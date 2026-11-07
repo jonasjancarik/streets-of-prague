@@ -9,10 +9,10 @@ anything left above the road (a car, a hedge) from lifting it.
 
 Where the LiDAR and the map's ground disagree by more than 0.3 m, each such
 place is judged on its own. A metre or more apart, IPR's surface model (the
-top surface, as the game's camera sees it) picks the level; closer than that,
-or where it shows neither, the map keeps its level unless it has a hole or a
-spike there and the LiDAR runs on smoothly. Where the map keeps its level the
-fit follows it, smoothed. Retaining walls and terraces split the grid. Over a
+top surface, as the game's camera sees it) picks the level; closer than that it
+picks the LiDAR's only when it lies clearly on it. Otherwise the map keeps its
+level unless it has a hole or a spike there and the LiDAR runs on smoothly.
+Where the map keeps its level the fit follows it, smoothed. Retaining walls and terraces split the grid. Over a
 tunnel and where the ground meets a bridge's deck the street is the map's (its
 ground was shaped there to meet them) and the fit comes down to it, so there is
 no step where they meet.
@@ -72,7 +72,8 @@ LARGE = 1.0         # m, changes this large are listed in the report for a look
 # With second differences on a 2 m grid a weight w smooths out waves shorter
 # than about 2π·2·w^¼ m: 20 m along, 6 m across, 12 m for the twist.
 ALONG, ACROSS, TWIST = 6.0, 0.05, 0.8
-JUNCTION = 2.0      # isotropic, at junctions and on squares
+JUNCTION = 0.5      # isotropic at junctions: soft, so a steep side street breaks at the junction
+SQUARE = 2.0        # isotropic, on squares and paving off any street
 TIE = 1e-3          # weak pull to the map's ground, so a cell with no data has a height
 HELD = 0.2          # where the map keeps its level it holds the fit there, smoothed
 PIN = 100.0         # over a tunnel the fit takes the map's level
@@ -82,6 +83,7 @@ MEETS = 1.0         # m: where the ground is this close to a deck beside it, it 
 ROUGH, SMOOTH = 0.25, 0.08  # m off the 3×3 mean: a map hole's sides, a LiDAR street with none
 APART = 1.0         # m, where the LiDAR and the map are this far apart the surface model decides
 SEEN = 0.5          # m, the surface model (lowest quarter) this close to a level shows it is on top
+CLOSE = 0.15        # m, under a metre apart the surface model must be this close to the LiDAR, and this much closer than to the map
 OFFSET = 0.3        # m, a LiDAR cell this far off the survey (or the map) disagrees
 # Lopsided Huber scales: the road under a car is below the LiDAR, not above it.
 ABOVE, BELOW = 0.06, 0.12
@@ -162,7 +164,11 @@ def junctions(edges):
 
 
 def build_penalty(idx, tx, ty, iso):
-    """Sparse rows of the bending penalty on the grid cells `idx` (−1 off the grid)."""
+    """Sparse rows of the bending penalty on the grid cells `idx` (−1 off the grid). `iso` marks
+    the cells bent the same whichever way (True: at the junction weight), or gives their weight."""
+    iso = np.asarray(iso)
+    iso_w = np.where(iso, JUNCTION, 0.0) if iso.dtype == bool else iso.astype(float)
+    iso = iso_w > 0
     ny, nx = idx.shape
     pad = np.full((ny + 2, nx + 2), -1, int)
     pad[1:-1, 1:-1] = idx
@@ -196,9 +202,9 @@ def build_penalty(idx, tx, ty, iso):
                 (NE, cxy / 4), (SW, cxy / 4), (NW, -cxy / 4), (SE, -cxy / 4)]
 
     t2x, t2y, txy = tx * tx, ty * ty, tx * ty
-    wa = np.where(iso, JUNCTION, ALONG)
-    wc = np.where(iso, JUNCTION, ACROSS)
-    wt = np.where(iso, 2 * JUNCTION, 2 * TWIST)
+    wa = np.where(iso, iso_w, ALONG)
+    wc = np.where(iso, iso_w, ACROSS)
+    wt = np.where(iso, 2 * iso_w, 2 * TWIST)
     add(full, hessian_terms(t2x, t2y, 2 * txy), wa)          # along: tᵀHt
     add(full, hessian_terms(t2y, t2x, -2 * txy), wc)         # across: nᵀHn
     add(full, hessian_terms(-txy, txy, t2x - t2y), wt)       # twist: tᵀHn
@@ -313,13 +319,15 @@ def fit(city, area, lidar_at, dsm_at):
     dist, nearest = tree.query(np.column_stack([cx, cy]))
     tx, ty = np.zeros(gx.shape), np.zeros(gx.shape)
     tx[on], ty[on] = ad[nearest, 0], ad[nearest, 1]
-    iso = np.zeros(gx.shape, bool)
+    iso = np.zeros(gx.shape)
+    off_street = dist > ah[nearest] + FEATHER + 6
+    iso[on] = np.where(off_street, SQUARE, 0)
     junction = junctions(edges)
     if junction:
         jt = cKDTree(np.array([p for p, _ in junction]))
         reach = np.array([r for _, r in junction])
         dj, kj = jt.query(np.column_stack([cx, cy]))
-        iso[on] = (dj <= reach[kj]) | (dist > ah[nearest] + FEATHER + 6)
+        iso[on] = np.where(dj <= reach[kj], JUNCTION, iso[on])
     P = build_penalty(idx, tx, ty, iso)
 
     # Over a tunnel and round it, and where the ground meets a bridge's deck (at its ends,
@@ -351,9 +359,10 @@ def fit(city, area, lidar_at, dsm_at):
     # game's camera does, picks the level: on the LiDAR the map is wrong (the survey caught
     # a metro shaft, a crossing got the wrong level); on the map the street is on something
     # the LiDAR's bare earth leaves out (a road over a station hall, a bridge the map
-    # doesn't have). Closer than that, and where the surface model shows neither (trees, a
-    # deck above), the shape decides: a hole or a spike in the map has sides no street has
-    # while the LiDAR runs on smoothly; otherwise the map keeps its level, smoothed.
+    # doesn't have). Closer than that the surface model picks the LiDAR only when it lies
+    # on it. Where it shows neither (trees, a deck above), the shape decides: a hole or a
+    # spike in the map has sides no street has while the LiDAR runs on smoothly; otherwise
+    # the map keeps its level, smoothed.
     valid = np.isfinite(lid)
     off = valid & (np.abs(lid - ground) > OFFSET)
     groups, _ = ndimage.label(off, structure=np.ones((3, 3)))
@@ -378,6 +387,9 @@ def fit(city, area, lidar_at, dsm_at):
                 why = "seen at the LiDAR"
             elif abs(t - m_) < SEEN:
                 why = "seen at the map"
+        elif abs(t - l) < CLOSE and abs(t - m_) > abs(t - l) + CLOSE:
+            # Closer, the surface model only decides when it lies on the LiDAR's street.
+            why = "seen at the LiDAR"
         if why is None:
             around = ndimage.binary_dilation(part, iterations=3) & valid[sl]
             rough_map = np.nanpercentile(r_ground[sl][around], 90) if np.isfinite(r_ground[sl][around]).any() else 0
@@ -419,9 +431,26 @@ def fit(city, area, lidar_at, dsm_at):
               f"{np.mean(np.abs(r) > 0.15) * 100:.1f}% over 15 cm ({time.time() - t0:.0f} s)")
     Z = np.full(gx.shape, np.nan)
     Z[on] = z
-    # Up to a wall each side keeps its own height: a cut cell takes its nearest fitted cell's.
+    # Up to a wall each side keeps its own height: a cut cell takes its nearest fitted cell's
+    # on its own side of the wall.
     _, (nj, ni) = ndimage.distance_transform_edt(~on, return_indices=True)
     Z[cut] = Z[nj[cut], ni[cut]]
+    if walls is not None and not walls.is_empty:
+        cj, ci = np.nonzero(cut)
+        best = np.full(len(cj), np.inf)
+        for dj, di in sorted(((a, b) for a in range(-2, 3) for b in range(-2, 3) if a or b), key=lambda q: q[0] ** 2 + q[1] ** 2):
+            d = math.hypot(dj, di)
+            j, i = cj + dj, ci + di
+            ok = (j >= 0) & (i >= 0) & (j < ny) & (i < nx) & (d < best)
+            ok[ok] &= on[j[ok], i[ok]]
+            if not ok.any():
+                continue
+            seg = shapely.linestrings(np.stack([np.column_stack([gx[cj[ok], ci[ok]], gy[cj[ok], ci[ok]]]),
+                                                np.column_stack([gx[j[ok], i[ok]], gy[j[ok], i[ok]]])], axis=1))
+            same = ~shapely.intersects(walls, seg)
+            k = np.flatnonzero(ok)[same]
+            Z[cj[k], ci[k]] = Z[j[k], i[k]]
+            best[k] = d
     nl = len(d_lidar)
     big = inside & (np.abs(Z - ground) > LARGE)
     lab, _ = ndimage.label(big)
@@ -458,8 +487,30 @@ def fit(city, area, lidar_at, dsm_at):
                         p95=float(np.percentile(np.abs(e - np.median(e)), 95)))
         stats["surveyCheck"] = dict(points=int(near.sum()), fit=spread((C @ z - sv[:, 2])[near]),
                                     now=spread((now - sv[:, 2])[near]))
-    grids = dict(Z=Z, base=ground, lidar=lid, inside=inside, masked=masked | pinned, iso=iso, cut=cut)
-    return dict(Z=Z, x0=x0, y0=y0, on=on, geo=geo, paved=paved, bounds=bounds, tiles=tiles, at=at, idx=idx, grids=grids), stats
+    grids = dict(Z=Z, base=ground, lidar=lid, inside=inside, masked=masked | pinned, iso=iso > 0, cut=cut)
+    return dict(Z=Z, x0=x0, y0=y0, on=on, geo=geo, paved=paved, bounds=bounds, tiles=tiles, at=at, idx=idx, walls=walls, grids=grids), stats
+
+
+def node_heights(Z, x0, y0, px, py, i, j, fa, fb, walls):
+    """Patch nodes from the 2 m grid, bilinear; near a wall only from the grid cells on the
+    node's own side of it, so the step stays at the wall and doesn't lean out over the street."""
+    corners = [(j, i, (1 - fa) * (1 - fb)), (j, i + 1, fa * (1 - fb)), (j + 1, i, (1 - fa) * fb), (j + 1, i + 1, fa * fb)]
+    w = np.stack([c[2] for c in corners])
+    if walls is not None and not walls.is_empty:
+        near = shapely.dwithin(walls, shapely.points(px, py), CELL * 1.5)
+        if near.any():
+            k = np.flatnonzero(near)
+            for n, (cj, ci, _) in enumerate(corners):
+                seg = shapely.linestrings(np.stack([np.column_stack([px[k], py[k]]),
+                                                    np.column_stack([x0 + CELL * ci[k], y0 + CELL * cj[k]])], axis=1))
+                cross = shapely.intersects(walls, seg)
+                # (A node on no side keeps them all.)
+                w[n, k[cross]] = 0
+            lost = w.sum(0) < 1e-9
+            w[:, lost] = np.stack([c[2] for c in corners])[:, lost]
+    zs = np.stack([Z[cj, ci] for cj, ci, _ in corners])
+    # (A node needs all four cells, as before: past them the fit has no height.)
+    return np.where(np.isfinite(zs).all(0), (w * np.nan_to_num(zs)).sum(0) / w.sum(0), np.nan)
 
 
 def pack_heights(h, weights):
@@ -514,8 +565,7 @@ def patches(city, f):
             ny, nx = Z.shape
             i, j = np.clip(i, 0, nx - 2), np.clip(j, 0, ny - 2)
             fa, fb = np.clip(gxf - i, 0, 1), np.clip(gyf - j, 0, 1)
-            h = ((1 - fa) * (1 - fb) * Z[j, i] + fa * (1 - fb) * Z[j, i + 1]
-                 + (1 - fa) * fb * Z[j + 1, i] + fa * fb * Z[j + 1, i + 1])
+            h = node_heights(Z, x0, y0, px, py, i, j, fa, fb, f.get("walls"))
             ground = np.asarray(at(px, py), float)
             missing = ~np.isfinite(h)
             weight[missing] = 0

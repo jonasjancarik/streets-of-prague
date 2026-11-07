@@ -5,6 +5,7 @@ import base64
 import unittest
 
 import numpy as np
+import shapely
 
 import road_fit
 
@@ -54,6 +55,22 @@ class RoadFitPenaltyTests(unittest.TestCase):
         z = np.where(self.x < 4, 240.0, 242.0)[idx >= 0]
         r = P @ z
         self.assertAlmostEqual(float(r @ r), 0, places=9)
+
+
+class WallTests(unittest.TestCase):
+    def test_a_point_by_a_wall_takes_its_height_from_its_own_side(self):
+        # A wall along x = 5 between a street at 240 m and a terrace at 243 m (2 m cells).
+        y, x = np.mgrid[0:6, 0:6].astype(float) * road_fit.CELL
+        Z = np.where(x < 5, 240.0, 243.0)
+        wall = shapely.linestrings([[5, -5], [5, 15]])
+        px, py = np.array([4.6, 5.4, 1.0]), np.array([5.0, 5.0, 5.0])
+        gi, gj = px / road_fit.CELL, py / road_fit.CELL
+        i, j = np.floor(gi).astype(int), np.floor(gj).astype(int)
+        h = road_fit.node_heights(Z, 0.0, 0.0, px, py, i, j, gi - i, gj - j, wall)
+        np.testing.assert_allclose(h, [240, 243, 240])
+        # Without the wall the point by it blends both sides.
+        h = road_fit.node_heights(Z, 0.0, 0.0, px, py, i, j, gi - i, gj - j, None)
+        self.assertGreater(h[0], 240.5)
 
 
 class PackTests(unittest.TestCase):
