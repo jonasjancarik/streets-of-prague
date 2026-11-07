@@ -53,7 +53,7 @@ import { Districts } from './districts.ts';
 import { kindAt, loadStrips, setCentre } from './reflections.ts';
 import { TileWorld } from './tiles.ts';
 import { loadFacadeAtlas } from './facades.ts';
-import { groundSamples } from './surface.ts';
+import { groundSamples, GROUND_DEPTH } from './surface.ts';
 import { CUTAWAY, DIG, WEATHER_DETAIL } from './shading.ts';
 import { setupDev } from './dev.ts';
 import { setupSettings } from './settings.ts';
@@ -2573,6 +2573,8 @@ async function main() {
     // Out of first person, the mouse it took to look round with is let go.
     if (!eyes && document.pointerLockElement === renderer.domElement) document.exitPointerLock();
     if (camera.near !== nearPlane) { camera.near = nearPlane; camera.updateProjectionMatrix(); }
+    // From street level the ground hides what's behind it (see GROUND_DEPTH).
+    GROUND_DEPTH.visible = !!eyes;
     sun.position.copy(sun.target.position).add(sky.offset);
     fitShadow();
     // Street lamps and headlights, and the rain, snow and mist round the view.

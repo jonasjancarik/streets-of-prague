@@ -475,7 +475,9 @@ that without a new renderer.
   drawn stay when you turn); a tile coming into view shows a few meshes a frame, and only
   one tile joins the scene a frame anywhere, so none stalls the game (`View` in
   `src/tiles.ts`). Shadows only reach as far as the view from above would
-  show. Under Testing: pause, one frame at a time, slow
+  show. The ground's layers write no depth (from above nothing is behind the ground), so
+  in first person each tile's plain ground goes into the depth first, 0.3 m low, and hides
+  what lies behind a crest or down a slope (`GROUND_DEPTH` in `src/surface.ts`). Under Testing: pause, one frame at a time, slow
   motion or 2–4×, money, stars, full health, nothing hurts, into a new car of any type,
   the test places, and the scenarios (see Testing above).
   "Helicopter next to me" parks one on the nearest open ground (flown like the one on

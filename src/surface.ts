@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PATTERN, patterned, held, DIG, roadRasterEnabled } from './shading.ts';
+import { PATTERN, patterned, held, DIG, roadRasterEnabled, cutAway } from './shading.ts';
 import type { RoadRaster } from './roadRaster.ts';
 
 // A tile's ground as meshes, from the layers ground.ts worked out (in a tile worker):
@@ -31,6 +31,18 @@ interface SurfaceOptions {
   photo?: { texture: THREE.Texture; box: number[] } | null;
 }
 
+// The ground in depth alone, for first person (main.ts turns it on there). The layers
+// write no depth (see below), which from above costs nothing: nothing is ever behind the
+// ground. From street level everything behind a crest or down a slope would be drawn
+// over the ground in front of it, and a road far off over the grass at your feet. So
+// before the layers, each tile's plain ground (which covers all of it, cut at the steps
+// like the rest) goes into the depth, a little lower than it is: the layers lie on it,
+// triangulated differently, and must stay in front. The hole round you in a tunnel is
+// cut in it too.
+export const GROUND_DEPTH = cutAway(new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide }), 'ground-depth');
+GROUND_DEPTH.visible = false;
+const GROUND_DEPTH_DROP = 0.3; // m
+
 export class Surfaces {
   group: THREE.Group;
   masks: THREE.DataTexture[];
@@ -57,6 +69,12 @@ export class Surfaces {
       // it: the walls' backs go into the depth first, and the layers are tested against
       // that (so is everything else: a boat by the quay is hidden from the street).
       if (!l.slab && !l.deck && !l.tunnel) mat.depthTest = true;
+      if (l.base) {
+        const depth = new THREE.Mesh(g, GROUND_DEPTH);
+        depth.position.y = -GROUND_DEPTH_DROP;
+        depth.renderOrder = -3001;
+        this.group.add(depth);
+      }
       if (l.wall) {
         const back = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.BackSide }));
         back.renderOrder = -3000;
@@ -79,7 +97,7 @@ export class Surfaces {
   }
 
   dispose() {
-    this.group.traverse((o) => { if (o instanceof THREE.Mesh) { o.geometry.dispose(); o.material.dispose(); } });
+    this.group.traverse((o) => { if (o instanceof THREE.Mesh) { o.geometry.dispose(); if (o.material !== GROUND_DEPTH) o.material.dispose(); } });
     for (const m of this.masks) m.dispose();
   }
 }
