@@ -1242,8 +1242,45 @@ The largest single change is a 3.7 m bump on nábřeží Edvarda Beneše (50.094
   on its side of the wall is on the slope up to the wall's top. Taking the map's
   height plus the nearest cell's change there instead made it worse (step 0.79 →
   1.07 m): the height comes from the wall's same-side search, not the fallback.
-- Walls along a street follow the fitted ground: on the bank above nábřeží Edvarda
-  Beneše the walls' tops, already in long ramps on the map, turn jagged with the fit.
+- The parapets on the terrain's steps take their height from the fitted ground on
+  each side. On the bank above nábřeží Edvarda Beneše they turned jagged with the fit;
+  see below.
 
-![Walls on the bank above nábřeží Edvarda Beneše, on the map (top) and with the fit (bottom)](images/road-fit-wall-tops.png)
+### The parapets on the bank above nábřeží Edvarda Beneše
+
+The bank and the street are both plain ground, with a terrace strip a fraction of a
+metre wide along the kerb, and the game puts a step with a parapet on its outline.
+Cells within a surveyed wall's gap are taken out of the fit and given the height of the
+nearest fitted cell on their side of the wall; on top of the bank there is none, and
+they took the street's height, 4–11 m below. The parapets sample the fitted ground on
+both sides of the step, so they followed it up and down.
+
+Two changes, both on 7 November 2026:
+
+- `road_fit.py`: a cut cell off the carriageway that comes out a metre or more off
+  the map keeps the map's height. (On the carriageway too, it put nábřeží Edvarda
+  Beneše's 3.7 m bump back.)
+- `src/roadSurfaces.ts`: a patch's heights between its nodes count each node by its
+  weight as well, so a node the patch doesn't cover adds nothing.
+
+The parapets up the bank are back to the map's long ramps; the lower ones at the kerb
+still zigzag. Against the first five-area fit, the streets come out the same in
+Nusle, Zlíchov, Smíchov and Žižkov; in the centre steps over 0.25 m go from 13 to 18
+(over 1 m 4 → 5, bumps over 0.5 m 14 → 13), and Palackého most's worst join goes back
+to the map's 2.73 m (2.39 m with the first fit).
+
+Tried and dropped:
+
+- Treating every terrace outline in the tiles as a wall in the fit. It parts the bank
+  from the street, but cells by the kerb then took the bank's height, 11 m up: the
+  search for a fitted cell on their own side reaches round the strip's ends.
+- Keeping walls (`wallArrays`) on the map's ground: these ribbons are the steps'
+  parapets (`stepEdges`), not OSM's walls, and nothing changed.
+- Carrying the nearest fitted cell's change from the map, not its height, into the cut
+  cells: the courtyard street in Žižkov got worse (step 0.79 → 1.07 m).
+
+The kerb parapets need the fit to part its grid along the game's own step outlines,
+with a fill for the cut cells that stays on its side.
+
+![The bank above nábřeží Edvarda Beneše: the map, the first five-area fit, and now](images/road-fit-wall-tops.png)
 

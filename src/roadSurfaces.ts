@@ -91,7 +91,7 @@ export function withRoadSurfaces(base: HeightAt, patches: RoadSurface[] | undefi
       if (!strength) continue;
       if (side === false && label?.(x, y)) return base(x, y, side);
       if (p.heights) {
-        const fitted = bilinear(p.heights, k, n, a, b) - ref;
+        const fitted = weighted(p.heights, p.weights, k, n, a, b) - ref;
         if (strength === 1 && !p.lowerOnly) return fitted;
         // A corridor can taper into the junction fit below it.
         const below = sample(x, y, side, i + 1);
@@ -105,6 +105,16 @@ export function withRoadSurfaces(base: HeightAt, patches: RoadSurface[] | undefi
     return base(x, y, side);
   };
   return sample;
+}
+
+// The heights between four nodes, each counted by its weight as well: a node the patch
+// doesn't cover (weight 0) is often across a wall, at the height of the wall's top, and a
+// street's last metre before the wall leant up to it (the walls on Letná's bank above
+// nábřeží Edvarda Beneše went jagged, standing on it).
+function weighted(h: number[], w: number[], k: number, stride: number, a: number, b: number) {
+  const c0 = (1 - a) * (1 - b) * w[k], c1 = a * (1 - b) * w[k + 1];
+  const c2 = (1 - a) * b * w[k + stride], c3 = a * b * w[k + stride + 1];
+  return (c0 * h[k] + c1 * h[k + 1] + c2 * h[k + stride] + c3 * h[k + stride + 1]) / (c0 + c1 + c2 + c3);
 }
 
 function bilinear(v: number[], k: number, stride: number, a: number, b: number) {

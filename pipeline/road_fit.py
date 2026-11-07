@@ -490,6 +490,15 @@ def fit(city, area, lidar_at, dsm_at):
             k = np.flatnonzero(ok)[same]
             Z[cj[k], ci[k]] = Z[j[k], i[k]]
             best[k] = d
+    # A cut cell a metre or more off the map took its height from across the step: the cells
+    # on top of a step, with no fitted cell up there, took the street's 4–11 m below, and the
+    # parapets on the steps went jagged (Letná's bank above nábřeží Edvarda Beneše). Off the
+    # carriageway it keeps the map's. (Not on it: there the map's own bump is what the fit
+    # mends, and nábřeží Edvarda Beneše's 3.7 m one came back.)
+    across = cut & (np.abs(Z - ground) >= LARGE)
+    if across.any():
+        across[across] = ~shapely.covers(paved, shapely.points(gx[across], gy[across]))
+    Z[across] = ground[across]
     nl = len(d_lidar)
     big = inside & (np.abs(Z - ground) > LARGE)
     lab, _ = ndimage.label(big)

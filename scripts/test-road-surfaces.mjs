@@ -80,3 +80,13 @@ test('a patch may carry its grids packed as base64', () => {
   assert.equal(readRoadSurfaces({ ...file, patches: [{ ...packed, weights: b64(Uint8Array.from(weights.slice(1))) }] }, 'praha', 'new'), null);
   assert.equal(readRoadSurfaces({ ...file, patches: [{ ...packed, heights: { ...packed.heights, step: 0 } }] }, 'praha', 'new'), null);
 });
+
+test('a node the patch does not cover adds nothing to the height beside it', () => {
+  // Street nodes at 240 m up to x = 10; past them a wall's top at 244 m, weight 0.
+  const n = 21;
+  const w = weights.map((v, i) => (i % n) <= 10 ? v : 0);
+  const heights = weights.map((_, i) => (i % n) <= 10 ? 240 : 244);
+  const h = withRoadSurfaces(() => 0, [{ ...patch, z: undefined, weights: w, heights }], 0, null);
+  // Half a metre short of the wall: half the strength, and the street's own height.
+  assert.ok(Math.abs(h(10.5, 10) - 0.5 * 240) < 1e-9);
+});
