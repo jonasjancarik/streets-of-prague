@@ -138,20 +138,27 @@ function sidePlane(hm: Float32Array, labels: Uint8Array, n: number, p0: number, 
 // labels on its left and right, and at each point the ground's height (m a.s.l.) on
 // either side, smoothed along the line (null where there was none to read).
 export interface StepLine { l: number; r: number; pts: [number, number, number | null, number | null][] }
-export interface StepLineIndex { cell: (x: number, y: number) => number[] | undefined; near: (x: number, y: number, want: number, pieces: number[], loose: number, ground: number) => [number, number] }
+export interface StepLineIndex { cell: (x: number, y: number) => number[] | undefined; near: (x: number, y: number, want: number, pieces: number[], loose: number, groundAt: (label: number) => number) => [number, number] }
 
 const ON_LINE = 0.3; // m: this near a step line, a point may be on either side of it
 const FACING = 0.3; // past a line's end, its say fades as a point comes round to the other side (cosines)
 const HOLD = 1; // m from a step line where it has the say whatever the lattice's cell
-// m: a line this far from the lattice's height at a point has its full say there, and none
-// from twice as far: it's another place's ground with the same label (the hillside past a
-// small terrace by the street at K Vlásence, an embankment over Prokopova). A third more
-// on the line itself (to ON_LINE / 2), where the walls' tops and feet are read and the
-// lattice's staircase is worst. Not on a map in centimetres, whose ground is the scan
-// (ipr_terrain.py --lidar-ground): its lattice blurs each wall into a ramp, so a line read
-// from the scan may well be metres off it (nábřeží Edvarda Beneše and Chotkova got their
-// sawtooth back).
-const AGREE = 1.5;
+// A line can read another place's ground with the same label: plain ground on both sides
+// of a small terrace, a street on one and a hillside on the other (K Vlásence), or an
+// embankment beside a street (Prokopova), and lift the street by metres. It then gives way
+// to the lattice where both of these hold at a point:
+// - it's far off the lattice's height there: its full say within AGREE (a third more on
+//   the line itself, to ON_LINE / 2, where the walls' tops and feet are read and the
+//   lattice's staircase is worst), none from twice as far;
+// - it has a step of SEEN or more that the lattice there doesn't: the lattice's step
+//   (the point's side against the line's other side) is at least half the line's for its
+//   full say, none from a fifth. A wall whose top the lattice has as a staircase keeps
+//   its line (under the castle by Jelení příkop, Letná).
+// Not on a map in centimetres, whose ground is the scan (ipr_terrain.py --lidar-ground):
+// its lattice blurs each wall into a ramp, and nábřeží Edvarda Beneše and Chotkova got
+// their sawtooth back.
+const AGREE = 1.5; // m
+const SEEN = 1; // m
 // How far from a step its line has the say over the lattice (heightSampler): past where
 // the lattice's points by a step read one corner and its ramp.
 export const lineReach = (step: number) => Math.max(3, 1.5 * step);
@@ -162,12 +169,12 @@ export const lineReach = (step: number) => Math.max(3, 1.5 * step);
 // its height on that side at the nearest point, weighted 1 at the line to 0 at `reach`,
 // and only on that side of it: the same label past the line is another place (the
 // street below a terrace and the hillside above it). Past HOLD from the line, the weight
-// is only `loose`: how much of the lattice's cell there is another side's. A line far off
-// `ground`, the lattice's height there, has less say (AGREE). [sum of weight × height,
-// sum of weights].
+// is only `loose`: how much of the lattice's cell there is another side's. A line reading
+// another place's ground gives way (AGREE, SEEN); `groundAt(label)`: the lattice's height
+// at the point on that side. [sum of weight × height, sum of weights].
 export function stepLineIndex(lines: StepLine[] | null | undefined, ref: number, reach: number, unit = 0.1): StepLineIndex | null {
   if (!sampling.lines || !lines?.length) return null;
-  const agreeBy = unit < 0.1 ? Infinity : AGREE;
+  const checked = unit >= 0.1;
   const ax: number[] = [], ay: number[] = [], bx: number[] = [], by: number[] = [], h: number[][] = [], lab: number[][] = [], line: number[] = [];
   lines.forEach((ln, id) => {
     for (let k = 0; k + 1 < ln.pts.length; k++) {
@@ -188,10 +195,11 @@ export function stepLineIndex(lines: StepLine[] | null | undefined, ref: number,
       }
     }
   }
-  const best = new Map<number, [number, number, number]>();
+  const best = new Map<number, [number, number, number, number, number]>();
   return {
     cell: (x, y) => cells.get(key(Math.floor(x / reach), Math.floor(y / reach))),
-    near: (x, y, want, pieces, loose, ground) => {
+    near: (x, y, want, pieces, loose, groundAt) => {
+      const ground = groundAt(want);
       best.clear();
       for (const k of pieces) {
         if (lab[k][0] !== want && lab[k][1] !== want) continue;
@@ -210,13 +218,22 @@ export function stepLineIndex(lines: StepLine[] | null | undefined, ref: number,
         const hk = h[k][side * 2] * (1 - t) + h[k][side * 2 + 1] * t;
         if (Number.isNaN(hk)) continue;
         const was = best.get(line[k]);
-        if (!was || d < was[0] - 1e-6 || (d < was[0] + 1e-6 && facing > was[2])) best.set(line[k], [d, hk, facing]);
+        const ho = h[k][(1 - side) * 2] * (1 - t) + h[k][(1 - side) * 2 + 1] * t;
+        if (!was || d < was[0] - 1e-6 || (d < was[0] + 1e-6 && facing > was[2])) best.set(line[k], [d, hk, facing, ho, lab[k][1 - side]]);
       }
       let sum = 0, weight = 0;
-      for (const [d, hk, facing] of best.values()) {
+      for (const [d, hk, facing, ho, other] of best.values()) {
         const f = d / reach, e = Math.min(1, d / HOLD), hold = 1 - e * e * (3 - 2 * e);
-        const off = Math.max(0, Math.min(1, 2 * d / ON_LINE - 1)), tol = agreeBy * (1 + (1 - off) / 3);
-        const a = Math.max(0, Math.min(1, Math.abs(hk - ground) / tol - 1)), agree = Number.isNaN(a) ? 1 : 1 - a * a * (3 - 2 * a);
+        let agree = 1;
+        if (checked) {
+          const off = Math.max(0, Math.min(1, 2 * d / ON_LINE - 1)), tol = AGREE * (1 + (1 - off) / 3);
+          const a = Math.max(0, Math.min(1, Math.abs(hk - ground) / tol - 1));
+          if (a > 0) {
+            const go = groundAt(other), step = hk - (Number.isNaN(ho) ? go : ho);
+            const b = Math.abs(step) >= SEEN ? Math.max(0, Math.min(1, ((ground - go) / step - 0.2) / 0.3)) : 0;
+            agree = Math.max(1 - a * a * (3 - 2 * a), Number.isNaN(b) ? 0 : b * b * (3 - 2 * b));
+          }
+        }
         const w = (1 - f * f * (3 - 2 * f)) * facing * Math.max(hold, loose) * agree;
         sum += w * hk;
         weight += w;
@@ -314,7 +331,7 @@ export function heightSampler(hm: Float32Array, [bx, by]: [number, number] | [nu
     const want = sideOf(x, y, side);
     if (flat?.has(want)) return flat.get(want)!;
     const ground = lattice(x, y, side);
-    const [sum, weight] = lines.near(x, y, want, pieces, loose(x, y, want), ground);
+    const [sum, weight] = lines.near(x, y, want, pieces, loose(x, y, want), (label) => (label === want ? ground : lattice(x, y, label)));
     if (!weight) return ground;
     return weight >= 1 ? sum / weight : sum + (1 - weight) * ground;
   };
