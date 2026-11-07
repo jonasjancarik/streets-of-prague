@@ -861,7 +861,11 @@ the result as road surface patches with `?roadsurfaces&roadfit`.
   a bridge's deck beside it (the deck's ends, a street crossing a cutting), and in
   the outer 10 m of the area, the fit takes the map's own level. The map's ground
   there was shaped to meet those structures and the ground beyond the area, so the
-  fitted streets come down to it without a step.
+  fitted streets come down to it without a step. Beside a tunnel (not over it) the
+  map can dip to the tunnel's own level, though. Where the LiDAR and the surface
+  model agree on a level a metre or more off the map's, that is the street on top,
+  and the fit takes it (173 cells in Nusle, 148 in Zlíchov, checked at the kerb
+  too, where the fit otherwise takes no LiDAR).
 - Where the LiDAR and the map's ground are more than 0.3 m apart, each place is
   judged on its own. At a metre or more apart, IPR's surface model decides: it
   sees the top surface, as the game's camera does. Below a metre, it decides only
@@ -997,7 +1001,7 @@ fit" the one with them, before the leftovers above were fixed:
 | Bumps (> 0.15 / 0.5 m) | 66 / 8 | 19 / 3 | 4 / 0 | 4 / 0 |
 | Leaning across (> 8 / 15 %) | 82 / 30 | 47 / 19 | 39 / 15 | 34 / 11 |
 | Ridge or trough (> 0.3 / 1 m) | 14 / 1 | 8 / 0 | 8 / 0 | 7 / 1 |
-| Twisting (> 5 / 12 %) | 94 / 26 | 38 / 12 | 15 / 4 | 18 / 5 |
+| Twisting (> 5 / 12 %) | 94 / 26 | 38 / 12 | 15 / 4 | 16 / 5 |
 | Off the road (> 4 / 10 m) | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
 
 The ridge and one twist over the hard limit are U tržnice, where the street really is
@@ -1068,7 +1072,9 @@ leftovers' before and after in `shots3/` (`pair-*`, `triple-strip.png`, and
 e=docs/evidence/road-fit/final
 uv run --project pipeline python pipeline/road_fit.py --data public/data/praha_now \
   --out $e/road-fit.json --report $e/report.json
-cp $e/road-fit.json public/data/praha_now/road-fit.json
+# Both areas into the file the game reads (patch ids must not repeat across areas):
+uv run --project pipeline python pipeline/road_fit.py --data public/data/praha_now \
+  --area nusle zlichov --out public/data/praha_now/road-fit.json --report $e/report-both.json
 node scripts/check-road-flatness.mjs praha --near 50.072,14.4355,1700 --save $e/plain-roads.json
 node scripts/check-road-flatness.mjs praha --near 50.072,14.4355,1700 \
   --roadsurfaces $e/road-fit.json --save $e/fit-roads.json
@@ -1081,5 +1087,72 @@ node scripts/check-bridge-decks.mjs praha --near 50.072,14.4355,1700 --roadsurfa
 
 The report (`report.json`) lists each step's counts and the large changes.
 `report.npz` holds the grids (fit, map, LiDAR, what was left to the map or held to
-it) for drawing. The fit needs the survey snapshot, the LiDAR import and IPR's
+it) for drawing; with several areas there is one per area (`report.<area>.npz`) and
+the report lists each area. For Zlíchov the checks run with `--near 50.051,14.409,1700`
+and `road_fit_compare.py --area zlichov`. The fit needs the survey snapshot, the LiDAR import and IPR's
 surface model in `pipeline/.cache`.
+
+## Road fit, second area: Zlíchov
+
+Work of 7 November 2026, to see whether the rules worked out in Nusle carry over to
+different ground. The box covers Zlíchov and the slope below Barrandov
+(14.398–14.420 E, 50.040–50.062 N, 88 tiles): the Strakonická and Dobříšská
+trunk roads along the river, the Zlíchov interchange with its tunnel, and steep
+residential streets in hairpins. The first run used the Nusle rules unchanged; the
+only change since is the rule for the ground beside a tunnel (see "How the fit
+works"), which came from here.
+
+On the 440 car streets wholly inside the box (371 on the ground):
+
+| Findings (flag / hard limit) | Map now | Nusle rules | Road fit |
+| --- | ---: | ---: | ---: |
+| Steps along the street (> 0.25 / 1 m) | 3 / 0 | 4 / 0 | 4 / 0 |
+| Bumps (> 0.15 / 0.5 m) | 48 / 8 | 10 / 2 | 11 / 2 |
+| Leaning across (> 8 / 15 %) | 77 / 44 | 52 / 25 | 52 / 25 |
+| Ridge or trough (> 0.3 / 1 m) | 29 / 6 | 17 / 3 | 17 / 3 |
+| Twisting (> 5 / 12 %) | 100 / 41 | 28 / 15 | 28 / 15 |
+| Off the road (> 4 / 10 m) | 0 / 0 | 0 / 0 | 0 / 0 |
+
+The rules carry over: the counts fall about as much as in Nusle, with no new
+constants. The fit stays within 0.7 cm of the LiDAR it uses (median; 95th
+percentile 8.5 cm). The surface model sided with the LiDAR at 814 places and with
+the map at 13; the map kept 447. The step-edge check improves Strakonická's drop
+from 3.3 to 1.4 m and otherwise matches the map. The bridge check is unchanged.
+
+- The trunk link at 50.04779, 14.40959 (asked about earlier) is fixed: lean
+  34 → 4 %, twist 28.6 → 0.7 %, crown 0.96 → 0.14 m. Another link 40 m north
+  (50.04821, 14.40954) still leans 42 % (46 % on the map).
+- Ke Sklárně at the interchange: the map has two pits of up to 10 m beside the
+  tunnel (50.0499, 14.4083) where the LiDAR and the surface model both show the
+  street at about 201 m. The tunnel's 4 m hold kept them; with the rule for the
+  ground beside a tunnel the lean goes −126 → −44 % and the twist 102 → 40 %. What
+  remains of the southern pit lies inside the tunnel's outline, where the patches
+  leave the map alone, and the northern one just past the kerb.
+- The hairpin streets below Barrandov (Pod Kesnerkou, Franty Kocourka, Koulka,
+  Pod Závěrkou, U Dívčích hradů) lean 15–34 % on the map; the fit halves that.
+  What's left is in the LiDAR: the carriageway outlines take in part of the bank on
+  the uphill side.
+- Large changes: the fit lowers long stretches of Strakonická by 3 to 5 m (the
+  surface model agrees with the LiDAR there) and raises a part of Nový Zlíchov by
+  2.5 m.
+
+![Zlíchov in the game from above, now and with the fit: the trunk link, the interchange, the hairpin, and the cutting at the north end](images/road-fit-zlichov.jpg)
+
+### What doesn't work yet in Zlíchov
+
+- Dobříšská at the north end (50.0615, 14.4061). The LiDAR and the surface model
+  show the road in a walled cutting at 199 m on its way into the tunnel; the map
+  has no cutting and puts it at 204–206 m. The fit digs the cutting part way, then
+  climbs back to the map in the area's outer 10 m (lean −16 → −53 %). This needs the
+  cutting's walls in the terrain (see the terrain-steps skill), not a road fit.
+- Dobříšská's leans of 53 and 71 % at 50.05025, 14.408 are the tunnel portal's
+  cutting edge, the same on the map.
+- With the fit, thin bright streaks show on the grass and the road near the
+  Zlíchov tunnel, about 30 m west of the interchange. They were there with the
+  first Zlíchov run too, and the newer one has fewer; the plain map has none. They
+  aren't in the fitted ground itself (it equals the map there). The cause is open;
+  the likeliest suspect is the hidden ground being lowered under patches in a
+  tunnel tile.
+- In the same views, 2 of 123,008 points on the hidden ground rise above the road,
+  by up to 10 cm (1,715 points and 11.7 m without the fit).
+
