@@ -98,7 +98,8 @@ export function withRamps(base: (x: number, y: number) => number, ramps: Ramp[] 
 // How a point by a step gets its height (heightSampler): `plane`, from its own side's
 // slope (sidePlane); off, from its own side's corners of the cell alone, which is flat
 // across the cell where it has one (a wall running down a hill had a staircase for a top).
-export const sampling = { plane: false };
+// `lines`: from the tile's step lines where it has them (stepLineIndex).
+export const sampling = { plane: false, lines: true };
 
 // A stand-in height at lattice point (p0, q0), which is on another side of a step, for
 // the side `want`: the plane through that side's points within two steps of it (least
@@ -133,6 +134,80 @@ function sidePlane(hm: Float32Array, labels: Uint8Array, n: number, p0: number, 
   return Math.max(lo - span, Math.min(hi + span, mz - gx * mx - gy * my));
 }
 
+// A step in the ground as a line (pipeline/step_lines.py, a trial): `l` and `r` the
+// labels on its left and right, and at each point the ground's height (m a.s.l.) on
+// either side, smoothed along the line (null where there was none to read).
+export interface StepLine { l: number; r: number; pts: [number, number, number | null, number | null][] }
+export interface StepLineIndex { cell: (x: number, y: number) => number[] | undefined; near: (x: number, y: number, want: number, pieces: number[]) => [number, number] }
+
+const ON_LINE = 0.3; // m: this near a step line, a point may be on either side of it
+const FACING = 0.3; // past a line's end, its say fades as a point comes round to the other side (cosines)
+// How far from a step its line has the say over the lattice (heightSampler): past where
+// the lattice's points by a step read one corner and its ramp.
+export const lineReach = (step: number) => Math.max(3, 1.5 * step);
+
+// A tile's step lines for heightSampler, their heights above `ref`, or null with none.
+// `near(x, y, want, pieces)`: of each line within `reach` with the side `want`, its
+// height on that side at the nearest point, weighted 1 at the line to 0 at `reach`, and
+// only on that side of it: the same label past the line is another place (the street
+// below a terrace and the hillside above it). [sum of weight × height, sum of weights].
+export function stepLineIndex(lines: StepLine[] | null | undefined, ref: number, reach: number): StepLineIndex | null {
+  if (!sampling.lines || !lines?.length) return null;
+  const ax: number[] = [], ay: number[] = [], bx: number[] = [], by: number[] = [], h: number[][] = [], lab: number[][] = [], line: number[] = [];
+  lines.forEach((ln, id) => {
+    for (let k = 0; k + 1 < ln.pts.length; k++) {
+      const p = ln.pts[k], q = ln.pts[k + 1];
+      ax.push(p[0]); ay.push(p[1]); bx.push(q[0]); by.push(q[1]);
+      h.push([p[2] === null ? NaN : p[2] - ref, q[2] === null ? NaN : q[2] - ref, p[3] === null ? NaN : p[3] - ref, q[3] === null ? NaN : q[3] - ref]);
+      lab.push([ln.l, ln.r]);
+      line.push(id);
+    }
+  });
+  if (!ax.length) return null;
+  const cells = new Map<number, number[]>(), key = (cx: number, cy: number) => (cx + 32768) * 65536 + cy + 32768;
+  for (let k = 0; k < ax.length; k++) {
+    for (let cx = Math.floor((Math.min(ax[k], bx[k]) - reach) / reach); cx <= Math.floor((Math.max(ax[k], bx[k]) + reach) / reach); cx++) {
+      for (let cy = Math.floor((Math.min(ay[k], by[k]) - reach) / reach); cy <= Math.floor((Math.max(ay[k], by[k]) + reach) / reach); cy++) {
+        const c = cells.get(key(cx, cy));
+        if (c) c.push(k); else cells.set(key(cx, cy), [k]);
+      }
+    }
+  }
+  const best = new Map<number, [number, number, number]>();
+  return {
+    cell: (x, y) => cells.get(key(Math.floor(x / reach), Math.floor(y / reach))),
+    near: (x, y, want, pieces) => {
+      best.clear();
+      for (const k of pieces) {
+        if (lab[k][0] !== want && lab[k][1] !== want) continue;
+        const dx = bx[k] - ax[k], dy = by[k] - ay[k];
+        const t = Math.max(0, Math.min(1, ((x - ax[k]) * dx + (y - ay[k]) * dy) / (dx * dx + dy * dy || 1)));
+        const ex = x - ax[k] - dx * t, ey = y - ay[k] - dy * t, d = Math.hypot(ex, ey);
+        if (d >= reach) continue;
+        const side = lab[k][0] === want ? 0 : 1;
+        // How squarely the point lies on that side: 1 off the piece's middle on it, 0 on
+        // the other side, and in between round an end; on the line (to ON_LINE) its label
+        // says (a wall's foot and top are read there, a hair either side).
+        const c = d > 1e-6 ? (side ? -1 : 1) * (dx * ey - dy * ex) / ((Math.hypot(dx, dy) || 1) * d) : 1;
+        const on = Math.max(0, 1 - d / ON_LINE), g = Math.max(0, Math.min(1, (c + (1 - c) * on + FACING) / (2 * FACING)));
+        const facing = g * g * (3 - 2 * g);
+        if (!facing) continue;
+        const hk = h[k][side * 2] * (1 - t) + h[k][side * 2 + 1] * t;
+        if (Number.isNaN(hk)) continue;
+        const was = best.get(line[k]);
+        if (!was || d < was[0] - 1e-6 || (d < was[0] + 1e-6 && facing > was[2])) best.set(line[k], [d, hk, facing]);
+      }
+      let sum = 0, weight = 0;
+      for (const [d, hk, facing] of best.values()) {
+        const f = d / reach, w = (1 - f * f * (3 - 2 * f)) * facing;
+        sum += w * hk;
+        weight += w;
+      }
+      return [sum, weight];
+    },
+  };
+}
+
 // Height at a point, bilinear and clamped to the tile (NaN next to a missing height).
 // With `labels` (pointLabels), in a cell a step crosses only the corners on the point's
 // own side count. `side`: the label of that side; true for the water's; left out, it's
@@ -140,10 +215,11 @@ function sidePlane(hm: Float32Array, labels: Uint8Array, n: number, p0: number, 
 // never the water, so what stands by a quay wall stands on the quay. `flat`: the flat
 // terraces' heights (flatTerraces).
 export function heightSampler(hm: Float32Array, [bx, by]: [number, number] | [number, number, number, number], n: number, step: number,
-  labels: Uint8Array | null = null, terrace: ((x: number, y: number) => number) | null = null, flat: Map<number, number> | null = null) {
+  labels: Uint8Array | null = null, terrace: ((x: number, y: number) => number) | null = null, flat: Map<number, number> | null = null,
+  lines: StepLineIndex | null = null) {
   const ghosts = new Map<number, number>(); // (sidePlane's, by point and side)
   const sideOf = (x: number, y: number, side: number | boolean) => (side === true ? WATER : side === false ? (terrace ? terrace(x, y) : 0) : side);
-  return (x: number, y: number, side: number | boolean = false) => {
+  const lattice = (x: number, y: number, side: number | boolean = false) => {
     let want = -1;
     if (flat) {
       want = sideOf(x, y, side);
@@ -198,6 +274,19 @@ export function heightSampler(hm: Float32Array, [bx, by]: [number, number] | [nu
       }
     }
     return (a * (1 - fu) + b * fu) * (1 - fv) + (c * (1 - fu) + d * fu) * fv;
+  };
+  if (!lines || !labels) return lattice;
+  // Near a step, its line's height on the point's side, going over into the lattice
+  // out to the line's reach (stepLineIndex). (Putting the lattice right by the line's
+  // difference from it instead carried the lattice's staircase out onto the streets.)
+  return (x: number, y: number, side: number | boolean = false) => {
+    const pieces = lines.cell(x, y);
+    if (!pieces) return lattice(x, y, side);
+    const want = sideOf(x, y, side);
+    if (flat?.has(want)) return flat.get(want)!;
+    const [sum, weight] = lines.near(x, y, want, pieces);
+    if (!weight) return lattice(x, y, side);
+    return weight >= 1 ? sum / weight : sum + (1 - weight) * lattice(x, y, side);
   };
 }
 

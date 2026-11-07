@@ -584,6 +584,9 @@ def put_together(area: str, strict=False) -> dict:
         # Its terraces at the foot of retaining walls (dtm_heights.py; their labels are in its .height.bin).
         if terrain and terrain.get("terraces", {}).get(k):
             t["terraces"] = terrain["terraces"][k]
+        # (Trial: its steps as lines with the ground's height either side, step_lines.py.)
+        if terrain and terrain.get("steplines", {}).get(k):
+            t["stepLines"] = terrain["steplines"][k]
         written += write(out_dir / "tiles" / f"{k}.json", dumps(t))
         leaving(t, meta, outward)
         # Whether it has IPR's buildings, so the game can fetch them with the rest.

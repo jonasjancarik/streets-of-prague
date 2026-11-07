@@ -23,7 +23,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
 import { join } from 'node:path';
-import { decodeHeights, decodeLevels, pointLabels, heightSampler, terraceAt, flatTerraces, withRamps } from '../src/terrain.ts';
+import { decodeHeights, decodeLevels, pointLabels, heightSampler, terraceAt, flatTerraces, withRamps, stepLineIndex, lineReach } from '../src/terrain.ts';
 import { onPolygons } from '../src/map/geo.ts';
 import { readRoadSurfaces, withRoadSurfaces } from '../src/roadSurfaces.ts';
 import { bridgeSurfaceBuffers, bridgeSurfaceTile, readBridgeSurfacePreview } from '../src/bridgeSurfacePreview.ts';
@@ -70,7 +70,7 @@ function tileOf(i, j) {
     const heights = levels ? decodeLevels(levels, terrain.n, structures.length, REF) : [];
     const side = terraceAt(t.terraces);
     const base = height ? heightSampler(decodeHeights(height, terrain.n, REF, terrain.unit), t.box, terrain.n, terrain.step,
-      pointLabels(height, terrain.n), side, flatTerraces(t.terraces, REF)) : () => NaN;
+      pointLabels(height, terrain.n), side, flatTerraces(t.terraces, REF), stepLineIndex(t.stepLines, REF, lineReach(terrain.step))) : () => NaN;
     const road = surfaces ? surfaces.get(k) : undefined, lower = preview?.ground.get(k);
     const fits = lower ? [...lower, ...(road ?? [])] : road;
     const patches = height && !structures.some(s => s.kind === 'tunnel') ? fits : undefined;

@@ -7,7 +7,7 @@
 import { readFileSync, readdirSync, existsSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
-import { decodeHeights, pointLabels, heightSampler, terraceAt, flatTerraces, sampling } from '../src/terrain.ts';
+import { decodeHeights, pointLabels, heightSampler, terraceAt, flatTerraces, sampling, stepLineIndex, lineReach } from '../src/terrain.ts';
 import { stepEdges } from '../src/stepEdges.ts';
 import { readRoadSurfaces, withRoadSurfaces } from '../src/roadSurfaces.ts';
 import { bridgeSurfaceBuffers, bridgeSurfaceTile, readBridgeSurfacePreview } from '../src/bridgeSurfacePreview.ts';
@@ -25,6 +25,7 @@ for (let i = 0; i < args.length; i++) {
   } else positional.push(key);
 }
 if (options['--sides']) sampling.plane = options['--sides'] === 'plane';
+if (options['--lines'] === 'off') sampling.lines = false;
 const area = positional[0] ?? 'ujezd', list = Number(options['--list'] ?? 15);
 const dir = options['--data'] ? `${options['--data']}/${area}_now/` : new URL(`../public/data/${area}_now/`, import.meta.url).pathname;
 const index = JSON.parse(readFileSync(`${dir}index.json`, 'utf8')), { n, step } = index.terrain;
@@ -50,7 +51,7 @@ for (const f of selected ? selected.map(k => k + '.json') : readdirSync(`${dir}t
   const { height: ab } = bridgeSurfaceBuffers(t, k, n, buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), null, preview);
   const hm = decodeHeights(ab, n, 0, index.terrain.unit), labels = pointLabels(ab, n);
   const side = terraceAt(t.terraces);
-  const base = heightSampler(hm, t.box, n, step, labels, side, flatTerraces(t.terraces, 0));
+  const base = heightSampler(hm, t.box, n, step, labels, side, flatTerraces(t.terraces, 0), stepLineIndex(t.stepLines, 0, lineReach(step)));
   const road = surfaces?.get(k), lower = preview?.ground.get(k);
   const patches = lower ? [...lower, ...(road ?? [])] : road;
   const H = withRoadSurfaces(base, patches, 0, side);

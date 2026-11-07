@@ -29,7 +29,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
 import { join } from 'node:path';
-import { decodeHeights, decodeLevels, pointLabels, heightSampler, terraceAt, flatTerraces, withRamps } from '../src/terrain.ts';
+import { decodeHeights, decodeLevels, pointLabels, heightSampler, terraceAt, flatTerraces, withRamps, stepLineIndex, lineReach } from '../src/terrain.ts';
 import { readRoadProfile, withRoadProfile } from '../src/roadProfiles.ts';
 import { readRoadSurfaces, withRoadSurfaces } from '../src/roadSurfaces.ts';
 import { bridgeSurfaceBuffers, bridgeSurfaceTile, readBridgeSurfacePreview } from '../src/bridgeSurfacePreview.ts';
@@ -96,7 +96,7 @@ function tileOf(i, j) {
     const heights = levels ? decodeLevels(levels, terrain.n, structures.length, REF) : [];
     const roads = t.roads || {}, side = terraceAt(t.terraces);
     const base = height ? heightSampler(decodeHeights(height, terrain.n, REF, terrain.unit), t.box, terrain.n, terrain.step,
-      pointLabels(height, terrain.n), side, flatTerraces(t.terraces, REF)) : () => NaN;
+      pointLabels(height, terrain.n), side, flatTerraces(t.terraces, REF), stepLineIndex(t.stepLines, REF, lineReach(terrain.step))) : () => NaN;
     out = {
       side: side || (() => 0),
       base,

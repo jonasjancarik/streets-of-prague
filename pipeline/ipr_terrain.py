@@ -50,6 +50,7 @@ import build_cache
 import dmr5g
 import dtm_heights
 import ipr_lidar
+import step_lines
 import structures
 from osm_area import AREAS, OUT
 from ipr_buildings import CACHE, krovak_to_local, search, sheet_names
@@ -358,6 +359,8 @@ def main() -> None:
     ap.add_argument("--step", type=float, default=STEP, help="prototype: the lattice's step in metres, roughly (the default about 4)")
     ap.add_argument("--lidar-ground", action="store_true",
                     help="prototype: the LiDAR is the ground and the survey only says where the walls, streets and water are; heights in centimetres")
+    ap.add_argument("--step-lines", action="store_true",
+                    help="trial: each step's outline with the ground's height on either side of it (step_lines.py)")
     ap.add_argument("--resume", action="store_true", help="reuse completed terrain output if its inputs and binary files match")
     ap.add_argument("--no-assemble", action="store_true", help="leave output staged; assemble the complete generation separately")
     args = ap.parse_args()
@@ -386,6 +389,8 @@ def main() -> None:
         options["step"] = args.step
     if args.lidar_ground:
         options["lidar_ground"] = True
+    if args.step_lines:
+        options["step_lines"] = True
     inputs = layers.stage_inputs(area, "terrain", options, meta)
     if args.resume and layers.resume_stage(area, "terrain", inputs, args.no_assemble):
         return
@@ -418,10 +423,11 @@ def main() -> None:
     # filled sheet by sheet, so memory follows the tiles that exist, not the bbox. The
     # step divides the tile, so tile (i, j) starts at lattice point (i * N, j * N).
     tiles, boxes, outlines, roads, ways, water, by_water, driven = {}, {}, [], [], [], [], [], []
-    weirs, streets, street_edges = [], {}, {}
+    weirs, streets, street_edges, tile_water = [], {}, {}, {}
     for i, j, t in layers.tiles(area, meta):
         tiles[(i, j)] = np.full((N + 1, N + 1), np.nan, dtype=np.float32)
         boxes[(i, j)] = box(*t["box"])
+        tile_water[(i, j)] = t["areas"].get("water", [])
         water += [Polygon(r[0], r[1:]).buffer(0) for r in t["areas"].get("water", [])]
         weirs += t.get("weirs") or []
         # The car streets on the ground, kerb to kerb (a tile lists each edge that touches it).
@@ -560,6 +566,25 @@ def main() -> None:
         met = pull_to_bridges(tiles, labels, found, N)
         print(f"  ground brought to the bridges' ends at {met} points")
     timings.lap("bridges_tunnels")
+    # Trial: the steps as lines with the ground's height either side (step_lines.py), read
+    # from the scan where it's the ground, else from the lattice's own side.
+    lines_by_tile = {}
+    if args.step_lines and labels:
+        own = step_lines.lattice_reader(tiles, labels, N, T, step, gx0, gy0)
+        read = (lambda xs, ys, label: own(xs, ys, label) if label == step_lines.WATER else lidar_at(xs, ys)) if args.lidar_ground else own
+        kerbs = [line.buffer(half, cap_style="flat") for line, half in streets.values()]
+        tree = shapely.STRtree(kerbs)
+        def driven(xs, ys):
+            on = np.zeros(len(xs), dtype=bool)
+            hit, _ = tree.query(shapely.points(xs, ys), predicate="within")
+            on[hit] = True
+            return on
+        for key, listed in terraces.items():
+            got = step_lines.for_tile(boxes[key].bounds, tile_water.get(key, []), listed, read, driven)
+            if got:
+                lines_by_tile[f"{key[0]}_{key[1]}"] = got
+        print(f"  {sum(len(v) for v in lines_by_tile.values())} step lines, {sum(len(l['pts']) for v in lines_by_tile.values() for l in v)} points")
+        timings.lap("step_lines")
     # The heights, then each point's label as a byte (dtm_heights.py): 0 the plain ground,
     # 1 water, 2 and up the tile's terraces. A bank or a retaining wall is a step in the
     # ground: the game reads the height by one from the points with the same label alone.
@@ -596,6 +621,7 @@ def main() -> None:
         terrain_index["unit"] = unit
     layers.write_layer(area, "terrain", {"gzip": True, "tile": T, "made_for": [f"{i}_{j}" for i, j in tiles], "tiles": per_tile,
                                          "terraces": {f"{i}_{j}": v for (i, j), v in terraces.items()},
+                                         **({"steplines": lines_by_tile} if lines_by_tile else {}),
                                          # Each bridge or tunnel way's level, for the streets and tram tracks on them (structures.OnLevels).
                                          "ways": way_levels,
                                          **inputs, "payloads": payloads, "index": terrain_index})

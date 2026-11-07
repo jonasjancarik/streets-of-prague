@@ -18,8 +18,8 @@ import { readRoadProfile, withRoadProfile } from './roadProfiles.ts';
 import { readRoadSurfaces, withRoadSurfaces } from './roadSurfaces.ts';
 import { bridgeSurfaceBuffers, bridgeSurfaceTile, readBridgeSurfacePreview } from './bridgeSurfacePreview.ts';
 import { readStationTracks } from './stationTracks.ts';
-import { decodeHeights, decodeLevels, flatTerraces, heightSampler, pointLabels, terraceAt, fetchBinary, withRamps } from './terrain.ts';
-import type { Terrace } from './terrain.ts';
+import { decodeHeights, decodeLevels, flatTerraces, heightSampler, lineReach, pointLabels, stepLineIndex, terraceAt, fetchBinary, withRamps } from './terrain.ts';
+import type { StepLine, Terrace } from './terrain.ts';
 import { SKY_STEP, SKY_MARGIN } from './map/skyView.ts';
 import type { Shadower } from './map/skyView.ts';
 import type { Point2, Bounds, Polygons } from './map/geo.ts';
@@ -159,7 +159,7 @@ function deckRailLevel(stretches: { level: number; pts: Point2[] }[]) {
 // tile's edge points, for the slope at the edge; `edges()` shades the edges again once
 // a neighbour has come.
 function relief(buffer: ArrayBuffer, bareBuffer: ArrayBuffer | null, box: Bounds, n: number, step: number, ref: number,
-  around: ((di: number, dj: number) => Float32Array | null) | null, terraces: Terrace[] | undefined, unit = 0.1) {
+  around: ((di: number, dj: number) => Float32Array | null) | null, terraces: Terrace[] | undefined, unit = 0.1, stepLines?: StepLine[]) {
   // Heights in metres above `ref` (the game's y = 0), bilinear and clamped to the tile.
   const hm = decodeHeights(buffer, n, ref, unit), labels = pointLabels(buffer, n);
   // Hill shading uses the bare ground where bridges were raised (see ipr_terrain.py).
@@ -203,7 +203,7 @@ function relief(buffer: ArrayBuffer, bareBuffer: ArrayBuffer | null, box: Bounds
     for (let k = 0; k < n; k++) { paint(k, 0); paint(k, n - 1); paint(0, k); paint(n - 1, k); }
     tex.needsUpdate = true;
   };
-  return { texture: tex, box: [x0 - half, y0 - half, x0 + (n - 1) * step + half, y0 + (n - 1) * step + half], sample: heightSampler(hm, box, n, step, labels, terraceAt(terraces), flatTerraces(terraces, ref)), hm, labels, edges };
+  return { texture: tex, box: [x0 - half, y0 - half, x0 + (n - 1) * step + half, y0 + (n - 1) * step + half], sample: heightSampler(hm, box, n, step, labels, terraceAt(terraces), flatTerraces(terraces, ref), stepLineIndex(stepLines, ref, lineReach(step))), hm, labels, edges };
 }
 
 const shadowerBox = new WeakMap<Shadower, Bounds>();
@@ -505,6 +505,7 @@ export class TileWorld {
   private roadSurfaces: Promise<ReturnType<typeof readRoadSurfaces>> | null;
   private roadProfiles: Promise<ReturnType<typeof readRoadProfile>> | null;
   private stationTracks: Promise<ReturnType<typeof readStationTracks>> | null;
+  private stepLines: boolean;
   private bridgeSurfacePreview: Promise<ReturnType<typeof readBridgeSurfacePreview>> | null;
   grid: {
     res: number; height: (x: number, y: number) => number; at: (x: number, y: number) => number;
@@ -522,6 +523,8 @@ export class TileWorld {
     this.index = index;
     const query = new URLSearchParams(location.search);
     const station = area === 'praha' && query.has('stationtracks');
+    // ?lines=off: a map's step lines (pipeline/step_lines.py, a trial) left out, to compare.
+    this.stepLines = query.get('lines') !== 'off';
     this.bridgeSurfacePreview = (query.has('bridgesurfaces') || station) ? fetch(dataUrl(area, 'bridge-surfaces.json'))
       .then(async (r) => r.ok ? readBridgeSurfacePreview(await r.json(), area, index.built) : null)
       .catch(() => null) : null;
@@ -1265,7 +1268,7 @@ export class TileWorld {
     // Data from 2026-09-29 on shares the grid points along tile edges with the neighbours.
     const shared = !!terrain && Math.abs((terrain.n - 1) * terrain.step - (x1 - x0)) < 0.01;
     const around = shared ? (di: number, dj: number) => this.byIndex.get((t.i + di) * 65536 + t.j + dj)?.relief?.hm ?? null : null;
-    const shade = height && terrain ? relief(height, bare, t.box, terrain.n, terrain.step, this.ref, around, t.terraces, terrain.unit) : null;
+    const shade = height && terrain ? relief(height, bare, t.box, terrain.n, terrain.step, this.ref, around, t.terraces, terrain.unit, this.stepLines ? t.stepLines : undefined) : null;
     const pilot = this.roadProfiles && this.available.has(k) && shade ? await this.roadProfiles : null;
     const roadProfile = pilot?.tiles.includes(k) ? pilot.profile : undefined;
     if (shade && roadProfile) shade.sample = withRoadProfile(shade.sample, roadProfile, this.ref);
@@ -1276,7 +1279,7 @@ export class TileWorld {
     if (shade && surfaces) shade.sample = withRoadSurfaces(shade.sample, surfaces, this.ref, terraceAt(t.terraces));
     const hAt = shade ? shade.sample : () => 0;
     const ground = shade && terrain ? { hm: shade.hm, box: t.box, n: terrain.n, step: terrain.step, labels: shade.labels,
-      terraces: t.terraces, ref: this.ref, ...(roadProfile ? { roadProfile } : {}), ...(surfaces ? { roadSurfaces: surfaces } : {}) } : null;
+      terraces: t.terraces, stepLines: this.stepLines ? t.stepLines : undefined, ref: this.ref, ...(roadProfile ? { roadProfile } : {}), ...(surfaces ? { roadSurfaces: surfaces } : {}) } : null;
     // Bridges above the ground and tunnels below it, each level with its own heights.
     const structures = t.structures || [];
     const heights = levels && terrain ? decodeLevels(levels, terrain.n, structures.length, this.ref) : [];
