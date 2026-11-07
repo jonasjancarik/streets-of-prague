@@ -141,7 +141,7 @@ def heights(run, read, at, box):
         inside = (xs.ravel() > box[0]) & (xs.ravel() < box[2]) & (ys.ravel() > box[1]) & (ys.ravel() < box[3])
         z[inside & (at(xs.ravel(), ys.ravel()) != label)] = np.nan
         z = z.reshape(xs.shape)
-        h = np.array([_carried_in(row, line) for row, line in zip(z, read(pts[:, 0], pts[:, 1], label))])
+        h = _carried_in_rows(z, read(pts[:, 0], pts[:, 1], label))
         # Smoothed along the line (the points with no height left out), and no height
         # where the nearest reading along it is further than GAP.
         ok = np.isfinite(h)
@@ -156,29 +156,48 @@ def heights(run, read, at, box):
 
 
 def _carried_in(z, line):
-    """A straight line through the heights read out at OUT (the worst two dropped),
-    carried in to the line, and kept between the nearest of them and `line`, what's
-    read on the line itself. A wall's line reads halfway up it (the scan blurs it over a
-    metre or two), so its top and foot come through; a slope reads its own height there,
-    so a bank rising away from the line gets no pit at its foot and a battered wall's
-    face no step at its foot. With nothing read out on that side: `line`."""
+    """One point's height on one side (see _carried_in_rows)."""
+    return float(_carried_in_rows(np.asarray(z, dtype=float)[None, :], np.array([line], dtype=float))[0])
+
+
+def _carried_in_rows(z, line):
+    """Per row of `z` (the heights read out at OUT), a straight line through them (the
+    worst two dropped), carried in to the line, and kept between the nearest of them and
+    `line`, what's read on the line itself. A wall's line reads halfway up it (the scan
+    blurs it over a metre or two), so its top and foot come through; a slope reads its
+    own height there, so a bank rising away from the line gets no pit at its foot and a
+    battered wall's face no step at its foot. With nothing read out on that side: `line`."""
+    z = np.asarray(z, dtype=float)
+    line = np.asarray(line, dtype=float)
     ok = np.isfinite(z)
-    if not ok.any():
-        return float(line)
-    if ok.sum() < 2:
-        return float(z[ok][0])
-    d, v = OUT[ok], z[ok]
+    count = ok.sum(axis=1)
+    d = np.broadcast_to(OUT, z.shape)
+    v = np.where(ok, z, 0.0)
+
+    def fit(m):
+        n = m.sum(axis=1)
+        sd, sv = (m * d).sum(axis=1), (m * v).sum(axis=1)
+        sdd, sdv = (m * d * d).sum(axis=1), (m * d * v).sum(axis=1)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            b = (n * sdv - sd * sv) / (n * sdd - sd * sd)
+            a = (sv - b * sd) / n
+        return a, b
+
+    m = ok.copy()
     for _ in range(2):
-        b, a = np.polyfit(d, v, 1)
-        if len(v) <= 3:
-            break
-        worst = np.argmax(np.abs(v - (a + b * d)))
-        d, v = np.delete(d, worst), np.delete(v, worst)
-    b, a = np.polyfit(d, v, 1)
-    near = a + b * OUT[ok][0]
-    if not math.isfinite(line):
-        return float(a)
-    return float(min(max(a, min(near, line)), max(near, line)))
+        a, b = fit(m)
+        drop = m.sum(axis=1) > 3
+        miss = np.where(m, np.abs(v - (a[:, None] + b[:, None] * d)), -np.inf)
+        worst = np.argmax(miss, axis=1)
+        rows = np.nonzero(drop)[0]
+        m[rows, worst[rows]] = False
+    a, b = fit(m)
+    first = np.argmax(ok, axis=1)
+    near = a + b * OUT[first]
+    out = np.minimum(np.maximum(a, np.minimum(near, line)), np.maximum(near, line))
+    out = np.where(np.isfinite(line), out, a)
+    out = np.where(count == 1, z[np.arange(len(z)), first], out)
+    return np.where(count == 0, line, out)
 
 
 def for_tile(box, water, terraces, read, driven=None):
@@ -228,30 +247,35 @@ def lattice_reader(tiles, labels, N, T, step, gx0, gy0):
             if arr is None:
                 continue
             lab = labels.get(key)
+            own = (lab == label) if lab is not None else np.full(arr.shape, label == 0)
             sel = (i == key[0]) & (j == key[1])
             u = np.clip((xs[sel] - gx0 - key[0] * T) / step, 0, N - 0.001)
             v = np.clip((ys[sel] - gy0 - key[1] * T) / step, 0, N - 0.001)
             a, b = np.floor(u).astype(int), np.floor(v).astype(int)
             fu, fv = u - a, v - b
+            total, acc = np.zeros(len(u)), np.zeros(len(u))
+            for da, db, w in ((0, 0, (1 - fu) * (1 - fv)), (1, 0, fu * (1 - fv)), (0, 1, (1 - fu) * fv), (1, 1, fu * fv)):
+                m = own[b + db, a + da]
+                total += np.where(m, w, 0.0)
+                acc += np.where(m, w * arr[b + db, a + da], 0.0)
             res = np.full(len(u), np.nan)
-            for k in range(len(u)):
-                total = acc = 0.0
-                for da, db, w in ((0, 0, (1 - fu[k]) * (1 - fv[k])), (1, 0, fu[k] * (1 - fv[k])), (0, 1, (1 - fu[k]) * fv[k]), (1, 1, fu[k] * fv[k])):
-                    if (lab[b[k] + db, a[k] + da] if lab is not None else 0) == label:
-                        total += w
-                        acc += w * arr[b[k] + db, a[k] + da]
-                if total > 1e-4:
-                    res[k] = acc / total
-                    continue
-                for q in range(max(0, b[k] - 1), min(N, b[k] + 2) + 1):
-                    for p in range(max(0, a[k] - 1), min(N, a[k] + 2) + 1):
-                        if (lab[q, p] if lab is not None else 0) != label:
-                            continue
-                        w = 1 / ((p - u[k]) ** 2 + (q - v[k]) ** 2 + 0.01)
-                        total += w
-                        acc += w * arr[q, p]
-                if total:
-                    res[k] = acc / total
+            hit = total > 1e-4
+            res[hit] = acc[hit] / total[hit]
+            # None of the cell's corners: that label's points a cell further out.
+            far = np.nonzero(~hit)[0]
+            if len(far):
+                t2, a2 = total[far].copy(), acc[far].copy()
+                for dq in range(-1, 3):
+                    for dp in range(-1, 3):
+                        q, p = b[far] + dq, a[far] + dp
+                        m = (q >= 0) & (q <= N) & (p >= 0) & (p <= N)
+                        qc, pc = np.clip(q, 0, N), np.clip(p, 0, N)
+                        m &= own[qc, pc]
+                        w = 1 / ((pc - u[far]) ** 2 + (qc - v[far]) ** 2 + 0.01)
+                        t2 += np.where(m, w, 0.0)
+                        a2 += np.where(m, w * arr[qc, pc], 0.0)
+                got = t2 != 0
+                res[far[got]] = a2[got] / t2[got]
             out[sel] = res
         return out
     return read
