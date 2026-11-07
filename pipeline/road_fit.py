@@ -61,7 +61,14 @@ HERE = Path(__file__).resolve().parent
 LIDAR = HERE / ".cache" / "ipr_lidar" / "2023"
 SURVEY = HERE / ".cache" / "dtm" / "heights" / "praha.pkl"
 # west, south, east, north
-AREAS = {"nusle": (14.424, 50.059, 14.447, 50.085), "zlichov": (14.398, 50.040, 14.420, 50.062)}
+# Areas may touch but not overlap; each is one solve (a minute or two, 15–20 MB of patches).
+AREAS = {
+    "nusle": (14.424, 50.059, 14.447, 50.085),      # Vinohrady to Nusle and Pankrác's slope
+    "zlichov": (14.398, 50.040, 14.420, 50.062),    # Zlíchov, Podolí's west bank, Barrandovský most
+    "smichov": (14.398, 50.062, 14.424, 50.085),    # Smíchov, Anděl, Výtoň, Nové Město's south-west
+    "centre": (14.398, 50.085, 14.447, 50.098),     # Malá Strana, Staré Město, Nové Město's north
+    "zizkov": (14.447, 50.075, 14.475, 50.095),     # Žižkov and Vinohrady's east
+}
 
 CELL = 2.0          # m, the fit's grid
 INSET = 1.0         # m, LiDAR only this far inside the kerb (the kerb's own step stays out)
@@ -639,12 +646,39 @@ def patches(city, f):
             keys = list(city.tiles(bx))
             if not keys:
                 continue
-            out.append(dict(id=f"roadfit:{cx}_{cy}", kind="roadfit", box=bx, n=[xs.shape[1], xs.shape[0]],
-                            weights=base64.b64encode(enc.astype(np.uint8).tobytes()).decode(),
-                            heights=pack_heights(h.reshape(xs.shape), enc2), tiles=sorted(keys)))
+            out.append(dict(id=f"roadfit:{cx}_{cy}", box=bx, w=enc2.astype(np.uint8), h=h.reshape(xs.shape),
+                            tiles=set(keys)))
     ch = np.concatenate(report.pop("change")) if report["patches"] else np.array([0.0])
     report["change"] = dict(median=float(np.median(ch)), p95=float(np.percentile(ch, 95)), max=float(ch.max()))
     return out, report
+
+
+def overlapping(areas):
+    """Pairs of areas whose boxes overlap (touching is fine: each comes down to the map at its edge)."""
+    return [(a, b) for k, a in enumerate(areas) for b in areas[k + 1:]
+            if AREAS[a][0] < AREAS[b][2] and AREAS[b][0] < AREAS[a][2] and AREAS[a][1] < AREAS[b][3] and AREAS[b][1] < AREAS[a][3]]
+
+
+def merge(into, got):
+    """Add an area's patches to the others'. Where two areas touch, a patch on their common
+    edge comes from both: each node from the one that weighs it more, which is the area
+    it lies in (the other's weight fades out within FEATHER past its edge, where both
+    are at the map's height)."""
+    for p in got:
+        q = into.get(p["id"])
+        if q is None:
+            into[p["id"]] = p
+            continue
+        take = p["w"] > q["w"]
+        q["w"][take], q["h"][take] = p["w"][take], p["h"][take]
+        q["tiles"] |= p["tiles"]
+
+
+def packed(p):
+    ny, nx = p["w"].shape
+    return dict(id=p["id"], kind="roadfit", box=p["box"], n=[nx, ny],
+                weights=base64.b64encode(p["w"].tobytes()).decode(),
+                heights=pack_heights(p["h"], p["w"]), tiles=sorted(p["tiles"]))
 
 
 def run(data, areas, out, report, survey=SURVEY, lidar=LIDAR, verbose=True):
@@ -661,21 +695,21 @@ def run(data, areas, out, report, survey=SURVEY, lidar=LIDAR, verbose=True):
     def to_krovak(xs, ys):
         return k_wgs.transform(*to_wgs.transform(xs, ys), direction=TransformDirection.INVERSE)
     areas = list(dict.fromkeys(areas))
-    out_patches, reports = [], {}
+    clash = overlapping(areas)
+    if clash:
+        raise SystemExit("areas overlap: " + ", ".join(f"{a} and {b}" for a, b in clash))
+    out_patches, reports = {}, {}
     for name in areas:
         f, stats = fit(city, AREAS[name], lidar_at, dsm_sampler(to_krovak))
         got, rep = patches(city, f)
-        # Patches sit on one fixed layout, so two areas sharing a patch would clash.
-        shared = {p["id"] for p in out_patches} & {p["id"] for p in got}
-        if shared:
-            raise SystemExit(f"{name} shares patches with another area: {', '.join(sorted(shared))}")
-        out_patches += got
+        merge(out_patches, got)
         npz = report.with_suffix(".npz" if len(areas) == 1 else f".{name}.npz")
         np.savez_compressed(npz, x0=f["x0"], y0=f["y0"], cell=CELL, **f["grids"])
         reports[name] = dict(box=AREAS[name], fit=stats, **rep)
         if verbose:
             print(json.dumps({name: dict(fit=stats, **rep)}, indent=1))
-    write(out, json.dumps(dict(version=1, area=city.index["area"], built=city.index["built"], patches=out_patches),
+    write(out, json.dumps(dict(version=1, area=city.index["area"], built=city.index["built"],
+                               patches=[packed(p) for p in out_patches.values()]),
                           separators=(",", ":")) + "\n")
     one = reports[areas[0]] if len(areas) == 1 else None
     write(report, json.dumps(dict(area=areas[0], **one, lidar=source) if one else dict(areas=reports, lidar=source),

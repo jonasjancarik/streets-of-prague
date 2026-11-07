@@ -93,6 +93,24 @@ class PackTests(unittest.TestCase):
         self.assertTrue((back[~used] == packed["base"]).all())
 
 
+class AreaTests(unittest.TestCase):
+    def test_the_areas_touch_but_do_not_overlap(self):
+        self.assertEqual(road_fit.overlapping(list(road_fit.AREAS)), [])
+        with mock.patch.dict(road_fit.AREAS, {"over": (14.440, 50.080, 14.450, 50.090)}):
+            self.assertEqual(road_fit.overlapping(["nusle", "zizkov", "over"]), [("nusle", "over"), ("zizkov", "over")])
+
+    def test_a_patch_on_a_common_edge_takes_each_node_from_its_own_area(self):
+        def patch(w, h, tiles):
+            return dict(id="roadfit:0_0", box=[0, 0, 3, 0], w=np.array([w], np.uint8), h=np.array([h], float), tiles={tiles})
+        into = {}
+        road_fit.merge(into, [patch([255, 120, 10, 0], [240, 240.1, 240.2, 0], "1_1")])
+        road_fit.merge(into, [patch([0, 60, 200, 255], [0, 241, 240.3, 240.4], "1_2")])
+        p = into["roadfit:0_0"]
+        np.testing.assert_array_equal(p["w"][0], [255, 120, 200, 255])
+        np.testing.assert_allclose(p["h"][0], [240, 240.1, 240.3, 240.4])
+        self.assertEqual(p["tiles"], {"1_1", "1_2"})
+
+
 class AfterAssembleTests(unittest.TestCase):
     """Every step that puts a map together refits it, so road-fit.json carries its build."""
 
@@ -112,7 +130,7 @@ class AfterAssembleTests(unittest.TestCase):
 
     def test_the_areas_on_the_map_are_fitted(self):
         run = self.after([14.2244, 49.9419, 14.7068, 50.1774])  # praha
-        self.assertEqual(run.call_args.args[1], ["nusle", "zlichov"])
+        self.assertEqual(run.call_args.args[1], list(road_fit.AREAS))
 
     def test_a_map_without_an_area_has_no_fit(self):
         run = self.after([14.3985, 50.0765, 14.4155, 50.0865])  # ujezd

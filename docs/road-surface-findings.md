@@ -1199,3 +1199,51 @@ Rebuilt with the rule, the map also takes in the pipeline's other changes since
 - In the same views, 2 of 123,008 points on the hidden ground rise above the road,
   by up to 10 cm (1,715 points and 11.7 m without the fit).
 
+## Road fit, five areas
+
+On 7 November 2026 the fit took in three more areas next to the first two, so the
+fitted streets run on from one area into the next: Smíchov (with Anděl, Výtoň and
+Nové Město's south-west), the centre (Malá Strana, Staré Město, Nové Město's north)
+and Žižkov with Vinohrady's east (`road_fit.AREAS`). Areas may now touch: a patch on
+their common edge takes each node from the area it lies in, and both come down to the
+map within 10 m of their edge, so the seam has no step. They may not overlap.
+
+All five take 3 minutes to fit and make 1,537 patches, 93 MB of `road-fit.json`.
+Nusle and Zlíchov come out as before (550 of their 600 patches unchanged, the rest on
+the new common edges, and the same counts in every check). Inside each new area, car
+streets over the hard limits, map → fit:
+
+| | Smíchov | centre | Žižkov |
+|---|---|---|---|
+| car streets | 1,135 | 1,284 | 807 |
+| bumps over 0.5 m | 9 → 0 | 28 → 14 | 2 → 0 |
+| leaning over 15 % | 35 → 15 | 64 → 45 | 12 → 4 |
+| twisting over 12 % | 31 → 8 | 63 → 31 | 11 → 2 |
+| steps over 1 m | 0 → 0 | 7 → 4 | 0 → 0 |
+
+The largest single change is a 3.7 m bump on nábřeží Edvarda Beneše (50.0942,
+14.4179) brought down to 3 cm. The checks are in `docs/evidence/road-fit/five/`.
+
+### What gets worse with five areas
+
+- Rašínovo nábřeží under the railway viaduct at Výtoň (50.0662–50.0674, 14.415) leans
+  26–32 % with the fit, under 10 % on the map. The quay road by the river is 4 m below
+  it with a bank 4–6 m wide between them and no surveyed wall; the fit smooths across
+  the bank and Rašínovo's edge sags by up to 0.9 m. Železniční most's worst join goes
+  from 0.46 m to 1.11 m at the same place.
+- Cutting the fit wherever the map is steeper than 1 m in 2 m off the streets (a bank
+  rule) fixed three of Rašínovo's four leaning stretches, but streets running along a
+  bank leant towards it (Ke Sklárně −44 → −90 %, Pod Závěrkou 24 → 62 %, nábřeží
+  Kapitána Jaroše 2 → −20 %), and every area had more twisting. Dropped.
+- Husitská, Pernerova and Wilsonova by the main station lean 22–33 % in places (2–11 %
+  on the map), where the streets pass under the railway and Magistrála's decks.
+- A short living street in a Žižkov courtyard (50.0871, 14.4650) climbs 3 m in its
+  last metre (lean −63 %). Its end is within a wall's gap, and the nearest fitted cell
+  on its side of the wall is on the slope up to the wall's top. Taking the map's
+  height plus the nearest cell's change there instead made it worse (step 0.79 →
+  1.07 m): the height comes from the wall's same-side search, not the fallback.
+- Walls along a street follow the fitted ground: on the bank above nábřeží Edvarda
+  Beneše the walls' tops, already in long ramps on the map, turn jagged with the fit.
+
+![Walls on the bank above nábřeží Edvarda Beneše, on the map (top) and with the fit (bottom)](images/road-fit-wall-tops.png)
+

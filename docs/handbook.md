@@ -102,7 +102,8 @@ Add `&roadshelves` to load the screened LiDAR terrain corrections beside
 lower roads from the matching `road-shelves.json`.
 [Source comparison and screening](road-surface-findings.md#lower-ground-beside-elevated-roads).
 
-Add `&roadfit` to load the road fit over Vinohrady–Nusle and Zlíchov from
+Add `&roadfit` to load the road fit over the inner city (Vinohrady, Nusle, Zlíchov,
+Smíchov, the centre and Žižkov) from
 `road-fit.json`: one smooth surface over the streets, fitted to IPR's LiDAR. Every
 step that puts the map together (`layers.assemble`) fits it again, so it always
 matches the map; without IPR's LiDAR and surface model in `pipeline/.cache` the map
