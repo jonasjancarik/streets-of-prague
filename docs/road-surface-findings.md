@@ -1284,3 +1284,105 @@ with a fill for the cut cells that stays on its side.
 
 ![The bank above nábřeží Edvarda Beneše: the map, the first five-area fit, and now](images/road-fit-wall-tops.png)
 
+
+## One surface: a trial on the centre map
+
+The road fit sits on top of the map as patches, and each part of the game (the ground,
+the walls, the parapets, the cars, the checks) reads the map and the patches its own way
+at a step. A trial on 7 November 2026 put the LiDAR into the map instead, so there is
+one surface read one way. It was built on `centrum` (Hradčany to Vinohrady, Letná's
+slope to Vyšehrad's edge, 234 tiles) twice:
+
+- **today**: `ipr_terrain.py centrum`, the terrain model on the 4 m lattice with the
+  survey's rules;
+- **one surface**: `ipr_terrain.py centrum --ipr-lidar .cache/ipr_lidar/2023
+  --lidar-ground --step 2`. The heights are the 2023 LiDAR's on a 2 m lattice, in
+  centimetres. The survey still says where the streets, the walls and the water are,
+  but gives no street its height: no kerb heights, no levelling across, no feathering.
+  The ramps at walls and banks are taken as 3–4 m wide, not 10 (`dtm_heights.Reach`).
+  No road fit patches.
+
+Both builds take 43 s. The checks are in `docs/evidence/one-surface/` (local).
+
+### The streets
+
+All 3,031 car streets of the map, over the hard limits:
+
+| | today | one surface |
+|---|---|---|
+| bumps over 0.5 m (over 0.15 m) | 54 (181) | 32 (45) |
+| leaning over 15 % (over 8 %) | 118 (268) | 61 (127) |
+| twisting over 12 % | 115 | 56 |
+| ridge or trough over 1 m | 20 | 18 |
+| steps over 1 m | 14 | 13 |
+| bridges with a join over 1 m | 18 | 17 |
+
+For comparison, the patch fit in its centre area took bumps from 28 to 14, leaning from
+64 to 45 and twisting from 63 to 31: about what the LiDAR in the map does without any
+fit. nábřeží Edvarda Beneše's 7.8 m step and Chotkova's 7.4 m are gone. New are a 2.2 m
+step on the ground by Nuselský most and a 1.9 m one on Wilsonova over the main station's
+hall, where the LiDAR is the ground under a deck (see "Why not the LiDAR everywhere").
+
+### The walls
+
+`check-step-edges.mjs` now measures how a parapet's top runs along it: metres where the
+top jumps by more than 15 cm from the mean of the metres either side, which from above
+is a sawtooth in the parapet and its shadow.
+
+| parapet with a top jumping over 15 cm | today | one surface |
+|---|---|---|
+| read from the cell's corners on its side (the game) | 2,376 m | 3,791 m |
+| read from its side's slope (`--sides plane`) | 1,632 m | 3,311 m |
+
+Much of the sawtooth comes from how the game reads the ground by a step. In a cell a
+step crosses, a point takes its height from that cell's corners on its own side; with
+one such corner the height is flat across the cell, so along a wall running down a slope
+the top climbs in stairs, a step per cell. Giving each corner across the step a
+stand-in for this side (the plane through this side's points within two steps of it)
+keeps each side's own slope up to the step, the same in every cell that shares the
+corner (`sidePlane` in `src/terrain.ts`). It straightened the staircase on the slope at
+Na Slupi, but on today's map it also put short new parapets along the foot of the bank
+at nábřeží Edvarda Beneše, where drops grew past 0.8 m. It is off in the game
+(`sampling.plane`).
+
+The LiDAR map has more rough wall tops than today's. The wall rules were made for a
+terrain model whose ramps are 10 m wide: they take each side's height from 1.5 to 4 m
+off the surveyed wall line, and where that line and the LiDAR's step lie a metre or more
+apart, the points beside the wall are still on the ramp. The sharper ground also lets
+more slopes pass as walls. On Letná's bank the tall wedges of today's map are gone, but
+a wavy row of parapets runs along it instead, with short humps at its foot (below).
+
+![Letná's bank above Chotkova and nábřeží Edvarda Beneše, today and one surface; Na Slupi on one surface, read from the cell's corners and from its side's slope](images/one-surface-trial.jpg)
+
+### The cost
+
+The height files for the centre map grow from 0.7 MB to 4.5 MB (3.2 MB stored as
+differences from the neighbouring point: the LiDAR's centimetres don't compress).
+`praha`'s 61 MB would become some 300–400 MB. The tiles load as the player moves, so
+it's what a tile costs to fetch that grows, four to five times. The ground mesh is made
+as before (8 m, finer along steps and on the streets), so the finer lattice shows off the
+streets only in the hill shading; the frame cost wasn't measured.
+
+### What it says
+
+For the streets, the LiDAR in the map does what the patches do, and the fit could come
+back as a light smoothing inside the build if it's still wanted. For the walls, the
+edges come back in a new form: each part of the game still reads a wall from an outline
+and the lattice points on either side. The next step would be walls as lines with their
+own heights, like the stairs' `ramps`: a top and a foot along each wall, taken from the
+LiDAR on each side and smoothed along the wall, written into the tile, with the
+parapets, the wall faces, the ground's cut and the collision all reading those, and the
+lattice points beside a wall taking their own side's height.
+
+### Reproducing
+
+    cd pipeline
+    uv run build_tiles.py centrum && uv run ipr_buildings.py centrum
+    uv run ipr_terrain.py centrum                       # today
+    uv run ipr_terrain.py centrum --ipr-lidar .cache/ipr_lidar/2023 --lidar-ground --step 2
+    cd .. && node scripts/check-road-flatness.mjs centrum
+    node scripts/check-bridge-decks.mjs centrum
+    node scripts/check-step-edges.mjs centrum [--sides plane]
+
+The game shows the map at `?area=centrum`. `?countryside` still writes decimetres and
+doesn't go with a centimetre map.

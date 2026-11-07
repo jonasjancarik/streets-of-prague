@@ -110,6 +110,13 @@ matches the map; without IPR's LiDAR and surface model in `pipeline/.cache` the 
 has none.
 [How it is made and what it changes](road-surface-findings.md#road-fit-pilot-vinohradynusle).
 
+A prototype puts the LiDAR into the map itself instead: `uv run ipr_terrain.py <area>
+--ipr-lidar .cache/ipr_lidar/2023 --lidar-ground --step 2` makes the ground a 2 m
+lattice of the 2023 LiDAR's heights in centimetres (`unit` in index.json's
+`terrain`), and the survey only says where the streets, walls and water are. Tried on
+`centrum`, not on `praha`.
+[What it changes](road-surface-findings.md#one-surface-a-trial-on-the-centre-map).
+
 Add `&bridgesurfaces` to preview the surveyed railway and ramp repairs from
 the matching `bridge-surfaces.json`.
 [Husitská and U Bulhara](road-surface-findings.md#the-railway-at-husitská-and-the-ramps-at-u-bulhara).
@@ -1336,8 +1343,11 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   each street, path or stairs on the ground that crosses it, and at each end of a bridge
   (the flat terrace before it is a step over the ground under the deck). `node
   scripts/check-step-edges.mjs <area>` counts the edges and lists the car streets that
-  cross the highest drops (places where the terrain or the map is wrong);
-  `?nostepedges` turns the edges off.
+  cross the highest drops (places where the terrain or the map is wrong), how many
+  metres of parapet have a top that jumps from the metres either side of it (a sawtooth
+  from above) and the roughest places; `--data <folder>` reads a copy of a map, and
+  `--sides plane` reads the ground by a step from its own side's slope (`sampling` in
+  `src/terrain.ts`, a trial, off in the game). `?nostepedges` turns the edges off.
   Where the rules make a place worse than the
   terrain model alone (seen in the game), list it in `pipeline/terrain_keep.json` (a box
   in degrees and why) and it stays as the terrain model has it. A wall the survey doesn't
