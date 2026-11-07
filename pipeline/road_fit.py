@@ -12,10 +12,12 @@ place is judged on its own. A metre or more apart, IPR's surface model (the
 top surface, as the game's camera sees it) picks the level; closer than that it
 picks the LiDAR's only when it lies clearly on it. Otherwise the map keeps its
 level unless it has a hole or a spike there and the LiDAR runs on smoothly.
-Where the map keeps its level the fit follows it, smoothed. Retaining walls and terraces split the grid. Over a
-tunnel and where the ground meets a bridge's deck the street is the map's (its
-ground was shaped there to meet them) and the fit comes down to it, so there is
-no step where they meet.
+Where the map keeps its level the fit follows it, smoothed. LiDAR the fit ends
+up a metre or more away from is left to the map in a second pass, and off the
+car streets the map shows there. Retaining walls and terraces split the grid.
+Over a tunnel and where the ground meets a bridge's deck the street is the map's
+(its ground was shaped there to meet them) and the fit comes down to it, so
+there is no step where they meet.
 The surveyed road edges are only a check: the map was built with them.
 
 The result is written as level-zero road surface patches (src/roadSurfaces.ts)
@@ -88,6 +90,8 @@ OFFSET = 0.3        # m, a LiDAR cell this far off the survey (or the map) disag
 # Lopsided Huber scales: the road under a car is below the LiDAR, not above it.
 ABOVE, BELOW = 0.06, 0.12
 ROUNDS = 5
+REJECT = 1.0        # m, LiDAR this far off the fit was set aside: the second pass leaves it to the map
+ASIDE = 3.0         # m round such LiDAR off the car streets where the patches show the map, and as far again to fade in
 
 
 def grid_cells(bounds):
@@ -321,6 +325,8 @@ def fit(city, area, lidar_at, dsm_at):
     tx[on], ty[on] = ad[nearest, 0], ad[nearest, 1]
     iso = np.zeros(gx.shape)
     off_street = dist > ah[nearest] + FEATHER + 6
+    street = np.zeros(gx.shape, bool)
+    street[on] = dist <= ah[nearest] + CELL
     iso[on] = np.where(off_street, SQUARE, 0)
     junction = junctions(edges)
     if junction:
@@ -400,35 +406,50 @@ def fit(city, area, lidar_at, dsm_at):
             suspect[sl] |= ndimage.binary_dilation(part, iterations=1)
     print(f"{sum(votes.values())} places where the LiDAR and the map disagree: " + ", ".join(f"{n} {w}" for w, n in votes.items()))
     masked = inside & suspect
-    data_cells = valid & ~masked
-    L_idx = idx[data_cells]
-    d_lidar = lid[data_cells]
-    L = sp.csr_matrix((np.ones(len(L_idx)), (np.arange(len(L_idx)), L_idx)), shape=(len(L_idx), cells))
-    held = np.where(pinned[on], PIN, np.where(masked[on], HELD, TIE))
-    base = np.where(np.isfinite(ground[on]), ground[on], np.nanmedian(d_lidar))
-    print(f"{len(d_lidar)} LiDAR cells, {np.count_nonzero(masked)} left to the map ({time.time() - t0:.0f} s)")
-
-    A, d = L, d_lidar
-    weights = np.ones(len(d))
     PtP = (P.T @ P).tocsc()
-    tie = sp.diags(held, format="csc")
-    z = None
-    factor = None
-    for k in range(ROUNDS):
-        Wd = sp.diags(weights)
-        Nm = (A.T @ Wd @ A).tocsc() + PtP + tie
-        rhs = A.T @ (weights * d) + held * base
-        if factor is None:
-            factor = spla.splu(Nm, permc_spec="COLAMD")
-            z = factor.solve(rhs)
-        else:
-            M = spla.LinearOperator(Nm.shape, factor.solve)
-            z, _ = spla.cg(Nm, rhs, x0=z, M=M, rtol=1e-9, maxiter=200)
-        r = d - A @ z
-        scale = np.where(r > 0, ABOVE, BELOW)
-        weights = np.minimum(1.0, scale / np.maximum(np.abs(r), 1e-9))
-        print(f"round {k + 1}: median |r| {np.median(np.abs(r)) * 100:.1f} cm, "
-              f"{np.mean(np.abs(r) > 0.15) * 100:.1f}% over 15 cm ({time.time() - t0:.0f} s)")
+    rejected = 0
+    aside = np.zeros(gx.shape, bool)
+    # LiDAR the fit sets aside (a metre or more off it) leaves those cells held by
+    # nothing: a narrow strip with one row of LiDAR on a level the streets round it don't
+    # share then tips any which way. A second pass leaves such places to the map.
+    for attempt in range(2):
+        data_cells = valid & ~masked
+        L_idx = idx[data_cells]
+        d_lidar = lid[data_cells]
+        L = sp.csr_matrix((np.ones(len(L_idx)), (np.arange(len(L_idx)), L_idx)), shape=(len(L_idx), cells))
+        held = np.where(pinned[on], PIN, np.where(masked[on], HELD, TIE))
+        base = np.where(np.isfinite(ground[on]), ground[on], np.nanmedian(d_lidar))
+        print(f"{len(d_lidar)} LiDAR cells, {np.count_nonzero(masked)} left to the map ({time.time() - t0:.0f} s)")
+        A, d = L, d_lidar
+        weights = np.ones(len(d))
+        tie = sp.diags(held, format="csc")
+        z = None
+        factor = None
+        for k in range(ROUNDS):
+            Wd = sp.diags(weights)
+            Nm = (A.T @ Wd @ A).tocsc() + PtP + tie
+            rhs = A.T @ (weights * d) + held * base
+            if factor is None:
+                factor = spla.splu(Nm, permc_spec="COLAMD")
+                z = factor.solve(rhs)
+            else:
+                M = spla.LinearOperator(Nm.shape, factor.solve)
+                z, _ = spla.cg(Nm, rhs, x0=z, M=M, rtol=1e-9, maxiter=200)
+            r = d - A @ z
+            scale = np.where(r > 0, ABOVE, BELOW)
+            weights = np.minimum(1.0, scale / np.maximum(np.abs(r), 1e-9))
+            print(f"round {k + 1}: median |r| {np.median(np.abs(r)) * 100:.1f} cm, "
+                  f"{np.mean(np.abs(r) > 0.15) * 100:.1f}% over 15 cm ({time.time() - t0:.0f} s)")
+        off_fit = np.zeros(gx.shape, bool)
+        off_fit[data_cells] = np.abs(r) > REJECT
+        if attempt or not off_fit.any():
+            break
+        grown = inside & ndimage.binary_dilation(off_fit, iterations=1)
+        rejected = int(np.count_nonzero(grown & ~masked))
+        # (Only off the car streets: on one, the map's hole is what the fit is there to mend.)
+        aside = grown & ~masked & ~street
+        masked |= grown
+        print(f"{np.count_nonzero(off_fit)} LiDAR cells set aside by the fit; left to the map with their neighbours")
     Z = np.full(gx.shape, np.nan)
     Z[on] = z
     # Up to a wall each side keeps its own height: a cut cell takes its nearest fitted cell's
@@ -467,7 +488,7 @@ def fit(city, area, lidar_at, dsm_at):
                            change=round(float(np.median(delta)), 2), most=round(float(delta[np.abs(delta).argmax()]), 2),
                            lidarLeftOut=round(float(masked[sl][part].mean()), 2)))
     places.sort(key=lambda p: -p["area"])
-    stats = dict(tiles=len(tiles), cells=int(cells), lidarCells=int(nl), disagreements=dict(votes), leftToMap=int(np.count_nonzero(masked)),
+    stats = dict(tiles=len(tiles), cells=int(cells), lidarCells=int(nl), disagreements=dict(votes), leftToMap=int(np.count_nonzero(masked)), setAside=rejected,
                  lidarResidual=dict(median=float(np.median(np.abs(r))), p95=float(np.percentile(np.abs(r), 95))),
                  seconds=round(time.time() - t0), largeChanges=places)
     # The surveyed road edges (the lines along the carriageway's outline) as a check.
@@ -488,7 +509,8 @@ def fit(city, area, lidar_at, dsm_at):
         stats["surveyCheck"] = dict(points=int(near.sum()), fit=spread((C @ z - sv[:, 2])[near]),
                                     now=spread((now - sv[:, 2])[near]))
     grids = dict(Z=Z, base=ground, lidar=lid, inside=inside, masked=masked | pinned, iso=iso > 0, cut=cut)
-    return dict(Z=Z, x0=x0, y0=y0, on=on, geo=geo, paved=paved, bounds=bounds, tiles=tiles, at=at, idx=idx, walls=walls, grids=grids), stats
+    return dict(Z=Z, x0=x0, y0=y0, on=on, geo=geo, paved=paved, bounds=bounds, tiles=tiles, at=at, idx=idx, walls=walls, aside=ndimage.distance_transform_edt(~aside) * CELL if aside.any() else np.full(gx.shape, np.inf),
+                grids=grids), stats
 
 
 def node_heights(Z, x0, y0, px, py, i, j, fa, fb, walls):
@@ -557,6 +579,10 @@ def patches(city, f):
                 houses = house.intersection(reach)
                 if not houses.is_empty:
                     weight *= smooth(shapely.distance(houses, g) / HOUSE_GAP)
+            # Where the fit set the LiDAR aside it had nothing to go on: the map shows there.
+            ai = np.clip(np.round((px - x0) / CELL).astype(int), 0, Z.shape[1] - 1)
+            aj = np.clip(np.round((py - y0) / CELL).astype(int), 0, Z.shape[0] - 1)
+            weight *= smooth((f["aside"][aj, ai] - ASIDE) / ASIDE)
             own = (px >= cx) & (px <= cx + CORE) & (py >= cy) & (py <= cy + CORE)
             weight[~own] = 0
             # Heights from the 2 m grid; a node needs its four grid cells.

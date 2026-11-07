@@ -846,6 +846,13 @@ the result as road surface patches with `?roadsurfaces&roadfit`.
   tipping the street it meets.
 - The loss is robust and lopsided (6 cm above the surface, 12 cm below), so a car
   or a hedge left in the LiDAR can't lift the road.
+- LiDAR the fit ends up a metre or more away from has been set aside, and the cells
+  round it are then held by nothing. A second pass leaves those places to the map
+  (830 cells here). Off the car streets the patches also fade out there, within 3 m
+  and over the next 3 m, so the game shows the map's own ground (about 7,100 m²,
+  0.7 % of the patched area, all round the 5. května interchange and by the main
+  station). On a car street the fit stays: there it mends holes the map and the
+  LiDAR share, as on Legerova and Kongresová.
 - Retaining walls and terraces cut the grid. Up to a wall, each side keeps its own
   height: the cells cut at a wall, and the patches' 1 m points near one, take their
   heights only from fitted cells on their own side, so the step falls on the wall
@@ -959,6 +966,25 @@ A firmer pull to the map's level for cells without LiDAR (20 times the old one)
 kept that strip in check but brought back náměstí Míru's hole through the cells
 round it (a 60 % lean). It was dropped.
 
+The strip itself (50.06279, 14.43253) is paved but has only a footpath on it. The
+LiDAR and the surface model put it at 240 m, 4 m above the map, and the ground
+round it is wrong in the map too. Inside its kerbs it has one row of LiDAR cells,
+which the fit sets aside, and with them gone it tipped either way: a 3 m ridge, or,
+once squares stayed stiff, a 1.2 m pit. What was tried:
+
+- Leaving set-aside LiDAR to the map in a second pass (from half a metre off): it
+  held the strip but set aside the good LiDAR next to Legerova's shared hole too,
+  and Legerova's lean went from 9.6 to 16 %. From a metre off, Legerova is left
+  alone, but the strip, held at one cell a row, still sank a metre.
+- Holding the ground past the kerb of any street left to the map, or any cell more
+  than 6 m from LiDAR the fit uses, to the map: both brought the map's errors back
+  into streets (Legerova 19–22 %, Šubertova, Ctiborova).
+- Showing the map wherever LiDAR was set aside: the holes came back on Kongresová
+  and Legerova (bumps of 0.6 and 0.9 m).
+
+What stayed: the second pass from a metre off, and showing the map where LiDAR was
+set aside off the car streets. The strip now stays within 0.12 m of the map.
+
 ### Results inside the area
 
 `check-road-flatness.mjs` on the 1,051 car streets lying wholly inside the box (802
@@ -968,10 +994,10 @@ fit" the one with them, before the leftovers above were fixed:
 | Findings (flag / hard limit) | Map now | First fit | Second fit | Road fit |
 | --- | ---: | ---: | ---: | ---: |
 | Steps along the street (> 0.25 / 1 m) | 4 / 1 | 4 / 0 | 2 / 0 | 3 / 0 |
-| Bumps (> 0.15 / 0.5 m) | 66 / 8 | 19 / 3 | 4 / 0 | 5 / 0 |
+| Bumps (> 0.15 / 0.5 m) | 66 / 8 | 19 / 3 | 4 / 0 | 4 / 0 |
 | Leaning across (> 8 / 15 %) | 82 / 30 | 47 / 19 | 39 / 15 | 34 / 11 |
-| Ridge or trough (> 0.3 / 1 m) | 14 / 1 | 8 / 0 | 8 / 0 | 8 / 1 |
-| Twisting (> 5 / 12 %) | 94 / 26 | 38 / 12 | 15 / 4 | 17 / 5 |
+| Ridge or trough (> 0.3 / 1 m) | 14 / 1 | 8 / 0 | 8 / 0 | 7 / 1 |
+| Twisting (> 5 / 12 %) | 94 / 26 | 38 / 12 | 15 / 4 | 18 / 5 |
 | Off the road (> 4 / 10 m) | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
 
 The ridge and one twist over the hard limit are U tržnice, where the street really is
@@ -984,12 +1010,12 @@ The largest repairs:
 - Božetěchova: bump 1.20 → 0.20 m
 - Anglická: twist 55.2 → 1.1 %
 - Pod Zvonařkou: twist 50.4 → 1.8 % and lean 71.4 → 8.5 %
-- In the tunnel tiles: Kongresová's bump 0.70 → 0.21 m and twist 27.6 → 17.4 %, its
-  other leans 21.1 → 6.9 % and 12.6 → 6.2 %; Legerova's bump 0.87 → 0.16 m and lean
-  26.2 → 9.6 % by I. P. Pavlova
+- In the tunnel tiles: Kongresová's bump 0.70 → 0.12 m and twist 27.6 → 13.8 %, its
+  other leans 21.1 → 7.4 % and 12.6 → 6.2 %; Legerova's bump 0.87 → 0.18 m and lean
+  26.2 → 12.1 % by I. P. Pavlova
 
-The fit stays within 0.7 cm of the LiDAR it uses (median; 95th percentile 5.0 cm). It
-moves the carriageway by 8 cm (median; 95th percentile 50 cm). Against the surveyed
+The fit stays within 0.7 cm of the LiDAR it uses (median; 95th percentile 4.7 cm). It
+moves the carriageway by 8 cm (median; 95th percentile 48 cm). Against the surveyed
 edges, the fit spreads 10.9 cm and the map 9.2 cm, with tails of 44 and 39 cm. That
 comparison favours the map, which was built from those edges.
 
@@ -1004,8 +1030,8 @@ From above, the game shows the difference mainly at real defects. The dark,
 sunken patches in the náměstí Míru junction are gone. Elsewhere only the shading
 changes a little. Matched views are in `docs/evidence/road-fit/shots/` (`pair-*`,
 `crop-*` with a difference panel, and `pair2-*` from the tunnel tiles), and the
-leftovers' before and after in `shots3/` (`pair-*`, and `sections.png` with
-cross-sections of Na Topolce and Závišova).
+leftovers' before and after in `shots3/` (`pair-*`, `triple-strip.png`, and
+`sections.png` with cross-sections of Na Topolce and Závišova).
 
 ### What doesn't work yet
 
@@ -1020,18 +1046,16 @@ cross-sections of Na Topolce and Závišova).
 - Smaller findings under the hard limits: twists of 7–8 % on Nad Petruskou and
   Marie Cibulkové, leans of 8–11 % on Ctiborova, Boleslavova and Washingtonova.
   The LiDAR shows Washingtonova and Šmilovského really lean.
-- A narrow paved strip beside 5. května with only a footpath on it (50.06279,
-  14.43253) sinks 1.5 m below the map. The LiDAR and the surface model put it 4 m
-  above the map, at 240 m; with a single row of LiDAR cells inside its kerbs the fit
-  sets them aside and the strip is held by nothing. It isn't a car street, so the
-  checker doesn't see it.
-- The fit moves the carriageway by more than a metre at 98 places (73 for the second
+- Kongresová's ridge across the street (50.06152, 14.43079) is 0.91 m, under the
+  1 m limit; the map has 0.40 m.
+- The fit moves the carriageway by more than a metre at 86 places (73 for the second
   fit). The report lists them. Of the new ones I looked at three: a 1.5 m pit in the
   map on Washingtonova (50.08101, 14.43275) and a street 0.8 m too low (50.07122,
-  14.42942), both fixed by the fit, and the strip above. Most of the places where
-  the fit ends up more than 0.5 m from both the map and the LiDAR are round the
-  Kongresová cutting under 5. května and under the main road by the station, as
-  before (810 cells, against 859 for the second fit).
+  14.42942), both fixed by the fit, and the paved strip by 5. května (now left to
+  the map). Most of the places where the fit ends up more than 0.5 m from both the
+  map and the LiDAR are round the Kongresová cutting under 5. května and under the
+  main road by the station, as before (705 cells, against 859 for the second fit).
+  There the game mostly shows the map, as it did before the fit.
 - Bridge decks are not fitted. Nuselský most's deck stays 0.4 m high.
 - In the current game, without any patches, the hidden ground in the four tunnel
   tiles round I. P. Pavlova sticks up through the visible ground at 993 of
