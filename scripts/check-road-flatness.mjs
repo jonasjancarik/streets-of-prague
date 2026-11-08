@@ -457,28 +457,33 @@ for (const e of edges.values()) {
 
 // The LiDAR at every gathered point, then per street: the worst offset (map minus scan), the
 // share of its samples off by more than SCAN_NEAR, and the metres off by more than SCAN_FAR.
+// (A street on a deck in IPR's bridge model that OSM doesn't call a bridge is up where the
+// bare-earth scan has nothing: left out, and counted.)
+const ON_DECK = 1; // m from IPR's deck
 const scanSummary = (() => {
   if (!scanOn) return null;
   const work = mkdtempSync(join(tmpdir(), 'road-scan-')), pin = join(work, 'points.f32'), pout = join(work, 'heights.f32');
   try {
-    writeFileSync(pin, scanXY.view);
+    const xy = scanXY.view, map = scanMap.view, pos = scanPos.view, triples = new Float32Array(3 * map.length);
+    for (let q = 0; q < map.length; q++) { triples[3 * q] = xy[2 * q]; triples[3 * q + 1] = xy[2 * q + 1]; triples[3 * q + 2] = map[q]; }
+    writeFileSync(pin, triples);
     const run = spawnSync('uv', ['run', 'python', 'scan_heights.py', index.area || area, pin, pout, '--lidar', SCAN],
       { cwd: join(root, 'pipeline'), stdio: ['ignore', 'inherit', 'inherit'] });
     if (run.status !== 0) throw new Error(`scan_heights.py failed (${run.status ?? run.error})`);
-    const raw = readFileSync(pout), scan = new Float32Array(raw.buffer, raw.byteOffset, raw.byteLength / 4);
-    if (scan.length !== scanMap.n) throw new Error(`scan_heights.py gave ${scan.length} heights for ${scanMap.n} points`);
-    const map = scanMap.view, pos = scanPos.view, xy = scanXY.view;
+    const raw = readFileSync(pout), got = new Float32Array(raw.buffer, raw.byteOffset, raw.byteLength / 4);
+    if (got.length !== 2 * map.length) throw new Error(`scan_heights.py gave ${got.length / 2} heights for ${map.length} points`);
     const all = [];
-    let n = 0, near = 0, far = 0;
+    let n = 0, near = 0, far = 0, onDeck = 0;
     for (const [ri, from, to, places, e] of scanRows) {
       const r = rows[ri], bad = new Set();
       let worst = 0, at = null, count = 0, over = 0;
       for (let q = from; q < to; q++) {
-        const d = map[q] - scan[q];
+        const d = map[q] - got[2 * q];
         if (!Number.isFinite(d)) continue;
+        if (Math.abs(d) > SCAN_FAR && Math.abs(map[q] - got[2 * q + 1]) < ON_DECK) { onDeck++; continue; }
         count++;
         if (Math.abs(d) > SCAN_NEAR) over++;
-        if (Math.abs(d) > SCAN_FAR) bad.add(pos[q]);
+        if (Math.abs(d) > SCAN_FAR) { far++; bad.add(pos[q]); }
         if (Math.abs(d) > Math.abs(worst)) { worst = d; at = q; }
         if (places.length) notePlace(places, 'scan', d, xy[2 * q], xy[2 * q + 1], e);
         if (q % 7 === 0) all.push(d);
@@ -491,9 +496,8 @@ const scanSummary = (() => {
       r.scanShare = Math.round(100 * over / count);
       r.scanBad = bad.size * STEP;
     }
-    for (let q = 0; q < scan.length; q++) if (Math.abs(map[q] - scan[q]) > SCAN_FAR) far++;
     all.sort((a, b) => a - b);
-    return { lidar: basename(SCAN), samples: n, under: scanUnder, within: n ? +(100 * near / n).toFixed(1) : null,
+    return { lidar: basename(SCAN), samples: n, under: scanUnder, onDeck, within: n ? +(100 * near / n).toFixed(1) : null,
       over: n ? +(100 * far / n).toFixed(2) : null, median: all.length ? +all[all.length >> 1].toFixed(3) : null };
   } finally {
     rmSync(work, { recursive: true, force: true });
@@ -525,7 +529,7 @@ for (const [k, t] of Object.entries(lines.waves)) {
 if (scanSummary) {
   const b = before?.scan;
   console.log(`\nAgainst the LiDAR (${scanSummary.lidar}), streets on the ground, every ${SCAN_EVERY} m on every line: ${scanSummary.within} % within ${SCAN_NEAR} m, `
-    + `${scanSummary.over} % off by more than ${SCAN_FAR} m; middle offset ${scanSummary.median} m; ${scanSummary.samples} samples, ${scanSummary.under} under bridges left out`
+    + `${scanSummary.over} % off by more than ${SCAN_FAR} m; middle offset ${scanSummary.median} m; ${scanSummary.samples} samples; left out: ${scanSummary.under} under bridges, ${scanSummary.onDeck} on a deck in IPR's bridge model OSM doesn't call a bridge`
     + (b ? `\n  (before: ${b.within} % within, ${b.over} % over ${SCAN_FAR} m, middle ${b.median} m)` : ''));
   const by = (list) => list.filter((r) => Math.abs(r.scan) > SCAN_FAR).reduce((o, r) => ({ ...o, [r.scanNear]: (o[r.scanNear] || 0) + 1 }), {});
   const now = by(rows), was = before && had(before.rows, 'scanNear') ? by(before.rows) : null;

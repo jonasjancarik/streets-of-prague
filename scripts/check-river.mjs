@@ -25,7 +25,7 @@ try {
   const { BOAT_TOP } = await server.ssrLoadModule('/src/boats.ts');
   const index = JSON.parse(readFileSync(`${dir}/index.json`, 'utf8'));
   const river = parseRiver(JSON.parse(readFileSync(`${dir}/river.json`, 'utf8')));
-  const [ox, oy] = index.origin, size = index.tile, ref = index.iprRef ?? 180, { n, step } = index.terrain;
+  const [ox, oy] = index.origin, size = index.tile, ref = index.iprRef ?? 180, { n, step, unit } = index.terrain;
   const bin = (k, kind) => { const p = `${dir}/tiles/${k}.${kind}.bin${index.gzip ? '.gz' : ''}`; if (!existsSync(p)) return null; const b = readFileSync(p); const u = index.gzip ? gunzipSync(b) : b; return u.buffer.slice(u.byteOffset, u.byteOffset + u.byteLength); };
   const tiles = new Map();
   const tileAt = (x, y) => {
@@ -38,7 +38,7 @@ try {
           const xs = rings[0].map((p) => p[0]), ys = rings[0].map((p) => p[1]);
           return { rings, box: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] };
         });
-        const hm = h ? decodeHeights(h, n, ref) : null;
+        const hm = h ? decodeHeights(h, n, ref, unit) : null;
         const levels = lv ? decodeLevels(lv, n, t.structures.length, ref) : [];
         tile = {
           k, water, weirs: t.weirs || [],
