@@ -204,6 +204,47 @@ class UnderpassTests(unittest.TestCase):
         self.assertAlmostEqual(float(after[2, 8]), 200.0, delta=0.3)
 
 
+class DeckKerbTests(unittest.TestCase):
+    """A road in a cutting under an overpass, one surveyed surface (the D0 under Na
+    Radosti): the road's kerbs at 200 m along y = 20 and y = 44, the overpass's deck
+    kerbs at 209 m along x = 28 and x = 36, surveyed as ground. The LiDAR has no bridges:
+    200 m everywhere."""
+
+    def build(self, bridges, scan):
+        bare = np.full((17, 17), 200.0, dtype=np.float32)
+        tiles = {(0, 0): bare.copy()}
+        boxes = {(0, 0): box(0, 0, 64, 64)}
+        lines = [[(2, 20, 200), (62, 20, 200)], [(2, 44, 200), (62, 44, 200)],
+                 [(28, 2, 209), (28, 62, 209)], [(36, 2, 209), (36, 62, 209)]]
+        flat = lambda xs, ys, reach: (np.full(len(xs), 200.0, dtype=np.float32), np.full(len(xs), 200.0, dtype=np.float32))  # noqa: E731
+        with patch.object(dh, 'survey', return_value=([box(2, 2, 62, 62)], [np.array(c, float) for c in lines], [])):
+            out = dh.apply('test', None, Identity(), tiles, 16, 4.0, 0, 0, None, boxes, bridges=bridges,
+                           scan=flat if scan else None, level_across=False)
+        return tiles[0, 0], out
+
+    def test_the_road_under_a_bridge_takes_no_kerbs_of_its_deck(self):
+        bridge = [box(30, 0, 34, 64)]
+        before, _ = self.build(bridge, scan=False)
+        after, out = self.build(bridge, scan=True)
+        self.assertGreater(before[8, 8], 207.0)  # (32, 32): the upper level, the deck's
+        self.assertGreater(out['deck_kerbs'], 0)
+        self.assertAlmostEqual(float(after[8, 8]), 200.0, delta=0.3)
+
+    def test_the_lidar_picks_one_of_two_levels_without_a_bridge(self):
+        before, _ = self.build((), scan=False)
+        after, out = self.build((), scan=True)
+        self.assertGreater(before[8, 7], 201.0)  # (28, 32): the two levels averaged
+        self.assertEqual(out['deck_kerbs'], 0)
+        self.assertGreater(out['scan_lower'], 0)
+        self.assertAlmostEqual(float(after[8, 7]), 200.0, delta=0.3)
+
+    def test_past_a_bridge_s_end_the_scan_leaves_the_upper_level(self):
+        # The bridge ends 4 m short of (32, 32): the street on from it is on the viaduct
+        # the scan doesn't see (Hlávkův most's north end).
+        after, _ = self.build([box(30, 0, 34, 28)], scan=True)
+        self.assertGreater(float(after[8, 8]), 207.0)
+
+
 def _river(length=200, width=12):
     """A straight river on a 4 m lattice: `width` points across (48 m), land either side."""
     wet = np.zeros((width + 8, length), dtype=bool)
