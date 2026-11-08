@@ -41,7 +41,7 @@ import type { RoadHint } from './roadLevels.ts';
 import { fenceMeshes } from './map/fences.ts';
 import { shedMesh } from './map/sheds.ts';
 import { furnitureMeshes, disposeFurniture } from './furniture.ts';
-import { placeStatues, statueMesh, inPedestal, type Statue } from './statues.ts';
+import { placeBridge, clipDecks, bridgeMesh, inPedestal, type Bridge } from './statues.ts';
 import { chimneySmoke, dropChimneySmoke } from './chimneySmoke.ts';
 import { furnitureSurvey } from './furnitureSurvey.ts';
 import { CountrysideTiles } from './countrysideTiles.ts';
@@ -445,7 +445,8 @@ export class TileWorld {
   // the built map's outermost tiles, which they carry on from.
   country: CountrysideTiles | null; edgeHeights: Map<string, Promise<Uint16Array>>;
   bare: Set<string>; leveled: boolean; structures: Set<string>;
-  statues: Statue[];
+  // Charles Bridge's piers and statues (statues.ts).
+  charles: Bridge;
   loaded: Map<string, Tile>; byIndex: Map<number, Tile>;
   // Goes up whenever a tile's heights or levels come or go (see insert and drop), so a
   // height worked out from the loaded tiles can be kept until then (CarPool.render).
@@ -581,8 +582,8 @@ export class TileWorld {
     // Bridges and tunnels with levels of their own (ipr_terrain.py); older data raised
     // bridges into the ground and had no tunnels.
     this.leveled = !!index.terrain?.structures;
-    // Charles Bridge's statues (?nostatues: none, to compare).
-    this.statues = query.has('nostatues') ? [] : placeStatues(index.bbox_wgs84);
+    // Charles Bridge's piers and statues (?nostatues: the deck as the map has it, to compare).
+    this.charles = query.has('nostatues') ? { statues: [], piers: [] } : placeBridge(index.bbox_wgs84);
     this.structures = new Set(index.terrain?.structures || []);
     this.loaded = new Map(); // key → tile
     this.byIndex = new Map(); // i * 65536 + j → tile, for lookups by position
@@ -682,12 +683,12 @@ export class TileWorld {
     return { edges, crossings };
   }
 
-  // The statues on the bridges in a tile, standing on the deck: their mesh (if any),
-  // and their pedestals made solid on that deck (out of its level, as the parapet is).
+  // Charles Bridge's piers and statues in a tile: their mesh (if any), and the statues'
+  // pedestals made solid on the deck (out of its level, as the parapet is).
   statueFixtures(levels: TileLevel[], box: Bounds): THREE.Mesh[] {
     const [x0, y0, x1, y1] = box;
-    const here = this.statues.filter((s) => s.x >= x0 && s.x < x1 && s.y >= y0 && s.y < y1);
-    if (!here.length) return [];
+    const here = this.charles.statues.filter((s) => s.x >= x0 && s.x < x1 && s.y >= y0 && s.y < y1);
+    if (!here.length && !this.charles.piers.some((p) => p.base.some(([x, y]) => x >= x0 && x < x1 && y >= y0 && y < y1))) return [];
     const decks = levels.filter((l) => l.level > 0);
     const inBox = (x: number, y: number) => x >= x0 && x < x1 && y >= y0 && y < y1;
     // The deck at a statue, or the nearest bit of one within a few metres (it may stand
@@ -706,7 +707,7 @@ export class TileWorld {
       }
       return null;
     };
-    const mesh = statueMesh(here, box, deck);
+    const mesh = bridgeMesh(this.charles, box, deck);
     for (const l of decks) {
       // (Its own copy of the cells: the mask is also what the deck is drawn by.)
       l.grid.cells = l.grid.cells.slice();
@@ -1328,7 +1329,8 @@ export class TileWorld {
     const ground = shade && terrain ? { hm: shade.hm, box: t.box, n: terrain.n, step: terrain.step, labels: shade.labels,
       terraces: t.terraces, stepLines: this.stepLines ? t.stepLines : undefined, unit: terrain.unit, ref: this.ref, ...(roadProfile ? { roadProfile } : {}), ...(surfaces ? { roadSurfaces: surfaces } : {}) } : null;
     // Bridges above the ground and tunnels below it, each level with its own heights.
-    const structures = t.structures || [];
+    // (Charles Bridge's cutwaters come off its deck.)
+    const structures = clipDecks(t.structures || [], this.charles.piers, t.box);
     const heights = levels && terrain ? decodeLevels(levels, terrain.n, structures.length, this.ref) : [];
     const tileLevels: LevelInput[] | null = this.leveled && terrain ? structures.map((s, i) => ({
       ...s, heights: { hm: heights[i] ?? new Float32Array(terrain.n * terrain.n).fill(NaN), box: t.box, n: terrain.n, step: terrain.step, ramps: s.ramps, ref: this.ref },

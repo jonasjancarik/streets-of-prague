@@ -815,13 +815,21 @@ record the measurements, merge decisions and pending landmark asset activation.
   OSM's 7 m leaves the tracks out). Bridges in `BALUSTRADES` (`src/ground.ts`; most
   Legií so far) get a stone balustrade instead of the plain parapet: a rail on balusters
   between pillars, each with a stone ball on top.
-  Charles Bridge has its thirty statues and groups, and Bruncvík on his column beside
-  it (`src/statues.ts`, placed from OSM's `memorial=statue` points and hand-listed
-  there with how many figures each has and the odd feature: Nepomuk's bronze and halo
-  of stars, the Calvary's crucifix, the Pietà, the groups on rocks). They're simple
-  low-poly figures on pedestals, facing the walkway, built per tile into one mesh on
-  the deck's height. Their pedestals are cut out of the deck's level, so you walk
-  round them. `?nostatues` leaves them out.
+  Charles Bridge's deck is a straight band. OSM's outline of it takes in the piers'
+  cutwaters, the triangles sticking out on both sides, which would otherwise be raised
+  to the deck with a parapet round them. `pipeline/charles_bridge.py` finds them in
+  the outline (the corners well out from the walkway's centre line) and writes
+  `src/charlesBridge.json`: each pier's outline, the parapet line across it and the
+  statues on it. The game (`src/statues.ts`) cuts the cutwaters off the deck's level
+  and draws them as stone piers about 4 m below it, with a body under the arches. On
+  the parapet over each pier stand its statues and groups, thirty of them, and
+  Bruncvík on his column beside the bridge. They're low-poly figures on pedestals,
+  facing the walkway, listed by OSM's name with how many figures each has and the odd
+  feature: Nepomuk's bronze and halo of stars, the Calvary's crucifix with Mary and
+  John, the Pietà, the groups on rocks, mitres, croziers, books and the Christ child.
+  Each tile builds its share into one mesh at the deck's height, and the pedestals are
+  cut out of the deck's level, so you walk round them. `?nostatues` leaves out the
+  statues and piers and keeps the deck as OSM has it.
   Cars, trams and people drive or walk onto a bridge or into a tunnel where it meets
   the street and off it at the far end; parapets and tunnel walls keep them in, and
   whatever is on one level and another passes by. Under a bridge a round hole opens in
