@@ -1542,6 +1542,16 @@ all: the beta then reads the one production serves (`deploy/data-version`, from
 The `urad-ai-poc` tunnel routes the hostname there. `scripts/httpd.conf` gives
 JSON the content type Cloudflare needs for compression.
 
+Since 8 November 2026 the beta can run on Cloudflare too, which is where
+beta.streetsofprague.com points now: `scripts/deploy-cloudflare-beta.sh` deploys any
+committed code (no release) as the assets-only Worker `streets-of-prague-beta`, and
+uploads the local map to R2 as `beta-<id>`, with the same fingerprint as on mbxp. An
+unchanged map isn't sent again; a changed one is a new upload of the whole map (about
+1.4 GB), and an interrupted one is finished by running the script again. Its forms and
+statistics go to production's Worker, as mbxp's do. The hostname is a Worker custom
+domain now; to send it back to mbxp, remove the custom domain and recreate the proxied
+CNAME to the tunnel, `9e92b145-1491-421a-942e-b33e6cb89a09.cfargotunnel.com`.
+
 The main site serves the app as Worker static assets, with a small Worker for the
 newsletter signup, the feedback form and the statistics (below). That Worker answers at
 <https://play.streetsofprague.com> and at <https://streetsofprague.com>, and
