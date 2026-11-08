@@ -254,4 +254,31 @@ Ask first:
 ## Progress
 
 - 8 November 2026: underpass kerbs kept out of the street above (48f7cc8f); in `main`
-  and pushed. The beta map with it is being rebuilt with `--step-lines`.
+  and pushed. The beta (Cloudflare) has it since the evening: game 903ea33c, map
+  `beta-5b2e5ce38dd8` (built 19:45 with `--step-lines`).
+- 8 November 2026, step 1 done. `check-road-flatness.mjs` walks lines 1 m apart, measures
+  waves 2, 5 and 12 m either side (the plan's 3, 10 and 25 m windows, rounded to whole
+  metres each way), compares every line every 2 m with the LiDAR
+  (`pipeline/scan_heights.py`), sorts each street's worst LiDAR offset by what's beside
+  it (a bridge or tunnel within 15 m, a wall's terrace, neither), and lists
+  `scripts/road-places.json`. The index records the terrain's options. `praha` takes
+  1.5–2 minutes: the road outlines are tested as half-metre masks now (`--exact` for
+  the polygons), nine times faster, within a quarter of a metre of an outline.
+  - **Thresholds** from the real roads: along the middle lines of 4,345 km of streets
+    on the ground, the LiDAR's waves are under 4, 9 and 24 cm (2, 5, 12 m either side)
+    at 99 % of points, and over the flags (0.1, 0.2, 0.5 m) at 0.2 %. The map is over
+    them at 1.0, 2.1 and 1.8 % of line metres: six to ten times the real road.
+  - **Baseline**, the beta's map before the fix (built 7 Nov) → today's map:
+    86.6 → 86.7 % of carriageway within 0.3 m of the LiDAR (target 95 %), 1.33 →
+    1.32 % more than 1 m off; middle offset +0.02 m (the conversion is right).
+    Streets whose worst is more than 1 m off: 2,226 with nothing beside them, 385 by
+    a bridge or tunnel (273 over 2 m, 115 over 5 m: most of the big ones), 82 by a
+    wall's terrace. Reports: `docs/evidence/road-plan/report-{beta,now}.{txt,json}`.
+  - **The dips** on the old map: Na Veselí −6.05 m off the LiDAR and 2.85 m waves (its
+    worst step was 0.36 m, which is why the old check missed it), náměstí Hrdinů
+    −2.11 m. On today's map 1.27 and 0.35 m.
+  - Worst left (step 2 and 3): Čuprova and Sokolovská in Vysočany 14–18 m over the
+    LiDAR (the elevated road's kerbs surveyed as ground), Na Botiči 15 m, a trunk at
+    49.9426, 14.3677 15 m under it for 1–2 km, Dobříšská's north end 7 m over,
+    Kongresová 6 m under, náměstí Míru 4 m over, the side street at náměstí Hrdinů
+    4 m over (a wall's terrace reaching onto it).

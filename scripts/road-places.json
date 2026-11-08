@@ -1,0 +1,27 @@
+{
+  "about": "Places where a player or a check found a broken street. scripts/check-road-flatness.mjs reports the worst of every measure within `radius` metres of each (default 40), so a fix can be seen to hold and a regression shows by name.",
+  "places": [
+    { "name": "Na Veselí over the underpass", "at": [50.0546, 14.43879], "found": "2026-11-08, feedback",
+      "what": "a dip of several metres and a wall across: the underpass's kerbs pulled the street down (sunk kerbs, fixed 2026-11-08)" },
+    { "name": "náměstí Hrdinů over Táborská", "at": [50.05715, 14.43602], "found": "2026-11-08, feedback",
+      "what": "the street sank to the road in the underpass (sunk kerbs, fixed 2026-11-08); a wall terrace's bump on the side street remains" },
+    { "name": "Kongresové centrum", "at": [50.0613, 14.43124], "found": "2026-11, road surface trials",
+      "what": "the crossing by the congress centre, two levels in one survey polygon" },
+    { "name": "Kongresová, ridge across", "at": [50.06152, 14.43079], "found": "2026-11, road surface trials",
+      "what": "a ridge of about 0.9 m across the street" },
+    { "name": "Legerova", "at": [50.07785, 14.43071], "found": "2026-11, road surface trials",
+      "what": "a stretch the map and the LiDAR share, next to one they don't" },
+    { "name": "U tržnice", "at": [50.07671, 14.44267], "found": "2026-11, road surface trials",
+      "what": "a lean of 44 % and a 1.4 m ridge" },
+    { "name": "Washingtonova", "at": [50.08101, 14.43275], "found": "2026-11, road surface trials",
+      "what": "the map off the street's height" },
+    { "name": "Na Topolce", "at": [50.05927, 14.42545], "found": "2026-11, road surface trials",
+      "what": "a retaining wall along the street" },
+    { "name": "Závišova", "at": [50.06706, 14.43724], "found": "2026-11, road surface trials",
+      "what": "the map a flat 0.4 m above the street" },
+    { "name": "Dobříšská, north end", "at": [50.0615, 14.4061], "found": "2026-11, road surface trials",
+      "what": "the LiDAR and the surface model disagree" },
+    { "name": "náměstí Míru", "at": [50.0753, 14.437], "radius": 80, "found": "2026-10, feedback",
+      "what": "a pit players drove into: kerbs surveyed 21 m under the square (SUNK, fixed in October)" }
+  ]
+}

@@ -76,8 +76,25 @@ Without the game, on the built tiles with the game's own samplers:
 It walks every car street a metre at a time, along its middle and both edges, on its
 own level, and lists per street the worst step, bump (washboard), lean across, ridge or
 trough, twist (the lean changing within 4 m) and stretch off the road (grass or a verge
-over the carriageway), with a place to paste into the game. Two minutes for praha,
-seconds with `--near`. `--strict` fails on anything over the hard limits.
+over the carriageway), with a place to paste into the game. `--strict` fails on anything
+over the hard limits.
+
+Since November 2026 it also walks lines along each street a metre apart across it
+(`--across 0` for the middle and edges only) and measures how wavy each line is: its
+height against the straight line 2, 5 and 12 m either side. A street may climb and lean;
+a line along it bends only gently. And it compares the map with IPR's 2023 LiDAR ground
+on every line, every 2 m, for streets on the ground and not under a bridge
+(`pipeline/scan_heights.py` looks the points up; `--scan <directory>` where the LiDAR
+isn't in this checkout's `pipeline/.cache/ipr_lidar/2023`, `--scan off` to skip it). The
+summary gives the share of line metres with a wave over the flag and the share of samples
+within 0.3 m of the LiDAR, which don't depend on how streets are cut into edges.
+`scripts/road-places.json` lists places players or checks found broken; the report always
+gives the worst of each measure near each, against `--against`'s too. A few minutes for
+praha, seconds with `--near`.
+
+The two dips players found on 8 November (Na Veselí and náměstí Hrdinů, the survey's
+kerbs of the underpass below pulling the street down) had steps of only 0.36 m: no single
+metre jumps much. They are 2.9 m waves and 6 m off the LiDAR.
 
 Steps, lean and crown count only where the samples lie on the carriageway as drawn: OSM's
 width reaches past the kerb, onto the retaining wall beside the street (U Komína and
