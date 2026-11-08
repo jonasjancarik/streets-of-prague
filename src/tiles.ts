@@ -41,6 +41,7 @@ import type { RoadHint } from './roadLevels.ts';
 import { fenceMeshes } from './map/fences.ts';
 import { shedMesh } from './map/sheds.ts';
 import { furnitureMeshes, disposeFurniture } from './furniture.ts';
+import { placeStatues, statueMesh, inPedestal, type Statue } from './statues.ts';
 import { chimneySmoke, dropChimneySmoke } from './chimneySmoke.ts';
 import { furnitureSurvey } from './furnitureSurvey.ts';
 import { CountrysideTiles } from './countrysideTiles.ts';
@@ -444,6 +445,7 @@ export class TileWorld {
   // the built map's outermost tiles, which they carry on from.
   country: CountrysideTiles | null; edgeHeights: Map<string, Promise<Uint16Array>>;
   bare: Set<string>; leveled: boolean; structures: Set<string>;
+  statues: Statue[];
   loaded: Map<string, Tile>; byIndex: Map<number, Tile>;
   // Goes up whenever a tile's heights or levels come or go (see insert and drop), so a
   // height worked out from the loaded tiles can be kept until then (CarPool.render).
@@ -579,6 +581,8 @@ export class TileWorld {
     // Bridges and tunnels with levels of their own (ipr_terrain.py); older data raised
     // bridges into the ground and had no tunnels.
     this.leveled = !!index.terrain?.structures;
+    // Charles Bridge's statues (?nostatues: none, to compare).
+    this.statues = query.has('nostatues') ? [] : placeStatues(index.bbox_wgs84);
     this.structures = new Set(index.terrain?.structures || []);
     this.loaded = new Map(); // key → tile
     this.byIndex = new Map(); // i * 65536 + j → tile, for lookups by position
@@ -676,6 +680,49 @@ export class TileWorld {
       }
     }
     return { edges, crossings };
+  }
+
+  // The statues on the bridges in a tile, standing on the deck: their mesh (if any),
+  // and their pedestals made solid on that deck (out of its level, as the parapet is).
+  statueFixtures(levels: TileLevel[], box: Bounds): THREE.Mesh[] {
+    const [x0, y0, x1, y1] = box;
+    const here = this.statues.filter((s) => s.x >= x0 && s.x < x1 && s.y >= y0 && s.y < y1);
+    if (!here.length) return [];
+    const decks = levels.filter((l) => l.level > 0);
+    const inBox = (x: number, y: number) => x >= x0 && x < x1 && y >= y0 && y < y1;
+    // The deck at a statue, or the nearest bit of one within a few metres (it may stand
+    // just off the deck's outline, on the pier).
+    const deck = (x: number, y: number) => {
+      for (let r = 0; r <= 6; r += 1) {
+        for (let a = 0; a < (r ? 12 : 1); a++) {
+          const px = x + Math.cos((a * Math.PI) / 6) * r, py = y + Math.sin((a * Math.PI) / 6) * r;
+          if (!inBox(px, py)) continue;
+          for (const l of decks) {
+            if (!l.grid.at(px, py)) continue;
+            const h = l.sample(px, py);
+            if (!Number.isNaN(h)) return h;
+          }
+        }
+      }
+      return null;
+    };
+    const mesh = statueMesh(here, box, deck);
+    for (const l of decks) {
+      // (Its own copy of the cells: the mask is also what the deck is drawn by.)
+      l.grid.cells = l.grid.cells.slice();
+      const step = 1 / RES;
+      for (const s of here) {
+        const reach = Math.hypot(s.half[0], s.half[1]) + step;
+        for (let x = s.x - reach; x <= s.x + reach; x += step / 2) {
+          for (let y = s.y - reach; y <= s.y + reach; y += step / 2) {
+            if (!inBox(x, y) || !inPedestal(s, x, y, 0.1)) continue;
+            const g = l.grid, i = Math.floor((x + g.ox) * g.res), j = Math.floor((g.H - (y + g.oy)) * g.res);
+            if (i >= 0 && j >= 0 && i < g.w && j < g.h) g.cells[j * g.w + i] = 0;
+          }
+        }
+      }
+    }
+    return mesh ? [mesh] : [];
   }
 
   // Height of a level at a point: of the ground at level 0, of a bridge or tunnel
@@ -1366,6 +1413,7 @@ export class TileWorld {
     const fenceRows = fenceMeshes(land.fences);
     const sheds = shedMesh(land.sheds);
     const furniture = furnitureMeshes(land.furniture);
+    const statues = this.statueFixtures(onLevels, t.box);
     const fenceSections = fences.sections(k, land.fences.sections, fenceRows);
     // The overhead wires over the tram tracks, at the height of the bridge deck a track
     // is on (as ground.ts lays the tracks) or of the ground: the deck the map names for
@@ -1405,7 +1453,7 @@ export class TileWorld {
     for (const c of cars) c.level = 0; // (nobody parks on a bridge or in a tunnel)
     const tile: Tile = {
       k, i: t.i, j: t.j, box: t.box, passages: t.passages || [], raised: t.buildings.filter((b) => !grounded(b)).map((b) => b.rings), grid, levels: onLevels, cars, ms,
-      source, shown: false, dressing: null, drawn: null, drawMs: {}, drawAfter: 0, fixtures: [walls, fenceRows.fence, fenceRows.hedge, fenceRows.rail, ...(sheds ? [sheds] : []), ...wires],
+      source, shown: false, dressing: null, drawn: null, drawMs: {}, drawAfter: 0, fixtures: [walls, fenceRows.fence, fenceRows.hedge, fenceRows.rail, ...(sheds ? [sheds] : []), ...wires, ...statues],
       roads, crossers, poles, fences: fenceSections, furniture, relief: shade, sample: shade?.sample,
       water: (t.areas.water || []).map((rings) => {
         const xs = rings[0].map((p) => p[0]), ys = rings[0].map((p) => p[1]);

@@ -810,6 +810,13 @@ record the measurements, merge decisions and pending landmark asset activation.
   OSM's 7 m leaves the tracks out). Bridges in `BALUSTRADES` (`src/ground.ts`; most
   Legií so far) get a stone balustrade instead of the plain parapet: a rail on balusters
   between pillars, each with a stone ball on top.
+  Charles Bridge has its thirty statues and groups, and Bruncvík on his column beside
+  it (`src/statues.ts`, placed from OSM's `memorial=statue` points and hand-listed
+  there with how many figures each has and the odd feature: Nepomuk's bronze and halo
+  of stars, the Calvary's crucifix, the Pietà, the groups on rocks). They're simple
+  low-poly figures on pedestals, facing the walkway, built per tile into one mesh on
+  the deck's height. Their pedestals are cut out of the deck's level, so you walk
+  round them. `?nostatues` leaves them out.
   Cars, trams and people drive or walk onto a bridge or into a tunnel where it meets
   the street and off it at the far end; parapets and tunnel walls keep them in, and
   whatever is on one level and another passes by. Under a bridge a round hole opens in
