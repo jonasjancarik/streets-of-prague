@@ -828,8 +828,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   feature: Nepomuk's bronze and halo of stars, the Calvary's crucifix with Mary and
   John, the Pietà, the groups on rocks, mitres, croziers, books and the Christ child.
   Each tile builds its share into one mesh at the deck's height, and the pedestals are
-  cut out of the deck's level, so you walk round them. `?nostatues` leaves out the
-  statues and piers and keeps the deck as OSM has it.
+  cut out of the deck's level, so you walk round them. The bridge's lamps are gas
+  lanterns on slim posts standing on the parapets: the surveyed lamps within 2.5 m of a
+  parapet's line are moved onto it and drawn so (`bridgeLamp`), and the floodlights in
+  the river under the arches are left out. `?nostatues` leaves out the statues and
+  piers, keeps the deck as OSM has it and the lamps as the survey has them.
   Cars, trams and people drive or walk onto a bridge or into a tunnel where it meets
   the street and off it at the far end; parapets and tunnel walls keep them in, and
   whatever is on one level and another passes by. Under a bridge a round hole opens in

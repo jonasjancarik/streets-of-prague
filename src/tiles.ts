@@ -41,7 +41,7 @@ import type { RoadHint } from './roadLevels.ts';
 import { fenceMeshes } from './map/fences.ts';
 import { shedMesh } from './map/sheds.ts';
 import { furnitureMeshes, disposeFurniture } from './furniture.ts';
-import { placeBridge, clipDecks, bridgeMesh, inPedestal, type Bridge } from './statues.ts';
+import { placeBridge, clipDecks, bridgeMesh, inPedestal, NO_BRIDGE, type Bridge } from './statues.ts';
 import { chimneySmoke, dropChimneySmoke } from './chimneySmoke.ts';
 import { furnitureSurvey } from './furnitureSurvey.ts';
 import { CountrysideTiles } from './countrysideTiles.ts';
@@ -583,7 +583,7 @@ export class TileWorld {
     // bridges into the ground and had no tunnels.
     this.leveled = !!index.terrain?.structures;
     // Charles Bridge's piers and statues (?nostatues: the deck as the map has it, to compare).
-    this.charles = query.has('nostatues') ? { statues: [], piers: [] } : placeBridge(index.bbox_wgs84);
+    this.charles = query.has('nostatues') ? NO_BRIDGE : placeBridge(index.bbox_wgs84);
     this.structures = new Set(index.terrain?.structures || []);
     this.loaded = new Map(); // key → tile
     this.byIndex = new Map(); // i * 65536 + j → tile, for lookups by position

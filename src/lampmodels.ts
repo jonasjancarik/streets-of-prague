@@ -101,6 +101,20 @@ export function gasSingle(): Part {
   return merge(out);
 }
 
+// A lantern on a slim iron post standing on a bridge's parapet (its top `lift` m up), as
+// on Charles Bridge. Light at the lantern's middle, `lift` + 3.1 m up.
+export function parapetLantern(lift: number): Part {
+  const top = 2.6, out: Part[] = [];
+  out.push(part(cyl(0.13, 0.15, 0.12, 8), IRON, [0, 0.06, 0]));
+  out.push(part(cyl(0.08, 0.11, 0.5, 8), IRON, [0, 0.37, 0]));
+  out.push(part(cyl(0.05, 0.065, top - 0.6, 10), IRON, [0, (top + 0.6) / 2, 0]));
+  out.push(part(cyl(0.085, 0.085, 0.04, 8), IRON_LIGHT, [0, top - 0.1, 0]));
+  out.push(part(cyl(0.05, 0.08, 0.09, 8), IRON, [0, top + 0.04, 0]));
+  out.push(...lantern(0, top + 0.08, 0, 1.4));
+  out.forEach((p) => p.translate(0, lift, 0));
+  return merge(out);
+}
+
 // A lantern on a scrolled bracket sticking out of a wall (the wall at x = 0), 4.5 m up.
 export function wallLantern(): Part {
   const out: Part[] = [];

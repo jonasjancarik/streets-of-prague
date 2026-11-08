@@ -4,7 +4,8 @@ import { mirrored, mirroredGlow } from './mirror.ts';
 import { fetchBinary } from './terrain.ts';
 import { CLOUD, CLOUD_MAP, CLOUD_GLSL } from './clouds.ts';
 import { posts, fall, type Post } from './posts.ts';
-import { armLamp, gasPair, gasSingle, wallLantern, globeLamp, hungLamp } from './lampmodels.ts';
+import { armLamp, gasPair, gasSingle, wallLantern, globeLamp, hungLamp, parapetLantern } from './lampmodels.ts';
+import { PARAPET } from './ground.ts';
 import { send, sendInstances } from './gpu.ts';
 import { LightFx } from './lightfx.ts';
 
@@ -142,8 +143,9 @@ const KINDS = [
   { head: 0, pole: false, r: 7, i: 0.8, raise: 0, glow: 0 }, // in a tunnel or underpass
   { head: 0, pole: false, r: 3, i: 0.4, raise: 0, glow: 0 }, // set into the ground
   { head: 6.3, pole: false, r: 14, i: 0.9, raise: 0, glow: 0.5 }, // added: hung over a street on cables (see fill)
+  { head: PARAPET + 3.1, pole: false, r: 10, i: 0.8, raise: 0, glow: 0.45 }, // a gas lantern on a bridge's parapet (place)
 ];
-const HUNG = 7, ON_BRIDGE = 3;
+const HUNG = 7, ON_BRIDGE = 3, ON_PARAPET = 8;
 // The models (lampmodels.ts) and where their lights are (x along the arm, y, z across it).
 // A kind's lamps take one by hash: the Old Town has big two-lantern gas posts and small
 // single lanterns both.
@@ -154,8 +156,9 @@ const MODELS = [
   { make: wallLantern, glows: [[0.55, 4.7, 0]] },
   { make: () => globeLamp(5.5), glows: [[0, 5.5, 0]] },
   { make: () => hungLamp(6.3), glows: [[0, 6.25, 0]] },
+  { make: () => parapetLantern(PARAPET), glows: [[0, PARAPET + 3.1, 0]] },
 ];
-const modelOf = (kind: number, i: number) => kind === 0 ? 0 : kind === 2 ? (hash(i + 7) < 0.5 ? 1 : 2) : kind === 1 ? 3 : kind === 3 ? 4 : kind === HUNG ? 5 : -1;
+const modelOf = (kind: number, i: number) => kind === 0 ? 0 : kind === 2 ? (hash(i + 7) < 0.5 ? 1 : 2) : kind === 1 ? 3 : kind === 3 ? 4 : kind === HUNG ? 5 : kind === ON_PARAPET ? 6 : -1;
 // Streets to turn lamps towards: their segments in a grid (x0, y0, x1, y1 each).
 const STREET_CELL = 50, REACH_ARM = 30;
 // Many side streets' lamps hang on cables between the houses or sit on their walls,
@@ -190,7 +193,7 @@ const TRAM_SECTION = 10.2; // m (trams.ts)
 
 const hash = (i: number) => { const s = Math.sin(i * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
 function colourOf(kind: number, i: number) {
-  if (kind === 2) return GAS;
+  if (kind === 2 || kind === ON_PARAPET) return GAS;
   if (kind === 4) return FLOOD;
   if (kind === HUNG) return hash(i) < 0.7 ? WARM : SODIUM;
   const r = hash(i);
@@ -326,6 +329,9 @@ export class Lamps {
   private rise: number[] = [];
   private high: boolean[] = [];
   readonly fx: LightFx;
+  // Set before the survey loads: where a surveyed lamp really stands, if not where the
+  // survey has it ([x, y]: a lantern on a bridge's parapet; null: left out). See bridgeLamp.
+  place?: (x: number, y: number, flood: boolean) => [number, number] | null | undefined;
   private lightScene = new THREE.Scene();
   private lightCam = new THREE.Camera();
   private lights: THREE.InstancedBufferGeometry;
@@ -551,7 +557,14 @@ export class Lamps {
       if (!buf) return;
       const n = new DataView(buf).getUint32(0, true);
       const xy = new Float32Array(buf.slice(4, 4 + n * 8)), kind = new Uint8Array(buf, 4 + n * 8, n);
-      for (let i = 0; i < n; i++) this.add(xy[i * 2], xy[i * 2 + 1], kind[i]);
+      for (let i = 0; i < n; i++) {
+        const k = kind[i], x = xy[i * 2], y = xy[i * 2 + 1];
+        const at = this.place && (k === 4 || KINDS[k].head) ? this.place(x, y, k === 4) : undefined;
+        // A lamp left out keeps its index (an empty slot), so the survey's indices still line up.
+        if (at === null) { const j = this.kind.length; this.kind[j] = -1; this.xy[j * 2] = this.xy[j * 2 + 1] = NaN; }
+        else if (at) this.add(at[0], at[1], ON_PARAPET);
+        else this.add(x, y, k);
+      }
       this.surveyed = n;
     }).catch(() => {});
     const lit = fetchBinary(dataUrl(area, 'lit.bin.gz'), true).then((buf) => { if (buf) this.lit = litStreets(buf); }).catch(() => {});

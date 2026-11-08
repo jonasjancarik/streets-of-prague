@@ -6,6 +6,7 @@ import { cutAway } from './shading.ts';
 import { rng, hash } from './map/geo.ts';
 import type { Bounds, Point2, Polygons } from './map/geo.ts';
 import type { TileStructure } from './contracts.ts';
+import { PARAPET_W } from './ground.ts';
 import bridge from './charlesBridge.json';
 
 // Charles Bridge: its piers and the thirty statues and groups on its parapets, and
@@ -67,7 +68,10 @@ export interface Statue { name: string; x: number; y: number; fx: number; fy: nu
 // the other), the way out from the deck, and what is cut off the deck (`cutter`, a
 // polygon beyond the parapet line; null where the deck keeps it).
 export interface Pier { outline: Point2[]; base: [Point2, Point2]; out: Point2; cutter: Point2[] | null }
-export interface Bridge { statues: Statue[]; piers: Pier[] }
+// A parapet: its line along one side of the deck, with the way out from the deck.
+export interface Parapet { line: Point2[]; out: Point2 }
+export interface Bridge { statues: Statue[]; piers: Pier[]; parapets: Parapet[] }
+export const NO_BRIDGE: Bridge = { statues: [], piers: [], parapets: [] };
 
 const PEDESTAL_D = 1.9; // m across the parapet
 const OUT = 0.35; // m: how far the pedestal's middle stands out from the parapet line
@@ -78,7 +82,7 @@ const pedestalL = (s: Spec) => (s.figures >= 3 || s.look === 'calvary' ? 2.9 : s
 export function placeBridge([w0, s0, e0, n0]: [number, number, number, number]): Bridge {
   const local = `+proj=tmerc +lat_0=${(s0 + n0) / 2} +lon_0=${(w0 + e0) / 2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`;
   const [bw, bs] = bridge.piers[0].base[0];
-  if (!(bw > w0 && bw < e0 && bs > s0 && bs < n0)) return { statues: [], piers: [] };
+  if (!(bw > w0 && bw < e0 && bs > s0 && bs < n0)) return NO_BRIDGE;
   const to = (p: number[]) => proj4('EPSG:4326', local, p) as Point2;
   const piers: (Pier & { names: string[] })[] = bridge.piers.map((p) => {
     const a = to(p.base[0]), b = to(p.base[1]), outline = p.outline.map(to);
@@ -106,7 +110,50 @@ export function placeBridge([w0, s0, e0, n0]: [number, number, number, number]):
     const along = Math.min(Math.max((px - a[0]) * ux + (py - a[1]) * uy, Math.min(L / 2 + 0.3, len / 2)), Math.max(len - L / 2 - 0.3, len / 2));
     statues.push({ name, x: a[0] + ux * along + nx * OUT, y: a[1] + uy * along + ny * OUT, fx: -nx, fy: -ny, half: [L / 2, PEDESTAL_D / 2], spec });
   }
-  return { statues, piers: piers.map(({ names: _, ...p }) => p) };
+  // Each side's parapet runs through the piers' parapet lines, in order along the bridge.
+  const ref = piers[0].out, parapets: Parapet[] = [];
+  for (const side of [1, -1]) {
+    const on = piers.filter((p) => (p.out[0] * ref[0] + p.out[1] * ref[1]) * side > 0);
+    const along = (q: Point2) => -q[0] * ref[1] + q[1] * ref[0];
+    const line = on.flatMap((p) => p.base).sort((a, b) => along(a) - along(b));
+    parapets.push({ line, out: [ref[0] * side, ref[1] * side] });
+  }
+  return { statues, piers: piers.map(({ names: _, ...p }) => p), parapets };
+}
+
+// What becomes of a lamp on the bridge: the floodlights in the river under its arches go
+// (null), and the lamps along its parapets stand on them as lanterns, halfway across the
+// parapet's top (the spot); any other lamp stays as it is (undefined).
+const PARAPET_MID = PARAPET_W / 2;
+const LAMP_TO_PARAPET = 2.5; // m: a lamp this close to a parapet's line is one of its lamps
+const UNDER_ARCHES = 16; // m from a pier's parapet line: a floodlight in the river by it
+export function bridgeLamp(b: Bridge, x: number, y: number, flood: boolean): Point2 | null | undefined {
+  if (flood) {
+    for (const p of b.piers) {
+      if (!p.cutter) continue;
+      const [[ax, ay], [bx, by]] = p.base;
+      if (Math.hypot(x - (ax + bx) / 2, y - (ay + by) / 2) < UNDER_ARCHES) return null;
+    }
+    return undefined;
+  }
+  let best: Point2 | undefined, bestD = LAMP_TO_PARAPET;
+  for (const { line, out } of b.parapets) {
+    for (let i = 0; i + 1 < line.length; i++) {
+      const [ax, ay] = line[i], [bx, by] = line[i + 1], dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
+      if (!len2) continue;
+      const u = ((x - ax) * dx + (y - ay) * dy) / len2;
+      if (u < 0 || u > 1) continue;
+      const px = ax + dx * u, py = ay + dy * u, d = Math.hypot(x - px, y - py);
+      if (d >= bestD) continue;
+      // The segment's own normal, turned to face out like the side's.
+      const len = Math.sqrt(len2);
+      let nx = -dy / len, ny = dx / len;
+      if (nx * out[0] + ny * out[1] < 0) { nx = -nx; ny = -ny; }
+      bestD = d;
+      best = [px - nx * PARAPET_MID, py - ny * PARAPET_MID];
+    }
+  }
+  return best;
 }
 
 // A tile's structures with the cutwaters off the bridge decks.

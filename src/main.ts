@@ -37,6 +37,7 @@ import { updateChimneySmoke } from './chimneySmoke.ts';
 import { MIST_MODE } from './localmist.ts';
 import type { Kind } from './weather.ts';
 import { Lamps, type Flashing } from './lamps.ts';
+import { bridgeLamp } from './statues.ts';
 import { Signals } from './signals.ts';
 import { Skids } from './skids.ts';
 import { SteerGuide, aimSteer, type Held } from './steerGuide.ts';
@@ -315,6 +316,7 @@ async function main() {
     return null;
   };
   const lamps = new Lamps(scene, renderer, AREA, (x, y) => world.terrainAt(x, y), deckAt);
+  lamps.place = (x, y, flood) => bridgeLamp(world.charles, x, y, flood);
   const signals = new Signals(scene, AREA, () => clock.t, (x, y, bridge) => (bridge ? world.heightAt(x, y) : world.terrainAt(x, y)), (x, y) => world.onRoad(x, y));
   const streaks = new Streaks(scene);
   if (params.has('ipr')) void import('./iprdebug.ts').then((m) => m.iprOverlay(scene, AREA, (x, y) => world.terrainAt(x, y)));
