@@ -158,6 +158,9 @@ UNDER_BRIDGE = 6.0  # m round a bridge that count as under it (how far its deck'
 # past its ends) more than LEVELS below the highest surveyed point within SUNK_ROUND is
 # the underpass's; no lattice point outside the tunnels takes it.
 SUNK_ROUND = 20.0  # m
+# With the LiDAR as the ground (`sharp`), a street surveyed this far above the scan
+# keeps the survey, mixed in from ALOFT_FROM (see where it's used).
+ALOFT_FROM, ALOFT_TO = 0.5, 1.5  # m
 # The 2023 LiDAR decides between two levels. The bare-earth scan has the ground and no
 # bridges, so a surveyed point more than LEVELS above the highest the scan has within
 # SCAN_REACH is up on something (`aloft`). Inside one of the map's bridges (DECK_SIDE
@@ -882,7 +885,15 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
     grid[back] = bare[back]
     street[back] = False
     if sharp:
-        grid[street] = bare[street]
+        # The scan is bare earth. Under a bridge or viaduct the map doesn't draw as one
+        # (the ramps of Pražský okruh at Černý Most, 11 m up) it's the ground below, and
+        # the survey's street is well above it: there the street keeps the survey. Within
+        # ALOFT_FROM of the scan it's the scan's, and in between a mix, so the road
+        # doesn't step where the two part.
+        lift = np.nan_to_num(grid[street] - bare[street], nan=0.0)
+        mix = np.clip((lift - ALOFT_FROM) / (ALOFT_TO - ALOFT_FROM), 0.0, 1.0)
+        grid[street] = bare[street] + mix * lift
+        counts["kept_aloft"] = int((mix > 0).sum())
 
     # A car street is level from kerb to kerb: each of its points takes the height of
     # its cross-section, not of the kerb points nearest it (see _level_across). Not
@@ -1184,6 +1195,8 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
             off_streets += was - strip.area
         if water is not None and water.intersects(strip):
             strip = strip.difference(water)
+        if strip.is_empty:
+            continue
         for k in sorted({k for sq in squares(strip) for k in nearby.get(sq, ())}):
             if strips[k].intersects(strip):
                 strip = strip.difference(strips[k])
@@ -1274,7 +1287,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         if listed:
             outlines[(i, j)] = listed
     changed = ~np.isnan(bare) & (np.abs(grid - bare) > 0.05)
-    return {"survey_rejected_vertices": rejected, "off_scan": counts.get("off_scan", 0), "sunk_kerbs": int(sunk.sum()), "aloft": int(aloft.sum()), "deck_kerbs": int(decked.sum()), "kerbs_skipped": counts.get("kerbs_skipped", 0), "scan_lower": counts.get("scan_lower", 0), "scan_upper": counts.get("scan_upper", 0), "surfaces": surfaces, "street_points": street_points, "levelled_across": levelled_points, "two_levels": two_levels, "under_points": under, "feathered": feathered, "overhang_points": overhang, "water_points": int(wet.sum()), "water_levelled": levelled, "valley_points": valley, "bank_points": bank_points,
+    return {"survey_rejected_vertices": rejected, "off_scan": counts.get("off_scan", 0), "sunk_kerbs": int(sunk.sum()), "aloft": int(aloft.sum()), "deck_kerbs": int(decked.sum()), "kerbs_skipped": counts.get("kerbs_skipped", 0), "scan_lower": counts.get("scan_lower", 0), "scan_upper": counts.get("scan_upper", 0), **({"kept_aloft": counts["kept_aloft"]} if "kept_aloft" in counts else {}), "surfaces": surfaces, "street_points": street_points, "levelled_across": levelled_points, "two_levels": two_levels, "under_points": under, "feathered": feathered, "overhang_points": overhang, "water_points": int(wet.sum()), "water_levelled": levelled, "valley_points": valley, "bank_points": bank_points,
             "kept_by_hand": kept, "cut_streets": cuts, "retaining_walls": len(strips) - cuts, "retaining_metres": round(wall_length), "terrace_off_streets_m2": round(off_streets), "wall_points": wall_points, "lone_points": lone_points,
             "changed": int(changed.sum()), "mean_change": float(np.abs(grid - bare)[changed].mean()) if changed.any() else 0.0,
             "labels": labels, "terraces": outlines}

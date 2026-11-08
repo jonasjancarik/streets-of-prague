@@ -309,3 +309,27 @@ class WaterLevelTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class LidarGroundTests(unittest.TestCase):
+    """The LiDAR as the ground (`sharp`): the scan is bare earth, 200 m everywhere, and
+    one street surveyed across the whole square, its kerbs along y = 20 and y = 44."""
+
+    def build(self, kerbs):
+        tiles = {(0, 0): np.full((17, 17), 200.0, dtype=np.float32)}
+        boxes = {(0, 0): box(0, 0, 64, 64)}
+        lines = [[(2, 20, kerbs), (62, 20, kerbs)], [(2, 44, kerbs), (62, 44, kerbs)]]
+        with patch.object(dh, 'survey', return_value=([box(2, 2, 62, 62)], [np.array(c, float) for c in lines], [])):
+            dh.apply('test', None, Identity(), tiles, 16, 4.0, 0, 0, None, boxes, sharp=True)
+        return tiles[0, 0]
+
+    def test_a_street_near_the_scan_is_the_scan(self):
+        self.assertAlmostEqual(float(self.build(200.3)[8, 8]), 200.0, delta=0.01)
+
+    def test_a_street_on_a_viaduct_the_map_does_not_draw_keeps_the_survey(self):
+        self.assertAlmostEqual(float(self.build(209.0)[8, 8]), 209.0, delta=0.01)
+
+    def test_in_between_it_is_a_mix(self):
+        h = float(self.build(201.0)[8, 8])
+        self.assertGreater(h, 200.2)
+        self.assertLess(h, 200.8)
