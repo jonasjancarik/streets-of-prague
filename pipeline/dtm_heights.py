@@ -180,9 +180,19 @@ ALOFT_FROM, ALOFT_TO = 0.5, 1.5  # m
 # lower level isn't picked there either. Without them the slip road at Malovanka
 # (OSM's bridge ending 5 m before the street is back on the ground, over the road down to
 # the tunnel) and the paths off Hlávkův most's north end (over the quay) ended 6–7 m over
-# the ground they meet.
+# the ground they meet. Outside the map's bridges a kerb aloft is the street's own,
+# `carried` on a bridge or viaduct the map doesn't draw, where it's within CARRIED_GRADE
+# times the distance (and no less than CARRIED_LEAST) of the height of the nearest kerb
+# of its surface that isn't aloft, or where its surface has none: the ramps up to
+# Hlávkův most and Jižní spojka are drawn as streets on the ground and surveyed on the
+# viaduct. One that isn't is a deck's over the street, surveyed as ground, and that
+# surface's lattice points don't take it: the railway over Čuprova, 18 m over the
+# street's kerbs 8 m away, was a hump 8 m high (and the surveyed pieces of the street
+# under it are small: where fewer than six of their kerbs are left, the farthest of them
+# counts again).
 DECK_SIDE = 2.0  # m
 END_CLEAR = 6.0  # m
+CARRIED_GRADE, CARRIED_LEAST = 0.15, 1.0  # (m per m, m)
 SCAN_AGREE = 1.5  # m
 WATER_REACH = 16.0  # m: further than the terrain model's ramp at a bank reaches
 POOL_WIDE = 10.0  # m from the bank: water this wide is a river's or a pond's, level between weirs
@@ -402,11 +412,11 @@ def bridge_ends(lines):
 
 
 def _on_decks(points, bridges, scan_here, ends=()):
-    """(Which surveyed points are aloft, which are on one of the map's bridges' decks):
-    see DECK_SIDE and END_CLEAR."""
+    """(Which surveyed points are aloft, which are on one of the map's bridges' decks,
+    which are a deck's within END_CLEAR of a bridge's end): see DECK_SIDE."""
     aloft = np.zeros(len(points), dtype=bool)
     if scan_here is None or not len(points):
-        return aloft, aloft.copy()
+        return aloft, aloft.copy(), aloft.copy()
     _, hi = scan_here(points[:, :2], SCAN_REACH)
     with np.errstate(invalid="ignore"):
         aloft = points[:, 2] > hi + LEVELS
@@ -415,11 +425,28 @@ def _on_decks(points, bridges, scan_here, ends=()):
     if len(k) and len(bridges):
         decks = [shape.buffer(DECK_SIDE) for shape in bridges]
         decked[k[np.unique(STRtree(decks).query(shapely.points(points[k, :2]), predicate="intersects")[0])]] = True
+    at_end = np.zeros(len(points), dtype=bool)
     if len(ends) and decked.any():
         k = np.flatnonzero(decked)
         d, _ = cKDTree(np.asarray(ends, dtype=float)).query(points[k, :2])
-        decked[k[d < END_CLEAR]] = False
-    return aloft, decked
+        at_end[k[d < END_CLEAR]] = True
+        decked &= ~at_end
+    return aloft, decked, at_end
+
+
+def _carried(points, up, ground):
+    """Which of `points` (x, y, z: one surface's kerbs) are carried on a viaduct: the
+    ones `up` within CARRIED_GRADE (see there) of the nearest of the `ground` ones, or all
+    `up` with no `ground` to go by."""
+    out = np.zeros(len(points), dtype=bool)
+    if not up.any():
+        return out
+    if not ground.any():
+        out[up] = True
+        return out
+    d, j = cKDTree(points[ground, :2]).query(points[up, :2])
+    out[up] = np.abs(points[up, 2] - points[ground, 2][j]) <= np.maximum(CARRIED_LEAST, CARRIED_GRADE * d)
+    return out
 
 
 def _under_decks(tree, xy):
@@ -805,7 +832,8 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
     pts = points[:, :2]
     sunk, tunnelled = _sunk_in_tunnels(points, tunnels if sunk_kerbs else (), grid.shape, x_of, y_of, step)
     scan_here = _scan_local(scan, to_local) if scan_levels else None
-    aloft, decked = _on_decks(points, bridges, scan_here, bridge_ends)
+    aloft, decked, at_end = _on_decks(points, bridges, scan_here, bridge_ends)
+    over_any, carried_any = np.zeros(len(points), dtype=bool), np.zeros(len(points), dtype=bool)
     deck_tree = STRtree(list(bridges)) if scan_here is not None and len(bridges) else None
     end_tree = cKDTree(np.asarray(bridge_ends, dtype=float)) if scan_here is not None and len(bridge_ends) else None
 
@@ -868,13 +896,21 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         # above (see DECK_SIDE): the nearest of the others. (In a tunnel the underpass's
         # kerbs are its own.)
         inside = tunnelled[gj, gi]
-        for here, others in ((~inside, ~(sunk | decked)[own]), (inside, ~decked[own])):
+        up = (aloft & ~(sunk | decked | at_end))[own]
+        over = up & ~_carried(points[own], up, ~(aloft | sunk)[own])
+        over_any[own[over]] = True
+        carried_any[own[up & ~over]] = True
+        for here, others in ((~inside, ~(sunk | decked)[own] & ~over), (inside, ~decked[own] & ~over)):
             ours = np.flatnonzero(others)
             swap = here & (~others)[near].any(axis=1)
-            if not swap.any() or len(ours) < k:
+            if not swap.any() or not len(ours):
                 continue
-            d2, n2 = cKDTree(pts[own][ours]).query(xy[swap], k=k)
-            d[swap], near[swap] = d2.reshape(-1, k), ours[n2.reshape(-1, k)]
+            d2, n2 = cKDTree(pts[own][ours]).query(xy[swap], k=min(k, len(ours)))
+            d2, n2 = d2.reshape(int(swap.sum()), -1), n2.reshape(int(swap.sum()), -1)
+            # (Fewer than k left: the farthest of them counts again.)
+            d2 = np.pad(d2, ((0, 0), (0, k - d2.shape[1])), mode="edge")
+            n2 = np.pad(n2, ((0, 0), (0, k - n2.shape[1])), mode="edge")
+            d[swap], near[swap] = d2, ours[n2]
             counts["kerbs_skipped"] = counts.get("kerbs_skipped", 0) + int(swap.sum())
         wgt = 1.0 / (d * d + 0.25)
         # Two levels in one surface under one of the map's bridges (a junction over a
@@ -930,7 +966,8 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
     # its cross-section, not of the kerb points nearest it (see _level_across). Not
     # under a bridge (that's the ground below it), but right up to one: the street's
     # last metres before a bridge over a cutting kept the cutting's heights and sagged.
-    levelled_points = _level_across(grid, street & ~beneath, points[~(sunk | decked)], streets, x_of, y_of, step) if level_across else 0
+    over_kerbs = over_any & ~carried_any  # (a deck's over every surface that has them)
+    levelled_points = _level_across(grid, street & ~beneath, points[~(sunk | decked | over_kerbs)], streets, x_of, y_of, step) if level_across else 0
 
     # A street surveyed in an underpass is under the ground, not on it: where the map has
     # a tunnel and the survey is well below the terrain model, the terrain stays.
@@ -1318,7 +1355,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         if listed:
             outlines[(i, j)] = listed
     changed = ~np.isnan(bare) & (np.abs(grid - bare) > 0.05)
-    return {"survey_rejected_vertices": rejected, "off_scan": counts.get("off_scan", 0), "sunk_kerbs": int(sunk.sum()), "aloft": int(aloft.sum()), "deck_kerbs": int(decked.sum()), "kerbs_skipped": counts.get("kerbs_skipped", 0), "scan_lower": counts.get("scan_lower", 0), "scan_upper": counts.get("scan_upper", 0), **({"kept_aloft": counts["kept_aloft"]} if "kept_aloft" in counts else {}), "surfaces": surfaces, "street_points": street_points, "levelled_across": levelled_points, "two_levels": two_levels, "under_points": under, "feathered": feathered, "overhang_points": overhang, "water_points": int(wet.sum()), "water_levelled": levelled, "valley_points": valley, "bank_points": bank_points,
+    return {"survey_rejected_vertices": rejected, "off_scan": counts.get("off_scan", 0), "sunk_kerbs": int(sunk.sum()), "aloft": int(aloft.sum()), "deck_kerbs": int(decked.sum()), "over_kerbs": int(over_kerbs.sum()), "end_kerbs": int(at_end.sum()), "kerbs_skipped": counts.get("kerbs_skipped", 0), "scan_lower": counts.get("scan_lower", 0), "scan_upper": counts.get("scan_upper", 0), **({"kept_aloft": counts["kept_aloft"]} if "kept_aloft" in counts else {}), "surfaces": surfaces, "street_points": street_points, "levelled_across": levelled_points, "two_levels": two_levels, "under_points": under, "feathered": feathered, "overhang_points": overhang, "water_points": int(wet.sum()), "water_levelled": levelled, "valley_points": valley, "bank_points": bank_points,
             "kept_by_hand": kept, "cut_streets": cuts, "retaining_walls": len(strips) - cuts, "retaining_metres": round(wall_length), "terrace_off_streets_m2": round(off_streets), "wall_points": wall_points, "lone_points": lone_points,
             "changed": int(changed.sum()), "mean_change": float(np.abs(grid - bare)[changed].mean()) if changed.any() else 0.0,
             "labels": labels, "terraces": outlines}

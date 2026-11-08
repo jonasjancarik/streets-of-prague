@@ -230,19 +230,19 @@ class DeckKerbTests(unittest.TestCase):
         self.assertGreater(out['deck_kerbs'], 0)
         self.assertAlmostEqual(float(after[8, 8]), 200.0, delta=0.3)
 
-    def test_the_lidar_picks_one_of_two_levels_without_a_bridge(self):
+    def test_without_a_bridge_the_deck_s_kerbs_are_still_a_deck_s(self):
         before, _ = self.build((), scan=False)
         after, out = self.build((), scan=True)
         self.assertGreater(before[8, 7], 201.0)  # (28, 32): the two levels averaged
         self.assertEqual(out['deck_kerbs'], 0)
-        self.assertGreater(out['scan_lower'], 0)
+        self.assertGreater(out['over_kerbs'], 0)
         self.assertAlmostEqual(float(after[8, 7]), 200.0, delta=0.3)
 
-    def test_past_a_bridge_s_end_the_scan_leaves_the_upper_level(self):
-        # The bridge ends 4 m short of (32, 32): the street on from it is on the viaduct
-        # the scan doesn't see (Hlávkův most's north end).
+    def test_past_the_end_the_map_gives_a_bridge_its_deck_is_still_over_the_road(self):
+        # The bridge ends 4 m short of (32, 32), and the deck's kerbs past its end are as
+        # far over the road's as the others.
         after, _ = self.build([box(30, 0, 34, 28)], scan=True)
-        self.assertGreater(float(after[8, 8]), 207.0)
+        self.assertAlmostEqual(float(after[8, 8]), 200.0, delta=0.3)
 
     def test_a_bridge_s_last_metres_keep_its_deck_kerbs(self):
         # The bridge comes down to the ground at (32, 2), the deck's kerbs (28, 2) and
@@ -253,6 +253,31 @@ class DeckKerbTests(unittest.TestCase):
         self.assertLess(float(before[1, 8]), 201.0)  # (32, 4)
         self.assertGreater(float(after[1, 8]), 207.0)
         self.assertAlmostEqual(float(after[8, 8]), 200.0, delta=0.3)  # (32, 32)
+
+    def test_a_deck_the_map_does_not_draw_is_not_the_street_s_height(self):
+        # The railway over Čuprova: a deck surveyed as ground over the street, its edges
+        # across it cutting the street's surface in three, and no bridge in the map.
+        tiles = {(0, 0): np.full((17, 17), 200.0, dtype=np.float32)}
+        lines = [[(2, y, 200), (62, y, 200)] for y in (20, 44)] + [[(x, 20, 209), (x, 44, 209)] for x in (28, 36)]
+        polys = [box(2, 20, 28, 44), box(28, 20, 36, 44), box(36, 20, 62, 44)]
+        flat = lambda xs, ys, reach: (np.full(len(xs), 200.0, dtype=np.float32), np.full(len(xs), 200.0, dtype=np.float32))  # noqa: E731
+        for scan in (None, flat):
+            with patch.object(dh, 'survey', return_value=(polys, [np.array(c, float) for c in lines], [])):
+                dh.apply('test', None, Identity(), tiles, 16, 4.0, 0, 0, None, {(0, 0): box(0, 0, 64, 64)}, scan=scan, level_across=False)
+            if scan is None:
+                self.assertGreater(float(tiles[0, 0][8, 8]), 207.0)  # (32, 32)
+                tiles[0, 0] = np.full((17, 17), 200.0, dtype=np.float32)
+        self.assertAlmostEqual(float(tiles[0, 0][8, 8]), 200.0, delta=0.3)
+
+    def test_a_street_climbing_onto_a_viaduct_the_map_does_not_draw_keeps_its_kerbs(self):
+        # Its kerbs rise from 200 m to 206 m, 10 %, and leave the scan (200 m) at x = 32.
+        tiles = {(0, 0): np.full((17, 17), 200.0, dtype=np.float32)}
+        lines = [[(2, y, 200), (62, y, 206)] for y in (20, 44)]
+        flat = lambda xs, ys, reach: (np.full(len(xs), 200.0, dtype=np.float32), np.full(len(xs), 200.0, dtype=np.float32))  # noqa: E731
+        with patch.object(dh, 'survey', return_value=([box(2, 20, 62, 44)], [np.array(c, float) for c in lines], [])):
+            out = dh.apply('test', None, Identity(), tiles, 16, 4.0, 0, 0, None, {(0, 0): box(0, 0, 64, 64)}, scan=flat, level_across=False)
+        self.assertEqual(out['over_kerbs'], 0)
+        self.assertGreater(float(tiles[0, 0][8, 14]), 204.5)  # (56, 32): 205.4 m on the survey
 
     def test_a_bridge_s_ends_are_where_no_other_bridge_way_goes_on(self):
         ends = dh.bridge_ends([LineString([(0, 0), (10, 0)]), LineString([(10, 0), (30, 0)]), LineString([(20, 0), (20, 15)])])
