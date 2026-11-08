@@ -1550,3 +1550,54 @@ and those by the walls the height check spoiled 63–135 m².
 
 The game shows the map at `?area=centrum`, and `&lines=off` leaves the step lines out. `?countryside` still writes decimetres and
 doesn't go with a centimetre map.
+
+## Roads against the LiDAR: the measure (8 November 2026)
+
+Step 1 of [the plan](road-plan.md). Two dips players found on 8 November, at Na Veselí
+and náměstí Hrdinů (the kerbs of the underpass below pulling the street down, fixed the
+same day), had passed the street check: their worst steps were 0.36 and 0.13 m, since
+no single metre jumped much. `check-road-flatness.mjs` now also:
+
+- walks lines along each street 1 m apart across it, and measures each line's height
+  against its chord 2, 5 and 12 m either side ("waves");
+- compares every line every 2 m with IPR's 2023 bare-earth LiDAR, for streets on the
+  ground and not under a bridge, and leaves out stretches on a deck in IPR's bridge
+  model that OSM doesn't call a bridge (the bare-earth scan is the ground under them);
+- lists `scripts/road-places.json` by name.
+
+On the map from before the fix, the dip at Na Veselí was 6.05 m under the LiDAR and a
+2.85 m wave; náměstí Hrdinů 2.11 m under it.
+
+**How wavy real streets are.** Along the middle lines of 4,345 km of car streets on the
+ground, the LiDAR's own waves are under 4, 9 and 24 cm (2, 5 and 12 m either side) at
+99 % of points. The flags (0.1, 0.2 and 0.5 m) are where the real road is 0.2 % of the
+time; the map is over them on 1.0, 2.1 and 1.8 % of its line metres.
+
+**Today's map** (built 19:45 on 8 November, with the fix): 86.7 % of carriageway
+samples within 0.3 m of the LiDAR, 1.29 % more than 1 m off, the middle offset +0.02 m.
+Streets whose worst sample is more than 1 m off: 2,220 with no bridge, tunnel or wall's
+terrace within 15 m, 367 by a bridge or tunnel, 82 by a wall's terrace. Beside a
+structure the offsets are larger: 257 of its 1,389 streets are more than 2 m off and
+111 more than 5 m, against 453 and 70 of the 41,000 with nothing beside them. The kinds found
+so far:
+
+- **A bridge's deck kerbs surveyed as ground, in the ground under it.** The D0 in its
+  cutting under the bridge of Na Radosti (50.0530, 14.2764): the overpass's kerbs at
+  396 m, the motorway's at 387 m, one surveyed surface; within 6 m of a bridge the upper
+  of two levels counts (`UNDER_BRIDGE`), so the motorway had a hump 8 m high under the
+  overpass.
+- **A railway bridge's deck in the ground.** Čuprova under the railway in Vysočany
+  (50.1087, 14.4808): survey lines with vertices at 210 m (the rail deck), 192 m (the
+  street, where the LiDAR is) and 187.6 m (the Rokytka's culvert below), and the street
+  over a hump 17 m high. The map has no bridge there: OSM tags the rail ways
+  `bridge=yes`, with no outline, and the terrain only knows highway bridges and
+  outlines. 24 streets more than 2 m off are under a railway bridge.
+- **Roads on a viaduct OSM calls ground.** Most of the map-over-LiDAR offsets beside
+  bridges and on motorway ramps: the bare-earth scan is the ground under the deck, and
+  the street is rightly up on it. IPR's bridge model has a deck at the street's height
+  at many of them, and the check leaves those out.
+- **Made-up land past IPR's terrain model.** Road 4 at 49.9426, 14.3677: 1.3 km of it
+  14–15 m under the LiDAR, which covers it.
+
+Reports: `docs/evidence/road-plan/report-beta.*` (the map from 7 November) and
+`report-now.*`.

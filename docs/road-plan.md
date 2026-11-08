@@ -261,7 +261,9 @@ Ask first:
   metres each way), compares every line every 2 m with the LiDAR
   (`pipeline/scan_heights.py`), sorts each street's worst LiDAR offset by what's beside
   it (a bridge or tunnel within 15 m, a wall's terrace, neither), and lists
-  `scripts/road-places.json`. The index records the terrain's options. `praha` takes
+  `scripts/road-places.json`. Stretches on a deck in IPR's bridge model that OSM doesn't
+  call a bridge are left out of the LiDAR comparison (the bare-earth scan is the ground
+  under them). The index records the terrain's options. `praha` takes
   1.5–2 minutes: the road outlines are tested as half-metre masks now (`--exact` for
   the polygons), nine times faster, within a quarter of a metre of an outline.
   - **Thresholds** from the real roads: along the middle lines of 4,345 km of streets
@@ -269,11 +271,11 @@ Ask first:
     at 99 % of points, and over the flags (0.1, 0.2, 0.5 m) at 0.2 %. The map is over
     them at 1.0, 2.1 and 1.8 % of line metres: six to ten times the real road.
   - **Baseline**, the beta's map before the fix (built 7 Nov) → today's map:
-    86.6 → 86.7 % of carriageway within 0.3 m of the LiDAR (target 95 %), 1.33 →
-    1.32 % more than 1 m off; middle offset +0.02 m (the conversion is right).
-    Streets whose worst is more than 1 m off: 2,226 with nothing beside them, 385 by
-    a bridge or tunnel (273 over 2 m, 115 over 5 m: most of the big ones), 82 by a
-    wall's terrace. Reports: `docs/evidence/road-plan/report-{beta,now}.{txt,json}`.
+    86.7 → 86.7 % of carriageway within 0.3 m of the LiDAR (target 95 %), 1.30 →
+    1.29 % more than 1 m off; middle offset +0.02 m (the conversion is right).
+    Streets whose worst is more than 1 m off: 2,220 with nothing beside them, 379 →
+    367 by a bridge or tunnel (257 over 2 m, 111 over 5 m: most of the big ones), 82
+    by a wall's terrace. Reports: `docs/evidence/road-plan/report-{beta,now}.{txt,json}`.
   - **The dips** on the old map: Na Veselí −6.05 m off the LiDAR and 2.85 m waves (its
     worst step was 0.36 m, which is why the old check missed it), náměstí Hrdinů
     −2.11 m. On today's map 1.27 and 0.35 m.
