@@ -2847,6 +2847,8 @@ async function main() {
     season: { set: (when) => { const day = parseDay(when); if (!day) throw new Error(`A season's name, MM-DD or a day of the year, not ${when}`); season.set(day); }, date: () => season.date },
   });
   window.__test = testkit;
+  // ?fps starts in first person, as the developer panel's First person box does.
+  if (params.has('fps')) testkit.eyes = { yaw: 0, pitch: 0 };
   dev.attach(testkit);
   // A fixed target altitude keeps before/after terrain views on the same camera.
   const shot = params.get('camera')?.split(',').map(Number);
