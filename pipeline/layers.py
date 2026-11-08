@@ -607,6 +607,10 @@ def put_together(area: str, strict=False) -> dict:
         index["iprRef"] = ipr["iprRef"]
     if terrain:
         index["terrain"] = terrain["index"]
+        # Which of ipr_terrain.py's options made it, so a road report can say what it
+        # measured (a directory by its last part only: the index is public).
+        index["terrainOptions"] = {k: Path(v).name if isinstance(v, str) else v
+                                   for k, v in (terrain.get("options") or {}).items() if v not in (False, None)}
     keys = {f"{i}_{j}" for i, j, *_ in listed}
     for name, layer in (("ipr_buildings", ipr), ("ipr_terrain", terrain)):
         if layer and keys - set(layer["made_for"]):
