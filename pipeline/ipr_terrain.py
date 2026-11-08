@@ -364,6 +364,8 @@ def main() -> None:
     ap.add_argument("--survey-companion-decks", action="store_true",
                     help="trial: use the DTM to add a second carriageway on a bridge already identified above a cutting")
     ap.add_argument("--step", type=float, default=STEP, help="prototype: the lattice's step in metres, roughly (the default about 4)")
+    ap.add_argument("--lidar-window", type=int, default=1, metavar="N",
+                    help="prototype: each lattice point takes the median of N × N of the LiDAR's 1 m cells round it (1: the scan at the point)")
     ap.add_argument("--lidar-ground", action="store_true",
                     help="prototype: the LiDAR is the ground and the survey only says where the walls, streets and water are; heights in centimetres")
     ap.add_argument("--step-lines", action="store_true",
@@ -404,6 +406,8 @@ def main() -> None:
         options["step"] = args.step
     if args.lidar_ground:
         options["lidar_ground"] = True
+    if args.lidar_window > 1:
+        options["lidar_window"] = args.lidar_window
     if args.step_lines:
         options["step_lines"] = True
     inputs = layers.stage_inputs(area, "terrain", options, meta)
@@ -430,6 +434,7 @@ def main() -> None:
     if args.ipr_lidar:
         try:
             lidar_at, lidar_source = ipr_lidar.sampler(options["ipr_lidar"], local)
+            lattice_at = ipr_lidar.sampler(options["ipr_lidar"], local, args.lidar_window)[0] if args.lidar_window > 1 else lidar_at
         except ValueError as exc:
             ap.exit(1, f"{exc}\n")
     timings.lap("prepare_downloads")
@@ -489,7 +494,7 @@ def main() -> None:
         for (i, j), arr in tiles.items():
             # Use integer lattice indices so adjacent tiles query the same shared points.
             xs, ys = np.meshgrid(gx0 + (i * N + offsets) * step, gy0 + (j * N + offsets) * step)
-            h = lidar_at(xs, ys)
+            h = lattice_at(xs, ys)
             valid = np.isfinite(h)
             if valid.any():
                 arr[valid] = h[valid]
@@ -607,8 +612,11 @@ def main() -> None:
     # 1 water, 2 and up the tile's terraces. A bank or a retaining wall is a step in the
     # ground: the game reads the height by one from the points with the same label alone.
     plain = np.zeros((N + 1, N + 1), dtype=np.uint8)
-    # (Decimetres; centimetres with --lidar-ground, whose lattice is fine enough to show them.)
-    unit = 0.01 if args.lidar_ground else 0.1
+    # (Decimetres; centimetres with --lidar-ground on a lattice under 3 m. On a 4 m one
+    # they add nothing: with the LiDAR through it, 0.30 % of the street middle lines'
+    # metres have a wave over 0.1 m within 2 m in decimetres and 0.29 % in centimetres,
+    # and the heights take twice the room.)
+    unit = 0.01 if args.lidar_ground and step < 3 else 0.1
     encode = lambda a, label: np.clip(np.round((a - 100) / unit), 0, 65535).astype("<u2").tobytes() + label.astype(np.uint8).tobytes()  # noqa: E731
     # The structures' heights to the centimetre (decimetres would step along a deck).
     fine = lambda a: np.clip(np.round((np.nan_to_num(a, nan=100.0) - 100) * 100), 0, 65535).astype("<u2").tobytes()  # noqa: E731

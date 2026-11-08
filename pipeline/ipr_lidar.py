@@ -11,6 +11,7 @@ import math
 import os
 import shutil
 import tempfile
+import warnings
 import zipfile
 from pathlib import Path
 
@@ -187,9 +188,13 @@ def _open(directory):
     return heights, origin, {**SOURCE, "archiveSha256": metadata["archiveSha256"]}
 
 
-def sampler(directory, local):
-    """Return the sampler and source record for the verified, memory-mapped raster."""
+def sampler(directory, local, window=1):
+    """Return the sampler and source record for the verified, memory-mapped raster.
+    With `window` over 1, each point takes the median of window × window of the scan's
+    1 m cells round it, not the scan at the point: for a lattice coarser than the scan,
+    so a kerb, a wall's foot or a hedge inside a cell isn't the whole cell's height."""
     heights, origin, source = _open(directory)
+    offsets = (np.arange(window) - (window - 1) / 2) * 1.0
 
     # Match ipr_buildings.krovak_to_local in reverse: converting directly from
     # the datum-less local projection would omit the Czech datum shift.
@@ -200,7 +205,13 @@ def sampler(directory, local):
     def at(xs, ys):
         lon, lat = local_to_wgs.transform(xs, ys)
         kx, ky = krovak_to_wgs.transform(lon, lat, direction=TransformDirection.INVERSE)
-        return sample_projected(heights, origin, kx, ky)
+        if window <= 1:
+            return sample_projected(heights, origin, kx, ky)
+        kx, ky = np.asarray(kx, float), np.asarray(ky, float)
+        around = np.stack([sample_projected(heights, origin, kx + dx, ky + dy) for dx in offsets for dy in offsets])
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)  # (all NaN off the scan)
+            return np.nanmedian(around, axis=0).astype(np.float32)
 
     return at, source
 

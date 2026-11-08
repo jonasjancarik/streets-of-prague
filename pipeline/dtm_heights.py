@@ -158,9 +158,9 @@ UNDER_BRIDGE = 6.0  # m round a bridge that count as under it (how far its deck'
 # past its ends) more than LEVELS below the highest surveyed point within SUNK_ROUND is
 # the underpass's; no lattice point outside the tunnels takes it.
 SUNK_ROUND = 20.0  # m
-# With the LiDAR as the ground (`sharp`), a street surveyed this far above the scan
-# keeps the survey, mixed in from ALOFT_FROM (see where it's used).
-ALOFT_FROM, ALOFT_TO = 0.5, 1.5  # m
+# With the LiDAR as the ground (`sharp`), a street point surveyed more than ALOFT_FROM
+# over the scan mixes in the survey, all of it from ALOFT_TO (see where it's used).
+ALOFT_FROM, ALOFT_TO = 2.0, 3.0  # m
 # The 2023 LiDAR decides between two levels. The bare-earth scan has the ground and no
 # bridges, so a surveyed point more than LEVELS above the highest the scan has within
 # SCAN_REACH is up on something (`aloft`). Inside one of the map's bridges (DECK_SIDE
@@ -954,11 +954,18 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
     if sharp:
         # The scan is bare earth. Under a bridge or viaduct the map doesn't draw as one
         # (the ramps of Pražský okruh at Černý Most, 11 m up) it's the ground below, and
-        # the survey's street is well above it: there the street keeps the survey. Within
-        # ALOFT_FROM of the scan it's the scan's, and in between a mix, so the road
-        # doesn't step where the two part.
+        # the street surveyed on it keeps the survey, from ALOFT_FROM over the scan: its
+        # kerbs are `carried` (see CARRIED_GRADE), and so are a bridge's last metres
+        # (END_CLEAR). A deck's kerbs over a street are out of its surface, which then
+        # comes down to the scan. (Keeping the survey wherever it was more than half a
+        # metre over the scan, deck kerbs and all, kept the survey's own error: 1.5 million
+        # points on the 2 m lattice, and steps over 1 m on 108 streets instead of 27.)
+        # Under one of the map's bridges the scan can't see the street and fills in
+        # under the deck: there it's the survey's (the D0 in its cutting under Na
+        # Radosti had a bump of 1.7 m with the scan's).
         lift = np.nan_to_num(grid[street] - bare[street], nan=0.0)
         mix = np.clip((lift - ALOFT_FROM) / (ALOFT_TO - ALOFT_FROM), 0.0, 1.0)
+        mix[beneath[street]] = 1.0
         grid[street] = bare[street] + mix * lift
         counts["kept_aloft"] = int((mix > 0).sum())
 

@@ -346,20 +346,25 @@ class WaterLevelTests(unittest.TestCase):
         assert lowered == 40 and out[4:6, 40:60].max() < 5.5
 
 
-if __name__ == '__main__':
-    unittest.main()
-
-
 class LidarGroundTests(unittest.TestCase):
     """The LiDAR as the ground (`sharp`): the scan is bare earth, 200 m everywhere, and
-    one street surveyed across the whole square, its kerbs along y = 20 and y = 44."""
+    one street surveyed along y = 32, its kerbs along y = 20 and y = 44, from x = 2 at
+    `west` to x = 62 at `east` (m)."""
 
-    def build(self, kerbs):
+    def build(self, west, east=None, deck=None, bridges=()):
+        east = west if east is None else east
         tiles = {(0, 0): np.full((17, 17), 200.0, dtype=np.float32)}
         boxes = {(0, 0): box(0, 0, 64, 64)}
-        lines = [[(2, 20, kerbs), (62, 20, kerbs)], [(2, 44, kerbs), (62, 44, kerbs)]]
-        with patch.object(dh, 'survey', return_value=([box(2, 2, 62, 62)], [np.array(c, float) for c in lines], [])):
-            dh.apply('test', None, Identity(), tiles, 16, 4.0, 0, 0, None, boxes, sharp=True)
+        lines = [[(2, y, west), (62, y, east)] for y in (20, 44)]
+        polys = [box(2, 20, 62, 44)]
+        if deck:
+            # A bridge's deck over the street at `deck`, surveyed as ground: its two edges
+            # across the street cut the street's surface in three, as in the survey.
+            lines += [[(x, 20, deck), (x, 44, deck)] for x in (28, 36)]
+            polys = [box(2, 20, 28, 44), box(28, 20, 36, 44), box(36, 20, 62, 44)]
+        flat = lambda xs, ys, reach: (np.full(len(xs), 200.0, dtype=np.float32), np.full(len(xs), 200.0, dtype=np.float32))  # noqa: E731
+        with patch.object(dh, 'survey', return_value=(polys, [np.array(c, float) for c in lines], [])):
+            dh.apply('test', None, Identity(), tiles, 16, 4.0, 0, 0, None, boxes, sharp=True, scan=flat, bridges=bridges)
         return tiles[0, 0]
 
     def test_a_street_near_the_scan_is_the_scan(self):
@@ -368,7 +373,26 @@ class LidarGroundTests(unittest.TestCase):
     def test_a_street_on_a_viaduct_the_map_does_not_draw_keeps_the_survey(self):
         self.assertAlmostEqual(float(self.build(209.0)[8, 8]), 209.0, delta=0.01)
 
-    def test_in_between_it_is_a_mix(self):
-        h = float(self.build(201.0)[8, 8])
-        self.assertGreater(h, 200.2)
-        self.assertLess(h, 200.8)
+    def test_a_street_climbing_onto_one_keeps_the_survey_up_there(self):
+        # Its kerbs leave the scan at x = 22 and carry on at the street's grade, 15 %.
+        h = self.build(200.0, 209.0)
+        self.assertGreater(float(h[8, 8]), 204.0)
+        self.assertAlmostEqual(float(h[8, 2]), 200.0, delta=0.01)
+
+    def test_a_little_over_the_scan_it_is_a_mix(self):
+        h = float(self.build(202.5)[8, 8])
+        self.assertGreater(h, 200.5)
+        self.assertLess(h, 202.0)
+
+    def test_under_one_of_the_map_s_bridges_the_street_is_the_survey_s(self):
+        # The scan fills in under the deck at 200 m, over a road 1.5 m lower.
+        self.assertAlmostEqual(float(self.build(198.5)[8, 8]), 200.0, delta=0.01)
+        self.assertAlmostEqual(float(self.build(198.5, bridges=[box(0, 0, 64, 64)])[8, 8]), 198.5, delta=0.01)
+
+    def test_a_deck_s_kerbs_over_a_street_are_not_its_height(self):
+        # (The railway over Čuprova.)
+        self.assertAlmostEqual(float(self.build(200.0, deck=209.0)[8, 8]), 200.0, delta=0.01)
+
+
+if __name__ == '__main__':
+    unittest.main()
