@@ -284,3 +284,55 @@ Ask first:
     49.9426, 14.3677 15 m under it for 1–2 km, Dobříšská's north end 7 m over,
     Kongresová 6 m under, náměstí Míru 4 m over, the side street at náměstí Hrdinů
     4 m over (a wall's terrace reaching onto it).
+- 8 November 2026, step 2 started: the LiDAR decides where the survey has two levels,
+  as rules in `dtm_heights.py` rather than a file of decisions (the evidence agreed at
+  every place looked at, so the script decides; a file is still the way for places it
+  can't). All on `praha` with `--step-lines`, against today's map.
+  - **A bridge's deck kerbs out of the ground** (4238a983): a surveyed point more than
+    3 m over the highest the LiDAR has within 2 m is up on something; inside one of the
+    map's bridges it's the deck's, and no lattice point takes it. And where a lattice
+    point's nearest kerbs are on two levels, the LiDAR picks the one it agrees with. The
+    D0 under Na Radosti lost its 8 m hump (its slip road's bump 3.64 → 0.23 m); bumps
+    over 0.5 m 510 → 482, waves over 0.3 m within 2 m 1,739 → 1,703, streets more than
+    1 m off the LiDAR beside a structure 367 → 331. But 8 bridge joins got worse by more
+    than half a metre, two of them 7 m.
+  - **A bridge's last metres** (57b7f2ef): OSM ends bridges a few metres short of their
+    abutments, and the bridge's end takes the ground's height there. Kerbs within 6 m
+    of where a bridge comes down to the ground stay the street's. Joins worse by more
+    than half a metre: 8 → 2; Malovanka's slip road 7.08 → 0.22 m, Hlávkův most's north
+    footway 6.03 → 0.03 m. (Keeping the LiDAR from picking the lower level within 25 m
+    of a bridge, tried first, changed none of the joins.)
+  - **Decks the map doesn't draw** (5dae8174): outside the map's bridges a kerb up on
+    something is the street's own where it carries on from the street's other kerbs at
+    a street's grade (a viaduct the map calls ground), and a deck's over the street where
+    it doesn't. Čuprova under the railway: bump 2.1 → 0.28 m; Na Žertvách 5.27 →
+    0.32 m; Na Botiči's step 1.84 → 0.18 m. Steps over 1 m 14 → 12, bumps 471, ridges
+    over 1 m 139 → 103, waves over 0.3 m within 2 m 1,686, streets more than 1 m off
+    the LiDAR beside a structure 321; no bridge join changed.
+  - Left for step 2: Ohrobecké údolí (6.7 m) and Železničářů (3.8 m), bridges' pads
+    across a street; nábřeží Edvarda Beneše (5.4 m) and Kapitána Jaroše (3.2 m); the
+    footway at 50.1024, 14.5723 (0.05 → 2.87 m since 4238a983); V Kuťatech, a 7 m bridge
+    whose deck kerbs all lie within 6 m of its ends (6.22 m, as today).
+- 9 November 2026, step 3 measured, not finished. `praha` with the LiDAR as the ground
+  (`--ipr-lidar .cache/ipr_lidar/2023 --lidar-ground --lidar-window 4 --step-lines`, on
+  today's 4 m lattice, each point the median of the scan's 4 × 4 metres), against
+  today's map:
+  - **Streets:** bumps over 0.5 m 510 → 295, waves over 0.3 m within 2 m 1,739 → 994,
+    over 1.5 m within 12 m 684 → 467, leaning over 15 % 2,883 → 1,999, twisting over 12 %
+    2,322 → 1,289; steps over 1 m 14 → 17 (Chotkova 4.4 m, nábřeží Edvarda Beneše 3.9 m,
+    Ryšavého's walls).
+  - **Bridges and the river are worse:** 112 joins worse by more than half a metre, 92
+    better (Jižní spojka 0.18 → 5.01 m; Mánesův most 1.35 → 0.24 m, Palackého most 2.02
+    → 1.84 m); the D0's slip road under Na Radosti has a bump of 1.8 m again; a deck
+    1.57 m into the river (today 0.59 m) and a new step in the water at tile 60_67. The
+    bridges take their ends' heights from the ground (`structures.py`), and with the
+    LiDAR that's the bare earth under a deck's last metres.
+  - **Cost:** the heights 29.6 MB against 27.0 MB (decimetres: centimetres added
+    nothing on a 4 m lattice and doubled them). The lattice, the meshes and the tiles
+    are the same size, so the frame time shouldn't move; not benchmarked yet. A 2 m
+    lattice would be about as smooth as the scan itself (0.17 % of line metres over
+    the 2 m wave flag, against 0.29 % on 4 m), but its heights were 205 MB.
+  - **Recommendation:** the LiDAR on today's 4 m lattice, once the bridges read the
+    street's height at their ends instead of the bare earth, and the river's decks
+    and steps are as good as today's. Not before: today's survey map with step 2's
+    rules has the bridges right.

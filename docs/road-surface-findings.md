@@ -1601,3 +1601,48 @@ so far:
 
 Reports: `docs/evidence/road-plan/report-beta.*` (the map from 7 November) and
 `report-now.*`.
+
+## Two levels, and the LiDAR as the ground (8–9 November 2026)
+
+Steps 2 and 3 of [the plan](road-plan.md); the numbers are in its "Progress".
+
+**What the survey does at a bridge.** The technical map surveys a bridge's deck as
+ground, often on the same surface as the road under it: at Malovanka two surfaces of
+5,000 m² each hold kerbs at 266.9 m (the road down to the tunnel) and 274.1 m (the
+slip road on the bridge). IPR's 2023 bare-earth LiDAR has no bridges, so a kerb more
+than 3 m over the highest the scan has within 2 m is up on something, and the scan
+says which of two levels a road is on. Three kinds turned up:
+
+- **A deck over the road** (the D0 under Na Radosti, Čuprova under the railway, the
+  elevated road over Sokolovská): the deck's kerbs are metres over the road's beside
+  them (Čuprova: 18 m over kerbs 8 m away). They're out of the road's surface, whether
+  the map draws the bridge or not.
+- **A street on a viaduct the map calls ground** (Pražský okruh's overpass at Černý
+  Most, the ramps up to Hlávkův most and Jižní spojka): its kerbs carry on from the
+  street's others at a street's grade, and stay. Telling these from decks by a
+  surface's share of kerbs aloft fails both ways: Čuprova's pieces under the railway
+  are up to 55 % deck kerbs, and the overpass is 7 % of a surface of 10 ha.
+- **A bridge's last metres.** OSM ends bridges a few metres short of their abutments.
+  Along Malovanka's slip road the LiDAR reads 276.3 m at the top, 268–269 m (the road
+  below) under the deck, 270 m at OSM's end and 273.7 m 5 m past it, where the street is
+  on the ground again. A bridge's end takes the ground's height at its last node, so
+  the deck's kerbs there are the street's: without them the end came out on the road
+  below, the deck went level (a bridge way that steep is taken for a mistake) and met
+  its street 7 m up.
+
+**The LiDAR as the ground, on today's lattice.** A 4 m lattice of point samples is
+twice as wavy along the streets as the scan (0.37 % of line metres over the 0.1 m flag
+within 2 m, the scan 0.17 %); the median of the scan's 4 × 4 metres round each point
+takes it to 0.29 %, and a 2 m lattice to 0.17 %. Centimetres add nothing on 4 m (0.30 %
+in decimetres). With step 2's rules underneath, the 4 m map nearly halves bumps,
+waves and twisting, but it breaks bridges where the survey map has them right: the
+bridge solve (`structures.py`) takes a bridge's ends from the ground, and the LiDAR's
+ground at a deck's last metres is the bare earth under it. Under a deck the scan
+can't see the road at all and fills in across it (the D0's slip road, a bump of 1.8 m
+with the scan's heights), so under the map's bridges the street keeps the survey; that
+alone didn't take the bump away (not looked into yet: perhaps the fill-in reaches past
+the outline OSM gives the bridge).
+
+Reports: `docs/evidence/road-plan/{report,decks,edges,river}-{scanlevels2,ends,over,lidar4mc,lidar4mv6}.*`
+(local). The builds: `ipr_terrain.py praha --step-lines`, and for the LiDAR
+`--ipr-lidar .cache/ipr_lidar/2023 --lidar-ground --lidar-window 4 --step-lines`.

@@ -195,6 +195,17 @@ steeper than VALLEY anywhere, which took steps over 1 m from 71 to 38.
   pit 3 m deep. Within 6 m of a bridge, where a lattice point's nearest surveyed points
   are more than 3 m apart in height, the upper ones count (`LEVELS`, `UNDER_BRIDGE`).
   Everywhere, it moved 78,000 points and added 20 steps.
+- Since November 2026 the LiDAR decides (`aloft`, `DECK_SIDE` in `dtm_heights.py`): a
+  kerb more than 3 m over the highest the bare-earth scan has within 2 m is up on
+  something. Inside one of the map's bridges it's the deck's and no lattice point takes
+  it (the D0 under Na Radosti had a hump 8 m high); outside them it's the street's own
+  where it carries on from the street's other kerbs at a street's grade (a viaduct the
+  map calls ground) and a deck's where it doesn't (the railway over Čuprova, which the
+  map doesn't draw). Within 6 m of where a bridge comes down to the ground it's the
+  street's (`END_CLEAR`): OSM ends bridges a few metres short of their abutments, a
+  bridge's end takes the ground's height at its last node, and without the deck's
+  kerbs there Malovanka's slip road met its street 7 m up. Where a lattice point's
+  nearest kerbs are on two levels, the scan picks the one it agrees with.
 - A path down a bank is narrower than the lattice, so only a point here and there took
   the survey's height and the slope came out in teeth. The ground within 14 m of a
   surveyed street now moves with it (`FEATHER`); `--no-feather` to compare.
