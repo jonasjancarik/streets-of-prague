@@ -9,6 +9,8 @@ read_when:
 
 # Road surfaces: findings, fixes and further research
 
+What comes next, in order, is in [the plan for roads without breaks](road-plan.md).
+
 Work of 5 November 2026 on branch `flat-roads` (worktree with cloned data). The
 user's complaint: street surfaces "not flat, broken up a lot", then a wall across
 5. května and a dip at náměstí Hrdinů, then a broken patch on 5. května by
