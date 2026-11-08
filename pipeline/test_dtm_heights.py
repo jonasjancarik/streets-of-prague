@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import numpy as np
 import shapely
-from shapely.geometry import MultiLineString, box
+from shapely.geometry import LineString, MultiLineString, box
 import dtm_heights as dh
 
 
@@ -210,7 +210,7 @@ class DeckKerbTests(unittest.TestCase):
     kerbs at 209 m along x = 28 and x = 36, surveyed as ground. The LiDAR has no bridges:
     200 m everywhere."""
 
-    def build(self, bridges, scan):
+    def build(self, bridges, scan, ends=()):
         bare = np.full((17, 17), 200.0, dtype=np.float32)
         tiles = {(0, 0): bare.copy()}
         boxes = {(0, 0): box(0, 0, 64, 64)}
@@ -219,7 +219,7 @@ class DeckKerbTests(unittest.TestCase):
         flat = lambda xs, ys, reach: (np.full(len(xs), 200.0, dtype=np.float32), np.full(len(xs), 200.0, dtype=np.float32))  # noqa: E731
         with patch.object(dh, 'survey', return_value=([box(2, 2, 62, 62)], [np.array(c, float) for c in lines], [])):
             out = dh.apply('test', None, Identity(), tiles, 16, 4.0, 0, 0, None, boxes, bridges=bridges,
-                           scan=flat if scan else None, level_across=False)
+                           scan=flat if scan else None, level_across=False, bridge_ends=ends)
         return tiles[0, 0], out
 
     def test_the_road_under_a_bridge_takes_no_kerbs_of_its_deck(self):
@@ -243,6 +243,20 @@ class DeckKerbTests(unittest.TestCase):
         # the scan doesn't see (Hlávkův most's north end).
         after, _ = self.build([box(30, 0, 34, 28)], scan=True)
         self.assertGreater(float(after[8, 8]), 207.0)
+
+    def test_a_bridge_s_last_metres_keep_its_deck_kerbs(self):
+        # The bridge comes down to the ground at (32, 2), the deck's kerbs (28, 2) and
+        # (36, 2) 4.5 m from it: the street's on from the bridge (Malovanka's slip road).
+        # The road under the middle of the bridge still takes none of them.
+        before, _ = self.build([box(30, 0, 34, 64)], scan=True)
+        after, out = self.build([box(30, 0, 34, 64)], scan=True, ends=[(32, 2)])
+        self.assertLess(float(before[1, 8]), 201.0)  # (32, 4)
+        self.assertGreater(float(after[1, 8]), 207.0)
+        self.assertAlmostEqual(float(after[8, 8]), 200.0, delta=0.3)  # (32, 32)
+
+    def test_a_bridge_s_ends_are_where_no_other_bridge_way_goes_on(self):
+        ends = dh.bridge_ends([LineString([(0, 0), (10, 0)]), LineString([(10, 0), (30, 0)]), LineString([(20, 0), (20, 15)])])
+        self.assertEqual(sorted(map(tuple, ends.tolist())), [(0.0, 0.0), (20.0, 15.0), (30.0, 0.0)])
 
 
 def _river(length=200, width=12):

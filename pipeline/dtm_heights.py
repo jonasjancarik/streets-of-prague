@@ -172,10 +172,17 @@ ALOFT_FROM, ALOFT_TO = 0.5, 1.5  # m
 # drawn as streets on the ground and surveyed on the viaduct, and the street needs
 # them.) And where a lattice point's nearest surveyed points are on two levels, LEVELS
 # apart, the scan picks the one it agrees with to SCAN_AGREE, if it agrees with one and
-# not the other; otherwise the rules below decide as before. Beside a bridge, outside
-# its outline, it can't pick the lower: the street on from Hlávkův most's north end is on
-# the viaduct, where the scan has the quay 7 m below, and its last metres dropped to it.
+# not the other; otherwise the rules below decide as before. Within UNDER_BRIDGE of a
+# bridge, outside its outline, it doesn't pick the lower. A kerb within END_CLEAR of where
+# one of the map's bridges comes down to the ground isn't a deck's: OSM ends bridges a few
+# metres short of their abutments, and there the deck's kerbs are the street's on from the
+# bridge, whose end takes the ground's height, and where the scan has the road below the
+# lower level isn't picked there either. Without them the slip road at Malovanka
+# (OSM's bridge ending 5 m before the street is back on the ground, over the road down to
+# the tunnel) and the paths off Hlávkův most's north end (over the quay) ended 6–7 m over
+# the ground they meet.
 DECK_SIDE = 2.0  # m
+END_CLEAR = 6.0  # m
 SCAN_AGREE = 1.5  # m
 WATER_REACH = 16.0  # m: further than the terrain model's ramp at a bank reaches
 POOL_WIDE = 10.0  # m from the bank: water this wide is a river's or a pond's, level between weirs
@@ -378,9 +385,25 @@ def _scan_local(scan, to_local):
     return at
 
 
-def _on_decks(points, bridges, scan_here):
+def bridge_ends(lines):
+    """Where the map's bridges come down to the ground, from their ways (lines): the ends
+    no other bridge way has, or passes within a metre of."""
+    lines = [line for line in lines if line.length > 0]
+    if not lines:
+        return np.zeros((0, 2))
+    tree = STRtree(lines)
+    ends = []
+    for i, line in enumerate(lines):
+        for p in (line.coords[0], line.coords[-1]):
+            near = tree.query(shapely.Point(p), predicate="dwithin", distance=1.0)
+            if not any(j != i for j in near):
+                ends.append(p[:2])
+    return np.array(ends, dtype=float).reshape(-1, 2)
+
+
+def _on_decks(points, bridges, scan_here, ends=()):
     """(Which surveyed points are aloft, which are on one of the map's bridges' decks):
-    see DECK_SIDE."""
+    see DECK_SIDE and END_CLEAR."""
     aloft = np.zeros(len(points), dtype=bool)
     if scan_here is None or not len(points):
         return aloft, aloft.copy()
@@ -392,6 +415,10 @@ def _on_decks(points, bridges, scan_here):
     if len(k) and len(bridges):
         decks = [shape.buffer(DECK_SIDE) for shape in bridges]
         decked[k[np.unique(STRtree(decks).query(shapely.points(points[k, :2]), predicate="intersects")[0])]] = True
+    if len(ends) and decked.any():
+        k = np.flatnonzero(decked)
+        d, _ = cKDTree(np.asarray(ends, dtype=float)).query(points[k, :2])
+        decked[k[d < END_CLEAR]] = False
     return aloft, decked
 
 
@@ -722,7 +749,7 @@ def weir_points(weirs, shape, x_of, y_of, step):
     return out
 
 
-def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=(), tunnels=(), keep=(), carriageways=(), streets=(), no_feather=False, no_shoulder=True, cut_streets=False, weirs=(), unknown=None, valley_smooth=True, bridges=(), drawn=(), level_across=True, cuts=(), sharp=False, scan=None, sunk_kerbs=True, scan_levels=True):
+def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=(), tunnels=(), keep=(), carriageways=(), streets=(), no_feather=False, no_shoulder=True, cut_streets=False, weirs=(), unknown=None, valley_smooth=True, bridges=(), drawn=(), level_across=True, cuts=(), sharp=False, scan=None, sunk_kerbs=True, scan_levels=True, bridge_ends=()):
     """Correct the tiles' lattices in place (see the top of the file). Works on arrays
     over the whole area (a few GB for `praha`). `tiles`: {(i, j):
     (N + 1) x (N + 1) heights}, the lattice of tile (i, j) starting at point (i * N, j * N);
@@ -735,7 +762,8 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
     terraces: their label and outline; and under label 1 its water, where that's not
     simply the map's: see below). `weirs`: the map's weirs as lines; `unknown`: {(i, j):
     which of the tile's points the terrain model had nothing for}; `drawn`: walls the
-    survey misses (terrain_walls.json), as lines in local metres. `sharp` (prototype):
+    survey misses (terrain_walls.json), as lines in local metres; `bridge_ends`: where the
+    map's bridges come down to the ground (`bridge_ends()`), local metres. `sharp` (prototype):
     the lattice is a laser scan's, which has the streets right; the survey only says
     where the streets, walls and water are, and gives no street its heights."""
     ramp = Reach(sharp)
@@ -777,8 +805,9 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
     pts = points[:, :2]
     sunk, tunnelled = _sunk_in_tunnels(points, tunnels if sunk_kerbs else (), grid.shape, x_of, y_of, step)
     scan_here = _scan_local(scan, to_local) if scan_levels else None
-    aloft, decked = _on_decks(points, bridges, scan_here)
+    aloft, decked = _on_decks(points, bridges, scan_here, bridge_ends)
     deck_tree = STRtree(list(bridges)) if scan_here is not None and len(bridges) else None
+    end_tree = cKDTree(np.asarray(bridge_ends, dtype=float)) if scan_here is not None and len(bridge_ends) else None
 
     # Streets: each surface from the surveyed points along its own edge.
     edges = STRtree(shapely.boundary(polys))
@@ -864,6 +893,8 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
             lo, hi = scan_here(xy[q], SCAN_REACH)
             with np.errstate(invalid="ignore"):
                 lower = (hi < top[q] - LEVELS) & (np.abs(lo - bottom[q]) < SCAN_AGREE) & (~split[q] | _under_decks(deck_tree, xy[q]))
+                if end_tree is not None:
+                    lower &= end_tree.query(xy[q])[0] >= END_CLEAR
                 upper = ~lower & (lo > bottom[q] + LEVELS) & (np.abs(hi - top[q]) < SCAN_AGREE)
             counts["scan_lower"] = counts.get("scan_lower", 0) + int(lower.sum())
             counts["scan_upper"] = counts.get("scan_upper", 0) + int((upper & ~split[q]).sum())
