@@ -157,17 +157,40 @@
       #district::after { content: ''; display: block; width: 120px; height: 5px; margin: 12px auto 0; background: var(--ink); box-shadow: 3px 3px 0 var(--edge); transform: rotate(-4deg); }
       #district.on { animation: district 6s ease-in-out forwards; }
       @keyframes district { 0% { opacity: 0; transform: translateY(10px); } 18% { opacity: 1; transform: none; } 72% { opacity: 1; } 100% { opacity: 0; } }
-      /* Controls card: only the keys for what you're doing right now. */
-      #help, #help-pad { bottom: 16px; right: 16px; opacity: 0.85; font-size: 12px; width: 250px; }
+      /* Controls card: only the keys for what you're doing right now. The keyboard's card is
+         a cut-out of a keyboard with those keys lit (src/keyhelp.ts); the controller's a list. */
+      #help, #help-pad { bottom: 16px; right: 16px; opacity: 0.85; font-size: 12px; }
+      #help-pad { width: 250px; }
       #help h2, #help-pad h2 { margin: 0 0 6px; font: 17px/1 'Bebas Neue', sans-serif; letter-spacing: 0.05em; color: var(--accent); }
-      #help dl, #help-pad dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 0; align-items: baseline; }
-      #help dt, #help-pad dt { justify-self: end; white-space: nowrap; }
-      #help dd, #help-pad dd { margin: 0; }
+      #help-pad dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 0; align-items: baseline; }
+      #help-pad dt { justify-self: end; white-space: nowrap; }
+      #help-pad dd { margin: 0; }
       #help kbd, #help-pad kbd { display: inline-block; font: 600 11px/1 Inter, system-ui, sans-serif; background: var(--key); border: 1px solid rgba(236, 228, 214, 0.35); padding: 3px 5px 2px; min-width: 1em; text-align: center; }
       #help .foot, #help-pad .foot { margin-top: 8px; padding-top: 6px; border-top: 1px solid rgba(236, 228, 214, 0.15); opacity: 0.7; }
-      #help section, #help-pad section { display: none; }
-      #help[data-mode='foot'] .foot-only, #help[data-mode='car'] .car-only, #help[data-mode='drive'] .drive-only, #help[data-mode='tram'] .tram-only, #help[data-mode='funicular'] .funicular-only, #help[data-mode='ferry'] .ferry-only, #help[data-mode='heli'] .heli-only, #help-pad[data-mode='foot'] .foot-only, #help-pad[data-mode='car'] .car-only, #help-pad[data-mode='drive'] .drive-only, #help-pad[data-mode='tram'] .tram-only, #help-pad[data-mode='funicular'] .funicular-only, #help-pad[data-mode='ferry'] .ferry-only, #help-pad[data-mode='heli'] .heli-only { display: block; }
-      #help.folded { width: auto; padding: 6px 10px; }
+      #help-pad section { display: none; }
+      #help-pad[data-mode='foot'] .foot-only, #help-pad[data-mode='car'] .car-only, #help-pad[data-mode='drive'] .drive-only, #help-pad[data-mode='tram'] .tram-only, #help-pad[data-mode='funicular'] .funicular-only, #help-pad[data-mode='ferry'] .ferry-only, #help-pad[data-mode='heli'] .heli-only { display: block; }
+      #help .help-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+      #help .help-head h2 { margin-bottom: 10px; }
+      #help button { font: inherit; color: var(--ink); background: none; border: 0; padding: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+      #help .fold { font-size: 11px; opacity: 0.6; transition: opacity 0.12s; }
+      #help .fold:hover, #help .fold:focus-visible { opacity: 1; }
+      #help .fold kbd { padding: 2px 4px 1px; font-size: 10px; }
+      /* --p is a key's width with the gap, --r a row with the label under it. Unused keys are
+         only faintly there. */
+      #help .kb { --p: 37px; --r: 41px; position: relative; width: calc(var(--p) * 8.3); height: calc(var(--r) * 3 + 24px); }
+      #help .k { position: absolute; left: calc(var(--x) * var(--p)); top: calc(var(--y) * var(--r)); width: calc(var(--p) - 4px); display: flex; flex-direction: column; align-items: center; }
+      #help .k kbd { box-sizing: border-box; width: 100%; height: 24px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; color: rgba(236, 228, 214, 0.28); background: rgba(236, 228, 214, 0.05); border-color: rgba(236, 228, 214, 0.1); border-bottom-width: 2px; border-radius: 3px; }
+      #help .k.on kbd { color: #140d0c; background: var(--ink); border-color: var(--ink); border-bottom-color: #a89e8e; }
+      #help .k.on { cursor: help; }
+      #help .k .lbl { margin-top: 2px; font-size: 10px; line-height: 13px; white-space: nowrap; }
+      #help .k.wide { width: calc(var(--p) * 1.3 - 4px); }
+      #help .k.space { width: calc(var(--p) * 5 - 4px); }
+      #help .k.space kbd { font-weight: 500; }
+      #help .help-note { margin: 6px 0 0; max-width: calc(37px * 8.3); }
+      #help .foot kbd { padding: 2px 4px 1px; font-size: 10px; }
+      #help.folded { padding: 0; }
+      #help .unfold { padding: 6px 10px; }
+      #help .unfold:hover { background: var(--key); }
       #help.folded > :not(.unfold), #help:not(.folded) .unfold { display: none; }
       /* The same card for a game controller, in place of the keyboard's while a pad was the last thing used. */
       body.pad #help { display: none; }
@@ -667,81 +690,14 @@
     <canvas id="minimap" hidden aria-hidden="true"></canvas>
     <div id="district" aria-live="polite"></div>
     <div id="help" class="panel" data-mode="foot">
-      <section class="foot-only">
-        <h2 data-t>On foot</h2>
-        <dl>
-          <dt><kbd>W</kbd> <kbd>S</kbd></dt><dd data-t>Walk forwards and back</dd>
-          <dt><kbd>A</kbd> <kbd>D</kbd></dt><dd data-t>Turn</dd>
-          <dt><kbd>Shift</kbd></dt><dd data-t>Run</dd>
-          <dt><kbd>Space</kbd></dt><dd data-t>Jump</dd>
-          <dt><kbd>E</kbd></dt><dd data-t>Get into the nearest car, onto a bike or motorbike, or onto a tram at a stop</dd>
-          <dt><kbd>T</kbd></dt><dd data-t>Get a taxi: wave one down or order one through an app</dd>
-          <dt><kbd>J</kbd></dt><dd data-t>Jobs: ask for work, take the job on offer, or give one up</dd>
-          <dt><kbd>N</kbd></dt><dd data-t>Map: pick where to drive, and the way there shows on the road</dd>
-          <dt class="gun-only"><kbd>F</kbd> <span data-t>or click</span></dt><dd class="gun-only" data-t>Shoot ahead, or where you click (hold it to keep shooting). Bullets never hit people</dd>
-        </dl>
-      </section>
-      <section class="car-only">
-        <h2 data-t>Driving</h2>
-        <dl>
-          <dt><kbd>W</kbd> <kbd>S</kbd></dt><dd data-t>Gas and brake, hold S to reverse</dd>
-          <dt><kbd>A</kbd> <kbd>D</kbd></dt><dd data-t>Steer</dd>
-          <dt><kbd>Space</kbd></dt><dd data-t>Handbrake</dd>
-          <dt><kbd>Shift</kbd></dt><dd data-t>Hold to keep to the lane and the speed limit, while A and D pick the next turn. With directions on, it follows them</dd>
-          <dt><kbd>Q</kbd></dt><dd data-t>Horn (hold it)</dd>
-          <dt><kbd>F</kbd></dt><dd data-t>Water cannon of a fire engine (hold it)</dd>
-          <dt><kbd>R</kbd></dt><dd data-t>Radio: next station, and off (or use the buttons under the speed)</dd>
-          <dt><kbd>N</kbd></dt><dd data-t>Map: pick where to drive, and the way there shows on the road</dd>
-          <dt><kbd>E</kbd></dt><dd data-t>Get out, or off a bike</dd>
-        </dl>
-      </section>
-      <section class="drive-only">
-        <h2 data-t>Driving the tram</h2>
-        <dl>
-          <dt><kbd>W</kbd> <kbd>S</kbd></dt><dd data-t>Pull away and brake</dd>
-          <dt><kbd>Space</kbd></dt><dd data-t>Brake hard</dd>
-          <dt><kbd>A</kbd> <kbd>D</kbd></dt><dd data-t>Pick the way at the next junction (straight on if you don't)</dd>
-          <dt><kbd>Q</kbd></dt><dd data-t>Ring the bell</dd>
-          <dt><kbd>X</kbd></dt><dd data-t>Open and close the doors at a stop (people get off and on)</dd>
-          <dt><kbd>E</kbd></dt><dd data-t>Get off once it has stopped</dd>
-        </dl>
-      </section>
-      <section class="tram-only">
-        <h2 data-t>On the tram</h2>
-        <dl>
-          <dt><kbd>W</kbd> <kbd>S</kbd></dt><dd data-t>Pick where to get off</dd>
-          <dt><kbd>Shift</kbd></dt><dd data-t>Speed up the ride</dd>
-          <dt><kbd>E</kbd></dt><dd data-t>Get off at the next stop</dd>
-          <dt><kbd>F</kbd></dt><dd data-t>Take over the tram and drive it yourself</dd>
-        </dl>
-      </section>
-      <section class="funicular-only">
-        <h2 data-t>On the funicular</h2>
-        <dl>
-          <dt><kbd>Shift</kbd></dt><dd data-t>Speed up the ride</dd>
-          <dt><kbd>E</kbd></dt><dd data-t>Get off while it stands at a station</dd>
-        </dl>
-      </section>
-      <section class="ferry-only">
-        <h2 data-t>On the ferry</h2>
-        <dl>
-          <dt><kbd>Shift</kbd></dt><dd data-t>Speed up the crossing</dd>
-          <dt><kbd>E</kbd></dt><dd data-t>Get off onto the bank when it reaches a landing</dd>
-        </dl>
-        <p data-t>The ferry takes a PID ticket, like a tram.</p>
-      </section>
-      <section class="heli-only">
-        <h2 data-t>Flying</h2>
-        <dl>
-          <dt><kbd>W</kbd> <kbd>S</kbd></dt><dd data-t>Fly forwards and back</dd>
-          <dt><kbd>A</kbd> <kbd>D</kbd></dt><dd data-t>Turn</dd>
-          <dt><kbd>Space</kbd> <kbd>Shift</kbd></dt><dd data-t>Climb and come down</dd>
-          <dt><kbd>E</kbd></dt><dd data-t>Get out, once landed on open ground</dd>
-        </dl>
-      </section>
-      <div class="foot">
-        <span data-t>Scroll to zoom</span> · <kbd>`</kbd> <span data-t>dev tools</span> · <kbd>M</kbd> <span data-t>sound</span> · <kbd>G</kbd> <span data-t>graphics</span> · <kbd>P</kbd> <span data-t>weather</span> · <kbd>H</kbd> <span data-t>hide</span></div>
-      <div class="unfold"><kbd>H</kbd> <span data-t>controls</span></div>
+      <div class="help-head">
+        <h2>On foot</h2>
+        <button class="fold" type="button" aria-label="Hide the controls" data-t-label><span data-t>hide</span> <kbd>H</kbd></button>
+      </div>
+      <div class="kb"></div>
+      <p class="help-note" hidden></p>
+      <div class="foot"><kbd>M</kbd> <span data-t>sound</span> · <kbd>G</kbd> <span data-t>graphics</span> · <kbd>P</kbd> <span data-t>weather</span> · <span data-t>scroll to zoom</span></div>
+      <button class="unfold" type="button"><kbd>H</kbd> <span data-t>controls</span></button>
     </div>
     <div id="help-pad" class="panel" data-mode="foot">
       <section class="foot-only">

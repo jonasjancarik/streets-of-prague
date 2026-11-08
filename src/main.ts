@@ -78,6 +78,7 @@ import { Ambulances } from './ambulance.ts';
 import { Refuse } from './refuse.ts';
 import { Tracers, Health, MAX_HEALTH } from './guns.ts';
 import { trace, strike, assist as aimAssist, PACE, gunOn, setGun } from './pistol.ts';
+import { keyHelp, type HelpMode } from './keyhelp.ts';
 import type { Hit } from './pistol.ts';
 import { Fires } from './fire.ts';
 import { Chopper, loadHelicopters } from './helicopter.ts';
@@ -1531,12 +1532,18 @@ async function main() {
     if (ride.on && ['KeyW', 'ArrowUp'].includes(e.code)) ride.pick(-1);
     if (ride.on && ['KeyS', 'ArrowDown'].includes(e.code)) ride.pick(1);
   });
-  // The controls card remembers whether you folded it away.
+  // The controls card remembers whether you folded it away, with H or its buttons.
   const foldHelp = (folded: boolean) => {
     $('help').classList.toggle('folded', folded);
     try { localStorage.setItem('help-folded', folded ? '1' : ''); } catch {}
   };
   try { foldHelp(localStorage.getItem('help-folded') === '1'); } catch {}
+  const drawHelp = keyHelp($('help'));
+  for (const [sel, folded] of [['.fold', true], ['.unfold', false]] as const) {
+    const button = $('help').querySelector<HTMLButtonElement>(sel)!;
+    // Let go of the focus, so Space jumps again rather than pressing the button.
+    button.addEventListener('click', () => { foldHelp(folded); button.blur(); });
+  }
   window.addEventListener('keyup', (e) => {
     if (keymap[e.code]) input[keymap[e.code]] = false;
     if (!e.shiftKey) input.run = false;
@@ -2719,6 +2726,7 @@ async function main() {
     taxi.render(touch.active, usingPad());
     show('hint', padLabels(hint), 'html');
     $('help').dataset.mode = inHeli ? 'heli' : inCar ? 'car' : ride.driving ? 'drive' : ride.on ? 'tram' : funicular.me ? 'funicular' : ferries.me ? 'ferry' : 'foot';
+    drawHelp({ mode: $('help').dataset.mode as HelpMode, gun: gunOn(), fire: inCar?.type === 'fire', two: !!inCar?.two });
     $('help-pad').dataset.mode = $('help').dataset.mode;
     ride.render();
     const label = ride.driving ? (ride.canLeave() ? 'Get off' : null) : ride.on ? (ride.atStop() ? 'Get off' : ride.stuck ? 'Get off here' : ride.dest === ride.upcoming()[0] ? 'Stop requested' : 'Request stop') : funicular.me ? (funicular.me.stop !== null ? 'Get off' : null) : ferries.me ? (ferries.me.stop !== null ? 'Get off' : null) : canBoard || cabin || ferryHere?.open || enterable?.two ? 'Get on' : inCar?.two ? 'Get off' : null;

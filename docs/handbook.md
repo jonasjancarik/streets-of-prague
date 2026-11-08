@@ -322,6 +322,11 @@ that without a new renderer.
   cannon. Touch controls also release when the browser loses their pointer capture.
   Releasing a movement key in a developer field still stops movement; scenario
   `input-release` checks this and window focus in the running game.
+- **Controls card** (bottom right, `src/keyhelp.ts`): a cut-out of the keyboard with the
+  keys for what you're doing lit up and a word under each; hovering a lit key gives the
+  full sentence. H or its "hide" button folds it to a small button, and the game
+  remembers that. The developer panel's key isn't on it. With a game controller the
+  card is a list of the pad's buttons instead (`#help-pad` in `index.html`).
 - **Game controllers** (`src/gamepad.ts`): the left stick points where to go, the
   triggers are gas and brake, X gets in or out, A jumps or brakes, d-pad right is J
   (jobs) outside the metro, and Menu opens settings. In a panel, the stick or d-pad moves focus and A activates the selected
