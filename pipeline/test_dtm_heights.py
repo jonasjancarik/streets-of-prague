@@ -182,6 +182,28 @@ class TerrainApplyTests(unittest.TestCase):
             np.testing.assert_array_equal(grid[out['labels'][k] == 1], 184.0)
 
 
+class UnderpassTests(unittest.TestCase):
+    """A street over a short underpass, both one surveyed surface (Na Veselí under
+    5. května): the street's kerbs at 200 m along y = 18, the underpass road's at 194.5 m
+    along y = 2, in the map's tunnel."""
+
+    def build(self, tunnels):
+        bare = np.full((17, 17), 200.0, dtype=np.float32)
+        tiles = {(0, 0): bare.copy()}
+        boxes = {(0, 0): box(0, 0, 64, 64)}
+        lines = [[(2, 18, 200), (62, 18, 200)], [(2, 2, 194.5), (62, 2, 194.5)]]
+        with patch.object(dh, 'survey', return_value=([box(2, 2, 62, 18)], [np.array(c, float) for c in lines], [])):
+            out = dh.apply('test', None, Identity(), tiles, 16, 4.0, 0, 0, None, boxes, tunnels=tunnels)
+        return tiles[0, 0], out
+
+    def test_the_street_over_an_underpass_keeps_its_own_kerbs(self):
+        before, _ = self.build(())
+        after, out = self.build([(shapely.LineString([(10, 2), (54, 2)]), 2.0)])
+        self.assertLess(before[2, 8], 197.0)  # (32, 8): the road's kerbs were nearest
+        self.assertGreater(out['sunk_kerbs'], 0)
+        self.assertAlmostEqual(float(after[2, 8]), 200.0, delta=0.3)
+
+
 def _river(length=200, width=12):
     """A straight river on a 4 m lattice: `width` points across (48 m), land either side."""
     wet = np.zeros((width + 8, length), dtype=bool)
