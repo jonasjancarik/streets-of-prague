@@ -149,6 +149,15 @@ UNDER_SIDE = 4.0  # m either side of the tunnel that counts as in it
 FEW = 3  # a surface with fewer surveyed points than this keeps the terrain model's heights
 LEVELS = 3.0  # m between the surveyed points nearest a lattice point under a bridge: a surface on two levels
 UNDER_BRIDGE = 6.0  # m round a bridge that count as under it (how far its deck's heights reach)
+# A short underpass under a wide street (Na Veselí and Táborská under 5. května at
+# Pankrác): the survey draws the street on top and the road below as one surface, and
+# its kerbs run on under the street. The street's lattice points beside the map's bridge,
+# which is shorter than the real one, took the road's kerbs below, for their surface's
+# heights and for levelling the street across: a pit 6 m deep and a trench of 2 m. A
+# kerb in one of the map's tunnels (the tunnel's outline, UNDER_SIDE either side, not
+# past its ends) more than LEVELS below the highest surveyed point within SUNK_ROUND is
+# the underpass's; no lattice point outside the tunnels takes it.
+SUNK_ROUND = 20.0  # m
 WATER_REACH = 16.0  # m: further than the terrain model's ramp at a bank reaches
 POOL_WIDE = 10.0  # m from the bank: water this wide is a river's or a pond's, level between weirs
 POOL_FALL = 0.001  # the most its surface falls a metre along (a metre a kilometre: the Berounka's is 0.6)
@@ -328,6 +337,29 @@ def _survey_points(lines, to_local, at, lowest=None, scan=None, counts=None, spa
             points.append(_along(local[start + a:start + b]))
         start = end
     return np.concatenate(points) if points else np.zeros((0, 3)), int((~valid).sum())
+
+
+def _sunk_in_tunnels(points, tunnels, shape, x_of, y_of, step):
+    """(Which surveyed points are an underpass's kerbs, which lattice points are in one of
+    the map's tunnels): see SUNK_ROUND. `tunnels`: (line, width) in local metres."""
+    sunk, tunnelled = np.zeros(len(points), dtype=bool), np.zeros(shape, dtype=bool)
+    if not tunnels or not len(points):
+        return sunk, tunnelled
+    holes = [line.buffer(width / 2 + UNDER_SIDE, cap_style="flat") for line, width in tunnels]
+    inside = np.unique(STRtree(holes).query(shapely.points(points[:, :2]), predicate="intersects")[0])
+    if len(inside):
+        round_ = cKDTree(points[:, :2]).query_ball_point(points[inside, :2], SUNK_ROUND)
+        highest = np.array([points[r, 2].max() for r in round_])
+        sunk[inside] = points[inside, 2] < highest - LEVELS
+    for hole in holes:
+        bx0, by0, bx1, by1 = hole.bounds
+        ia, ib = max(0, int(np.ceil((bx0 - x_of(0)) / step))), min(shape[1] - 1, int(np.floor((bx1 - x_of(0)) / step)))
+        ja, jb = max(0, int(np.ceil((by0 - y_of(0)) / step))), min(shape[0] - 1, int(np.floor((by1 - y_of(0)) / step)))
+        if ia > ib or ja > jb:
+            continue
+        bi, bj = np.meshgrid(np.arange(ia, ib + 1), np.arange(ja, jb + 1))
+        tunnelled[bj, bi] |= shapely.contains_xy(hole, x_of(bi), y_of(bj))
+    return sunk, tunnelled
 
 
 def _level_across(grid, on, points, streets, x_of, y_of, step, spacing=1.0):
@@ -626,7 +658,7 @@ def weir_points(weirs, shape, x_of, y_of, step):
     return out
 
 
-def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=(), tunnels=(), keep=(), carriageways=(), streets=(), no_feather=False, no_shoulder=True, cut_streets=False, weirs=(), unknown=None, valley_smooth=True, bridges=(), drawn=(), level_across=True, cuts=(), sharp=False, scan=None):
+def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=(), tunnels=(), keep=(), carriageways=(), streets=(), no_feather=False, no_shoulder=True, cut_streets=False, weirs=(), unknown=None, valley_smooth=True, bridges=(), drawn=(), level_across=True, cuts=(), sharp=False, scan=None, sunk_kerbs=True):
     """Correct the tiles' lattices in place (see the top of the file). Works on arrays
     over the whole area (a few GB for `praha`). `tiles`: {(i, j):
     (N + 1) x (N + 1) heights}, the lattice of tile (i, j) starting at point (i * N, j * N);
@@ -679,6 +711,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         return out
     points, rejected = _survey_points(lines, to_local, at_bare, at_lowest, scan, counts, spared)
     pts = points[:, :2]
+    sunk, tunnelled = _sunk_in_tunnels(points, tunnels if sunk_kerbs else (), grid.shape, x_of, y_of, step)
 
     # Streets: each surface from the surveyed points along its own edge.
     edges = STRtree(shapely.boundary(polys))
@@ -732,8 +765,16 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
             continue
         gi, gj, own = gi[on], gj[on], point[a:b]
         k = min(6, len(own))
-        d, near = cKDTree(pts[own]).query(np.column_stack([x_of(gi), y_of(gj)]), k=k)
+        xy = np.column_stack([x_of(gi), y_of(gj)])
+        d, near = cKDTree(pts[own]).query(xy, k=k)
         d, near = d.reshape(len(gi), k), near.reshape(len(gi), k)
+        # Not the kerbs of an underpass below (see SUNK_ROUND): the nearest of the others.
+        ours = np.flatnonzero(~sunk[own])
+        swap = ~tunnelled[gj, gi] & sunk[own][near].any(axis=1) if len(ours) >= k else np.zeros(len(gi), dtype=bool)
+        if swap.any():
+            d2, n2 = cKDTree(pts[own][ours]).query(xy[swap], k=k)
+            d[swap], near[swap] = d2.reshape(-1, k), ours[n2.reshape(-1, k)]
+            counts["sunk_kerbs_skipped"] = counts.get("sunk_kerbs_skipped", 0) + int(swap.sum())
         wgt = 1.0 / (d * d + 0.25)
         # Two levels in one surface under one of the map's bridges (a junction over a
         # passage under it, Palackého most's east end): the upper one, the street on top,
@@ -741,11 +782,12 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         # under Jižní spojka's ramps; anywhere, not only under a bridge, the rule moved
         # 78,000 points and made more steps than it took away.)
         z = points[own, 2][near]
-        split = (z.max(axis=1) - z.min(axis=1) > LEVELS) & bridged[gj, gi]
+        top, bottom = z.max(axis=1), z.min(axis=1)
+        split = (top - bottom > LEVELS) & bridged[gj, gi]
         if split.any():
             low = split & cut[gj, gi]
-            wgt = np.where((split & ~low)[:, None] & (z < z.max(axis=1)[:, None] - 1.0), 0.0, wgt)
-            wgt = np.where(low[:, None] & (z > z.min(axis=1)[:, None] + 1.0), 0.0, wgt)
+            wgt = np.where((split & ~low)[:, None] & (z < top[:, None] - 1.0), 0.0, wgt)
+            wgt = np.where(low[:, None] & (z > bottom[:, None] + 1.0), 0.0, wgt)
             two_levels += int(split.sum())
         grid[gj, gi] = (wgt * z).sum(axis=1) / wgt.sum(axis=1)
         street[gj, gi] = True
@@ -765,7 +807,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
     # its cross-section, not of the kerb points nearest it (see _level_across). Not
     # under a bridge (that's the ground below it), but right up to one: the street's
     # last metres before a bridge over a cutting kept the cutting's heights and sagged.
-    levelled_points = _level_across(grid, street & ~beneath, points, streets, x_of, y_of, step) if level_across else 0
+    levelled_points = _level_across(grid, street & ~beneath, points[~sunk], streets, x_of, y_of, step) if level_across else 0
 
     # A street surveyed in an underpass is under the ground, not on it: where the map has
     # a tunnel and the survey is well below the terrain model, the terrain stays.
@@ -1151,7 +1193,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         if listed:
             outlines[(i, j)] = listed
     changed = ~np.isnan(bare) & (np.abs(grid - bare) > 0.05)
-    return {"survey_rejected_vertices": rejected, "off_scan": counts.get("off_scan", 0), "surfaces": surfaces, "street_points": street_points, "levelled_across": levelled_points, "two_levels": two_levels, "under_points": under, "feathered": feathered, "overhang_points": overhang, "water_points": int(wet.sum()), "water_levelled": levelled, "valley_points": valley, "bank_points": bank_points,
+    return {"survey_rejected_vertices": rejected, "off_scan": counts.get("off_scan", 0), "sunk_kerbs": int(sunk.sum()), "sunk_kerbs_skipped": counts.get("sunk_kerbs_skipped", 0), "surfaces": surfaces, "street_points": street_points, "levelled_across": levelled_points, "two_levels": two_levels, "under_points": under, "feathered": feathered, "overhang_points": overhang, "water_points": int(wet.sum()), "water_levelled": levelled, "valley_points": valley, "bank_points": bank_points,
             "kept_by_hand": kept, "cut_streets": cuts, "retaining_walls": len(strips) - cuts, "retaining_metres": round(wall_length), "terrace_off_streets_m2": round(off_streets), "wall_points": wall_points, "lone_points": lone_points,
             "changed": int(changed.sum()), "mean_change": float(np.abs(grid - bare)[changed].mean()) if changed.any() else 0.0,
             "labels": labels, "terraces": outlines}

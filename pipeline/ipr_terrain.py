@@ -357,6 +357,7 @@ def main() -> None:
     ap.add_argument("--walls-on-streets", action="store_true", help="retaining walls' terraces over car streets as they come (to compare)")
     ap.add_argument("--valley-nearest", action="store_true", help="made-up land beside water from the nearest water alone, cliffs and all (to compare)")
     ap.add_argument("--cut-streets", action="store_true", help="trial: a surveyed street under or over a steep bank is a terrace, cut along its outline")
+    ap.add_argument("--no-sunk-kerbs", action="store_true", help="streets over an underpass from the kerbs below too (to compare)")
     ap.add_argument("--no-level", action="store_true", help="car streets from their nearest kerb points, leaning and all, not level across (to compare)")
     ap.add_argument("--survey-companion-decks", action="store_true",
                     help="trial: use the DTM to add a second carriageway on a bridge already identified above a cutting")
@@ -384,7 +385,7 @@ def main() -> None:
     ox, oy = meta["origin"]
     local = f"+proj=tmerc +lat_0={(s + n) / 2} +lon_0={(w + e) / 2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m"
     options = {name: getattr(args, name) for name in (
-        "no_survey", "no_feather", "dmr5g", "shoulder", "walls_on_streets", "valley_nearest", "cut_streets", "no_level")}
+        "no_survey", "no_feather", "dmr5g", "shoulder", "walls_on_streets", "valley_nearest", "cut_streets", "no_level", "no_sunk_kerbs")}
     if args.ipr_lidar:
         options["ipr_lidar"] = str(args.ipr_lidar.resolve())
     if args.survey_companion_decks:
@@ -536,7 +537,8 @@ def main() -> None:
                                       bridges=[LineString(w["pts"]).buffer(w["w"] / 2) for w in ways if w["kind"] == "bridge" and len(w["pts"]) > 1] + list(outlines),
                                       drawn=drawn_walls(local), level_across=not args.no_level,
                                       cuts=[LineString(w["pts"]).buffer(w["w"] / 2) for w in ways if w.get("cut")], sharp=args.lidar_ground,
-                                      scan=ipr_lidar.range_sampler(options["survey_scan"])[0] if options.get("survey_scan") else None)
+                                      scan=ipr_lidar.range_sampler(options["survey_scan"])[0] if options.get("survey_scan") else None,
+                                      sunk_kerbs=not args.no_sunk_kerbs)
         labels, terraces = surveyed.pop("labels"), surveyed.pop("terraces")
         print(f"  survey: {surveyed}")
         timings.lap("survey")
