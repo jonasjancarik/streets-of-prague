@@ -170,7 +170,10 @@ stay on at every tier. Quieter streets have
 fewer people; changing tiers lets surplus people leave out of sight.
 Auto, the default, starts High (Medium on touch devices) and moves between tiers
 by how steady the frames are (`src/graphics.ts`), ignoring loading and tile builds;
-it never picks Ultra, which only choosing it turns on.
+it never picks Ultra, which only choosing it turns on. On WebGPU it doesn't step down
+when frames are slow only because they wait: when the browser or the screen holds the
+game at 30 frames a second (Chrome's Energy Saver does), a frame whose work fits in
+half the time stays at its tier.
 `?graphics=auto|ultra|high|medium|low|lowest` overrides it for one visit; `?dpr=1` fixes
 only the pixel ratio. The Water setting turns on waves, sun glitter and lamp reflections on
 the river (`src/webgpu/water.ts`; WebGPU only, not on Lowest, off unless chosen;

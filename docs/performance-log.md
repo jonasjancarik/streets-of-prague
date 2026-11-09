@@ -856,3 +856,25 @@ Kongresová view stayed at 175. Mean frame time switched direction with run
 order, and the raster variant's slow-frame tail was higher in both pairs.
 See [the shared asphalt trial](tiny-prague-road-rendering.md#shared-asphalt-trial-6-november-2026)
 for frame, worker and raw buffer measurements.
+
+## 9 November 2026 — Auto and a 30 fps cap
+
+Telemetry from 1 October to 9 November showed 22 sessions on fast GPUs (Apple silicon,
+RTX, RDNA), all in Chrome, running at a steady 33 ms; 14 of them ended on Lowest.
+Auto aims for 40 frames a second, so a frame rate the browser holds at 30 (Chrome's
+Energy Saver) or a 30 Hz screen read as too slow, and Auto stepped down to the bottom,
+counting windows towards the "needs a better computer" hint on the way.
+
+On WebGPU, Auto now also times each frame's work: the longer of the main thread's part
+and the time from handing the frame to the GPU to `onSubmittedWorkDone`. A slow window
+whose median work is under half its median frame interval is held (`cappedWindows` in
+the `frames` report). In the in-app browser on an M5 at 2560 × 1600, with
+requestAnimationFrame thinned to every other frame (33.3 ms), the old behaviour went
+High → Medium → Low → Lowest in 16 s; the new one stayed on High for 26 s, holding 12
+windows. Uncapped it stayed on High. With the CPU slowed 6× in headless Chrome (frames
+of 50 ms that are all work) it still stepped down to Lowest. The GPU's answer comes
+late: from the start of drawing it read 17–18 ms even on Low under the cap, so timing
+it from there sent Auto down to Low; from the hand-over it read 10–14 ms across the
+tiers. A hidden pane never presents, so its GPU work piles up and the timing grows
+without bound (80 ms at pixel ratio 4 while frames came every 17 ms); that only makes
+frames look busier. WebGL is unchanged. No phone or Windows machine was measured.

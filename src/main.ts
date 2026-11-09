@@ -2326,6 +2326,7 @@ async function main() {
   let soundHeld = false;
   renderer.setAnimationLoop((now) => {
     if (benchPause.paused) { last = now; return; } // a benchmark elsewhere on this machine (dev only)
+    const began = performance.now();
     const paused = settingsPanel.open || mapOpen();
     let dt = paused ? 0 : Math.min(0.05, (now - last) / 1000); // the settings and the map pause the game
     // (Filming, a frame's worth of the game's time and no more: see Testkit.frameDt.)
@@ -2788,6 +2789,7 @@ async function main() {
       renderer.render(scene, camera);
       scene.matrixWorldAutoUpdate = true;
     } else renderer.render(scene, camera);
+    graphics.rendered(began);
     // A picture of the frame just drawn, asked for by the feedback form: the canvas can only
     // be read in the task that drew it.
     if (grab.length) { const picture = takePicture(); for (const done of grab.splice(0)) done(picture); }

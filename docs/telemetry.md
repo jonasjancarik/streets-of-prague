@@ -21,7 +21,7 @@ every field of each and is the only place the format is defined.
 | Report | When | What it holds |
 |---|---|---|
 | `start` | the game begins after the start screen | renderer (WebGPU, WebGL 2, or the legacy WebGL renderer), graphics card name, graphics setting and level, language, keyboard or touch, new or continued game, browser and its major version, operating system, the site the visitor came from, loading time, screen size, pixel ratio, memory and processor cores as the browser reports them |
-| `frames` | the tab is hidden or closed | time played, frames drawn, middle and 95th-percentile frame time, frames over 100 ms and over 250 ms, how often Auto changed the graphics level, map tiles that failed to load |
+| `frames` | the tab is hidden or closed | time played, frames drawn, middle and 95th-percentile frame time, frames over 100 ms and over 250 ms, how often Auto changed the graphics level, map tiles that failed to load, how many times Auto kept the level because slow frames were waiting rather than working (the browser or the screen holding the game at 30 frames a second; WebGPU only) |
 | `play` | with `frames` | seconds on foot, driving, on a tram, in a taxi and on anything else; metres travelled; cars wrecked, people knocked over, arrests, deaths; money; the most stars reached; tickets bought; games saved by hand |
 | `activity` | with `frames`, one for each thing done or paid for | `did`: the name of something the player did, how many times, and how many seconds into the session the first time. `spent`: what money went on, how many payments, the first one's time and the amount in Kč |
 | `setting` | a setting is changed in the panel, or with G or P | which one and the new value |

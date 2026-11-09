@@ -43,6 +43,14 @@ const check = `(async () => {
   const run = (t0) => { let n = null; for (let i = 0; i < 60; i++) n = choppy.record(i % 6 ? 16 : 120, t0 + i * 34) ?? n; return n; };
   assert(run(1000) === null, 'Auto waits for a second choppy window');
   assert(run(4000) === 'medium', 'Auto steps down when it keeps hitching');
+  // A frame rate held at 30 by the browser or the screen: 33 ms between frames, but
+  // each frame's work done in 8. Auto holds; with the work taking 30 ms it steps down.
+  const capped = new AutoTier('high', () => false);
+  for (let w = 0; w < 4; w++) for (let i = 0; i < 60; i++) { const t = 1000 + (w * 60 + i) * 33; capped.work(8, t); assert(capped.record(33, t) === null, 'Auto holds a capped frame rate'); }
+  assert(capped.capped === 4 && capped.stuck === 0, 'Capped windows are counted, not stuck');
+  const busy = new AutoTier('high', () => false);
+  for (let i = 0; i < 60; i++) { busy.work(30, 1000 + i * 33); next = busy.record(33, 1000 + i * 33); }
+  assert(next === 'medium' && busy.capped === 0, 'Auto steps down when the frame was working');
   const paused = new AutoTier('high', () => false);
   for (let w = 0; w < 3; w++) for (let i = 0; i < 60; i++) assert(paused.record(i ? 16 : 5000, 1000 + w * 2000 + i * 20) === null, 'A pause is not a hitch');
   g.set('ultra');

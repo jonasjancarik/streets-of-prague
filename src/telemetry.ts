@@ -180,7 +180,7 @@ function flush() {
   const r = Math.round;
   send('frames', {
     renderer, graphics: graphicsNow, tier: lastTier, seq, seconds: r(seconds), frames,
-    medianMs: percentile(0.5), p95Ms: percentile(0.95), hitches, stalls, tierChanges, tileFailures: counts.tileFailures ?? 0,
+    medianMs: percentile(0.5), p95Ms: percentile(0.95), hitches, stalls, tierChanges, tileFailures: counts.tileFailures ?? 0, cappedWindows: counts.cappedWindows ?? 0,
   });
   send('play', {
     seq, seconds: r(seconds), foot: r(modes.foot), car: r(modes.car), tram: r(modes.tram), taxi: r(modes.taxi), other: r(modes.other),

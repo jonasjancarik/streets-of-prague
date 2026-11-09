@@ -8,6 +8,7 @@ import { STREAKS_ON } from './streaks.ts';
 import type { Sky } from './sky.ts';
 import { t } from './i18n.ts';
 import { slowHint } from './graphicswarning.ts';
+import * as telemetry from './telemetry.ts';
 
 // Graphics tiers keep the street surfaces and facade pictures at every level. High,
 // Medium and Low keep the dirt, grime, leaves, tone curve and detailed roofs too.
@@ -38,6 +39,19 @@ import { slowHint } from './graphicswarning.ts';
 // up. It ignores pauses, tile builds and the seconds after loading, returning to the
 // tab or changing a tier.
 // A tier that proved too slow is tried again after 2 minutes, then 4, 8…
+// A slow window whose frames were mostly waiting is held, not stepped down: the browser
+// or the screen is holding the frame rate down (Chrome's Energy Saver caps it at 30, some
+// screens run at 30 Hz), and less detail wouldn't bring it up. On WebGPU a frame's work is
+// the longer of the main thread's part (the whole frame up to handing it to the GPU) and
+// the GPU's (from then to the GPU saying it has finished, onSubmittedWorkDone): the two
+// overlap, and the slower one sets the pace. When that takes under half the time between
+// frames, the frame could have come twice as often: it was waiting. Telemetry showed fast
+// GPUs dropped to Lowest at a steady 33 ms. WebGL has no such timing and steps down as
+// before. The GPU's answer comes late (on an M5 at pixel ratio 2 it took 10 ms at Low and
+// 13 at High, far closer together than their pixel counts), and a GPU still busy with the
+// last frame makes it later still, so the timing errs towards busy. Timed from the start
+// of drawing instead, the drawing counted twice: under a 30 cap there even Low read as
+// busy, and Auto still went down to Low.
 // Still too slow on Lowest for STUCK windows in a row, it tells the player once
 // (graphicswarning.ts: the game needs a better computer, and what may help).
 // The choice is remembered; ?graphics=auto|ultra|high|medium|low|lowest overrides it for
@@ -66,7 +80,7 @@ const TIERS: Record<Tier, { look: boolean; maxRatio: number; samples: 0 | 4; sha
 // just the canvas target; three resizes its MSAA attachments on the next render.
 // Disposing it here would invalidate depth textures still used by compileAsync.
 type GPURenderer = THREE.WebGLRenderer & {
-  backend?: { isWebGPUBackend?: boolean };
+  backend?: { isWebGPUBackend?: boolean; device?: { queue: { onSubmittedWorkDone(): Promise<void> } } };
   _samples: number;
   _canvasTarget: unknown;
   _frameBufferTargets: Map<unknown, THREE.RenderTarget>;
@@ -89,6 +103,7 @@ const HITCH = TARGET_MS * 2;  // a frame this long (50 ms) is a hitch, and a win
 const CHOPPY = 0.25, CHOPPY_WINDOWS = 2; // a quarter of its time in them is choppy: two in a row step down
 const WARMUP = 4000, SETTLE = 3000, RETRY = 120000;
 const STUCK = 5;
+const WAITING = 0.5; // a frame whose work took under half its time was waiting
 
 export class AutoTier {
   tier: Tier;
@@ -96,6 +111,8 @@ export class AutoTier {
   private spent = 0;  // the window's time (ms)…
   private stalled = 0; // …and how much of it went in hitches
   private choppy = 0; // windows in a row that were
+  private worked: number[] = []; // how long each frame's work took, where the renderer says
+  capped = 0; // slow windows held because their frames were waiting
   private holdUntil = 0;
   stuck = 0; // windows in a row too slow with no tier lower to go to
   private failures: Record<Tier, number> = { lowest: 0, low: 0, medium: 0, high: 0, ultra: 0 };
@@ -111,8 +128,13 @@ export class AutoTier {
   // Ignore frames for a while (loading, a change, coming back to the tab).
   hold(now: number, ms: number) {
     this.holdUntil = Math.max(this.holdUntil, now + ms);
-    this.samples.length = 0;
+    this.samples.length = this.worked.length = 0;
     this.spent = this.stalled = this.choppy = 0;
+  }
+
+  // How long one frame's work took (Graphics.rendered).
+  work(ms: number, now: number) {
+    if (now >= this.holdUntil && this.worked.length < SAMPLES * 2) this.worked.push(ms);
   }
 
   // One frame's time; the new tier when it's time to change.
@@ -129,7 +151,11 @@ export class AutoTier {
     const choppy = this.stalled > this.spent * CHOPPY;
     const steady = !choppy && sorted.filter((t) => t <= QUICK).length >= sorted.length * STEADY;
     this.choppy = choppy ? this.choppy + 1 : 0;
-    this.samples.length = 0;
+    const median = (a: number[]) => [...a].sort((x, y) => x - y)[a.length >> 1];
+    const waiting = this.worked.length >= SAMPLES / 2 && median(this.worked) < median(sorted) * WAITING;
+    const slow = mean > SLOW && !waiting;
+    if (mean > SLOW && waiting) this.capped++;
+    this.samples.length = this.worked.length = 0;
     this.spent = this.stalled = 0;
     const step = (dir: 1 | -1) => {
       for (let i = ORDER.indexOf(this.tier) + dir; i >= 0 && i < ORDER.length; i += dir) {
@@ -139,8 +165,8 @@ export class AutoTier {
     };
     let next: Tier | null = null;
     const lower = step(-1), higher = step(1);
-    this.stuck = mean > SLOW && !lower ? this.stuck + 1 : 0;
-    if ((mean > SLOW || this.choppy >= CHOPPY_WINDOWS) && lower) {
+    this.stuck = slow && !lower ? this.stuck + 1 : 0;
+    if ((slow || this.choppy >= CHOPPY_WINDOWS) && lower) {
       this.failures[this.tier] += 1;
       this.retryAt[this.tier] = now + RETRY * 2 ** (this.failures[this.tier] - 1);
       next = lower;
@@ -282,9 +308,20 @@ export class Graphics {
   // `busy`: map tiles are being built, so this frame doesn't count.
   frame(ms: number, now: number, busy = false) {
     if (this.choice !== 'auto' || busy) return;
+    const capped = this.auto.capped;
     const next = this.auto.record(ms, now);
+    if (this.auto.capped !== capped) telemetry.count('cappedWindows');
     if (next) { this.tier = next; this.apply(); }
     if (this.auto.stuck >= STUCK) slowHint();
+  }
+
+  // The frame that began at `began` has been handed to the GPU: on WebGPU, its work is the
+  // longer of the main thread's part and the GPU's.
+  rendered(began: number) {
+    const device = (this.renderer as GPURenderer).backend?.device;
+    if (this.choice !== 'auto' || !device) return;
+    const sent = performance.now();
+    device.queue.onSubmittedWorkDone().then(() => { const now = performance.now(); this.auto.work(Math.max(sent - began, now - sent), now); }, () => {});
   }
 
   label() {
