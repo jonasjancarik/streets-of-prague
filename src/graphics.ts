@@ -48,7 +48,7 @@ export type Reflections = typeof REFLECTIONS[number];
 export type Tier = 'lowest' | 'low' | 'medium' | 'high' | 'ultra';
 export type Choice = Tier | 'auto';
 const ORDER: Tier[] = ['lowest', 'low', 'medium', 'high']; // (Auto's)
-const CHOICES: Choice[] = ['auto', 'ultra', 'high', 'medium', 'low', 'lowest'];
+export const CHOICES: Choice[] = ['auto', 'ultra', 'high', 'medium', 'low', 'lowest'];
 // `cars`: what gets in the way of the lamps' light at night: 3 cars, people, trams and
 // posts cast shadows from every lamp and headlight, 2 only the cars do, 1 a soft darkening
 // round each car, 0 nothing. `lights`: the cones and glints, and the sharper light map.
