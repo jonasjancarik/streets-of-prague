@@ -6,12 +6,11 @@ import { SCALE, FIGURE_SIZE } from './figures.ts';
 // Umbrellas over the people walking in the rain. From above an open umbrella hides
 // whoever carries it, so it needs no pose of theirs: each is one more instance (a
 // canopy of eight panels on a stick) put over a walker, all of them one draw, and
-// nothing at all is drawn in dry weather.
+// nothing at all is drawn in dry weather. Nobody puts one up for snow.
 
 export const UMBRELLAS = {
   share: 0.6, // of the people have one with them
   from: 0.2, to: 0.55, // how hard it rains when the first and the last of them go up
-  snow: 0.45, // how much snow counts for, against rain
 };
 // Many of them dark, as in any street, and enough that stand out to read from above.
 const COLOURS = ['#1b1c20', '#1b1c20', '#1b1c20', '#222b40', '#222b40', '#34363b', '#4a2a2e', '#24463f', '#8a2227', '#b9282d', '#2c4f8c', '#dcb520', '#e8e5dc', '#62967a', '#cc5f8f', '#56437a', '#b0652a', '#3f7fa8'];
@@ -53,7 +52,7 @@ const PALETTE = COLOURS.map((c) => new THREE.Color(c));
 
 export class Umbrellas {
   mesh: THREE.InstancedMesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>;
-  // How wet it is for the people: 0 dry, 1 pouring (set every frame from the weather).
+  // How hard it rains: 0 dry, 1 pouring (set every frame from the weather).
   wet = 0;
   private n = 0;
 

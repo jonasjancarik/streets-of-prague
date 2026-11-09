@@ -118,7 +118,6 @@ import { Minimap, minimapOn } from './minimap.ts';
 import { PLACES as NAMED_PLACES } from './taxi.ts';
 import * as telemetry from './telemetry.ts';
 import { Birds } from './birds.ts';
-import { UMBRELLAS } from './umbrellas.ts';
 import { Hitches } from './hitches.ts';
 import { benchPause } from './benchpause.ts';
 import type { Testkit } from './testkit.ts';
@@ -2442,7 +2441,7 @@ async function main() {
     metro.update(dt);
     metro.sync(camPos.x, -camPos.z, viewRadius() + 60, ground);
     tramStops.sync(camPos.x, -camPos.z, viewRadius() + 60, ground);
-    crowd.umbrellas.wet = Math.max(weather.now.rain, weather.now.snow * UMBRELLAS.snow);
+    crowd.umbrellas.wet = weather.now.rain;
     crowd.render(ground, (x, y) => !offscreen(x, y));
     birds.update(dt, Object.assign(birdsView, { x: camPos.x, y: -camPos.z, radius: viewRadius(), height: eyes ? 1000 : height, dark: sky.dark, rain: weather.now.rain, snow: weather.now.snow }));
     police.render(ground, time.value);

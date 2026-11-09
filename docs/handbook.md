@@ -916,8 +916,8 @@ record the measurements, merge decisions and pending landmark asset activation.
   textures, so the whole crowd is one instanced draw call. Rebuild with `blender -b --factory-startup -P assets/figures/build.py`; add
   `-- --preview DIR` to render a few frames of every clip.
   People are dressed for the game's date when they're made (`WARDROBE` in
-  `src/figures.ts`): coats in the cold months, bare arms mostly in summer. In rain (and
-  heavy snow) three in five of the walkers put up an umbrella (`src/umbrellas.ts`): one
+  `src/figures.ts`): coats in the cold months, bare arms mostly in summer. In rain (not in
+  snow) three in five of the walkers put up an umbrella (`src/umbrellas.ts`): one
   more instanced mesh over the crowd, drawn only while it rains.
 - **Birds** (`src/birds.ts`): by day in dry weather, flocks of pigeons arrive from beyond
   the view, wheel round a spot above the roofs for a minute or so and leave; over the
