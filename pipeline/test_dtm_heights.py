@@ -330,6 +330,46 @@ def _river(length=200, width=12):
     return wet
 
 
+class CuttingTests(unittest.TestCase):
+    # 5. května over Hvězdova: a bridge 10 m wide along y = 50, a street 7 m wide along
+    # x = 50 under it, in a cutting 6 m deep (the ground at 264 m from 6 m off its middle).
+    bridge = [(LineString([(0, 50), (100, 50)]), 10.0)]
+    street = (LineString([(50, -50), (50, 150)]), 3.5)
+
+    @staticmethod
+    def cut(p):
+        return np.where(np.abs(p[:, 0] - 50) < 6, 258.0, 264.0)
+
+    def test_a_street_in_a_cutting_under_a_bridge_has_a_wall_either_side(self):
+        walls = dh._cuttings(self.bridge, [self.street], self.cut)
+        self.assertEqual(len(walls), 2)
+        for line, low, top in walls:
+            xy = shapely.get_coordinates(line)
+            self.assertTrue(np.allclose(np.abs(xy[:, 0] - 50), 3.5 + dh.CUT_OUT))
+            # From under the deck out to CUT_RUN past it either way.
+            self.assertAlmostEqual(xy[:, 1].min(), 45 - dh.CUT_RUN, delta=dh.PIECE)
+            self.assertAlmostEqual(xy[:, 1].max(), 55 + dh.CUT_RUN, delta=dh.PIECE)
+            # The street is on the lower side.
+            (x0, y0), (x1, y1) = xy[0], xy[-1]
+            left = (x1 - x0) * (50 - y0) - (y1 - y0) * (50 - x0) > 0
+            self.assertEqual(low, 1 if left else -1)
+            self.assertTrue(top)
+
+    def test_no_wall_in_a_valley_or_along_a_bridge(self):
+        valley = lambda p: 258.0 + 0.2 * np.abs(p[:, 0] - 50)  # noqa: E731
+        self.assertEqual(dh._cuttings(self.bridge, [self.street], valley), [])
+        along = (LineString([(-50, 50), (150, 50)]), 3.5)
+        self.assertEqual(dh._cuttings(self.bridge, [along], lambda p: np.where(np.abs(p[:, 1] - 50) < 6, 258.0, 264.0)), [])
+
+    def test_the_wall_stops_where_a_street_joins(self):
+        joining = (LineString([(53, 80), (120, 80)]), 2.0)
+        walls = dh._cuttings(self.bridge, [self.street, joining], self.cut)
+        east = [shapely.get_coordinates(line) for line, _, _ in walls if shapely.get_coordinates(line)[0, 0] > 50]
+        self.assertEqual(len(east), 1)
+        self.assertLess(east[0][:, 1].max(), 80)  # (short of its middle; its lane is out of the terrace)
+        self.assertGreater(east[0][:, 1].min(), 45 - dh.CUT_RUN - dh.PIECE)
+
+
 class WaterLevelTests(unittest.TestCase):
     def test_water_stands_no_higher_than_the_water_it_is_joined_to(self):
         wet = _river()

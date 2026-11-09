@@ -357,6 +357,7 @@ def main() -> None:
     ap.add_argument("--walls-on-streets", action="store_true", help="retaining walls' terraces over car streets as they come (to compare)")
     ap.add_argument("--valley-nearest", action="store_true", help="made-up land beside water from the nearest water alone, cliffs and all (to compare)")
     ap.add_argument("--cut-streets", action="store_true", help="trial: a surveyed street under or over a steep bank is a terrace, cut along its outline")
+    ap.add_argument("--no-cuttings", action="store_true", help="no walls along a street in a cutting under a bridge (to compare)")
     ap.add_argument("--no-sunk-kerbs", action="store_true", help="streets over an underpass from the kerbs below too (to compare)")
     ap.add_argument("--no-scan-levels", action="store_true",
                     help="bridges' decks surveyed as ground in the ground under them, and two levels decided without the LiDAR (to compare)")
@@ -389,7 +390,7 @@ def main() -> None:
     ox, oy = meta["origin"]
     local = f"+proj=tmerc +lat_0={(s + n) / 2} +lon_0={(w + e) / 2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m"
     options = {name: getattr(args, name) for name in (
-        "no_survey", "no_feather", "dmr5g", "shoulder", "walls_on_streets", "valley_nearest", "cut_streets", "no_level", "no_sunk_kerbs", "no_scan_levels")}
+        "no_survey", "no_feather", "dmr5g", "shoulder", "walls_on_streets", "valley_nearest", "cut_streets", "no_level", "no_sunk_kerbs", "no_scan_levels", "no_cuttings")}
     if args.ipr_lidar:
         options["ipr_lidar"] = str(args.ipr_lidar.resolve())
     if args.survey_companion_decks:
@@ -543,6 +544,7 @@ def main() -> None:
                                       [(LineString(w["pts"]), w["w"]) for w in ways if w["kind"] == "tunnel" and len(w["pts"]) > 1], kept_places(local), driven, [] if args.walls_on_streets else list(streets.values()), args.no_feather, not args.shoulder, args.cut_streets, weirs=weirs, unknown=unknown, valley_smooth=not args.valley_nearest,
                                       bridges=[LineString(w["pts"]).buffer(w["w"] / 2) for w in ways if w["kind"] == "bridge" and len(w["pts"]) > 1] + list(outlines),
                                       bridge_ends=dtm_heights.bridge_ends([LineString(w["pts"]) for w in ways if w["kind"] == "bridge" and len(w["pts"]) > 1]),
+                                      bridge_ways=[] if args.no_cuttings else [(LineString(w["pts"]), w["w"]) for w in ways if w["kind"] == "bridge" and len(w["pts"]) > 1],
                                       drawn=drawn_walls(local), level_across=not args.no_level,
                                       cuts=[LineString(w["pts"]).buffer(w["w"] / 2) for w in ways if w.get("cut")], sharp=args.lidar_ground,
                                       scan=ipr_lidar.range_sampler(options["survey_scan"])[0] if options.get("survey_scan") else None,

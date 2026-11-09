@@ -221,6 +221,17 @@ WATER_CLEAR = 8.0  # m from the water: nearer, the wall is the bank's, which is 
 BESIDE = 1.5  # m: two wall lines this close are one wall's two faces; the lower one is the step
 RUN_MIN = 12.0  # m: shorter stretches of retaining wall are left alone (their ends make more mess than they make steps)
 REACH = 10.0  # m either side of a retaining wall: as far as the terrain model's ramp reaches
+# A car street passing under one of the map's bridges in a cutting: 5. května crosses
+# Hvězdova and its slip roads on short bridges off embankments 6 m high. The survey has no
+# wall there, and the terrain model's ramp from the embankment down to the street ran
+# across the lattice at an angle, a torn slope in teeth with the guardrails on top in
+# zigzags. Along each side of such a street, CUT_OUT past its edge, a wall goes wherever
+# the terrain model PROBE further out is CUT_RISE or more over the street's middle, from
+# under the deck out to CUT_RUN past its edges at most, the terrace on its top (see
+# _drawn). It stops where another car street's middle crosses it (a street joining
+# there) or runs into the lane of one that doesn't meet it (slip roads side by side). (A wall across each of the bridge's ends instead, tried
+# first, left the slope as it was and put 24 bridges' joins out by over half a metre.)
+CUT_RISE, CUT_OUT, CUT_RUN = 2.5, 1.0, 40.0  # m
 LONE = 2.0  # m: a surveyed point this far above or below every point round it is a spike or a pit
 STRIP = 8.0  # m: the width of the terrace marked at a wall's foot (two lattice cells)
 # A car street's cross-section: its height is the mean of each kerb's surveyed points
@@ -687,6 +698,87 @@ def _drawn(lines, at):
     return out
 
 
+def _cuttings(ways, streets, at):
+    """Walls along the car streets passing under a bridge in a cutting (see CUT_RISE):
+    [(line, low, True)], as _drawn's, the street on the lower side. `ways`: the map's
+    bridges as (line, width); `streets`: the car streets on the ground as (line, half
+    width), local metres."""
+    streets = [(line, half) for line, half in streets if half > 0]
+    if not ways or not streets:
+        return []
+    line_tree = STRtree([line for line, _ in streets])
+    lanes = [line.buffer(half) for line, half in streets]
+    lane_tree = STRtree(lanes)
+    decks = [line.buffer(width / 2, cap_style="flat") for line, width in ways]
+    deck_tree = STRtree(decks)
+    out = []
+    for k, (street, half) in enumerate(streets):
+        spans = []  # (from, to) along the street: under a deck it crosses
+        for b in deck_tree.query(street, predicate="intersects"):
+            for part in shapely.get_parts(street.intersection(decks[b])):
+                if part.geom_type != "LineString" or part.length < 0.5:
+                    continue
+                bridge = ways[b][0]
+                (x0, y0), (x1, y1) = part.coords[0], part.coords[-1]
+                m = bridge.project(shapely.Point((x0 + x1) / 2, (y0 + y1) / 2))
+                a, c = bridge.interpolate(max(0.0, m - 1.0)), bridge.interpolate(min(bridge.length, m + 1.0))
+                dx, dy = c.x - a.x, c.y - a.y
+                if abs((x1 - x0) * dx + (y1 - y0) * dy) >= np.cos(np.pi / 6) * np.hypot(x1 - x0, y1 - y0) * np.hypot(dx, dy):
+                    continue  # (along the bridge, not under it)
+                u = sorted(street.project(shapely.Point(q)) for q in (part.coords[0], part.coords[-1]))
+                spans.append((u[0], u[1]))
+        if not spans:
+            continue
+        lo_u, hi_u = max(0.0, min(a for a, _ in spans) - CUT_RUN), min(street.length, max(b for _, b in spans) + CUT_RUN)
+        n_pieces = int(np.ceil((hi_u - lo_u) / PIECE))
+        if n_pieces < 1:
+            continue
+        edges = np.linspace(lo_u, hi_u, n_pieces + 1)
+        mids = (edges[1:] + edges[:-1]) / 2
+        c = shapely.get_coordinates(shapely.line_interpolate_point(street, mids))
+        ahead = shapely.get_coordinates(shapely.line_interpolate_point(street, np.minimum(mids + 0.5, street.length))) \
+            - shapely.get_coordinates(shapely.line_interpolate_point(street, np.maximum(mids - 0.5, 0)))
+        n = np.column_stack([-ahead[:, 1], ahead[:, 0]]) / np.maximum(np.hypot(ahead[:, 0], ahead[:, 1]), 1e-9)[:, None]
+        under = np.array([any(a - PIECE <= m <= b + PIECE for a, b in spans) for m in mids])
+        with np.errstate(invalid="ignore"), warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            middle = at(c)
+            for side in (1, -1):
+                off = half + CUT_OUT
+                rise = at(c + n * side * (off + PROBE)) - middle
+                good = rise >= CUT_RISE
+                # Not where another car street's middle crosses the wall's piece, nor on
+                # the lane of one that doesn't meet this one. (The street's own next piece
+                # of way, drawn on from its end, does neither.)
+                joined = set(line_tree.query(street, predicate="intersects"))
+                for q in np.flatnonzero(good):
+                    a, b = edges[q], edges[q + 1]
+                    piece = shapely.LineString([street.interpolate(a), street.interpolate(b)]).offset_curve(side * off)
+                    if piece.is_empty or any(o != k for o in line_tree.query(piece, predicate="intersects")) \
+                            or any(o not in joined for o in lane_tree.query(piece, predicate="intersects")):
+                        good[q] = False
+                # The runs of good pieces that reach a deck.
+                q = 0
+                while q < len(good):
+                    if not good[q]:
+                        q += 1
+                        continue
+                    r = q
+                    while r + 1 < len(good) and good[r + 1]:
+                        r += 1
+                    if under[q:r + 1].any() and edges[r + 1] - edges[q] >= RUN_MIN:
+                        us = np.arange(edges[q], edges[r + 1] + 1e-6, 1.0)
+                        cc = shapely.get_coordinates(shapely.line_interpolate_point(street, us))
+                        aa = shapely.get_coordinates(shapely.line_interpolate_point(street, np.minimum(us + 0.5, street.length))) \
+                            - shapely.get_coordinates(shapely.line_interpolate_point(street, np.maximum(us - 0.5, 0)))
+                        nn = np.column_stack([-aa[:, 1], aa[:, 0]]) / np.maximum(np.hypot(aa[:, 0], aa[:, 1]), 1e-9)[:, None]
+                        line = shapely.LineString(cc + nn * side * off)
+                        if line.is_valid and line.length > 1:
+                            out.append((line, -side, True))  # the street on the wall's right when it's on the left
+                    q = r + 1
+    return out
+
+
 def _no_steeper(grid, free, rise, rounds=400):
     """Lower the points `free` of `grid` (in place) until none is more than `rise` above
     a neighbour (its diagonal ones √2 times that); how many it lowered."""
@@ -811,7 +903,7 @@ def weir_points(weirs, shape, x_of, y_of, step):
     return out
 
 
-def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=(), tunnels=(), keep=(), carriageways=(), streets=(), no_feather=False, no_shoulder=True, cut_streets=False, weirs=(), unknown=None, valley_smooth=True, bridges=(), drawn=(), level_across=True, cuts=(), sharp=False, scan=None, sunk_kerbs=True, scan_levels=True, bridge_ends=()):
+def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=(), tunnels=(), keep=(), carriageways=(), streets=(), no_feather=False, no_shoulder=True, cut_streets=False, weirs=(), unknown=None, valley_smooth=True, bridges=(), drawn=(), level_across=True, cuts=(), sharp=False, scan=None, sunk_kerbs=True, scan_levels=True, bridge_ends=(), bridge_ways=()):
     """Correct the tiles' lattices in place (see the top of the file). Works on arrays
     over the whole area (a few GB for `praha`). `tiles`: {(i, j):
     (N + 1) x (N + 1) heights}, the lattice of tile (i, j) starting at point (i * N, j * N);
@@ -825,7 +917,9 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
     simply the map's: see below). `weirs`: the map's weirs as lines; `unknown`: {(i, j):
     which of the tile's points the terrain model had nothing for}; `drawn`: walls the
     survey misses (terrain_walls.json), as lines in local metres; `bridge_ends`: where the
-    map's bridges come down to the ground (`bridge_ends()`), local metres. `sharp` (prototype):
+    map's bridges come down to the ground (`bridge_ends()`), local metres; `bridge_ways`:
+    the map's bridges as (line, width), for the walls of the streets in cuttings under them
+    (CUT_RISE). `sharp` (prototype):
     the lattice is a laser scan's, which has the streets right; the survey only says
     where the streets, walls and water are, and gives no street its heights."""
     ramp = Reach(sharp)
@@ -1257,7 +1351,10 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
     lanes = np.array([ls.buffer(half) for ls, half in streets if half > 0], dtype=object)
     lane_tree = STRtree(lanes) if len(lanes) else None
     off_streets = 0.0  # m² of terrace taken off the car streets
-    for line, low, top in [(shapely.LineString(run), low, False) for run, low in _retaining(walls, at, dry)] + _drawn(drawn, at):
+    cuttings = _cuttings(bridge_ways, streets, at)
+    # (line, low, top, lifts): `top`, the terrace on the wall's top; `lifts`, the streets
+    # beside it take its heights (a drawn wall's: the survey has the line along its top).
+    for line, low, top, lifts in [(shapely.LineString(run), low, False, False) for run, low in _retaining(walls, at, dry)] + [(*w, True) for w in _drawn(drawn, at)] + [(*w, False) for w in cuttings]:
         bx0, by0, bx1, by1 = line.bounds
         ia, ib = max(0, int(np.floor((bx0 - ramp.reach - x_of(0)) / step))), min(grid.shape[1] - 1, int(np.ceil((bx1 + ramp.reach - x_of(0)) / step)))
         ja, jb = max(0, int(np.floor((by0 - ramp.reach - y_of(0)) / step))), min(grid.shape[0] - 1, int(np.ceil((by1 + ramp.reach - y_of(0)) / step)))
@@ -1270,7 +1367,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         d, u = shapely.distance(line, pt), shapely.line_locate_point(line, pt)
         # Beside the wall, not past its ends. (A drawn wall's street too: the survey bounds
         # it with the line along the wall's top, so it came up to the top's height.)
-        on = (d <= ramp.reach) & (d > 1e-6) & (u > 1e-6) & (u < line.length - 1e-6) & ~wet[gj, gi] & (top | ~street[gj, gi]) & ~np.isnan(grid[gj, gi])
+        on = (d <= ramp.reach) & (d > 1e-6) & (u > 1e-6) & (u < line.length - 1e-6) & ~wet[gj, gi] & (lifts | ~street[gj, gi]) & ~np.isnan(grid[gj, gi])
         gi, gj, p, d, u = gi[on], gj[on], p[on], d[on], u[on]
         if len(gi):
             foot = shapely.get_coordinates(shapely.line_interpolate_point(line, u))
@@ -1398,6 +1495,6 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
             outlines[(i, j)] = listed
     changed = ~np.isnan(bare) & (np.abs(grid - bare) > 0.05)
     return {"survey_rejected_vertices": rejected, "off_scan": counts.get("off_scan", 0), "sunk_kerbs": int(sunk.sum()), "aloft": int(aloft.sum()), "deck_kerbs": int(decked.sum()), "over_kerbs": int(over_kerbs.sum()), "end_kerbs": int(at_end.sum()), "kerbs_skipped": counts.get("kerbs_skipped", 0), "scan_lower": counts.get("scan_lower", 0), "scan_upper": counts.get("scan_upper", 0), **({"kept_aloft": counts["kept_aloft"]} if "kept_aloft" in counts else {}), "surfaces": surfaces, "street_points": street_points, "levelled_across": levelled_points, "two_levels": two_levels, "under_points": under, "feathered": feathered, "overhang_points": overhang, "water_points": int(wet.sum()), "water_levelled": levelled, "valley_points": valley, "bank_points": bank_points,
-            "kept_by_hand": kept, "cut_streets": cuts, "retaining_walls": len(strips) - cuts, "retaining_metres": round(wall_length), "terrace_off_streets_m2": round(off_streets), "wall_points": wall_points, "lone_points": lone_points,
+            "kept_by_hand": kept, "cut_streets": cuts, "retaining_walls": len(strips) - cuts, "retaining_metres": round(wall_length), "cuttings": len(cuttings), "terrace_off_streets_m2": round(off_streets), "wall_points": wall_points, "lone_points": lone_points,
             "changed": int(changed.sum()), "mean_change": float(np.abs(grid - bare)[changed].mean()) if changed.any() else 0.0,
             "labels": labels, "terraces": outlines}
