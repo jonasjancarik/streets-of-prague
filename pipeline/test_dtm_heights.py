@@ -204,6 +204,27 @@ class UnderpassTests(unittest.TestCase):
         self.assertAlmostEqual(float(after[2, 8]), 200.0, delta=0.3)
 
 
+    def test_a_street_under_a_railway_by_a_tunnel_keeps_its_kerbs(self):
+        # Čuprova under the railway, a cycle path's tunnel beside it: the railway's edges
+        # cut the street's survey into pieces, the one between them 4 m wide (deck kerbs
+        # at 209 m along x = 30 and x = 34), the street's kerbs at 200 m along y = 24, all
+        # in the tunnel's strip. The railway isn't a bridge of the map's; the LiDAR has
+        # the street, 200 m.
+        tiles = {(0, 0): np.full((17, 17), 200.0, dtype=np.float32)}
+        boxes = {(0, 0): box(0, 0, 64, 64)}
+        lines = [[(2, 24, 200), (62, 24, 200)], [(30, 12, 209), (30, 24, 209)], [(34, 12, 209), (34, 24, 209)]]
+        polys = [box(2, 12, 30, 24), box(30, 12, 34, 24), box(34, 12, 62, 24)]
+        flat = lambda xs, ys, reach: (np.full(len(xs), 200.0, dtype=np.float32), np.full(len(xs), 200.0, dtype=np.float32))  # noqa: E731
+        with patch.object(dh, 'survey', return_value=(polys, [np.array(c, float) for c in lines], [])):
+            out = dh.apply('test', None, Identity(), tiles, 16, 4.0, 0, 0, None, boxes,
+                           tunnels=[(shapely.LineString([(2, 17), (62, 17)]), 8.0)],
+                           streets=[(LineString([(0, 18), (64, 18)]), 12.0)], scan=flat)
+        self.assertEqual(out['sunk_kerbs'], 0)
+        self.assertGreater(out['over_kerbs'], 0)
+        for j in (4, 5):  # (32, 16) and (32, 20)
+            self.assertAlmostEqual(float(tiles[0, 0][j, 8]), 200.0, delta=0.3)
+
+
 class DeckKerbTests(unittest.TestCase):
     """A road in a cutting under an overpass, one surveyed surface (the D0 under Na
     Radosti): the road's kerbs at 200 m along y = 20 and y = 44, the overpass's deck

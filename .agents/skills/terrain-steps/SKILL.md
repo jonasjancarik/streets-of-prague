@@ -138,6 +138,10 @@ steeper than VALLEY anywhere, which took steps over 1 m from 71 to 38.
   on the ground are taken out of the water, and the tile lists its own water outline
   under label 1.
 - A street surveyed in an underpass is under the ground (Hlávkův most on Štvanice).
+  In a tunnel's strip a kerb more than 3 m under the highest kerb round it is the
+  underpass's, the highest of those not up on something (`SUNK_ROUND`): beside a cycle
+  path's tunnel under the railway, Čuprova's own kerbs were taken for the tunnel's, and
+  the railway's deck filled the street, a ridge 18 m high.
 - An embankment between two walls is narrower than the 10 m the rules look out to.
 - Water lies level: a pool of wide water between weirs has one level (what all but its
   lowest tenth has; the lowest is the water running off at a weir's end or into a

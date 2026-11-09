@@ -309,10 +309,24 @@ Ask first:
     0.32 m; Na Botiči's step 1.84 → 0.18 m. Steps over 1 m 14 → 12, bumps 471, ridges
     over 1 m 139 → 103, waves over 0.3 m within 2 m 1,686, streets more than 1 m off
     the LiDAR beside a structure 321; no bridge join changed.
+  - **Čuprova under the railway** (9 November): in a tunnel's strip a kerb more than 3 m
+    under the highest kerb round it counts as the underpass's, and the highest was the
+    railway's deck, so a cycle path's tunnel beside Čuprova took the street's own kerbs
+    for its own and the deck filled the street, a ridge 18 m high. The highest is now
+    one that isn't up on something: Čuprova's waves within 12 m 5.40 → 0.29 m and 3.56 →
+    0.57 m, its bump 0.75 → 0.13 m; 535 fewer kerbs taken for an underpass's in the
+    city, no bridge join changed, and one street worse: Wilsonova by Těšnovský tunel,
+    already leaning 48 % across, bump 1.25 → 1.81 m (its crown 1.53 → 1.08 m). Judging
+    the kerbs of surveyed pieces too small to hold a lattice point, the first guess,
+    moved no street in the city.
   - Left for step 2: Ohrobecké údolí (6.7 m) and Železničářů (3.8 m), bridges' pads
     across a street; nábřeží Edvarda Beneše (5.4 m) and Kapitána Jaroše (3.2 m); the
     footway at 50.1024, 14.5723 (0.05 → 2.87 m since 4238a983); V Kuťatech, a 7 m bridge
-    whose deck kerbs all lie within 6 m of its ends (6.22 m, as today).
+    whose deck kerbs all lie within 6 m of its ends (6.22 m, as today); Wilsonova at
+    50.0923, 14.4374 (leaning 48 % across, as today); Kosmická at 50.0319, 14.5323, a
+    crown of 3.15 m that keeping out every kerb up on something that no surface carries
+    took to 0.04 m (but that also broke the viaducts of Brněnská, Strakonická and
+    Pražský okruh, whose own kerbs lie just off their surfaces' outlines).
 - 9 November 2026, step 3 measured, not finished. `praha` with the LiDAR as the ground
   (`--ipr-lidar .cache/ipr_lidar/2023 --lidar-ground --lidar-window 4 --step-lines`, on
   today's 4 m lattice, each point the median of the scan's 4 × 4 metres), against

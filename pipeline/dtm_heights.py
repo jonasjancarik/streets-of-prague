@@ -156,7 +156,12 @@ UNDER_BRIDGE = 6.0  # m round a bridge that count as under it (how far its deck'
 # heights and for levelling the street across: a pit 6 m deep and a trench of 2 m. A
 # kerb in one of the map's tunnels (the tunnel's outline, UNDER_SIDE either side, not
 # past its ends) more than LEVELS below the highest surveyed point within SUNK_ROUND is
-# the underpass's; no lattice point outside the tunnels takes it.
+# the underpass's; no lattice point outside the tunnels takes it. The highest of those
+# that aren't up on something (`aloft`, `_on_decks`): Čuprova runs under the railway
+# beside a cycle path's tunnel, and its kerbs, 18 m under the railway's deck, were taken
+# for the tunnel's. Its surveyed pieces there had no kerb left on the ground, so the
+# deck's kerbs counted as the street's on a viaduct (see CARRIED_GRADE): a ridge of the
+# railway's height across the street.
 SUNK_ROUND = 20.0  # m
 # With the LiDAR as the ground (`sharp`), a street point surveyed more than ALOFT_FROM
 # over the scan mixes in the survey, all of it from ALOFT_TO (see where it's used).
@@ -457,17 +462,19 @@ def _under_decks(tree, xy):
     return under
 
 
-def _sunk_in_tunnels(points, tunnels, shape, x_of, y_of, step):
+def _sunk_in_tunnels(points, tunnels, shape, x_of, y_of, step, aloft=None):
     """(Which surveyed points are an underpass's kerbs, which lattice points are in one of
-    the map's tunnels): see SUNK_ROUND. `tunnels`: (line, width) in local metres."""
+    the map's tunnels): see SUNK_ROUND. `tunnels`: (line, width) in local metres; `aloft`:
+    which points are up on something (`_on_decks`), none by default."""
     sunk, tunnelled = np.zeros(len(points), dtype=bool), np.zeros(shape, dtype=bool)
     if not tunnels or not len(points):
         return sunk, tunnelled
     holes = [line.buffer(width / 2 + UNDER_SIDE, cap_style="flat") for line, width in tunnels]
     inside = np.unique(STRtree(holes).query(shapely.points(points[:, :2]), predicate="intersects")[0])
     if len(inside):
-        round_ = cKDTree(points[:, :2]).query_ball_point(points[inside, :2], SUNK_ROUND)
-        highest = np.array([points[r, 2].max() for r in round_])
+        ground = np.flatnonzero(~aloft) if aloft is not None else np.arange(len(points))
+        round_ = cKDTree(points[ground, :2]).query_ball_point(points[inside, :2], SUNK_ROUND) if len(ground) else [[] for _ in inside]
+        highest = np.array([points[ground[r], 2].max() if r else -np.inf for r in round_])
         sunk[inside] = points[inside, 2] < highest - LEVELS
     for hole in holes:
         bx0, by0, bx1, by1 = hole.bounds
@@ -830,9 +837,9 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         return out
     points, rejected = _survey_points(lines, to_local, at_bare, at_lowest, scan, counts, spared)
     pts = points[:, :2]
-    sunk, tunnelled = _sunk_in_tunnels(points, tunnels if sunk_kerbs else (), grid.shape, x_of, y_of, step)
     scan_here = _scan_local(scan, to_local) if scan_levels else None
     aloft, decked, at_end = _on_decks(points, bridges, scan_here, bridge_ends)
+    sunk, tunnelled = _sunk_in_tunnels(points, tunnels if sunk_kerbs else (), grid.shape, x_of, y_of, step, aloft)
     over_any, carried_any = np.zeros(len(points), dtype=bool), np.zeros(len(points), dtype=bool)
     deck_tree = STRtree(list(bridges)) if scan_here is not None and len(bridges) else None
     end_tree = cKDTree(np.asarray(bridge_ends, dtype=float)) if scan_here is not None and len(bridge_ends) else None

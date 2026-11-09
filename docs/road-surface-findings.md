@@ -1630,6 +1630,29 @@ says which of two levels a road is on. Three kinds turned up:
   below, the deck went level (a bridge way that steep is taken for a mistake) and met
   its street 7 m up.
 
+**Čuprova under the railway.** With the deck's kerbs out of the street's surfaces,
+Čuprova still had a ridge of the railway's height across its carriageway, about 6 × 12 m,
+18 m over the street. A cycle path runs in a tunnel beside the street there and under the
+railway, and in a tunnel's strip (4 m either side) a kerb more than 3 m below the highest
+surveyed point within 20 m is taken for the underpass's. The highest was the railway's
+deck, so Čuprova's own kerbs counted as the tunnel's: of 44 such kerbs there, 26 lay
+within a metre of the LiDAR. The railway's edges cut the street's survey into pieces of
+5 to 51 m², and with their own kerbs gone, those pieces had no kerb left on the ground:
+the deck's kerbs counted as the street's own on a viaduct and filled the street. The
+highest point round a kerb is now one that isn't up on something; 19 kerbs remain the
+tunnel's there, all of them the cycle path's, 3 to 5 m under the LiDAR.
+
+Two first guesses were wrong and left the ridge as it was. Most of those pieces are too
+small to hold a lattice point, and a surface's kerbs were judged only while filling its
+lattice points; judging every piece's kerbs moved no street anywhere in the city. The
+other was the terrain model's height in a tunnel's strip (the next paragraph).
+
+Tried and dropped on the way: the terrain model kept where a street in a tunnel's
+strip is surveyed well under it, only where the LiDAR doesn't see the street itself. The
+terrain model has the railway's bridge as ground, which looked like the ridge's cause.
+The rule smoothed a few places (the slip road under Malovanka's ramp, U Brusnice,
+Těšnovský tunel) but put Zálužská 7 m off the LiDAR and waves of 0.9 m on Na Veselí.
+
 **The LiDAR as the ground, on today's lattice.** A 4 m lattice of point samples is
 twice as wavy along the streets as the scan (0.37 % of line metres over the 0.1 m flag
 within 2 m, the scan 0.17 %); the median of the scan's 4 × 4 metres round each point
