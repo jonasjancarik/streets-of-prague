@@ -250,7 +250,7 @@ const tell = (body, { origin = SITE, method = 'POST', e = senv } = {}) => {
 res = await tell({ e: 'frames', v: 'v1.2.3', d: '2026-10-01-b2', s: 'abc', f: { renderer: 'WebGPU', tier: 'high', seq: 2, medianMs: 16, unknown: 'dropped', p95Ms: 'not a number' } });
 assert.equal(res.status, 204);
 // Fields land in the order worker/stats.js lists them; what it doesn't list is dropped.
-assert.deepEqual(rows, [{ indexes: ['frames'], blobs: ['frames', 'v1.2.3', 'abc', 'CZ', 'play.streetsofprague.com', '2026-10-01-b2', 'WebGPU', '', 'high'], doubles: [2, 0, 0, 16, 0, 0, 0, 0, 0, 0] }]);
+assert.deepEqual(rows, [{ indexes: ['frames'], blobs: ['frames', 'v1.2.3', 'abc', 'CZ', 'play.streetsofprague.com', '2026-10-01-b2', 'WebGPU', '', 'high'], doubles: [2, 0, 0, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] }]);
 await tell({ e: 'error', f: { message: 'x'.repeat(5000).slice(0, 3000) } });
 assert.equal(rows[0].blobs[7].length, 600);
 

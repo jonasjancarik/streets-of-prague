@@ -316,12 +316,16 @@ export class Graphics {
   }
 
   // The frame that began at `began` has been handed to the GPU: on WebGPU, its work is the
-  // longer of the main thread's part and the GPU's.
-  rendered(began: number) {
+  // longer of the main thread's part and the GPU's. `gpu` hears the GPU's part.
+  rendered(began: number, gpu?: (ms: number) => void) {
     const device = (this.renderer as GPURenderer).backend?.device;
-    if (this.choice !== 'auto' || !device) return;
-    const sent = performance.now();
-    device.queue.onSubmittedWorkDone().then(() => { const now = performance.now(); this.auto.work(Math.max(sent - began, now - sent), now); }, () => {});
+    if (!device) return;
+    const sent = performance.now(), auto = this.choice === 'auto';
+    device.queue.onSubmittedWorkDone().then(() => {
+      const now = performance.now();
+      gpu?.(now - sent);
+      if (auto) this.auto.work(Math.max(sent - began, now - sent), now);
+    }, () => {});
   }
 
   label() {

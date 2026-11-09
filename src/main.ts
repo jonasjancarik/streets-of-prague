@@ -117,6 +117,7 @@ import { Blinkers } from './blinkers.ts';
 import { Minimap, minimapOn } from './minimap.ts';
 import { PLACES as NAMED_PLACES } from './taxi.ts';
 import * as telemetry from './telemetry.ts';
+import { Hitches } from './hitches.ts';
 import { benchPause } from './benchpause.ts';
 import type { Testkit } from './testkit.ts';
 
@@ -2324,9 +2325,17 @@ async function main() {
   };
   setScreenshot(() => new Promise((resolve) => { grab.push(resolve); setTimeout(() => resolve(null), 2000); }));
   let soundHeld = false;
+  // What makes the frames over 100 ms long, for the statistics: shader builds are new
+  // node builder states (WebGPU) or programs (WebGL).
+  const hitches = new Hitches(() => {
+    const r = renderer as unknown as { _nodes?: { nodeBuilderCache?: Map<unknown, unknown> }; info?: { programs?: unknown[] | null } };
+    return r._nodes?.nodeBuilderCache?.size ?? r.info?.programs?.length ?? 0;
+  });
+  let joinedWas = 0;
   renderer.setAnimationLoop((now) => {
     if (benchPause.paused) { last = now; return; } // a benchmark elsewhere on this machine (dev only)
     const began = performance.now();
+    hitches.begin(now - last);
     const paused = settingsPanel.open || mapOpen();
     let dt = paused ? 0 : Math.min(0.05, (now - last) / 1000); // the settings and the map pause the game
     // (Filming, a frame's worth of the game's time and no more: see Testkit.frameDt.)
@@ -2364,7 +2373,11 @@ async function main() {
       view.h = Math.round(Math.atan2(-looking.z, looking.x) / STEP5) * STEP5;
       view.spread = Math.round(half / STEP5) * STEP5;
     }
+    // (A tile joins the scene just after a frame's update, so this frame draws it first.)
+    const tilesFrom = performance.now(), joined = world.joined !== joinedWas;
+    joinedWas = world.joined;
     world.update(camPos.x, -camPos.z, eyes ? EYES_REACH : viewRadius() + 220, testkit?.cam ? Infinity : eyes ? EYES_REACH : viewRadius(Math.max(height, heightWanted)) + world.drawBeyond, eyes ? view : null);
+    hitches.tiles(performance.now() - tilesFrom, joined);
 
     // Player: keyboard and touch controls together. In the car, Shift is lane assist:
     // it steers along your lane, and A/D picks the turn at the next junction instead.
@@ -2783,20 +2796,23 @@ async function main() {
 
     dev.update();
     // (Ultra: the street round the middle of the view, for the cars to mirror.)
-    const probed = renderProbe(renderer, scene, camPos.x, camGround, camPos.z, carPool.allMeshes());
-    if (renderMirror(renderer, scene, camera, camGround, weather.now.wet) || probed) {
-      scene.matrixWorldAutoUpdate = false;
-      renderer.render(scene, camera);
-      scene.matrixWorldAutoUpdate = true;
-    } else renderer.render(scene, camera);
-    graphics.rendered(began);
+    hitches.render(() => {
+      const probed = renderProbe(renderer, scene, camPos.x, camGround, camPos.z, carPool.allMeshes());
+      if (renderMirror(renderer, scene, camera, camGround, weather.now.wet) || probed) {
+        scene.matrixWorldAutoUpdate = false;
+        renderer.render(scene, camera);
+        scene.matrixWorldAutoUpdate = true;
+      } else renderer.render(scene, camera);
+    });
+    const timed = hitches.end();
+    graphics.rendered(began, (ms) => hitches.gpu(timed, ms));
     // A picture of the frame just drawn, asked for by the feedback form: the canvas can only
     // be read in the task that drew it.
     if (grab.length) { const picture = takePicture(); for (const done of grab.splice(0)) done(picture); }
   });
 
   window.__drive = {
-    scene, camera, traffic, crowd, loose, restingByCar, restingIndex, get resting() { return resting; }, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, refuse, health, fires, trams, ride, taxi, clock, board, metro, funicular, ferries, graphics, sound, weather, lamps, sky, skids, bikeShare, carPool, spawnWork, bags,
+    hitches, scene, camera, traffic, crowd, loose, restingByCar, restingIndex, get resting() { return resting; }, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, refuse, health, fires, trams, ride, taxi, clock, board, metro, funicular, ferries, graphics, sound, weather, lamps, sky, skids, bikeShare, carPool, spawnWork, bags,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,

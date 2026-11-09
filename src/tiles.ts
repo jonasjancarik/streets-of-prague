@@ -501,6 +501,8 @@ export class TileWorld {
   private street = false;
   private reveal: THREE.Object3D[] = [];
   sliceMs = 8;
+  // Tiles that have joined the scene so far (the frame after draws them for the first time).
+  joined = 0;
   buildTimes: number[];
   skyTotals: { coalesced: number; cancelled: number };
   landmarks: Promise<Landmark[]>; landmarkModels: Map<string, Promise<THREE.Group | null>>;
@@ -1611,6 +1613,7 @@ export class TileWorld {
     this.trees.add(k, s.trees);
     if (this.street && !this.urgent) group.traverse((o) => { if (o !== group && o.visible && (o as THREE.Mesh).geometry) { o.visible = false; this.reveal.push(o); } });
     this.scene.add(group);
+    this.joined++;
     tile.drawn = { group, surfaces, own: [...buildings, ...(hidden ? [hidden] : [])], smoke };
     lap('meshes');
   }

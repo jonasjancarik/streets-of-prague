@@ -51,6 +51,20 @@ const check = `(async () => {
   const busy = new AutoTier('high', () => false);
   for (let i = 0; i < 60; i++) { busy.work(30, 1000 + i * 33); next = busy.record(33, 1000 + i * 33); }
   assert(next === 'medium' && busy.capped === 0, 'Auto steps down when the frame was working');
+
+  // A frame over 100 ms is put down to the part that took longest, if it took enough of it.
+  const { blame, scriptCause } = await import('/src/hitches.ts');
+  const before = (o) => ({ began: 0, ended: 0, work: 10, tiles: 0, joined: false, render: 0, built: false, gpu: 0, ...o });
+  assert(blame(150, before({ work: 140, render: 120, built: true }), [], true) === 'shaders', 'A long frame that built a shader is the shaders');
+  assert(blame(150, before({ work: 140, render: 120 }), [], true) === 'drawing', 'A long drawing without a build is the drawing');
+  assert(blame(150, before({ work: 140, render: 20 }), [], true) === 'game', 'A long frame outside the drawing is the game');
+  assert(blame(150, before({ work: 140, render: 120, joined: true }), [], true) === 'tiles', 'Drawing a new tile is the tiles');
+  assert(blame(150, before({ work: 140, render: 20, gpu: 150 }), [], true) === 'game', 'The GPU only when the main thread does not explain it');
+  assert(blame(150, before({ work: 100, tiles: 90 }), [], true) === 'tiles', 'A long tile update is the tiles');
+  assert(blame(150, before({ gpu: 130 }), [], true) === 'gpu', 'A long GPU frame is the GPU');
+  assert(blame(150, before(), [{ start: 0, ms: 120, cause: scriptCause({ invoker: 'Worker.onmessage', sourceURL: 'https://x/assets/index-a.js' }) }], true) === 'tiles', 'A worker reply between frames is the tiles');
+  assert(blame(150, before(), [{ start: 0, ms: 120, cause: scriptCause({ invoker: 'Promise.then', sourceURL: 'https://x/assets/three.webgpu-b.js' }) }], true) === 'shaders', 'A three.js script between frames is the shaders');
+  assert(blame(150, before(), [], true) === 'waiting' && blame(150, before(), [], false) === 'unknown', 'Nothing timed is waiting, or unknown without long animation frames');
   const paused = new AutoTier('high', () => false);
   for (let w = 0; w < 3; w++) for (let i = 0; i < 60; i++) assert(paused.record(i ? 16 : 5000, 1000 + w * 2000 + i * 20) === null, 'A pause is not a hitch');
   g.set('ultra');
