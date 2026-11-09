@@ -878,3 +878,36 @@ it from there sent Auto down to Low; from the hand-over it read 10–14 ms acros
 tiers. A hidden pane never presents, so its GPU work piles up and the timing grows
 without bound (80 ms at pixel ratio 4 while frames came every 17 ms); that only makes
 frames look busier. WebGL is unchanged. No phone or Windows machine was measured.
+
+## 9 November 2026 — what makes a frame over 100 ms
+
+The statistics (1 October–9 November) put weak machines at 60 fps on the lowest levels
+but with many frames over 100 ms: about 30 a minute on older Intel graphics, 11–12 on
+older Android, 1.5–2 on fast GPUs, and 50 a minute on weak GPUs with four cores or
+fewer. They didn't say why. `src/hitches.ts` now puts each such frame down to one cause
+in the `frames` report (`hitchShaders`, `hitchTiles`, `hitchDrawing`, `hitchGame`,
+`hitchScripts`, `hitchGpu`, `hitchWaiting`, `hitchUnknown`; docs/telemetry.md), so the
+players' own machines will say.
+
+Checked against `bench.mjs --hitches` on the M5 (headless Chrome, WebGPU, High, 1×,
+the drive, 60 s), `e54f7365` served from a detached worktree:
+
+- **The GPU's answer can't be compared with main-thread time.** In a first version the
+  GPU took the blame for 9 of 19 frames over 100 ms with the CPU slowed 4×, frames the
+  detailed recorder put down to builds and tiles: `onSubmittedWorkDone` is answered
+  only when the main thread is free, so a busy frame looks like a busy GPU. The GPU is
+  now blamed only when nothing on the main thread explains the frame.
+- **A tile's first drawing is the tile's.** The frame after a tile joins the scene drew
+  for 121 ms with no build in it (CPU 4×); it now counts as `hitchTiles`, not drawing.
+- **Agreement:** with the CPU slowed 6× (machine quieter, 30 fps), two frames over
+  100 ms in the timed minute: a build (102 ms, both say shaders) and one the detailed
+  recorder couldn't place (118 ms; the game's verdict: the GPU).
+- **What the drives showed:** with the CPU slowed 4× on a loaded machine (other
+  sessions at load average 20–50), 9 of 18 frames over 100 ms were shader builds, 4 a
+  tile's first drawing, 1 a 320 ms `writeBuffer`. Builds were 34–39 a drive, and
+  `MeshLambertNodeMaterial ground` 15 of them each time (443–670 ms, up to 46–76 ms
+  each): ground variants (`groundGraph`'s key: pattern, relief, sky, deck, mask,
+  photo, raster, dig, sheltered, seasonal) meeting the camera for the first time,
+  which the loading warm-up can't cover because they aren't in the first tiles. That is
+  the lead for the main thread; whether it is what players feel waits for the
+  statistics, since the weak machines are mostly limited by their GPUs.
