@@ -67,10 +67,10 @@ Both deploy scripts write `version.json` at the site root with
       "mapsAccepted": ["2026-10-01-b2"] }
 
 `game` is what `git describe` gave the build (as in the settings panel), `map` the map
-it goes with and `mapsAccepted` the range from the check above. On mbxp the map is the
-fingerprint id, and that is the only one accepted. Cloudflare serves it with
-`Cache-Control: no-store` (the generated `_headers`); the beta's Caddy on mbxp sends no
-such header, so the game asks for it with `cache: 'no-store'` instead.
+it goes with and `mapsAccepted` the range from the check above. On the beta the map is
+`beta-<id>` (on mbxp, the bare fingerprint id), and that is the only one accepted.
+Cloudflare serves it with `Cache-Control: no-store` (the generated `_headers`); Caddy on
+mbxp sends no such header, so the game asks for it with `cache: 'no-store'` instead.
 
 An open tab reads it (`src/update.ts`) on load and when it becomes visible again, at
 most every 15 minutes. If `game` differs from the tab's own version, the settings panel
@@ -138,16 +138,24 @@ the current commit anyway; the settings panel then shows something like
 
 ## The two sites
 
-**Cloudflare** (<https://play.streetsofprague.com>, or <https://streetsofprague.com>
+**Production** (<https://play.streetsofprague.com>, or <https://streetsofprague.com>
 while `GAME_MOVED` in `deploy/address` is empty; the same Worker answers at both) is built by
 `scripts/deploy-cloudflare.sh` with the address of the map version baked into the code.
 An open tab, a cached page and an earlier deployment each keep loading the map they were
 built for.
 
-**mbxp** (<https://beta.streetsofprague.com>) is built by `scripts/deploy-mbxp.sh`
-from the local `public/data`, with no upload to R2 and no entry in
-`deploy/data-version`. Each map is kept on the server in `data/<id>` and served at
-`data/<id>/`, where the id is a fingerprint of the files' paths, sizes and modification
+**The beta** (<https://beta.streetsofprague.com>) has been on Cloudflare since 8 November
+2026: `scripts/deploy-cloudflare-beta.sh` deploys any commit, no release needed, as the
+assets-only Worker `streets-of-prague-beta`. Its map is the local `public/data`,
+uploaded to R2 as `beta-<id>`, where the id is a fingerprint of the files' paths, sizes
+and modification times; there is no entry in `deploy/data-version`. A changed map gets a
+new name, so open tabs keep the map they started with, and an unchanged one isn't sent
+again. The forms and statistics go to production's Worker.
+
+**mbxp**, where the beta used to be, is still built by `scripts/deploy-mbxp.sh` from the
+local `public/data`, but beta.streetsofprague.com is a Worker custom domain now and
+doesn't reach it (the handbook's "Deploying" says how to point it back).
+Each map is kept on the server in `data/<id>` and served at `data/<id>/`, where the id is a fingerprint of the files' paths, sizes and modification
 times. A changed map therefore gets a new folder and a new address: the game that is
 running keeps its map until the new one is whole, and browsers never mix files of two
 maps. Files that are unchanged are hard links to the previous map's, so only the
@@ -158,7 +166,8 @@ Old folders in `data/` are not removed automatically.
 ## What the settings panel shows
 
 `Version v1.2.3 · 2026-10-01 · map data 2026-10-01-b2`: the game's version, the day it
-was built, and the map. On Cloudflare the map is the data version. On mbxp and in local
+was built, and the map. On production the map is the data version, on the beta
+`beta-<id>`. On mbxp and in local
 runs it is the day the map was built (`built` in `index.json`), or `local` for a map
 built before that was recorded.
 
@@ -169,6 +178,10 @@ built before that was recorded.
   map is still on R2.
 - **A bad map on Cloudflare.** Revert the commit that changed `deploy/data-version` and
   release that as a patch. Nothing is uploaded or deleted.
+- **The beta.** Every `beta-<id>` map stays on R2, so a Worker version rolled back in
+  Cloudflare's dashboard (Workers, `streets-of-prague-beta`, Deployments) comes back with
+  the map it was built for. Or check out the earlier commit with its map in
+  `public/data` and run `scripts/deploy-cloudflare-beta.sh` again.
 - **mbxp.** Check out the earlier commit and run
   `DATA_ID=<id> scripts/deploy-mbxp.sh`, with the id from that release's `data-id` file,
   to deploy it with the map it had. Without `DATA_ID` it takes the local map.
