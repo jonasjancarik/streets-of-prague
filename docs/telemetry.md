@@ -96,8 +96,8 @@ report and adds them up itself, so the three lists at the top narrow everything 
 to one game version, one domain or one map data version; the choice is kept in the
 page's address. The page is a file on
 your machine; nothing is published. Reading needs the **Account Analytics: Read**
-permission, which the `cf` login does not have (checked 2026-10-01: its scopes include
-none for analytics). Create an API token with just that permission for the account, at
+permission. The `cf` login has it now (checked 2026-11-09; it didn't on 2026-10-01), and
+the script uses it when no token is set. Otherwise, create an API token with just that permission for the account, at
 <https://dash.cloudflare.com/profile/api-tokens>, and save it in
 `~/.config/streets-of-prague/analytics-token`, or pass it as `CLOUDFLARE_API_TOKEN`.
 The token can only read analytics; keep it out of the repository all the same.
