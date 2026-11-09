@@ -118,6 +118,7 @@ import { Minimap, minimapOn } from './minimap.ts';
 import { PLACES as NAMED_PLACES } from './taxi.ts';
 import * as telemetry from './telemetry.ts';
 import { Birds, BIRDS } from './birds.ts';
+import { Terraces } from './terraces.ts';
 import { Hitches } from './hitches.ts';
 import { benchPause } from './benchpause.ts';
 import type { Testkit } from './testkit.ts';
@@ -429,6 +430,7 @@ async function main() {
   const water = new Water(scene, weatherFx.tint);
   const beacons = new Beacons(scene);
   const birds = new Birds(scene);
+  const terraces = new Terraces(scene, AREA);
   const birdsView = {
     x: 0, y: 0, radius: 0, height: 0, dark: 0, rain: 0, snow: 0,
     ground: (x: number, y: number) => world.heightAt(x, y), water: (x: number, y: number) => !!world.waterAt(x, y),
@@ -441,6 +443,7 @@ async function main() {
       return null;
     },
   };
+  const terraceView = { x: 0, y: 0, radius: 0, day: 0, loaded: (x: number, y: number) => !!world.tileAt(x, y), open: birdsView.open, ground: birdsView.ground };
   // The emergency vehicles with their lights going, and what the lamps need each frame
   // besides the cars (the people in view stand in their light too).
   const flashing: Flashing[] = [];
@@ -2455,6 +2458,7 @@ async function main() {
     crowd.umbrellas.wet = weather.now.rain;
     crowd.render(ground, (x, y) => !offscreen(x, y));
     birds.update(dt, Object.assign(birdsView, { x: camPos.x, y: -camPos.z, radius: viewRadius(), height: eyes ? 1000 : height, dark: sky.dark, rain: weather.now.rain, snow: weather.now.snow }));
+    terraces.update(dt, Object.assign(terraceView, { x: camPos.x, y: -camPos.z, radius: viewRadius(), day: season.day }));
     police.render(ground, time.value);
     {
       const chasing = police.lit(inCar), engines = brigade.lit, rescue = ambulances.lit, carts = refuse.lit;

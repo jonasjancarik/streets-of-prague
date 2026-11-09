@@ -937,6 +937,19 @@ record the measurements, merge decisions and pending landmark asset activation.
   only the instance getting narrower across, so a frame costs one matrix per bird (96 at
   most). A flock comes down as the camera zooms in, and shrinks away among the roofs.
   `t.flock('pigeon' | 'gull')` puts one over you.
+  On the ground, small groups of pigeons peck about on open ground just past the edge
+  of the view; they take off when you come within 3 m on foot or a moving car within
+  7 m, climb into a flock, circle nearby and come down on open ground again or fly off.
+  `t.pigeons(ahead)` puts a group in front of you.
+- **Café terraces** (`src/terraces.ts`): from 10 April to 27 October the cafés,
+  restaurants and pubs that OpenStreetMap tags with `outdoor_seating` (and its beer
+  gardens) have tables under square parasols outside: 1,212 places in `praha`
+  (`pipeline/build_terraces.py` → `terraces.json`; a map without the file has none). OSM
+  doesn't say where the tables stand or how many, so each place gets a row of two to
+  six on the open ground nearest its point on the map, along the house, wherever a
+  table fits clear of walls, roads and water; on a narrow pavement that may be one, or
+  none. All the tables are one instanced mesh, rewritten only when a place comes into
+  view or leaves. Nothing collides with them yet.
 - **Cars** are built the same way (`assets/cars/build.py` → `public/cars.glb`): one
   low-poly body per type (hatchback, saloon, estate, SUV, van, pickup, taxi, police), shaped for
   the view from above, where the bonnet, cabin, windows and roof show, with a little
@@ -1250,6 +1263,7 @@ uv run ipr_greenery.py build centrum  # IPR's surveyed lawns, shrubs, hedges and
 uv run ipr_utility.py build centrum   # manhole covers, storm drains, traffic-light poles into the tiles (optional; before build_signals.py)
 uv run build_signals.py centrum    # traffic lights at junctions from OSM → signals.json
 uv run build_bikes.py centrum      # shared bikes' stations from GBFS feeds → bikes.json
+uv run build_terraces.py centrum   # cafés, restaurants and pubs with tables outside (OSM) → terraces.json
 uv run build_districts.py centrum  # parts of town from OSM's cadastral areas → districts.json
 uv run landmarks.py centrum        # landmarks from IPR's photorealistic mesh → landmarks/
 ```
