@@ -288,7 +288,11 @@ steeper than VALLEY anywhere, which took steps over 1 m from 71 to 38.
   car street crosses fixed Ohrobecké údolí (`solve`, 9 November 2026). A wall across
   every bridge's end over a lower street, tried the same day for 5. května over
   Hvězdova, broke 24 bridge joins and didn't help there: the slope runs beside the
-  deck along the lower street, not across the bridge's end.
+  deck along the lower street, not across the bridge's end. A wall along each side of
+  a car street in a cutting under a bridge (`_cuttings`, `CUT_RISE`) does it, where the
+  terrain model's slope beside the street is steep enough; it stops where another
+  street's middle crosses it, not where any lane touches it (a street's ways are cut at
+  every junction, and its own next way touched every wall).
 - A street crossing over a tunnel isn't in it: Modřanská's points over a footway's
   tunnel at Zlíchov took the footway's floor (`_crossing` in `dtm_heights.py`). Rašínovo nábřeží by Palackého
   most and Komořanská by most Závodu míru were the two-level survey under a bridge (see

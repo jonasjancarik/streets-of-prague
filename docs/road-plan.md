@@ -336,8 +336,23 @@ Ask first:
     left 5. května looking the same, with slabs standing beside the slope. The slope
     there runs along the lower street, beside the deck, not across its end. The code is
     in `docs/evidence/road-plan/abutment-walls.patch` (local).
-  - Left for step 2: 5. května over Hvězdova (50.05296, 14.44106 and 50.05162,
-    14.44466); Železničářů (3.8 m), a bridge's pad across a street; nábřeží Edvarda Beneše (5.4 m) and Kapitána Jaroše (3.2 m); the
+  - **Walls along a street in a cutting under a bridge** (9 November): along each side
+    of a car street passing under one of the map's bridges, where the terrain model 7 m
+    out is 2.5 m or more above the street, a wall from under the deck out to 40 m past
+    it, the terrace on top; it stops where another street's middle crosses it or it runs
+    into the lane of a street that doesn't meet this one (`_cuttings`, `--no-cuttings`).
+    209 walls. Against the two fixes above: bumps over 0.5 m 468 → 462, ridges over 1 m
+    102 → 98, waves over 1.5 m within 12 m 633 → 623; 14 streets' bumps better and none
+    worse, crowns 14 better and 1 worse (Chlumecká 0.64 → 1.66 m); the trunk link at
+    50.08752, 14.38088 7.60 → 1.37 m; joins 6 worse (the footway at náměstí Hrdinů 3.43
+    → 6.66 m, by the eye cleaner than before) and 5 better. 5. května's slip road over
+    Hvězdova (50.05162, 14.44466) got its wall. Stopping where any other lane touched the
+    wall, the first version, put none at 50.05296, 14.44106: the street's own next piece
+    of way touched it.
+  - Left for step 2: 5. května over Hvězdova at 50.05296, 14.44106, where the low ground
+    under the bridges is wide (two carriageways and the slip roads) and the terrain
+    model's slope beside them is gentler than CUT_RISE; Železničářů (3.8 m), a bridge's
+    pad across a street; nábřeží Edvarda Beneše (5.4 m) and Kapitána Jaroše (3.2 m); the
     footway at 50.1024, 14.5723 (0.05 → 2.87 m since 4238a983); V Kuťatech, a 7 m bridge
     whose deck kerbs all lie within 6 m of its ends (6.22 m, as today); Wilsonova at
     50.0923, 14.4374 (leaning 48 % across, as today); Kosmická at 50.0319, 14.5323, a
