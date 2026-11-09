@@ -69,7 +69,7 @@ rms = lambda s: np.sqrt(np.mean(s ** 2)) + 1e-9
 shots = [s for s in SEGS if s['kind'] == 'shot']
 sound = {s['name']: read(os.path.join(HERE, 'sound', s['name'] + '.wav')) for s in shots}
 # (How loud each shot sits against the others: the wide still places stay calm.)
-LEVEL = {'castle': 0.55, 'getin': 1.0, 'tram': 0.85, 'heli': 1.0, 'mikulas': 0.5, 'rain': 0.9, 'chase': 1.15}
+LEVEL = {'castle': 0.55, 'square': 0.6, 'getin': 1.0, 'tram': 0.85, 'heli': 1.0, 'mikulas': 0.5, 'autumn': 0.7, 'rain': 0.9, 'chase': 1.15}
 mid = np.median([rms(v) for v in sound.values()])
 for seg in shots:
     s = sound[seg['name']][: int((secs(seg) + 0.08) * SR)]

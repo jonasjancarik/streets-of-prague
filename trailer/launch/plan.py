@@ -12,6 +12,13 @@ import json, os
 FPS = 30
 HERE = os.path.dirname(os.path.abspath(__file__))
 
+# There are two cuts. The first (CUT=1, the default) opens on the Castle. The second
+# (CUT=2, rendered as launch2.mp4) is from 9 November 2026, when the Old Town Square got
+# its Jan Hus memorial and Marian column: it opens there, among the café parasols with
+# pigeons about, and has an autumn afternoon on Karlovo náměstí (fallen leaves, pigeons
+# flying up from under your feet) where St. Nicholas was. The other shots are the same
+# ones, filmed again.
+CUT = os.environ.get('CUT', '1')
 # name, seconds on screen, time of day shown, place shown (the same in both languages)
 SHOTS = [
     ('castle', 2.8, '09:30', 'PRAŽSKÝ HRAD'),
@@ -19,6 +26,14 @@ SHOTS = [
     ('tram', 1.8, '19:00', 'MASARYKOVO NÁBŘEŽÍ'),
     ('heli', 2.4, '17:40', 'KARLŮV MOST'),
     ('mikulas', 1.5, '19:20', 'MALÁ STRANA'),
+    ('rain', 2.2, '23:20', 'VODIČKOVA'),
+    ('chase', 5.0, '01:30', 'MOST LEGIÍ'),
+] if CUT == '1' else [
+    ('square', 3.0, '10:00', 'STAROMĚSTSKÉ NÁMĚSTÍ'),
+    ('getin', 2.4, '13:30', 'JEČNÁ'),
+    ('tram', 1.8, '19:00', 'MASARYKOVO NÁBŘEŽÍ'),
+    ('heli', 2.4, '17:40', 'KARLŮV MOST'),
+    ('autumn', 2.4, '15:30', 'KARLOVO NÁMĚSTÍ'),
     ('rain', 2.2, '23:20', 'VODIČKOVA'),
     ('chase', 5.0, '01:30', 'MOST LEGIÍ'),
 ]

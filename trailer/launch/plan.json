@@ -190,13 +190,13 @@
   37000.0
  ],
  "filmed": 80,
- "frames": 843,
+ "frames": 876,
  "shots": {
-  "castle": 96,
+  "square": 102,
   "getin": 84,
   "tram": 66,
   "heli": 84,
-  "mikulas": 57,
+  "autumn": 84,
   "rain": 78,
   "chase": 162
  }
