@@ -235,6 +235,17 @@ Three sets in `landmarks.py` cover such a landmark (8 October 2026):
   Slate and copper church roofs need it too (St Vitus, St Ludmila, Vyšehrad): their
   shaded slopes otherwise come out as red-brown tile patches. Check every new church.
 
+**A monument that is no OSM building** (the Jan Hus memorial, 9 November 2026: OSM has
+it as `historic=memorial`, so the tiles don't, and `find.py` doesn't list it). Copy its
+OSM outline into `MONUMENTS` in `landmarks.py` (`osmium tags-filter … nwr/name=…`, then
+`osmium export`) and list its id in `LANDMARKS` as usual. Such a landmark is cut to the
+outline plus 0.3 m (the usual 1.5 m brought the square's paving along as dark shards),
+keeps its lowest metre (the steps; `ground_off` would take them), and gets `solid` in
+`landmarks.json`, which makes the game stamp the footprint into the collision grid. The
+Marian column is a building in OSM (0.5 m high) and needed none of that, only `SHADED`
+for its north side. Both are in `PLAIN`. The mesh is coarse there (about 1,400 and 500
+triangles): fine from above, lumpy close up in first person.
+
 Walking under it needs nothing from the landmark: OSM's `passages` open the collision
 grid, and the cutaway opens the model above the player.
 

@@ -724,7 +724,7 @@ record the measurements, merge decisions and pending landmark asset activation.
   renderer checks and seasonal screenshots. Run `node scripts/check-tree-pool.mjs
   --url http://localhost:5191/` for the existing reuse and shader-preparation checks;
   add `--full-shadows` to check the original detailed mode.
-- **Landmarks** (so far Mánes with Šítkovská vodárenská věž, the Týn Church, the Old Town Hall with its tower, St Nicholas at Old Town Square, the National Theatre, the Rudolfinum, the Municipal House with the Powder Tower, House Okamura in Břevnov, and the Dancing House, which is the mesh as it is, since the city model has it as a plain prism without the legs you walk between) are cut out of IPR's
+- **Landmarks** (so far Mánes with Šítkovská vodárenská věž, the Týn Church, the Old Town Hall with its tower, St Nicholas at Old Town Square, the Jan Hus memorial and the Marian column on the square (monuments: the mesh as it is, see below), the National Theatre, the Rudolfinum, the Municipal House with the Powder Tower, House Okamura in Břevnov, and the Dancing House, which is the mesh as it is, since the city model has it as a plain prism without the legs you walk between) are cut out of IPR's
   photorealistic 3D model instead: a textured mesh of the whole city from oblique aerial
   photographs (summer 2023, about 5 cm/px), published as an I3S scene layer.
   `pipeline/landmarks.py` takes the mesh's pieces over the landmark's OSM footprints
@@ -748,6 +748,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   (add `--dry-run` to validate without writing). Keep the old GLBs and original
   manifest until the new app is live: an older client would adjust the warmed files
   again. Review the staged manifest and assets before activating them in shared data.
+  A monument OSM doesn't map as a building (the Jan Hus memorial) isn't in the tiles:
+  its OSM outline is copied into `MONUMENTS` in `landmarks.py`. It is cut to that outline
+  with hardly any margin, keeps its lowest metre (its steps), and is marked `solid` in
+  `landmarks.json`, so the game stamps its footprint into the collision grid as it does
+  a building's.
 - **Roof colours.** Pitched roofs are terracotta tiles (a palette matched to reference photos of Prague's roofs, brick-red rather than orange, with each tile a little redder or duller than the next; the landmarks' photographs get the same warming in the final GLB, or on load for older models, and where a landmark's photograph shows a red roof, the roof shader draws the same tiles at the photograph's brightness: `shadeLandmark` in `src/shading.ts` and its port in `src/webgpu/buildings.ts`), as nearly all of them are in Prague;
   flat ones are grey. OSM's `roof:material` and `roof:colour` can make a roof grey slate
   or green copper instead, down to single building parts (the cathedral's grey roofs

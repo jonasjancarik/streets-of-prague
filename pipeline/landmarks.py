@@ -67,6 +67,21 @@ LANDMARKS = {
     "ludmila": ["way/27854653"],  # Kostel sv. Ludmily, náměstí Míru
     "vysehrad": ["way/24376643"],  # Bazilika sv. Petra a Pavla, Vyšehrad
     "emauzy": ["relation/33709"],  # Emauzský klášter (Na Slovanech), the cloister; the church on its north side is not in it
+    "hus": ["way/176442801"],  # Pomník mistra Jana Husa, Staroměstské náměstí: a memorial, not a building (MONUMENTS)
+    "sloup": ["way/815041625"],  # Mariánský sloup, Staroměstské náměstí (put up again in 2020)
+}
+# Monuments OSM maps as something other than a building, so the area's tiles don't have
+# them: their OSM outline (lon, lat), copied here. Neither is in IPR's city model; they
+# are the mesh's own triangles.
+MONUMENTS = {
+    "way/176442801": [
+        (14.4210233, 50.0876439), (14.421075, 50.0876319), (14.4211214, 50.0876314), (14.421167, 50.0876338),
+        (14.42121, 50.0876493), (14.4212542, 50.0876683), (14.4212824, 50.0876949), (14.4212911, 50.0877072),
+        (14.4212821, 50.0877231), (14.4212894, 50.0877258), (14.4212786, 50.0877404), (14.42125, 50.0877664),
+        (14.4212153, 50.0877847), (14.4211643, 50.0877951), (14.4211274, 50.0877972), (14.4210931, 50.0877926),
+        (14.4210682, 50.0877843), (14.4210469, 50.0877754), (14.4210209, 50.0877569), (14.4209978, 50.087732),
+        (14.42099, 50.0877035), (14.4209925, 50.0876786), (14.421003, 50.0876573), (14.421013, 50.0876599),
+    ],
 }
 # Places on a landmark's roofs (lon, lat, radius in metres) where the photographs show
 # something that isn't the roof, a tree reaching over it: what is much darker than the
@@ -81,18 +96,25 @@ PAINT_OVER = {
 RAW = {"tancici"}
 # Landmarks photographed with their street fronts in shade, which the white plaster
 # shows as blue: how much of that cast is taken out, and how much lighter it gets.
-SHADED = {"tancici": (0.85, 1.45)}
+SHADED = {"tancici": (0.85, 1.45), "sloup": (0.85, 1.3)}  # (and the column: pale sandstone, its north side in shade)
 # Landmarks without a tiled roof. The game draws tiles where a landmark's photograph
 # shows a red or a near-black roof (shadeLandmark in src/shading.ts); these are drawn as
 # photographed throughout (the Dancing House's dark glass slopes like a roof).
-PLAIN = {"tancici", "vit", "ludmila", "vysehrad"}  # the churches: slate and copper, no clay tiles
+PLAIN = {"tancici", "vit", "ludmila", "vysehrad", "hus", "sloup"}  # the churches: slate and copper, no clay tiles; the monuments: bronze and stone
 PAD = 1.5
 BLENDER = os.environ.get("BLENDER") or shutil.which("blender") or "/Applications/Blender.app/Contents/MacOS/Blender"
 
 
 def footprints(area: str, ids: list[str]):
-    """The OSM buildings' outlines in the area's coordinates, from its tiles."""
+    """The OSM buildings' outlines in the area's coordinates, from its tiles (a monument's,
+    from MONUMENTS)."""
     polys = {}
+    w, s_, e, n = AREAS[area]
+    local = Transformer.from_crs("EPSG:4326", f"+proj=tmerc +lat_0={(s_ + n) / 2} +lon_0={(w + e) / 2} +k=1 +x_0=0 +y_0=0 "
+                                 "+ellps=WGS84 +units=m", always_xy=True)
+    for i in ids:
+        if i in MONUMENTS:
+            polys[i] = Polygon([local.transform(lon, lat) for lon, lat in MONUMENTS[i]])
     for f in (OUT / f"{area}_now" / "tiles").glob("*.json"):
         for b in json.loads(f.read_text())["buildings"]:
             if b["id"] in ids and b["id"] not in polys:
@@ -199,7 +221,10 @@ def cut(area: str, name: str, ids: list[str], level: int | None, crs: str, ref: 
     # What the landmark takes over: OSM's footprint and IPR's buildings in it, a little
     # wider (the game hides IPR's triangles by where their middles are, which for a wall
     # is on the outline).
-    foot = unary_union([osm.buffer(PAD, join_style="mitre")] + [g.buffer(0.5, join_style="mitre") for g in outlines])
+    # (A monument's outline is its own edge, with the square's paving right outside it:
+    # any wider and the mesh's ground comes along as dark shards.)
+    pad = 0.3 if any(i in MONUMENTS for i in ids) else PAD
+    foot = unary_union([osm.buffer(pad, join_style="mitre")] + [g.buffer(0.5, join_style="mitre") for g in outlines])
     to3857 = Transformer.from_crs(crs, "EPSG:3857", always_xy=True)
     back = Transformer.from_crs("EPSG:3857", crs, always_xy=True)
     x0, y0, x1, y1 = foot.bounds
@@ -217,7 +242,9 @@ def cut(area: str, name: str, ids: list[str], level: int | None, crs: str, ref: 
     if not parts:
         raise SystemExit(f"{name}: the mesh has nothing there")
     if not len(clean):
-        parts = ground_off(parts)
+        # (A monument keeps its lowest metre: that is its steps, and its outline holds no street.)
+        if pad == PAD:
+            parts = ground_off(parts)
         if name in SHADED:
             parts = [(p, uv, unshaded(tex, *SHADED[name])) for p, uv, tex in parts]
     ox, oy = origin
@@ -241,7 +268,9 @@ def cut(area: str, name: str, ids: list[str], level: int | None, crs: str, ref: 
     cx, cy = foot.centroid.x, foot.centroid.y
     polys = list(foot.geoms) if foot.geom_type == "MultiPolygon" else [foot]
     return {"name": name, "file": f"landmarks/{name}.warm-v1.glb", "polygons": [mapping(q)["coordinates"] for q in polys],
-            "home": f"{int((cx + ox) // tile)}_{int((cy + oy) // tile)}", "tiles": tiles, **({"plain": True} if name in PLAIN else {})}
+            "home": f"{int((cx + ox) // tile)}_{int((cy + oy) // tile)}", "tiles": tiles, **({"plain": True} if name in PLAIN else {}),
+            # (Not a building in the tiles: the game takes its footprint for what stands in the way.)
+            **({"solid": True} if pad != PAD else {})}
 
 
 def rebake(area: str, name: str, crs: str) -> str:
