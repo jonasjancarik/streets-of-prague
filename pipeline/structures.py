@@ -488,6 +488,14 @@ def solve(ways, ground, decks, soft=frozenset(), streets=()):
                     # from the wall to where the bridge begins, are at the bridge's height
                     # (ipr_terrain.py lifts the ground there; see pads).
                     fixed[i], back = abutment(ground, net.xy[i], ahead, T[i])
+                    # Not over a car street that crosses it: the street's last metres
+                    # lifted over another street wall it off (Ohrobecké údolí, a step of
+                    # 6.7 m across it). The end is on the ground there, as before.
+                    if back and streets:
+                        d = ahead / (np.hypot(*ahead) or 1)
+                        pad = LineString([net.xy[i], net.xy[i] + d * (back + 0.5)]).buffer(w["w"] / 2 + 1.0, cap_style="flat")
+                        if crossed(pad, d, streets):
+                            fixed[i], back = T[i], 0.0
                     if back:
                         w.setdefault("raised", {})[0 if k == 0 else -1] = (back + 0.5, fixed[i])
                 else:
@@ -625,10 +633,10 @@ def solve(ways, ground, decks, soft=frozenset(), streets=()):
 
     # Crossings between layers: the upper one a storey above the lower.
     profiles = paths_profiles(net)
-    crossed = set()
+    cleared = set()
     for _ in range(2):
         moved = clear_crossings(ways, net, profiles, fixed, base)
-        crossed |= moved
+        cleared |= moved
         if not moved:
             break
         net.spread(fixed)
@@ -636,7 +644,7 @@ def solve(ways, ground, decks, soft=frozenset(), streets=()):
     # Smooth out the kinks where one rule hands over to another (a tunnel levelling
     # out under its cover, a bridge joining IPR's deck), over a few tens of metres;
     # the ends on the ground and the crossings stay where they are.
-    keep = set(base) | crossed | lifted
+    keep = set(base) | cleared | lifted
     for _ in range(25):
         h = net.h.copy()
         for i, nb in enumerate(net.adj):
