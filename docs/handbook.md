@@ -757,6 +757,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   triangle, from the OSM building or part holding at least half of the triangle (seen
   from above): IPR's triangles can be much bigger than a small part, such as a bay's
   copper roof.
+  A flat roof nobody measured gets its tile colour greyed (`flat_roof` in
+  `pipeline/ipr_buildings.py`: 35 % of the terracotta in grey), which came out pink in
+  big plain faces. The game draws those eight exact colours as a warm grey instead
+  (`PINK_FLAT` in `src/tileWorker.ts`), so no rebuild is needed; at the next rebuild of
+  the buildings, lower the share in `flat_roof` to 0.12 and the table matches nothing.
 - **Colours from the photo mesh.** Where `pipeline/mesh_colours.py` has run, IPR's
   buildings take their real colours from IPR's photorealistic mesh instead of the
   palette: each roof face its colour and material (tiles, slate, sheet metal, copper;

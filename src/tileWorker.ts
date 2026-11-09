@@ -128,6 +128,22 @@ const insertAt = (a: BuildingArrays, d: DetailArrays, at: number): BuildingArray
   return { position: put(a.position, d.position, 3), normal: put(a.normal, d.normal, 3), color: put(a.color, d.color, 3), facade: put(a.facade, d.facade, 4) };
 };
 
+// A flat roof nobody measured (a face the photo mesh shows only in shade, a building it
+// doesn't cover) comes from the pipeline in its tile colour greyed: 35 % of the tiles'
+// terracotta in grey 138 (flat_roof in pipeline/ipr_buildings.py), which is meant as
+// grey and comes out pink, in big plain faces among the measured roofs. These are those
+// eight colours exactly, by the pipeline's palette (ROOF_TILES), and what they are drawn
+// as instead: the same with 12 % of the tiles, a warm grey. (Changing the formula in the
+// pipeline would mean rebuilding every building; a map built with it changed simply has
+// none of these colours.)
+const ROOF_TILES = [0xb2644b, 0xa6543f, 0xbf7256, 0x9e5442, 0xad5f45, 0xa8634f, 0xba6e50, 0xa15540];
+const PINK_FLAT = new Map(ROOF_TILES.flatMap((hex) => {
+  const tile = [hex >> 16, (hex >> 8) & 255, hex & 255], mix = (share: number) => tile.map((v) => Math.round(v * share + 138 * (1 - share)));
+  const was = mix(0.35), grey = mix(0.12);
+  // (A half rounds down in the pipeline's Python where it rounds up here: either.)
+  return [0, 1].map((down) => [(((was[0] - (Math.abs((tile[0] * 0.35 + 89.7) % 1 - 0.5) < 1e-6 ? down : 0)) << 16) | (was[1] << 8) | was[2]), grey] as const);
+}));
+
 // IPR Praha's 3D buildings for a tile (pipeline/ipr_buildings.py): triangles with
 // positions in centimetres from the tile corner, a colour per triangle and, in newer
 // data, a material per triangle. Those in a landmark's footprint (`hide`) are left
@@ -163,7 +179,9 @@ function ipr({ buffer, box: [x0, y0], absolute, ground, bbox, hide, clutter, foo
   const c = new THREE.Color();
   for (let o = 0; o < n; o++) {
     const t = kept[o];
-    c.setRGB(c8[t * 3] / 255, c8[t * 3 + 1] / 255, c8[t * 3 + 2] / 255, THREE.SRGBColorSpace);
+    const grey = PINK_FLAT.get((c8[t * 3] << 16) | (c8[t * 3 + 1] << 8) | c8[t * 3 + 2]);
+    if (grey) c.setRGB(grey[0] / 255, grey[1] / 255, grey[2] / 255, THREE.SRGBColorSpace);
+    else c.setRGB(c8[t * 3] / 255, c8[t * 3 + 1] / 255, c8[t * 3 + 2] / 255, THREE.SRGBColorSpace);
     for (let v = 0; v < 3; v++) {
       const s = t * 9 + v * 3, i = o * 9 + v * 3;
       const h = p16[s + 1] / 100;
