@@ -349,9 +349,18 @@ Ask first:
     Hvězdova (50.05162, 14.44466) got its wall. Stopping where any other lane touched the
     wall, the first version, put none at 50.05296, 14.44106: the street's own next piece
     of way touched it.
-  - Left for step 2: 5. května over Hvězdova at 50.05296, 14.44106, where the low ground
-    under the bridges is wide (two carriageways and the slip roads) and the terrain
-    model's slope beside them is gentler than CUT_RISE; Železničářů (3.8 m), a bridge's
+  - **5. května over Hvězdova by hand** (9 November): two walls in `terrain_walls.json`
+    along the survey's top edges of the embankment (264–265 m) either side of the low
+    ground under the bridges, the west one 31 m, the east one 32 m (carried on north-east
+    past the surveyed edge along the lattice's step). The east side is a clean wall now
+    and the torn slope under the bridges smaller (`kvetna-hand-walls-above.jpg` in the
+    evidence); no street or join elsewhere moved. Still torn: north-west of the west wall,
+    between it and 5. května's own south kerb (264 m), the terrain model has a pocket at
+    259–260 m, 9–15 m from the wall (past its terrace strip), and the guardrail along the
+    kerb still zigzags there. Next to try: a third wall along that kerb (the survey's
+    line from 14.440701, 50.053046 to 14.441017, 50.05292), after checking the pocket
+    isn't a real slope down to the underpass.
+  - Left for step 2: the pocket at 5. května above; Železničářů (3.8 m), a bridge's
     pad across a street; nábřeží Edvarda Beneše (5.4 m) and Kapitána Jaroše (3.2 m); the
     footway at 50.1024, 14.5723 (0.05 → 2.87 m since 4238a983); V Kuťatech, a 7 m bridge
     whose deck kerbs all lie within 6 m of its ends (6.22 m, as today); Wilsonova at

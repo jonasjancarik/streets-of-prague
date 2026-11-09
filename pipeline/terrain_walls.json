@@ -11,5 +11,25 @@
    [14.413901, 50.081127]
   ],
   "why": "náměstí Václava Havla stands 3 m over the street in the cutting; the survey has the wall's top as a paved area's edge, not as a wall, and the plaza ran down to the street as a slope. North of here the stairs come down beside the wall"
+ },
+ {
+  "name": "5. května over Hvězdova at Pankrác, the west side of the underpass",
+  "line": [
+   [14.441017, 50.05292],
+   [14.441131, 50.053025],
+   [14.441148, 50.053041],
+   [14.441264, 50.053152]
+  ],
+  "why": "5. května and its slip roads cross Hvězdova on short bridges off embankments 6 m high; the survey has the embankment's top edge (264 m) but no wall, and the ground under the bridges ran up to it as a torn slope with the guardrails in zigzags. The low ground there is too wide for the cutting rule (CUT_RISE) to see the slope"
+ },
+ {
+  "name": "5. května over Hvězdova at Pankrác, the east side of the underpass",
+  "line": [
+   [14.441339, 50.052772],
+   [14.441461, 50.052882],
+   [14.441466, 50.052886],
+   [14.441625, 50.053029]
+  ],
+  "why": "as the west side: the embankment's top edge (265 m) along the far side of the low ground under the bridges, carried on north-east along the lattice's step"
  }
 ]
