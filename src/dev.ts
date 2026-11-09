@@ -10,6 +10,7 @@ import { MIST, MIST_DEFAULT, MOST_SHEETS, type Kind, type Mist } from './weather
 import { LOCAL_MIST, LOCAL_MIST_DEFAULT, MIST_MODE, supportsLocalMist, type MistMode, type LocalMistSettings } from './localmist.ts';
 import type { Testkit } from './testkit.ts';
 import { gunOn, setGun } from './pistol.ts';
+import { did } from './telemetry.ts';
 
 // far: a place out of the game's reach, [lat, lon]; going there reloads the game.
 interface DevHit { label: string; x: number; y: number; far?: [number, number] }
@@ -202,6 +203,7 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
     if (text) results.appendChild(Object.assign(document.createElement('div'), { className: 'dev-note', textContent: text }));
   };
   const go = async (x: number, y: number, label: string) => {
+    did('dev: jumped to a place');
     showNote(`Going to ${label}…`);
     if (bench?.free()) { const [lon, lat] = toLonLat(x, y); await bench.look(lat, lon); } else await teleport(x, y);
     results.replaceChildren();
@@ -272,17 +274,18 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
 
   const pick = $('dev-graphics') as HTMLSelectElement;
   pick.value = graphics.choice;
-  pick.onchange = () => graphics.set(pick.value as Choice);
+  pick.onchange = () => { did('dev: changed graphics'); graphics.set(pick.value as Choice); };
   pick.addEventListener('keydown', (ev) => { if (ev.code !== 'Backquote') ev.stopPropagation(); });
   const sky = $('dev-weather') as HTMLSelectElement;
   sky.value = weather.get();
-  sky.onchange = () => weather.set(sky.value as Kind | 'auto');
+  sky.onchange = () => { did('dev: changed weather'); weather.set(sky.value as Kind | 'auto'); };
   sky.addEventListener('keydown', (ev) => { if (ev.code !== 'Backquote') ev.stopPropagation(); });
   // Past the map's edge: the game is opened again with or without ?countryside.
   const country = $('dev-country') as HTMLSelectElement;
   const opened = new URLSearchParams(location.search);
   country.value = opened.has('at') || opened.get('countryside') === 'live' ? 'live' : opened.has('countryside') ? 'file' : '';
   country.onchange = () => {
+    did('dev: changed countryside');
     const u = new URL(location.href);
     if (country.value === 'live') u.searchParams.set('countryside', 'live');
     else if (country.value === 'file') u.searchParams.set('countryside', '');
@@ -297,12 +300,13 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
   const time = $('dev-time') as HTMLInputElement;
   let dragging = false;
   time.oninput = () => { dragging = true; setTimeOfDay(+time.value * 60); };
-  time.onchange = () => { dragging = false; };
+  time.onchange = () => { dragging = false; did('dev: changed time of day'); };
   // Arrow keys move the slider, not the player.
   time.addEventListener('keydown', (ev) => { if (ev.code !== 'Backquote') ev.stopPropagation(); });
   time.addEventListener('keyup', (ev) => ev.stopPropagation());
   const date = $('dev-date') as HTMLInputElement;
   date.oninput = () => season.set(+date.value);
+  date.onchange = () => did('dev: changed date');
   date.addEventListener('keydown', (ev) => { if (ev.code !== 'Backquote') ev.stopPropagation(); });
   date.addEventListener('keyup', (ev) => ev.stopPropagation());
   $('dev-copy').onclick = async () => {
@@ -311,17 +315,20 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
     flash($('dev-copy'), 'Copied', 'Copy coordinates');
   };
   $('dev-fire').onclick = () => {
+    did('dev: set a car on fire');
     const ok = setFire();
     $('dev-fire').textContent = ok ? 'On fire, engine called' : 'No car nearby';
     setTimeout(() => { $('dev-fire').textContent = 'Set the nearest car on fire'; }, 1800);
   };
   $('dev-hurt').onclick = () => {
+    did('dev: left someone hurt');
     const ok = setHurt();
     $('dev-hurt').textContent = ok ? 'Hurt, ambulance called' : 'Nobody nearby';
     setTimeout(() => { $('dev-hurt').textContent = 'Leave the nearest person hurt'; }, 1800);
   };
-  $('dev-road').onclick = backOnRoad;
+  $('dev-road').onclick = () => { did('dev: back on the road'); backOnRoad(); };
   $('dev-heli').onclick = () => {
+    did('dev: parked a helicopter');
     const ok = helicopter();
     $('dev-heli').textContent = ok ? 'Helicopter parked nearby' : 'No open space for it here';
     setTimeout(() => { $('dev-heli').textContent = 'Helicopter next to me'; }, 1800);
@@ -338,6 +345,7 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
   overlay.innerHTML = `<div id="dev-mapview"></div><div class="dev-maphint">Click where you want to be${import.meta.env.DEV ? ' (past the dashed line, the game reloads there)' : ''} · right-click copies the coordinates · <kbd>Esc</kbd> closes the map</div>`;
   document.body.appendChild(overlay);
   $('dev-map').onclick = async () => {
+    did('dev: opened the map');
     overlay.hidden = false;
     const lib = await loadMapLibre();
     const [lon, lat] = toLonLat(...position());
@@ -383,7 +391,7 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
 
   const toggle = (on = panel.hidden) => {
     panel.hidden = !on;
-    if (on) query.focus();
+    if (on) { did('dev: opened the panel'); query.focus(); }
     else overlay.hidden = true;
   };
   window.addEventListener('keydown', (ev) => {
@@ -592,28 +600,30 @@ function setupBench(kit: Testkit, $: (id: string) => HTMLElement) {
   tilt.oninput = () => { if (kit.cam) kit.orbit(kit.cam.heading, tilt.valueAsNumber); };
   const out = $('dev-out');
   const pause = $('dev-pause');
-  pause.onclick = () => { kit.paused = !kit.paused; };
-  $('dev-step').onclick = () => { kit.paused = true; kit.step(); };
+  pause.onclick = () => { did('dev: paused'); kit.paused = !kit.paused; };
+  $('dev-step').onclick = () => { did('dev: stepped a frame'); kit.paused = true; kit.step(); };
   const speed = $('dev-speed') as HTMLSelectElement;
-  speed.onchange = () => { kit.speed = +speed.value; };
+  speed.onchange = () => { did('dev: changed speed'); kit.speed = +speed.value; };
   const money = $('dev-money') as HTMLInputElement;
   keep(money);
-  money.onchange = () => kit.set({ money: +money.value });
+  money.onchange = () => { did('dev: set money'); kit.set({ money: +money.value }); };
   const stars = $('dev-stars') as HTMLSelectElement;
-  stars.onchange = () => kit.set({ stars: +stars.value });
-  $('dev-heal').onclick = () => kit.set({ health: 100 });
+  stars.onchange = () => { did('dev: set stars'); kit.set({ stars: +stars.value }); };
+  $('dev-heal').onclick = () => { did('dev: healed'); kit.set({ health: 100 }); };
   const unhurt = $('dev-unhurt') as HTMLInputElement;
-  unhurt.onchange = () => { kit.unhurt = unhurt.checked; };
+  unhurt.onchange = () => { did('dev: toggled invincibility'); kit.unhurt = unhurt.checked; };
   const gun = $('dev-gun') as HTMLInputElement;
   gun.checked = gunOn();
-  gun.onchange = () => setGun(gun.checked);
+  gun.onchange = () => { did('dev: toggled the pistol'); setGun(gun.checked); };
   const kind = $('dev-car-kind') as HTMLSelectElement;
   $('dev-car').onclick = async () => {
+    did('dev: spawned a vehicle');
     try { await kit.drive(kind.value); } catch (e) { out.textContent = e instanceof Error ? e.message : String(e); }
   };
   const place = $('dev-place') as HTMLSelectElement;
   place.onchange = async () => {
     if (!place.value) return;
+    did('dev: jumped to a place');
     await kit.go(place.value);
     place.value = '';
   };
@@ -624,6 +634,7 @@ function setupBench(kit: Testkit, $: (id: string) => HTMLElement) {
     (r.error ? `<div class="dev-fail">  ${esc(r.error)}</div>` : '');
   const esc = (s: string) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
   const run = async (names: string[], watch: boolean) => {
+    did('dev: ran scenarios');
     out.innerHTML = '<div class="dev-note">Running…</div>';
     kit.watch = watch;
     let html = '';
