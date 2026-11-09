@@ -46,6 +46,7 @@ in compass degrees (0 north, 90 east), speeds in km/h.
   scenario. An airborne helicopter is staged on nearby clear ground and descends
   through `t.wait` controls; failure to land or disembark fails preparation.
 - `t.time('21:30')`, `t.weather('rain' | … | 'auto')`, `t.season('autumn' | '10-20')` (the game's date), `t.set({ money, stars, health })`.
+  `t.flock('pigeon' | 'gull')` puts a flock of birds over you (they fly on; shoot within a second or two).
 - `t.drive(type)`: gets out of whatever you're in and into a new car on clear ground
   ahead (`hatch`, `sedan`, `suv`, `van`, `taxi`, `police`, `pickup`, `truck`, `bus`,
   `moto`, `bike`…, the keys of `SPECS` in `src/car.ts`). `t.car(type, opt)`: just

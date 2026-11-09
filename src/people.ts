@@ -6,6 +6,7 @@ import type { WalkEdge, WalkGraph } from './network.ts';
 import type { Footfall } from './footfall.ts';
 import type { Point2 } from './map/geo.ts';
 import { fences } from './fences.ts';
+import { Umbrellas } from './umbrellas.ts';
 
 interface WalkGrid {
   at(x: number, y: number): number;
@@ -23,6 +24,8 @@ export interface Pedestrian extends WalkSpot {
   dodge: number; dodgeTo: number;
   // How fast they're actually going (for the legs), m/s.
   pace: number;
+  // Theirs for good, whichever slot they're drawn in (which umbrella they carry).
+  serial: number;
   target?: WalkSpot & { x: number; y: number };
   gz?: number;
   // Knocked down by someone taking their bike: which way to run once they're up.
@@ -72,6 +75,8 @@ export class Crowd {
   kit: FigureKit;
   people: Pedestrian[];
   fig: Figures;
+  umbrellas: Umbrellas;
+  private serial = 0;
   totalLen: number;
   cell: number;
   segs: Map<string, WalkSegment[]>;
@@ -86,6 +91,7 @@ export class Crowd {
     this.people = [];
     this.fig = new Figures(kit, count + 16);
     scene.add(this.fig.mesh);
+    this.umbrellas = new Umbrellas(scene, count + 16);
     this.totalLen = walk.edges.reduce((a, e) => a + e.path.length, 0);
     this.cell = 16;
     this.segs = new Map();
@@ -169,7 +175,7 @@ export class Crowd {
       i, e, s: s ?? 0, fwd: r() > 0.5, side: r() > 0.5 ? 1 : -1, lane: r(),
       speed: 1.1 + r() * 0.6, x: 0, y: 0, h: 0, vx: 0, vy: 0,
       state: 'walk', t: 0, pause: 0, z: 0, anim: new Anim(this.kit, 'walk', r() * 2), look: randomLook(r),
-      dodge: 0, dodgeTo: 0, pace: 0,
+      dodge: 0, dodgeTo: 0, pace: 0, serial: this.serial++,
     };
     this.fig.look(i, p.look);
     this.fig.mesh.count = this.people.length + 1;
@@ -451,16 +457,20 @@ export class Crowd {
   // Only those `seen` (in view, with room for their shadows) are drawn, packed into the
   // first slots: most of the crowd round you is out of sight.
   render(height: (x: number, y: number, p: Pedestrian) => number = () => 0, seen: (x: number, y: number) => boolean = () => true) {
-    const m = _m;
+    const m = _m, rain = this.umbrellas.wet > 0;
     let n = 0;
+    this.umbrellas.begin();
     for (const p of this.people) {
       if (!seen(p.x, p.y)) continue;
       m.compose(_p.set(p.x, height(p.x, p.y, p) + p.z, -p.y), _q.setFromAxisAngle(UP, p.h), _s);
       this.fig.wear(n, p.i);
       this.fig.set(n, m, p.anim);
       n++;
+      // (Dropped by anyone running from a car or knocked over.)
+      if (rain && (p.state === 'walk' || p.state === 'rejoin') && this.umbrellas.up(p.serial)) this.umbrellas.put(p.serial, _p, p.h);
     }
     this.fig.commit(n);
+    this.umbrellas.commit();
   }
 }
 

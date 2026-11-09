@@ -14,7 +14,7 @@ import { parseBusLines } from './buses.ts';
 import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp, streetShare } from './network.ts';
 import { Car, TYPES, CarPool, collideBodies, contact, loadCars, ordinaryCarBodies, useKit, variantName } from './car.ts';
 import { RestingCars } from './restingCars.ts';
-import { loadKit, FIGURE_SIZE, SCALE } from './figures.ts';
+import { loadKit, FIGURE_SIZE, SCALE, WARDROBE } from './figures.ts';
 import { Traffic, trafficWanted } from './traffic.ts';
 import { roadHint } from './roadLevels.ts';
 import { preparePeople, pickPerson } from './spawn.ts';
@@ -117,6 +117,8 @@ import { Blinkers } from './blinkers.ts';
 import { Minimap, minimapOn } from './minimap.ts';
 import { PLACES as NAMED_PLACES } from './taxi.ts';
 import * as telemetry from './telemetry.ts';
+import { Birds } from './birds.ts';
+import { UMBRELLAS } from './umbrellas.ts';
 import { Hitches } from './hitches.ts';
 import { benchPause } from './benchpause.ts';
 import type { Testkit } from './testkit.ts';
@@ -403,6 +405,7 @@ async function main() {
     fares: { valid: () => wallet.hasTicket(clock.t), afford: (k) => wallet.has(k.price), buy: (k) => wallet.buyTicket(clock.t, k) },
   });
   const footfall = await footfallLoad;
+  Object.assign(WARDROBE, { cold: season.cold, warm: season.shares().summer });
   crowd = new Crowd(walk, grid, scene, seeded, PEOPLE, kit);
   crowd.footfall = footfall;
   // Past the map's edge nobody counted the people: a little busier where houses stand.
@@ -426,6 +429,8 @@ async function main() {
   const spray = new Spray(scene, weatherFx.tint);
   const water = new Water(scene, weatherFx.tint);
   const beacons = new Beacons(scene);
+  const birds = new Birds(scene);
+  const birdsView = { x: 0, y: 0, radius: 0, height: 0, dark: 0, rain: 0, snow: 0, ground: (x: number, y: number) => world.terrainAt(x, y), water: (x: number, y: number) => !!world.waterAt(x, y) };
   // The emergency vehicles with their lights going, and what the lamps need each frame
   // besides the cars (the people in view stand in their light too).
   const flashing: Flashing[] = [];
@@ -2437,7 +2442,9 @@ async function main() {
     metro.update(dt);
     metro.sync(camPos.x, -camPos.z, viewRadius() + 60, ground);
     tramStops.sync(camPos.x, -camPos.z, viewRadius() + 60, ground);
+    crowd.umbrellas.wet = Math.max(weather.now.rain, weather.now.snow * UMBRELLAS.snow);
     crowd.render(ground, (x, y) => !offscreen(x, y));
+    birds.update(dt, Object.assign(birdsView, { x: camPos.x, y: -camPos.z, radius: viewRadius(), height: eyes ? 1000 : height, dark: sky.dark, rain: weather.now.rain, snow: weather.now.snow }));
     police.render(ground, time.value);
     {
       const chasing = police.lit(inCar), engines = brigade.lit, rescue = ambulances.lit, carts = refuse.lit;
@@ -2862,6 +2869,7 @@ async function main() {
     viewRadius, offscreen,
     canvas: renderer.domElement, fov: camera.fov,
     weather: { set: (k) => { if (k === 'auto') weather.fixed = false; else weather.set(k, true); }, kind: () => weather.kind },
+    birds: (kind, x, y) => !!birds.add(kind, x, y, 0, birdsView),
     season: { set: (when) => { const day = parseDay(when); if (!day) throw new Error(`A season's name, MM-DD or a day of the year, not ${when}`); season.set(day); }, date: () => season.date },
   });
   window.__test = testkit;

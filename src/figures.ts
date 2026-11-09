@@ -197,9 +197,20 @@ const SHIRTS = ['#3b4a63', '#5c3a3a', '#2f2f33', '#6a6f5a', '#8a6d4e', '#a8a39a'
 const TROUSERS = ['#23272e', '#2f3a4f', '#3e3a33', '#5a5347', '#1b1b1d', '#44506a', '#6b6255', '#2b3b36'];
 const SKIN = ['#e3b99a', '#d4a383', '#b9825f', '#8d5a3e', '#f0cdb3'];
 const HAIR = ['#2a1d15', '#4a3222', '#8a6a44', '#1a1a1a', '#b9b1a6', '#6e4a2c', '#c9a063'];
+// Coats and jackets for the cold months: mostly dark, a few bright ones.
+const COATS = ['#1f2329', '#1f2329', '#232c3d', '#232c3d', '#33363b', '#3a3f35', '#4b3b2e', '#8c6f4d', '#5a2a2e', '#6d7074', '#2c4a52', '#a3352c', '#c08a2a', '#d6d1c6', '#2f5b6e'];
+// The time of year people are dressed for, set from the game's date before anyone is made:
+// `cold` 0 to 1 through the winter, `warm` 0 to 1 through the summer. Bare arms are for the
+// summer (four in five then, one in ten in spring and autumn, nobody in winter).
+export const WARDROBE = { cold: 0, warm: 0.4 };
 export function randomLook(r: () => number): Look {
   const pick = (a: string[]) => a[Math.floor(r() * a.length)];
-  return { shirt: pick(SHIRTS), trousers: pick(TROUSERS), skin: pick(SKIN), hair: pick(HAIR), sleeves: r() < 0.6 };
+  // (One number picks both the colour and whether it's a coat, so the game's sequence of
+  // random numbers is the same whatever the season.)
+  const top = r(), coat = (top * 89) % 1 < WARDROBE.cold, tops = coat ? COATS : SHIRTS;
+  const look = { shirt: tops[Math.floor(top * tops.length)], trousers: pick(TROUSERS), skin: pick(SKIN), hair: pick(HAIR) };
+  const bare = r() >= 0.2 + 0.7 * (1 - WARDROBE.warm) + 0.1 * WARDROBE.cold;
+  return { ...look, sleeves: coat || !bare };
 }
 
 // A delivery courier: a jacket in the colour of their box.

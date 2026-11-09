@@ -915,10 +915,23 @@ record the measurements, merge decisions and pending landmark asset activation.
   load, `src/figures.ts` plays every clip through and bakes the posed vertices into
   textures, so the whole crowd is one instanced draw call. Rebuild with `blender -b --factory-startup -P assets/figures/build.py`; add
   `-- --preview DIR` to render a few frames of every clip.
+  People are dressed for the game's date when they're made (`WARDROBE` in
+  `src/figures.ts`): coats in the cold months, bare arms mostly in summer. In rain (and
+  heavy snow) three in five of the walkers put up an umbrella (`src/umbrellas.ts`): one
+  more instanced mesh over the crowd, drawn only while it rains.
+- **Birds** (`src/birds.ts`): by day in dry weather, flocks of pigeons arrive from beyond
+  the view, wheel round a spot above the roofs for a minute or so and leave; over the
+  river they're a few gulls gliding. Every bird is a flat shape in one instanced mesh
+  with an ordinary material (one draw, one more for their shadows), and a wingbeat is
+  only the instance getting narrower across, so a frame costs one matrix per bird (96 at
+  most). A flock comes down as the camera zooms in, and shrinks away among the roofs.
+  `t.flock('pigeon' | 'gull')` puts one over you.
 - **Cars** are built the same way (`assets/cars/build.py` → `public/cars.glb`): one
   low-poly body per type (hatchback, saloon, estate, SUV, van, pickup, taxi, police), shaped for
   the view from above, where the bonnet, cabin, windows and roof show, with a little
-  of the sides, wheels and lights towards the edges of the screen. `src/car.ts` puts
+  of the sides, wheels and lights towards the edges of the screen; on top, the black
+  scuttle and the wipers under the windscreen, an aerial, a glass roof panel on the
+  saloon and the SUV, and the ribs pressed into the van's roof. `src/car.ts` puts
   each car's colour on the paint. The doors are objects of their own in the file
   (`<type>_door1` to `4`, each with its origin on its hinge), and inside there is a
   floor, walls and seats to see through an open one. In the game they are still part
