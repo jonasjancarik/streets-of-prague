@@ -462,14 +462,16 @@ def _under_decks(tree, xy):
     return under
 
 
-def _sunk_in_tunnels(points, tunnels, shape, x_of, y_of, step, aloft=None):
+def _sunk_in_tunnels(points, tunnels, shape, x_of, y_of, step, aloft=None, streets=()):
     """(Which surveyed points are an underpass's kerbs, which lattice points are in one of
     the map's tunnels): see SUNK_ROUND. `tunnels`: (line, width) in local metres; `aloft`:
-    which points are up on something (`_on_decks`), none by default."""
+    which points are up on something (`_on_decks`), none by default; `streets`: the car
+    streets on the ground as (line, half width), those crossing over a tunnel not in it."""
     sunk, tunnelled = np.zeros(len(points), dtype=bool), np.zeros(shape, dtype=bool)
     if not tunnels or not len(points):
         return sunk, tunnelled
     holes = [line.buffer(width / 2 + UNDER_SIDE, cap_style="flat") for line, width in tunnels]
+    tunnel_line = {id(h): line for h, (line, _) in zip(holes, tunnels)}
     inside = np.unique(STRtree(holes).query(shapely.points(points[:, :2]), predicate="intersects")[0])
     if len(inside):
         ground = np.flatnonzero(~aloft) if aloft is not None else np.arange(len(points))
@@ -483,8 +485,34 @@ def _sunk_in_tunnels(points, tunnels, shape, x_of, y_of, step, aloft=None):
         if ia > ib or ja > jb:
             continue
         bi, bj = np.meshgrid(np.arange(ia, ib + 1), np.arange(ja, jb + 1))
-        tunnelled[bj, bi] |= shapely.contains_xy(hole, x_of(bi), y_of(bj))
+        here = shapely.contains_xy(hole, x_of(bi), y_of(bj))
+        # Not on a street crossing over it (a footway under Modřanská at Zlíchov: the
+        # street's points took the footway's floor, pits 2–3 m deep in the carriageway).
+        for line, half in _crossing(hole, tunnel_line[id(hole)], streets):
+            here &= ~shapely.contains_xy(line.buffer(half), x_of(bi), y_of(bj))
+        tunnelled[bj, bi] |= here
     return sunk, tunnelled
+
+
+def _crossing(hole, line, streets):
+    """The streets of `streets` ((line, half width)) that cross `hole` more than 30° off
+    the direction of the tunnel `line` there (not one running through it)."""
+    out = []
+    for street, half in streets:
+        if half <= 0 or not street.intersects(hole):
+            continue
+        for part in shapely.get_parts(street.intersection(hole)):
+            if part.geom_type != "LineString" or part.length < 1:
+                continue
+            (x0, y0), (x1, y1) = part.coords[0], part.coords[-1]
+            m = line.interpolate(line.project(shapely.Point((x0 + x1) / 2, (y0 + y1) / 2)))
+            a = line.interpolate(max(0.0, line.project(m) - 1.0))
+            b = line.interpolate(min(line.length, line.project(m) + 1.0))
+            dx, dy = b.x - a.x, b.y - a.y
+            if abs((x1 - x0) * dx + (y1 - y0) * dy) < np.cos(np.pi / 6) * np.hypot(x1 - x0, y1 - y0) * np.hypot(dx, dy):
+                out.append((street, half))
+                break
+    return out
 
 
 def _level_across(grid, on, points, streets, x_of, y_of, step, spacing=1.0):
@@ -839,7 +867,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
     pts = points[:, :2]
     scan_here = _scan_local(scan, to_local) if scan_levels else None
     aloft, decked, at_end = _on_decks(points, bridges, scan_here, bridge_ends)
-    sunk, tunnelled = _sunk_in_tunnels(points, tunnels if sunk_kerbs else (), grid.shape, x_of, y_of, step, aloft)
+    sunk, tunnelled = _sunk_in_tunnels(points, tunnels if sunk_kerbs else (), grid.shape, x_of, y_of, step, aloft, streets)
     over_any, carried_any = np.zeros(len(points), dtype=bool), np.zeros(len(points), dtype=bool)
     deck_tree = STRtree(list(bridges)) if scan_here is not None and len(bridges) else None
     end_tree = cKDTree(np.asarray(bridge_ends, dtype=float)) if scan_here is not None and len(bridge_ends) else None

@@ -225,6 +225,24 @@ class UnderpassTests(unittest.TestCase):
             self.assertAlmostEqual(float(tiles[0, 0][j, 8]), 200.0, delta=0.3)
 
 
+    def test_a_street_over_a_footway_tunnel_keeps_its_kerbs(self):
+        # Modřanská at Zlíchov: a footway's tunnel crosses under the street, whose lattice
+        # points are in the tunnel's strip; the underpass's floor (196 m) is surveyed too,
+        # and the terrain model dips over it.
+        tiles = {(0, 0): np.full((17, 17), 200.0, dtype=np.float32)}
+        tiles[0, 0][6:10, :] = 197.0
+        boxes = {(0, 0): box(0, 0, 64, 64)}
+        lines = [[(28, 2, 200), (28, 62, 200)], [(36, 2, 200), (36, 62, 200)],
+                 [(2, 26, 196), (62, 26, 196)], [(2, 34, 196), (62, 34, 196)]]
+        polys = [box(28, 2, 36, 26), box(28, 26, 36, 34), box(28, 34, 36, 62)]  # (the underpass's lines cut the street's surface)
+        with patch.object(dh, 'survey', return_value=(polys, [np.array(c, float) for c in lines], [])):
+            dh.apply('test', None, Identity(), tiles, 16, 4.0, 0, 0, None, boxes,
+                     tunnels=[(shapely.LineString([(2, 30), (62, 30)]), 8.0)],
+                     streets=[(LineString([(32, 0), (32, 64)]), 4.0)], level_across=False)
+        for j in (7, 8):  # (32, 28) and (32, 32): not 196.3, a pit
+            self.assertAlmostEqual(float(tiles[0, 0][j, 8]), 200.0, delta=0.3)
+
+
 class DeckKerbTests(unittest.TestCase):
     """A road in a cutting under an overpass, one surveyed surface (the D0 under Na
     Radosti): the road's kerbs at 200 m along y = 20 and y = 44, the overpass's deck
