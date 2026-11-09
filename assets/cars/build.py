@@ -45,6 +45,8 @@ COLOURS = {
 MATS = list(COLOURS)
 # How far in from the side a rounded body's top begins (see Car.body's crown).
 LID = 0.12
+# How much of the crown's height the top has already gained halfway in from its edge.
+SHOULDER = 0.8
 
 
 def material(name):
@@ -137,7 +139,10 @@ class Car:
                 pts += [(w, hi, "Paint"), (w - 0.035, zt - 0.035, "Paint"), (w - 0.11, zt, "Paint")]
             L = [self.v(x, y, z) for y, z, _ in pts]
             R = [self.v(x, -y, z) for y, z, _ in pts]
-            ridge = self.v(x, 0, zt + crown(x)) if crown else None
+            # The top's middle line and, halfway out to each edge, a shoulder standing
+            # SHOULDER of the way up to it: a dome rather than a tent.
+            ridge = ([self.v(x, s * (w - LID) / 2, zt + SHOULDER * crown(x)) for s in (1, -1)] +
+                     [self.v(x, 0, zt + crown(x))]) if crown else None
             rings.append((L, R, [m for _, _, m in pts], ridge))
         for s in range(len(rings) - 1):
             (L0, R0, mats, C0), (L1, R1, _, C1) = rings[s], rings[s + 1]
@@ -151,7 +156,8 @@ class Car:
                 if door and i:
                     left[self.door], right[self.door] = door, door + 1
             top = "Blue" if bonnet_band and bonnet_band[0] < mid < bonnet_band[1] else "Paint"
-            lids = ([self.face([L0[-1], L1[-1], C1, C0], top), self.face([C0, C1, R1[-1], R0[-1]], top)] if crown
+            lids = ([self.face([L0[-1], L1[-1], C1[0], C0[0]], top), self.face([C0[0], C1[0], C1[2], C0[2]], top),
+                     self.face([C0[2], C1[2], C1[1], C0[1]], top), self.face([C0[1], C1[1], R1[-1], R0[-1]], top)] if crown
                     else [self.face([L0[-1], L1[-1], R1[-1], R0[-1]], top)])
             if cabin and cabin[1] < mid < cabin[0]:
                 self.under += lids
@@ -161,7 +167,7 @@ class Car:
                 # Bumpers across the bottom, paint above.
                 self.face([L[i], L[i + 1], R[i + 1], R[i]], "Trim" if i == 0 else "Paint")
             if C:
-                self.face([L[-1], C, R[-1]], "Paint")
+                self.face([L[-1], C[0], C[2], C[1], R[-1]], "Paint")
 
     def cabin(self, belt, xa, xb, xm, xc, xd, wb, wr, top, glass_rear=True, glass_back_side=True, xm_top=None,
               rear_doors=True, xq=None, edge=None, crown=0.0, bow=0.0):
@@ -307,6 +313,22 @@ class Car:
         """A flat shape lying on the body (lettering, a lamp): `points` (x, y) round it,
         `z(x, y)` the height of the body under each."""
         self.decals.append(([(x, y, z(x, y) + lift) for x, y in points], mat))
+
+    def strip(self, x0, x1, ys, mat, z, lift=0.008):
+        """A band across the car from x0 to x1, bent at each y of `ys` to follow the body."""
+        for ya, yb in zip(ys, ys[1:]):
+            self.decal([(x0, ya), (x1, ya), (x1, yb), (x0, yb)], mat, z, lift)
+
+    def screen(self, shape, xa, xb, z0, top, e):
+        """What shows round a windscreen from above: the black scuttle between the bonnet
+        and the glass (out to half width e), and the two wipers lying at the bottom of the
+        glass, which runs from (xa, z0) up to (xb, top)."""
+        self.strip(xa + 0.085, xa + 0.005, [-e, -e / 2, 0, e / 2, e], "Trim", shape.top)
+
+        def glass(x, y):
+            return z0 + (xa - x) / (xa - xb) * (top - z0)
+        for ya, yb in ((0.72 * e, 0.06), (-0.1, -0.76 * e)):
+            self.decal([(xa - 0.04, ya), (xa - 0.13, yb), (xa - 0.165, yb), (xa - 0.075, ya)], "Trim", glass, 0.03)
 
     def block(self, c, s, mat):
         (cx, cy, cz), (sx, sy, sz) = c, s
@@ -456,7 +478,9 @@ class Shape:
             if x1 <= x <= x0:
                 u = (x0 - x) / (x0 - x1)
                 edge = w0 + (w1 - w0) * u - LID
-                return z0 + (z1 - z0) * u + self.bulge(x) * max(0.0, 1 - abs(y) / edge)
+                t = min(abs(y) / edge, 1.0)
+                dome = 1 - 2 * (1 - SHOULDER) * t if t < 0.5 else 2 * SHOULDER * (1 - t)
+                return z0 + (z1 - z0) * u + self.bulge(x) * dome
         return self.stations[0][2]
 
     def bumpers(self, c, front, back):
@@ -486,12 +510,14 @@ class Shape:
 # Lengths, widths and heights as in src/car.ts TYPES.
 
 
-def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, r=0.31, lift=0.0, word=None):
+def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, r=0.31, lift=0.0, word=None,
+           sunroof=0.0, fin=True):
     """A car: `rear` is 'hatch', 'sedan' or 'estate'; `bar` is where along the roof the
     light bar goes (the middle of `cabin` in src/car.ts, where src/police.ts flashes it).
     `r` is the wheel radius and `lift` how much higher the bonnet and sills sit (an SUV).
     `word` is written across the bonnet, and the stripe then turns into yellow and blue
     blocks on the front wings and behind the rear doors (the Czech police's colours).
+    `sunroof` is the length of a glass panel in the roof, and `fin` an aerial at the back of it.
 
     Seen from above (and from above at a slant, away from the middle of the screen) a
     car is its outline, its glass and how the light runs over it, so: corners rounded
@@ -559,6 +585,13 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, 
     # (Tail lamps from above only on a saloon, with a boot behind the rear window.)
     shape.lamps(c, back=rear == "sedan")
     mid = (xb + xc) / 2
+    wr = w * 0.74
+    c.screen(shape, xa, xb, belt - 0.02, roof, half(xa) - LID - 0.03)
+    if sunroof:
+        x0 = xb - 0.16
+        c.strip(x0, max(x0 - sunroof, xc + 0.2), [-0.6 * wr, 0, 0.6 * wr], "Glass", lambda x, y: roof + 0.035 * (1 - abs(y) / wr))
+    if fin:
+        c.block((xc + 0.2, 0, roof + 0.06), (0.17, 0.045, 0.06), "Trim")
     if sign:
         c.block((mid, 0, H + 0.1), (0.24, 0.62, 0.2), "Sign")
     if bar is not None:
@@ -597,6 +630,11 @@ def van(name="van", L=5.2, W=2.0, H=2.3):
             edge=lambda x: half(x) - 0.03, crown=0.06, bow=(0.08, 0.0))
     c.interior(xa - 0.01, xm - 0.3, w - 0.08, 0.5, belt - 0.02, H - 0.07, xa - 0.75, xm - 0.3, w * 0.93 - 0.03,
                [(xa - 0.6, s * w * 0.5, 0.55) for s in (1, -1)])
+    c.screen(shape, xa, xa - 0.72, belt - 0.02, H - 0.06, half(xa) - 0.1)
+    # The ribs pressed into the roof, along it.
+    wr, x0, x1 = w * 0.93, xa - 1.05, -nb + 0.3
+    for y in (-0.66, -0.22, 0.22, 0.66):
+        c.block(((x0 + x1) / 2, y * wr, H - 0.06 + 0.06 * (1 - abs(y)) + 0.004), (x0 - x1, 0.09, 0.03), "Paint")
     c.wheels(wheels, w, 0.34, 0.23)
     c.mirrors(xa - 0.05, half(xa - 0.05) + 0.03, belt + 0.1, stalk=True)
     c.lamps(nb - 0.06, -nb + 0.06, half(nb) - 0.17, half(-nb) - 0.15, 0.72, 0.85,
@@ -630,6 +668,7 @@ def pickup(name="pickup", L=5.9, W=2.03, H=1.95):
             edge=lambda x: half(x) - LID, crown=0.035, bow=(0.05, 0.0))
     c.interior(xa - 0.01, xd + 0.05, w - 0.08, 0.6, belt - 0.02, H - 0.06, xa - 0.68, xd + 0.13, w * 0.8 - 0.03,
                [(xa - 0.65, s * w * 0.48, 0.55) for s in (1, -1)] + [(xm - 0.6, 0, W - 0.4)])
+    c.screen(shape, xa, xa - 0.65, belt - 0.02, H - 0.035, half(xa) - LID - 0.03)
     c.wheels(wheels, w, r, 0.28)
     c.mirrors(xa - 0.1, half(xa - 0.1) + 0.02, belt + 0.1, stalk=True)
     c.lamps(nb - 0.06, -nb + 0.06, half(nb) - 0.17, half(-nb) - 0.14, 0.86, 0.98,
@@ -678,13 +717,13 @@ def build():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     return [
         saloon("hatch", 3.9, 1.75, 1.45, "hatch"),
-        saloon("sedan", 4.6, 1.82, 1.45, "sedan"),
+        saloon("sedan", 4.6, 1.82, 1.45, "sedan", sunroof=0.5),
         saloon("estate", 4.7, 1.82, 1.5, "estate", rails=True),
-        saloon("suv", 4.65, 1.88, 1.65, "estate", rails=True, r=0.36, lift=0.07),
+        saloon("suv", 4.65, 1.88, 1.65, "estate", rails=True, r=0.36, lift=0.07, sunroof=1.0),
         van(),
         pickup(),
         saloon("taxi", 4.6, 1.82, 1.45, "sedan", sign=True),
-        saloon("police", 4.7, 1.84, 1.5, "estate", stripe=POLICE_STRIPE, bar=-0.25, rails=True, word="POLICIE"),
+        saloon("police", 4.7, 1.84, 1.5, "estate", stripe=POLICE_STRIPE, bar=-0.25, rails=True, word="POLICIE", fin=False),
         ram("police_ram", 4.7, 1.84),
     ]
 
