@@ -242,7 +242,60 @@ STRIP = 8.0  # m: the width of the terrace marked at a wall's foot (two lattice 
 # is 4 m, so a narrow street's edges are read from the points just outside it.
 # A kerb point more than OTHER above or below the street's height from its own surface
 # there is another street's: one passing under or over it, a slip road beside it.
-ALONG, ALONG_FAR, KERB_OUT, LEVEL_OUT, OTHER = 5.0, 15.0, 1.5, 4.0, 1.0
+# And one more than OWN off what the street's own lattice points have there, from their
+# surfaces, is on another level altogether and never counts: 5. května's carriageway
+# before its bridge over Hvězdova is wider than the map says, so none of its own kerbs
+# lie within KERB_OUT of it, and the only points that did were the kerbs of Hvězdova in
+# its cutting, crossing under the carriageway's end 5 m down. The last 15 m of the
+# carriageway took their height, a pit 4 m deep in front of the bridge.
+ALONG, ALONG_FAR, KERB_OUT, LEVEL_OUT, OTHER, OWN = 5.0, 15.0, 1.5, 4.0, 1.0, 1e9  # (OWN: trial, off)
+ALONGSIDE = 0.0  # (trial, off) the cosine between a street and a surveyed line along it: its kerb, not one crossing it
+# The car streets on the ground from IPR's 2023 LiDAR, where it's been imported. The
+# survey gives a street its kerbs, not the road between them, and the rules above make a
+# street of them one case at a time: on a 4 m lattice it leant, twisted and waved, and
+# where a rule took the wrong kerbs it had a pit (5. května before its bridge over
+# Hvězdova: 4 m deep, from the kerbs of Hvězdova in its cutting). The bare-earth scan
+# has the road itself. Along each street, every metre, the scan is read at SCAN_ACROSS
+# of the way from its line to each kerb and the middle value taken (a parked car's
+# shadow, a kerb, the bank where the map draws the street a little off: not the mean),
+# smoothed along the street over SCAN_SMOOTH (a real street's waves within 2 m are under
+# 4 cm), and every lattice point of the carriageway, and of the surveyed street beside
+# it out to LEVEL_OUT, takes that height: level from kerb to kerb.
+# Not where the scan can't be the street. Within SCAN_CLEAR of one of the map's bridges
+# or tunnels, and of a surveyed point SCAN_OFF or more above or below everything the
+# scan has within SCAN_REACH of it (a deck's kerbs, a viaduct the map doesn't draw, an
+# underpass: two levels in one place), the rules above decide as before, and from there
+# the scan comes in over SCAN_EASE. And where no surveyed point within SCAN_SURE bears
+# the scan out, it counts less the further it is from what the street had: not at all
+# from SCAN_FAR (the terrain model against the scan alone: an excavation, a new road).
+SCAN_ACROSS = np.array([-0.8, -0.4, 0.0, 0.4, 0.8])
+SCAN_FEW = 3  # of them with a height, at least
+SCAN_SMOOTH = 3.0  # m along the street (a Gaussian's sigma)
+SCAN_CLEAR, SCAN_EASE = 6.0, 8.0  # m
+SCAN_OFF = 2.0  # m
+# Nearer one than that the scan still counts along a street as far as it runs on unbroken
+# from where it's clear: it's the street's own ground up to the edge of an abutment or a
+# portal, where it changes by more than SCAN_BREAK within SCAN_SPAN m along the street (no
+# street is that steep), and from there on it's the ground under a deck or over a roof.
+# (At Malovanka the slip road down to the tunnel is surveyed under its roof, 6 m below
+# the scan: mixed in over a few metres, the two made a street at neither height.)
+SCAN_BREAK, SCAN_SPAN = 1.2, 3
+SCAN_MIX = 1.0  # m: further than this from what the street had, the scan counts wholly or not at all
+# A street has a shoulder: the ground out to SCAN_SHOULDER past its kerbs, further than a
+# lattice cell, is level with it, where the scan round the point is within SCAN_BESIDE
+# of the street's height (a bank, a garden wall, a front garden: not the next street up
+# the hill or a quay) and the point isn't on another street's carriageway. On a 4 m
+# lattice a point just outside the kerb is a corner of the cells the carriageway's edge
+# lies in: left on the bank, it tilted the street's edge up it.
+SCAN_SHOULDER = 4.5  # m
+SCAN_BESIDE = 2.0  # m
+# (The scan round the point: within SCAN_POINT of it. Within 2 m, a point on the edge of
+# a wall's top had the foot's height in reach too, and the street at the foot took it:
+# nábřeží Edvarda Beneše over the quay road lost a row of points and leant 135 %.)
+SCAN_POINT = 1.0  # m
+SCAN_SEAM = 0.5  # m: where streets' heights within two lattice points are further apart than this, they aren't blended
+SCAN_SURE = 12.0  # m
+SCAN_NEAR, SCAN_FAR = 2.0, 3.0  # m
 BLEND = 3.0  # m: where two streets meet, their levels are blended over this far (a Gaussian's sigma)
 
 
@@ -344,7 +397,7 @@ def _along(c, spacing=SPACING):
     return np.concatenate(out)
 
 
-def _survey_points(lines, to_local, at, lowest=None, scan=None, counts=None, spared=None):
+def _survey_points(lines, to_local, at, lowest=None, scan=None, counts=None, spared=None, runs=None):
     """Validate original vertices against bare terrain, then sample only intact runs.
 
     Keep isolated valid vertices as anchors, but never connect across a rejected one.
@@ -354,7 +407,8 @@ def _survey_points(lines, to_local, at, lowest=None, scan=None, counts=None, spa
     `(xs, ys, reach) -> (lowest, highest)` in the survey's coordinates: a vertex more than
     OFF_SCAN below the lowest is moved up to it (see OFF_SCAN), and counted in
     `counts["off_scan"]`, unless `spared(local xy)` says it's by a bridge or in a tunnel.
-    Transform and sample in one batch so this also scales to the city's survey.
+    Transform and sample in one batch so this also scales to the city's survey. `runs`,
+    if given, gets the number of points of each unbroken run, in order (see _directions).
     """
     if not lines:
         return np.zeros((0, 3)), 0
@@ -387,8 +441,23 @@ def _survey_points(lines, to_local, at, lowest=None, scan=None, counts=None, spa
         edges = np.flatnonzero(np.diff(np.r_[False, good, False]))
         for a, b in zip(edges[::2], edges[1::2]):
             points.append(_along(local[start + a:start + b]))
+            if runs is not None:
+                runs.append(len(points[-1]))
         start = end
     return np.concatenate(points) if points else np.zeros((0, 3)), int((~valid).sum())
+
+
+def _directions(points, runs):
+    """Which way the surveyed line runs at each of _survey_points' points, as unit
+    vectors (either way along it); zeros for a point on its own."""
+    out = np.zeros((len(points), 2))
+    start = 0
+    for n in runs:
+        if n > 1:
+            d = np.gradient(points[start:start + n, :2], axis=0)
+            out[start:start + n] = d / np.maximum(np.hypot(d[:, 0], d[:, 1]), 1e-9)[:, None]
+        start += n
+    return out
 
 
 def _scan_local(scan, to_local):
@@ -526,7 +595,7 @@ def _crossing(hole, line, streets):
     return out
 
 
-def _level_across(grid, on, points, streets, x_of, y_of, step, spacing=1.0):
+def _level_across(grid, on, points, streets, x_of, y_of, step, spacing=1.0, directions=None):
     """Level the car streets across: every lattice point `on` a surveyed street within
     half a street's width of its centre line takes the height of that street's
     cross-section there (see ALONG). Each surface took the heights of the surveyed points
@@ -549,16 +618,20 @@ def _level_across(grid, on, points, streets, x_of, y_of, step, spacing=1.0):
     def project(xy):
         dist, near = tree.query(xy)
         d, t = xy - dense[near], tangents[near]
-        return ids[near], stations[near] + (d * t).sum(axis=1), t[:, 0] * d[:, 1] - t[:, 1] * d[:, 0] > 0, dist
+        return ids[near], stations[near] + (d * t).sum(axis=1), t[:, 0] * d[:, 1] - t[:, 1] * d[:, 0] > 0, dist, t
 
     gj, gi = np.nonzero(on)
-    line, station, _, dist = project(np.column_stack([x_of(gi), y_of(gj)]))
+    line, station, _, dist, _ = project(np.column_stack([x_of(gi), y_of(gj)]))
     keep = dist <= halves[line] + LEVEL_OUT
     gj, gi, line, station = gj[keep], gi[keep], line[keep], station[keep]
-    pl, ps, side, pd = project(points[:, :2])
+    pl, ps, side, pd, pt = project(points[:, :2])
     lengths = np.array([ls.length for ls, _ in lines])
     # (Along the street itself: past its end, the kerbs are the next street's.)
     kerb = (pd <= halves[pl] + KERB_OUT) & (ps >= -1) & (ps <= lengths[pl] + 1)
+    if directions is not None:
+        # (And running along it: a line across the street is a crossing street's kerb.)
+        with np.errstate(invalid="ignore"):
+            kerb &= ~(np.abs((directions * pt).sum(axis=1)) < ALONGSIDE) | ~directions.any(axis=1)
     pl, ps, side, pz = pl[kerb], ps[kerb], side[kerb], points[kerb, 2]
 
     # Per street: the lattice points against its kerb points, a tent of weights along it.
@@ -569,6 +642,9 @@ def _level_across(grid, on, points, streets, x_of, y_of, step, spacing=1.0):
     for k in np.flatnonzero((lb[1:] > lb[:-1]) & (pb[1:] > pb[:-1])):
         every, kerbs = order[lb[k]:lb[k + 1]], porder[pb[k]:pb[k + 1]]
         every, kerbs = every[np.argsort(station[every])], kerbs[np.argsort(ps[kerbs])]
+        kerbs = kerbs[_own_level(station[every], grid[gj[every], gi[every]], ps[kerbs], pz[kerbs])]
+        if not len(kerbs):
+            continue
         for c in range(0, len(every), 512):  # (a long street in pieces: the matrix stays small)
             g = every[c:c + 512]
             p = kerbs[np.searchsorted(ps[kerbs], station[g[0]] - ALONG_FAR):np.searchsorted(ps[kerbs], station[g[-1]] + ALONG_FAR, "right")]
@@ -582,6 +658,32 @@ def _level_across(grid, on, points, streets, x_of, y_of, step, spacing=1.0):
     blended = ndimage.gaussian_filter(np.where(done, level, 0), blur) / np.maximum(ndimage.gaussian_filter(done.astype(np.float32), blur), 1e-6)
     grid[done] = blended[done]
     return int(done.sum())
+
+
+def _own_level(station, h, ps, pz):
+    """Which of a street's kerb points (at `ps` along it, heights `pz`) are on its own
+    level: within OWN of the middle height of its lattice points (at `station`, heights
+    `h`) within ALONG of them along the street, or failing that within ALONG_FAR (a
+    street's last points before a bridge are under it, and not its own). The middle one,
+    not the mean: a few of a street's lattice points may be on another level themselves
+    (Italská over the passage under it, 5 m down). A kerb point with no lattice point so
+    near counts."""
+    ok = np.isfinite(h)
+    order = np.argsort(station[ok], kind="stable")
+    st, hs = station[ok][order], h[ok][order]
+    own = np.full(len(ps), np.nan)
+    for reach in (ALONG, ALONG_FAR):
+        todo = np.flatnonzero(np.isnan(own))
+        if not len(todo) or not len(st):
+            break
+        lo, hi = np.searchsorted(st, ps[todo] - reach), np.searchsorted(st, ps[todo] + reach, "right")
+        at = lo[:, None] + np.arange(max(1, int((hi - lo).max())))[None, :]
+        near = np.where(at < hi[:, None], hs[np.minimum(at, len(hs) - 1)], np.nan)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)  # (none so near)
+            own[todo] = np.nanmedian(near, axis=1)
+    with np.errstate(invalid="ignore"):
+        return ~(np.abs(pz - own) > OWN)
 
 
 def _cross_sections(grid, gj, gi, station, ps, side, pz):
@@ -612,6 +714,141 @@ def _cross_sections(grid, gj, gi, station, ps, side, pz):
         ours = np.abs(pz - np.interp(ps, station[ok], level[ok])) <= OTHER
     grid[gj[ok], gi[ok]] = level[ok]
     return int(ok.sum())
+
+
+def _scan_streets(grid, on, streets, sides, scan_here, apart, sure, x_of, y_of, step, spacing=1.0, free=None):
+    """The car streets on the ground from the LiDAR (see SCAN_ACROSS): every lattice point
+    of a street's carriageway, and of the surveyed street surface out to LEVEL_OUT past
+    its kerbs, takes the height the scan has along the street there, level from kerb to
+    kerb. `on`: the lattice points on a surveyed street surface; `sides`: each street's
+    kerbs, metres left and right of its line; `scan_here`: the LiDAR's `(xy, reach) ->
+    (lowest, highest)`; `apart`: metres from each lattice point to where the scan can't be
+    the street (a bridge or tunnel of the map, a surveyed point on another level than the
+    scan); `sure`: metres to the nearest surveyed point the scan agrees with; `free`: the
+    lattice points that may be a street's at all (not those under a bridge). In place;
+    returns the lattice points it set, as a mask."""
+    done = np.zeros(grid.shape, dtype=bool)
+    free = np.ones(grid.shape, dtype=bool) if free is None else free
+    lines = [(ls, np.clip(side, 1.0, 15.0)) for (ls, half), side in zip(streets, sides) if half > 0 and ls.length > 0.5]
+    if not lines:
+        return done
+    dense, ids, tangents, counts = [], [], [], []
+    for k, (ls, _) in enumerate(lines):
+        n = max(2, int(np.ceil(ls.length / spacing)) + 1)
+        p = shapely.get_coordinates(shapely.line_interpolate_point(ls, np.linspace(0, ls.length, n)))
+        t = np.gradient(p, axis=0)
+        t /= np.maximum(np.linalg.norm(t, axis=1, keepdims=True), 1e-9)
+        dense.append(p), ids.append(np.full(n, k)), tangents.append(t), counts.append(n)
+    dense, ids, tangents = map(np.concatenate, (dense, ids, tangents))
+    left, right = np.array([side[0] for _, side in lines])[ids], np.array([side[1] for _, side in lines])[ids]
+    normal = np.column_stack([-tangents[:, 1], tangents[:, 0]])  # (to the left)
+
+    # The scan across the carriageway at every metre of every street: the middle value.
+    across = np.where(SCAN_ACROSS[None, :] > 0, SCAN_ACROSS[None, :] * left[:, None], SCAN_ACROSS[None, :] * right[:, None])
+    z = np.full(across.shape, np.nan)
+    for a in range(0, len(dense), 500_000):  # (in pieces: the transform's arrays)
+        at = dense[a:a + 500_000, None, :] + normal[a:a + 500_000, None, :] * across[a:a + 500_000, :, None]
+        z[a:a + 500_000] = scan_here(at.reshape(-1, 2), 0)[0].reshape(-1, across.shape[1])
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)  # (none there)
+        middle = np.where(np.isfinite(z).sum(axis=1) >= SCAN_FEW, np.nanmedian(z, axis=1), np.nan)
+    # How much the scan counts at each (see SCAN_CLEAR, SCAN_SURE).
+    u, v = (dense[:, 0] - x_of(0)) / step, (dense[:, 1] - y_of(0)) / step
+    inside = (u >= 0) & (v >= 0) & (u <= grid.shape[1] - 1) & (v <= grid.shape[0] - 1)
+    gu, gv = np.clip(np.round(u), 0, grid.shape[1] - 1).astype(int), np.clip(np.round(v), 0, grid.shape[0] - 1).astype(int)
+    have = _bilinear(grid, u, v)
+    gap = apart[gv, gu]
+    with np.errstate(invalid="ignore"):
+        weight = np.clip((gap - SCAN_CLEAR) / SCAN_EASE, 0, 1)
+        unsure = sure[gv, gu] > SCAN_SURE
+        weight = np.where(unsure, weight * (1 - np.clip((np.abs(have - middle) - SCAN_NEAR) / (SCAN_FAR - SCAN_NEAR), 0, 1)), weight)
+        mixed = np.abs(have - middle) > SCAN_MIX
+    weight = np.where(inside & np.isfinite(middle) & np.isfinite(weight), weight, 0.0)
+    # Unbroken from where it's clear (see SCAN_BREAK): the stretches between breaks, each
+    # wholly the scan's if any of it is clear.
+    ends = np.cumsum(counts) - 1
+    broken = np.zeros(len(dense), dtype=bool)  # (between each station and the next)
+    broken[ends] = True
+    for k in range(1, SCAN_SPAN + 1):
+        with np.errstate(invalid="ignore"):
+            jump = ~(np.abs(middle[k:] - middle[:-k]) <= SCAN_BREAK) & (ids[k:] == ids[:-k])
+        jump |= ((gap[k:] <= 0) | (gap[:-k] <= 0)) & (ids[k:] == ids[:-k])
+        for o in range(k):
+            broken[o:len(jump) + o] |= jump
+    stretch = np.r_[0, np.cumsum(broken[:-1])]
+    clear = np.bincount(stretch, weights=(weight >= 0.999) & ~unsure, minlength=stretch[-1] + 1) > 0
+    reached = clear[stretch] & inside & np.isfinite(middle) & (gap > 0) if SCAN_BREAK > 0 else np.zeros(len(dense), dtype=bool)
+    weight = np.where(reached, np.maximum(weight, np.where(unsure, weight, 1.0)), np.where(mixed, np.where(weight >= 0.999, weight, 0.0), weight))
+    target = np.full(len(dense), np.nan)
+    start, sigma = 0, SCAN_SMOOTH / spacing
+    for n in counts:
+        part = slice(start, start + n)
+        start += n
+        ok = weight[part] > 0
+        if not ok.any():
+            continue
+        total = ndimage.gaussian_filter1d(np.where(ok, middle[part], 0.0), sigma, mode="nearest")
+        share = ndimage.gaussian_filter1d(ok.astype(float), sigma, mode="nearest")
+        target[part] = np.where(share > 0.05, total / np.maximum(share, 1e-9), np.nan)
+    weight = np.where(np.isfinite(target), weight, 0.0)
+
+    # Each lattice point from the street nearest it. (Only those near a street at all.)
+    out = float(max(left.max(), right.max())) + max(LEVEL_OUT, SCAN_SHOULDER)
+    close = np.zeros(grid.shape, dtype=bool)
+    close[gv[inside], gu[inside]] = True
+    close = ndimage.binary_dilation(close, iterations=int(np.ceil(out / step)) + 1) & np.isfinite(grid) & free
+    gj, gi = np.nonzero(close)
+    xy = np.column_stack([x_of(gi), y_of(gj)])
+    tree = cKDTree(dense)
+    dist, near = tree.query(xy, distance_upper_bound=out + spacing, workers=-1)
+    ok = np.isfinite(dist)
+    gj, gi, xy, near = gj[ok], gi[ok], xy[ok], near[ok]
+
+    def beside(xy, near):
+        d, t = xy - dense[near], tangents[near]
+        off = t[:, 0] * d[:, 1] - t[:, 1] * d[:, 0]  # (to the left of the street: positive)
+        return np.abs(off), np.where(off > 0, left[near], right[near]), np.abs((d * t).sum(axis=1)) <= spacing
+    off, reach, along = beside(xy, near)
+    kerbed = along & (off <= reach)
+    # (A point past the nearest street's kerb may be on another's carriageway: a wide
+    # street beside a narrow one. Then it's that one's.)
+    rest = np.flatnonzero(~kerbed & along & (off <= reach + max(LEVEL_OUT, SCAN_SHOULDER)))
+    for a in range(0, len(rest), 200_000):
+        part = rest[a:a + 200_000]
+        _, others = tree.query(xy[part], k=24, distance_upper_bound=float(max(left.max(), right.max())) + spacing, workers=-1)
+        for k in range(1, others.shape[1]):
+            other = others[:, k]
+            todo = (other < len(dense)) & ~kerbed[part]
+            if not todo.any():
+                continue
+            o_off, o_reach, o_along = beside(xy[part[todo]], other[todo])
+            on_it = o_along & (o_off <= o_reach)
+            hit = part[todo][on_it]
+            near[hit], off[hit], reach[hit], along[hit], kerbed[hit] = other[todo][on_it], o_off[on_it], o_reach[on_it], True, True
+    mine = along & (kerbed | (off <= reach + np.where(on[gj, gi], max(LEVEL_OUT, SCAN_SHOULDER), SCAN_SHOULDER))) & (weight[near] > 0)
+    gj, gi, xy, near, kerbed = gj[mine], gi[mine], xy[mine], near[mine], kerbed[mine]
+    # (And on the street's own ground: where the scan round the point is far off the
+    # street's height, the point is up a bank, on a wall or on another street beside it.)
+    lo, hi = scan_here(xy, SCAN_POINT)
+    with np.errstate(invalid="ignore"):
+        slack = np.where(kerbed, SCAN_OFF, SCAN_BESIDE)
+        mine = (target[near] >= lo - slack) & (target[near] <= hi + slack)
+    gj, gi, near = gj[mine], gi[mine], near[mine]
+    if not len(gj):
+        return done
+    level = np.zeros(grid.shape, dtype=np.float32)
+    share = np.zeros(grid.shape, dtype=np.float32)
+    level[gj, gi], share[gj, gi] = target[near], weight[near]
+    done[gj, gi] = True
+    # (Where two streets meet, blended over a cell, as _level_across; not where they're
+    # at two heights side by side.)
+    blur = BLEND / step
+    blended = ndimage.gaussian_filter(level, blur) / np.maximum(ndimage.gaussian_filter(done.astype(np.float32), blur), 1e-6)
+    lowest = ndimage.minimum_filter(np.where(done, level, np.inf), size=5)
+    highest = ndimage.maximum_filter(np.where(done, level, -np.inf), size=5)
+    level = np.where(highest - lowest <= SCAN_SEAM, blended, level)
+    grid[done] += share[done] * (level[done] - grid[done])
+    return done
 
 
 def _bilinear(grid, u, v):
@@ -903,7 +1140,7 @@ def weir_points(weirs, shape, x_of, y_of, step):
     return out
 
 
-def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=(), tunnels=(), keep=(), carriageways=(), streets=(), no_feather=False, no_shoulder=True, cut_streets=False, weirs=(), unknown=None, valley_smooth=True, bridges=(), drawn=(), level_across=True, cuts=(), sharp=False, scan=None, sunk_kerbs=True, scan_levels=True, bridge_ends=(), bridge_ways=()):
+def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=(), tunnels=(), keep=(), carriageways=(), streets=(), no_feather=False, no_shoulder=True, cut_streets=False, weirs=(), unknown=None, valley_smooth=True, bridges=(), drawn=(), level_across=True, cuts=(), sharp=False, scan=None, sunk_kerbs=True, scan_levels=True, bridge_ends=(), bridge_ways=(), street_sides=None, scan_streets=True):
     """Correct the tiles' lattices in place (see the top of the file). Works on arrays
     over the whole area (a few GB for `praha`). `tiles`: {(i, j):
     (N + 1) x (N + 1) heights}, the lattice of tile (i, j) starting at point (i * N, j * N);
@@ -957,7 +1194,9 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         if shelter_tree is not None:
             out[np.unique(shelter_tree.query(shapely.points(p), predicate="intersects")[0])] = True
         return out
-    points, rejected = _survey_points(lines, to_local, at_bare, at_lowest, scan, counts, spared)
+    runs = []
+    points, rejected = _survey_points(lines, to_local, at_bare, at_lowest, scan, counts, spared, runs)
+    directions = _directions(points, runs)
     pts = points[:, :2]
     scan_here = _scan_local(scan, to_local) if scan_levels else None
     aloft, decked, at_end = _on_decks(points, bridges, scan_here, bridge_ends)
@@ -1103,7 +1342,39 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
     # under a bridge (that's the ground below it), but right up to one: the street's
     # last metres before a bridge over a cutting kept the cutting's heights and sagged.
     over_kerbs = over_any & ~carried_any  # (a deck's over every surface that has them)
-    levelled_points = _level_across(grid, street & ~beneath, points[~(sunk | decked | over_kerbs)], streets, x_of, y_of, step) if level_across else 0
+    ours = ~(sunk | decked | over_kerbs)
+    levelled_points = _level_across(grid, street & ~beneath, points[ours], streets, x_of, y_of, step, directions=directions[ours]) if level_across else 0
+
+    # And from the LiDAR where it can be the street (see SCAN_ACROSS).
+    scanned = 0
+    scan_at = _scan_local(scan, to_local) if scan_streets and not sharp else None
+    if scan_at is not None and len(streets):
+        lo, hi = scan_at(pts, SCAN_REACH)
+        with np.errstate(invalid="ignore"):
+            other = (points[:, 2] > hi + SCAN_OFF) | (points[:, 2] < lo - SCAN_OFF)
+            agree = ~other & np.isfinite(lo)
+        pi, pj = np.round((pts[:, 0] - x_of(0)) / step).astype(int), np.round((pts[:, 1] - y_of(0)) / step).astype(int)
+        inside = (pi >= 0) & (pi < grid.shape[1]) & (pj >= 0) & (pj < grid.shape[0])
+        clash = beneath.copy()
+        for line, width in tunnels:
+            hole = line.buffer(width / 2 + UNDER_SIDE)
+            bx0, by0, bx1, by1 = hole.bounds
+            ia, ib = max(0, int(np.ceil((bx0 - x_of(0)) / step))), min(grid.shape[1] - 1, int(np.floor((bx1 - x_of(0)) / step)))
+            ja, jb = max(0, int(np.ceil((by0 - y_of(0)) / step))), min(grid.shape[0] - 1, int(np.floor((by1 - y_of(0)) / step)))
+            if ia > ib or ja > jb:
+                continue
+            gi, gj = np.meshgrid(np.arange(ia, ib + 1), np.arange(ja, jb + 1))
+            clash[gj, gi] |= shapely.contains_xy(hole, x_of(gi), y_of(gj))
+        under_roof = clash.copy()
+        clash[pj[inside & other], pi[inside & other]] = True
+        borne = np.zeros(grid.shape, dtype=bool)
+        borne[pj[inside & agree], pi[inside & agree]] = True
+        apart = ndimage.distance_transform_edt(~clash).astype(np.float32) * step if clash.any() else np.full(grid.shape, np.inf, dtype=np.float32)
+        sure = ndimage.distance_transform_edt(~borne).astype(np.float32) * step if borne.any() else np.full(grid.shape, np.inf, dtype=np.float32)
+        sides = street_sides if street_sides is not None and len(street_sides) == len(streets) else [(half, half) for _, half in streets]
+        from_scan = _scan_streets(grid, street & ~beneath, streets, sides, scan_at, apart, sure, x_of, y_of, step, free=~under_roof)
+        street |= from_scan
+        scanned = int(from_scan.sum())
 
     # A street surveyed in an underpass is under the ground, not on it: where the map has
     # a tunnel and the survey is well below the terrain model, the terrain stays.
@@ -1494,7 +1765,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         if listed:
             outlines[(i, j)] = listed
     changed = ~np.isnan(bare) & (np.abs(grid - bare) > 0.05)
-    return {"survey_rejected_vertices": rejected, "off_scan": counts.get("off_scan", 0), "sunk_kerbs": int(sunk.sum()), "aloft": int(aloft.sum()), "deck_kerbs": int(decked.sum()), "over_kerbs": int(over_kerbs.sum()), "end_kerbs": int(at_end.sum()), "kerbs_skipped": counts.get("kerbs_skipped", 0), "scan_lower": counts.get("scan_lower", 0), "scan_upper": counts.get("scan_upper", 0), **({"kept_aloft": counts["kept_aloft"]} if "kept_aloft" in counts else {}), "surfaces": surfaces, "street_points": street_points, "levelled_across": levelled_points, "two_levels": two_levels, "under_points": under, "feathered": feathered, "overhang_points": overhang, "water_points": int(wet.sum()), "water_levelled": levelled, "valley_points": valley, "bank_points": bank_points,
+    return {"survey_rejected_vertices": rejected, "off_scan": counts.get("off_scan", 0), "sunk_kerbs": int(sunk.sum()), "aloft": int(aloft.sum()), "deck_kerbs": int(decked.sum()), "over_kerbs": int(over_kerbs.sum()), "end_kerbs": int(at_end.sum()), "kerbs_skipped": counts.get("kerbs_skipped", 0), "scan_lower": counts.get("scan_lower", 0), "scan_upper": counts.get("scan_upper", 0), **({"kept_aloft": counts["kept_aloft"]} if "kept_aloft" in counts else {}), "surfaces": surfaces, "street_points": street_points, "levelled_across": levelled_points, "streets_from_scan": scanned, "two_levels": two_levels, "under_points": under, "feathered": feathered, "overhang_points": overhang, "water_points": int(wet.sum()), "water_levelled": levelled, "valley_points": valley, "bank_points": bank_points,
             "kept_by_hand": kept, "cut_streets": cuts, "retaining_walls": len(strips) - cuts, "retaining_metres": round(wall_length), "cuttings": len(cuttings), "terrace_off_streets_m2": round(off_streets), "wall_points": wall_points, "lone_points": lone_points,
             "changed": int(changed.sum()), "mean_change": float(np.abs(grid - bare)[changed].mean()) if changed.any() else 0.0,
             "labels": labels, "terraces": outlines}

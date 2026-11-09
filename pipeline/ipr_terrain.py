@@ -361,6 +361,7 @@ def main() -> None:
     ap.add_argument("--no-sunk-kerbs", action="store_true", help="streets over an underpass from the kerbs below too (to compare)")
     ap.add_argument("--no-scan-levels", action="store_true",
                     help="bridges' decks surveyed as ground in the ground under them, and two levels decided without the LiDAR (to compare)")
+    ap.add_argument("--no-scan-streets", action="store_true", help="car streets from the survey's kerbs alone, not from the LiDAR's road between them (to compare)")
     ap.add_argument("--no-level", action="store_true", help="car streets from their nearest kerb points, leaning and all, not level across (to compare)")
     ap.add_argument("--survey-companion-decks", action="store_true",
                     help="trial: use the DTM to add a second carriageway on a bridge already identified above a cutting")
@@ -390,7 +391,7 @@ def main() -> None:
     ox, oy = meta["origin"]
     local = f"+proj=tmerc +lat_0={(s + n) / 2} +lon_0={(w + e) / 2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m"
     options = {name: getattr(args, name) for name in (
-        "no_survey", "no_feather", "dmr5g", "shoulder", "walls_on_streets", "valley_nearest", "cut_streets", "no_level", "no_sunk_kerbs", "no_scan_levels", "no_cuttings")}
+        "no_survey", "no_feather", "dmr5g", "shoulder", "walls_on_streets", "valley_nearest", "cut_streets", "no_level", "no_sunk_kerbs", "no_scan_levels", "no_cuttings", "no_scan_streets")}
     if args.ipr_lidar:
         options["ipr_lidar"] = str(args.ipr_lidar.resolve())
     if args.survey_companion_decks:
@@ -444,7 +445,7 @@ def main() -> None:
     # filled sheet by sheet, so memory follows the tiles that exist, not the bbox. The
     # step divides the tile, so tile (i, j) starts at lattice point (i * N, j * N).
     tiles, boxes, outlines, roads, ways, water, by_water, driven = {}, {}, [], [], [], [], [], []
-    weirs, streets, street_edges, tile_water = [], {}, {}, {}
+    weirs, streets, street_edges, tile_water, kerbs = [], {}, {}, {}, {}
     for i, j, t in layers.tiles(area, meta):
         tiles[(i, j)] = np.full((N + 1, N + 1), np.nan, dtype=np.float32)
         boxes[(i, j)] = box(*t["box"])
@@ -456,6 +457,7 @@ def main() -> None:
             if not e.get("bridge") and len(e["pts"]) > 1 and e["id"] not in streets:
                 half = min(e["width"] / 2, *(e.get("kerb") or [e["width"] / 2]))
                 streets[e["id"]] = (LineString(e["pts"]), half)
+                kerbs[e["id"]] = tuple(e.get("kerb") or (e["width"] / 2, e["width"] / 2))
                 street_edges[e["id"]] = e
         if t["areas"].get("water"):
             for kind in ("road", "sett", "path", "dirt"):
@@ -548,7 +550,8 @@ def main() -> None:
                                       drawn=drawn_walls(local), level_across=not args.no_level,
                                       cuts=[LineString(w["pts"]).buffer(w["w"] / 2) for w in ways if w.get("cut")], sharp=args.lidar_ground,
                                       scan=ipr_lidar.range_sampler(options["survey_scan"])[0] if options.get("survey_scan") else None,
-                                      sunk_kerbs=not args.no_sunk_kerbs, scan_levels=not args.no_scan_levels)
+                                      sunk_kerbs=not args.no_sunk_kerbs, scan_levels=not args.no_scan_levels,
+                                      street_sides=[] if args.walls_on_streets else list(kerbs.values()), scan_streets=not args.no_scan_streets)
         labels, terraces = surveyed.pop("labels"), surveyed.pop("terraces")
         print(f"  survey: {surveyed}")
         timings.lap("survey")
