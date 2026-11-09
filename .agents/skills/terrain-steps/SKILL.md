@@ -284,7 +284,13 @@ steeper than VALLEY anywhere, which took steps over 1 m from 71 to 38.
   VALLEY from any neighbour (`--valley-nearest` for the old way).
 - A bridge's pad that doesn't meet the street past it is a wall across that street
   (Ohrobecké údolí, Železničářů: 4–7 m). Leaving such pads out broke the joins of
-  Palackého most (8.9 m) and Lahovický most: not done. Rašínovo nábřeží by Palackého
+  Palackého most (8.9 m) and Lahovický most: not done. Leaving out only a pad that a
+  car street crosses fixed Ohrobecké údolí (`solve`, 9 November 2026). A wall across
+  every bridge's end over a lower street, tried the same day for 5. května over
+  Hvězdova, broke 24 bridge joins and didn't help there: the slope runs beside the
+  deck along the lower street, not across the bridge's end.
+- A street crossing over a tunnel isn't in it: Modřanská's points over a footway's
+  tunnel at Zlíchov took the footway's floor (`_crossing` in `dtm_heights.py`). Rašínovo nábřeží by Palackého
   most and Komořanská by most Závodu míru were the two-level survey under a bridge (see
   above): fixed since, most Závodu míru's join down from 3.7 m to 0.9 m.
 

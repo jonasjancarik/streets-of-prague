@@ -319,8 +319,25 @@ Ask first:
     already leaning 48 % across, bump 1.25 → 1.81 m (its crown 1.53 → 1.08 m). Judging
     the kerbs of surveyed pieces too small to hold a lattice point, the first guess,
     moved no street in the city.
-  - Left for step 2: Ohrobecké údolí (6.7 m) and Železničářů (3.8 m), bridges' pads
-    across a street; nábřeží Edvarda Beneše (5.4 m) and Kapitána Jaroše (3.2 m); the
+  - **A footway's tunnel under Modřanská, a pad across Ohrobecké údolí** (9 November,
+    bc877eb0, 7feb7740): Modřanská's lattice points at Zlíchov lay in the strip of a
+    footway's tunnel crossing under it and took its floor, pits 2–3 m deep; a car street
+    crossing a tunnel is no longer in it. A bridge's end lifted over a car street that
+    crosses its pad stays on the ground: Ohrobecké údolí 6.66 → 0.21 m. Together: steps
+    over 1 m 12 → 11, bumps over 0.5 m 469 → 468, ridges over 1 m 103 → 102; Čechův
+    most's join 0.12 → 0.72 m, Oistrachova's bump 0.75 → 1.49 m and Povltavská's waves
+    0.29 → 1.37 m worse.
+  - **Tried and dropped: a wall at every bridge end over a lower street** (9 November,
+    for 5. května over Hvězdova and its slip roads, a torn slope and a guardrail in
+    zigzags). A wall across a bridge's end, a terrace on top, wherever a car street in
+    its last 30 m is 3 m or more below the end: 750 walls in the city. It fixed
+    Železničářů (3.79 → 0.02 m) and Spojovací (1.63 → 0.06 m), but made 24 bridge joins
+    worse by over half a metre (a motorway's 0.12 → 6.81 m at 50.12468, 14.26942) and
+    left 5. května looking the same, with slabs standing beside the slope. The slope
+    there runs along the lower street, beside the deck, not across its end. The code is
+    in `docs/evidence/road-plan/abutment-walls.patch` (local).
+  - Left for step 2: 5. května over Hvězdova (50.05296, 14.44106 and 50.05162,
+    14.44466); Železničářů (3.8 m), a bridge's pad across a street; nábřeží Edvarda Beneše (5.4 m) and Kapitána Jaroše (3.2 m); the
     footway at 50.1024, 14.5723 (0.05 → 2.87 m since 4238a983); V Kuťatech, a 7 m bridge
     whose deck kerbs all lie within 6 m of its ends (6.22 m, as today); Wilsonova at
     50.0923, 14.4374 (leaning 48 % across, as today); Kosmická at 50.0319, 14.5323, a
