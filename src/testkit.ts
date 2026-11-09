@@ -111,7 +111,7 @@ interface Game {
   wallet: Wallet; police: Police; health: Health; clock: Clock; fires: Fires; brigade: Brigade; ambulances: Ambulances; refuse: Refuse; traffic: Traffic; crowd: { people: { state: string; x: number; y: number }[] }; hurtNearest: (grave?: boolean) => Pedestrian | null;
   weather: { set: (k: Kind | 'auto') => void; kind: () => string };
   season: { set: (when: string | number) => void; date: () => string };
-  birds: (kind: 'pigeon' | 'gull', x: number, y: number) => boolean;
+  birds: (kind: 'pigeon' | 'gull' | 'ground', x: number, y: number) => boolean;
   rng: () => number;
   bags: Bags;
   missions: Missions;
@@ -260,6 +260,8 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     season(when: string | number) { g.season.set(when); },
     // A flock of birds over where you are (they come by themselves too, by day in dry weather).
     flock(kind: 'pigeon' | 'gull' = 'pigeon') { const m = g.me(); return g.birds(kind, m.x, m.y); },
+    // Pigeons on the ground `ahead` metres in front of you (they fly up when you or a moving car get near).
+    pigeons(ahead = 8) { const m = g.me(); return g.birds('ground', m.x + Math.cos(m.h) * ahead, m.y + Math.sin(m.h) * ahead); },
 
     // What the arrest does to the chase: the stars go and the police cars stand down.
     forgive() { g.police.forgive(); },

@@ -117,7 +117,7 @@ import { Blinkers } from './blinkers.ts';
 import { Minimap, minimapOn } from './minimap.ts';
 import { PLACES as NAMED_PLACES } from './taxi.ts';
 import * as telemetry from './telemetry.ts';
-import { Birds } from './birds.ts';
+import { Birds, BIRDS } from './birds.ts';
 import { Hitches } from './hitches.ts';
 import { benchPause } from './benchpause.ts';
 import type { Testkit } from './testkit.ts';
@@ -429,7 +429,18 @@ async function main() {
   const water = new Water(scene, weatherFx.tint);
   const beacons = new Beacons(scene);
   const birds = new Birds(scene);
-  const birdsView = { x: 0, y: 0, radius: 0, height: 0, dark: 0, rain: 0, snow: 0, ground: (x: number, y: number) => world.terrainAt(x, y), water: (x: number, y: number) => !!world.waterAt(x, y) };
+  const birdsView = {
+    x: 0, y: 0, radius: 0, height: 0, dark: 0, rain: 0, snow: 0,
+    ground: (x: number, y: number) => world.heightAt(x, y), water: (x: number, y: number) => !!world.waterAt(x, y),
+    open: (x: number, y: number) => grid.at(x, y) === 0 && !world.onRoad(x, y) && !world.waterAt(x, y),
+    // What pigeons on the ground fly up from: you, and any car on the move.
+    threat: (x: number, y: number): { x: number; y: number } | null => {
+      const me = inCar || walker;
+      if (!inHeli && Math.hypot(me.x - x, me.y - y) < (inCar ? BIRDS.car : BIRDS.shy)) return me;
+      for (const c of carsNear(x, y, BIRDS.car)) if (Math.hypot(c.vx, c.vy) > 1.5) return c;
+      return null;
+    },
+  };
   // The emergency vehicles with their lights going, and what the lamps need each frame
   // besides the cars (the people in view stand in their light too).
   const flashing: Flashing[] = [];
@@ -2868,7 +2879,7 @@ async function main() {
     viewRadius, offscreen,
     canvas: renderer.domElement, fov: camera.fov,
     weather: { set: (k) => { if (k === 'auto') weather.fixed = false; else weather.set(k, true); }, kind: () => weather.kind },
-    birds: (kind, x, y) => !!birds.add(kind, x, y, 0, birdsView),
+    birds: (kind, x, y) => !!(kind === 'ground' ? birds.settle(x, y) : birds.add(kind, x, y, 0, birdsView)),
     season: { set: (when) => { const day = parseDay(when); if (!day) throw new Error(`A season's name, MM-DD or a day of the year, not ${when}`); season.set(day); }, date: () => season.date },
   });
   window.__test = testkit;
