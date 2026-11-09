@@ -12,7 +12,7 @@ import {
   normalize, cross, sqrt, fwidth, distance, select, clamp, storage, buffer, instanceIndex,
 } from 'three/tsl';
 import { BARE, LEAVES, SEASON } from '../shading.ts';
-import { CROWN } from '../map/vegetation.ts';
+import { CROWN, STEM } from '../map/vegetation.ts';
 import { lampLit } from './lamps.ts';
 import { type N, follow, followVec, addPort, uCut, uWet, uSnow, hash12, detail } from './common.ts';
 
@@ -48,39 +48,57 @@ const smallLeaves = (p: N) => {
   return vec4(sqrt(d2).sub(sqrt(d1)), hash12(c1.add(5.1)), o1.negate());
 };
 
-// bareTwig: -1 where there's nothing, else how much of a twig it is.
-const bareTwig = Fn(([t, bare]: N[]) => {
+// bareTwig (BARE_GLSL in vegetation.ts): -1 where there's nothing, else how much of a twig
+// it is. `p` is where in the crown, across it.
+const bareTwig = Fn(([t, bare, p, above, size]: N[]) => {
   const out = float(0).toVar();
-  If(bare.greaterThan(0), () => {
+  If(t.z.lessThan(-3.5), () => {
+    // Fallen leaves (bare: how many lie there; size: the crown's radius in metres): clumps
+    // a foot across, thinning out towards the edge of the crown.
+    const leaf = smallLeaves(p.mul(size).mul(3)).toVar();
+    out.assign(select(leaf.x.greaterThan(0.12).and(leaf.y.lessThan(bare.mul(float(1.05).sub(dot(p, p).div(1.32))))), fract(leaf.y.mul(7)).mul(0.35), -1));
+  }).ElseIf(t.z.lessThan(-1.5), () => { out.assign(1); }).ElseIf(bare.greaterThan(0), () => {
     If(t.z.lessThan(0), () => { out.assign(bare); }).Else(() => {
-      const r = length(t.xy), s = t.z.mul(TAU);
-      const a = atan(t.y, t.x).add(sin(r.mul(9).add(s)).mul(0.25));
-      const bough = abs(fract(a.mul(7 / TAU).add(t.z.mul(3))).sub(0.5)).mul(r).mul(TAU / 7);
-      const fork = abs(fract(a.mul(14 / TAU).add(t.z.mul(5))).sub(0.5)).mul(r).mul(TAU / 14);
-      const twig = max(step(bough, float(0.045).sub(r.mul(0.025))), step(fork, float(0.025).sub(r.mul(0.012))).mul(step(0.45, r))).toVar();
+      const rr = length(p), th = atan(p.y, p.x).add(sin(rr.mul(5).add(t.z.mul(TAU))).mul(0.06));
+      const u = fract(th.mul(6 / TAU)).sub(0.5);
+      const d = abs(abs(abs(u).sub(smoothstep(0.22, 0.5, rr).mul(0.25))).sub(smoothstep(0.5, 0.85, rr).mul(0.125)));
+      const twig = step(d.mul(rr).mul(TAU / 6), float(0.028).sub(min(rr, 1).mul(0.016))).mul(step(rr, mix(0.42, 0.9, above))).toVar();
+      const r = length(t.xy);
+      const fine = abs(fract(atan(t.y, t.x).mul(11 / TAU).add(t.z.mul(3))).sub(0.5)).mul(r).mul(TAU / 11);
+      twig.assign(max(twig, step(fine, 0.009).mul(step(0.3, r)).mul(step(r, 0.7))));
       const c = smallLeaves(t.xy.mul(5).add(t.z.mul(31))).toVar();
-      twig.assign(max(twig, step(c.x, 0.06).mul(step(0.5, r)).mul(step(0.4, hash12(floor(t.xy.mul(9).add(t.z.mul(17))))))));
       If(twig.lessThan(0.5).and(c.y.lessThan(bare)), () => { out.assign(-1); }).Else(() => { out.assign(twig.mul(bare)); });
     });
   });
   return out;
 });
 
-// `yearly` (vegetation.ts): the tree's own timing, and whether it changes at all.
-const own = fract(yearly), changes = float(1).sub(step(0.995, yearly).mul(step(yearly, 1.5)));
-const vBare = () => clamp(uBare.mul(1.6).sub(own.mul(0.6)), 0, 1).mul(changes);
+// `yearly` (vegetation.ts): the tree's own timing, whether it changes at all, and above
+// that how long its trunk is (STEM).
+const year = yearly.mod(STEM.span);
+const own = fract(year), changes = float(1).sub(step(0.995, year).mul(step(year, 1.5)));
+// (For the fallen leaves it is how many lie there: from early October.)
+const litter = tuft.z.lessThan(-3.5), fallen = clamp(uSeason.x.mul(2).sub(0.8), 0, 1).mul(changes);
+const vBare = () => select(litter, fallen, clamp(uBare.mul(1.6).sub(own.mul(0.6)), 0, 1).mul(changes));
+// Where in the crown (across it), with how fresh and how far turned the leaves are: one
+// varying for the four numbers (a fragment takes no more than 16). The fallen leaves
+// have all turned, and carry the crown's radius in metres where the others say how fresh.
+const crownSize = () => instanceMatrix().mul(vec4(1, 0, 0, 0)).xyz.length();
+const crownTurn = () => select(litter, 1, clamp(uSeason.x.mul(1.7).sub(clamp(own.add(tuft.z.sub(0.5).mul(0.3)), 0, 1).mul(0.7)), 0, 1).mul(changes));
+const crownMix = (): N => vec4(positionGeometry.xz, select(litter, crownSize(), uSeason.z.mul(changes)), crownTurn()).toVarying('crownMix');
+const crownXZ = (): N => crownMix().xy;
 
 // YEAR_VERTEX in vegetation.ts: the leaves' colour through the year. What depends on
 // the tree and the tuft alone is worked out at the corners.
 const yearColour = (colour: N) => {
   const pick = fract(own.mul(7.31).add(0.13));
   const shade = min(dot(colour, vec3(0.3, 0.59, 0.11)).div(0.15), 1.6);
-  const c = colour.mul(mix(vec3(1), vec3(1.3, 1.25, 0.7), uSeason.z.mul(changes).toVarying('treeFresh'))).toVar();
+  const c = colour.mul(mix(vec3(1), vec3(1.3, 1.25, 0.7), select(litter, 0, crownMix().z))).toVar();
   const autumn = mix(mix(vec3(0.58, 0.39, 0.03), vec3(0.32, 0.1, 0.02), smoothstep(0.25, 0.85, pick)), vec3(0.27, 0.03, 0.014), step(0.9, pick)).toVarying('treeAutumn');
-  const turn = clamp(uSeason.x.mul(1.7).sub(clamp(own.add(tuft.z.sub(0.5).mul(0.3)), 0, 1).mul(0.7)), 0, 1).mul(changes).toVarying('treeTurn');
+  const turn = crownMix().w;
   c.assign(mix(c, autumn.mul(shade).mul(0.7), turn));
   const flower = mix(vec3(0.8, 0.78, 0.72), vec3(0.8, 0.6, 0.62), step(0.6, pick)).toVarying('treeFlower');
-  const inFlower = uSeason.y.mul(step(1.5, yearly)).mul(step(0, tuft.z)).mul(0.85).toVarying('treeInFlower');
+  const inFlower = uSeason.y.mul(step(1.5, year)).mul(step(0, tuft.z)).mul(0.85).toVarying('treeInFlower');
   return mix(c, flower.mul(shade).mul(0.7), inFlower);
 };
 
@@ -162,28 +180,32 @@ const leafState = Fn(() => {
 
 addPort(/^tufts-cut$/, (node) => {
   const proto = Object.getPrototypeOf(node);
-  const twig = bareTwig(tuft, vBare()).toVar();
+  const twig = bareTwig(tuft, vBare(), crownXZ(), step(0.5, cameraViewMatrix.mul(vec4(0, 1, 0, 0)).z), crownMix().z).toVar();
   const state = leafState().toVar();
 
-  // Twigs alone are left of a bare tree's core, which shrinks to its thicker branches.
-  const shrink = () => select(tuft.z.lessThan(0), float(1).sub(vBare().mul(0.5)), float(1));
-  const outlined = (p: N) => { const o = outlineAt(p); return vec3(o, 1, o); };
+  // A bare tree's core shrinks away, and the foot of the trunk goes down to the ground.
+  const shrink = () => select(tuft.z.lessThan(0).and(tuft.z.greaterThan(-1.5)), float(1).sub(vBare().mul(0.85)), float(1));
+  // The fallen leaves lie on the ground, and are folded away while there are none.
+  const stem = floor(yearly.div(STEM.span)).mul(STEM.step);
+  const shaped = (): N => {
+    const p: N = positionGeometry.mul(shrink()), o: N = outlineAt(positionGeometry).mul(select(litter, step(0.01, fallen), 1));
+    return vec3(p.x.mul(o), select(litter, float(0.02).sub(stem), select(tuft.z.lessThan(-2.5), stem.add(STEM.under).negate(), p.y)), p.z.mul(o));
+  };
   node.setupPosition = function (builder: N) {
     shareInstances(builder);
-    positionLocal.mulAssign(shrink());
-    positionLocal.mulAssign(outlined(positionGeometry));
+    positionLocal.assign(shaped());
     return proto.setupPosition.call(this, builder);
   };
-  node.castShadowPositionNode = instanceMatrix().mul(vec4(positionGeometry.mul(shrink()).mul(outlined(positionGeometry)), 1)).xyz;
+  node.castShadowPositionNode = instanceMatrix().mul(vec4(shaped(), 1)).xyz;
 
   node.maskNode = positionWorld.y.greaterThan(uCut.y).and(distance(positionWorld.xz, uCut.xz).lessThan(uCut.w)).not();
-  node.maskShadowNode = bareTwig(tuft, vBare()).greaterThanEqual(0);
+  node.maskShadowNode = bareTwig(tuft, vBare(), crownXZ(), float(1), crownMix().z).greaterThanEqual(0);
 
   node.setupDiffuseColor = function (builder: N) {
     proto.setupDiffuseColor.call(this, builder);
     If(twig.lessThan(0), () => { Discard(); });
     const c = yearColour(diffuseColor.rgb).mul(state.w).mul(float(1).sub(uWet.mul(0.18))).toVar();
-    c.assign(mix(c, vec3(0.3, 0.27, 0.24), twig));
+    c.assign(mix(c, vec3(0.23, 0.2, 0.18), twig));
     If(uSnow.greaterThan(0.01), () => {
       const up = dot(state.xyz, cameraViewMatrix.mul(vec4(0, 1, 0, 0)).xyz);
       c.assign(mix(c, vec3(0.78, 0.8, 0.84), smoothstep(0.35, 0.8, up).mul(smoothstep(0.2, 0.8, uSnow)).mul(float(0.75).sub(twig.mul(0.45)))));

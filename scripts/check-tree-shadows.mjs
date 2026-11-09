@@ -39,7 +39,8 @@ try {
         const ids = [index.getX(i), index.getX(i + 1), index.getX(i + 2)];
         assert.ok(ids.every(id => id >= 0 && id < position.count));
         const seeds = ids.map(id => tuft.getZ(id));
-        assert.ok(seeds.every(seed => seed === seeds[0]), 'triangle stays within its original tuft/core');
+        // (The trunk's foot and its top are both wood: -3 and -2.)
+        assert.ok(seeds.every(seed => seed === seeds[0]) || seeds.every(seed => seed === -2 || seed === -3), 'triangle stays within its original tuft, core or trunk');
         const [a, b, c] = ids.map(id => new THREE.Vector3().fromBufferAttribute(position, id));
         const face = b.sub(a).cross(c.sub(a));
         assert.ok(face.lengthSq() > 1e-12, 'nondegenerate shadow triangle');

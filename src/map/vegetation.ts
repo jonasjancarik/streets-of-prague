@@ -40,7 +40,8 @@ export const OUTLINE = 8;
 // `conifers`: one page kind each.
 // `yearly`: how each goes through the year: 1 an evergreen, which doesn't change; below
 // 1 a tree that turns and sheds, and 2 and more a fruit tree, which also flowers. The
-// fraction is the tree's own timing (early or late) and picks its autumn colour.
+// fraction is the tree's own timing (early or late) and picks its autumn colour. On top of
+// that comes STEM.span times how long a broadleaf's trunk is (STEM).
 // `outlines`: OUTLINE numbers each, how far the crown reaches (1 its radius) in each
 // direction of its own frame (turned with the instance), for the shader (outlineAt).
 export interface TreeInstances { matrices: Float32Array; colours: Float32Array; yearly: Float32Array; outlines: Float32Array; count: number; big: number; shrubs: number; conifers: number }
@@ -295,6 +296,8 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     // (By where it stands, so the other trees' looks don't change.)
     const own = rng(Math.imul(Math.floor(x * 8), 73856093) ^ Math.imul(Math.floor(y * 8), 19349663));
     yearly[i] = kind === CONIFER || own() < EVERGREEN[kind] ? 1 : (kind === 2 ? 2 : 0) + own() * 0.98;
+    // (How long its trunk is, for the shader: see STEM.)
+    if ((kind === 1 || kind === 2) && rad > 0) yearly[i] += STEM.span * Math.min(STEM.most, Math.round(h / (rad * deep) / STEM.step));
   });
   return { matrices, colours, yearly, outlines, count: trees.length, big, shrubs, conifers };
 }
@@ -438,10 +441,18 @@ const SHRUB_TIERS: Tier[] = [[5, 0.6, -0.05, 56, 0.6], [3, 0.3, 0.24, 30, 0.6], 
 // (Its tufts overlap more and its core is lighter: through the gaps between small tufts,
 // a dark core made the whole crown darker than a small one.)
 const BIG_TIERS: Tier[] = [[12, 0.68, -0.1, 64, 0.38], [10, 0.5, 0.12, 48, 0.37], [7, 0.3, 0.3, 32, 0.35], [4, 0.14, 0.44, 16, 0.33], [1, 0, 0.52, 0, 0.3]];
-const crownGeometry = () => crownShape(7, 20, CROWN_TIERS);
-const bigCrownGeometry = () => crownShape(11, 16, BIG_TIERS, 0.6, 0.45);
+const crownGeometry = () => crownShape(7, 20, CROWN_TIERS, 0.56, 0.32, 5);
+const bigCrownGeometry = () => crownShape(11, 16, BIG_TIERS, 0.6, 0.45, 7);
 const shrubGeometry = () => crownShape(13, 8, SHRUB_TIERS, 0.55, 0.45);
-function crownShape(seed0: number, RIM: number, tiers: Tier[], coreSize = 0.56, coreShade = 0.32) {
+// `tuft.z` of what isn't a tuft: the core, the wood (trunk and boughs, always bark), and
+// the foot of the trunk, which the shader puts on the ground (STEM), and the fallen leaves
+// lying round it there in autumn.
+const CORE = -1, BARK = -2, FOOT = -3, LITTER = -4;
+// How far below the crown's middle the ground is, in the crown's own heights: each tree's
+// goes in `yearly` in steps of STEM.step (STEM.span times its number), and the foot of the
+// trunk reaches STEM.under further, into the ground. (The same in webgpu/trees.ts.)
+export const STEM = { step: 1 / 32, span: 4, most: 1023, under: 0.3 };
+function crownShape(seed0: number, RIM: number, tiers: Tier[], coreSize = 0.56, coreShade = 0.32, boughs = 0) {
   const r = rng(seed0);
   const pos: number[] = [], nor: number[] = [], col: number[] = [], tuft: number[] = [], idx: number[] = [];
   const shadowIdx: number[] = [];
@@ -503,11 +514,61 @@ function crownShape(seed0: number, RIM: number, tiers: Tier[], coreSize = 0.56, 
     pos.push(p.x, p.y, p.z);
     nor.push(n.x, n.y, n.z);
     col.push(coreShade, coreShade, coreShade);
-    tuft.push(0, 0, -1); // (no leaves)
+    tuft.push(0, 0, CORE); // (no leaves)
     across.push(1, 0, 0);
     along.push(0, 0, 1);
   }
   core.dispose();
+  if (boughs) {
+    // A trunk up into the core and a few boughs out from it into the tufts: what holds the
+    // crown up seen from the street, and what is left of the tree in winter. Hidden from
+    // above under the leaves.
+    const wood = (x: number, y: number, z: number, nx: number, ny: number, nz: number, part: number) => {
+      pos.push(x, y, z);
+      nor.push(nx, ny, nz);
+      col.push(1, 1, 1);
+      tuft.push(0, 0, part);
+      across.push(1, 0, 0);
+      along.push(0, 0, 1);
+      return pos.length / 3 - 1;
+    };
+    // A tube from a to b, `sides` round, its radius ra at a and rb at b.
+    const tube = (a: THREE.Vector3, b: THREE.Vector3, ra: number, rb: number, sides: number, partA: number, shadow: boolean) => {
+      const dir = b.clone().sub(a).normalize(), u = new THREE.Vector3().crossVectors(Math.abs(dir.y) > 0.9 ? side : up, dir).normalize(), v = new THREE.Vector3().crossVectors(dir, u);
+      const rings: number[][] = [[], []];
+      for (let j = 0; j < sides; j++) {
+        const th = (j / sides) * Math.PI * 2;
+        n.copy(u).multiplyScalar(Math.cos(th)).addScaledVector(v, Math.sin(th));
+        rings[0].push(wood(a.x + n.x * ra, a.y + n.y * ra, a.z + n.z * ra, n.x, n.y, n.z, partA));
+        rings[1].push(wood(b.x + n.x * rb, b.y + n.y * rb, b.z + n.z * rb, n.x, n.y, n.z, BARK));
+      }
+      for (let j = 0; j < sides; j++) {
+        const k = (j + 1) % sides, tris = [rings[0][j], rings[0][k], rings[1][j], rings[1][j], rings[0][k], rings[1][k]];
+        idx.push(...tris);
+        if (shadow) shadowIdx.push(...tris);
+      }
+    };
+    tube(new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, 0.02, 0), 0.055, 0.042, 5, FOOT, true);
+    const phase = r() * Math.PI * 2;
+    for (let i = 0; i < boughs; i++) {
+      const a = phase + (i / boughs) * Math.PI * 2 + (r() - 0.5) * 0.5, reach = 0.5 + r() * 0.25;
+      tube(new THREE.Vector3(0, -0.22 + 0.1 * (i % 3), 0), new THREE.Vector3(Math.cos(a) * reach, 0.08 + r() * 0.3, Math.sin(a) * reach), 0.03, 0.01, 3, BARK, false);
+    }
+    // The fallen leaves: a flat sheet under the crown, as wide as it, which the shader
+    // lays on the ground and cuts into leaves in autumn (and folds away the rest of the
+    // year). Last, so the crown above hides what it covers. No shadow.
+    const centre = pos.length / 3, SIDES = 10, WIDE = 1.15;
+    for (let j = -1; j < SIDES; j++) {
+      const th = (j / SIDES) * Math.PI * 2, e = j < 0 ? 0 : 1;
+      pos.push(Math.cos(th) * WIDE * e, -1, Math.sin(th) * WIDE * e);
+      nor.push(0, 1, 0);
+      col.push(1, 1, 1);
+      tuft.push(Math.cos(th) * e, Math.sin(th) * e, LITTER);
+      across.push(1, 0, 0);
+      along.push(0, 0, 1);
+    }
+    for (let j = 0; j < SIDES; j++) idx.push(centre, centre + 1 + ((j + 1) % SIDES), centre + 1 + j);
+  }
   const geom = crownBuffers({ pos, nor, col, tuft, across, along, idx: RIM > 8 ? [...idx, ...shadowIdx] : idx });
   geom.setDrawRange(0, idx.length);
   if (RIM > 8) geom.userData.simpleShadowRange = { start: idx.length, count: shadowIdx.length };
@@ -597,7 +658,7 @@ let pine: THREE.BufferGeometry | null = null;
 // (The same in webgpu/trees.ts.)
 export const CROWN = { round: 0.5, rim: 0.5 };
 // TUFT_RIM: how dark a tuft's rim is (the same in webgpu/trees.ts).
-const TUFT_GLSL = 'varying vec3 vTuft;\nconst float TUFT_RIM = .5;';
+const TUFT_GLSL = 'varying vec3 vTuft;\nvarying vec2 vCrownXZ;\nconst float TUFT_RIM = .5;';
 // Cells for the small leaves: x = gap to the next leaf, y = random, zw = from the
 // leaf's middle. Only the four nearest cells are searched (their points kept near the
 // middle of each cell so that's enough).
@@ -614,23 +675,34 @@ vec4 smallLeaves(vec2 p) {
   return vec4(sqrt(d2) - sqrt(d1), hash12(c1 + 5.1), -o1);
 }
 `;
-// Bare in winter (BARE), each tree but the evergreens, the early ones first: of every tuft only twigs are
-// left, where the small leaves' cells meet, and a few boughs out from its middle;
-// the rest falls cell by cell as it grows. The core shrinks to the thicker branches.
-// -1 where there's nothing, else how much of a twig it is.
+// Bare in winter (BARE), each tree but the evergreens, the early ones first: the leaves
+// fall cell by cell, and what is left is the tree's branches. Those run out from the trunk
+// across the whole crown (`p`, where in the crown, 1 its radius), each forking in two
+// twice on the way and getting thinner, so from above a bare tree is spokes that divide
+// and from the street branches that rise; at the end of each tuft, a fan of short straight
+// twigs. The core shrinks away, and the trunk and boughs are bark all year.
+// -1 where there's nothing, else how much of a twig it is. `above`: 1 looking down on the tree.
 const BARE_GLSL = /* glsl */ `
-float bareTwig(vec3 t, float bare) {
+float bareTwig(vec3 t, float bare, vec2 p, float above) {
+  if (t.z < -3.5) {
+    // Fallen leaves (bare: how many lie there; t.xy: metres from the trunk): clumps a
+    // foot across, thinning out towards the edge of the crown.
+    vec4 leaf = smallLeaves(t.xy * 3.);
+    return leaf.x > .12 && leaf.y < bare * (1.05 - dot(p, p) / 1.32) ? .35 * fract(leaf.y * 7.) : -1.;
+  }
+  if (t.z < -1.5) return 1.;
   if (bare <= 0.) return 0.;
   if (t.z < 0.) return bare;
-  float r = length(t.xy), s = t.z * 6.2832;
-  // Boughs out from the middle, wavering, thinner outwards, forking halfway.
-  float a = atan(t.y, t.x) + .25 * sin(r * 9. + s);
-  float bough = abs(fract(a * 7. / 6.2832 + t.z * 3.) - .5) * r * 6.2832 / 7.;
-  float fork = abs(fract(a * 14. / 6.2832 + t.z * 5.) - .5) * r * 6.2832 / 14.;
-  float twig = max(step(bough, .045 - .025 * r), step(fork, .025 - .012 * r) * step(.45, r));
-  // Twigs at the ends: bits of the small leaves' cell edges, not all of them.
+  float rr = length(p), th = atan(p.y, p.x) + .06 * sin(rr * 5. + t.z * 6.2832);
+  float u = fract(th * 6. / 6.2832) - .5;
+  float d = abs(abs(abs(u) - .25 * smoothstep(.22, .5, rr)) - .125 * smoothstep(.5, .85, rr));
+  // (Seen from the side, above 0, not on the tufts down the crown's sides: lines there
+  // droop like a willow's. The boughs' own geometry shows instead.)
+  float twig = step(d * rr * 6.2832 / 6., .028 - .016 * min(rr, 1.)) * step(rr, mix(.42, .9, above));
+  float r = length(t.xy);
+  float fine = abs(fract(atan(t.y, t.x) * 11. / 6.2832 + t.z * 3.) - .5) * r * 6.2832 / 11.;
+  twig = max(twig, step(fine, .009) * step(.3, r) * step(r, .7));
   vec4 c = smallLeaves(t.xy * 5. + t.z * 31.);
-  twig = max(twig, step(c.x, .06) * step(.5, r) * step(.4, hash12(floor(t.xy * 9. + t.z * 17.))));
   if (twig < .5 && c.y < bare) return -1.;
   return twig * bare;
 }
@@ -648,11 +720,21 @@ float outlineAt(vec3 p) {
   }
   return s;
 }`;
-const TUFT_VERTEX = ['#include <common>', `#include <common>\nattribute vec3 tuft;\nattribute float yearly;\nuniform float uBare;\nvarying vec3 vTuft;\nvarying float vBare;\n${OUTLINE_GLSL}`] as const;
+const TUFT_VERTEX = ['#include <common>', `#include <common>\nattribute vec3 tuft;\nattribute float yearly;\nuniform float uBare;\nuniform vec4 uSeason;\nvarying vec3 vTuft;\nvarying vec2 vCrownXZ;\nvarying float vBare;\n${OUTLINE_GLSL}`] as const;
 const TUFT_BEGIN = ['#include <begin_vertex>', `#include <begin_vertex>
   vTuft = tuft;
-  vBare = clamp(uBare * 1.6 - fract(yearly) * .6, 0., 1.) * (1. - step(.995, yearly) * step(yearly, 1.5));
-  if (tuft.z < 0.) transformed *= 1. - .5 * vBare;
+  vCrownXZ = position.xz;
+  float treeYear = mod(yearly, ${STEM.span.toFixed(1)});
+  vBare = clamp(uBare * 1.6 - fract(treeYear) * .6, 0., 1.) * (1. - step(.995, treeYear) * step(treeYear, 1.5));
+  if (tuft.z < 0. && tuft.z > -1.5) transformed *= 1. - .85 * vBare;
+  float stem = floor(yearly / ${STEM.span.toFixed(1)}) * ${STEM.step};
+  if (tuft.z < -3.5) {
+    // The fallen leaves, from early October: on the ground, and gone the rest of the year.
+    vBare = clamp(uSeason.x * 2. - .8, 0., 1.) * (1. - step(.995, treeYear) * step(treeYear, 1.5));
+    transformed.y = .02 - stem;
+    vTuft.xy = position.xz * length(instanceMatrix[0].xyz);
+    transformed.xz *= step(.01, vBare);
+  } else if (tuft.z < -2.5) transformed.y = -(stem + ${STEM.under.toFixed(2)});
   transformed.xz *= outlineAt(transformed);`] as const;
 
 // The leaves' colour through the year (SEASON), worked out for each corner of a tuft:
@@ -661,16 +743,18 @@ const TUFT_BEGIN = ['#include <begin_vertex>', `#include <begin_vertex>
 // while they flower. As bright as the green it replaces was shaded.
 const YEAR_VERTEX = ['#include <color_vertex>', `#include <color_vertex>
   {
-    float own = fract(yearly), changes = 1. - step(.995, yearly) * step(yearly, 1.5);
+    float year = mod(yearly, ${STEM.span.toFixed(1)});
+    float own = fract(year), changes = 1. - step(.995, year) * step(year, 1.5);
     float pick = fract(own * 7.31 + .13);
     float shade = min(dot(vColor.rgb, vec3(.3, .59, .11)) / .15, 1.6);
     vColor.rgb *= mix(vec3(1.), vec3(1.3, 1.25, .7), uSeason.z * changes);
     vec3 autumn = mix(vec3(.58, .39, .03), vec3(.32, .1, .02), smoothstep(.25, .85, pick));
     autumn = mix(autumn, vec3(.27, .03, .014), step(.9, pick));
     float turn = clamp(uSeason.x * 1.7 - clamp(own + (tuft.z - .5) * .3, 0., 1.) * .7, 0., 1.) * changes;
+    if (tuft.z < -3.5) turn = 1.; // (fallen leaves have all turned)
     vColor.rgb = mix(vColor.rgb, autumn * shade * .7, turn);
     vec3 flower = mix(vec3(.8, .78, .72), vec3(.8, .6, .62), step(.6, pick));
-    vColor.rgb = mix(vColor.rgb, flower * shade * .7, uSeason.y * step(1.5, yearly) * step(0., tuft.z) * .85);
+    vColor.rgb = mix(vColor.rgb, flower * shade * .7, uSeason.y * step(1.5, year) * step(0., tuft.z) * .85);
   }`] as const;
 
 // Leaves: every tuft is five big leaves with five smaller ones on top, set between
@@ -688,7 +772,6 @@ function leafy(material: THREE.MeshLambertMaterial) {
     sh.uniforms.uBare = BARE;
     sh.uniforms.uSeason = SEASON;
     sh.vertexShader = sh.vertexShader.replace(...TUFT_VERTEX).replace(...TUFT_BEGIN).replace(...YEAR_VERTEX)
-      .replace('#include <common>', '#include <common>\nuniform vec4 uSeason;')
       .replace('#include <common>', '#include <common>\nattribute vec3 across;\nattribute vec3 along;\nvarying vec3 vAcross;\nvarying vec3 vAlong;\nvarying vec3 vCrownN;\nvarying vec3 vCrownP;')
       .replace('#include <defaultnormal_vertex>', `#include <defaultnormal_vertex>
   vCrownP = position;
@@ -702,7 +785,7 @@ function leafy(material: THREE.MeshLambertMaterial) {
   // no leaves at all.)
   float tw = fwidth(length(vTuft.xy));
   float sd = detail(vTuft.xy * 8., 1.5);
-  twigAmt = bareTwig(vTuft, vBare);
+  twigAmt = bareTwig(vTuft, vBare, vCrownXZ, step(.5, (viewMatrix * vec4(0., 1., 0., 0.)).z));
   if (twigAmt < 0.) discard;
   if (uLeaves > .5 && vTuft.z >= 0. && tw < .3) {
     float r = length(vTuft.xy), s = vTuft.z * 6.2832, k = 6.2832 / 5.;
@@ -747,7 +830,7 @@ function leafy(material: THREE.MeshLambertMaterial) {
   }`)
       .replace('#include <lights_lambert_fragment>', `diffuseColor.rgb *= leafCrease * (1. - .18 * uWet);
   // Twigs and branches: grey-brown bark.
-  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.3, .27, .24), twigAmt);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.23, .2, .18), twigAmt);
   // Snow on the tops of the crowns (weather.ts); wet leaves a little darker.
   if (uSnow > .01) {
     float up = dot(normal, (viewMatrix * vec4(0., 1., 0., 0.)).xyz);
@@ -824,10 +907,11 @@ export function treePageFactory() {
 const treeDepth = new THREE.MeshDepthMaterial();
 treeDepth.onBeforeCompile = (sh) => {
   sh.uniforms.uBare = BARE;
+  sh.uniforms.uSeason = SEASON;
   sh.uniforms.uNoise = NOISE;
   sh.vertexShader = sh.vertexShader.replace(...TUFT_VERTEX).replace(...TUFT_BEGIN);
   sh.fragmentShader = sh.fragmentShader
     .replace('#include <common>', `#include <common>\n${TUFT_GLSL}\nvarying float vBare;\n${NOISE_GLSL}\n${SMALL_LEAVES_GLSL}\n${BARE_GLSL}`)
-    .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n  if (bareTwig(vTuft, vBare) < 0.) discard;');
+    .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n  if (bareTwig(vTuft, vBare, vCrownXZ, 1.) < 0.) discard;');
 };
 treeDepth.customProgramCacheKey = () => 'tree-depth';

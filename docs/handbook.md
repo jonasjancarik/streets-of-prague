@@ -698,6 +698,17 @@ record the measurements, merge decisions and pending landmark asset activation.
   "Young woods" under Unmapped ground) get small, dense ones. The dark woodland floor fades out
   over the grass beside it (`woodEdges` in `src/ground.ts`). Rebuild them with
   `uv run build_tiles.py <area> --layers ground`, then `ipr_terrain.py <area>`.
+  A broadleaf tree is its crown of tufts on a trunk, with a few boughs up into the crown
+  (`crownShape`): the trunk's foot is put on the ground in the vertex shader, from how
+  far below the crown the ground is, which rides in each tree's `yearly` number (`STEM`).
+  Bare in winter, a tree shows branches running out from the trunk across the whole
+  crown, forking twice on the way (`bareTwig`), so from above it is spokes that divide;
+  seen from the side (first person) the lines on the tufts down the crown's sides are
+  left out, where they would hang like a willow's, and the boughs show instead. From
+  early October to the end of the year fallen leaves lie under every broadleaf tree in
+  its autumn colour: a sheet in the same mesh, laid on the ground and cut into clumps by
+  the shader, folded away the rest of the year (no extra draw; on steep ground it is
+  level, so it floats on one side and is buried on the other).
   Rendering keeps fixed-capacity mesh pages per tree shape (`src/trees.ts`). A tile
   leases pages containing only its own trees; unloading the tile clears the pages
   for reuse without changing the surveyed or generated tree data. Pages hold 1,200
