@@ -78,3 +78,24 @@ class ForTileTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SidedTests(unittest.TestCase):
+    def test_the_lattice_reader_takes_only_corners_on_the_reading_s_side(self):
+        # One plain-ground tile: a street at 20 m west of x = 8, the low side at 10 m east
+        # of it. A wall's line at x = 9.9 passes close by the street's last points; its
+        # foot, read on the east side, is the low ground's, not a share of the street's.
+        N, step = 4, 4.0
+        arr = np.where(np.arange(N + 1)[None, :] * step <= 8, 20.0, 10.0).repeat(N + 1, axis=0)
+        read = sl.lattice_reader({(0, 0): arr}, {}, N, N * step, step, 0.0, 0.0)
+        xs, ys = np.array([9.9]), np.array([6.0])
+        assert abs(read(xs, ys, 0)[0] - 15.25) < 0.01
+        assert read(xs, ys, 0, away=(xs, ys, np.array([1.0]), np.array([0.0])))[0] == 10.0
+        assert read(xs, ys, 0, away=(xs, ys, np.array([-1.0]), np.array([0.0])))[0] == 20.0
+
+    def test_a_street_under_a_bridge_s_deck_crosses_no_line(self):
+        # The carriageway is drawn up to where its bridge begins; under the deck it's the
+        # bridge's, and a wall there keeps its heights.
+        from shapely.geometry import LineString, box
+        driven = sl.crossing([(LineString([(0, 0), (10, 0)]), 3.0)], [box(8, -5, 20, 5)])
+        assert driven(np.array([5.0, 9.0, 15.0]), np.array([0.0, 0.0, 0.0])).tolist() == [True, False, False]

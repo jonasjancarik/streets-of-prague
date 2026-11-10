@@ -137,11 +137,17 @@ def heights(run, read, at, box):
     for sign, label in ((1, run["lr"][0]), (-1, run["lr"][1])):
         xs = pts[:, 0, None] + sign * normal[:, 0, None] * OUT
         ys = pts[:, 1, None] + sign * normal[:, 1, None] * OUT
-        z = read(xs.ravel(), ys.ravel(), label)
+        # (A reader that can, the lattice's, takes only what lies on this side of the line.)
+        side = {}
+        if getattr(read, "sided", False):
+            k = np.repeat(np.arange(len(pts)), len(OUT))
+            side = {"away": (pts[k, 0], pts[k, 1], sign * normal[k, 0], sign * normal[k, 1])}
+        z = read(xs.ravel(), ys.ravel(), label, **side)
         inside = (xs.ravel() > box[0]) & (xs.ravel() < box[2]) & (ys.ravel() > box[1]) & (ys.ravel() < box[3])
         z[inside & (at(xs.ravel(), ys.ravel()) != label)] = np.nan
         z = z.reshape(xs.shape)
-        h = _carried_in_rows(z, read(pts[:, 0], pts[:, 1], label))
+        on_line = {"away": (pts[:, 0], pts[:, 1], sign * normal[:, 0], sign * normal[:, 1])} if side else {}
+        h = _carried_in_rows(z, read(pts[:, 0], pts[:, 1], label, **on_line))
         # Smoothed along the line (the points with no height left out), and no height
         # where the nearest reading along it is further than GAP.
         ok = np.isfinite(h)
@@ -233,12 +239,39 @@ def for_tile(box, water, terraces, read, driven=None):
     return lines
 
 
+def crossing(streets, decks=()):
+    """for_tile's `driven`: whether points are on a car street's carriageway on the ground.
+    `streets`: (centre line, half width) pairs; `decks`: the map's bridges' outlines. Not
+    under a deck: the carriageway is drawn up to where its bridge starts, and where the
+    wall under the bridge's end runs at a slant to the street, the carriageway's corner
+    reached over it. The wall lost its heights there and the lattice's 4 m ramp showed as
+    a tear in front of the bridge (5. května over Hvězdova)."""
+    tree = shapely.STRtree([line.buffer(half, cap_style="flat") for line, half in streets])
+    over = shapely.STRtree(list(decks)) if len(decks) else None
+
+    def driven(xs, ys):
+        pts = shapely.points(xs, ys)
+        on = np.zeros(len(xs), dtype=bool)
+        on[tree.query(pts, predicate="within")[0]] = True
+        if over is not None and on.any():
+            k = np.flatnonzero(on)
+            on[k[over.query(pts[k], predicate="within")[0]]] = False
+        return on
+    return driven
+
+
 def lattice_reader(tiles, labels, N, T, step, gx0, gy0):
     """The ground's height at points from the lattice, on one side of the steps: the
     cell's corners with that label, else that label's points a cell further out (the
     nearer the more), else NaN. `tiles`, `labels`: per tile (i, j), its (N + 1)² heights
-    and labels (no labels: all plain ground)."""
-    def read(xs, ys, label):
+    and labels (no labels: all plain ground). `away`, if given, is per point a point on
+    the step's line and the normal pointing to the point's side: only corners on that
+    side count. The plain ground on a wall's low side has the same label as the street
+    behind the terrace's strip on its top, and where the line passed a few centimetres
+    from one of the street's points, the foot took a share of the street's height: 5.
+    května's carriageway before its bridge over Hvězdova came down to the wall's foot
+    over 4 m, torn, instead of stepping down at the wall."""
+    def read(xs, ys, label, away=None):
         out = np.full(len(xs), np.nan)
         i = np.floor((xs - gx0) / T).astype(int)
         j = np.floor((ys - gy0) / T).astype(int)
@@ -249,6 +282,13 @@ def lattice_reader(tiles, labels, N, T, step, gx0, gy0):
             lab = labels.get(key)
             own = (lab == label) if lab is not None else np.full(arr.shape, label == 0)
             sel = (i == key[0]) & (j == key[1])
+            if away is not None:
+                px, py, nx, ny = (np.asarray(c, dtype=float)[sel] for c in away)
+
+                def beyond(qq, pp, k=slice(None)):
+                    # (Whether lattice corners (column pp, row qq) lie on points k's side.)
+                    cx, cy = gx0 + key[0] * T + pp * step, gy0 + key[1] * T + qq * step
+                    return (cx - px[k]) * nx[k] + (cy - py[k]) * ny[k] > 0
             u = np.clip((xs[sel] - gx0 - key[0] * T) / step, 0, N - 0.001)
             v = np.clip((ys[sel] - gy0 - key[1] * T) / step, 0, N - 0.001)
             a, b = np.floor(u).astype(int), np.floor(v).astype(int)
@@ -256,6 +296,8 @@ def lattice_reader(tiles, labels, N, T, step, gx0, gy0):
             total, acc = np.zeros(len(u)), np.zeros(len(u))
             for da, db, w in ((0, 0, (1 - fu) * (1 - fv)), (1, 0, fu * (1 - fv)), (0, 1, (1 - fu) * fv), (1, 1, fu * fv)):
                 m = own[b + db, a + da]
+                if away is not None:
+                    m = m & beyond(b + db, a + da)
                 total += np.where(m, w, 0.0)
                 acc += np.where(m, w * arr[b + db, a + da], 0.0)
             res = np.full(len(u), np.nan)
@@ -271,6 +313,8 @@ def lattice_reader(tiles, labels, N, T, step, gx0, gy0):
                         m = (q >= 0) & (q <= N) & (p >= 0) & (p <= N)
                         qc, pc = np.clip(q, 0, N), np.clip(p, 0, N)
                         m &= own[qc, pc]
+                        if away is not None:
+                            m &= beyond(qc, pc, far)
                         w = 1 / ((pc - u[far]) ** 2 + (qc - v[far]) ** 2 + 0.01)
                         t2 += np.where(m, w, 0.0)
                         a2 += np.where(m, w * arr[qc, pc], 0.0)
@@ -278,4 +322,5 @@ def lattice_reader(tiles, labels, N, T, step, gx0, gy0):
                 res[far[got]] = a2[got] / t2[got]
             out[sel] = res
         return out
+    read.sided = True
     return read

@@ -599,14 +599,8 @@ def main() -> None:
     lines_by_tile = {}
     if args.step_lines and labels:
         own = step_lines.lattice_reader(tiles, labels, N, T, step, gx0, gy0)
-        read = (lambda xs, ys, label: own(xs, ys, label) if label == step_lines.WATER else lidar_at(xs, ys)) if args.lidar_ground else own
-        kerbs = [line.buffer(half, cap_style="flat") for line, half in streets.values()]
-        tree = shapely.STRtree(kerbs)
-        def driven(xs, ys):
-            on = np.zeros(len(xs), dtype=bool)
-            hit, _ = tree.query(shapely.points(xs, ys), predicate="within")
-            on[hit] = True
-            return on
+        read = (lambda xs, ys, label, away=None: own(xs, ys, label, away) if label == step_lines.WATER else lidar_at(xs, ys)) if args.lidar_ground else own
+        driven = step_lines.crossing(list(streets.values()), [LineString(w["pts"]).buffer(w["w"] / 2) for w in ways if w["kind"] == "bridge" and len(w["pts"]) > 1])
         for key, listed in terraces.items():
             got = step_lines.for_tile(boxes[key].bounds, tile_water.get(key, []), listed, read, driven)
             if got:

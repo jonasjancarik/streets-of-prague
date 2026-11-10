@@ -245,11 +245,12 @@ def main():
         np.savez(args.npz, x=gx0 + (i0 * N + np.arange(h.shape[1])) * step, y=gy0 + (j0 * N + np.arange(h.shape[0])) * step, h=h, label=lab, bare=raw)
     if args.data:
         write_map(args.data / f"{area}_now", OUT / f"{area}_now", tiles, labels, terraces, found, steep, tile_water, boxes, streets,
-                  N, T, step, gx0, gy0, ti, tj, args.tiles)
+                  N, T, step, gx0, gy0, ti, tj, args.tiles,
+                  [LineString(way["pts"]).buffer(way["w"] / 2) for way in ways if way["kind"] == "bridge" and len(way["pts"]) > 1])
     print(f"{len(tiles)} tiles round {ti}_{tj} in {time.perf_counter() - started:.0f} s")
 
 
-def write_map(out, built, tiles, labels, terraces, found, steep, tile_water, boxes, streets, N, T, step, gx0, gy0, ti, tj, reach):
+def write_map(out, built, tiles, labels, terraces, found, steep, tile_water, boxes, streets, N, T, step, gx0, gy0, ti, tj, reach, decks=()):
     """A map folder for the offline checks: the window's tiles as built here (their
     heights and labels, bridge and tunnel levels, terraces and step lines, as
     ipr_terrain.main and layers.assemble write them), and a ring of tiles round them and
@@ -260,12 +261,7 @@ def write_map(out, built, tiles, labels, terraces, found, steep, tile_water, box
     inner = set(tiles)
     plain = np.zeros((N + 1, N + 1), dtype=np.uint8)
     own = step_lines.lattice_reader(tiles, labels, N, T, step, gx0, gy0)
-    tree = shapely.STRtree([line.buffer(half, cap_style="flat") for line, half in streets.values()])
-
-    def driven(xs, ys):
-        on = np.zeros(len(xs), dtype=bool)
-        on[tree.query(shapely.points(xs, ys), predicate="within")[0]] = True
-        return on
+    driven = step_lines.crossing(list(streets.values()), decks)
     for i in range(ti - reach - 1, ti + reach + 2):
         for j in range(tj - reach - 1, tj + reach + 2):
             k = f"{i}_{j}"
