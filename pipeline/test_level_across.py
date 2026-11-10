@@ -47,32 +47,6 @@ class LevelAcross(unittest.TestCase):
         dtm_heights._level_across(grid, on, points, [(LineString([(-50, 0), (50, 0)]), 5.0)], x_of, y_of, 4.0)
         assert np.abs(grid[on] - 20.0).max() < 0.05
 
-    def test_kerbs_crossing_under_a_wide_street_s_end_are_not_taken(self):
-        # 5. května before its bridge over Hvězdova: the carriageway is wider than the map
-        # says, so its own kerbs are out of reach, and the only kerb points in reach are
-        # those of the street in the cutting, crossing 6 m down under its end.
-        grid, x_of, y_of = _lattice()
-        y = np.arange(-6, 6.01, 1.5)
-        below = np.column_stack([np.full(len(y), 30.5), y, np.full(len(y), 14.0)])
-        points = np.vstack([_kerb(-50, 30, 12, 20.0, 20.0), _kerb(-50, 30, -12, 20.0, 20.0), below])
-        gj, gi = np.meshgrid(np.arange(grid.shape[0]), np.arange(grid.shape[1]), indexing="ij")
-        on = (np.abs(y_of(gj)) <= 6) & (x_of(gi) <= 26)  # (the last points are under the bridge)
-        grid[on] = 20.0
-        dtm_heights._level_across(grid, on, points, [(LineString([(-50, 0), (30, 0)]), 4.0)], x_of, y_of, 4.0)
-        assert np.abs(grid[on] - 20.0).max() < 0.05, grid[on].min()
-
-    def test_a_kerb_a_little_off_the_street_s_own_points_still_counts(self):
-        # A kerb half a metre over what the lattice has (a surface that took the other
-        # kerb's height) is the street's own.
-        grid, x_of, y_of = _lattice()
-        points = np.vstack([_kerb(-50, 50, 5, 10.5, 10.5), _kerb(-50, 50, -5, 10.0, 10.0)])
-        gj, gi = np.meshgrid(np.arange(grid.shape[0]), np.arange(grid.shape[1]), indexing="ij")
-        on = np.abs(y_of(gj)) <= 6
-        grid[on] = 10.0
-        dtm_heights._level_across(grid, on, points, [(LineString([(-50, 0), (50, 0)]), 5.0)], x_of, y_of, 4.0)
-        middle = (np.abs(x_of(gi)) <= 40) & on
-        assert np.abs(grid[middle] - 10.25).max() < 0.05
-
 
 if __name__ == '__main__':
     unittest.main()
