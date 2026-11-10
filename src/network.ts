@@ -555,7 +555,15 @@ export class SpatialHash<T extends { x: number; y: number }> {
   map: Map<number, T[]>;
 
   constructor(cell = 10) { this.cell = cell; this.map = new Map(); }
-  clear() { this.map.clear(); }
+  // Empty again. A hash filled anew every step keeps the cells it used last time, emptied,
+  // so they aren't all made again; a cell that a whole fill left empty goes, so the map
+  // holds only the cells of the last fill or two, however far you have travelled.
+  clear() {
+    for (const [k, b] of this.map) {
+      if (b.length) b.length = 0;
+      else this.map.delete(k);
+    }
+  }
   add(o: T) {
     const k = Math.floor(o.x / this.cell) * 131072 + Math.floor(o.y / this.cell);
     let b = this.map.get(k);
