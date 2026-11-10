@@ -47,6 +47,7 @@ export interface TramVehicle {
 }
 interface TrackObstacle { kind: string; x: number; y: number; r: number; car?: Car }
 export interface TramBody { v: TramVehicle; x: number; y: number; vx: number; vy: number; circles: Point2[] }
+const ALONG = [-3.85, -2.57, -1.28, 0, 1.28, 2.57, 3.85]; // m: a tram section's circles, from its middle
 type Nearby = (x: number, y: number, radius: number) => Iterable<TrackObstacle>;
 
 // Prague's trams on their real lines (data/<area>_now/lines.json, from
@@ -645,21 +646,34 @@ export class Trams {
 
   // Collision and look-ahead data for the trams within r of (x, y): for traffic, and
   // for crashes.
-  bodies(x = 0, y = 0, r = Infinity) {
-    const out: TramBody[] = [];
+  // With `into` (a list the caller keeps from step to step), the bodies and their circles
+  // are those of the last call with it, filled in again: they hold until the next one.
+  bodies(x = 0, y = 0, r = Infinity, into?: TramBody[]) {
+    const out: TramBody[] = into ?? [];
+    out.length = 0;
     for (const v of this.list) {
       const mid = v.parts[1];
       if (Math.hypot(mid.x - x, mid.y - y) > r) continue;
-      const circles: Point2[] = [];
+      const b: TramBody = (into && this.spareBodies[out.length]) || { v, x: 0, y: 0, vx: 0, vy: 0, circles: [] };
+      if (into) this.spareBodies[out.length] = b;
+      const circles = b.circles;
+      let n = 0;
       for (const p of v.parts) {
         const c = Math.cos(p.ang), s = Math.sin(p.ang);
-        for (const k of [-3.85, -2.57, -1.28, 0, 1.28, 2.57, 3.85]) circles.push([p.x + c * k, p.y + s * k]);
+        for (const k of ALONG) {
+          const q = circles[n++] ??= [0, 0];
+          q[0] = p.x + c * k;
+          q[1] = p.y + s * k;
+        }
       }
+      circles.length = n;
       const c = Math.cos(mid.ang), s = Math.sin(mid.ang);
-      out.push({ v, x: mid.x, y: mid.y, vx: c * v.speed, vy: s * v.speed, circles });
+      b.v = v; b.x = mid.x; b.y = mid.y; b.vx = c * v.speed; b.vy = s * v.speed;
+      out.push(b);
     }
     return out;
   }
+  private spareBodies: TramBody[] = [];
 }
 
 // Someone on foot (radius `rad`) out of a tram's sections, to the nearest side as long

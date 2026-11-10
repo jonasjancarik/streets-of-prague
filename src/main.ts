@@ -87,7 +87,7 @@ import { Chopper, loadHelicopters } from './helicopter.ts';
 import { Boats } from './boats.ts';
 import { isMapIndex } from './contracts.ts';
 import type { MapIndex } from './contracts.ts';
-import type { RawTramLine } from './trams.ts';
+import type { RawTramLine, TramBody } from './trams.ts';
 import type { MetroLine } from './metro.ts';
 import { BikeShare } from './bikeshare.ts';
 import { rentalCost } from './pricing.ts';
@@ -1859,11 +1859,29 @@ async function main() {
     carHash.near(x, y, rr, found);
     return resting.near(x, y, rr, found);
   };
+  // What goes into `hash` (and `carHash`) is taken from a pool and filled in again each
+  // step, sparing a few thousand objects a step. Nothing keeps one past the step that
+  // made it: traffic, trams, the crowd and the officers' `bodyAt` look at them and keep
+  // the car at most. (`restingWhole`'s, kept from one rebuild to the next, are its own.)
+  const pool: Obstacle[] = [];
+  let pooled = 0;
+  const obstacle = (x: number, y: number, z: number | undefined, r: number, vx: number, vy: number, kind: string, car?: Car) => {
+    const o = pool[pooled++];
+    if (!o) { const n: Obstacle = { x, y, z, r, vx, vy, kind, car }; pool.push(n); return n; }
+    o.x = x; o.y = y; o.z = z; o.r = r; o.vx = vx; o.vy = vy; o.kind = kind; o.car = car;
+    return o;
+  };
+  const person = (p: { x: number; y: number; gz?: number; vx: number; vy: number }) => hash.add(obstacle(p.x, p.y, p.gz, 0.4, p.vx, p.vy, 'person'));
+  // (The car's circles as `circles()` places them, without making the list.)
   const pushCar = (h: SpatialHash<Obstacle>, c: Car) => {
-    for (const [x, y] of c.circles()) {
-      const o: Obstacle = { x, y, z: c.gz, r: c.r, vx: c.vx, vy: c.vy, kind: c.mode === 'player' ? 'player' : 'car', car: c };
-      h.add(o);
-      if (h === hash) carHash.add(o);
+    const cs = Math.cos(c.h), sn = Math.sin(c.h), kind = c.mode === 'player' ? 'player' : 'car', offsets = c.offsets;
+    for (let i = 0; i < offsets.length; i++) {
+      const x = c.x + cs * offsets[i], y = c.y + sn * offsets[i];
+      if (h === hash) {
+        const o = obstacle(x, y, c.gz, c.r, c.vx, c.vy, kind, c);
+        h.add(o);
+        carHash.add(o);
+      } else h.add({ x, y, z: c.gz, r: c.r, vx: c.vx, vy: c.vy, kind, car: c });
     }
   };
   // On a bridge and under it: two things that don't meet.
@@ -1892,6 +1910,9 @@ async function main() {
     restingStale = false;
   };
   let spawnT = 0;
+
+  // The lists a step makes, kept for the next one (each is filled afresh where it's used).
+  const moverList: Car[] = [], copList: Car[] = [], threatList: Car[] = [], activeList: Car[] = [], doneSet = new Set<Car>(), tramList: TramBody[] = [];
 
   // One step of everything that moves (several per frame while a tram ride is sped up).
   let jolt = 0; // the hardest hit your own vehicle took this step
@@ -1936,7 +1957,9 @@ async function main() {
     const heliTurn = inHeli && ctl.aim ? clamp(turnOf(inHeli.h, ctl.aim.h) * 1.2, -1, 1) : ctl.turn;
     for (const c of choppers) c.update(dt, c === inHeli ? { move: ctl.move, turn: heliTurn, up: ctl.brake, down: ctl.run } : null);
 
-    const movers = loose.filter(moving);
+    const movers = moverList;
+    movers.length = 0;
+    for (const c of loose) if (moving(c)) movers.push(c);
     for (const c of movers) c.update(dt, null, grid);
     const me = inCar || inHeli || walker;
     police.update(dt, { x: me.x, y: me.y, z: inHeli ? inHeli.z : ground(me.x, me.y, inCar || walker), level: inHeli ? 0 : world.track(inCar || walker), vx: me.vx, vy: me.vy, speed: Math.hypot(me.vx, me.vy), car: inCar, air: (!!inHeli && !inHeli.landed) || ride.on || passenger(), riding: ride.on || passenger() });
@@ -1962,29 +1985,34 @@ async function main() {
       }
       for (const f of brigade.crew) if (f.down <= 0 && cannon.hit(car, f.x, f.y, 1.8) >= 0) brigade.knock(f, dx * 3, dy * 3);
     }
-    const cops = [...police.cars.map((p) => p.car), ...brigade.engines.map((e) => e.car), ...ambulances.rigs.map((r) => r.car)];
+    const cops = copList;
+    cops.length = 0;
+    for (const p of police.cars) cops.push(p.car);
+    for (const e of brigade.engines) cops.push(e.car);
+    for (const r of ambulances.rigs) cops.push(r.car);
 
     // Everything the traffic, trams and people need to look out for.
     hash.clear();
     carHash.clear();
+    pooled = 0;
     for (const a of traffic.agents) pushCar(hash, a.car);
     for (const c of movers) pushCar(hash, c);
     syncResting();
     for (const c of cops) pushCar(hash, c);
     if (inCar) pushCar(hash, inCar);
-    else if (!inHeli && !ride.on && !passenger()) hash.add({ x: walker.x, y: walker.y, z: walker.gz, r: 0.5, vx: walker.vx, vy: walker.vy, kind: 'player' });
+    else if (!inHeli && !ride.on && !passenger()) hash.add(obstacle(walker.x, walker.y, walker.gz, 0.5, walker.vx, walker.vy, 'player'));
     // (People walking along the pavement only where a car is driving along it too.)
     traffic.gatherPavementCars();
-    for (const p of crowd.people) if (p.state !== 'walk' || p.e.side === 0 || traffic.pavementNear(p.x, p.y, 12)) hash.add({ x: p.x, y: p.y, z: p.gz, r: 0.4, vx: p.vx, vy: p.vy, kind: 'person' });
-    for (const o of police.officers) hash.add({ x: o.x, y: o.y, z: o.gz, r: 0.4, vx: o.vx, vy: o.vy, kind: 'person' });
-    for (const o of brigade.crew) hash.add({ x: o.x, y: o.y, z: o.gz, r: 0.4, vx: o.vx, vy: o.vy, kind: 'person' });
-    for (const o of ambulances.crew) hash.add({ x: o.x, y: o.y, z: o.gz, r: 0.4, vx: o.vx, vy: o.vy, kind: 'person' });
-    for (const o of refuse.walking) hash.add({ x: o.x, y: o.y, r: 0.4, vx: o.vx, vy: o.vy, kind: 'person' });
-    if (inspector.person) hash.add({ x: inspector.person.x, y: inspector.person.y, z: inspector.person.gz, r: 0.4, vx: inspector.person.vx, vy: inspector.person.vy, kind: 'person' });
-    const tramBodies = trams.bodies(px(), py(), LIFE_RADIUS + 100);
-    for (const t of tramBodies) for (const [x, y] of t.circles) hash.add({ x, y, r: 1.25, vx: t.vx, vy: t.vy, kind: 'tram' });
+    for (const p of crowd.people) if (p.state !== 'walk' || p.e.side === 0 || traffic.pavementNear(p.x, p.y, 12)) person(p);
+    for (const o of police.officers) person(o);
+    for (const o of brigade.crew) person(o);
+    for (const o of ambulances.crew) person(o);
+    for (const o of refuse.walking) hash.add(obstacle(o.x, o.y, undefined, 0.4, o.vx, o.vy, 'person')); // (wherever they stand: no height)
+    if (inspector.person) person(inspector.person);
+    const tramBodies = trams.bodies(px(), py(), LIFE_RADIUS + 100, tramList);
+    for (const t of tramBodies) for (const [x, y] of t.circles) hash.add(obstacle(x, y, undefined, 1.25, t.vx, t.vy, 'tram'));
     const funiBodies = funicular.bodies(px(), py(), LIFE_RADIUS + 100);
-    for (const f of funiBodies) for (const [x, y] of f.circles) hash.add({ x, y, z: f.gz, r: f.line.spec.w / 2, vx: f.vx, vy: f.vy, kind: 'tram' });
+    for (const f of funiBodies) for (const [x, y] of f.circles) hash.add(obstacle(x, y, f.gz, f.line.spec.w / 2, f.vx, f.vy, 'tram'));
 
     traffic.emergency = [...police.chasing, ...brigade.engines.filter((e) => e.phase === 'go' && !e.wrecked), ...ambulances.rigs.filter((r) => r.phase === 'go' && !r.wrecked)].map((e) => e.car);
     traffic.update(dt, obstacles);
@@ -2010,7 +2038,11 @@ async function main() {
     boats.update(dt, px(), py(), ctl);
     if (boats.me) { walker.x = boats.me.x; walker.y = boats.me.y; walker.h = boats.me.h; walker.vx = walker.vy = 0; }
 
-    const threats = [...(inCar ? [inCar] : []), ...movers.filter((c) => c.speed > 5), ...cops.filter((c) => c.speed > 5)];
+    const threats = threatList;
+    threats.length = 0;
+    if (inCar) threats.push(inCar);
+    for (const c of movers) if (c.speed > 5) threats.push(c);
+    for (const c of cops) if (c.speed > 5) threats.push(c);
     crowd.update(dt, threats, carsOnly, (x, y) => !offscreen(x, y));
     bags.update(dt, px(), py());
     missions.update(dt);
@@ -2019,10 +2051,15 @@ async function main() {
     // ---- Collisions ------------------------------------------------------
     // Two cars that have just met: the lamps the blow landed on break.
     const smash = (a: Car, b: Car, hit: number) => { a.knock(contact.x, contact.y, hit); b.knock(contact.x, contact.y, hit); };
-    const active = [...(inCar ? [inCar] : []), ...movers, ...cops];
+    const active = activeList;
+    active.length = 0;
+    if (inCar) active.push(inCar);
+    for (const c of movers) active.push(c);
+    for (const c of cops) active.push(c);
     // A car a tram is pushing off its track, even while it still stands.
     for (const c of trams.shoved()) if (!active.includes(c)) active.push(c);
-    const done = new Set();
+    const done = doneSet;
+    done.clear();
     for (const a of active) {
       done.add(a);
       const ca = a.circles();
