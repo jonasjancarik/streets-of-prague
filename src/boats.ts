@@ -316,7 +316,7 @@ export class Boats {
   // A cruise boat onto the fairway, somewhere near the player but not in a lock.
   launch(b: Boat, px: number, py: number) {
     for (const c of this.courses) {
-      const near = c.project(px, py);
+      const near = c.project(px, py, undefined, undefined, SPAWN);
       if (near.d > SPAWN) continue;
       for (let k = 0; k < 4; k++) {
         const s = near.s + (this.rng() * 2 - 1) * SPAWN, p = c.at(s), d = Math.hypot(p.x - px, p.y - py);

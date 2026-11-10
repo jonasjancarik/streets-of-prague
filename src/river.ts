@@ -69,6 +69,7 @@ export function parseRiver(raw: unknown): RiverData {
 
 // A line to sail along: where it is `s` metres from its start, which way it runs there
 // and how far the bank is (`w`, Infinity for a line without widths).
+const RUN = 32;
 export class Course {
   pts: number[][];
   cum: number[];
@@ -90,17 +91,41 @@ export class Course {
   }
 
   // How far along the line the point nearest (x, y) is; with `near`, looking only
-  // `reach` metres either side of it.
-  project(x: number, y: number, near?: number, reach = 60) {
+  // `reach` metres either side of it. With `within`, for a caller that only wants a
+  // place no further than that from the line: the answer is the same up to there, and
+  // beyond it `d` is only known to be more (the boats ask every frame where the river
+  // is, from anywhere in the city, and the Vltava has 3000 points).
+  project(x: number, y: number, near?: number, reach = 60, within = Infinity) {
     let best = Infinity, s = 0;
-    for (let i = 1; i < this.pts.length; i++) {
-      if (near !== undefined && (this.cum[i] < near - reach || this.cum[i - 1] > near + reach)) continue;
-      const [ax, ay] = this.pts[i - 1], [bx, by] = this.pts[i], dx = bx - ax, dy = by - ay;
+    const pts = this.pts, cum = this.cum, boxes = within < Infinity ? (this.boxes ??= this.box()) : null;
+    for (let i = 1; i < pts.length; i++) {
+      if (boxes && (i - 1) % RUN === 0) {
+        // The next RUN pieces lie in this box: none of them is nearer than the box is.
+        const o = ((i - 1) / RUN) * 4, bx = Math.max(boxes[o] - x, 0, x - boxes[o + 2]), by = Math.max(boxes[o + 1] - y, 0, y - boxes[o + 3]);
+        const far = Math.sqrt(bx * bx + by * by) - 1e-6;
+        if (far > within || far >= best) { i += RUN - 1; continue; }
+      }
+      if (near !== undefined && (cum[i] < near - reach || cum[i - 1] > near + reach)) continue;
+      const a = pts[i - 1], b = pts[i], ax = a[0], ay = a[1], dx = b[0] - ax, dy = b[1] - ay;
       const k = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy || 1)));
       const d = Math.hypot(x - ax - dx * k, y - ay - dy * k);
-      if (d < best) { best = d; s = this.cum[i - 1] + (this.cum[i] - this.cum[i - 1]) * k; }
+      if (d < best) { best = d; s = cum[i - 1] + (cum[i] - cum[i - 1]) * k; }
     }
     return { s, d: best };
+  }
+
+  // The box (min x, min y, max x, max y) round each run of RUN pieces of the line.
+  private boxes: Float64Array | null = null;
+  private box() {
+    const pts = this.pts, boxes = new Float64Array(Math.ceil((pts.length - 1) / RUN) * 4);
+    for (let i = 0, o = 0; i < pts.length - 1; i += RUN, o += 4) {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (let j = i; j <= Math.min(i + RUN, pts.length - 1); j++) {
+        x0 = Math.min(x0, pts[j][0]); y0 = Math.min(y0, pts[j][1]); x1 = Math.max(x1, pts[j][0]); y1 = Math.max(y1, pts[j][1]);
+      }
+      boxes[o] = x0; boxes[o + 1] = y0; boxes[o + 2] = x1; boxes[o + 3] = y1;
+    }
+    return boxes;
   }
 
   // The narrowest the water gets between two places along the line.
