@@ -444,6 +444,30 @@ Ask first:
     than about 1.5 m apart is the next thing to try.
   - Left: those side-by-side places; the three footway joins above; Ryšavého's walls
     (steps 6.2 and 5.5 m, as before); the trunk at 49.9423, 14.3674 (a bump of 5.6 m).
+  - **The deck ends at 5. května over Hvězdova** were still torn after that: under the
+    front edge of both decks the ground ramped from the road (264.1 m) down to
+    Hvězdova's (258.7 m) over 4–5 m. Three causes, three fixes (commits 6d6245b,
+    3e511e2): the wall's low side read the road's height through the lattice's corners
+    across the line (the reader now takes only corners on the reading's side); wall
+    points under a deck counted as a street crossing the line, which leaves a line
+    without heights (points under a deck no longer count); and the street's pad
+    stopped where OSM's bridge begins, 1.3 m short of the wall, with the road's
+    lattice point under the deck lip on plain ground (the pad now reaches 2 m under the
+    deck, kept 4 m off car streets passing under the bridge's end, which otherwise got
+    6–7 m steps at Palackého most, náměstí Hrdinů and Zlíchov). Now one step from the
+    road to Hvězdova within a metre along the whole deck front; picture
+    `kvetna-deck-ends-before-after.jpg` in the evidence.
+  - **City build** against the one on the beta (`report-lip`, `decks-lip` against
+    `report-scan`, `decks-scan`): street measures within one or two either way (steps
+    over 1 m 7 → 9, bumps 260 → 259, leaning 940 → 941); 7 streets worse by more than
+    0.3 m on a measure, 3 better. The two new steps over 1 m, Čábelecká (0.95 → 2.32 m,
+    50.12455, 14.38740) and Chotkova (0.91 → 2.08 m, 50.09280, 14.40765), come from the
+    side-taking reader: a wall's line runs over the street's edge there, and the edge
+    now takes the wall top's height instead of a ramp half way up. The wall's line is
+    the fault in both. Bridge joins: Hlávkův most (sever) 0.73 → 1.46 m, Palackého
+    most 2.01 → 2.93 m, Štefánikův 0.99 → 0.9 m. Wall edges 1.4 km longer (the new steps
+    under deck fronts); parapet tops jumping over 15 cm 6,085 → 6,594 m. The river check
+    fails as before.
   - **On the beta** (Cloudflare) since 10 November, from this branch with main merged
     in: game `v0.9.0-28-gbbc0ba5`, map `beta-69864399a5e4` (built 07:45 UTC with
     `--step-lines`; the Old Town Square's two monuments and the café terraces copied
