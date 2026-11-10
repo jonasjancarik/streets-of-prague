@@ -36,7 +36,7 @@ export interface TramVehicle {
   id: number; kind: string; line: TramLine; s: number; speed: number; dwell: number; halt: number;
   stuck: number; ghost: number; waitFor: TramVehicle | null; blocker: Car | null;
   spotted: number; forPlayer: boolean;
-  held: number; shove: Car | null; look: TramLook | null; pending: number;
+  held: number; shove: Car[]; look: TramLook | null; pending: number;
   parts: TramPoint[]; cells?: TramCell[]; levels?: { x: number; y: number; gz?: number }[];
   rider?: boolean;
   driven?: boolean; // someone is driving it (src/tramdrive.ts): the timetable no longer moves it
@@ -299,7 +299,7 @@ export class Trams {
   }
 
   add(line: TramLine, s: number) {
-    const v: TramVehicle = { id: this.id++, kind: randomKind(this.rng), line, s, speed: 0, dwell: 0, halt: 0, stuck: 0, ghost: 0, waitFor: null, blocker: null, spotted: 0, forPlayer: false, held: 0, shove: null, look: null, pending: this.rng() * FAR_STEP, parts: [] };
+    const v: TramVehicle = { id: this.id++, kind: randomKind(this.rng), line, s, speed: 0, dwell: 0, halt: 0, stuck: 0, ghost: 0, waitFor: null, blocker: null, spotted: 0, forPlayer: false, held: 0, shove: [], look: null, pending: this.rng() * FAR_STEP, parts: [] };
     // Not on the short cut across a terminus with no loop.
     for (const h of line.halts) {
       if (h.to !== undefined && h.to !== h.s && line.path.ahead(h.s - HALF, v.s) < line.path.ahead(h.s, h.to) + 2 * HALF) v.s = h.to + HALF;
@@ -358,7 +358,7 @@ export class Trams {
   steal(v: TramVehicle, path: Path, s: number) {
     v.line.trams.splice(v.line.trams.indexOf(v), 1);
     const line: TramLine = { ...v.line, path, halts: [], haltS: [], limitS: [], limitV: [], trams: [v] };
-    Object.assign(v, { line, s, driven: true, rider: true, dwell: 0, speed: Math.max(0, v.speed), hold: false, waitFor: null, blocker: null, shove: null, held: 0, stuck: 0, ghost: 0, ring: v.ring ?? 0 });
+    Object.assign(v, { line, s, driven: true, rider: true, dwell: 0, speed: Math.max(0, v.speed), hold: false, waitFor: null, blocker: null, shove: [], held: 0, stuck: 0, ghost: 0, ring: v.ring ?? 0 });
     this.place(v);
   }
 
@@ -517,9 +517,11 @@ export class Trams {
     const gap = this.clearAhead(v, dt, front, look, near, seen);
     if (gap < Infinity) target = Math.min(target, Math.sqrt(2 * BRAKE * Math.max(0, gap - 4)));
     v.held = v.blocker && v.blocker === was && v.speed < 0.1 ? v.held + dt : 0;
-    const patience = v.blocker?.mode === 'traffic' ? (seen(v.blocker.x, v.blocker.y) ? 30 : 12) : PUSH;
-    if (v.held > patience && v.blocker && v.blocker.mode !== 'player') { v.shove = v.blocker; v.held = 0; }
-    if (v.shove) target = Math.min(target, CREEP);
+    // (Already pushing one car aside, the next one in the way goes along with it: pushing
+    // one at a time, a tram swapped between two standing nose to tail and never moved.)
+    const patience = v.shove.length ? 1 : v.blocker?.mode === 'traffic' ? (seen(v.blocker.x, v.blocker.y) ? 30 : 12) : PUSH;
+    if (v.held > patience && v.blocker && v.blocker.mode !== 'player') { v.shove.push(v.blocker); v.held = 0; }
+    if (v.shove.length) target = Math.min(target, CREEP);
 
     v.speed = v.speed < target ? Math.min(target, v.speed + ACCEL * dt) : Math.max(target, v.speed - (v.forPlayer ? EMERGENCY : HARD) * dt);
     v.s = path.wrap(v.s + Math.min(v.speed * dt, toHalt)); // never past the stop
@@ -533,7 +535,7 @@ export class Trams {
     v.forPlayer = false;
     let sawPlayer = false;
     const shove = v.shove;
-    v.shove = null; // until it's on the track ahead again
+    v.shove = []; // each until it's on the track ahead again
     if (v.ghost > 0) v.ghost -= dt;
     for (let d = 1; d <= look; d += 3.5) {
       const p = path.at(front + d);
@@ -563,7 +565,7 @@ export class Trams {
         for (const o of near(p.x, p.y, 3)) {
           if (o.kind === 'tram') continue;
           if (Math.hypot(o.x - p.x, o.y - p.y) >= 1.3 + o.r) continue;
-          if (o.car && o.car === shove) { v.shove = shove; continue; } // being pushed aside
+          if (o.car && shove.includes(o.car)) { if (!v.shove.includes(o.car)) v.shove.push(o.car); continue; } // being pushed aside
           // The player: only once the driver has had a moment to react.
           if (o.kind === 'player') {
             sawPlayer = true;
@@ -583,7 +585,7 @@ export class Trams {
 
   // The cars trams are pushing off the track.
   *shoved(): Generator<Car> {
-    for (const v of this.list) if (v.shove) yield v.shove;
+    for (const v of this.list) yield* v.shove;
   }
 
   // Draw the trams within r of (x, y); the others keep running undrawn.

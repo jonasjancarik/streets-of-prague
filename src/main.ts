@@ -2073,7 +2073,7 @@ async function main() {
           const d = Math.hypot(a.x - t.x, a.y - t.y) || 1;
           const closing = ((t.vx - a.vx) * (a.x - t.x) + (t.vy - a.vy) * (a.y - t.y)) / d;
           const ag = traffic.agents.find((x) => x.car === a);
-          if ((closing < 1 && t.v.shove !== a) || !ag) continue; // only just touching: the car is braking for the tram
+          if ((closing < 1 && !t.v.shove.includes(a)) || !ag) continue; // only just touching: the car is braking for the tram
           traffic.release(ag);
           a.mode = 'loose';
           loose.push(a);
@@ -2082,7 +2082,7 @@ async function main() {
         }
         const hit = collideBodies(t, t.circles, 1.25, 0, a, ca, a.r, 1 / a.mass);
         // Pushing a car off the track: ahead, and to the right, away from the other track.
-        if (hit && t.v.shove === a) {
+        if (hit && t.v.shove.includes(a)) {
           const ang = t.v.parts[2].ang, rx = Math.sin(ang), ry = -Math.cos(ang);
           const lat = a.vx * rx + a.vy * ry;
           if (lat < SHOVE) { a.vx += rx * (SHOVE - lat); a.vy += ry * (SHOVE - lat); }
