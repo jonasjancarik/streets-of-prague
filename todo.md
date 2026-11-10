@@ -161,8 +161,24 @@ before that day's frame-count fix may be doubled.
   have none on the GLSL path; the wet ground's mirror ignores them.
 - **Tree meshes:** check with `--stalls` whether the third (shrub) mesh adds shader
   builds as tiles arrive; a quiet-desktop and phone comparison of plan 009's pool.
-- **Main thread:** what's left is the crowd's `spot` / `follow` / `avoid`, `simulate`,
-  `traffic.update`, `trams.clearAhead` and uniform uploads.
+- **Main thread** (profiles of 10–11 November, performance log): on a Pixel 5 at 1× the
+  JavaScript alone is 16–18 ms a frame, more than one refresh of a 60 Hz screen.
+  What's left, largest first: three.js's own work for each object drawn (211 a frame on
+  Medium; 75 of them the shadow pass), `traffic.update` (8–13 %: every obstacle circle
+  in a square of reach + 8 m round each car, most of them parked cars far to the side),
+  the crowd (3 ms a frame standing among 1200 people on the phone), garbage from
+  `simulate` (an obstacle object for every person and car circle each step, the hash's
+  buckets, `loose.filter`; the collector takes 4 % on the phone), `CarPool.render`,
+  `syncResting` and `moving` over every loose car twice a step, `BusStops.sync` over
+  every stop in the city each frame (and `place` again each frame for a stop that
+  can't be placed).
+- **Empty instanced meshes** (unused lamp models, gun flashes, beacons, bins: 17 of the
+  211 objects) measured 0–3 % when hidden, within the noise, and hiding them would put
+  off their shader builds to first use. Left alone.
+- **The lamps' re-gather** sends 2.2–2.7 MB of instance data in one frame on the phone
+  (`lamps.update` 9–14 ms in those frames): check what goes beyond the lamps in use.
+- **Pixel 5 in the woods:** 9 fps at Medium and 1.5× with 5.7 million triangles, 22 ms
+  of it JavaScript; the trees' triangles and shading are the cost (plan 017).
 - **Ground under buildings** is still shaded on GPUs that don't skip covered pixels.
 
 ## Pipeline
