@@ -435,6 +435,8 @@ export class TileWorld {
   trees: TreePool;
   time: { value: number };
   night: boolean;
+  // Where nobody parks besides what the map says: the kerb at a bus stop (src/busstops.ts).
+  noParking: ((x: number, y: number) => boolean) | null = null;
   T: number; ox: number; oy: number;
   available: Set<string>; iprTiles: Map<string, boolean>;
   // Goes up whenever `available` changes, so update() looks again at which tiles are
@@ -1446,8 +1448,8 @@ export class TileWorld {
     const parking = parkCarsSteps({
       data, edges, clearanceEdges, zones, buildings: location.search.includes('oldparking') ? null : nearBuildings, r: rng(Math.floor(hash(`${this.area}/${k}`) * 1e9)), night: this.night,
       shares: new Map((t.sections ?? []).map((s) => [s.code, s.share])), inside, height: shade?.sample,
-      // No parking inside passages.
-      solid: (x, y) => (inside(x, y) ? grid.at(x, y) !== 0 || inPassage(t.passages || [], x, y, 1) : false),
+      // No parking inside passages, or at a bus stop.
+      solid: (x, y) => (inside(x, y) ? grid.at(x, y) !== 0 || inPassage(t.passages || [], x, y, 1) || !!this.noParking?.(x, y) : false),
     });
     // A tile that update() asked for parks its cars a few milliseconds a frame (`jobs`);
     // the same cars as at once, only later. (`parking`: the time it took on the main

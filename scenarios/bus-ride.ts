@@ -13,7 +13,7 @@ export default {
       dev: { toLonLat: (x: number, y: number) => [number, number] };
       board: { kind: string; shown: string | null; next: number; el: HTMLElement };
       busStops: { near: (x: number, y: number, r: number) => { x: number; y: number; name: string; placed: boolean }[] };
-      busRide: { boardable: (x: number, y: number) => unknown; dest: number | null; upcoming: () => number[]; run: { stop: number; line: { stops: [number, string][] } } | null };
+      busRide: { boardable: (x: number, y: number) => unknown; dest: number | null; upcoming: () => number[]; run: { stop: number; dwell: number; line: { stops: [number, string][] } } | null };
     };
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     const key = (code: string, up = false) => window.dispatchEvent(new KeyboardEvent(up ? 'keyup' : 'keydown', { code }));
@@ -57,6 +57,21 @@ export default {
     key('KeyS'); key('KeyS', true);
     const dest = g.busRide.dest, name = dest !== null ? g.busRide.run!.line.stops[dest][1] : '';
     t.check('S picks the next stop', dest !== null && dest === g.busRide.upcoming()[0], name);
+    // Riding without a ticket, and sure to be checked at the next stop: the bus waits there
+    // for your answer, and goes on (letting you off) once you've paid.
+    t.roll = 0;
+    let checked = null as { phase: string; where: string } | null, held = false;
+    for (let i = 0; i < 180 && t.where().mode === 'bus' && !checked; i++) {
+      await sleep(500);
+      if (t.inspection().phase === 'decide') checked = t.inspection();
+    }
+    t.roll = null;
+    if (t.check('an inspector checks you at the next stop', !!checked, t.inspection())) {
+      await sleep(3000);
+      held = t.where().mode === 'bus' && g.busRide.run!.dwell > 0;
+      t.check('the bus stands there until you answer', held, { mode: t.where().mode, hint: hint() });
+      t.payFine();
+    }
     for (let i = 0; i < 180 && t.where().mode === 'bus'; i++) await sleep(500);
     const left = g.busStops.near(g.walker.x, g.walker.y, 60).map((s) => s.name);
     t.check('let off at that stop', t.where().mode === 'foot' && g.walker.mesh.visible && left.includes(name), { mode: t.where().mode, name, near: left });

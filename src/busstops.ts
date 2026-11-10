@@ -33,6 +33,30 @@ const CELL = 50;
 const STUCK = 10; // seconds standing between stops before you can get off there
 const CLOSE = 40; // m: held up this near your stop, you get off and walk
 
+// The kerb at the bus stops, kept clear of parked cars as on the real ones: from a bus's
+// length behind where its front stops to a little past it, on the right of the line
+// (where the bus pulls in and the sign stands, out to a wide pavement's edge).
+const ZONE_BACK = 16, ZONE_ON = 4, ZONE_OUT = 12;
+export function busStopZones(lines: BusLine[]) {
+  const cells = new Map<number, [number, number, number, number][]>(); // x, y, cos, sin (asked for every point parking tries)
+  for (const line of lines) for (const [at] of line.stops) {
+    const p = line.path.at(at), z: [number, number, number, number] = [p.x, p.y, Math.cos(p.ang), Math.sin(p.ang)];
+    const k = Math.floor(p.x / CELL) * 131072 + Math.floor(p.y / CELL);
+    if (!cells.has(k)) cells.set(k, []);
+    cells.get(k)!.push(z);
+  }
+  return (x: number, y: number) => {
+    const ci = Math.floor(x / CELL), cj = Math.floor(y / CELL);
+    for (let i = ci - 1; i <= ci + 1; i++) for (let j = cj - 1; j <= cj + 1; j++) {
+      for (const [zx, zy, c, s] of cells.get(i * 131072 + j) || []) {
+        const dx = x - zx, dy = y - zy, along = dx * c + dy * s, side = dx * s - dy * c;
+        if (along > -ZONE_BACK && along < ZONE_ON && side > 0.5 && side < ZONE_OUT) return true;
+      }
+    }
+    return false;
+  };
+}
+
 export interface BusStop {
   x: number; y: number; ang: number; name: string;
   // The lines that stop here, and where along each.

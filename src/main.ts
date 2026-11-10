@@ -48,7 +48,7 @@ import { Cannon, TANK, HOSE } from './cannon.ts';
 import { Graphics } from './graphics.ts';
 import { createGameRenderer } from './renderer.ts';
 import { StopBoard } from './board.ts';
-import { BusStops, BusRide } from './busstops.ts';
+import { BusStops, BusRide, busStopZones } from './busstops.ts';
 import { Metro } from './metro.ts';
 import { TramStops } from './tramstops.ts';
 import { Districts } from './districts.ts';
@@ -352,6 +352,8 @@ async function main() {
   await world.country?.opened;
   const there = proj4('EPSG:4326', `+proj=tmerc +lat_0=${lat0} +lon_0=${lon0} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`, [slon, slat]);
   const [sx, sy] = inside(slon, slat) || world.hasAt(there[0], there[1]) ? there : [0, 0];
+  // (Nobody parks at a bus stop: known before the first tiles park their cars.)
+  world.noParking = busStopZones(await busLines);
   status('Building the streets…');
   // (The view at the start is about 85 m across; what's beyond is loaded but not yet drawn.)
   await world.loadNow(sx, sy, 380, 85 + world.drawBeyond);
@@ -579,7 +581,12 @@ async function main() {
   const busRide = new BusRide(traffic, world, $('busride'), FAST);
   // On a bus or in a taxi, a passenger.
   const passenger = () => taxi.riding || busRide.on;
-  const leaveBus = () => { busRide.leave(walker, (x, y) => nearestWalkable(grid, x, y)); pid.leave(); };
+  // (Getting off while the inspector waits for your answer is running from them.)
+  const leaveBus = () => {
+    busRide.leave(walker, (x, y) => nearestWalkable(grid, x, y));
+    pid.leave();
+    if (inspector.phase === 'decide') inspector.run(walker.x, walker.y, walker.h);
+  };
   const firstTrafficEdges = edgesNear(walker.x, walker.y, LIFE_RADIUS);
   const firstTrafficSampler = traffic.prepareSpawn(firstTrafficEdges);
   for (let i = trafficWanted(clock.t); i > 0; i--) traffic.spawn(lifeSpots(walker.x, walker.y, 25), firstTrafficEdges, null, firstTrafficSampler);
@@ -1757,7 +1764,7 @@ async function main() {
   };
   let waitScale = 1, clockShown = '';
   let ticketWas = false;
-  let rideAt: boolean | null = null, funiAt: number | null | undefined, ferryAt: number | null | undefined;
+  let rideAt: boolean | null = null, busAt: boolean | null = null, funiAt: number | null | undefined, ferryAt: number | null | undefined;
   let street: string | null = null, bannerT = 0, lifeT = 0;
   // The HUD is only written when what it says changes: every write makes the browser
   // lay the page out again.
@@ -2453,7 +2460,7 @@ async function main() {
     taxi.update(dt);
     // Off the bus at your stop, or where it crashed or left its line.
     if (busRide.on) busRide.watch(dt);
-    if (busRide.on && (busRide.lost || busRide.arrived())) {
+    if (busRide.on && (busRide.lost || (busRide.arrived() && inspector.phase !== 'decide'))) {
       const lost = busRide.lost;
       leaveBus();
       if (lost) showBanner(t('The bus stopped running. You got off'));
@@ -2478,6 +2485,13 @@ async function main() {
       rideAt = at;
       ride.v!.hold = inspector.phase === 'decide' && inspector.where === 'tram';
     } else rideAt = null;
+    // (On a bus the same, at a stop you've ridden to; it stands there until you answer.)
+    if (busRide.on) {
+      const at = busRide.atStop();
+      if (busAt !== null && at && !busAt && pid.check(CHECK_STOP, testkit?.roll ?? Math.random())) inspector.start('tram');
+      busAt = at;
+      if (inspector.phase === 'decide' && inspector.where === 'tram' && busRide.run) busRide.run.dwell = Math.max(busRide.run.dwell, 0.6);
+    } else busAt = null;
     if (funicular.me) {
       const stop = funicular.me.stop;
       if (funiAt !== undefined && funiAt === null && stop !== null && pid.check(CHECK_STOP, Math.random())) inspector.start('funicular');

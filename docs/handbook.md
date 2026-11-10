@@ -939,7 +939,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   ride runs at 6× until 200 m before it; Shift speeds up at any time; E gets you off at the
   next stop, or at once while it stands. Held up for 10 seconds between stops, E lets you
   off where it is, and held up within 40 m of your stop you get off by yourself. The PID
-  ticket covers buses (10 seconds to buy one), but there are no inspections on buses yet.
+  ticket covers buses (10 seconds to buy one), and riding without one risks an inspection
+  at each stop you ride to, as on a tram: the bus waits there for your answer. Nobody
+  parks at a bus stop: parking keeps the kerb clear from a bus's length behind the stop to
+  just past it (`busStopZones`, asked by the tiles' parking through `world.noParking`).
 - **Lorries.** Box trucks and articulated lorries (built from boxes in `src/car.ts`, like the
   bus) use only the motorways and, further than 6.5 km from the Old Town Square, the trunk and
   primary roads (the suburbs with the depots and warehouses); they never appear in the
@@ -1033,6 +1036,8 @@ record the measurements, merge decisions and pending landmark asset activation.
   tram in front and for anything on the track. A car left on the track that holds a
   tram up for 15 seconds gets pushed aside, slowly. A blocked traffic car gets 30
   seconds to clear the track, or 12 seconds outside the view, before the same recovery.
+  Once a tram is pushing one car, the next one standing in its way goes along with it
+  after a second (pushing one at a time, two cars nose to tail held trams up for good).
   A player-controlled car is never selected for this recovery. They're the types Prague runs, about
   as often as in its fleet: the Škoda 15T, Tatra T3R.P in coupled pairs, the Škoda 14T,
   the Tatra KT8D5R.N2P and the new Škoda 52T, with the line number on the roof in the
