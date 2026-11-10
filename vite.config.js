@@ -89,6 +89,11 @@ export default defineConfig({
   define: { __APP_VERSION__: JSON.stringify(version), __APP_BUILT__: JSON.stringify(built), __DATA_VERSION__: JSON.stringify(data) },
   server: {
     allowedHosts,
+    // Other checkouts of the game live under .claude/worktrees, each with a dev server
+    // of its own. Watching them too (and the map data and node_modules they link to)
+    // ran this server out of memory when two were made while it was running. (By this
+    // checkout's own path: a worktree's server must still watch its own files.)
+    watch: { ignored: [join(import.meta.dirname, '.claude/worktrees/**')] },
     // Protomaps' daily planet build for ?countryside=live (src/data.ts): their server
     // lets only a few origins read it, so the dev server fetches it for the game.
     proxy: {

@@ -88,7 +88,12 @@
     const cb = dev.createBuffer.bind(dev);
     dev.createBuffer = (desc) => { S.acc.bufs++; S.acc.bufBytes += desc.size; return cb(desc); };
     const ua = r.backend.updateAttribute.bind(r.backend);
-    r.backend.updateAttribute = (attr) => { S.acc.ua += (attr.isInterleavedBufferAttribute ? attr.data : attr).array.byteLength; return ua(attr); };
+    // (What is sent: the update ranges where there are any, as send() in gpu.ts sets them, else the whole array.)
+    r.backend.updateAttribute = (attr) => {
+      const a = attr.isInterleavedBufferAttribute ? attr.data : attr, ranges = a.updateRanges || [];
+      S.acc.ua += ranges.length ? ranges.reduce((n, x) => n + x.count * a.array.BYTES_PER_ELEMENT, 0) : a.array.byteLength;
+      return ua(attr);
+    };
   }
   // Material builds: a new entry in three.js's node-builder cache, by kind of object.
   const nodes = r._nodes, cache = nodes?.nodeBuilderCache;

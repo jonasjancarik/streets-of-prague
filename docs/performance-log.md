@@ -985,3 +985,8 @@ garbage collector 4 %, the crowd 3 %, `CarPool.render` 3 %.
 The phone's Chrome had 217 tabs open from earlier test runs of several projects, and a
 second scene in one run closed the page each time; one scene a run worked.
 
+`bench.mjs --stalls` counted an attribute update as its whole array, so the lamps'
+re-gathering read as 2.7 MB in a frame; it sends only the lamps in use (`send()` ranges).
+The counter now adds up the ranges. The gathering itself takes 1.0–1.4 ms (5.5 ms at most)
+with the CPU slowed 4×, 10–15 times in 30 s: not worth changing.
+

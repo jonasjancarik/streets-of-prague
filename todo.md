@@ -175,8 +175,6 @@ before that day's frame-count fix may be doubled.
 - **Empty instanced meshes** (unused lamp models, gun flashes, beacons, bins: 17 of the
   211 objects) measured 0–3 % when hidden, within the noise, and hiding them would put
   off their shader builds to first use. Left alone.
-- **The lamps' re-gather** sends 2.2–2.7 MB of instance data in one frame on the phone
-  (`lamps.update` 9–14 ms in those frames): check what goes beyond the lamps in use.
 - **Pixel 5 in the woods:** 9 fps at Medium and 1.5× with 5.7 million triangles, 22 ms
   of it JavaScript; the trees' triangles and shading are the cost (plan 017).
 - **Ground under buildings** is still shaded on GPUs that don't skip covered pixels.
