@@ -1002,9 +1002,14 @@ one page, 40–60 s each, every window agreeing, 26–30 °C, no touches on the 
 | the whole ground (its layers hidden) | 34.8 ms | 30 % |
 | the buildings (hidden) | 42.3 ms | 14 % |
 
-So the ground costs about 14.6 ms there and only 3.9 ms of it is the patterns: the rest is
-what every ground pixel pays in every layer drawn over it (lighting, the sun's shadow,
-the relief and sky textures, the stencil). That is the lead for phones at 1.5× and up.
+| the sun's shadow on the ground (`receiveShadow` off on its layers) | 45.2 ms | 8 % |
+
+So the ground costs about 14.6 ms there: 3.9 ms the patterns, 3.9 ms reading the sun's
+shadow (PCF on every tier), and some 7 ms the rest (lighting, the relief and sky
+textures, layers over each other, the stencil). That is the lead for phones at 1.5× and
+up. One more swap is unexplained: with only each tile's lowest ground layer left visible
+the frame was 35.1 ms, the same as with no ground at all; which layer that was, and how
+much of the tile it covers, wasn't checked.
 
 Tried and dropped: the buildings' depth drawn before the ground (a depth-only copy of
 each building mesh at render order −3002, cut away like the ground's depth), so that the
