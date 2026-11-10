@@ -48,13 +48,50 @@ export default {
 
     // Taken from them, while it works a house: the crew get down and walk off.
     const g = window.__drive as { refuse: { rounds: { phase: string; car: unknown }[]; crew: { job: string }[] } };
-    for (let i = 0; i < 120 && g.refuse.rounds[0] && g.refuse.rounds[0].phase !== 'work'; i++) { await t.wait(0.5); follow(round().car); }
+    // (Taken while they're off at the bins: anyone back on the steps by then stays there, below.)
+    const atBins = () => g.refuse.rounds[0]?.phase === 'work' && round().crew.every((j) => ['fetch', 'in', 'wheel', 'tip', 'return'].includes(j));
+    for (let i = 0; i < 240 && g.refuse.rounds[0] && !atBins(); i++) { await t.wait(0.25); follow(round().car); }
     const cartNow = g.refuse.rounds[0]?.car;
-    if (!t.check('it stops at another house', !!cartNow)) return;
+    if (!t.check('it stops at another house, the crew off at the bins', !!cartNow && atBins(), round()?.crew)) return;
     await (t as unknown as { enter: (c: unknown) => Promise<unknown> }).enter(cartNow);
     await t.wait(1);
     const crew = g.refuse.crew.map((m) => m.job);
     t.check('taken, the crew get down and walk off', t.where().mode !== 'foot' && crew.length > 0 && crew.every((j) => j === 'leave'), { crew, mode: t.where().mode });
+    t.exit();
+
+    // Taken on the move, with the crew on the steps: they stay on, holding tight, until you
+    // go too fast; the one who falls off runs after it and climbs on again once you stop.
+    let next = null;
+    for (let i = 0; i < 10 && !next; i++) { next = kit.dustcart(150); if (!next) await t.wait(0.5); }
+    if (!t.check('another dustcart turns up', !!next)) return;
+    const mine = () => g.refuse.rounds.find((k) => k.car === next) as unknown as { phase: string; crew: { job: string; down: number; x: number; y: number }[] } | undefined;
+    for (let i = 0; i < 30 && mine()?.phase !== 'drive'; i++) await t.wait(0.5);
+    await t.wait(1);
+    if (!t.check('on its way, the crew on the steps', !!mine()?.crew.every((m) => m.job === 'ride'), mine()?.crew.map((m) => m.job))) return;
+    await (t as unknown as { enter: (c: unknown) => Promise<unknown> }).enter(next);
+    await t.wait(2, { move: 0.4 });
+    const car = next as { speed: number; x: number; y: number };
+    t.check('taken on the move, they stay on at a crawl', t.where().mode === 'car' && mine()!.crew.every((m) => m.job === 'ride'), { crew: mine()!.crew.map((m) => m.job), kmh: Math.round(car.speed * 3.6) });
+    // (Stopped, and turned to the longest clear run along the street: a crash knocks them off too.)
+    for (let i = 0; i < 12 && car.speed > 0.3; i++) await t.wait(0.25, { brake: true });
+    const h0 = t.where().heading, run = (h: number) => Math.min(...[-1.5, 0, 1.5].map((sd) => t.runway(h, 120, sd)));
+    const best = [0, 180, -10, 10, 170, 190].map((d) => h0 + d).sort((a, b) => run(b) - run(a))[0];
+    t.push(0, best);
+    // (Something the run doesn't see, a parked car, can end it in a crash: that throws them off as well.)
+    let fellAt = 0, peak = 0;
+    for (let i = 0; i < 60 && !fellAt; i++) {
+      await t.wait(0.25, { move: 1 });
+      peak = Math.max(peak, car.speed * 3.6);
+      if (mine()!.crew.some((m) => m.job !== 'ride')) fellAt = car.speed * 3.6;
+    }
+    t.check('going fast (or crashing), someone falls off', fellAt > 0, { kmh: Math.round(fellAt), peak: Math.round(peak) });
+    const [lon2, lat2] = (window.__drive as { dev: { toLonLat: (x: number, y: number) => [number, number] } }).dev.toLonLat(car.x, car.y);
+    t.camera({ at: [lat2, lon2], height: 40, tilt: 0 });
+    await t.wait(0.3, { move: 1 });
+    await t.shot('dustcart-fall');
+    t.camera(null);
+    for (let i = 0; i < 40 && !mine()!.crew.every((m) => m.job === 'ride'); i++) await t.wait(0.5, { brake: true });
+    t.check('stopped for him, he climbs on again', mine()!.crew.every((m) => m.job === 'ride'), mine()!.crew.map((m) => m.job));
     t.exit();
     t.empty(false);
   },

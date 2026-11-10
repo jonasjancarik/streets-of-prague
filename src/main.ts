@@ -1108,6 +1108,7 @@ async function main() {
     const cop = best.type === 'police';
     if (cop) police.take(best);
     const engine = brigade.take(best) || ambulances.take(best);
+    refuse.take(best); // (its crew on the steps stay there)
     if (engine) police.crime('carjack', best.x, best.y);
     if (agent) traffic.release(agent);
     // The driver leaves the car and runs off: pulled out through their door by you (and

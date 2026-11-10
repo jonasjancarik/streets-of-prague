@@ -16,7 +16,10 @@ import type { FigureKit } from './figures.ts';
 // house beside it (bins in the old town are kept in the passage or the courtyard), wheel
 // a bin out to the back of the cart, where the lift tips it into the hopper, wheel it
 // back in, and climb on again. Cars behind wait, or get past where the street is wide
-// enough. A cart that's crashed into or taken is left, and its crew walks off.
+// enough. A cart that's crashed into is left, and its crew walks off. One you take from
+// them with the crew on the steps keeps them there, holding on, until you drive too fast
+// or throw it round a corner and they fall off; they run after it, and climb on again if
+// you stop for them.
 
 const CENTRE = [-3205, 3097], ROUNDS = 6000; // m from the Old Town Square: rounds only in the inner city
 const FROM = 5, TO = 23; // the hours they're out
@@ -30,6 +33,9 @@ const TIP = 5; // seconds a bin takes on the lift
 const HANDLE = 0.8; // m from a dustman to the middle of the bin he's wheeling
 const GIVE_UP = 14; // seconds getting no nearer before they leave it
 const BINS = 32;
+// On a cart you've taken: how fast (m/s) and how hard a pull (m/s², braking, cornering, a
+// crash) the crew on the steps can hold on through, and how fast they run after it.
+const HOLD = 11, GRIP = 7, CHASE = 3.6, LOSE = 45;
 // The streets they don't work: the big through roads, bridges and tunnels.
 const THROUGH = new Set(['motorway', 'motorway_link', 'trunk', 'trunk_link', 'primary', 'primary_link']);
 const street = (e: DriveEdge) => !THROUGH.has(e.hw) && !e.bridge && !e.tunnel;
@@ -43,7 +49,7 @@ interface Dustman {
   x: number; y: number; h: number; vx: number; vy: number; anim: Anim; round: Round; side: number;
   job: Job; t: number; door?: Door; bin?: Bin; down: number; detour?: number; best: number; stuck: number; gone?: boolean; gz?: number;
 }
-interface Round { agent: TrafficAgent; car: Car; crew: Dustman[]; since: number; gap: number; phase: 'drive' | 'brake' | 'work' | 'gone'; doors: Door[]; t: number }
+interface Round { agent: TrafficAgent; car: Car; crew: Dustman[]; since: number; gap: number; phase: 'drive' | 'brake' | 'work' | 'taken' | 'gone'; vx?: number; vy?: number; doors: Door[]; t: number }
 interface RefuseOptions {
   scene: THREE.Scene; traffic: Traffic; grid: CarGrid; kit: FigureKit;
   height: (x: number, y: number, who?: Car) => number;
@@ -81,7 +87,8 @@ export class Refuse {
   }
 
   // Dustcarts on their rounds, with their amber lamps going.
-  get lit() { return this.rounds.filter((r) => r.phase !== 'gone').map((r) => r.car); }
+  // (A cart you've taken keeps them going while someone still rides on it.)
+  get lit() { return this.rounds.filter((r) => r.phase !== 'gone' && (r.phase !== 'taken' || r.crew.some((m) => m.job === 'ride' && m.down <= 0))).map((r) => r.car); }
   // The dustmen on foot, for the traffic to stop for (not the ones on the steps or indoors).
   get walking() { return this.crew.filter((m) => m.job !== 'ride' && m.job !== 'in' && m.job !== 'out'); }
 
@@ -115,6 +122,15 @@ export class Refuse {
     this.rounds = [];
     this.crew = [];
     this.bins = [];
+  }
+
+  // You got into a dustcart. The crew riding on its steps stay there; the ones on foot
+  // leave their bins and walk off. Returns whether it was one.
+  take(car: Car) {
+    const r = this.rounds.find((k) => k.car === car && k.phase !== 'gone');
+    if (!r) return false;
+    this.abandon(r, true);
+    return true;
   }
 
   knock(m: Dustman, vx: number, vy: number) {
@@ -183,10 +199,11 @@ export class Refuse {
       this.spawnT = 2;
       const h = o.hour(), centre = Math.hypot(me.x - CENTRE[0], me.y - CENTRE[1]) < ROUNDS;
       const want = o.quiet() || !centre || h < FROM || h >= TO ? 0 : h >= 6 && h < 12 ? 3 : 2;
-      if (this.rounds.filter((r) => r.phase !== 'gone').length < want) this.send(me.x, me.y);
+      if (this.rounds.filter((r) => r.phase !== 'gone' && r.phase !== 'taken').length < want) this.send(me.x, me.y);
     }
     for (const r of this.rounds) {
-      if (r.phase !== 'gone' && !o.traffic.agents.includes(r.agent)) this.abandon(r);
+      if (r.phase === 'taken') this.hold(r, dt, me === r.car);
+      else if (r.phase !== 'gone' && !o.traffic.agents.includes(r.agent)) this.abandon(r);
       else if (r.phase !== 'gone') this.drive(r, dt);
     }
     for (const m of this.crew) this.walk(m, dt);
@@ -251,17 +268,51 @@ export class Refuse {
 
   // The cart is gone from its round (crashed into, set on fire, taken, or far behind you):
   // the crew jump down and walk off, leaving any bin where it stands.
-  abandon(r: Round) {
+  // (`taken`: by you, and the ones riding on the steps stay there.)
+  abandon(r: Round, taken = false) {
     const { o } = this;
-    r.phase = 'gone';
+    r.phase = taken ? 'taken' : 'gone';
     r.car.working = false;
     r.agent.crawl = r.agent.stop = undefined;
+    Object.assign(r, { vx: r.car.vx, vy: r.car.vy, t: 0 });
     for (const m of r.crew) {
+      if (taken && m.job === 'ride' && m.down <= 0) continue;
       if (m.bin) { m.bin.left = true; m.bin.lift = m.bin.tilt = 0; m.bin = undefined; }
       if (m.job === 'ride') { const lx = -Math.sin(r.car.h) * m.side, ly = Math.cos(r.car.h) * m.side; m.x += lx * 0.8; m.y += ly * 0.8; }
       m.job = 'leave';
       m.t = 0;
       if (o.offscreen(m.x, m.y)) m.gone = true;
+    }
+  }
+
+  // A cart you've taken, with someone on the steps: they hold on, and fall off when you
+  // go too fast or pull too hard. Left standing without you for a while, or burning,
+  // they get down and walk off.
+  hold(r: Round, dt: number, driven: boolean) {
+    const c = r.car, rnd = this.o.rng;
+    if (!r.crew.length) { r.phase = 'gone'; return; }
+    const ax = (c.vx - (r.vx ?? c.vx)) / Math.max(dt, 1e-3), ay = (c.vy - (r.vy ?? c.vy)) / Math.max(dt, 1e-3);
+    r.vx = c.vx; r.vy = c.vy;
+    const pull = Math.hypot(ax, ay), speed = Math.hypot(c.vx, c.vy);
+    r.t = driven || speed > 0.5 ? 0 : r.t + dt;
+    if (c.burnt || r.t > 6) {
+      for (const m of r.crew) if (m.job === 'ride') { const lx = -Math.sin(c.h) * m.side, ly = Math.cos(c.h) * m.side; m.x += lx * 0.8; m.y += ly * 0.8; }
+      for (const m of r.crew) if (m.job !== 'leave') this.go(m, 'leave');
+      r.phase = 'gone';
+      return;
+    }
+    // (Each a little differently: the chance per second grows with how far past it you are.)
+    const risk = Math.max(0, speed - HOLD) * 0.1 + Math.max(0, pull - GRIP) * 0.12;
+    for (const m of r.crew) {
+      if (m.job !== 'ride' || m.down > 0) continue;
+      this.ride(m);
+      if (rnd() < risk * dt) {
+        // Off the step, the way the cart was going, and thrown out to his side.
+        const lx = -Math.sin(c.h) * m.side, ly = Math.cos(c.h) * m.side;
+        m.x += lx * 0.5; m.y += ly * 0.5;
+        this.knock(m, c.vx * 0.6 + lx * 2.5, c.vy * 0.6 + ly * 2.5);
+        m.down = 3 + Math.min(2, speed / 10);
+      }
     }
   }
 
@@ -343,7 +394,9 @@ export class Refuse {
       }
     } else if (m.job === 'back') {
       if (r.phase === 'gone') { this.go(m, 'leave'); return; }
-      const s = this.stepAt(c, m.side), d = to(s.x, s.y, WALK * 1.2);
+      const taken = r.phase === 'taken', s = this.stepAt(c, m.side), d = to(s.x, s.y, taken ? CHASE : WALK * 1.2);
+      // After the cart you took: on again if you stop for him, given up once it's away.
+      if (taken) { if (d < 1.3 && c.speed < 2) this.ride(m); else if (d > LOSE || this.stalled(m, d, dt)) this.go(m, 'leave'); return void this.move(m, dt); }
       // On the step again (or, getting nowhere, round by any way: he's on).
       if (d < 1.3 || this.stalled(m, d, dt)) this.ride(m);
     } else {
@@ -352,6 +405,10 @@ export class Refuse {
       if (o.offscreen(m.x, m.y) || m.t > 90) m.gone = true;
     }
     if (m.job === 'in' || m.job === 'out') return;
+    this.move(m, dt);
+  }
+
+  move(m: Dustman, dt: number) {
     const nx = m.x + m.vx * dt, ny = m.y + m.vy * dt;
     if (!this.blocked(nx, m.y)) m.x = nx;
     if (!this.blocked(m.x, ny)) m.y = ny;

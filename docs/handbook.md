@@ -457,8 +457,13 @@ that without a new renderer.
   (old-town bins are kept in the passage or the courtyard) and wheel a bin out to the
   lift at the back, which tips it. They take the bin back in, sometimes come out with a
   second one, then climb back on. Cars behind wait, or get past where the street is
-  wide enough. If the cart is crashed into, set on fire or taken, the crew walk off and
-  leave any bin where it stands. Hitting a dustman with your car knocks him over, as it
+  wide enough. If the cart is crashed into or set on fire, the crew walk off and
+  leave any bin where it stands; so do the ones on foot when you take it. Take it while
+  they ride on the steps and they stay on, holding tight, with the amber lamps still
+  going. Past about 40 km/h, or with a hard stop, a sharp swerve or a crash, they fall
+  off. A fallen dustman runs after the cart and climbs back on if you stop for him
+  (stood still and empty for 6 seconds, it's given up on); 45 m behind, he gives up
+  and walks off. Hitting a dustman with your car knocks him over, as it
   does anyone else (`src/refuse.ts`, `scenarios/dustcart.ts`).
 - **Developer panel**: press <kbd>`</kbd> (or add `?dev`). Type a street for instant
   matches from the area's `names.json`, press Enter to look up a full address on
