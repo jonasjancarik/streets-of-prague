@@ -444,3 +444,7 @@ Ask first:
     than about 1.5 m apart is the next thing to try.
   - Left: those side-by-side places; the three footway joins above; Ryšavého's walls
     (steps 6.2 and 5.5 m, as before); the trunk at 49.9423, 14.3674 (a bump of 5.6 m).
+  - **On the beta** (Cloudflare) since 10 November, from this branch with main merged
+    in: game `v0.9.0-28-gbbc0ba5`, map `beta-69864399a5e4` (built 07:45 UTC with
+    `--step-lines`; the Old Town Square's two monuments and the café terraces copied
+    in from main's map). Not in main, not in production.
