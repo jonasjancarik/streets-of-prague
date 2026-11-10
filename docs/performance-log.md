@@ -990,3 +990,29 @@ re-gathering read as 2.7 MB in a frame; it sends only the lamps in use (`send()`
 The counter now adds up the ranges. The gathering itself takes 1.0–1.4 ms (5.5 ms at most)
 with the CPU slowed 4×, 10–15 times in 30 s: not worth changing.
 
+### Where the Pixel 5's GPU time goes (11 November, 2×, Medium, the Old Town Square)
+
+At 2× the phone is limited by its GPU (49 ms a frame, 20 ms of it JavaScript). `--ab` in
+one page, 40–60 s each, every window agreeing, 26–30 °C, no touches on the screen:
+
+| Left out | Frame | Share of the frame |
+|---|---|---|
+| nothing | 49 ms | |
+| the ground's patterns (`userData.flatten()`) | 45.0 ms | 8 % |
+| the whole ground (its layers hidden) | 34.8 ms | 30 % |
+| the buildings (hidden) | 42.3 ms | 14 % |
+
+So the ground costs about 14.6 ms there and only 3.9 ms of it is the patterns: the rest is
+what every ground pixel pays in every layer drawn over it (lighting, the sun's shadow,
+the relief and sky textures, the stencil). That is the lead for phones at 1.5× and up.
+
+Tried and dropped: the buildings' depth drawn before the ground (a depth-only copy of
+each building mesh at render order −3002, cut away like the ground's depth), so that the
+ground under roofs fails the depth test. 49.1 → 47.6 ms on the phone (3 %), nothing on
+an M5, for one more draw of every building.
+
+Also measured on the M5 with the CPU slowed 4×: not drawing the 128- and 256-tree pages
+at all (29 of them in view on the drive, each a draw in the colour pass and the shadow
+pass) saves 3–4 %, so packing them into fewer pages would save less. The shadow pass
+draws about three times as many tree pages as the camera sees (26 against 9 a frame).
+

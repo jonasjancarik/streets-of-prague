@@ -175,6 +175,10 @@ before that day's frame-count fix may be doubled.
 - **Empty instanced meshes** (unused lamp models, gun flashes, beacons, bins: 17 of the
   211 objects) measured 0–3 % when hidden, within the noise, and hiding them would put
   off their shader builds to first use. Left alone.
+- **The ground on phones:** 30 % of the Pixel 5's frame at 2× (14.6 ms of 49), and only
+  3.9 ms of that is the patterns (performance log, 11 November). Find what the plain
+  ground pays for in each layer (the sun's shadow filter, lamp light by day, relief and
+  sky textures, layers drawn over each other) with material swaps on the phone.
 - **Pixel 5 in the woods:** 9 fps at Medium and 1.5× with 5.7 million triangles, 22 ms
   of it JavaScript; the trees' triangles and shading are the cost (plan 017).
 - **Ground under buildings** is still shaded on GPUs that don't skip covered pixels.
