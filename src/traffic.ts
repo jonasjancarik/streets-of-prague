@@ -1,4 +1,4 @@
-import { BusRun, busStart, busType } from './buses.ts';
+import { BusRun, busAt, busStart, busType } from './buses.ts';
 import type { BusLine } from './buses.ts';
 import { COURIER_BOXES, Car, randomType } from './car.ts';
 import { courierLook, randomLook } from './figures.ts';
@@ -177,6 +177,23 @@ export class Traffic {
     return null;
   }
 
+  // A bus onto `line` at `along` (or a little further on), where `avoid` allows: one
+  // sent for someone waiting at a stop. Whether one could be put there.
+  sendBus(line: BusLine, along: number, avoid: (x: number, y: number) => boolean, edges: DriveEdge[]) {
+    const start = busAt(line, along, edges, (x, y) => avoid(x, y) && !this.agents.some((a) => Math.hypot(a.car.x - x, a.car.y - y) < 20), (node) => this.g.out.get(node) || []);
+    if (start) this.addBus(start);
+    return !!start;
+  }
+
+  private addBus({ edge, s, run }: { edge: DriveEdge; s: number; run: BusRun }) {
+    const p = edge.path.at(s);
+    const car = new Car(busType(run.line.ref), this.r, p.x, p.y, p.ang);
+    car.mode = 'traffic';
+    car.hint = roadHint(edge, s);
+    car.line = { ref: run.line.ref, to: run.line.to };
+    this.agents.push({ car, route: new Route(this.g, edge, s, this.r, true, (e, opts) => run.pick(e, opts)), speed: edge.speed * 0.6, stuck: 0, jam: 0, ignore: 0, cruise: 0.9, off: 0, bus: run });
+  }
+
   // Keep `want` buses about, on their lines (or, without them, on the main roads)
   // among `edges`, where `avoid` allows.
   buses(avoid: (x: number, y: number) => boolean, edges: DriveEdge[], want: number) {
@@ -185,14 +202,7 @@ export class Traffic {
     if (n >= want) return;
     if (this.busLines.length) {
       const start = busStart(this.busLines, edges, this.r, (x, y) => avoid(x, y) && !this.agents.some((a) => Math.hypot(a.car.x - x, a.car.y - y) < 20), this.agents.flatMap((a) => a.bus ?? []), (node) => this.g.out.get(node) || []);
-      if (!start) return;
-      const { edge, s, run } = start;
-      const p = edge.path.at(s);
-      const car = new Car(busType(run.line.ref), this.r, p.x, p.y, p.ang);
-      car.mode = 'traffic';
-      car.hint = roadHint(edge, s);
-      car.line = { ref: run.line.ref, to: run.line.to };
-      this.agents.push({ car, route: new Route(this.g, edge, s, this.r, true, (e, opts) => run.pick(e, opts)), speed: edge.speed * 0.6, stuck: 0, jam: 0, ignore: 0, cruise: 0.9, off: 0, bus: run });
+      if (start) this.addBus(start);
       return;
     }
     const main = edges.filter((e) => MAIN_ROADS.has(e.hw) && !e.bridge && !e.tunnel);

@@ -188,7 +188,7 @@ export class BusRun {
 export function busStart(lines: BusLine[], edges: DriveEdge[], rand: () => number, ok: (x: number, y: number) => boolean, running: BusRun[] = [], out: ((node: string) => DriveEdge[]) | null = null) {
   // The lanes a bus can start on, each with its box, and the box round them all.
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  const lanes: [DriveEdge, number, number, number, number][] = [];
+  const lanes: Lane[] = [];
   for (const e of edges) {
     if (e.bridge || e.tunnel || e.path.length < 16) continue;
     let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity;
@@ -224,17 +224,44 @@ export function busStart(lines: BusLine[], edges: DriveEdge[], rand: () => numbe
     if (running.some((r) => r.line.ref === line.ref && r.line.to === line.to && Math.abs(r.along - along) < GAP)) continue;
     const p = line.path.at(along);
     if (!ok(p.x, p.y)) continue;
-    let best: { edge: DriveEdge; s: number } | null = null, bestD = 8;
-    for (const [e, ex0, ey0, ex1, ey1] of lanes) {
-      if (p.x < ex0 - bestD || p.x > ex1 + bestD || p.y < ey0 - bestD || p.y > ey1 + bestD) continue;
-      const [s, d] = project(e.path, p.x, p.y);
-      if (d >= bestD || s < 6 || s > e.path.length - 8) continue;
-      const q = e.path.at(s);
-      if (Math.cos(q.ang - p.ang) < 0.8) continue;
-      best = { edge: e, s };
-      bestD = d;
-    }
+    const best = laneAt(lanes, p);
     if (best) return { ...best, run: new BusRun(line, along, out) };
+  }
+  return null;
+}
+
+type Lane = [DriveEdge, number, number, number, number];
+
+// The lane (of `lanes`, each with its box) a bus at `p` on its line would be in.
+function laneAt(lanes: Lane[], p: { x: number; y: number; ang: number }) {
+  let best: { edge: DriveEdge; s: number } | null = null, bestD = 8;
+  for (const [e, ex0, ey0, ex1, ey1] of lanes) {
+    if (p.x < ex0 - bestD || p.x > ex1 + bestD || p.y < ey0 - bestD || p.y > ey1 + bestD) continue;
+    const [s, d] = project(e.path, p.x, p.y);
+    if (d >= bestD || s < 6 || s > e.path.length - 8) continue;
+    const q = e.path.at(s);
+    if (Math.cos(q.ang - p.ang) < 0.8) continue;
+    best = { edge: e, s };
+    bestD = d;
+  }
+  return best;
+}
+
+// A bus joining `line` at `along` (or the first place a little further on where a
+// street of `edges` takes it), for a bus sent for someone waiting at a stop.
+export function busAt(line: BusLine, along: number, edges: DriveEdge[], ok: (x: number, y: number) => boolean, out: ((node: string) => DriveEdge[]) | null = null) {
+  const lanes: Lane[] = [];
+  for (const e of edges) {
+    if (e.bridge || e.tunnel || e.path.length < 16) continue;
+    let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity;
+    for (const q of e.path.pts) { a = Math.min(a, q[0]); b = Math.min(b, q[1]); c = Math.max(c, q[0]); d = Math.max(d, q[1]); }
+    lanes.push([e, a, b, c, d]);
+  }
+  for (let at = along; at < along + 150 && at < line.path.length - 50; at += 15) {
+    const p = line.path.at(at);
+    if (!ok(p.x, p.y)) continue;
+    const best = laneAt(lanes, p);
+    if (best) return { ...best, run: new BusRun(line, at, out) };
   }
   return null;
 }

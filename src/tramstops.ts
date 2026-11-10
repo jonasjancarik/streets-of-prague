@@ -42,7 +42,7 @@ const topMaterial = (() => {
 })();
 
 const names = new Map<string, THREE.MeshBasicMaterial>();
-function nameMaterial(name: string) {
+export function nameMaterial(name: string) {
   let m = names.get(name);
   if (!m) {
     const c = document.createElement('canvas');
@@ -66,8 +66,8 @@ function nameMaterial(name: string) {
 
 const topGeometry = new THREE.PlaneGeometry(2.2, 2.2).rotateX(-Math.PI / 2);
 const plateGeometry = new THREE.PlaneGeometry(1.8, 0.34);
-const postGeometry = new THREE.BoxGeometry(0.14, 2.6, 0.14).translate(0, 1.3, 0);
-const postMaterial = new THREE.MeshLambertMaterial({ color: '#3a3d40' });
+export const postGeometry = new THREE.BoxGeometry(0.14, 2.6, 0.14).translate(0, 1.3, 0);
+export const postMaterial = new THREE.MeshLambertMaterial({ color: '#3a3d40' });
 
 export class TramStops {
   scene: THREE.Scene;

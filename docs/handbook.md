@@ -926,6 +926,20 @@ record the measurements, merge decisions and pending landmark asset activation.
   the main roads and is replaced once out of sight; without `buses.json` all buses just
   drive the main roads. You can take one like any car, but it's slow to pick up speed,
   wide in the turns and shoves smaller cars aside.
+- **Bus stops and riding a bus** (`src/busstops.ts`, `scenarios/bus-ride.ts`). Every stop of
+  the bus lines has a sign on the pavement beside where the bus pulls up: a blue plate with
+  a black bus, lying flat so it reads from above, and the stop's name on the pole. It goes
+  past the surveyed kerb (a parking lane can lie between) and up only once the ground there
+  has loaded. Standing at one, the board lists the buses coming to it and to the stop of the
+  same name across the street, counted down from where they are. Few buses are about at a
+  time, so when none of your side's lines has one on its way, one is sent: it joins the
+  line 220–400 m back, out of sight, and comes along it. Hold Space to wait, as at a tram
+  stop. When it stands at the stop, E gets you on (F takes it over, throwing the driver
+  out, as a carjacking). The strip lists the stops ahead: W/S or a tap picks one and the
+  ride runs at 6× until 200 m before it; Shift speeds up at any time; E gets you off at the
+  next stop, or at once while it stands. Held up for 10 seconds between stops, E lets you
+  off where it is, and held up within 40 m of your stop you get off by yourself. The PID
+  ticket covers buses (10 seconds to buy one), but there are no inspections on buses yet.
 - **Lorries.** Box trucks and articulated lorries (built from boxes in `src/car.ts`, like the
   bus) use only the motorways and, further than 6.5 km from the Old Town Square, the trunk and
   primary roads (the suburbs with the depots and warehouses); they never appear in the

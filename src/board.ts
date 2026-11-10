@@ -4,11 +4,14 @@ import { t } from './i18n.ts';
 
 interface StopSpot { line: TramLine; i: number; x: number; y: number; name: string; headsign: string }
 interface DueTram { line: TramLine; headsign: string; eta: number; here: boolean; v: TramVehicle }
+// A row of the board: a tram or a bus (src/busstops.ts) on its way.
+interface Row { ref: string; colour: string; headsign: string; eta: number; here: boolean }
 
 // Departure boards. Standing at a tram stop, the HUD lists the next trams due there and
 // counts them down as they come. The times come from where the trams actually are
 // (how far each has to go at a line's usual pace, stops included), not from the
-// timetable, so a tram held up behind a car shows up late here too.
+// timetable, so a tram held up behind a car shows up late here too. At a bus stop it
+// lists the buses coming the same way (`buses`, from src/busstops.ts).
 
 const NEAR = 16; // m from a stop's track position that counts as standing at it
 const SAME = 150; // m: stops with the same name this close are one stop (both ways, all lines)
@@ -25,6 +28,9 @@ export class StopBoard {
   t: number;
   key: string;
   expanded = false;
+  kind: 'tram' | 'bus' = 'tram';
+  // The bus stop you stand at and the buses due there, if any.
+  buses: ((x: number, y: number, dt: number) => { name: string; rows: Row[] } | null) | null = null;
 
   constructor(trams: Trams, el: HTMLElement) {
     this.trams = trams;
@@ -68,6 +74,11 @@ export class StopBoard {
     if (this.t > 0) return;
     this.t = 0.25;
     const at = here ? this.near(x, y, NEAR).sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0] : null;
+    const bus = !at && here && this.buses ? this.buses(x, y, 0.25) : null;
+    if (bus) {
+      this.show('bus', bus.name, bus.rows);
+      return;
+    }
     if (!at) {
       this.shown = null;
       this.next = Infinity;
@@ -90,23 +101,29 @@ export class StopBoard {
     // One row per tram (a tram due at both platforms shows for the sooner one).
     due.sort((a, b) => a.eta - b.eta);
     const rows = due.filter((d, i) => due.findIndex((e) => e.v === d.v) === i).slice(0, SHOWN);
-    if (this.shown !== at.name) { this.expanded = false; this.el.classList.remove('expanded'); }
-    this.shown = at.name;
-    this.next = rows.length ? rows[0].eta : Infinity;
-    this.render(at.name, rows);
+    this.show('tram', at.name, rows.map((r) => ({ ref: r.line.ref, colour: r.line.colour || '#c4161c', headsign: r.headsign, eta: r.eta, here: r.here })));
   }
 
-  render(name: string, rows: DueTram[]) {
+  private show(kind: 'tram' | 'bus', name: string, rows: Row[]) {
+    if (this.shown !== name || this.kind !== kind) { this.expanded = false; this.el.classList.remove('expanded'); }
+    this.kind = kind;
+    this.shown = name;
+    this.next = rows.length ? rows[0].eta : Infinity;
+    this.render(name, rows);
+  }
+
+  render(name: string, rows: Row[]) {
     const chars: Record<string, string> = { '&': 'amp', '<': 'lt', '>': 'gt', '"': 'quot' };
     const esc = (s: string) => String(s).replace(/[&<>"]/g, (c) => `&${chars[c]};`);
-    const when = (r: DueTram) => (r.here ? t('now') : r.eta < 45 ? t('arriving') : t('{n} min', { n: Math.round(r.eta / 60) }));
+    const bus = this.kind === 'bus', none = t(bus ? 'No bus due yet' : 'No trams due in the next half hour');
+    const when = (r: Row) => (r.here ? t('now') : r.eta < 45 ? t('arriving') : t('{n} min', { n: Math.round(r.eta / 60) }));
     const list = rows.length
-      ? `<ol class="board-rows">${rows.map((r) => `<li><span class="ride-ref" style="background:${esc(r.line.colour || '#c4161c')}">${esc(r.line.ref)}</span>`
+      ? `<ol class="board-rows">${rows.map((r) => `<li><span class="ride-ref" style="background:${esc(r.colour)}">${esc(r.ref)}</span>`
         + `<span class="board-to">${esc(r.headsign)}</span><span class="board-eta">${when(r)}</span></li>`).join('')}</ol>`
-      : `<div class="board-none">${t('No trams due in the next half hour')}</div>`;
-    const title = esc(t('Trams from {name}', { name }));
+      : `<div class="board-none">${none}</div>`;
+    const title = esc(t(bus ? 'Buses from {name}' : 'Trams from {name}', { name }));
     const first = rows[0];
-    const summary = first ? `${esc(first.line.ref)} · ${esc(first.headsign)} · ${when(first)}` : t('No trams due in the next half hour');
+    const summary = first ? `${esc(first.ref)} · ${esc(first.headsign)} · ${when(first)}` : none;
     const html = `<div class="board-title">${title}</div><button class="board-toggle" aria-expanded="${this.expanded}" aria-controls="board-list">${title}<span>${summary}</span><small>${t('Timetable')} ▾</small></button><div id="board-list">${list}</div>`;
     if (html === this.key) return;
     this.key = html;
