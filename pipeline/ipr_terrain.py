@@ -572,7 +572,7 @@ def main() -> None:
         # mostly, so the lattice alone couldn't say it).
         ring = lambda r: np.round(shapely.get_coordinates(r)[:-1], 2).tolist()  # noqa: E731
         lifted = 0
-        for pad, height in structures.pads(ways):
+        for pad, height in structures.pads(ways, list(streets.values())):
             bx0, by0, bx1, by1 = pad.bounds
             for i in range(math.floor((bx0 - gx0) / T), math.floor((bx1 - gx0) / T) + 1):
                 for j in range(math.floor((by0 - gy0) / T), math.floor((by1 - gy0) / T) + 1):

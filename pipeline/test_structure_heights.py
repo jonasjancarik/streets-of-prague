@@ -16,6 +16,30 @@ def branch():
             way(3,[10,30],[[0,0],[1305,0]])]
 
 
+class PadTests(unittest.TestCase):
+    def test_a_street_s_pad_reaches_a_little_under_its_bridge(self):
+        # A bridge from (0, 0) east, drawn from 5 m past its wall's edge: the pad is the
+        # street's last 5 m west of it at the bridge's height, and PAD_INTO under the deck.
+        import shapely
+        way = {"pts": [(0.0, 0.0), (20.0, 0.0)], "w": 8.0, "raised": {0: (5.0, 264.0)}}
+        (pad, height), = structures.pads([way])
+        assert height == 264.0
+        inside = shapely.contains_xy(pad, [-4.0, 1.5, 3.0], [0.0, 0.0, 0.0]).tolist()
+        assert inside == [True, True, False], inside
+
+    def test_a_street_under_the_bridge_s_end_keeps_its_own_height(self):
+        # The street the bridge runs on into (west) is lifted; one ending under the
+        # north half of the deck's first metres (x = 1.5, 1 m wide) isn't, nor the
+        # ground within PAD_CLEAR of it, but the deck's south corner is.
+        import shapely
+        from shapely.geometry import LineString
+        way = {"pts": [(0.0, 0.0), (20.0, 0.0)], "w": 8.0, "raised": {0: (5.0, 264.0)}}
+        streets = [(LineString([(-30.0, 0.0), (0.0, 0.0)]), 4.0), (LineString([(1.5, 3.0), (1.5, 20.0)]), 0.5)]
+        (pad, _), = structures.pads([way], streets, clear=1.5)
+        inside = shapely.contains_xy(pad, [-4.0, 1.5, 1.0, 1.0], [0.0, 3.5, 1.5, -4.0]).tolist()
+        assert inside == [True, False, False, True], inside
+
+
 class StructureHeightTests(unittest.TestCase):
     def pins(self, net, heights):
         return {net.key['n',node]:h for node,h in heights.items()}

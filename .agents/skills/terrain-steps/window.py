@@ -211,7 +211,7 @@ def main():
                                  ipr_terrain.sampler(tiles, N, T, step, gx0, gy0, labels), local, tiles, N, T, step, gx0, gy0, boxes,
                                  way_levels=[], ramps_out=steep, streets=[line for line, _ in streets.values()])
         ring = lambda r: np.round(shapely.get_coordinates(r)[:-1], 2).tolist()  # noqa: E731
-        for pad, height in structures.pads(ways):
+        for pad, height in structures.pads(ways, list(streets.values())):
             bx0, by0, bx1, by1 = pad.bounds
             for i in range(math.floor((bx0 - gx0) / T), math.floor((bx1 - gx0) / T) + 1):
                 for j in range(math.floor((by0 - gy0) / T), math.floor((by1 - gy0) / T) + 1):

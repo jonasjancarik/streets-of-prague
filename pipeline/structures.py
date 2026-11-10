@@ -1157,19 +1157,55 @@ SCRAP = 25.0  # m: a bridge way shorter than this, lying on a much longer one, i
 PORTAL = 12.0  # m a tunnel reaches out of its portal, at the portal's height
 
 
-def pads(ways):
+PAD_INTO = 2.0  # m under a bridge's first metres that the street's pad before it reaches (see pads)
+PAD_CLEAR = 4.0  # m that reach keeps off the other streets' kerbs: a lattice cell
+
+
+def pads(ways, streets=(), clear=None):
     """Where the ground has to come up to a bridge's end: [(polygon, height)], the
     street's last metres between the edge of the wall the bridge comes off and where the
-    map has the bridge begin (see abutment). They'd hang down to the quay below."""
-    out = []
+    map has the bridge begin (see abutment). They'd hang down to the quay below. And on
+    PAD_INTO under the bridge's first metres: OSM begins a bridge a little short of its
+    abutment's edge, and from where it begins the ground ramped down to the low side over
+    a lattice cell, a torn band under the deck's front edge (5. května over Hvězdova);
+    now its step is cut under the deck. Not on a car street on the ground passing under
+    the bridge's end, `streets` [(line, half width)] (Hořejší nábřeží under Palackého
+    most), which keeps its own height there, nor within `clear` of its kerbs (a lattice
+    corner raised beside it would lift its edge). A street running on from a bridge's end
+    at about this height (its own, or the one beside it, as 5. května's link road) isn't
+    passing under."""
+    clear = PAD_CLEAR if clear is None else clear
+    tree = STRtree([line for line, _ in streets]) if len(streets) else None
+    ends = []
     for w in ways:
         if w.get("scrap") or w.get("cut"):  # (its ends' heights aren't the bridge's: see pieces; a cut's are the street's)
             continue
         for end, (far, height) in w.get("raised", {}).items():
             a, b = (w["pts"][1], w["pts"][0]) if end == 0 else (w["pts"][-2], w["pts"][-1])
             d = math.dist(a, b) or 1
-            on = (b[0] + (b[0] - a[0]) / d * far, b[1] + (b[1] - a[1]) / d * far)
-            out.append((LineString([b, on]).buffer(w["w"] / 2 + 1.0, cap_style="flat"), height))
+            ends.append((w, b, d, (b[0] - a[0]) / d, (b[1] - a[1]) / d, far, height))
+    # The streets each end runs on into: through the end and on along the bridge.
+    runs_on = defaultdict(list)
+    for w, b, d, ux, uy, far, height in ends if tree is not None else ():
+        at, ahead = shapely.points(*b), shapely.points(b[0] + ux * 1.5, b[1] + uy * 1.5)
+        for k in tree.query(at.buffer(1.0)):
+            if streets[k][0].distance(at) < 1.0 and streets[k][0].distance(ahead) < 1.0:
+                runs_on[k].append(height)
+    out = []
+    for w, b, d, ux, uy, far, height in ends:
+        on = (b[0] + ux * far, b[1] + uy * far)
+        pad = LineString([b, on]).buffer(w["w"] / 2 + 1.0, cap_style="flat") if far > 0 else None
+        into = min(PAD_INTO, d / 2)
+        if into > 0:
+            lip = LineString([(b[0] - ux * into, b[1] - uy * into), b]).buffer(w["w"] / 2 + 1.0, cap_style="flat")
+            if tree is not None:
+                under = [streets[k][0].buffer(streets[k][1] + clear) for k in tree.query(lip.buffer(clear))
+                         if not any(abs(h - height) < 1.0 for h in runs_on.get(k, ()))]
+                if under:
+                    lip = lip.difference(unary_union(under))
+            pad = lip if pad is None else pad.union(lip)
+        if pad is not None and not pad.is_empty:
+            out.append((pad, height))
     return out
 
 
