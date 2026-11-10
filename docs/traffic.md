@@ -147,7 +147,13 @@ The lane ahead is built only when the first standing car near it needs measuring
 most once a car a step, and each piece's direction and length are worked out once
 then rather than for every circle of every standing car (plan 034;
 `node scripts/check-traffic-lanes.mjs --compare FILE` replays seeded traffic against a
-trace recorded from the code before, step by step).
+trace recorded from the code before, step by step). Once the lane is built, a box round
+its pieces (`laneBox`, measured along and across the lane where the car is, with the
+margin a standing car of that size could matter within) rules out the many parked cars
+nowhere near it before they are measured against every piece; the bound is exact, so
+nothing a car does changes (11 November 2026). A standing car's speed is not worked out
+with a square root when it is surely under 0.3 m/s, and `mergeDistance` is asked only
+about moving obstacles, since a standing car is never followed into a shared lane.
 
 Traffic already queuing on a car's current or immediately upcoming directed lane
 remains an obstacle during jam escape, even when a sharp turn makes it face across the
