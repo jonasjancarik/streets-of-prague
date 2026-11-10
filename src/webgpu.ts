@@ -334,6 +334,10 @@ const toneCurve = Fn(([color, exposure]: N[]) => {
   return select(exposure.lessThan(0), color.mul(exposure.negate()), c.add(vec3(0.016, 0.012, 0.006).mul(c.oneMinus())));
 }).setLayout({ name: 'customToneMapping', type: 'vec3', inputs: [{ name: 'color', type: 'vec3' }, { name: 'exposure', type: 'float' }] });
 
+// Off, every instance matrix in a uniform buffer is sent each frame again, as three.js
+// does by itself (to compare: bench.mjs --ab).
+export const SEND_CHANGED_MATRICES = { value: true };
+
 export function configureRenderer(renderer: WebGPURenderer) {
   const library = renderer.library as any;
   const fromMaterial = library.fromMaterial.bind(library);
@@ -368,7 +372,24 @@ export function configureRenderer(renderer: WebGPURenderer) {
     if (sharedGraph(ro.material)) state.usedTimes++;
   };
   const getForRender = nodes.getForRender.bind(nodes);
-  nodes.getForRender = (ro: { material: THREE.Material }, useAsync?: boolean) => {
+  const webgpu = 'isWebGPUBackend' in renderer.backend && renderer.backend.isWebGPUBackend === true;
+  const backend = renderer.backend as any;
+  // Instance matrices three.js keeps in a uniform buffer (a mesh with too many attributes
+  // for its shared build: the trees, the people), by their array.
+  const matrices = new WeakMap<object, THREE.InstancedBufferAttribute>();
+  const uniformLimit: number = webgpu ? backend.capabilities.getUniformBufferLimit() : Infinity;
+  nodes.getForRender = (ro: { material: THREE.Material; object?: THREE.Object3D }, useAsync?: boolean) => {
+    const m = (ro.object as THREE.InstancedMesh | undefined)?.instanceMatrix as (THREE.InstancedBufferAttribute & { isStorageInstancedBufferAttribute?: boolean }) | undefined;
+    if (m && webgpu) {
+      // Matrices too many for a uniform buffer go in a storage buffer the mesh's shaders
+      // share (shareInstances in webgpu/trees.ts). Said here, before anything is built for
+      // the mesh: its shadow can be built before its colours (a mesh the sun sees before the
+      // camera does), and three.js's plain instancing then made the buffer for vertex
+      // input only, which the storage binding that followed was refused ("Binding usage
+      // … doesn't match expected usage (BufferUsage::Storage)", and nothing drawn).
+      if (ro.object!.userData.sharedMatrices && !m.isStorageInstancedBufferAttribute && Math.max(m.count, 1) * 64 > uniformLimit) m.isStorageInstancedBufferAttribute = true;
+      if (!matrices.has(m.array)) matrices.set(m.array, m);
+    }
     const out = getForRender(ro, useAsync);
     if (typeof out?.then === 'function') out.then((state: { usedTimes: number }) => hold(ro, state), () => {});
     else hold(ro, out);
@@ -393,7 +414,24 @@ export function configureRenderer(renderer: WebGPURenderer) {
   // finishes; what isn't compiled by then is compiled when it's first drawn.
   const compileAsync = renderer.compileAsync.bind(renderer);
   renderer.compileAsync = (...a: Parameters<typeof compileAsync>) => Promise.race([compileAsync(...a), new Promise<void>((r) => setTimeout(r, 10000))]);
-  const webgpu = 'isWebGPUBackend' in renderer.backend && renderer.backend.isWebGPUBackend === true;
+  // three.js sends every uniform buffer again each frame its object is drawn, changed or
+  // not. For matrices that is the whole array, once for each of the mesh's shaders that
+  // reads it: about 60 buffers and 600 KB a frame for the trees round Újezd. They are sent
+  // when their attribute's version has moved on (needsUpdate, as send() in gpu.ts sets it)
+  // or the buffer on the GPU is a new one.
+  if (webgpu) {
+    const updateBinding = backend.updateBinding.bind(backend);
+    backend.updateBinding = (binding: { isNodeUniformBuffer?: boolean; buffer: object }) => {
+      const attribute = binding.isNodeUniformBuffer && SEND_CHANGED_MATRICES.value ? matrices.get(binding.buffer) : undefined;
+      if (attribute) {
+        const data = backend.get(binding) as { buffer: unknown; sent?: unknown; sentVersion?: number };
+        if (data.sent === data.buffer && data.sentVersion === attribute.version) return;
+        data.sent = data.buffer;
+        data.sentVersion = attribute.version;
+      }
+      updateBinding(binding);
+    };
+  }
   setPatterned(groundMaterial, webgpu);
   setHeld(heldMaterial);
   console.info(`Renderer: three.js WebGPURenderer on ${webgpu ? 'WebGPU' : 'WebGL 2 (no WebGPU here)'}`);

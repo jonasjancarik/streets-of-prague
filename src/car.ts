@@ -1448,6 +1448,7 @@ export class CarPool {
     }
     geometry.setAttribute('doors', new THREE.InstancedBufferAttribute(new Float32Array(CarPool.pageCapacity * 4), 4));
     const mesh = mirrored(new THREE.InstancedMesh(geometry, material, CarPool.pageCapacity));
+    mesh.userData.sharedMatrices = true; // (see configureRenderer in webgpu.ts)
     mesh.count = 0;
     mesh.visible = false;
     mesh.castShadow = true;

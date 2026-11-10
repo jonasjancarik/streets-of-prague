@@ -364,8 +364,14 @@ These checks adapt Quiet Blocks' edit/reuse lessons to a moving city:
   final range already covers all drawn data.
 - **No `DynamicDrawUsage`.** three.js's WebGPU renderer uploads such an attribute every
   frame whether it changed or not, and whole once its ranges are used up.
-- An instanced mesh whose matrices fit a uniform buffer (≤ ~1000) is uploaded as a
-  uniform buffer every frame it's drawn; past that, as vertex data only when changed.
+- An instanced mesh with too many attributes for three.js's shared build (geometry
+  attributes + matrix + colour over 8: the trees, the people) and at most 1024 instances
+  keeps its matrices in a uniform buffer, which three.js sends every frame the mesh is
+  drawn, once for each place its shaders read it. `configureRenderer` in `src/webgpu.ts`
+  sends it only when the attribute's version moves on (`SEND_CHANGED_MATRICES`; 1 MB a
+  frame less on the drive, the woods twice as fast on an M5), so every write to an
+  instance matrix must set `needsUpdate` (`send()` does). Other meshes bind their
+  matrices as vertex data, sent only when changed.
 
 ## WebGPU
 

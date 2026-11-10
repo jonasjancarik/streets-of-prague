@@ -866,6 +866,7 @@ export function treePageFactory() {
     geom.setAttribute('outlineA', new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4).fill(1), 4));
     geom.setAttribute('outlineB', new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4).fill(1), 4));
     const mesh = mirrored(new THREE.InstancedMesh(geom, material, capacity));
+    mesh.userData.sharedMatrices = true; // (see configureRenderer in webgpu.ts)
     mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3);
     mesh.count = 0;
     mesh.visible = false;

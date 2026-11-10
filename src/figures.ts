@@ -247,6 +247,7 @@ export class Figures {
       g.setAttribute(k, (this.looks[k] = new THREE.InterleavedBufferAttribute(worn, 3, n * 3)));
     });
     this.mesh = new THREE.InstancedMesh(g, kit.material, capacity);
+    this.mesh.userData.sharedMatrices = true; // (see configureRenderer in webgpu.ts)
     this.mesh.customDepthMaterial = kit.depthMaterial;
     this.mesh.castShadow = this.mesh.receiveShadow = true;
     this.mesh.frustumCulled = false;

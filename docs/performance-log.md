@@ -911,3 +911,77 @@ the drive, 60 s), `e54f7365` served from a detached worktree:
   which the loading warm-up can't cover because they aren't in the first tiles. That is
   the lead for the main thread; whether it is what players feel waits for the
   statistics, since the weak machines are mostly limited by their GPUs.
+
+## 11 November 2026 — instance matrices sent only when they change
+
+three.js (r187) keeps an instanced mesh's matrices in a uniform buffer when the mesh has
+too many attributes for its shared build (geometry attributes + matrix + colour over 8:
+the tree pages with 9 + 2, the people with 9 + 1) and no more than 1024 instances, and
+`Bindings._update` sends every uniform buffer again each frame its object is drawn. The
+tree shaders read the matrix more than once, so each visible 128- or 256-tree page sent
+its whole array up to five times a frame: by Újezd about 0.75 MB a frame in some 60
+`writeBuffer` calls, in the Petřín woods 1.5 MB.
+
+`configureRenderer` now sends such a buffer only when its attribute's version has moved
+on (`needsUpdate`, which `send()` sets) or its GPU buffer is new (`SEND_CHANGED_MATRICES`
+in `src/webgpu.ts` switches it off, for `--ab`). Counted by `--stalls` on the M5 (WebGPU,
+High, 1×): `writeBuffer` 1.02 MB in 345 calls a frame → 0.03 MB in 229 on the drive,
+1.58 MB in 371 → 0.03 MB in 237 in the woods.
+
+`--ab` in one page, 30 s a scene, headless Chrome on the M5 at 1× and High (load average
+about 8 from other sessions; every window agreed in direction):
+
+| Scene | Off | On |
+|---|---|---|
+| woods | 16.4 ms (61 fps) | 7.2 ms (140 fps) |
+| drive | 3.9 ms (258 fps) | 3.1 ms (320 fps) |
+| stand | 3.4 ms | 3.2 ms |
+| woods, CPU 4× | 11.8 ms | 10.0 ms |
+| drive, CPU 4× | 13.8 ms | 12.0 ms |
+
+On the Pixel 5 (Medium, 1.5×, 60 s of the drive, `--ab`) it made no difference that could
+be measured: 55.1 against 55.5 ms a frame, JavaScript 22.7 against 23.0 ms. (A first run
+read 9 % quicker, but something was touching the phone's screen during it and its windows
+swung between 8 and 20 fps.) The phone is not held back by the main thread at that tier:
+see the sweep below.
+
+Checked: screenshots in the woods and Letná park match with the switch on and off (0.2 %
+and 1.0 % of pixels differ, the same as two runs with it on); after four 45–50 s drives no
+matrix buffer on the GPU differed from its array except pages changed but not drawn since
+(their version ahead of the one sent, so they go at the next draw).
+
+The same change marks matrices that are too many for a uniform buffer as storage before
+anything is built for their mesh (`userData.sharedMatrices`). Until now `shareInstances`
+did that while the colour shader was built. If the shadow shader is built first, three.js's
+own instancing has already made the buffer for vertex input, and the storage binding is
+refused: the phone logged exactly that once on the Old Town Square ("Binding usage
+(CopySrc|CopyDst|Vertex) … doesn't match expected usage (Storage)", then invalid bind
+groups and command buffers). It could not be made to happen again, so the cause is
+reasoned, not reproduced.
+
+### What limits the Pixel 5 (standing on the Old Town Square, 20 s each, 33–34 °C)
+
+| Tier, pixel ratio | Frame (mean) | Median | JavaScript |
+|---|---|---|---|
+| Medium, 0.75× | 18.5 ms (54 fps) | 22.3 ms | 16.9 ms |
+| Medium, 1× | 22.5 ms (44 fps) | 22.3 ms | 18.2 ms |
+| Medium, 1.5× | 33.7 ms (30 fps) | 33.4 ms | 18.7 ms |
+| Medium, 2× | 49.8 ms (20 fps) | 33.8 ms | 21.9 ms |
+| Low, 1× | 20.6 ms (49 fps) | 22.3 ms | 16.8 ms |
+| Lowest, 1× | 17.7 ms (57 fps) | 22.2 ms | 16.0 ms |
+
+The mean rises by about 9 ms for each 1× of pixels (2.5 million), so at 1.5× and above
+the GPU sets the pace and main-thread savings don't show. At 1× and below the median sits
+at two screen refreshes (22 ms at 90 Hz) because the JavaScript alone takes 16–18 ms, of
+which `renderer.render` is 7 ms, the crowd 3 ms and the traffic 3 ms. In the Petřín woods
+at Medium and 1.5× it draws 5.7 million triangles at about 9 fps with 22 ms of JavaScript.
+
+A CPU profile of the drive on the phone (Auto, which went down to Lowest): three.js's
+drawing of each object 31 % of the main thread's busy time (211 objects a frame on
+Medium, counted on the M5, 17 of them instanced meshes with nothing in them), shader builds 9 % (Auto's
+tier steps), `traffic.update` 8 %, sending uniform buffers 5 % (before this change), the
+garbage collector 4 %, the crowd 3 %, `CarPool.render` 3 %.
+
+The phone's Chrome had 217 tabs open from earlier test runs of several projects, and a
+second scene in one run closed the page each time; one scene a run worked.
+
