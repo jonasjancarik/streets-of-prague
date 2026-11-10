@@ -391,3 +391,56 @@ Ask first:
     street's height at their ends instead of the bare earth, and the river's decks
     and steps are as good as today's. Not before: today's survey map with step 2's
     rules has the bridges right.
+- 10 November 2026, **car streets from the LiDAR's road** (`_scan_streets` in
+  `dtm_heights.py`, on by default, `--no-scan-streets` to compare). Step 3 for the
+  streets only: the ground beside them, the bridges and the river stay as they were.
+  - **The cause at 5. května over Hvězdova:** its carriageway before the bridge is wider
+    than OSM says, so none of its own kerbs were within reach of `_level_across`, and
+    the only ones that were belonged to Hvězdova in its cutting, 5 m down: a pit 4 m
+    deep. Rules that kept such kerbs out (one far off the street's own lattice heights,
+    one crossing the street instead of running along it) each fixed one street and
+    broke another (Italská over its passage), so they were dropped.
+  - **The rule:** every metre along a car street on the ground, the scan at five points
+    across the carriageway, the middle value, smoothed along the street over 3 m; the
+    carriageway and the surveyed street surface out to 4 m past the kerb take it, level
+    kerb to kerb, and the ground out to 4.5 m too where the scan there agrees within
+    2 m (a shoulder: left on a bank, the lattice tilted the street's edge up it). Not
+    under the map's decks or in tunnels; within 6 m of them and of kerbs on another
+    level, only along stretches that run on unbroken from clear ground (the scan is the
+    ground under a deck from the abutment's edge on). Where no surveyed point within
+    12 m agrees with the scan and it's more than 2–3 m off what the street had, it
+    counts less, then not at all (an excavation, a new road). Tuned on 30 places (58 for the first versions) with
+    `window.py` (a few tiles built in seconds) and the offline checks.
+  - **City build** (34 min), against the map before it (`report-hand`, `decks-hand`):
+
+    | Car streets over the hard limit | before | after |
+    |---|---|---|
+    | Steps over 1 m | 11 | 7 |
+    | Bumps over 0.5 m | 462 | 260 |
+    | Leaning over 15 % | 2,826 | 940 |
+    | Ridge or trough over 1 m | 98 | 80 |
+    | Twisting over 12 % | 2,263 | 710 |
+    | Waves over 0.3 m (2 m either side) | 1,676 | 738 |
+    | Waves over 0.6 m (5 m either side) | 2,109 | 839 |
+    | Waves over 1.5 m (12 m either side) | 623 | 431 |
+
+    Against the LiDAR: 86.7 → 99 % of carriageway within 0.3 m, 1.23 → 0.49 % more
+    than 1 m off; streets whose worst is over 1 m off 311 → 263 by a bridge or tunnel,
+    88 → 18 by a wall's terrace, 2,198 → 584 by neither. Bridge joins over 0.5 m 224 →
+    223, over 1 m 117 → 114; 8 joins better by more than half a metre (8.51 → 1.89 m,
+    7.27 → 0.69, 4.64 → 0.07, 4.53 → 0.08) and 9 worse, three of them footways' ends by
+    about 3 m (Nový Zlíchov at 50.04875, 14.40786; a footway at Malovanka, 50.08849,
+    14.38055; Bubenská's over the railway, 50.09853, 14.43722). The river check fails
+    as it did before, on the same low deck (room −0.59 → −0.62 m, tile 54_48). The
+    tiles' size doesn't change. Pictures: `scan-streets-before-after.jpg` and
+    `scan-shots/` in the evidence.
+  - **Tried and dropped:** where the scan has two streets side by side at two heights
+    (nábřeží Edvarda Beneše over the quay road, Malovanka's trunk link, Táborská at
+    náměstí Hrdinů, Palackého's busway), the street below takes a row of points on the
+    wall's top edge, whose scan within 1 m has both levels. Keeping a point that already
+    matches the scan, or giving a point beside two streets to the one the scan agrees
+    with, fixed Edvarda Beneše's edge but left holes elsewhere: over 30 places leaning
+    95 → 99 and 96, twisting 99 → 106 and 100 streets. A wall between carriageways more
+    than about 1.5 m apart is the next thing to try.
+  - Left: those side-by-side places; the three footway joins above; Ryšavého's walls
+    (steps 6.2 and 5.5 m, as before); the trunk at 49.9423, 14.3674 (a bump of 5.6 m).

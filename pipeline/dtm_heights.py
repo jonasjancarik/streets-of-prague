@@ -25,6 +25,10 @@ the terrain's lattice:
   where averaging made a pit 3 m deep;
   (not where the map has a tunnel or an underpass and the survey is well below the
   terrain model: that's the street in the underpass, and the ground is the one over it);
+- a car street is levelled across from its kerbs (_level_across), and then, on the
+  ground and where the LiDAR is imported, takes the scan's road between them
+  (_scan_streets, see SCAN_ACROSS): the kerbs alone made streets lean, twist and wave on
+  the 4 m lattice;
 - the ground within SHOULDER of a surveyed street is level with it, and from there to
   FEATHER goes over into the slope (moved by what the survey changed on the street
   points round about, fading with the distance);

@@ -4,7 +4,7 @@ never touches the map in public/data or the build's caches.
 
     cd pipeline
     uv run python ../.agents/skills/terrain-steps/window.py praha <lat> <lon> --npz out.npz
-    uv run python ../.agents/skills/terrain-steps/window.py praha <lat> <lon> --data /tmp/try/data --set OWN=2.0
+    uv run python ../.agents/skills/terrain-steps/window.py praha <lat> <lon> --data /tmp/try/data --set SCAN_OFF=1.0
 
 --npz: x, y (the lattice points' local metres), h and label (rows from the south), and
 bare (the terrain model before the survey). window_diff.py compares two of them.

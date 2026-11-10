@@ -34,7 +34,19 @@ worktree with its own copies of the data (APFS clones: `public/data/praha_now`,
 
    The `survey:` line says how many points each rule touched; a count that jumps says
    more than the pictures will.
-2. **Then `praha`**: about 16 minutes. Don't edit anything in `pipeline/` while it
+   **Or on a few tiles of `praha` anywhere** (`window.py`, 5–25 seconds): the build for
+   5 × 5 tiles round a place, written as an `.npz` (`window_diff.py` tabulates it
+   against the terrain model and the LiDAR, or diffs two) or as a map folder the offline
+   checks read with `--data` and `--near <lat>,<lon>,120`. `--set NAME=value` changes a
+   constant for one run, so a rule can be tuned over many places without a city build:
+
+       uv run python ../.agents/skills/terrain-steps/window.py praha 50.05296 14.44106 --npz /tmp/a.npz
+       uv run python ../.agents/skills/terrain-steps/window_diff.py table /tmp/a.npz <x> <y>
+
+   To try a rule while a `praha` build runs, copy `pipeline/*.py` and its JSON files to a
+   scratch folder with `.cache` and `.venv` linked in, and the two scripts beside it as
+   `.agents/skills/terrain-steps/`: `window.py` finds the pipeline next to itself.
+2. **Then `praha`**: 17–35 minutes. Don't edit anything in `pipeline/` while it
    runs: the build checks its own code at the end and refuses its output if a file
    changed. Write the next change somewhere else meanwhile.
 3. **Measure the bridges.** With the dev server and the scene server up (the
@@ -210,6 +222,15 @@ steeper than VALLEY anywhere, which took steps over 1 m from 71 to 38.
   bridge's end takes the ground's height at its last node, and without the deck's
   kerbs there Malovanka's slip road met its street 7 m up. Where a lattice point's
   nearest kerbs are on two levels, the scan picks the one it agrees with.
+- Since 10 November 2026 a car street on the ground takes the LiDAR's road between its
+  kerbs (`_scan_streets`, `--no-scan-streets` to compare): the scan's middle value
+  across the carriageway every metre, smoothed along the street, level kerb to kerb,
+  with a shoulder out to 4.5 m. The survey's kerbs alone made a street lean, twist and
+  wave on the 4 m lattice, and at 5. května over Hvězdova the kerbs of the street in
+  the cutting made a pit 4 m deep. Not under decks or in tunnels, and near them only on
+  stretches that run on unbroken from clear ground. In the city: leaning over 15 %
+  2,826 → 940 streets, bumps over 0.5 m 462 → 260, 99 % of carriageway within 0.3 m of
+  the LiDAR (was 86.7 %).
 - A path down a bank is narrower than the lattice, so only a point here and there took
   the survey's height and the slope came out in teeth. The ground within 14 m of a
   surveyed street now moves with it (`FEATHER`); `--no-feather` to compare.
@@ -383,5 +404,7 @@ rule here will fix that.
   their ends. `list_bridges.py` writes it from praha's layers.
 - `bridges.mjs`: `measure` and `shots`, through the scene server.
 - `terrain_at.py`: the lattice round a place.
+- `window.py`, `window_diff.py`: the terrain build for a few tiles, and its tables and
+  diffs against the LiDAR (see "The loop").
 - `scripts/check-bridge-decks.mjs` (in the repo's scripts): the decks checked offline.
 - `pairs.py`: two runs' screenshots side by side.
