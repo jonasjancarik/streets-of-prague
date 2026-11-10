@@ -19,6 +19,8 @@ type Fields = Record<string, string | number>;
 const HITCH = 100;  // ms: a frame this long is felt as a stutter
 const STALL = 250;  // …and this long as a freeze
 const PAUSE = 2000; // longer is the tab coming back, not a frame
+// What made the frames over HITCH long (hitches.ts), in worker/stats.js's order.
+const HITCH_CAUSES = ['hitchShaders', 'hitchTiles', 'hitchDrawing', 'hitchGame', 'hitchScripts', 'hitchGpu', 'hitchWaiting', 'hitchUnknown'];
 const MOST_ROWS = 40; // activities in one request (worker/stats.js takes no more)
 const MOST_ERRORS = 5; // a session; an error that repeats every frame is sent once
 
@@ -149,6 +151,8 @@ export function spent(what: string, amount: number) {
 // What the game counts itself (cars wrecked, money…), read when a summary is sent.
 export function summary(read: () => Fields) { totals = read; }
 export function count(name: string, by = 1) { counts[name] = (counts[name] ?? 0) + by; }
+// A frame over 100 ms, by its cause (hitches.ts).
+export function hitch(name: string) { if (started) count(name); }
 export function most(name: string, value: number) { counts[name] = Math.max(counts[name] ?? 0, value); }
 
 // Once a frame: how long it took, and what the player is doing where.
@@ -180,7 +184,8 @@ function flush() {
   const r = Math.round;
   send('frames', {
     renderer, graphics: graphicsNow, tier: lastTier, seq, seconds: r(seconds), frames,
-    medianMs: percentile(0.5), p95Ms: percentile(0.95), hitches, stalls, tierChanges, tileFailures: counts.tileFailures ?? 0,
+    medianMs: percentile(0.5), p95Ms: percentile(0.95), hitches, stalls, tierChanges, tileFailures: counts.tileFailures ?? 0, cappedWindows: counts.cappedWindows ?? 0,
+    ...Object.fromEntries(HITCH_CAUSES.map((c) => [c, counts[c] ?? 0])),
   });
   send('play', {
     seq, seconds: r(seconds), foot: r(modes.foot), car: r(modes.car), tram: r(modes.tram), taxi: r(modes.taxi), other: r(modes.other),

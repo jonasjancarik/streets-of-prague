@@ -501,6 +501,8 @@ export class TileWorld {
   private street = false;
   private reveal: THREE.Object3D[] = [];
   sliceMs = 8;
+  // Tiles that have joined the scene so far (the frame after draws them for the first time).
+  joined = 0;
   buildTimes: number[];
   skyTotals: { coalesced: number; cancelled: number };
   landmarks: Promise<Landmark[]>; landmarkModels: Map<string, Promise<THREE.Group | null>>;
@@ -1374,7 +1376,8 @@ export class TileWorld {
       ...edges.flatMap((e) => bridgeApproaches(e).map((pts) => ({ pts, half: e.width / 2 + 2.5, hw: 'drive' }))),
       ...(this.walkBy.get(k) || []).filter((e) => !e.bridge && !e.tunnel).flatMap((e) => clipLine(e.pts, t.box).map((pts) => ({ pts, half: Math.max(1.5, e.width / 2 + 0.5), hw: e.hw }))),
     ];
-    const outlines = t.buildings.filter(grounded).map((b) => ({ rings: b.rings }));
+    // (A monument that is no building on the map stands in the way like one.)
+    const outlines = [...t.buildings.filter(grounded).map((b) => ({ rings: b.rings })), ...marks.filter((l) => l.solid).flatMap((l) => l.polygons.map((rings) => ({ rings })))];
     const reservedAll = await this.furnitureReserved, reserved: number[] = [];
     for (let n = 0; reservedAll && n < reservedAll.length; n += 2) {
       const x = reservedAll[n], y = reservedAll[n + 1];
@@ -1611,6 +1614,7 @@ export class TileWorld {
     this.trees.add(k, s.trees);
     if (this.street && !this.urgent) group.traverse((o) => { if (o !== group && o.visible && (o as THREE.Mesh).geometry) { o.visible = false; this.reveal.push(o); } });
     this.scene.add(group);
+    this.joined++;
     tile.drawn = { group, surfaces, own: [...buildings, ...(hidden ? [hidden] : [])], smoke };
     lap('meshes');
   }

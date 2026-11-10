@@ -19,7 +19,8 @@ export const SCHEMA = {
   // Totals since the start of the session; `seq` counts the reports, the last one holds the session.
   frames: {
     blobs: ['renderer', 'graphics', 'tier'],
-    doubles: ['seq', 'seconds', 'frames', 'medianMs', 'p95Ms', 'hitches', 'stalls', 'tierChanges', 'tileFailures'],
+    doubles: ['seq', 'seconds', 'frames', 'medianMs', 'p95Ms', 'hitches', 'stalls', 'tierChanges', 'tileFailures', 'cappedWindows',
+      'hitchShaders', 'hitchTiles', 'hitchDrawing', 'hitchGame', 'hitchScripts', 'hitchGpu', 'hitchWaiting', 'hitchUnknown'],
   },
   play: {
     blobs: [],

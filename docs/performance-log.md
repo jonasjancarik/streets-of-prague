@@ -856,3 +856,58 @@ Kongresová view stayed at 175. Mean frame time switched direction with run
 order, and the raster variant's slow-frame tail was higher in both pairs.
 See [the shared asphalt trial](tiny-prague-road-rendering.md#shared-asphalt-trial-6-november-2026)
 for frame, worker and raw buffer measurements.
+
+## 9 November 2026 — Auto and a 30 fps cap
+
+Telemetry from 1 October to 9 November showed 22 sessions on fast GPUs (Apple silicon,
+RTX, RDNA), all in Chrome, running at a steady 33 ms; 14 of them ended on Lowest.
+Auto aims for 40 frames a second, so a frame rate the browser holds at 30 (Chrome's
+Energy Saver) or a 30 Hz screen read as too slow, and Auto stepped down to the bottom,
+counting windows towards the "needs a better computer" hint on the way.
+
+On WebGPU, Auto now also times each frame's work: the longer of the main thread's part
+and the time from handing the frame to the GPU to `onSubmittedWorkDone`. A slow window
+whose median work is under half its median frame interval is held (`cappedWindows` in
+the `frames` report). In the in-app browser on an M5 at 2560 × 1600, with
+requestAnimationFrame thinned to every other frame (33.3 ms), the old behaviour went
+High → Medium → Low → Lowest in 16 s; the new one stayed on High for 26 s, holding 12
+windows. Uncapped it stayed on High. With the CPU slowed 6× in headless Chrome (frames
+of 50 ms that are all work) it still stepped down to Lowest. The GPU's answer comes
+late: from the start of drawing it read 17–18 ms even on Low under the cap, so timing
+it from there sent Auto down to Low; from the hand-over it read 10–14 ms across the
+tiers. A hidden pane never presents, so its GPU work piles up and the timing grows
+without bound (80 ms at pixel ratio 4 while frames came every 17 ms); that only makes
+frames look busier. WebGL is unchanged. No phone or Windows machine was measured.
+
+## 9 November 2026 — what makes a frame over 100 ms
+
+The statistics (1 October–9 November) put weak machines at 60 fps on the lowest levels
+but with many frames over 100 ms: about 30 a minute on older Intel graphics, 11–12 on
+older Android, 1.5–2 on fast GPUs, and 50 a minute on weak GPUs with four cores or
+fewer. They didn't say why. `src/hitches.ts` now puts each such frame down to one cause
+in the `frames` report (`hitchShaders`, `hitchTiles`, `hitchDrawing`, `hitchGame`,
+`hitchScripts`, `hitchGpu`, `hitchWaiting`, `hitchUnknown`; docs/telemetry.md), so the
+players' own machines will say.
+
+Checked against `bench.mjs --hitches` on the M5 (headless Chrome, WebGPU, High, 1×,
+the drive, 60 s), `e54f7365` served from a detached worktree:
+
+- **The GPU's answer can't be compared with main-thread time.** In a first version the
+  GPU took the blame for 9 of 19 frames over 100 ms with the CPU slowed 4×, frames the
+  detailed recorder put down to builds and tiles: `onSubmittedWorkDone` is answered
+  only when the main thread is free, so a busy frame looks like a busy GPU. The GPU is
+  now blamed only when nothing on the main thread explains the frame.
+- **A tile's first drawing is the tile's.** The frame after a tile joins the scene drew
+  for 121 ms with no build in it (CPU 4×); it now counts as `hitchTiles`, not drawing.
+- **Agreement:** with the CPU slowed 6× (machine quieter, 30 fps), two frames over
+  100 ms in the timed minute: a build (102 ms, both say shaders) and one the detailed
+  recorder couldn't place (118 ms; the game's verdict: the GPU).
+- **What the drives showed:** with the CPU slowed 4× on a loaded machine (other
+  sessions at load average 20–50), 9 of 18 frames over 100 ms were shader builds, 4 a
+  tile's first drawing, 1 a 320 ms `writeBuffer`. Builds were 34–39 a drive, and
+  `MeshLambertNodeMaterial ground` 15 of them each time (443–670 ms, up to 46–76 ms
+  each): ground variants (`groundGraph`'s key: pattern, relief, sky, deck, mask,
+  photo, raster, dig, sheltered, seasonal) meeting the camera for the first time,
+  which the loading warm-up can't cover because they aren't in the first tiles. That is
+  the lead for the main thread; whether it is what players feel waits for the
+  statistics, since the weak machines are mostly limited by their GPUs.

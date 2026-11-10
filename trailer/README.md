@@ -144,6 +144,26 @@ cargo run --release --bin launch -- render && street/finish.sh out.mp4 launch.mp
 cargo run --release --bin launch -- render --czech && street/finish.sh out.mp4 launch-cs.mp4
 ```
 
+There is a second cut, `launch2.mp4` and `launch2-cs.mp4` (29 seconds, 9 November 2026,
+when the Old Town Square got its Jan Hus memorial and Marian column). It opens on the
+square, coming down between the two with the café parasols out and pigeons about, where
+the first opens on the Castle; and where St. Nicholas was it has an afternoon at the
+start of November on Karlovo náměstí: you run into the park through the fallen leaves
+and the pigeons there fly up. The gulls over the river in the helicopter shot and the
+umbrellas on Vodičkova are in both. `plan.py` holds both cuts (`CUT=2`), `film.sh` films
+the shots of both, and `launch/render.sh 1` or `2` makes the plan, the sound and the
+two languages of one cut:
+
+```sh
+trailer/launch/film.sh                      # every shot of both cuts (about 12 minutes)
+trailer/launch/render.sh 1                  # launch.mp4, launch-cs.mp4
+trailer/launch/render.sh 2                  # launch2.mp4, launch2-cs.mp4
+```
+
+The birds move with the live game, not with `t.wait`, so a shot that wants them in the
+air waits in real time before filming (`square`), and one that wants them to fly up puts
+them where you will be a second into it (`autumn`).
+
 Every shot is filmed on Ultra with WebGPU and the river's waves and reflections on
 (`begin` in `lib.js` turns them on, and stops if WebGPU isn't there); with another
 session's scene server on 5199, run yours on another port and `PORT=<port> film.sh`. In

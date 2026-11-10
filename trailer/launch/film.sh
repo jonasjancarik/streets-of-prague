@@ -7,10 +7,11 @@ set -e
 cd "$(dirname "$0")/../.."
 OUT=${OUT:-/tmp/launch-frames}
 PORT=${PORT:-5199}
-[ $# -gt 0 ] || set -- castle getin tram heli mikulas rain chase rise
+# (The shots of both cuts: see plan.py.)
+[ $# -gt 0 ] || set -- castle square getin tram heli mikulas autumn rain chase rise
 mkdir -p trailer/launch/sound trailer/clips
 for shot in "$@"; do
-  frames=$(python3 -c "import json; p=json.load(open('trailer/launch/plan.json')); print(p['filmed'] + 12 if '$shot' == 'rise' else p['shots']['$shot'])")
+  frames=$(python3 -c "import json; p=json.load(open('trailer/launch/plan.json')); print(p['filmed'] + 12 if '$shot' == 'rise' else p['shots'].get('$shot') or $((${SECONDS_OF:-3} * 30 + 12)))")
   rm -f "$OUT/$shot"-*.png "$OUT/$shot.wav"
   # (scene.mjs eval loses long answers through a pipe: the answer is short.)
   node scripts/scene.mjs eval --port "$PORT" "const SHOT = '$shot', FRAMES = $frames, PLAN = $(cat trailer/launch/plan.json); $(cat trailer/launch/lib.js trailer/launch/shots.js); return { ...(await SHOTS[SHOT]()), where: t.where().street };" | grep -v "screenshot:" | tr '\n' ' '

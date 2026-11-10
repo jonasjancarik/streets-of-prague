@@ -5,11 +5,12 @@ import type { LayerSpecification, SourceSpecification } from '@maplibre/maplibre
 import { RED, foldCredits, loadMapLibre, posterStyle } from './postermap.ts';
 import type { MapIndex } from './contracts.ts';
 import type { Bounds, Point2 } from './map/geo.ts';
-import type { Graphics, Choice } from './graphics.ts';
+import { CHOICES, type Graphics, type Choice } from './graphics.ts';
 import { MIST, MIST_DEFAULT, MOST_SHEETS, type Kind, type Mist } from './weather.ts';
 import { LOCAL_MIST, LOCAL_MIST_DEFAULT, MIST_MODE, supportsLocalMist, type MistMode, type LocalMistSettings } from './localmist.ts';
 import type { Testkit } from './testkit.ts';
 import { gunOn, setGun } from './pistol.ts';
+import { did } from './telemetry.ts';
 
 // far: a place out of the game's reach, [lat, lon]; going there reloads the game.
 interface DevHit { label: string; x: number; y: number; far?: [number, number] }
@@ -23,6 +24,26 @@ interface StreetName { name: string; key: string; x: number; y: number }
 // set the time of day, the weather and the graphics; and the testing tools (pause, slow
 // motion, money, stars, scenarios). Street names come from the area's own index
 // (offline); addresses are looked up on OpenStreetMap's Nominatim only when you ask.
+
+// The panel's sections fold away when you click their heading; this browser remembers
+// which ones you folded.
+const FOLDED_KEY = 'dev-folded';
+const folded = (): Set<string> => {
+  try {
+    const list: unknown = JSON.parse(localStorage.getItem(FOLDED_KEY) ?? '[]');
+    return new Set(Array.isArray(list) ? list.filter((s): s is string => typeof s === 'string') : []);
+  } catch { return new Set(); }
+};
+const section = (id: string, title: string, body: string) =>
+  `<details class="dev-sec" data-sec="${id}"${folded().has(id) ? '' : ' open'}><summary class="dev-sub">${title}</summary><div class="dev-body">${body}</div></details>`;
+// ('toggle' doesn't bubble, so it's caught on the way down.)
+const rememberFolds = (root: HTMLElement) => root.addEventListener('toggle', (ev) => {
+  const d = ev.target;
+  if (!(d instanceof HTMLDetailsElement) || !d.dataset.sec) return;
+  const set = folded();
+  if (d.open) set.delete(d.dataset.sec); else set.add(d.dataset.sec);
+  try { localStorage.setItem(FOLDED_KEY, JSON.stringify([...set])); } catch { /* storage is off */ }
+}, true);
 
 const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
@@ -116,54 +137,52 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
       <button id="dev-map">Pick a spot on the map</button>
       <button id="dev-link" title="Copies a link that starts the game here">Copy link to this spot</button>
     </div>
-    <div class="dev-sub">Where you are</div>
-    <div class="dev-row">
-      <span id="dev-pos"></span>
-      <button id="dev-copy" title="Copies your latitude and longitude, e.g. to paste into a conversation">Copy coordinates</button>
-    </div>
-    <div class="dev-row dev-links">
-      <a id="dev-google" target="_blank" rel="noopener">Google Maps</a>
-      <a id="dev-street" target="_blank" rel="noopener" title="Google Street View here, looking the way you face">Street View</a>
-      <a id="dev-mapy" target="_blank" rel="noopener">Mapy.cz</a>
-    </div>
-    <div class="dev-sub">Make something happen</div>
-    <div class="dev-row dev-grid">
-      <button id="dev-heli" title="Walk up to it and press E to fly it">Helicopter next to me</button>
-      <button id="dev-road" title="Puts the car you are driving back on the nearest road">Back on the road</button>
-      <button id="dev-fire" title="The fire brigade comes from out of view">Set the nearest car on fire</button>
-      <button id="dev-hurt" title="An ambulance comes from out of view">Leave the nearest person hurt</button>
-    </div>
-    <div class="dev-sub">World</div>
-    <label class="dev-time">Time of day <span id="dev-time-label"></span>
-      <input id="dev-time" type="range" min="0" max="1439" step="5" title="The trams follow the timetable for the new time" />
-    </label>
-    <label class="dev-time">Date <span id="dev-date-label"></span>
-      <input id="dev-date" type="range" min="1" max="365" step="1" title="The trees, the sun and the weather follow the date" />
-    </label>
-    <label class="dev-time">Graphics <span id="dev-graphics-label"></span>
-      <select id="dev-graphics">
-        <option value="auto">Auto</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option><option value="lowest">Lowest</option>
-      </select>
-    </label>
-    <label class="dev-time">Weather <span id="dev-weather-label"></span>
-      <select id="dev-weather">
-        <option value="auto">Changing by itself</option>${weather.kinds.map((k) => `<option value="${k}">${k[0].toUpperCase()}${k.slice(1)}</option>`).join('')}
-      </select>
-    </label>
-    <label class="dev-time">Past the map's edge
-      <select id="dev-country" title="Reloads the game">
-        <option value="">Nothing, the map ends</option><option value="file">Countryside from the downloaded file</option><option value="live">Countryside anywhere, live from OpenStreetMap</option>
-      </select>
-    </label>
-    <details id="dev-mist">
-      <summary>Mist</summary>
-      <div id="dev-mist-rows"></div>
+    ${section('where', 'Where you are', `
       <div class="dev-row">
-        <button id="dev-mist-copy" title="Copies the values, to paste into a conversation or into src/weather.ts">Copy values</button>
-        <button id="dev-mist-reset" title="Back to the values the game ships with">Reset</button>
+        <span id="dev-pos"></span>
+        <button id="dev-copy" title="Copies your latitude and longitude, e.g. to paste into a conversation">Copy coordinates</button>
       </div>
-      <div class="dev-note">Your changes stay in this browser until you press Reset.</div>
-    </details>
+      <div class="dev-row dev-links">
+        <a id="dev-google" target="_blank" rel="noopener">Google Maps</a>
+        <a id="dev-street" target="_blank" rel="noopener" title="Google Street View here, looking the way you face">Street View</a>
+        <a id="dev-mapy" target="_blank" rel="noopener">Mapy.cz</a>
+      </div>`)}
+    ${section('happen', 'Make something happen', `
+      <div class="dev-row dev-grid">
+        <button id="dev-heli" title="Walk up to it and press E to fly it">Helicopter next to me</button>
+        <button id="dev-road" title="Puts the car you are driving back on the nearest road">Back on the road</button>
+        <button id="dev-fire" title="The fire brigade comes from out of view">Set the nearest car on fire</button>
+        <button id="dev-hurt" title="An ambulance comes from out of view">Leave the nearest person hurt</button>
+      </div>`)}
+    ${section('world', 'World', `
+      <label class="dev-slide" title="The trams follow the timetable for the new time">Time
+        <input id="dev-time" type="range" min="0" max="1439" step="5" /><span id="dev-time-label"></span>
+      </label>
+      <label class="dev-slide" title="The trees, the sun and the weather follow the date">Date
+        <input id="dev-date" type="range" min="1" max="365" step="1" /><span id="dev-date-label"></span>
+      </label>
+      <label class="dev-pick"><span>Graphics <em id="dev-graphics-label"></em></span>
+        <select id="dev-graphics">${CHOICES.map((c) => `<option value="${c}">${c[0].toUpperCase()}${c.slice(1)}</option>`).join('')}</select>
+      </label>
+      <label class="dev-pick"><span>Weather <em id="dev-weather-label"></em></span>
+        <select id="dev-weather">
+          <option value="auto">Changing by itself</option>${weather.kinds.map((k) => `<option value="${k}">${k[0].toUpperCase()}${k.slice(1)}</option>`).join('')}
+        </select>
+      </label>
+      <label class="dev-pick" title="What lies past the edge of the built map. Changing it reloads the game"><span>Past the map's edge</span>
+        <select id="dev-country">
+          <option value="">Nothing</option><option value="file">Countryside from the file</option><option value="live">Live countryside, anywhere</option>
+        </select>
+      </label>
+      <details id="dev-mist">
+        <summary>Mist</summary>
+        <div id="dev-mist-rows"></div>
+        <div class="dev-row">
+          <button id="dev-mist-copy" title="Copies the values, to paste into a conversation or into src/weather.ts">Copy values</button>
+          <button id="dev-mist-reset" title="Back to the values the game ships with">Reset</button>
+        </div>
+        <div class="dev-note">Your changes stay in this browser until you press Reset.</div>
+      </details>`)}
     <div id="dev-bench"></div>`;
   panel.style.maxHeight = 'calc(100vh - 32px)';
   panel.style.overflowY = 'auto';
@@ -172,6 +191,16 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
     #dev .dev-here { align-items: center; }
     #dev .dev-here span { flex: 1; font-variant-numeric: tabular-nums; }
     #dev .dev-sub { margin-top: 6px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.12); font: 11px/1 'IBM Plex Mono', monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
+    #dev .dev-sec > summary { display: flex; justify-content: space-between; list-style: none; cursor: pointer; user-select: none; }
+    #dev .dev-sec > summary::-webkit-details-marker { display: none; }
+    #dev .dev-sec > summary::after { content: '−'; opacity: 0.7; }
+    #dev .dev-sec:not([open]) > summary::after { content: '+'; }
+    #dev .dev-sec > summary:hover { color: var(--ink); }
+    #dev .dev-body { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+    #dev .dev-pick { display: grid; grid-template-columns: 128px 1fr; gap: 8px; align-items: center; }
+    #dev .dev-pick em { font-style: normal; opacity: 0.6; font-size: 12px; }
+    #dev .dev-pick select { min-width: 0; }
+    #dev .dev-body[hidden], #dev-out:empty { display: none; }
     #dev input[type=number] { width: 90px; padding: 4px 6px; }
     #dev .dev-check { display: flex; gap: 6px; align-items: center; }
     #dev .dev-check input { margin: 0; }
@@ -183,6 +212,7 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
     #dev-out { font-size: 12px; white-space: pre-wrap; max-height: 220px; overflow: auto; }`;
   document.head.appendChild(style);
   panel.hidden = true;
+  rememberFolds(panel);
   document.body.appendChild(panel);
   const $ = (id: string): HTMLElement => {
     const el = document.getElementById(id);
@@ -202,6 +232,7 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
     if (text) results.appendChild(Object.assign(document.createElement('div'), { className: 'dev-note', textContent: text }));
   };
   const go = async (x: number, y: number, label: string) => {
+    did('dev: jumped to a place');
     showNote(`Going to ${label}…`);
     if (bench?.free()) { const [lon, lat] = toLonLat(x, y); await bench.look(lat, lon); } else await teleport(x, y);
     results.replaceChildren();
@@ -272,17 +303,18 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
 
   const pick = $('dev-graphics') as HTMLSelectElement;
   pick.value = graphics.choice;
-  pick.onchange = () => graphics.set(pick.value as Choice);
+  pick.onchange = () => { did('dev: changed graphics'); graphics.set(pick.value as Choice); };
   pick.addEventListener('keydown', (ev) => { if (ev.code !== 'Backquote') ev.stopPropagation(); });
   const sky = $('dev-weather') as HTMLSelectElement;
   sky.value = weather.get();
-  sky.onchange = () => weather.set(sky.value as Kind | 'auto');
+  sky.onchange = () => { did('dev: changed weather'); weather.set(sky.value as Kind | 'auto'); };
   sky.addEventListener('keydown', (ev) => { if (ev.code !== 'Backquote') ev.stopPropagation(); });
   // Past the map's edge: the game is opened again with or without ?countryside.
   const country = $('dev-country') as HTMLSelectElement;
   const opened = new URLSearchParams(location.search);
   country.value = opened.has('at') || opened.get('countryside') === 'live' ? 'live' : opened.has('countryside') ? 'file' : '';
   country.onchange = () => {
+    did('dev: changed countryside');
     const u = new URL(location.href);
     if (country.value === 'live') u.searchParams.set('countryside', 'live');
     else if (country.value === 'file') u.searchParams.set('countryside', '');
@@ -297,12 +329,13 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
   const time = $('dev-time') as HTMLInputElement;
   let dragging = false;
   time.oninput = () => { dragging = true; setTimeOfDay(+time.value * 60); };
-  time.onchange = () => { dragging = false; };
+  time.onchange = () => { dragging = false; did('dev: changed time of day'); };
   // Arrow keys move the slider, not the player.
   time.addEventListener('keydown', (ev) => { if (ev.code !== 'Backquote') ev.stopPropagation(); });
   time.addEventListener('keyup', (ev) => ev.stopPropagation());
   const date = $('dev-date') as HTMLInputElement;
   date.oninput = () => season.set(+date.value);
+  date.onchange = () => did('dev: changed date');
   date.addEventListener('keydown', (ev) => { if (ev.code !== 'Backquote') ev.stopPropagation(); });
   date.addEventListener('keyup', (ev) => ev.stopPropagation());
   $('dev-copy').onclick = async () => {
@@ -311,17 +344,20 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
     flash($('dev-copy'), 'Copied', 'Copy coordinates');
   };
   $('dev-fire').onclick = () => {
+    did('dev: set a car on fire');
     const ok = setFire();
     $('dev-fire').textContent = ok ? 'On fire, engine called' : 'No car nearby';
     setTimeout(() => { $('dev-fire').textContent = 'Set the nearest car on fire'; }, 1800);
   };
   $('dev-hurt').onclick = () => {
+    did('dev: left someone hurt');
     const ok = setHurt();
     $('dev-hurt').textContent = ok ? 'Hurt, ambulance called' : 'Nobody nearby';
     setTimeout(() => { $('dev-hurt').textContent = 'Leave the nearest person hurt'; }, 1800);
   };
-  $('dev-road').onclick = backOnRoad;
+  $('dev-road').onclick = () => { did('dev: back on the road'); backOnRoad(); };
   $('dev-heli').onclick = () => {
+    did('dev: parked a helicopter');
     const ok = helicopter();
     $('dev-heli').textContent = ok ? 'Helicopter parked nearby' : 'No open space for it here';
     setTimeout(() => { $('dev-heli').textContent = 'Helicopter next to me'; }, 1800);
@@ -338,6 +374,7 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
   overlay.innerHTML = `<div id="dev-mapview"></div><div class="dev-maphint">Click where you want to be${import.meta.env.DEV ? ' (past the dashed line, the game reloads there)' : ''} · right-click copies the coordinates · <kbd>Esc</kbd> closes the map</div>`;
   document.body.appendChild(overlay);
   $('dev-map').onclick = async () => {
+    did('dev: opened the map');
     overlay.hidden = false;
     const lib = await loadMapLibre();
     const [lon, lat] = toLonLat(...position());
@@ -383,7 +420,7 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
 
   const toggle = (on = panel.hidden) => {
     panel.hidden = !on;
-    if (on) query.focus();
+    if (on) { did('dev: opened the panel'); query.focus(); }
     else overlay.hidden = true;
   };
   window.addEventListener('keydown', (ev) => {
@@ -472,8 +509,8 @@ function setupMist($: (id: string) => HTMLElement, weather: { get: () => string;
   const rows = $('dev-mist-rows');
   const save = () => { try { localStorage.setItem(MIST_KEY, JSON.stringify({ ...MIST, mode: MIST_MODE.value, volume: LOCAL_MIST })); } catch { /* storage is off */ } };
   const modeLabel = document.createElement('label');
-  modeLabel.className = 'dev-time';
-  modeLabel.append('Mist shape');
+  modeLabel.className = 'dev-pick';
+  modeLabel.append(Object.assign(document.createElement('span'), { textContent: 'Mist shape' }));
   const mode = document.createElement('select');
   mode.id = 'dev-mist-mode';
   mode.innerHTML = '<option value="sheets">Layered banks</option><option value="volume">Local volumes</option>';
@@ -530,52 +567,54 @@ function setupMist($: (id: string) => HTMLElement, weather: { get: () => string;
 function setupBench(kit: Testkit, $: (id: string) => HTMLElement) {
   const box = $('dev-bench');
   box.innerHTML = `
-    <div class="dev-sub">Camera</div>
-    <label class="dev-check" title="The camera stops following you. Searching or picking a spot on the map now moves the camera, not you."><input id="dev-free" type="checkbox" /> Free camera</label>
-    <div class="dev-note" id="dev-free-hint" hidden>Drag to pan · scroll to zoom · right-drag or Shift-drag to orbit</div>
-    <label class="dev-check" title="See the street the way you'd see it standing in it; driving, from just behind your car"><input id="dev-eyes" type="checkbox" /> First person</label>
-    <div class="dev-note" id="dev-eyes-hint" hidden>Click to look round with the mouse (Esc to let go), or right-drag · <button id="dev-ahead" class="dev-inline">Look ahead again</button></div>
-    <div id="dev-free-row" hidden>
-      <label class="dev-camera-angle">Rotation <span id="dev-heading-value" aria-hidden="true"></span><input id="dev-heading" type="range" min="0" max="359" step="1" /></label>
-      <label class="dev-camera-angle">Tilt <span id="dev-tilt-value" aria-hidden="true"></span><input id="dev-tilt" type="range" min="0" max="75" step="1" /></label>
-      <div class="dev-row">
-        <button id="dev-top" title="Looking straight down, north up">Straight down</button>
-        <button id="dev-back" title="The camera follows you again">Back to me</button>
+    ${section('camera', 'Camera', `
+      <div class="dev-row dev-here">
+        <label class="dev-check" title="The camera stops following you. Searching or picking a spot on the map now moves the camera, not you."><input id="dev-free" type="checkbox" /> Free camera</label>
+        <label class="dev-check" title="See the street the way you'd see it standing in it; driving, from just behind your car"><input id="dev-eyes" type="checkbox" /> First person</label>
       </div>
-    </div>
-    <div class="dev-sub">Testing</div>
-    <div class="dev-row">
-      <button id="dev-pause">Pause</button>
-      <button id="dev-step" title="Moves the world on by one frame">One frame</button>
-      <select id="dev-speed" title="How fast the world runs"><option value="0.1">0.1×</option><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>Normal speed</option><option value="2">2×</option><option value="4">4×</option></select>
-    </div>
-    <div class="dev-row dev-here">
-      <label class="dev-check">Money <input id="dev-money" type="number" min="0" step="100" /></label>
-      <label class="dev-check">Wanted <select id="dev-stars">${[0, 1, 2, 3, 4, 5].map((n) => `<option value="${n}">${n ? '★'.repeat(n) : 'no stars'}</option>`).join('')}</select></label>
-    </div>
-    <div class="dev-row dev-here">
-      <button id="dev-heal">Full health</button>
-      <label class="dev-check" title="Crashes, shots and explosions don't hurt you"><input id="dev-unhurt" type="checkbox" /> Nothing hurts</label>
-      <label class="dev-check" title="Players have no gun. This hands you the pistol (click, F on foot, RB, the Shoot button), and this browser keeps it"><input id="dev-gun" type="checkbox" /> Pistol</label>
-    </div>
-    <div class="dev-row">
-      <button id="dev-car" title="A car on clear ground ahead of you, with you in it">Into a new car</button>
-      <select id="dev-car-kind">${['hatch', 'sedan', 'suv', 'van', 'taxi', 'police', 'pickup', 'truck', 'bus', 'minibus', 'moto', 'bike'].map((k) => `<option>${k}</option>`).join('')}</select>
-    </div>
-    <label class="dev-time">Test places
-      <select id="dev-place"><option value="">Go to…</option>${Object.entries(kit.PLACES).map(([k, p]) => `<option value="${k}">${p.note}</option>`).join('')}</select>
-    </label>
-    <label class="dev-time">Scenarios
-      <select id="dev-scenario">${kit.scenarios.map((n) => `<option>${n}</option>`).join('')}</select>
-    </label>
-    <div class="dev-row">
-      <button id="dev-run">Run and watch</button>
-      <button id="dev-all" title="Runs every scenario as fast as it can and lists which pass">Run all</button>
-    </div>
-    <div class="dev-row">
-      <button id="dev-snap" title="Copies where you are, the time, the weather, your money, stars and car as the start of a scenario, to paste into a conversation">Copy this situation</button>
-    </div>
-    <div id="dev-out"></div>`;
+      <div class="dev-note" id="dev-free-hint" hidden>Drag to pan · scroll to zoom · right-drag or Shift-drag to orbit</div>
+      <div class="dev-note" id="dev-eyes-hint" hidden>Click to look round with the mouse (Esc to let go), or right-drag · <button id="dev-ahead" class="dev-inline">Look ahead again</button></div>
+      <div id="dev-free-row" class="dev-body" hidden>
+        <label class="dev-slide">Rotation <input id="dev-heading" type="range" min="0" max="359" step="1" /><span id="dev-heading-value" aria-hidden="true"></span></label>
+        <label class="dev-slide">Tilt <input id="dev-tilt" type="range" min="0" max="75" step="1" /><span id="dev-tilt-value" aria-hidden="true"></span></label>
+        <div class="dev-row">
+          <button id="dev-top" title="Looking straight down, north up">Straight down</button>
+          <button id="dev-back" title="The camera follows you again">Back to me</button>
+        </div>
+      </div>`)}
+    ${section('testing', 'Testing', `
+      <div class="dev-row">
+        <button id="dev-pause">Pause</button>
+        <button id="dev-step" title="Moves the world on by one frame">One frame</button>
+        <select id="dev-speed" title="How fast the world runs"><option value="0.1">0.1×</option><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>Normal speed</option><option value="2">2×</option><option value="4">4×</option></select>
+      </div>
+      <div class="dev-row dev-here">
+        <label class="dev-check">Money <input id="dev-money" type="number" min="0" step="100" /></label>
+        <label class="dev-check">Wanted <select id="dev-stars">${[0, 1, 2, 3, 4, 5].map((n) => `<option value="${n}">${n ? '★'.repeat(n) : 'no stars'}</option>`).join('')}</select></label>
+      </div>
+      <div class="dev-row dev-here">
+        <button id="dev-heal">Full health</button>
+        <label class="dev-check" title="Crashes, shots and explosions don't hurt you"><input id="dev-unhurt" type="checkbox" /> Nothing hurts</label>
+        <label class="dev-check" title="Players have no gun. This hands you the pistol (click, F on foot, RB, the Shoot button), and this browser keeps it"><input id="dev-gun" type="checkbox" /> Pistol</label>
+      </div>
+      <div class="dev-row">
+        <button id="dev-car" title="A car on clear ground ahead of you, with you in it">Into a new car</button>
+        <select id="dev-car-kind">${['hatch', 'sedan', 'suv', 'van', 'taxi', 'police', 'pickup', 'truck', 'bus', 'minibus', 'moto', 'bike'].map((k) => `<option>${k}</option>`).join('')}</select>
+      </div>
+      <label class="dev-pick"><span>Test places</span>
+        <select id="dev-place"><option value="">Go to…</option>${Object.entries(kit.PLACES).map(([k, p]) => `<option value="${k}">${p.note}</option>`).join('')}</select>
+      </label>
+      <label class="dev-pick"><span>Scenario</span>
+        <select id="dev-scenario">${kit.scenarios.map((n) => `<option>${n}</option>`).join('')}</select>
+      </label>
+      <div class="dev-row">
+        <button id="dev-run">Run and watch</button>
+        <button id="dev-all" title="Runs every scenario as fast as it can and lists which pass">Run all</button>
+      </div>
+      <div class="dev-row">
+        <button id="dev-snap" title="Copies where you are, the time, the weather, your money, stars and car as the start of a scenario, to paste into a conversation">Copy this situation</button>
+      </div>
+      <div id="dev-out"></div>`)}`;
   const free = $('dev-free') as HTMLInputElement;
   free.onchange = () => { if (free.checked) kit.eyes = null; void kit.camera(free.checked ? { level: true } : null); };
   const eyes = $('dev-eyes') as HTMLInputElement;
@@ -592,28 +631,30 @@ function setupBench(kit: Testkit, $: (id: string) => HTMLElement) {
   tilt.oninput = () => { if (kit.cam) kit.orbit(kit.cam.heading, tilt.valueAsNumber); };
   const out = $('dev-out');
   const pause = $('dev-pause');
-  pause.onclick = () => { kit.paused = !kit.paused; };
-  $('dev-step').onclick = () => { kit.paused = true; kit.step(); };
+  pause.onclick = () => { did('dev: paused'); kit.paused = !kit.paused; };
+  $('dev-step').onclick = () => { did('dev: stepped a frame'); kit.paused = true; kit.step(); };
   const speed = $('dev-speed') as HTMLSelectElement;
-  speed.onchange = () => { kit.speed = +speed.value; };
+  speed.onchange = () => { did('dev: changed speed'); kit.speed = +speed.value; };
   const money = $('dev-money') as HTMLInputElement;
   keep(money);
-  money.onchange = () => kit.set({ money: +money.value });
+  money.onchange = () => { did('dev: set money'); kit.set({ money: +money.value }); };
   const stars = $('dev-stars') as HTMLSelectElement;
-  stars.onchange = () => kit.set({ stars: +stars.value });
-  $('dev-heal').onclick = () => kit.set({ health: 100 });
+  stars.onchange = () => { did('dev: set stars'); kit.set({ stars: +stars.value }); };
+  $('dev-heal').onclick = () => { did('dev: healed'); kit.set({ health: 100 }); };
   const unhurt = $('dev-unhurt') as HTMLInputElement;
-  unhurt.onchange = () => { kit.unhurt = unhurt.checked; };
+  unhurt.onchange = () => { did('dev: toggled invincibility'); kit.unhurt = unhurt.checked; };
   const gun = $('dev-gun') as HTMLInputElement;
   gun.checked = gunOn();
-  gun.onchange = () => setGun(gun.checked);
+  gun.onchange = () => { did('dev: toggled the pistol'); setGun(gun.checked); };
   const kind = $('dev-car-kind') as HTMLSelectElement;
   $('dev-car').onclick = async () => {
+    did('dev: spawned a vehicle');
     try { await kit.drive(kind.value); } catch (e) { out.textContent = e instanceof Error ? e.message : String(e); }
   };
   const place = $('dev-place') as HTMLSelectElement;
   place.onchange = async () => {
     if (!place.value) return;
+    did('dev: jumped to a place');
     await kit.go(place.value);
     place.value = '';
   };
@@ -624,6 +665,7 @@ function setupBench(kit: Testkit, $: (id: string) => HTMLElement) {
     (r.error ? `<div class="dev-fail">  ${esc(r.error)}</div>` : '');
   const esc = (s: string) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
   const run = async (names: string[], watch: boolean) => {
+    did('dev: ran scenarios');
     out.innerHTML = '<div class="dev-note">Running…</div>';
     kit.watch = watch;
     let html = '';

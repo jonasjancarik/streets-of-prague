@@ -21,7 +21,7 @@ every field of each and is the only place the format is defined.
 | Report | When | What it holds |
 |---|---|---|
 | `start` | the game begins after the start screen | renderer (WebGPU, WebGL 2, or the legacy WebGL renderer), graphics card name, graphics setting and level, language, keyboard or touch, new or continued game, browser and its major version, operating system, the site the visitor came from, loading time, screen size, pixel ratio, memory and processor cores as the browser reports them |
-| `frames` | the tab is hidden or closed | time played, frames drawn, middle and 95th-percentile frame time, frames over 100 ms and over 250 ms, how often Auto changed the graphics level, map tiles that failed to load |
+| `frames` | the tab is hidden or closed | time played, frames drawn, middle and 95th-percentile frame time, frames over 100 ms and over 250 ms, how often Auto changed the graphics level, map tiles that failed to load, how many times Auto kept the level because slow frames were waiting rather than working (the browser or the screen holding the game at 30 frames a second; WebGPU only); the frames over 100 ms by what made them long (below) |
 | `play` | with `frames` | seconds on foot, driving, on a tram, in a taxi and on anything else; metres travelled; cars wrecked, people knocked over, arrests, deaths; money; the most stars reached; tickets bought; games saved by hand |
 | `activity` | with `frames`, one for each thing done or paid for | `did`: the name of something the player did, how many times, and how many seconds into the session the first time. `spent`: what money went on, how many payments, the first one's time and the amount in Kč |
 | `setting` | a setting is changed in the panel, or with G or P | which one and the new value |
@@ -31,6 +31,26 @@ every field of each and is the only place the format is defined.
 sent several times (each time the tab is hidden); `seq` counts them and the last one is
 the session. Activities that changed since the last time go out together in one request
 (`rows`, 40 at most).
+
+### What made a frame long
+
+`src/hitches.ts` puts each frame over 100 ms (`hitches` and `stalls` together) down to
+one cause, the part that took at least 40% of it and longer than the others:
+
+| Field | The long part |
+|---|---|
+| `hitchShaders` | a shader being made: built while drawing the frame before, or three.js's own scripts between frames |
+| `hitchTiles` | map tiles: the tiles' update in the frame before (parking, putting tiles in the scene), drawing a tile for the first time, or a worker's reply being put together between frames |
+| `hitchDrawing` | drawing the frame without a new shader or tile: mostly uploads to the GPU, or waiting for the browser's GPU process to catch up |
+| `hitchGame` | the rest of the game's frame: the simulation and the interface |
+| `hitchScripts` | other scripts between frames |
+| `hitchGpu` | the GPU's part of the frame before, when nothing on the main thread explains the frame (WebGPU only) |
+| `hitchWaiting` | nothing the page ran: the browser, its GPU process, garbage collection or the system |
+| `hitchUnknown` | nothing timed, in a browser that doesn't report scripts between frames (Safari, Firefox) |
+
+Scripts between frames come from Chrome's long animation frames, which only Chromium
+browsers have; elsewhere their time counts as `hitchUnknown`. Garbage collection inside a
+script counts towards that script.
 
 ### Activities
 
@@ -53,6 +73,7 @@ are several of a kind. Renaming one splits its history in two. What is tracked n
 | Trouble | `crime: knocked someone over`, `crime: took a car from its driver`, `crime: wrecked a car`, `crime: hit the police`, `crime: took a police car`, `crime: took a tram`, `crime: blew up a car`, `crime: blew up a police car`, `crime: ran from a ticket inspector` (each as the police count it, in `Police.crime`); `wanted: 1 star` to `wanted: 5 stars` (each time the level is reached); `arrested`, `killed`, `shot by the police`, `own car caught fire`, `a car blew up nearby` |
 | On foot | `jumped` |
 | Around the game | `opened the settings`, `saved the game by hand`, `loaded a saved game`, `started a new game from the settings`, `signed up for news`, `sent feedback` |
+| Developer panel (`dev: …`) | `dev: opened the panel`, `dev: jumped to a place`, `dev: opened the map`, `dev: changed graphics`, `dev: changed weather`, `dev: changed time of day`, `dev: changed date`, `dev: changed countryside`, `dev: changed speed`, `dev: paused`, `dev: stepped a frame`, `dev: set money`, `dev: set stars`, `dev: healed`, `dev: toggled invincibility`, `dev: toggled the pistol`, `dev: spawned a vehicle`, `dev: set a car on fire`, `dev: left someone hurt`, `dev: back on the road`, `dev: parked a helicopter`, `dev: ran scenarios`. Sessions with any of these have cheated or teleported, so their play totals are not a player's |
 | Money (`spent`) | `ticket`, `fine`, `taxi`, `shared bike`, `shared bike left outside a station` |
 
 Every report also carries the game's version and the map data version (see
@@ -95,8 +116,8 @@ report and adds them up itself, so the three lists at the top narrow everything 
 to one game version, one domain or one map data version; the choice is kept in the
 page's address. The page is a file on
 your machine; nothing is published. Reading needs the **Account Analytics: Read**
-permission, which the `cf` login does not have (checked 2026-10-01: its scopes include
-none for analytics). Create an API token with just that permission for the account, at
+permission. The `cf` login has it now (checked 2026-11-09; it didn't on 2026-10-01), and
+the script uses it when no token is set. Otherwise, create an API token with just that permission for the account, at
 <https://dash.cloudflare.com/profile/api-tokens>, and save it in
 `~/.config/streets-of-prague/analytics-token`, or pass it as `CLOUDFLARE_API_TOKEN`.
 The token can only read analytics; keep it out of the repository all the same.

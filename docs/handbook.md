@@ -170,7 +170,10 @@ stay on at every tier. Quieter streets have
 fewer people; changing tiers lets surplus people leave out of sight.
 Auto, the default, starts High (Medium on touch devices) and moves between tiers
 by how steady the frames are (`src/graphics.ts`), ignoring loading and tile builds;
-it never picks Ultra, which only choosing it turns on.
+it never picks Ultra, which only choosing it turns on. On WebGPU it doesn't step down
+when frames are slow only because they wait: when the browser or the screen holds the
+game at 30 frames a second (Chrome's Energy Saver does), a frame whose work fits in
+half the time stays at its tier.
 `?graphics=auto|ultra|high|medium|low|lowest` overrides it for one visit; `?dpr=1` fixes
 only the pixel ratio. The Water setting turns on waves, sun glitter and lamp reflections on
 the river (`src/webgpu/water.ts`; WebGPU only, not on Lowest, off unless chosen;
@@ -695,6 +698,17 @@ record the measurements, merge decisions and pending landmark asset activation.
   "Young woods" under Unmapped ground) get small, dense ones. The dark woodland floor fades out
   over the grass beside it (`woodEdges` in `src/ground.ts`). Rebuild them with
   `uv run build_tiles.py <area> --layers ground`, then `ipr_terrain.py <area>`.
+  A broadleaf tree is its crown of tufts on a trunk, with a few boughs up into the crown
+  (`crownShape`): the trunk's foot is put on the ground in the vertex shader, from how
+  far below the crown the ground is, which rides in each tree's `yearly` number (`STEM`).
+  Bare in winter, a tree shows branches running out from the trunk across the whole
+  crown, forking twice on the way (`bareTwig`), so from above it is spokes that divide;
+  seen from the side (first person) the lines on the tufts down the crown's sides are
+  left out, where they would hang like a willow's, and the boughs show instead. From
+  early October to the end of the year fallen leaves lie under every broadleaf tree in
+  its autumn colour: a sheet in the same mesh, laid on the ground and cut into clumps by
+  the shader, folded away the rest of the year (no extra draw; on steep ground it is
+  level, so it floats on one side and is buried on the other).
   Rendering keeps fixed-capacity mesh pages per tree shape (`src/trees.ts`). A tile
   leases pages containing only its own trees; unloading the tile clears the pages
   for reuse without changing the surveyed or generated tree data. Pages hold 1,200
@@ -710,7 +724,7 @@ record the measurements, merge decisions and pending landmark asset activation.
   renderer checks and seasonal screenshots. Run `node scripts/check-tree-pool.mjs
   --url http://localhost:5191/` for the existing reuse and shader-preparation checks;
   add `--full-shadows` to check the original detailed mode.
-- **Landmarks** (so far Mánes with Šítkovská vodárenská věž, the Týn Church, the Old Town Hall with its tower, St Nicholas at Old Town Square, the National Theatre, the Rudolfinum, the Municipal House with the Powder Tower, House Okamura in Břevnov, and the Dancing House, which is the mesh as it is, since the city model has it as a plain prism without the legs you walk between) are cut out of IPR's
+- **Landmarks** (so far Mánes with Šítkovská vodárenská věž, the Týn Church, the Old Town Hall with its tower, St Nicholas at Old Town Square, the Jan Hus memorial and the Marian column on the square (monuments: the mesh as it is, see below), the National Theatre, the Rudolfinum, the Municipal House with the Powder Tower, House Okamura in Břevnov, and the Dancing House, which is the mesh as it is, since the city model has it as a plain prism without the legs you walk between) are cut out of IPR's
   photorealistic 3D model instead: a textured mesh of the whole city from oblique aerial
   photographs (summer 2023, about 5 cm/px), published as an I3S scene layer.
   `pipeline/landmarks.py` takes the mesh's pieces over the landmark's OSM footprints
@@ -734,6 +748,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   (add `--dry-run` to validate without writing). Keep the old GLBs and original
   manifest until the new app is live: an older client would adjust the warmed files
   again. Review the staged manifest and assets before activating them in shared data.
+  A monument OSM doesn't map as a building (the Jan Hus memorial) isn't in the tiles:
+  its OSM outline is copied into `MONUMENTS` in `landmarks.py`. It is cut to that outline
+  with hardly any margin, keeps its lowest metre (its steps), and is marked `solid` in
+  `landmarks.json`, so the game stamps its footprint into the collision grid as it does
+  a building's.
 - **Roof colours.** Pitched roofs are terracotta tiles (a palette matched to reference photos of Prague's roofs, brick-red rather than orange, with each tile a little redder or duller than the next; the landmarks' photographs get the same warming in the final GLB, or on load for older models, and where a landmark's photograph shows a red roof, the roof shader draws the same tiles at the photograph's brightness: `shadeLandmark` in `src/shading.ts` and its port in `src/webgpu/buildings.ts`), as nearly all of them are in Prague;
   flat ones are grey. OSM's `roof:material` and `roof:colour` can make a roof grey slate
   or green copper instead, down to single building parts (the cathedral's grey roofs
@@ -743,6 +762,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   triangle, from the OSM building or part holding at least half of the triangle (seen
   from above): IPR's triangles can be much bigger than a small part, such as a bay's
   copper roof.
+  A flat roof nobody measured gets its tile colour greyed (`flat_roof` in
+  `pipeline/ipr_buildings.py`: 35 % of the terracotta in grey), which came out pink in
+  big plain faces. The game draws those eight exact colours as a warm grey instead
+  (`PINK_FLAT` in `src/tileWorker.ts`), so no rebuild is needed; at the next rebuild of
+  the buildings, lower the share in `flat_roof` to 0.12 and the table matches nothing.
 - **Colours from the photo mesh.** Where `pipeline/mesh_colours.py` has run, IPR's
   buildings take their real colours from IPR's photorealistic mesh instead of the
   palette: each roof face its colour and material (tiles, slate, sheet metal, copper;
@@ -912,10 +936,36 @@ record the measurements, merge decisions and pending landmark asset activation.
   load, `src/figures.ts` plays every clip through and bakes the posed vertices into
   textures, so the whole crowd is one instanced draw call. Rebuild with `blender -b --factory-startup -P assets/figures/build.py`; add
   `-- --preview DIR` to render a few frames of every clip.
+  People are dressed for the game's date when they're made (`WARDROBE` in
+  `src/figures.ts`): coats in the cold months, bare arms mostly in summer. In rain (not in
+  snow) three in five of the walkers put up an umbrella (`src/umbrellas.ts`): one
+  more instanced mesh over the crowd, drawn only while it rains.
+- **Birds** (`src/birds.ts`): by day in dry weather, flocks of pigeons arrive from beyond
+  the view, wheel round a spot above the roofs for a minute or so and leave; over the
+  river they're a few gulls gliding. Every bird is a flat shape in one instanced mesh
+  with an ordinary material (one draw, one more for their shadows), and a wingbeat is
+  only the instance getting narrower across, so a frame costs one matrix per bird (96 at
+  most). A flock comes down as the camera zooms in, and shrinks away among the roofs.
+  `t.flock('pigeon' | 'gull')` puts one over you.
+  On the ground, small groups of pigeons peck about on open ground just past the edge
+  of the view; they take off when you come within 3 m on foot or a moving car within
+  7 m, climb into a flock, circle nearby and come down on open ground again or fly off.
+  `t.pigeons(ahead)` puts a group in front of you.
+- **Café terraces** (`src/terraces.ts`): from 10 April to 27 October the cafés,
+  restaurants and pubs that OpenStreetMap tags with `outdoor_seating` (and its beer
+  gardens) have tables under square parasols outside: 1,212 places in `praha`
+  (`pipeline/build_terraces.py` → `terraces.json`; a map without the file has none). OSM
+  doesn't say where the tables stand or how many, so each place gets a row of two to
+  six on the open ground nearest its point on the map, along the house, wherever a
+  table fits clear of walls, roads and water; on a narrow pavement that may be one, or
+  none. All the tables are one instanced mesh, rewritten only when a place comes into
+  view or leaves. Nothing collides with them yet.
 - **Cars** are built the same way (`assets/cars/build.py` → `public/cars.glb`): one
   low-poly body per type (hatchback, saloon, estate, SUV, van, pickup, taxi, police), shaped for
   the view from above, where the bonnet, cabin, windows and roof show, with a little
-  of the sides, wheels and lights towards the edges of the screen. `src/car.ts` puts
+  of the sides, wheels and lights towards the edges of the screen; on top, the black
+  scuttle and the wipers under the windscreen, an aerial, a glass roof panel on the
+  saloon and the SUV, and the ribs pressed into the van's roof. `src/car.ts` puts
   each car's colour on the paint. The doors are objects of their own in the file
   (`<type>_door1` to `4`, each with its origin on its hinge), and inside there is a
   floor, walls and seats to see through an open one. In the game they are still part
@@ -1223,6 +1273,7 @@ uv run ipr_greenery.py build centrum  # IPR's surveyed lawns, shrubs, hedges and
 uv run ipr_utility.py build centrum   # manhole covers, storm drains, traffic-light poles into the tiles (optional; before build_signals.py)
 uv run build_signals.py centrum    # traffic lights at junctions from OSM → signals.json
 uv run build_bikes.py centrum      # shared bikes' stations from GBFS feeds → bikes.json
+uv run build_terraces.py centrum   # cafés, restaurants and pubs with tables outside (OSM) → terraces.json
 uv run build_districts.py centrum  # parts of town from OSM's cadastral areas → districts.json
 uv run landmarks.py centrum        # landmarks from IPR's photorealistic mesh → landmarks/
 ```

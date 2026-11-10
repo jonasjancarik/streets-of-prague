@@ -104,7 +104,7 @@ function sampleRows() {
     });
     if (rnd() < 0.12) continue; // left before anything was added up
     const seconds = Math.round(40 + rnd() * rnd() * 2400), drive = 0.25 + rnd() * 0.5, tram = rnd() < 0.3 ? rnd() * 0.25 : 0;
-    put(at, 'frames', version, s, country, { renderer, graphics: 'auto', tier, seq: 1, seconds, frames: Math.round((seconds * 1000) / median), medianMs: median, p95Ms: Math.round(median * (1.3 + rnd())), hitches: Math.round((seconds / 60) * rnd() * (base / 6)), stalls: Math.round(rnd() * 3), tierChanges: Math.round(rnd() * 3), tileFailures: rnd() < 0.05 ? 2 : 0 });
+    put(at, 'frames', version, s, country, { renderer, graphics: 'auto', tier, seq: 1, seconds, frames: Math.round((seconds * 1000) / median), medianMs: median, p95Ms: Math.round(median * (1.3 + rnd())), hitches: Math.round((seconds / 60) * rnd() * (base / 6)), stalls: Math.round(rnd() * 3), tierChanges: Math.round(rnd() * 3), tileFailures: rnd() < 0.05 ? 2 : 0, hitchShaders: Math.round(rnd() * 4), hitchTiles: Math.round(rnd() * 6), hitchGame: Math.round(rnd() * 3), hitchWaiting: Math.round(rnd() * 5), hitchUnknown: Math.round(rnd() * 2) });
     put(at, 'play', version, s, country, {
       seq: 1, seconds, car: seconds * drive, tram: seconds * tram, taxi: rnd() < 0.1 ? seconds * 0.05 : 0, other: rnd() < 0.15 ? seconds * 0.04 : 0, foot: seconds * (1 - drive - tram) * 0.9,
       metres: seconds * drive * 9, wrecked: Math.round(rnd() * seconds / 90), knocked: Math.round(rnd() * seconds / 60), busted: rnd() < 0.3 ? 1 : 0, wasted: rnd() < 0.2 ? 1 : 0,
@@ -187,6 +187,8 @@ function app(REPORTS, DAYS) {
       fpsGroups: FPS.map(([label, lo, hi]) => [label, frames.filter((f) => f.medianMs > 0 && 1000 / f.medianMs >= lo && 1000 / f.medianMs < hi).length]),
       renderers: tally(starts.map((s) => s.renderer)),
       tiers: tally(frames.map((f) => f.tier)),
+      stutters: [['Making a shader', 'hitchShaders'], ['Map tiles', 'hitchTiles'], ['Drawing, without a new shader or tile', 'hitchDrawing'], ['The game’s own frame', 'hitchGame'], ['Other scripts', 'hitchScripts'], ['The GPU', 'hitchGpu'], ['Nothing the page ran', 'hitchWaiting'], ['Not known (Safari, Firefox)', 'hitchUnknown']]
+        .map(([label, k]) => [label, frames.reduce((a, f) => a + (f[k] || 0), 0)]).filter(([, n]) => n > 0),
       browsers: tally(starts.map((s) => s.browser.replace(/ \d+$/, ''))),
       systems: tally(starts.map((s) => s.os)),
       countries: tally(starts.map((s) => s.country)).slice(0, 8),
@@ -261,6 +263,7 @@ function app(REPORTS, DAYS) {
   ${bars('Frame rate', d.fpsGroups, { note: 'Games by their middle frame, in frames a second.' })}
   ${bars('Renderer', d.renderers)}
   ${bars('Graphics level at the end of the game', d.tiers.map(([k, n]) => [k[0].toUpperCase() + k.slice(1), n]))}
+  ${bars('What made frames over 100 ms', d.stutters, { note: 'Each frame over 100 ms, put down to the part of the work that took longest. Only versions from 9 November 2026 on report this.' })}
   ${table('Graphics cards, slowest first', ['Graphics card', 'Games', 'Middle frame', 'Slow frames (95th percentile)', 'Stutters a minute', 'Usual graphics level'],
     d.cards.map((c) => [esc(c.gpu), c.n, `${num(c.median)} ms · ${num(1000 / c.median)} fps`, `${num(c.p95)} ms`, num(c.stutters, 1), esc(c.tier)]),
     'A stutter is a frame longer than a tenth of a second.')}

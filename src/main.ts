@@ -14,7 +14,7 @@ import { parseBusLines } from './buses.ts';
 import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp, streetShare } from './network.ts';
 import { Car, TYPES, CarPool, collideBodies, contact, loadCars, ordinaryCarBodies, useKit, variantName } from './car.ts';
 import { RestingCars } from './restingCars.ts';
-import { loadKit, FIGURE_SIZE, SCALE } from './figures.ts';
+import { loadKit, FIGURE_SIZE, SCALE, WARDROBE } from './figures.ts';
 import { Traffic, trafficWanted } from './traffic.ts';
 import { roadHint } from './roadLevels.ts';
 import { preparePeople, pickPerson } from './spawn.ts';
@@ -117,6 +117,9 @@ import { Blinkers } from './blinkers.ts';
 import { Minimap, minimapOn } from './minimap.ts';
 import { PLACES as NAMED_PLACES } from './taxi.ts';
 import * as telemetry from './telemetry.ts';
+import { Birds, BIRDS } from './birds.ts';
+import { Terraces } from './terraces.ts';
+import { Hitches } from './hitches.ts';
 import { benchPause } from './benchpause.ts';
 import type { Testkit } from './testkit.ts';
 
@@ -402,6 +405,7 @@ async function main() {
     fares: { valid: () => wallet.hasTicket(clock.t), afford: (k) => wallet.has(k.price), buy: (k) => wallet.buyTicket(clock.t, k) },
   });
   const footfall = await footfallLoad;
+  Object.assign(WARDROBE, { cold: season.cold, warm: season.shares().summer });
   crowd = new Crowd(walk, grid, scene, seeded, PEOPLE, kit);
   crowd.footfall = footfall;
   // Past the map's edge nobody counted the people: a little busier where houses stand.
@@ -425,6 +429,21 @@ async function main() {
   const spray = new Spray(scene, weatherFx.tint);
   const water = new Water(scene, weatherFx.tint);
   const beacons = new Beacons(scene);
+  const birds = new Birds(scene);
+  const terraces = new Terraces(scene, AREA);
+  const birdsView = {
+    x: 0, y: 0, radius: 0, height: 0, dark: 0, rain: 0, snow: 0,
+    ground: (x: number, y: number) => world.heightAt(x, y), water: (x: number, y: number) => !!world.waterAt(x, y),
+    open: (x: number, y: number) => grid.at(x, y) === 0 && !world.onRoad(x, y) && !world.waterAt(x, y),
+    // What pigeons on the ground fly up from: you, and any car on the move.
+    threat: (x: number, y: number): { x: number; y: number } | null => {
+      const me = inCar || walker;
+      if (!inHeli && Math.hypot(me.x - x, me.y - y) < (inCar ? BIRDS.car : BIRDS.shy)) return me;
+      for (const c of carsNear(x, y, BIRDS.car)) if (Math.hypot(c.vx, c.vy) > 1.5) return c;
+      return null;
+    },
+  };
+  const terraceView = { x: 0, y: 0, radius: 0, day: 0, loaded: (x: number, y: number) => !!world.tileAt(x, y), open: birdsView.open, ground: birdsView.ground };
   // The emergency vehicles with their lights going, and what the lamps need each frame
   // besides the cars (the people in view stand in their light too).
   const flashing: Flashing[] = [];
@@ -2324,8 +2343,17 @@ async function main() {
   };
   setScreenshot(() => new Promise((resolve) => { grab.push(resolve); setTimeout(() => resolve(null), 2000); }));
   let soundHeld = false;
+  // What makes the frames over 100 ms long, for the statistics: shader builds are new
+  // node builder states (WebGPU) or programs (WebGL).
+  const hitches = new Hitches(() => {
+    const r = renderer as unknown as { _nodes?: { nodeBuilderCache?: Map<unknown, unknown> }; info?: { programs?: unknown[] | null } };
+    return r._nodes?.nodeBuilderCache?.size ?? r.info?.programs?.length ?? 0;
+  });
+  let joinedWas = 0;
   renderer.setAnimationLoop((now) => {
     if (benchPause.paused) { last = now; return; } // a benchmark elsewhere on this machine (dev only)
+    const began = performance.now();
+    hitches.begin(now - last);
     const paused = settingsPanel.open || mapOpen();
     let dt = paused ? 0 : Math.min(0.05, (now - last) / 1000); // the settings and the map pause the game
     // (Filming, a frame's worth of the game's time and no more: see Testkit.frameDt.)
@@ -2363,7 +2391,11 @@ async function main() {
       view.h = Math.round(Math.atan2(-looking.z, looking.x) / STEP5) * STEP5;
       view.spread = Math.round(half / STEP5) * STEP5;
     }
+    // (A tile joins the scene just after a frame's update, so this frame draws it first.)
+    const tilesFrom = performance.now(), joined = world.joined !== joinedWas;
+    joinedWas = world.joined;
     world.update(camPos.x, -camPos.z, eyes ? EYES_REACH : viewRadius() + 220, testkit?.cam ? Infinity : eyes ? EYES_REACH : viewRadius(Math.max(height, heightWanted)) + world.drawBeyond, eyes ? view : null);
+    hitches.tiles(performance.now() - tilesFrom, joined);
 
     // Player: keyboard and touch controls together. In the car, Shift is lane assist:
     // it steers along your lane, and A/D picks the turn at the next junction instead.
@@ -2423,7 +2455,10 @@ async function main() {
     metro.update(dt);
     metro.sync(camPos.x, -camPos.z, viewRadius() + 60, ground);
     tramStops.sync(camPos.x, -camPos.z, viewRadius() + 60, ground);
+    crowd.umbrellas.wet = weather.now.rain;
     crowd.render(ground, (x, y) => !offscreen(x, y));
+    birds.update(dt, Object.assign(birdsView, { x: camPos.x, y: -camPos.z, radius: viewRadius(), height: eyes ? 1000 : height, dark: sky.dark, rain: weather.now.rain, snow: weather.now.snow }));
+    terraces.update(dt, Object.assign(terraceView, { x: camPos.x, y: -camPos.z, radius: viewRadius(), day: season.day }));
     police.render(ground, time.value);
     {
       const chasing = police.lit(inCar), engines = brigade.lit, rescue = ambulances.lit, carts = refuse.lit;
@@ -2782,19 +2817,23 @@ async function main() {
 
     dev.update();
     // (Ultra: the street round the middle of the view, for the cars to mirror.)
-    const probed = renderProbe(renderer, scene, camPos.x, camGround, camPos.z, carPool.allMeshes());
-    if (renderMirror(renderer, scene, camera, camGround, weather.now.wet) || probed) {
-      scene.matrixWorldAutoUpdate = false;
-      renderer.render(scene, camera);
-      scene.matrixWorldAutoUpdate = true;
-    } else renderer.render(scene, camera);
+    hitches.render(() => {
+      const probed = renderProbe(renderer, scene, camPos.x, camGround, camPos.z, carPool.allMeshes());
+      if (renderMirror(renderer, scene, camera, camGround, weather.now.wet) || probed) {
+        scene.matrixWorldAutoUpdate = false;
+        renderer.render(scene, camera);
+        scene.matrixWorldAutoUpdate = true;
+      } else renderer.render(scene, camera);
+    });
+    const timed = hitches.end();
+    graphics.rendered(began, (ms) => hitches.gpu(timed, ms));
     // A picture of the frame just drawn, asked for by the feedback form: the canvas can only
     // be read in the task that drew it.
     if (grab.length) { const picture = takePicture(); for (const done of grab.splice(0)) done(picture); }
   });
 
   window.__drive = {
-    scene, camera, traffic, crowd, loose, restingByCar, restingIndex, get resting() { return resting; }, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, refuse, health, fires, trams, ride, taxi, clock, board, metro, funicular, ferries, graphics, sound, weather, lamps, sky, skids, bikeShare, carPool, spawnWork, bags,
+    hitches, birds, birdsView, scene, camera, traffic, crowd, loose, restingByCar, restingIndex, get resting() { return resting; }, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, refuse, health, fires, trams, ride, taxi, clock, board, metro, funicular, ferries, graphics, sound, weather, lamps, sky, skids, bikeShare, carPool, spawnWork, bags,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,
@@ -2844,6 +2883,7 @@ async function main() {
     viewRadius, offscreen,
     canvas: renderer.domElement, fov: camera.fov,
     weather: { set: (k) => { if (k === 'auto') weather.fixed = false; else weather.set(k, true); }, kind: () => weather.kind },
+    birds: (kind, x, y) => !!(kind === 'ground' ? birds.settle(x, y) : birds.add(kind, x, y, 0, birdsView)),
     season: { set: (when) => { const day = parseDay(when); if (!day) throw new Error(`A season's name, MM-DD or a day of the year, not ${when}`); season.set(day); }, date: () => season.date },
   });
   window.__test = testkit;

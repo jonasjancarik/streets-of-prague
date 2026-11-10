@@ -27,7 +27,8 @@ export interface TerrainMetadata {
 // A landmark cut out of IPR's photorealistic mesh (pipeline/landmarks.py): its model,
 // the footprint it takes over, the tile it's drawn with and the tiles it reaches into.
 // `plain`: it has no tiled roofs, so it's drawn as photographed throughout.
-export interface Landmark { name: string; file: string; polygons: Point2[][][]; home: string; tiles: string[]; plain?: boolean }
+// `solid`: not a building on the map (a monument), so its footprint is what stands in the way.
+export interface Landmark { name: string; file: string; polygons: Point2[][][]; home: string; tiles: string[]; plain?: boolean; solid?: boolean }
 
 export type TileIndexEntry = [number, number, number] | [number, number, number, number];
 

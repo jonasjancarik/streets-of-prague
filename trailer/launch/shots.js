@@ -12,6 +12,42 @@ const SHOTS = {
     });
   },
 
+  // The Old Town Square on a summer morning, coming down between the Jan Hus memorial and
+  // the Marian column: parasols out along the houses, pigeons on the paving and a flock
+  // wheeling over it.
+  async square() {
+    const [x, y] = t.toLocal([50.08757, 14.42122]);
+    const c = { x, y };
+    await begin(at(c.x, c.y), { time: '10:00' });
+    t.cam = above(c, 300); await settle(8000);
+    // (Nobody is being played here: you, and the ring round you, stay out of the picture.)
+    d.walker.mesh.visible = false;
+    // (The live game has to run for the birds: they move with the picture, not with t.wait.)
+    for (const [dx, dy] of [[-14, 6], [16, -10], [4, 22]]) d.birds.settle(c.x + dx, c.y + dy);
+    t.flock('pigeon');
+    await new Promise((r) => setTimeout(r, 5000));
+    return record((k, n) => {
+      const u = k / (n - 1), e = 1 - (1 - u) ** 2;
+      t.cam = above({ x: c.x + mix(-10, 0, u), y: c.y + mix(14, 0, u) }, mix(250, 92, e), mix(-12, 0, e));
+    }).finally(() => { d.walker.mesh.visible = true; });
+  },
+
+  // An afternoon at the end of October on Karlovo náměstí: you run into the park through
+  // the fallen leaves, and the pigeons there fly up.
+  async autumn() {
+    await begin([50.0757, 14.4196], { date: '11-02', time: '15:30', heading: 180 });
+    await settle(3000);
+    const w = d.walker;
+    t.cam = above(ahead(w, 6), 40, 180); await settle(5000);
+    // Where you'll be a second and a bit into the shot.
+    d.birds.settle(w.x + Math.cos(w.h) * 9, w.y + Math.sin(w.h) * 9);
+    await new Promise((r) => setTimeout(r, 500));
+    return record((k, n) => {
+      const u = k / (n - 1);
+      t.cam = above(ahead(w, mix(6, 3, u)), mix(40, 33, u), 180 + mix(-6, 4, u));
+    }, { ctl: { move: 1, run: true } });
+  },
+
   // A red car pulls away along Ječná from the lights by Karlovo náměstí, the camera just ahead of it.
   async getin() {
     await begin([50.0755, 14.4200], { time: '13:30' });
@@ -62,6 +98,8 @@ const SHOTS = {
     };
     place(0);
     t.cam = above({ x: from.x, y: from.y + 10 }, 96); await settle(6000);
+    // Gulls over the river, in the picture as it starts.
+    d.birds.add('gull', from.x + 25, from.y + 40, 0, d.birdsView);
     return record((k, n) => {
       const u = k / (n - 1);
       place(u);
