@@ -985,3 +985,56 @@ garbage collector 4 %, the crowd 3 %, `CarPool.render` 3 %.
 The phone's Chrome had 217 tabs open from earlier test runs of several projects, and a
 second scene in one run closed the page each time; one scene a run worked.
 
+
+## 11 November 2026 — Traffic.update: standing cars ruled out before they are measured
+
+For each of its ~40 cars, `Traffic.update` goes through every obstacle circle in a square
+of reach + 8 m round it, most of them parked cars well off to the side, and measured each
+standing one against every piece of the lane ahead (two divisions and a `Math.hypot` a
+piece). Now, once the lane is built, a box round its pieces (`laneBox`, along and across
+the lane where the car is, its ends taken on by the largest radius it rules out) rules
+out every standing car further from it than such a car could matter: it can only be
+passed or be in the way within W / 2 + r + max(PASS + SWERVE, TOUCH + |off|) of the lane.
+The bound is exact. Also exact: no square root for a speed surely under 0.3 m/s,
+`mergeDistance`, ahead and side only for moving obstacles, a lane piece no nearer than
+the best so far skipped without `Math.hypot` (never less than the larger of its two
+parts), the square test first, an indexed loop. Nothing a car does changes, and
+obstacles are visited in the same order.
+
+Checked: `node scripts/check-traffic-lanes.mjs --compare` against traces recorded from
+`d2eeaad`, all 24 fixtures identical step by step (twelve of them new: cars standing
+anywhere round bent streets). A copy that measured every ruled-out car against every
+piece anyway found none of 3.8 million that would have mattered (the closest within
+10 µm of the line), and 60 such streets matched the old code. `check-traffic-queues` and
+`check-traffic-merges` print exactly what `d2eeaad` prints. `Math.hypot` calls in
+`Traffic.update`: grid fixture 7.94 M → 0.85 M, parked bends 1.70 M → 0.26 M, parked
+straight 113 k → 6 k; lane builds unchanged.
+
+Timing: M5 MacBook Air, headless Chrome, WebGPU, 1×, High, 14:00, clear, 30 s a scene,
+`--stalls --fresh-browser --loading-frames --require-webgpu`, 3 pairs with the candidate
+as `--url` and 3 with it as `--vs`, against a server from a detached worktree of `d2eeaad`.
+`Traffic.update` per call (`updates traffic` ms ÷ calls), mean of each order's three runs:
+
+| Scene | Baseline | Candidate | Change (each order) |
+|---|---|---|---|
+| drive | 0.659, 0.694 ms | 0.468, 0.457 ms | −29 %, −34 % |
+| stand | 0.347, 0.364 ms | 0.260, 0.252 ms | −25 %, −31 % |
+| drive, CPU 4× | 1.169, 1.212 ms | 0.880, 0.872 ms | −25 %, −28 % |
+| stand, CPU 4× | 1.111, 1.037 ms | 0.797, 0.789 ms | −28 %, −24 % |
+
+Every candidate run was quicker than every baseline run in the same series. A CPU
+profile of each on the drive: self time in `Traffic.update` 2.41 → 1.35 s over the run
+(7.8 → 4.4 % of samples); the obstacle lookup it calls (`obstacles` in `main.ts`, the two
+spatial hashes) stayed at 0.58–0.61 s and is now about a quarter of what is left. Whole
+frames came out between 4 % quicker and 2 % slower in the series means, inside the noise,
+so no frame-rate gain is claimed. A few seconds of Node checks ran during one 4×
+series. Not measured: the Pixel 5 (the phones were shared with other sessions tonight);
+on it `Traffic.update` was 3–4 ms a frame, so a similar share would be about 1 ms.
+
+What's left, not done: the query is a square of reach + 8 m because a moving car that
+this one follows into a shared lane counts wherever it is in that square; standing cars
+only matter within a few metres of the lane, so asking the parked cars' hash
+(`resting`) for a smaller area would cut the lookup and the loop, but that needs
+`obstacles()` in `main.ts` to take the two hashes apart. Deciding about standing cars
+less often than every step (they don't move) would save more but changes when a car
+reacts, so it wasn't tried.
