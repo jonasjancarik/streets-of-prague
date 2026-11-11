@@ -544,6 +544,7 @@ export class Traffic {
       // On the pavement it creeps along, and a little faster pulling in.
       if (a.kerb) target = Math.min(target, a.kerb.left > a.kerb.merge ? 2.2 : 4);
 
+      c.forTram = target < 0.3 && blocker?.kind === 'tram';
       if (target < 0.3 && blocker) a.stuck += dt;
       else a.stuck = Math.max(0, a.stuck - dt * 2);
       if (a.stuck > (a.reckless ? 1.5 : 3.5)) { a.ignore = 1.5; a.stuck = 0; }

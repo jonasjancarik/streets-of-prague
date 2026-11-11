@@ -399,8 +399,10 @@ export class Trams {
     this.place(v);
   }
 
-  // How far ahead of `front` (up to `reach` m) another tram is in the way, or Infinity.
+  // How far ahead of `front` (up to `reach` m) another tram is in the way, or Infinity;
+  // the tram is left in `v.waitFor`.
   gapToTram(v: TramVehicle, front: number, reach: number) {
+    v.waitFor = null;
     const path = v.line.path;
     for (let d = 1; d <= reach; d += 2.5) {
       const p = path.at(front + d);
@@ -410,7 +412,7 @@ export class Trams {
             if (o.v === v) continue;
             const dx = p.x - o.x, dy = p.y - o.y;
             const along = dx * o.c + dy * o.s, clamped = Math.max(-SECTION / 2, Math.min(SECTION / 2, along));
-            if (Math.hypot(along - clamped, dx * o.s - dy * o.c) <= 1.5) return d;
+            if (Math.hypot(along - clamped, dx * o.s - dy * o.c) <= 1.5) { v.waitFor = o.v; return d; }
           }
         }
       }
@@ -556,7 +558,9 @@ export class Trams {
     v.held = v.blocker && v.blocker === was && v.speed < 0.1 ? v.held + dt : 0;
     // (Already pushing one car aside, the next one in the way goes along with it: pushing
     // one at a time, a tram swapped between two standing nose to tail and never moved.)
-    const patience = v.shove.length ? 1 : v.blocker?.mode === 'traffic' ? (seen(v.blocker.x, v.blocker.y) ? 30 : 12) : PUSH;
+    // (A car that is itself standing for this tram, across the track at a junction, would
+    // wait for ever: pushed aside almost at once.)
+    const patience = v.shove.length ? 1 : v.blocker?.mode === 'traffic' ? (v.blocker.forTram ? 2 : seen(v.blocker.x, v.blocker.y) ? 30 : 12) : PUSH;
     if (v.held > patience && v.blocker && v.blocker.mode !== 'player') { v.shove.push(v.blocker); v.held = 0; }
     if (v.shove.length) target = Math.min(target, CREEP);
 
@@ -584,8 +588,9 @@ export class Trams {
               const dx = p.x - o.x, dy = p.y - o.y;
               const along = dx * o.c + dy * o.s, clamped = Math.max(-SECTION / 2, Math.min(SECTION / 2, along));
               if (Math.hypot(along - clamped, dx * o.s - dy * o.c) > 1.5) continue;
-              // Two trams waiting for each other (at a junction): the older one goes.
-              if (o.v.waitFor === v && v.id > o.v.id) continue;
+              // Two trams waiting for each other (at a junction): the older one goes, and
+              // always the other one where it's the tram you drive, which can't go round.
+              if (o.v.waitFor === v && (v.id > o.v.id || (o.v.driven && o.v.rider))) continue;
               v.waitFor = o.v;
               // Stuck behind a tram for long: drive through it only when the two meet
               // head-on (on a stub with one track), or when nobody can see it happen.
