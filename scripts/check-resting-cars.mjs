@@ -95,7 +95,7 @@ try {
   }, which);
   console.log(result);
   if (which === 'simulation' || which === 'all') {
-    await page.goto(new URL('?go&time=14:00&weather=clear&renderer=webgl', base).href);
+    await page.goto(new URL('?go&time=14:00&weather=clear&renderer=webgl&resting=incremental', base).href);
     await page.waitForFunction(() => document.getElementById('loading')?.classList.contains('done') && window.__drive, null, { timeout: 120000 });
     const live = await page.evaluate(async () => {
       const d = window.__drive, t = window.__test;
