@@ -574,8 +574,9 @@ async function main() {
       return traffic.sendBus(line, along, (x, y) => offscreen(x, y) && lifeSpots(px(), py(), 25)(x, y), edgesNear(p.x, p.y, 60));
     },
   });
+  let busStop: ReturnType<typeof busStops.at> | null = null;
   board.buses = (x, y, dt) => {
-    const s = busStops.at(x, y);
+    const s = busStop = busStops.at(x, y, busStop);
     return s ? { name: s.name, rows: busStops.due(s, dt) } : null;
   };
   const busRide = new BusRide(traffic, world, $('busride'), FAST);
@@ -2507,8 +2508,9 @@ async function main() {
     // enough for the physics.
     // At a tram stop, hold Space to wait: the same speed-up, until a tram is close.
     board.update(dt, walker.x, walker.y, !ride.on && !inCar && !inHeli);
-    // (The same waiting for a taxi on its way.)
-    const waiting = (!!board.shown && board.next > 8 || taxi.state === 'coming') && (input.brake || touch.fast);
+    // It waits for a tram or bus to your platform, not one at the stop's other side, and
+    // lets the clock run normally while you walk about. (The same waiting for a taxi on its way.)
+    const waiting = (!!board.shown && board.mine > 8 || taxi.state === 'coming') && (input.brake || touch.fast) && !ctl.move;
     waitScale += ((waiting ? FAST * 2 : 1) - waitScale) * Math.min(1, dt * (waiting ? 1.5 : 4));
     if (Math.abs(waitScale - (waiting ? FAST * 2 : 1)) < 0.02) waitScale = waiting ? FAST * 2 : 1;
     taxi.update(dt);

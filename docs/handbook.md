@@ -242,8 +242,13 @@ that without a new renderer.
   into it, and a name doesn't come up again within a minute and a half, so a street
   along the boundary doesn't keep showing titles.
 - **Tram stops**: stand at one and the HUD lists the next trams due, counting down
-  (`src/board.ts`). Hold Space (on touch, "Hold to wait") to fast-forward until one is
-  within about eight game seconds of arrival, at up to 12× speed. On touch screens
+  (`src/board.ts`). The stop covers the whole platform, the 30 m a tram fills behind
+  where its front stops. Hold Space (on touch, "Hold to wait") to fast-forward until one
+  is within about eight game seconds of your platform, at up to 12× speed. Trams at
+  the stop's other platforms (across the street, or a hundred metres on, as at Újezd)
+  are on the board but don't call off the wait. Walking pauses it and standing still
+  picks it up again. Bus stops work the same way, counting only the buses that stop at
+  your sign. On touch screens
   the board shows the nearest departure; tap “Timetable” to expand the full list. Stops have blue-and-white plates with a black tram in side view
   and the stop name on the pole.
 - **Trams**: press E next to a tram waiting at a stop to get on (`src/ride.ts`). The

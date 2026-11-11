@@ -22,6 +22,7 @@ import { getLang, t } from './i18n.ts';
 
 export const BUS_COLOUR = '#0a72b8'; // PID's blue for bus lines
 const NEAR = 9; // m from a sign that counts as standing at the stop
+const KEEP = 15; // m: …and still standing at it, once you are
 const SAME = 150; // m: stops with the same name this close are one stop (both ways)
 const MERGE = 25; // m: lines' stops this close, with the same name and heading, share a sign
 const PACE = 6.5; // m/s: a bus's usual pace along its line, stops included
@@ -64,7 +65,8 @@ export interface BusStop {
   lines: { line: BusLine; at: number; i: number }[];
   placed: boolean; mesh: THREE.Group | null; shown: boolean;
 }
-export interface DueBus { ref: string; colour: string; headsign: string; eta: number; here: boolean; key: unknown }
+// `mine`: it stops at the sign you stand by, not across the street.
+export interface DueBus { ref: string; colour: string; headsign: string; eta: number; here: boolean; mine: boolean; key: unknown }
 
 const topMaterial = (() => {
   const c = document.createElement('canvas');
@@ -231,7 +233,9 @@ export class BusStops {
   }
 
   // The stop you're standing at, if any.
-  at(x: number, y: number) {
+  // The sign you stand at; `keep`, that one, if you were already standing at it.
+  at(x: number, y: number, keep: BusStop | null = null) {
+    if (keep && Math.hypot(keep.x - x, keep.y - y) < KEEP) return keep;
     return this.near(x, y, NEAR).filter((s) => s.placed).sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0] ?? null;
   }
 
@@ -248,14 +252,14 @@ export class BusStops {
         if (l.line !== run.line || l.i < run.stop) continue;
         const here = run.dwell > 0 && run.stop === l.i;
         const eta = here ? 0 : Math.max(0, l.at - run.along) / PACE;
-        if (eta < HORIZON && (!best || eta < best.eta)) best = { ref: run.line.ref, colour: BUS_COLOUR, headsign: run.line.to, eta, here, key: a };
+        if (eta < HORIZON && (!best || eta < best.eta)) best = { ref: run.line.ref, colour: BUS_COLOUR, headsign: run.line.to, eta, here, mine: s.lines.some((m) => m.line === run.line), key: a };
       }
       if (best) out.push(best);
     }
     out.sort((p, q) => p.eta - q.eta);
     this.sendT -= dt;
     // (Sent to the side you stand on: a bus to the other side of the street is no use to you.)
-    const mine = out.some((d) => s.lines.some((l) => l.line === (d.key as TrafficAgent).bus!.line));
+    const mine = out.some((d) => d.mine);
     if (!mine && this.sendT <= 0) {
       this.sendT = 3;
       const ways = s.lines.filter((l) => l.at > SEND_BACK[0] + 50);
@@ -266,7 +270,7 @@ export class BusStops {
         if (this.o.send(l.line, Math.max(0, l.at - back))) break;
       }
     }
-    return out.slice(0, SHOWN);
+    return out;
   }
 }
 
