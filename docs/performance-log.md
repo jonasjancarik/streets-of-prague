@@ -1139,3 +1139,22 @@ both: `job-tram` two runs in three (the tram stops 30 m short of Na Knížecí) 
 `dustcart` half the runs (2 of 4 on `main`, 2 of 5 on the branch: the cart leaves the
 traffic and its crew walk off). `check-bus-lines` (two breaks over 30 m) and
 `check-resting-cars`'s simulation case (`d.resting.sync`) fail on `main` already.
+
+## 11 November 2026 — the two merges together
+
+`main` with the `Traffic.update` and simulation-garbage merges (`01ff310`) against the
+commit before both (`568d910`), headless Chrome on the M5, WebGPU, High, 1×, CPU slowed
+4×, 20 s a scene, three pairs with each as `--url` (load average about 5):
+
+| Scene | Before | After | `Traffic.update` a call |
+|---|---|---|---|
+| drive | 11.9, 11.9 ms | 11.0, 11.1 ms | 1.25 → 0.80 ms |
+| stand | 11.2, 10.9 ms | 10.1, 10.2 ms | 1.05 → 0.72 ms |
+
+Seven to ten per cent a frame, the same way in all twelve pairs, nearly all of it the
+traffic. Not measured on the phone.
+
+`bus-ride` (the scenario) fails about one run in five with or without the merges: the
+bus is still short of the next stop after three minutes (2 of 11 runs before, 3 of 16
+after), so no inspection starts and nobody is let off.
+
