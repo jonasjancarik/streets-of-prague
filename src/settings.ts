@@ -18,6 +18,7 @@ import type { TouchDrive } from './touch.ts';
 import { TUNNEL_VIEWS, tunnelView, setTunnelView } from './tunnelView.ts';
 import type { TunnelView } from './tunnelView.ts';
 import { feedbackLink, feedbackOpen } from './feedback.ts';
+import { apple, install, installWay, onInstallChange } from './install.ts';
 import { LEVELS, difficulty, setDifficulty } from './difficulty.ts';
 import type { Level } from './difficulty.ts';
 import { STATIONS } from './radio.ts';
@@ -72,14 +73,22 @@ export function setupSettings({ sound, graphics, weather, saves }: {
   saves: { list: () => { slot: Slot; data: SaveData | null }[]; save: () => boolean; load: (slot: Slot) => boolean; remove: (slot: Slot) => boolean; newGame: () => boolean; exit: () => boolean };
 }) {
   const corner = el('div', 'corner', document.body);
-  // Full screen, where the browser allows it (not on an iPhone). In a phone's
-  // landscape it also locks the screen that way, as far as the browser lets it.
+  // Full screen, where the browser allows it. In a phone's landscape it also locks the
+  // screen that way, as far as the browser lets it. An iPhone's browser has no full
+  // screen, so there the button points to the settings' Add to Home Screen instead;
+  // the installed app opens full screen anyway, so it needs no button.
   const full = el('button', 'corner-btn', corner) as HTMLButtonElement;
   full.type = 'button';
-  full.hidden = !document.fullscreenEnabled;
+  const fullHidden = () => matchMedia('(display-mode: fullscreen)').matches || !(document.fullscreenEnabled || installWay() === 'share');
+  full.hidden = fullHidden();
   const orientation = screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> };
   full.addEventListener('click', async () => {
     full.blur();
+    if (!document.fullscreenEnabled) {
+      show();
+      appBox.scrollIntoView({ block: 'center' });
+      return;
+    }
     try {
       if (document.fullscreenElement) await document.exitFullscreen();
       else {
@@ -128,6 +137,29 @@ export function setupSettings({ sound, graphics, weather, saves }: {
   const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
   const fixed = (s: string) => () => s;
   row<Lang>('Language', LANGS.map((l) => ({ id: l.id, label: fixed(l.label) })), getLang, setLang);
+  // Installing the game as an app (src/install.ts), where the browser can.
+  const appBox = el('div', 'settings-row', rows);
+  const appName = el('span', 'settings-label', appBox);
+  const appChips = el('div', 'settings-chips', appBox);
+  const appGo = el('button', 'settings-chip', appChips) as HTMLButtonElement;
+  appGo.type = 'button';
+  appGo.addEventListener('click', () => { telemetry.did('installed the app'); install(); });
+  const appNote = el('p', 'settings-note', appBox);
+  const appText = () => {
+    const way = installWay();
+    appBox.hidden = !way;
+    appGo.hidden = way !== 'prompt';
+    appName.textContent = t('Play as an app');
+    appGo.textContent = t('Install');
+    appNote.textContent = way === 'share'
+      ? t(apple && !document.fullscreenEnabled
+        ? 'To play full screen on an iPhone, tap the Share button in the browser, then Add to Home Screen, and start the game from its icon.'
+        : 'Tap the Share button in the browser, then Add to Home Screen. Started from its icon, the game opens full screen, without the browser’s bars.')
+      : t('Puts the game on your home screen or desktop. It then opens full screen, without the browser’s bars.');
+  };
+  relabel.push(appText);
+  refresh.push(appText);
+  onInstallChange(() => { appText(); full.hidden = fullHidden(); });
   row('Sound', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (sound.on ? 'on' : 'off'), (id) => { if ((id === 'on') !== sound.on) sound.toggle(); });
   const radioRow = row('Car radio', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (sound.radioOn ? 'on' : 'off'), (id) => sound.setRadio(id === 'on'));
   const radioDetails = el('details', 'settings-radio', radioRow);

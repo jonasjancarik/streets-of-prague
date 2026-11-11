@@ -325,6 +325,15 @@ that without a new renderer.
   cannon. Touch controls also release when the browser loses their pointer capture.
   Releasing a movement key in a developer field still stops movement; scenario
   `input-release` checks this and window focus in the running game.
+- **Full screen and installing** (`src/install.ts`, `public/manifest.webmanifest`): the
+  corner's expand button goes full screen and asks for landscape where the browser has
+  the Fullscreen API. Settings → "Play as an app" installs the game where the browser
+  offers it (Chrome and Edge, through `beforeinstallprompt`; there is no service
+  worker), and on iPhone and iPad explains Share → Add to Home Screen instead. An
+  iPhone's browser can't go full screen, so there the corner button opens that
+  explanation. The installed app opens full screen and hides the button. To test
+  the button where the browser doesn't offer installation, dispatch a fake
+  `beforeinstallprompt` event with `prompt` and `userChoice` on `window`.
 - **Controls card** (bottom right, `src/keyhelp.ts`): a cut-out of the keyboard with the
   keys for what you're doing lit up and a word under each; hovering a lit key gives the
   full sentence. H or its "hide" button folds it to a small button, and the game
