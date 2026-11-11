@@ -78,6 +78,9 @@ const SWERVE = 3.2, PASS = 0.35;
 // of the passing one. Less than the room parked cars leave a lane (parkingClearance),
 // or the widest cars would stop for every car parked at the least distance.
 const TOUCH = 0.1;
+// The largest radius of a standing car's circles that the box round the lane rules out
+// (Car.r is half a car's width and 2 cm; anything larger is measured as before).
+const BOX_R = 1.5;
 // The lane ahead of the car being moved (Route.ahead), reused from car to car, and
 // each of its pieces as six numbers: start, direction and length, distance along.
 const lane: number[] = [], pieceAt: number[] = [];
@@ -87,11 +90,12 @@ const lane: number[] = [], pieceAt: number[] = [];
 // along, then across, into `laneBoxOut`. It takes in where the first piece would run
 // back to `back` metres behind and the last one on to `fwd` ahead, as Traffic.update
 // measures a car standing past either end as if the lane ran straight on.
-// A standing car with radius r is passed or in the way only if it is less than `fwd` + r
-// ahead (`back` + r behind) and nearer the lane than W / 2 + r + PASS + SWERVE, or
-// W / 2 + r + TOUCH + |off|: then it is within that, plus r, of the box. Anything
-// further out does nothing, which is what lets Traffic.update skip measuring it
-// against every piece. (With a piece of no length, the box is everything.)
+// A standing car with radius r is passed or in the way only if it is less than
+// `fwd` ahead (`back` behind; both given with the largest radius it skips for added)
+// and nearer the lane than W / 2 + r + PASS + SWERVE (only on a street), or
+// W / 2 + r + TOUCH + |off|: then it is within that of the box. Anything further out
+// does nothing, which is what lets Traffic.update skip measuring it against every
+// piece. (With a piece of no length, the box is everything.)
 const laneBoxOut = new Float64Array(4);
 function laneBox(pieces: number, back: number, fwd: number, x: number, y: number, hx: number, hy: number) {
   const box = laneBoxOut;
@@ -316,7 +320,7 @@ export class Traffic {
   }
 
   // near(x, y, r): the obstacles ({ x, y, z, r, vx, vy, kind }) around a point.
-  update(dt: number, near: (x: number, y: number, radius: number) => Iterable<Obstacle>) {
+  update(dt: number, near: (x: number, y: number, radius: number) => ArrayLike<Obstacle>) {
     // The cars out of their lanes, going round something: oncoming traffic stops for them.
     const out = this.swerving;
     out.clear();
@@ -357,12 +361,15 @@ export class Traffic {
       let lo = -Infinity, hi = Infinity, stillGap = Infinity, still = null, oncoming = false;
       const sides = a.passSide ??= new Map(), seen = this.seenSides;
       seen.clear();
-      for (const o of near(c.x, c.y, reach + 8)) {
+      const found = near(c.x, c.y, reach + 8);
+      for (let oi = 0; oi < found.length; oi++) {
+        const o = found[oi];
+        // (The square asked for is rounded out to whole cells: the most left out first.)
+        const dx = o.x - c.x, dy = o.y - c.y;
+        if (Math.abs(dx) > reach + 8 || Math.abs(dy) > reach + 8) continue;
         if (o.car === c) continue;
         // On a bridge overhead, or under the one this car is on.
         if (o.z !== undefined && c.gz !== undefined && Math.abs(o.z - c.gz) > 3) continue;
-        const dx = o.x - c.x, dy = o.y - c.y;
-        if (Math.abs(dx) > reach + 8 || Math.abs(dy) > reach + 8) continue;
         // (Its speed only matters against 0.3 and 1 m/s, or divided by when over 1, so
         // anything surely under 0.3, the cars standing still, is 0 without a square root.)
         const vv = o.vx * o.vx + o.vy * o.vy, ov = vv < 0.08 ? 0 : Math.hypot(o.vx, o.vy);
@@ -378,15 +385,16 @@ export class Traffic {
                 pieceAt[k] = ax; pieceAt[k + 1] = ay; pieceAt[k + 2] = ux; pieceAt[k + 3] = uy;
                 pieceAt[k + 4] = Math.hypot(ux, uy); pieceAt[k + 5] = lane[i + 4];
               }
-              const box = laneBox(pieces, L / 2 + 0.5, reach, here.x, here.y, hx, hy);
+              const box = laneBox(pieces, L / 2 + 0.5 + BOX_R, reach + BOX_R, here.x, here.y, hx, hy);
               boxA0 = box[0]; boxA1 = box[1]; boxL0 = box[2]; boxL1 = box[3];
-              boxM = W / 2 + Math.max(PASS + SWERVE, TOUCH + Math.abs(a.off)) + 0.05;
+              // (Pulled out round it only along a street, where along0 is set.)
+              boxM = W / 2 + Math.max(along0 > -Infinity ? PASS + SWERVE : 0, TOUCH + Math.abs(a.off)) + 0.05;
             }
           }
           if (pieces > 1) {
             // Nowhere near the lane's pieces: neither passed nor in the way (see laneBox).
-            const m = boxM + 2 * o.r;
-            if (along < boxA0 - m || along > boxA1 + m || lat < boxL0 - m || lat > boxL1 + m) continue;
+            const m = boxM + o.r;
+            if (o.r <= BOX_R && (along < boxA0 - m || along > boxA1 + m || lat < boxL0 - m || lat > boxL1 + m)) continue;
             let best = Infinity;
             for (let k = 0, last = (pieces - 1) * 6; k <= last; k += 6) {
               const ax = pieceAt[k], ay = pieceAt[k + 1], ux = pieceAt[k + 2], uy = pieceAt[k + 3], len = pieceAt[k + 4];
