@@ -89,11 +89,14 @@ const breaks = [];
 for (const line of lines) {
   const L = line.path.length;
   total += L;
-  let open = null;
+  // (Before the first street a bus can join, the line hasn't begun for a bus: at a
+  // terminus in a knot of short streets, as at Florenc, it starts a little further on.)
+  let open = null, joined = false;
   for (let along = 0; along < L - 10;) {
     const edge = join(line, along);
     const reach = edge ? Math.max(follow(g, line, edge, along).run.ahead, along) : along;
-    if (reach - along < 30) { open ??= along; along += 10; continue; }
+    if (reach - along < 30) { if (joined) open ??= along; along += 10; continue; }
+    joined = true;
     if (open !== null) {
       const p = line.path.at(open), q = line.path.at(along);
       if (inner(p.x, p.y) && inner(q.x, q.y)) breaks.push({ line, from: open, len: along - open, p });
