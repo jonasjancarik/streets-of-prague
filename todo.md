@@ -340,9 +340,10 @@ before that day's frame-count fix may be doubled.
   Left: an AE bus still stalls near Na Poříčí; 581 line breaks over 30 m citywide not
   gone through (`check-bus-lines.mjs praha`); buses cut across sharp bends in a street.
 - **Scenarios still failing** (11 November, after the bus, dustcart and tram stand-offs
-  were fixed): `job-tram` runs out of its 240 s about one run in two, queued behind an AI
-  tram held by parked cars on the track or a fire engine at a fire (each pushed aside
-  after the tram's usual wait); `car-doors` fails when it runs after `bus-ride` (old code
+  were fixed): `job-tram` fails about one run in two even with 10 minutes for the shift: on
+  the way to Na Knížecí, traffic jams across the track on Nádražní (50.0679, 14.4068) and
+  the trams stand there for minutes, pushing one car after another off the track (each
+  shoved car is left on it as a loose car to push again); `car-doors` fails when it runs after `bus-ride` (old code
   too); `car-theft-passenger-door` sometimes finds no slow car in traffic; `step-edges`
   (a street across a step) and `tunnel-mouth` (Divadelní) fail on the old code as well.
 - **Traffic by time of day** is one city-wide figure; queues on real routes, the
