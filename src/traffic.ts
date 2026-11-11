@@ -441,6 +441,10 @@ export class Traffic {
         }
         const ahead = dx * fx + dy * fy;
         if (ahead < 0 || ahead > reach + o.r) continue;
+        // Someone beside the car, not in front of it (a walker pushed out to its side as
+        // they pass close): driving on pushes them aside, and waiting for them could take
+        // for ever, as they never squeeze past.
+        if (o.kind === 'person' && ahead < L / 2 - o.r) continue;
         const side = dx * fy - dy * fx; // + = to the right
         const inPath = Math.abs(side) < W / 2 + o.r + 0.25;
         if (o.kind === 'car' && ov > 1 && (o.vx * fx + o.vy * fy) / ov < -0.5 && lat < 0.5 && lat > -6) oncoming = true;
@@ -451,7 +455,9 @@ export class Traffic {
         // on a corner): go anyway, but never into the back of the car ahead in the
         // same lane, or into a tram.
         if (a.ignore > 0 && o.kind !== 'person' && o.kind !== 'player') {
-          const queue = o.kind === 'tram' || (o.car?.mode === 'traffic' && Math.cos(o.car.h - c.h) > 0.5);
+          // (One beside it, not ahead of its front, is no queue it is in: two cars that met
+          // side by side in a junction would each wait for the other for ever.)
+          const queue = o.kind === 'tram' || (o.car?.mode === 'traffic' && Math.cos(o.car.h - c.h) > 0.5 && ahead > L / 2 - o.r);
           if (!queue || !inPath || ahead - L / 2 - o.r > 2) {
             // A leader round a sharp bend can face across this car while already on
             // the lane it is turning into. Keep ordinary braking for it; escaping
