@@ -2146,7 +2146,8 @@ async function main() {
         if (a === inCar) jolt = Math.max(jolt, hit);
       }
     }
-    if (inCar?.two && jolt > 7) throwOff();
+    // (A motorbike is heavier and steadier than a bicycle: it takes a harder knock, about 43 km/h into a wall, to come off.)
+    if (inCar?.two && jolt > (inCar.two === 'moto' ? 12 : 7)) throwOff();
 
     // People and cars
     // `onHit` returns true to let `who` in over the car rather than out of it.
