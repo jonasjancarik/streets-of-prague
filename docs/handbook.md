@@ -899,7 +899,7 @@ record the measurements, merge decisions and pending landmark asset activation.
 - **Bikes and motorbikes.** Cyclists and motorcyclists ride with the traffic, and bikes
   and motorbikes stand on the pavements around you: E gets you on one, and it leans
   into the turns. Take one from someone riding it and they're pushed off (knocked
-  down if it was going), then run. Hit something hard and you're thrown off. On foot,
+  down if it was going), then run. Hit something hard and you're thrown off (a motorbike takes a harder knock than a bicycle). Get out of anything doing more than about 15 km/h (car, bike or tram) and you fall and get hurt. On foot,
   Space jumps (not at a tram stop, where it waits for a tram); in the air, a car can't
   knock you over. Jump at a car that's standing still and you climb onto it and can
   walk over its bonnet, roof or boot and drop off the other side. If it drives off with

@@ -856,14 +856,27 @@ async function main() {
     lastAim = null;
   };
   const drawn: Car[] = []; // the cars drawn this frame
+  // Getting out of something that's moving (the player's own doing) leaves you on the
+  // ground, hurt in proportion to its speed.
+  const JUMP_OUT = 4; // m/s: slower than this you step out
+  const fallOut = (vx: number, vy: number) => {
+    const speed = Math.hypot(vx, vy);
+    if (speed < JUMP_OUT) return;
+    telemetry.did('jumped from a moving vehicle');
+    walker.knock(vx * 0.6, vy * 0.6);
+    hurt(speed * 1.2);
+    shake = Math.max(shake, 0.6);
+  };
   // Off the tram onto the pavement beside it.
-  const getOff = () => {
+  const getOff = (jump = false) => {
+    const v = ride.driving ? ride.v : null, sp = v ? v.speed : 0;
     const [x, y, h] = ride.leave();
     pid.leave();
     [walker.x, walker.y] = nearestWalkable(grid, x, y);
     Object.assign(walker, { h, vx: 0, vy: 0 });
     walker.mesh.visible = true;
     walker.sync();
+    if (jump) fallOut(Math.cos(h) * sp, Math.sin(h) * sp);
     if (inspector.phase === 'decide') inspector.run(walker.x, walker.y, h);
   };
   // A PID ticket, while you're riding without one.
@@ -1024,8 +1037,7 @@ async function main() {
     }
     // On a tram: off at this stop (or here, if it's stuck), or at the next one.
     if (ride.on) {
-      if (ride.canLeave()) getOff();
-      else if (ride.driving) showBanner(t('Stop the tram first'));
+      if (ride.canLeave()) getOff(true);
       else ride.requestStop();
       return;
     }
@@ -1069,7 +1081,9 @@ async function main() {
       Object.assign(walker, { x: c.x, y: c.y, _tx: c.x, _ty: c.y, level: world.track(c), gz: c.gz });
       // Through the door (leaveCar follows, once it's open), or straight out.
       if (!quick && getIn.exit(c)) return;
+      const vx = c.vx, vy = c.vy;
       leaveCar(c);
+      if (!quick) fallOut(vx, vy);
       return;
     }
     const boat = only ? null : boats.near(walker.x, walker.y, world.groundFor(walker, walker.x, walker.y) + walker.z + walker.perch);
@@ -2028,6 +2042,7 @@ async function main() {
       ride.drive!.hit = 0;
       if (hit > 0) { shake = Math.min(1.2, shake + hit * 0.06); hapticCrash(hit); }
     }
+    ride.coast(dt);
     trams.update(dt, { near: obstacles, x: px(), y: py(), r: LIFE_RADIUS + 100, seen: (x, y) => !offscreen(x, y) });
     if (ride.on) ride.seat(walker);
     taxi.seat();

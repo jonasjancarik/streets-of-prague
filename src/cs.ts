@@ -415,7 +415,6 @@ export const CS: Record<string, string> = {
   'Take over the tram and drive it yourself': 'Převzít tramvaj a řídit ji',
   'Take over the tram': 'Převzít tramvaj',
   'You took over the tram': 'Tramvaj je tvoje',
-  'Stop the tram first': 'Nejdřív tramvaj zastav',
   'Driving the tram': 'Řízení tramvaje',
   'Pull away and brake': 'Rozjet se a brzdit',
   'Brake hard': 'Brzdit naplno',

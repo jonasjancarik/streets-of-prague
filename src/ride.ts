@@ -38,6 +38,7 @@ export class TramRide {
   shown: string;
   net: TrackNet;
   drive: TramDrive | null;
+  rolling: TramDrive[]; // trams you stepped out of while they moved: they brake to a stop by themselves
   passengers: Passengers | null = null; // set once the crowd exists
   next: StopAhead | null = null; // the next stop on your track while driving
   atName: string | null = null; // the stop you stand at
@@ -46,6 +47,7 @@ export class TramRide {
   constructor(trams: Trams, world: RideWorld, el: HTMLElement, net: TrackNet) {
     this.net = net;
     this.drive = null; // set while you're driving the tram you're on
+    this.rolling = [];
     this.trams = trams;
     this.world = world;
     this.el = el;
@@ -143,7 +145,8 @@ export class TramRide {
     v.hold = false;
     this.passengers?.close();
     this.next = this.atName = null;
-    if (this.drive) v.speed = 0; // left standing where it is
+    // Stepping out of a moving tram doesn't stop it: it rolls on with nobody at the controls.
+    if (this.drive && v.speed > 0.2) this.rolling.push(this.drive);
     this.drive = null;
     this.v = null;
     this.dest = null;
@@ -156,8 +159,19 @@ export class TramRide {
   atStop() { return this.riding.dwell > 0; }
   // Held up between stops long enough that you may as well walk.
   get stuck() { return this.held > STUCK; }
-  // (Driving, once it has nearly stopped.)
-  canLeave() { return this.drive ? this.riding.speed < 1.5 : this.atStop() || this.stuck; }
+  // (Driving: whenever you like, even on the move.)
+  canLeave() { return this.drive ? true : this.atStop() || this.stuck; }
+
+  // Trams left rolling carry on along the track, slowing only as a coasting tram does,
+  // until they stand or run into something (as a car you step out of does).
+  coast(dt: number) {
+    if (!this.rolling.length) return;
+    const ctl: DriveControls = { move: 0, turn: 0, brake: false, aim: null };
+    this.rolling = this.rolling.filter((d) => {
+      d.update(dt, ctl);
+      return d.v.speed > 0.01 && !!d.v.driven && this.trams.list.includes(d.v);
+    });
+  }
   watch(dt: number) { this.held = this.riding.speed < 0.2 && this.riding.dwell <= 0 ? this.held + dt : 0; }
   arrived() { return this.riding.dwell > 0 && this.riding.halt === this.dest; }
   // Get off at the next stop.
