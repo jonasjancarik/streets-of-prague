@@ -929,9 +929,9 @@ export class Car {
   // A dustcart out on its round: traffic behind it leaves room at the back for the crew
   // tipping bins into it.
   binRound?: boolean;
-  // In traffic, standing for a tram in its way (traffic.ts): a tram that is waiting for
-  // it in turn pushes it aside at once (trams.ts).
-  forTram?: boolean;
+  // In traffic, standing for a tram in its way (traffic.ts): where that tram's body is.
+  // The tram, if it is waiting for this car in turn, pushes it aside at once (trams.ts).
+  forTram?: [number, number];
   // A delivery courier's box colour (COURIER_BOXES), on a bike or moped.
   courier?: string;
   // Blown up (src/fire.ts): a charred wreck nobody can drive.

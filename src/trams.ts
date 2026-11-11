@@ -559,8 +559,9 @@ export class Trams {
     // (Already pushing one car aside, the next one in the way goes along with it: pushing
     // one at a time, a tram swapped between two standing nose to tail and never moved.)
     // (A car that is itself standing for this tram, across the track at a junction, would
-    // wait for ever: pushed aside almost at once.)
-    const patience = v.shove.length ? 1 : v.blocker?.mode === 'traffic' ? (v.blocker.forTram ? 2 : seen(v.blocker.x, v.blocker.y) ? 30 : 12) : PUSH;
+    // wait for ever: pushed aside almost at once. Not one standing for another tram.)
+    const at = v.blocker?.forTram, forMe = !!at && v.parts.some((p) => Math.hypot(p.x - at[0], p.y - at[1]) < SECTION);
+    const patience = v.shove.length ? 1 : v.blocker?.mode === 'traffic' ? (forMe ? 2 : seen(v.blocker.x, v.blocker.y) ? 30 : 12) : PUSH;
     if (v.held > patience && v.blocker && v.blocker.mode !== 'player') { v.shove.push(v.blocker); v.held = 0; }
     if (v.shove.length) target = Math.min(target, CREEP);
 
