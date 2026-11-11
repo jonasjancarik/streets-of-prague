@@ -38,16 +38,24 @@ headless **Google Chrome** on the GPU at fixed places (`stand`, `drive`, `woods`
     stretched a load to 115 s; the main checkout's own server shares that cache
     too. Load each server once before timing, so its own optimisation is done.
     When cleaning up, move the symlinks to the Trash before `git worktree remove`,
-    so the removal can't touch the targets.
+    so the removal can't touch the targets. Keep these worktrees in the scratchpad or
+    under `.claude/worktrees` (which `vite.config.js` tells the main dev server not to
+    watch): a worktree elsewhere inside the checkout is watched, and on 10 November
+    two of them ran the main server out of memory.
   - A change you can switch in the page: `--ab "window.__ab = (on) => { … }"`
     toggles it every 2 s in one page. It's the most reliable way to find what a
     piece costs. To patch a shader piece out: clone the material, wrap its
     `onBeforeCompile`, string-replace the GLSL, give it a new
     `customProgramCacheKey`, and swap materials in `__ab`.
-  - `--ab` (and `--eval`) code can `await import('/src/shading.ts')`: Vite hands the
-    page the same module instance the game uses, so any exported `{ value }` switch
-    (`DIRT`, `LEAVES`, `FACADE_ON`, `LAMP_SHADOWS`) toggles without changing code.
-    Wrap it in an async function; the bench waits for the promise.
+  - `--ab` (and `--eval`) code can import a game module and flip an exported
+    `{ value }` switch (`DIRT`, `LEAVES`, `FACADE_ON`, `LAMP_SHADOWS`,
+    `SEND_CHANGED_MATRICES`) without changing code. Import the game's own copy:
+    once a module has been edited, Vite serves the game a `?t=` URL, and a plain
+    `import('/src/webgpu.ts')` then gets a second, unused copy whose switch does
+    nothing (an A/B that measured nothing on 10 November). Take the URL from
+    `performance.getEntriesByType('resource').map((e) => e.name).filter((n) =>
+    n.includes('/src/webgpu.ts')).pop()`, and check that the switch took (count
+    draws or uploads). Wrap it in an async function; the bench waits for the promise.
   - **Benchmark a snapshot, not the checkout you're editing.** Saving a file makes Vite
     reload the page mid-run, and the run dies waiting for the map (`waitForFunction`
     timeout). Serve a detached worktree of your branch on its own port and move it
@@ -273,7 +281,11 @@ The ground is shaded on every pixel. Measure anything you add to `PATTERNS_GLSL`
   key that leaves a piece out, then `--ab` between the two on `--android`. A uniform
   switch (`ROOF_DETAIL`, `FACADE_ON`) only skips what sits inside its branch.
 - **Measured and not worth it:** folding the shadow filter's trigonometry together
-  (Metal copes already), and 4× instead of 8× anisotropy on the facade pictures.
+  (Metal copes already), 4× instead of 8× anisotropy on the facade pictures, drawing
+  the buildings' depth before the ground so the ground under roofs is skipped (3 % on
+  a Pixel 5 at 2×, nothing on an M5, one more draw per building mesh), and packing the
+  128- and 256-tree pages into fewer pages (leaving them out entirely saved only 3–4 %
+  with the CPU slowed 4×).
 - Changes that would help but alter the look are decisions for the user: MSAA off
   at 2× (antialiasing can only be chosen when the renderer is created), a tighter
   fade for the stones, a cheaper shadow filter.
@@ -325,6 +337,22 @@ The ground is shaded on every pixel. Measure anything you add to `PATTERNS_GLSL`
   loading; to time tile loads slowed, set the throttle before `--eval`.
 - Check behaviour after simulation changes: trams, traffic and people still move,
   some stop for obstacles, and the grids hold no stale entries.
+- **A speed-up of traffic or a lookup must give the same answers, so prove it.**
+  Before changing `src/traffic.ts`, record traces with the old code
+  (`node scripts/check-traffic-lanes.mjs --record FILE`, from a worktree of the
+  baseline if the change is already made, with any new fixtures copied in), then
+  `--compare FILE` with the new code: it replays seeded traffic step by step. Run
+  `check-traffic-queues.mjs` and `check-traffic-merges.mjs` on both and diff the
+  output. Keep the order obstacles are visited in: skipping some or sorting
+  differently can change which one a car reacts to first, and the traces then part.
+  For a geometric lookup, compare old and new over many places, as
+  `scripts/check-course-project.mjs` does for the river (180,000 places, every answer
+  identical, 1.6 → 0.2 s).
+- **A scenario that fails after your change may have failed before it.** On 11
+  November `bus-ride`, `job-tram` and `dustcart` failed now and then on the code
+  before the change too (`bus-ride` in 2 runs of 11). Run a failing scenario several
+  times on both revisions before blaming or excusing the change, and look at why it
+  fails (`t.probe()`, the vehicle's state over time) rather than at the count alone.
 
 ## Streaming and resource lifetime
 
@@ -374,6 +402,14 @@ These checks adapt Quiet Blocks' edit/reuse lessons to a moving city:
   frame less on the drive, the woods twice as fast on an M5), so every write to an
   instance matrix must set `needsUpdate` (`send()` does). Other meshes bind their
   matrices as vertex data, sent only when changed.
+- **A new instanced mesh of that kind needs `userData.sharedMatrices = true`** (as the
+  tree pages, `Figures` and the car pool pages have). Above 1024 instances its
+  matrices go into a storage buffer its shaders share (`shareInstances` in
+  `src/webgpu/trees.ts`), and `configureRenderer` marks them as storage before
+  anything is built for the mesh. Without the flag, a mesh first built in the shadow
+  pass (the sun can see it before the camera does) gets its buffer made for vertex
+  input only, the storage binding that follows is refused ("Binding usage … doesn't
+  match expected usage (BufferUsage::Storage)") and the mesh isn't drawn.
 
 ## WebGPU
 
@@ -478,6 +514,15 @@ core count: `--init "Object.defineProperty(navigator, 'hardwareConcurrency', { g
   a test tab a failed run left open (`curl http://localhost:9333/json`, then
   `/json/close/<id>`). A first load right after the dev server starts can fall back to
   WebGL (Vite's "Outdated Optimize Dep"); `--require-webgpu` refuses it, run again.
+- **Run one scene per bench run on the Pixel 5.** On 10–11 November a second scene in
+  the same run closed the page every time (`ECONNRESET`). Its Chrome held 217 tabs left
+  by test runs of several projects, and other sessions use the phone too: close only
+  tabs whose URL is your own server's.
+- **Watch for touches on the screen during a run.** That night something lying on the
+  phone touched it for minutes, typed into the Dialer and crashed Chrome, and an A/B
+  run during it showed a 9 % difference that wasn't there. Count them with
+  `adb shell getevent -lt | grep -c BTN_TOUCH` running alongside, and discard runs
+  with any. Turn the screen off when done (`adb shell input keyevent KEYCODE_SLEEP`).
 - `--dpr tier` gives the tier its own pixel ratio, which is what a player gets and what
   Auto needs to scale; `--dpr 2` pins it.
 - An `--ab` switch that rebuilds shaders (the sun's `castShadow`) leaves windows with
@@ -498,6 +543,16 @@ core count: `--init "Object.defineProperty(navigator, 'hardwareConcurrency', { g
   pixels is shading, and the part left at zero pixels is roughly the JavaScript. The
   bench's `js` figure against the frame time says the same. A frame five times its
   JavaScript time is not a main-thread problem, whatever the desktop profile says.
+  On 11 November, standing on the Old Town Square at Medium, the Pixel 5's frame rose
+  by about 9 ms for each 1× of pixels: limited by its GPU from 1.5× up (where Medium
+  and higher run), by its 16–18 ms of JavaScript at 1×. So a main-thread saving shows
+  on the phone only at 1× or Low: the matrix upload fix that doubled the M5's frame rate
+  in the woods measured nothing on the phone at Medium 1.5×.
+- **Where the Pixel 5's GPU time goes at 2×** (left out by `--ab`, 49 ms a frame): the
+  whole ground 30 %, of which its patterns 8 % and the sun's shadow on it 8 %; the
+  buildings 14 %. About 7 ms of the ground is still unattributed (lighting, the relief
+  and sky textures, overlapping layers, the stencil): the main lead for phones. See
+  the 11 November sections of `docs/performance-log.md`.
 - **A hot phone is a different phone.** At 37–38 °C the Pixel 5's JavaScript took
   28–36 ms a frame, against 16–20 ms at 35 °C. Note the temperature with every result.
 - The phone has no GPU timer here (`gpu –`), and vsync holds frames to multiples of

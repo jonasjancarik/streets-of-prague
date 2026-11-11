@@ -1001,7 +1001,6 @@ one page, 40–60 s each, every window agreeing, 26–30 °C, no touches on the 
 | the ground's patterns (`userData.flatten()`) | 45.0 ms | 8 % |
 | the whole ground (its layers hidden) | 34.8 ms | 30 % |
 | the buildings (hidden) | 42.3 ms | 14 % |
-
 | the sun's shadow on the ground (`receiveShadow` off on its layers) | 45.2 ms | 8 % |
 
 So the ground costs about 14.6 ms there: 3.9 ms the patterns, 3.9 ms reading the sun's
