@@ -64,6 +64,7 @@ STAIRS_SAME = 1.0  # m: the same for stairs (which have their own profile) and w
 NO_HIGHWAY = {"proposed", "construction", "elevator", "platform", "bus_stop", "abandoned", "razed", "planned"}
 STATION_FOOT = {"footway", "steps", "corridor", "pedestrian", "path"}  # a station's ways inside
 STATION = 30.0  # m from a metro station, platform or stop: its corridors and stairs
+ENTRANCE = 6.0  # m from a metro entrance: a corridor reached from it by a short passage on the ground
 MOSTY_ITEM ="622e66a29f3d459a8dbc57939954db8c"  # IPR's mosty_shp
 
 
@@ -89,13 +90,16 @@ def station_ways(els, tf, ground=frozenset()):
     """The ids of the ways that are a metro station's corridors and stairs: OSM tags them
     tunnel=yes, but they're the station inside, not tunnels to walk through. Footways
     and stairs in tunnels, taken together where they meet, are left out as a whole if
-    any of them is indoors (indoor=*), reaches a metro entrance (railway=subway_entrance),
-    comes within STATION metres of a metro station, platform or stop, or is inside a
+    any of them is indoors (indoor=*), reaches a metro entrance (railway=subway_entrance)
+    or comes within ENTRANCE metres of one (the entrance is often on a passage at street
+    level that leads to the stairs), comes within STATION metres of a metro station, platform or stop, or is inside a
     station's outline. Underpasses away from the metro (under the magistrála by Hlavní
-    nádraží, say) stay. `ground`: ways tagged as tunnels that are passages through
+    nádraží, say) stay. The chunk's cut may hold only part of a vestibule, without the
+    station (Jiřího z Poděbrad's west half): the entrances still tell. `ground`: ways tagged as tunnels that are passages through
     buildings at street level (osm_area.extract's ground_ways), neither."""
     where = {el["id"]: (el["lon"], el["lat"]) for el in els if el["type"] == "node"}
     entrances = {el["id"] for el in els if el["type"] == "node" and el.get("tags", {}).get("railway") == "subway_entrance"}
+    doors = STRtree(shapely.points([tf.transform(*where[n]) for n in entrances]) if entrances else [])
     near, outlines = [], []
     for el in els:
         tags = el.get("tags", {})
@@ -134,6 +138,7 @@ def station_ways(els, tf, ground=frozenset()):
         line = shapely.multipoints(pts) if pts else None
         if (any("indoor" in foot[i]["tags"] for i in ids) or nodes & entrances
                 or (line is not None and (len(stations.query(line, predicate="dwithin", distance=STATION))
+                                          or len(doors.query(line, predicate="dwithin", distance=ENTRANCE))
                                           or len(inside.query(line, predicate="intersects"))))):
             out.update(ids)
     return out
