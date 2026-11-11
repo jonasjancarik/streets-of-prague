@@ -13,6 +13,10 @@ export default {
     await t.wait(0.5);
     let j = t.startJob('tram');
     t.check('the shift starts in the cab', j.state === 'on' && !!t.tram(), j);
+    // (More than the shift's 4 minutes: queued behind a tram that waits for a car parked
+    // on the track, or for a fire engine at work, the five stops can take longer. This
+    // checks the stops and the pay, not the clock.)
+    t.jobTime(600);
     // Drive: up to speed, slow down for the stop ahead, open the doors at it, wait, go on.
     let served: string | null = null, paidAfterOne = 0, shot = false;
     for (let s = 0; s < 900 && t.job().state === 'on'; s += 0.5) {
