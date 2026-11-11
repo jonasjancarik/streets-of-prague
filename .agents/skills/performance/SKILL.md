@@ -283,7 +283,9 @@ The ground is shaded on every pixel. Measure anything you add to `PATTERNS_GLSL`
 - **Don't use generators or per-call allocations in per-step code.**
   `SpatialHash.near` fills an array. `obstacles()` in `main.ts` reuses one list,
   which holds until the next call, so never look up obstacles while going through
-  a list. `Polyline`/`Loop` keep each segment's heading, so there's no `atan2` per
+  a list. The obstacles themselves come from a pool filled in again each step: keep
+  the car or a position, never an obstacle. (Keeping `SpatialHash`'s bucket arrays
+  between steps measured slower than making them again, 11 November.) `Polyline`/`Loop` keep each segment's heading, so there's no `atan2` per
   `at()`.
 - **Update only what changed.** The tram grid re-files only trams that moved
   (`file`/`unfile` in `src/trams.ts`); when a tram leaves service it's taken out in

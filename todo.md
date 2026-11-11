@@ -166,12 +166,12 @@ before that day's frame-count fix may be doubled.
   What's left, largest first: three.js's own work for each object drawn (211 a frame on
   Medium; 75 of them the shadow pass), `traffic.update` (8–13 %: every obstacle circle
   in a square of reach + 8 m round each car, most of them parked cars far to the side),
-  the crowd (3 ms a frame standing among 1200 people on the phone), garbage from
-  `simulate` (an obstacle object for every person and car circle each step, the hash's
-  buckets, `loose.filter`; the collector takes 4 % on the phone), `CarPool.render`,
-  `syncResting` and `moving` over every loose car twice a step, `BusStops.sync` over
-  every stop in the city each frame (and `place` again each frame for a stop that
-  can't be placed).
+  the crowd (3 ms a frame standing among 1200 people on the phone), `CarPool.render`,
+  `syncResting` and `moving` over every loose car twice a step. `simulate`'s obstacles,
+  lists and tram bodies are reused and `BusStops.sync` looks only near the view since
+  11 November (the collector's share down by a quarter on the M5, frame times within
+  noise; not yet measured on the phone). The hash's buckets are still made each step:
+  keeping them measured slower.
 - **Empty instanced meshes** (unused lamp models, gun flashes, beacons, bins: 17 of the
   211 objects) measured 0–3 % when hidden, within the noise, and hiding them would put
   off their shader builds to first use. Left alone.
