@@ -339,6 +339,13 @@ before that day's frame-count fix may be doubled.
 - **Buses** now find a way round where a line has no street (centrum: 40 breaks to 3).
   Left: an AE bus still stalls near Na Poříčí; 581 line breaks over 30 m citywide not
   gone through (`check-bus-lines.mjs praha`); buses cut across sharp bends in a street.
+- **A bus stands in a junction for up to a minute** on the 135 from Římská to Na
+  Smetance (11 November): speed 0 in the junction 163 m short of the stop for 55 s, its
+  `stuck` timer running to 3.5 s and `ignore` letting it go for 1.5 s over and over. A
+  bus picks up speed at 1.2 m/s², so in 1.5 s it moves little more than a metre and is
+  blocked again where a car would be through. The `bus-ride` scenario fails on it about
+  one run in five (no inspection, nobody let off, within its 3 minutes), with or
+  without the 11 November traffic changes. Not yet looked at: what is in its way there.
 - **Traffic by time of day** is one city-wide figure; queues on real routes, the
   direction of the peak and the car mix are next (`docs/traffic.md`).
 - **Parked cars:** the 18 October centre-map sweep found 222 cars in a bus's way,
