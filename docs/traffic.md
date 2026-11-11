@@ -1,7 +1,9 @@
 # AI car traffic
 
 read_when: changing traffic counts, routes, bus displays, police lights, parking
-clearance or tile street loading; regenerating the time-of-day table.
+clearance or tile street loading; regenerating the time-of-day table; when a vehicle
+stands still for long (cars, buses, trams and dustcarts waiting on each other) or a
+gameplay scenario fails now and then.
 
 ## How it works
 
@@ -193,6 +195,23 @@ along the line it looks for the shortest way by street (2.5 km at most) to a str
 the line takes further on. On that way round the bus makes for no stop; back on the
 line, the stops it passed are skipped.
 
+**Waiting for each other.** Most long holds found so far were two things each waiting
+for the other, with nothing that ever gives way. These are handled now (11 November 2026):
+
+- A person beside a car's body, behind its front, isn't in its way. People walking into
+  a standing car are pushed out to its outline, and cars never squeeze past people, so a
+  walker at a bus's side used to hold it for as long as they stood there.
+- When stuck, a car squeezes past most things but not the car ahead in its queue. Only a
+  car ahead of its front counts as that now; two cars that met side by side in a junction
+  used to be each other's queue.
+- Traffic leaves 2.5 m more behind a dustcart on its round (`Car.binRound`), where a
+  dustman stands to tip a bin. A dustcart doesn't stop for houses within 3 m of a tram
+  track (`Trams.trackNear`), since a tram waits 30 s behind it and then pushes it off.
+- A car standing for a tram records where that tram is (`Car.forTram`). If the same tram
+  is waiting for the car, it pushes the car aside after 2 s instead of 30.
+- The tram you drive records the tram it stops for (`gapToTram` sets `waitFor`), so an
+  AI tram waiting on it in turn goes on instead of waiting for ever.
+
 ## Offline checks
 
 `scripts/offline-city.mjs` loads a built map in Node: tiles, the street graph, each
@@ -304,3 +323,22 @@ of the junction lean on its own.
 - **Clean-up look.** Cars are released only offscreen, so a car that stays in view keeps
   the count above target until it isn't. Cars fade in and out nowhere, which is fine
   now but would matter with a bigger difference between day and night.
+- **Stand-offs, and the timers that break them.** Each fix above removes one case of two
+  things waiting for each other; the rest are broken only by timers: traffic's `stuck`
+  and `ignore` (3.5 s, then 1.5 s of squeezing past, never past people, trams or the car
+  ahead), a tram's patience (30 s for a car it can see, then it pushes it off), and the
+  clean-up that takes a car out after 30 s in a jam it can't see. That keeps turning up
+  new holds rather than ending them, and a pushed car makes a new one: a car a tram
+  shoves off is left on the track as a loose car, which the tram has to push again. A
+  sturdier design would decide who goes when two things block each other (right of way,
+  or a reservation of the junction) instead of waiting and then squeezing through.
+- **Nádražní, on the way to Na Knížecí** (50.0679, 14.4068): traffic jams across the
+  tram track and the trams stand for minutes, pushing one car after another off it. This
+  is why `job-tram` fails about one run in two even with 10 minutes for the shift.
+- **The scenarios run in live traffic.** Most gameplay scenarios start in a real street
+  with traffic, people, trams and dustcarts about, so a run passes or fails on what
+  happens to be near (`bus-ride`, `dustcart`, `job-tram`, `car-theft-passenger-door`), and
+  some depend on the scenario run before them (`car-doors` after `bus-ride`). Either the
+  world should be seeded and reset between scenarios, or a scenario that tests one thing
+  (a job's pay, a door) should clear the traffic it doesn't need, as `dustcart` does with
+  `t.empty()`, and leave the stand-offs to scenarios written for them.
