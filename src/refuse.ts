@@ -30,6 +30,7 @@ const REACH = 13; // m from the lane to a house's wall, at most
 const WALK = 1.7, PUSH = 1.25; // m/s on foot, and wheeling a bin
 const STEP = 0.45; // m: the height of the steps they ride on
 const TIP = 5; // seconds a bin takes on the lift
+const TRAM_CLEAR = 3; // m from a tram track's middle that a cart stands clear of it
 const HANDLE = 0.8; // m from a dustman to the middle of the bin he's wheeling
 const GIVE_UP = 14; // seconds getting no nearer before they leave it
 const BINS = 32;
@@ -57,6 +58,9 @@ interface RefuseOptions {
   edgesNear: (x: number, y: number, r: number) => DriveEdge[];
   spot: (x: number, y: number) => boolean; // where a new cart may turn up
   bodyAt: (x: number, y: number, r: number, skip: Car | null) => boolean;
+  // Whether a tram track runs this near a spot: a cart working a house there for a minute
+  // would be in the trams' way, and they push a car off the track before long.
+  tramNear?: (x: number, y: number, r: number) => boolean;
   hour: () => number; quiet: () => boolean;
 }
 
@@ -98,13 +102,14 @@ export class Refuse {
     const { o } = this;
     const edges = o.edgesNear(x, y, r ?? 330).filter((e) => street(e) && e.path.length > 30);
     if (!edges.length) return null;
-    const avoid = r === undefined ? (sx: number, sy: number) => o.offscreen(sx, sy) && o.spot(sx, sy) : (sx: number, sy: number) => Math.hypot(sx - x, sy - y) < r && o.grid.at(sx, sy) === 0;
+    const avoid = r === undefined ? (sx: number, sy: number) => o.offscreen(sx, sy) && o.spot(sx, sy) : (sx: number, sy: number) => Math.hypot(sx - x, sy - y) < r && o.grid.at(sx, sy) === 0 && !o.tramNear?.(sx, sy, TRAM_CLEAR);
     const agent = o.traffic.spawn(avoid, edges, 'garbage');
     if (!agent) return null;
     const rnd = o.rng;
     agent.route.pick = (_e, opts) => { const ok = opts.filter(street); return ok.length ? ok[Math.floor(rnd() * ok.length)] : null; };
     agent.crawl = CRAWL;
     agent.cruise = 1;
+    agent.car.binRound = true;
     const round: Round = { agent, car: agent.car, crew: [], since: 0, gap: GAP * (1 + rnd()), phase: 'drive', doors: [], t: 0 };
     for (let i = 0; i < CREW; i++) {
       const m: Dustman = { x: agent.car.x, y: agent.car.y, h: agent.car.h, vx: 0, vy: 0, anim: new Anim(o.kit, 'hold', rnd()), round, side: i ? -1 : 1, job: 'ride', t: 0, down: 0, best: Infinity, stuck: 0 };
@@ -118,7 +123,7 @@ export class Refuse {
 
   // Dev teleport: everyone goes.
   reset() {
-    for (const r of this.rounds) if (r.phase !== 'gone') { r.car.working = false; r.agent.crawl = r.agent.stop = undefined; }
+    for (const r of this.rounds) if (r.phase !== 'gone') { r.car.working = r.car.binRound = false; r.agent.crawl = r.agent.stop = undefined; }
     this.rounds = [];
     this.crew = [];
     this.bins = [];
@@ -224,7 +229,8 @@ export class Refuse {
       const centre = Math.hypot(c.x - CENTRE[0], c.y - CENTRE[1]) < ROUNDS;
       // Far enough on from the last house, on a street they work, and not in a junction.
       if (r.since > r.gap && e && street(e) && centre && s > a.route.leg.s0 + 8 && s < a.route.leg.s1 - 10) {
-        const doors = this.doors(e, s);
+        // (Not on the tram tracks: the next tram would wait behind it and then push it off.)
+        const at = a.route.leg.path.at(s), doors = this.o.tramNear?.(at.x, at.y, TRAM_CLEAR) ? [] : this.doors(e, s);
         if (doors.length) {
           Object.assign(r, { phase: 'brake', doors, t: 0 });
           a.stop = { edge: e, s };
@@ -272,7 +278,7 @@ export class Refuse {
   abandon(r: Round, taken = false) {
     const { o } = this;
     r.phase = taken ? 'taken' : 'gone';
-    r.car.working = false;
+    r.car.working = r.car.binRound = false;
     r.agent.crawl = r.agent.stop = undefined;
     Object.assign(r, { vx: r.car.vx, vy: r.car.vy, t: 0 });
     for (const m of r.crew) {

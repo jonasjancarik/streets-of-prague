@@ -926,6 +926,12 @@ export class Car {
   crew?: boolean;
   // A dustcart standing at a house while its crew fetch the bins (refuse.ts).
   working?: boolean;
+  // A dustcart out on its round: traffic behind it leaves room at the back for the crew
+  // tipping bins into it.
+  binRound?: boolean;
+  // In traffic, standing for a tram in its way (traffic.ts): a tram that is waiting for
+  // it in turn pushes it aside at once (trams.ts).
+  forTram?: boolean;
   // A delivery courier's box colour (COURIER_BOXES), on a bike or moped.
   courier?: string;
   // Blown up (src/fire.ts): a charred wreck nobody can drive.

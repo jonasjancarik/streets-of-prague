@@ -81,6 +81,10 @@ const TOUCH = 0.1;
 // The largest radius of a standing car's circles that the box round the lane rules out
 // (Car.r is half a car's width and 2 cm; anything larger is measured as before).
 const BOX_R = 1.5;
+// Metres more left behind a dustcart on its round than behind another car: a dustman
+// tipping a bin stands with it some 2 m behind the cart, and a car up against it would
+// shut him in there (and itself behind him).
+const BIN_ROOM = 2.5;
 // The lane ahead of the car being moved (Route.ahead), reused from car to car, and
 // each of its pieces as six numbers: start, direction and length, distance along.
 const lane: number[] = [], pieceAt: number[] = [];
@@ -425,7 +429,7 @@ export class Traffic {
             }
           }
           // In the way only if this car, where it is across its lane, would touch it.
-          const d = along - L / 2 - o.r;
+          const d = along - L / 2 - o.r - (o.car?.binRound && Math.cos(o.car.h - c.h) > 0.5 ? BIN_ROOM : 0);
           if (along < 0 || along > reach + o.r || Math.abs(lat - a.off) >= W / 2 + o.r + TOUCH) continue;
           if (along < along0) { if (d < stillGap) { stillGap = d; still = o; } }
           // (Standing in a junction or beyond it: waited for a while, then squeezed past.)
@@ -479,7 +483,7 @@ export class Traffic {
           // Crossing traffic: give way to cars coming from the right only.
           if (Math.abs(cos) < 0.6 && side < -0.5 && ahead > L && !(merge > 0)) continue;
         }
-        const d = ahead - L / 2 - o.r;
+        const d = ahead - L / 2 - o.r - (o.car?.binRound && Math.cos(o.car.h - c.h) > 0.5 ? BIN_ROOM : 0);
         if (d < gap) { gap = d; blocker = o; }
       }
       // Where to be across the lane: as near its middle as gets past the cars standing

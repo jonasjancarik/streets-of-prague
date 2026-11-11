@@ -274,6 +274,42 @@ export class Trams {
     this.lay();
   }
 
+  // Whether a tram track runs within `r` m of (x, y): where a car stood for long would
+  // be in the trams' way. (The track's pieces by 20 m cell, made at the first question.)
+  private trackCells: Map<number, number[]> | null = null;
+  trackNear(x: number, y: number, r: number) {
+    const C = 20;
+    let cells = this.trackCells;
+    if (!cells) {
+      cells = this.trackCells = new Map();
+      for (const line of this.lines) {
+        const pts = line.pts;
+        for (let i = 1; i < pts.length; i++) {
+          const [ax, ay] = pts[i - 1], [bx, by] = pts[i];
+          for (let ci = Math.floor(Math.min(ax, bx) / C); ci <= Math.floor(Math.max(ax, bx) / C); ci++) {
+            for (let cj = Math.floor(Math.min(ay, by) / C); cj <= Math.floor(Math.max(ay, by) / C); cj++) {
+              const k = ci * 131072 + cj;
+              let l = cells.get(k);
+              if (!l) cells.set(k, l = []);
+              l.push(ax, ay, bx, by);
+            }
+          }
+        }
+      }
+    }
+    for (let ci = Math.floor((x - r) / C); ci <= Math.floor((x + r) / C); ci++) {
+      for (let cj = Math.floor((y - r) / C); cj <= Math.floor((y + r) / C); cj++) {
+        const l = cells.get(ci * 131072 + cj);
+        if (l) for (let i = 0; i < l.length; i += 4) {
+          const ax = l[i], ay = l[i + 1], ux = l[i + 2] - ax, uy = l[i + 3] - ay, uu = ux * ux + uy * uy || 1;
+          const u = Math.max(0, Math.min(1, ((x - ax) * ux + (y - ay) * uy) / uu));
+          if (Math.hypot(ax + ux * u - x, ay + uy * u - y) < r) return true;
+        }
+      }
+    }
+    return false;
+  }
+
   // Every line's trams laid out afresh for the clock's day and hour, evenly round it:
   // at the start, and when the clock jumps (the time picked on the start screen, a
   // night in the cells), where leaving one by one out of sight would keep the trams of

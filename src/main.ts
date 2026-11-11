@@ -1741,6 +1741,7 @@ async function main() {
     scene, traffic, grid, kit, height: ground, rng: seeded, offscreen, edgesNear,
     spot: (x, y) => lifeSpots(px(), py(), 40)(x, y),
     bodyAt: (x, y, r, skip) => police.bodyAt(x, y, r, skip),
+    tramNear: (x, y, r) => trams.trackNear(x, y, r),
     hour: () => clock.hour, quiet: () => !!testkit?.quiet,
   });
   // Streets far behind you leave the graphs, and what is indexed from them, unless one
