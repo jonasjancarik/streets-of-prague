@@ -32,6 +32,7 @@ const SLOW_BEFORE = 200; // m before your stop where the ride goes back to norma
 const CELL = 50;
 const STUCK = 10; // seconds standing between stops before you can get off there
 const CLOSE = 40; // m: held up this near your stop, you get off and walk
+const RETRY = 250; // ms: a sign that couldn't be placed yet (its street not loaded) is tried again after this
 
 // The kerb at the bus stops, kept clear of parked cars as on the real ones: from a bus's
 // length behind where its front stops to a little past it, on the right of the line
@@ -110,8 +111,13 @@ interface BusStopsOptions {
 export class BusStops {
   o: BusStopsOptions;
   stops: BusStop[] = [];
-  private grid = new Map<string, BusStop[]>();
+  private grid = new Map<number, BusStop[]>(); // by the cell where the line puts the stop
   private sendT = 0;
+  private order = new Map<BusStop, number>(); // each stop's place in `stops`
+  private shownNow: BusStop[] = [];
+  private visit: BusStop[] = [];
+  private retryAt = new Map<BusStop, number>();
+  private slack = 0; // m: the furthest a placed sign has moved from where it was filed, either way
 
   constructor(lines: BusLine[], o: BusStopsOptions) {
     this.o = o;
@@ -121,8 +127,9 @@ export class BusStops {
         const same = this.near(p.x, p.y, MERGE).find((s) => s.name === name && Math.cos(s.ang - p.ang) > 0.5);
         if (same) { same.lines.push({ line, at, i }); return; }
         const stop: BusStop = { x: p.x, y: p.y, ang: p.ang, name, lines: [{ line, at, i }], placed: false, mesh: null, shown: false };
+        this.order.set(stop, this.stops.length);
         this.stops.push(stop);
-        const k = `${Math.floor(p.x / CELL)},${Math.floor(p.y / CELL)}`;
+        const k = Math.floor(p.x / CELL) * 131072 + Math.floor(p.y / CELL);
         if (!this.grid.has(k)) this.grid.set(k, []);
         this.grid.get(k)!.push(stop);
       });
@@ -135,7 +142,8 @@ export class BusStops {
     const pad = r + 15; // (a placed sign is a few metres off where it was filed)
     for (let i = Math.floor((x - pad) / CELL); i <= Math.floor((x + pad) / CELL); i++) {
       for (let j = Math.floor((y - pad) / CELL); j <= Math.floor((y + pad) / CELL); j++) {
-        for (const s of this.grid.get(`${i},${j}`) || []) if (Math.hypot(s.x - x, s.y - y) < r) out.push(s);
+        const cell = this.grid.get(i * 131072 + j);
+        if (cell) for (const s of cell) if (Math.hypot(s.x - x, s.y - y) < r) out.push(s);
       }
     }
     return out;
@@ -160,7 +168,9 @@ export class BusStops {
     while (off < 12 && o.onRoad(x(off), y(off))) off += 0.25;
     off += 0.3; // (a little way onto the pavement)
     while (off > 1.2 && o.solid(x(off), y(off))) off -= 0.25;
-    Object.assign(s, { x: q.x + rx * off, y: q.y + ry * off, ang: q.ang, placed: true });
+    const sx = q.x + rx * off, sy = q.y + ry * off;
+    this.slack = Math.max(this.slack, Math.abs(sx - s.x), Math.abs(sy - s.y));
+    Object.assign(s, { x: sx, y: sy, ang: q.ang, placed: true });
     return true;
   }
 
@@ -179,16 +189,45 @@ export class BusStops {
   }
 
   // Only signs near the view are in the scene (and only once their street has loaded).
+  // Looks only at the stops filed near the view and those shown now, in the order of
+  // `stops`, as going through them all would.
   sync(x: number, y: number, r: number, height: (x: number, y: number) => number) {
-    for (const s of this.stops) {
-      const show = Math.abs(s.x - x) < r && Math.abs(s.y - y) < r && (s.placed || this.place(s));
+    const visit = this.visit, now = performance.now();
+    visit.length = 0;
+    for (const s of this.shownNow) visit.push(s);
+    const inView = (s: BusStop) => Math.abs(s.x - x) < r && Math.abs(s.y - y) < r;
+    const pad = r + this.slack, i0 = Math.floor((x - pad) / CELL), i1 = Math.floor((x + pad) / CELL), j0 = Math.floor((y - pad) / CELL), j1 = Math.floor((y + pad) / CELL);
+    if ((i1 - i0 + 1) * (j1 - j0 + 1) > this.grid.size) {
+      for (const s of this.stops) if (inView(s)) visit.push(s);
+    } else {
+      for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+        const cell = this.grid.get(i * 131072 + j);
+        if (cell) for (const s of cell) if (inView(s)) visit.push(s);
+      }
+    }
+    const order = this.order;
+    visit.sort((a, b) => order.get(a)! - order.get(b)!);
+    this.shownNow.length = 0;
+    for (let k = 0; k < visit.length; k++) {
+      const s = visit[k];
+      if (k > 0 && visit[k - 1] === s) continue;
+      const show = inView(s) && (s.placed || this.tryPlace(s, now));
       if (show !== s.shown) {
         s.shown = show;
         if (show) this.o.scene.add(s.mesh ??= this.build(s));
         else if (s.mesh) this.o.scene.remove(s.mesh);
       }
-      if (show) s.mesh!.position.set(s.x, height(s.x, s.y), -s.y);
+      if (show) { s.mesh!.position.set(s.x, height(s.x, s.y), -s.y); this.shownNow.push(s); }
     }
+  }
+
+  // A sign whose street hasn't loaded is tried again a few times a second, not every frame.
+  private tryPlace(s: BusStop, now: number) {
+    const at = this.retryAt.get(s);
+    if (at !== undefined && now < at) return false;
+    if (this.place(s)) { this.retryAt.delete(s); return true; }
+    this.retryAt.set(s, now + RETRY);
+    return false;
   }
 
   // The stop you're standing at, if any.

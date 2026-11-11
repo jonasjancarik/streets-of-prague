@@ -1073,3 +1073,69 @@ only matter within a few metres of the lane, so asking the parked cars' hash
 `obstacles()` in `main.ts` to take the two hashes apart. Deciding about standing cars
 less often than every step (they don't move) would save more but changes when a car
 reacts, so it wasn't tried.
+
+## 11 November 2026 — fewer objects made each simulation step
+
+`simulate` (`src/main.ts`) made an obstacle object every step for each circle of each
+moving car and for each person, officer, crew member and tram circle, and new arrays for
+`Car.circles()`, `Trams.bodies()` and its own lists; `BusStops.sync` went through all
+3102 stops each frame and tried `place()` every frame for a stop that couldn't be placed.
+Now the obstacles in `hash`/`carHash` come from a pool filled in again each step (every
+reader was followed first: none keeps one past its step), `pushCar` works out the circles
+without the list, the step's lists and the tram bodies are reused, and `BusStops.sync`
+looks only at the stops filed round the view and those shown, trying a failed `place()`
+again after 250 ms. Not changed: one pass over `loose` for the movers and
+`syncResting` (other code between them can move and add loose cars, so when
+`restingWhole` is rebuilt could change), and `traffic.emergency`.
+
+Counted in the page (headless Chrome on the M5, WebGPU, High, 1×, 10 s a scene, per
+simulation step; adds to any `SpatialHash` of an object not seen before):
+
+| | drive, `main` | drive, branch | Old Town Square, `main` | branch |
+|---|---|---|---|---|
+| obstacles made | 521 | 0.2 | 1240 | 0.4 |
+| `Car.circles()` calls | 55 | 14 | 40 | 0 |
+| hash adds (unchanged) | 650 | 647 | 1364 | 1362 |
+
+Bus-stop signs (a scene eval going through seven places, ~1580 `sync` calls on each
+server): a sign was shown exactly when it was in view and placed, and in the scene exactly
+when shown, for every stop on both; the same signs showed; `place()` calls 234 → 17.
+
+CPU profiles, `bench.mjs --profile`, 15 s, the two servers taking turns three times
+(order swapped in the second round), shares of the busy main-thread time:
+
+| | `main` | branch |
+|---|---|---|
+| garbage collector, drive 1× | 0.81–1.07 % | 0.70–0.76 % |
+| garbage collector, standing 1× | 1.70–1.75 % | 1.26–1.32 % |
+| garbage collector, drive 4× CPU | 0.77–0.78 % | 0.61–0.72 % |
+| garbage collector, standing 4× CPU | 1.01–1.28 % | 0.93–1.15 % |
+| `simulate` (with what it calls), drive 1× / 4× | 29.4–30.7 / 27.8–28.2 % | 30.0–30.2 / 27.2–27.9 % |
+| `simulate`, standing 1× / 4× | 42.2–42.8 / 41.7–42.2 % | 41.5–42.2 / 41.1–42.8 % |
+| `BusStops.sync` | 0.29–0.58 % | 0.11–0.21 % |
+| `pushCar` | 0.61–0.84 % | 0.38–0.55 % |
+
+Frame times and JavaScript per frame were within the noise in every pair (standing at
+4×: JavaScript 9.9–10.0 against 9.6–10.0 ms; driving at 4×: 10.8–11.3 against
+10.6–10.9 ms). What `simulate` spends filling in pooled obstacles is about what it spent
+making them; what's saved is in the collector, outside `simulate`. Offline in Node, the
+same fill (1360 obstacles a step, read back) took 15.0 µs a step pooled against 17.7 µs
+with new objects, the collector included.
+
+Tried and reverted: keeping the hash's bucket arrays from step to step (emptied, and
+dropped when a fill left them empty). It took the new buckets from 341 / 689 a step to
+under 1, and the collector's share at 1× standing to 0.8 %, but `clear()` going through
+the map cost 0.22 profile samples a frame (0.38 at 4×) against 0.09–0.26 saved in
+`add()`. In Node, `Map.clear()` with new arrays took 31 µs a step, walking the map 41 µs,
+lists of the buckets used 49 µs: V8 makes and drops short-lived arrays more cheaply than
+it keeps them.
+
+Not measured: the phone (the Pixel 5 was shared with other sessions tonight), and a
+same-build noise control. Checks: `check-traffic-lanes --compare` identical, the parked
+cars' hash from `time-parking.mjs` unchanged (-1273522741, 4129 cars),
+`check-parking-overlap` 0 pairs, typecheck; scenarios `police-chase`, `bike-hit`,
+`pedestrians-escape`, `bus-ride` and `bus-displays` pass on both. Two fail now and then on
+both: `job-tram` two runs in three (the tram stops 30 m short of Na Knížecí) and
+`dustcart` half the runs (2 of 4 on `main`, 2 of 5 on the branch: the cart leaves the
+traffic and its crew walk off). `check-bus-lines` (two breaks over 30 m) and
+`check-resting-cars`'s simulation case (`d.resting.sync`) fail on `main` already.
