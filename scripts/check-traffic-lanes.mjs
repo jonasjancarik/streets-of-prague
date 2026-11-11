@@ -161,6 +161,24 @@ fixtures.push(() => {
   return f.step(60);
 });
 
+// Cars left standing anywhere round bent two-way streets (in the lane, beside it, well
+// off it, turned every way, now and then a dustcart at work) and a few cars driving
+// both ways: the cars Traffic.update rules out before measuring them against every
+// piece of the lane (laneBox) sit at every distance from where it draws the line.
+for (let seed = 100; seed < 112; seed++) fixtures.push(() => {
+  let t = seed * 7919; const fr = () => { t = (t * 16807) % 2147483647; return t / 2147483647; };
+  const amp = fr() * 10, seg = 6 + fr() * 30;
+  const f = fixture('scattered ' + seed, both('a', 'p', 'q', zigzag(12, seg, amp), { width: 6 + fr() * 8 }), seed);
+  const [e, back] = f.edges;
+  for (let i = 0, n = 30 + Math.floor(fr() * 80); i < n; i++) {
+    const ed = fr() < 0.5 ? e : back, s = fr() * ed.path.length, lat = (fr() - 0.5) * (fr() < 0.3 ? 30 : 10);
+    const car = f.park(ed, s, lat, { type: fr() < 0.2 ? 'van' : fr() < 0.1 ? 'truck' : 'sedan', turn: (fr() - 0.5) * 2 });
+    if (fr() < 0.05) { car.mode = 'traffic'; car.working = true; }
+  }
+  for (let i = 0; i < 4; i++) { const ed = i % 2 ? back : e; f.drive(ed, 2 + fr() * ed.path.length * 0.5, fr() * 9, ['sedan', 'bus', 'moto', 'suv', 'van'][Math.floor(fr() * 5)]); }
+  return f.step(20);
+});
+
 const named = {};
 for (const make of fixtures) {
   const { name, ineligible, rows, counts } = make();

@@ -164,8 +164,10 @@ before that day's frame-count fix may be doubled.
 - **Main thread** (profiles of 10–11 November, performance log): on a Pixel 5 at 1× the
   JavaScript alone is 16–18 ms a frame, more than one refresh of a 60 Hz screen.
   What's left, largest first: three.js's own work for each object drawn (211 a frame on
-  Medium; 75 of them the shadow pass), `traffic.update` (8–13 %: every obstacle circle
-  in a square of reach + 8 m round each car, most of them parked cars far to the side),
+  Medium; 75 of them the shadow pass), `traffic.update` (8–13 %; since 11 November 25–34 % less a
+  call: what's left is mostly going through every obstacle circle in a square of
+  reach + 8 m round each car, and a smaller area asked of the parked cars' hash would
+  need `obstacles()` in `main.ts` to take the two hashes apart; see the performance log),
   the crowd (3 ms a frame standing among 1200 people on the phone), garbage from
   `simulate` (an obstacle object for every person and car circle each step, the hash's
   buckets, `loose.filter`; the collector takes 4 % on the phone), `CarPool.render`,
