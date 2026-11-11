@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Deploy the current commit to the beta on Cloudflare (https://beta.streetsofprague.com),
 # the way production is deployed but with the local map: no release needed.
-# The map (public/data) goes to R2 as beta-<id>, where the id is a fingerprint of its
-# files, the same as on mbxp: a changed map gets a new name, so open tabs keep the map
-# they started with. An unchanged map isn't sent again, and an interrupted upload is
+# When the local map (public/data) is the one production serves (deploy/data-version, file
+# for file), the beta uses it under that name. Otherwise it goes to R2 as beta-<id>, where
+# the id is a fingerprint of its files, the same as on mbxp: a changed map gets a new
+# name, so open tabs keep the map they started with. An unchanged map isn't sent again, and an interrupted upload is
 # finished by running this again (nothing is deployed before the upload is checked).
 # The game's files are static assets of their own Worker, streets-of-prague-beta; the
 # forms and statistics go to production's Worker, as they did from mbxp.
@@ -16,17 +17,24 @@ echo "Deploying $(git describe --tags --always) to the beta on Cloudflare."
 
 node scripts/check-data-format.mjs public/data
 npm run typecheck
-# Paths, sizes and modification times of every file, as scripts/deploy-mbxp.sh has it.
-ID=$(cd public/data && find . -type f ! -name .DS_Store -exec stat -f '%N %z %m' {} + | LC_ALL=C sort | shasum -a 256 | cut -c1-12)
-VERSION=beta-$ID
-DATA_URL=https://data.streetsofprague.com/$VERSION/
 REMOTE=${R2_REMOTE:-streets:streets-of-prague-data}
-echo "Map data: $VERSION"
-# --immutable: files already there must be the same, so a rerun only sends what's missing.
-rclone copy public/data/ "$REMOTE/$VERSION" --exclude .DS_Store --checksum --immutable --transfers 32 --checkers 32 \
-  --header-upload 'Cache-Control: public, max-age=31536000, immutable' \
-  --stats 20s --stats-one-line --log-level NOTICE
-rclone check public/data/ "$REMOTE/$VERSION" --exclude .DS_Store --checksum --checkers 32
+PROD=$(cat deploy/data-version)
+if rclone check public/data/ "$REMOTE/$PROD" --exclude .DS_Store --checksum --checkers 32 --log-level ERROR 2>/dev/null; then
+  # The local map is the one production serves: the beta uses it under its name.
+  VERSION=$PROD
+  echo "Map data: $VERSION (the same as production's)"
+else
+  # Paths, sizes and modification times of every file, as scripts/deploy-mbxp.sh has it.
+  ID=$(cd public/data && find . -type f ! -name .DS_Store -exec stat -f '%N %z %m' {} + | LC_ALL=C sort | shasum -a 256 | cut -c1-12)
+  VERSION=beta-$ID
+  echo "Map data: $VERSION"
+  # --immutable: files already there must be the same, so a rerun only sends what's missing.
+  rclone copy public/data/ "$REMOTE/$VERSION" --exclude .DS_Store --checksum --immutable --transfers 32 --checkers 32 \
+    --header-upload 'Cache-Control: public, max-age=31536000, immutable' \
+    --stats 20s --stats-one-line --log-level NOTICE
+  rclone check public/data/ "$REMOTE/$VERSION" --exclude .DS_Store --checksum --checkers 32
+fi
+DATA_URL=https://data.streetsofprague.com/$VERSION/
 node scripts/check-data-format.mjs "$DATA_URL"
 
 source deploy/newsletter; source deploy/feedback; source deploy/address

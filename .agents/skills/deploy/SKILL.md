@@ -12,7 +12,7 @@ changing a script or when something below doesn't fit the situation.
 
 | Site | Address | Script | Map it serves |
 |---|---|---|---|
-| Beta | <https://beta.streetsofprague.com> (Cloudflare, since 8 November 2026) | `scripts/deploy-cloudflare-beta.sh` | the local `public/data`, uploaded to R2 as `beta-<id>` |
+| Beta | <https://beta.streetsofprague.com> (Cloudflare, since 8 November 2026) | `scripts/deploy-cloudflare-beta.sh` | the local `public/data`, uploaded to R2 as `beta-<id>` (or production's, when identical) |
 | Beta on mbxp | (not where the address points now) | `scripts/deploy-mbxp.sh` | the local `public/data` |
 | Production | <https://play.streetsofprague.com> (Cloudflare) | `scripts/release.sh` (which runs `scripts/deploy-cloudflare.sh`) | the R2 version named in `deploy/data-version` |
 
@@ -51,7 +51,8 @@ major one.
 
 It builds the current commit and deploys it as the assets-only Worker
 `streets-of-prague-beta`, with the local map uploaded to R2 under its fingerprint
-(`beta-<id>`). An unchanged map isn't sent again; a changed one is a whole new upload
+(`beta-<id>`). When the local map is file for file the one in `deploy/data-version`
+(after `upload-data.sh`), it uses that one by name instead. An unchanged map isn't sent again; a changed one is a whole new upload
 (about 1.4 GB, some minutes), and an interrupted one is finished by running it again.
 `--dry-run` uploads and builds but deploys nothing.
 

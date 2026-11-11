@@ -68,7 +68,7 @@ Both deploy scripts write `version.json` at the site root with
 
 `game` is what `git describe` gave the build (as in the settings panel), `map` the map
 it goes with and `mapsAccepted` the range from the check above. On the beta the map is
-`beta-<id>` (on mbxp, the bare fingerprint id), and that is the only one accepted.
+`beta-<id>`, or production's map when the local one is the same (on mbxp, the bare fingerprint id), and that is the only one accepted.
 Cloudflare serves it with `Cache-Control: no-store` (the generated `_headers`); Caddy on
 mbxp sends no such header, so the game asks for it with `cache: 'no-store'` instead.
 
@@ -150,7 +150,9 @@ assets-only Worker `streets-of-prague-beta`. Its map is the local `public/data`,
 uploaded to R2 as `beta-<id>`, where the id is a fingerprint of the files' paths, sizes
 and modification times; there is no entry in `deploy/data-version`. A changed map gets a
 new name, so open tabs keep the map they started with, and an unchanged one isn't sent
-again. The forms and statistics go to production's Worker.
+again. When the local map is file for file the one `deploy/data-version` names (it was
+just uploaded for a release), the beta uses that map under its name instead of a second
+copy, so both sites show the same map name. The forms and statistics go to production's Worker.
 
 **mbxp**, where the beta used to be, is still built by `scripts/deploy-mbxp.sh` from the
 local `public/data`, but beta.streetsofprague.com is a Worker custom domain now and
@@ -167,7 +169,7 @@ Old folders in `data/` are not removed automatically.
 
 `Version v1.2.3 · 2026-10-01 · map data 2026-10-01-b2`: the game's version, the day it
 was built, and the map. On production the map is the data version, on the beta
-`beta-<id>`. On mbxp and in local
+`beta-<id>` or, when it's the same map, production's data version. On mbxp and in local
 runs it is the day the map was built (`built` in `index.json`), or `local` for a map
 built before that was recorded.
 

@@ -1643,7 +1643,8 @@ JSON the content type Cloudflare needs for compression.
 Since 8 November 2026 the beta can run on Cloudflare too, which is where
 beta.streetsofprague.com points now: `scripts/deploy-cloudflare-beta.sh` deploys any
 committed code (no release) as the assets-only Worker `streets-of-prague-beta`, and
-uploads the local map to R2 as `beta-<id>`, with the same fingerprint as on mbxp. An
+uploads the local map to R2 as `beta-<id>`, with the same fingerprint as on mbxp, unless
+it's the map production serves (`deploy/data-version`), which it then uses by name. An
 unchanged map isn't sent again; a changed one is a new upload of the whole map (about
 1.4 GB), and an interrupted one is finished by running the script again. Its forms and
 statistics go to production's Worker, as mbxp's do. The hostname is a Worker custom
