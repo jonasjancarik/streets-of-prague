@@ -64,7 +64,9 @@ The [handbook](docs/handbook.md) covers the rest: the controls and URL options, 
 each part of the game works, the tests (`scenarios/`, run in headless Chrome), the
 map pipeline (`pipeline/`, Python with [uv](https://docs.astral.sh/uv/)) and
 deployment. Topics that need more room have their own pages in [`docs/`](docs/), and
-larger changes were planned in [`plans/`](plans/).
+larger changes were planned in [`plans/`](plans/). The few places where the data is
+wrong and the map is corrected by hand are listed in
+[Places fixed by hand](docs/hand-fixes.md).
 
 A few links in `docs/` and `plans/` point into `docs/evidence/`: test captures and
 logs that are kept locally and aren't published.
