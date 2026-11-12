@@ -107,6 +107,14 @@ class WalkingSurfaceTests(unittest.TestCase):
         self.assertAlmostEqual(xs[-1], 30 + 1.8 + 3, delta=0.1)
         self.assertEqual(len(got["rails"]), 3)
 
+    def test_tram_track_mapped_on_a_street_or_bus_lane_keeps_its_rails(self):
+        # Lidická and Anděl: one OSM way is both the tram track and a bus lane or street.
+        got = self.extract([{"highway": "busway", "railway": "tram"},
+                            {"highway": "service", "railway": "tram", "embedded_rails": "tram"},
+                            {"highway": "busway"}])
+        self.assertEqual(sorted(r["kind"] for r in got["rails"]), ["tram", "tram"])
+        self.assertGreater(got["roads"]["road"].area, 0)
+
     def test_cobbled_footways_and_pedestrian_streets_use_setts(self):
         got = self.extract([{"highway": "pedestrian", "surface": "sett"},
                             {"highway": "footway", "surface": "cobblestone"},

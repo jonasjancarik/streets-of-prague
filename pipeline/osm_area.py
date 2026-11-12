@@ -309,6 +309,15 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         if isinstance(g, Point) and (col(row, "highway") == "bus_stop" or col(row, "railway") in ("tram_stop", "halt", "station", "subway_entrance")):
             stops.append((g.x, g.y))
             continue
+        # Track first: a tram lane that is also a street or a bus lane (Lidická, Anděl's
+        # busways: OSM maps both on one way) carries its rails too.
+        rw = col(row, "railway")
+        if rw in ("tram", "funicular", "rail") and isinstance(g, (LineString, MultiLineString)) and col(row, "tunnel") != "yes":
+            for ls in _lines(g.intersection(clip)):
+                rails.append({"kind": rw, "pts": _coords(ls)})
+            if (rw == "tram" and col(row, "bridge") in (None, "no")
+                    and _ground_level(col(row, "layer")) and _ground_level(col(row, "level"))):
+                trams.append(g)
         hw = col(row, "highway")
         if hw and isinstance(g, (LineString, MultiLineString)):
             if hw in ("proposed", "construction", "elevator", "platform", "bus_stop"):
@@ -334,15 +343,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             squares.append((g.buffer(0), col(row, "surface"), False))
             continue
 
-        rw = col(row, "railway")
         if rw in ("tram", "funicular", "rail") and isinstance(g, (LineString, MultiLineString)):
-            if col(row, "tunnel") == "yes":
-                continue
-            for ls in _lines(g.intersection(clip)):
-                rails.append({"kind": rw, "pts": _coords(ls)})
-            if (rw == "tram" and col(row, "bridge") in (None, "no")
-                    and _ground_level(col(row, "layer")) and _ground_level(col(row, "level"))):
-                trams.append(g)
             continue
 
         if col(row, "barrier") == "guard_rail":
