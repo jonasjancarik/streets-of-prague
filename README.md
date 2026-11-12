@@ -40,7 +40,7 @@ IPR Praha's data (needed to change how the map is made), install
 [uv](https://docs.astral.sh/uv/) and [osmium](https://osmcode.org/osmium-tool/), then:
 
 ```bash
-pipeline/build_map.sh ujezd --quick   # a few streets under Petřín
+pipeline/build_map.sh ujezd --quick   # a few streets under Petřín, about half an hour
 npm run dev                           # then http://localhost:5191/?area=ujezd
 ```
 

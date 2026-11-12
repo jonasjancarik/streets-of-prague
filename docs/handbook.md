@@ -1313,7 +1313,7 @@ Node.js, [osmium](https://osmcode.org/osmium-tool/) (`brew install osmium-tool` 
 on the PATH (or `$BLENDER`). Then, from the repository's root:
 
 ```bash
-pipeline/build_map.sh ujezd      # a few streets under Petřín, about 15 minutes the first time
+pipeline/build_map.sh ujezd      # a few streets under Petřín
 npm run dev                      # then http://localhost:5191/?area=ujezd
 ```
 
@@ -1342,8 +1342,10 @@ Blender). For `praha` the colours are a night's run and many gigabytes; the land
 take minutes. Without them the roofs and walls get the colours guessed from OSM and
 the landmarks are missing.
 
-Start with `ujezd`, then `centrum`. `praha` takes from about two hours (with warm
-caches) to a night, and tens of gigabytes in `pipeline/.cache`.
+Start with `ujezd`. From a fresh clone on 12 November 2026 it took about 40 minutes,
+half of it downloading, and left 5.6 GB in `pipeline/.cache` (3.4 GB of it the surface
+model); running it again took 2 minutes. Then `centrum`. `praha` takes from about two
+hours (with warm caches) to a night, and tens of gigabytes.
 [Rebuilding the map](rebuilding-the-map.md) has measured times, how to keep the
 previous map while rebuilding, and how to check the result against it.
 
