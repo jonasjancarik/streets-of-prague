@@ -1,0 +1,27 @@
+# The checks that need no map data: the game's type check and build, and the
+# pipeline's tests on small made-up inputs. The scenarios in scenarios/ need a built
+# map and a browser, so they're run locally (docs/handbook.md, "Testing").
+name: CI
+on:
+  push:
+  pull_request:
+
+jobs:
+  game:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+  pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv run --group cover python -B -m unittest discover -s . -p 'test_*.py'
+        working-directory: pipeline

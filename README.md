@@ -36,9 +36,16 @@ VITE_DATA_URL=https://data.streetsofprague.com/$(cat deploy/data-version)/ npm r
 
 Then open <http://localhost:5191>. The map isn't part of the repository: this command
 borrows the one the public game uses. To build your own map from OpenStreetMap and
-IPR Praha's data (needed to change how the map is made), follow
-[Building the map](docs/handbook.md#building-the-map) in the handbook, then run plain
-`npm run dev`.
+IPR Praha's data (needed to change how the map is made), install
+[uv](https://docs.astral.sh/uv/) and [osmium](https://osmcode.org/osmium-tool/), then:
+
+```bash
+pipeline/build_map.sh ujezd --quick   # a few streets under Petřín
+npm run dev                           # then http://localhost:5191/?area=ujezd
+```
+
+[Your first build](docs/handbook.md#your-first-build) in the handbook says what that
+downloads, how long the bigger areas take and what `--quick` leaves out.
 
 `npm run build` type-checks the code and makes a production build in `dist/`.
 
@@ -52,6 +59,14 @@ larger changes were planned in [`plans/`](plans/).
 
 A few links in `docs/` and `plans/` point into `docs/evidence/`: test captures and
 logs that are kept locally and aren't published.
+
+## Contributing and licence
+
+[CONTRIBUTING.md](CONTRIBUTING.md) says how to get started, test a change and send it.
+The code is free software under the [GNU Affero General Public License v3.0](LICENSE):
+if you run a changed version for others to play online, offer them its source too.
+The map data, sounds and other material from outside keep their own licences, listed
+below.
 
 ## Credits
 
