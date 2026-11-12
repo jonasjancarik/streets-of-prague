@@ -97,7 +97,8 @@ THREE.ShaderChunk.tonemapping_pars_fragment = THREE.ShaderChunk.tonemapping_pars
   if ( toneMappingExposure < 0. ) return color * -toneMappingExposure;   // off (see Sky.curve)
   vec3 x = max( color * toneMappingExposure, 0. );
   vec3 y = clamp( x * ( ${GRADE.a.toFixed(4)} * x + ${GRADE.b.toFixed(4)} ) / ( x * ( ${GRADE.c.toFixed(4)} * x + ${GRADE.d.toFixed(4)} ) + ${GRADE.e.toFixed(4)} ), 0., 1. );
-  return clamp( mix( vec3( dot( y, vec3( .2126, .7152, .0722 ) ) ), y, ${GRADE.sat.toFixed(4)} ), 0., 1. );
+  float keep = ${GRADE.sat.toFixed(4)} * ( 1. - ${GRADE.fade.toFixed(4)} * smoothstep( ${GRADE.fadeFrom.toFixed(4)}, 1., max( y.r, max( y.g, y.b ) ) ) );
+  return clamp( mix( vec3( dot( y, vec3( .2126, .7152, .0722 ) ) ), y, keep ), 0., 1. );
 }`,
 );
 

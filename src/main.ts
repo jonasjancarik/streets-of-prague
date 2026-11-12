@@ -5,6 +5,7 @@ import { stationAllowed, onRadioPreferencesChange } from './radio-preferences.ts
 import * as THREE from 'three';
 import { renderMirror } from './mirror.ts';
 import { renderProbe } from './probe.ts';
+import { POST, drawPost } from './post.ts';
 import { Streaks } from './streaks.ts';
 import proj4 from 'proj4';
 import { Funicular } from './funicular.ts';
@@ -2955,12 +2956,13 @@ async function main() {
     dev.update();
     // (Ultra: the street round the middle of the view, for the cars to mirror.)
     hitches.render(() => {
+      POST.night = sky.dark; POST.wet = weather.now.wet;
       const probed = renderProbe(renderer, scene, camPos.x, camGround, camPos.z, carPool.allMeshes());
       if (renderMirror(renderer, scene, camera, camGround, weather.now.wet) || probed) {
         scene.matrixWorldAutoUpdate = false;
-        renderer.render(scene, camera);
+        if (!drawPost(scene, camera)) renderer.render(scene, camera);
         scene.matrixWorldAutoUpdate = true;
-      } else renderer.render(scene, camera);
+      } else if (!drawPost(scene, camera)) renderer.render(scene, camera);
     });
     const timed = hitches.end();
     graphics.rendered(began, (ms) => hitches.gpu(timed, ms));

@@ -17,8 +17,12 @@ export const GRADE = {
   // How much of the light the curve takes in: the moods' exposures (sky.ts) were set for
   // the old curve, whose mid-grey this brings to about the same brightness.
   gain: 0.52,
-  // Saturation after the curve (1 leaves it).
-  sat: 0.88,
+  // Saturation after the curve (1 leaves it)…
+  sat: 0.9,
+  // …and how much of it bright colours lose on top, from where their strongest channel
+  // passes `fadeFrom` to where it clips: sunlit tiles at sunset glowed like neon. (Not
+  // undone in ungrade: what goes through that is near grey.)
+  fade: 0.34, fadeFrom: 0.5,
 };
 
 const LUMA = [0.2126, 0.7152, 0.0722];

@@ -2,7 +2,7 @@
 // blended before the curve but meant as a colour on the screen (rain, smoke, mist).
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Fn, vec3, dot, mix, clamp, max, sqrt, select, toneMappingExposure } from 'three/tsl';
+import { Fn, float, vec3, dot, mix, clamp, max, sqrt, select, smoothstep, toneMappingExposure } from 'three/tsl';
 import { GRADE } from '../grade.ts';
 import type { N } from './common.ts';
 
@@ -13,7 +13,8 @@ export const gradeCurve = Fn(([color, exposure]: N[]) => {
   const { a, b, c, d, e } = GRADE;
   const x: N = max(color.mul(exposure), 0).toVar();
   const y: N = clamp(x.mul(x.mul(a).add(b)).div(x.mul(x.mul(c).add(d)).add(e)), 0, 1).toVar();
-  y.assign(clamp(mix(vec3(dot(y, LUMA)), y, GRADE.sat), 0, 1));
+  const keep: N = float(GRADE.sat).mul(float(1).sub(smoothstep(GRADE.fadeFrom, 1, max(y.r, max(y.g, y.b))).mul(GRADE.fade)));
+  y.assign(clamp(mix(vec3(dot(y, LUMA)), y, keep), 0, 1));
   return select(exposure.lessThan(0), color.mul(exposure.negate()), y);
 }).setLayout({ name: 'customToneMapping', type: 'vec3', inputs: [{ name: 'color', type: 'vec3' }, { name: 'exposure', type: 'float' }] });
 

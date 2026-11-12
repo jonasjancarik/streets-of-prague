@@ -33,6 +33,7 @@ import './webgpu/weather.ts';
 import './webgpu/underground.ts';
 import { CloudSunNode } from './webgpu/clouds.ts';
 import { gradeCurve } from './webgpu/grade.ts';
+import { makePost } from './webgpu/post.ts';
 import { OLD_GRADE } from './grade.ts';
 import { mosaicStones } from './webgpu/mosaic.ts';
 import { uWater, ripples, waves, waveNormal, waterShine } from './webgpu/water.ts';
@@ -407,6 +408,7 @@ export function configureRenderer(renderer: WebGPURenderer) {
   // (`&nocloud` in the address leaves them out, to compare with and without.)
   if (!location.search.includes('nocloud')) THREE.DirectionalLight.registerNode(CloudSunNode);
   library.addToneMapping(OLD_GRADE ? toneCurve : gradeCurve, THREE.CustomToneMapping);
+  if (webgpu) makePost(renderer as any);
   // GLSL materials can't be drawn: hide them all. (Material's constructor sets
   // visible through this setter too.)
   // WebGPURenderer calls camera.updateProjectionMatrix(); the lamps' light map is drawn with a bare THREE.Camera, which has none.
