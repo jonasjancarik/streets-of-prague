@@ -12,6 +12,9 @@
   the lines with their surveyed heights (kerbs, walls, fences and railings; about
   270 MB, into .cache/dtm/ZPS_KR/). Without set 3 the terrain has no quay or
   retaining walls and the streets aren't levelled from their kerbs.
+- IPR's 2025 digital surface model, 1 m (DSM_1m.zip, 1.5 GB, unpacked to 3.7 GB in
+  .cache/cover/dsm_ipr/): the heights of roofs and tree tops, which ground_cover.py,
+  young_woods.py and tree_sizes.py read. Kept once it's there.
 - TSK's paid-parking counts (build_parking.py): the newest month of every district,
   from the copy kept in github.com/jonasjancarik/parkovani-praha (TSK's own server
   needs a login), into .cache/parking/.
@@ -24,6 +27,7 @@ import argparse
 import hashlib
 import json
 import shutil
+import subprocess
 import zipfile
 from pathlib import Path
 
@@ -36,6 +40,8 @@ CACHE = Path(__file__).parent / ".cache"
 PBF = CACHE / "osm" / "czech-republic-latest.osm.pbf"
 GEOFABRIK = "https://download.geofabrik.de/europe/czech-republic-latest.osm.pbf"
 LINES_LIST = "https://geoportalpraha.cz/api/get-dtm-download-metadata?code=03"
+DSM = CACHE / "cover" / "dsm_ipr" / "DSM_1m.tif"  # ground_cover.IPR_DSM
+DSM_ZIP = "https://www.arcgis.com/sharing/rest/content/items/a6120ef1652e4df2b1202c1a8ad4e0c7/data"
 PARKING = CACHE / "parking"
 PARKING_REPO = "jonasjancarik/parkovani-praha"
 PARKING_DIR = "data/downloaded/parked_cars/"
@@ -112,6 +118,30 @@ def technical_map():
     print(f"dtm: set 2 {len(list(dtm.PACKAGES.glob('*.zip')))} districts, set 3 {len(keep)} districts")
 
 
+def surface_model():
+    if DSM.exists():
+        print(f"dsm: {DSM.name} is here")
+        return
+    archive = DSM.parent.parent / "DSM_1m.zip"
+    size = int(requests.head(DSM_ZIP, headers=HEADERS, allow_redirects=True, timeout=60).headers["content-length"])
+    if not (archive.exists() and archive.stat().st_size == size):
+        print(f"dsm: downloading IPR's surface model ({size / 1e9:.1f} GB)", flush=True)
+        _download(DSM_ZIP, archive, size)
+    # (Packed with Deflate64, which Python's zipfile can't read; Info-ZIP's unzip can.)
+    if not shutil.which("unzip"):
+        raise SystemExit(f"dsm: unpacking {archive} needs unzip (apt install unzip)")
+    tmp = DSM.parent.with_name("dsm_ipr.part")
+    shutil.rmtree(tmp, ignore_errors=True)
+    print("  unpacking", flush=True)
+    subprocess.run(["unzip", "-q", "-j", str(archive), "-d", str(tmp)], check=True)
+    DSM.parent.mkdir(parents=True, exist_ok=True)
+    # (The image last, so DSM_1m.tif is there only once the rest is.)
+    for f in sorted(tmp.iterdir(), key=lambda f: f.name == DSM.name):
+        f.replace(DSM.parent / f.name)
+    tmp.rmdir()
+    archive.unlink()
+
+
 def parking():
     tree = requests.get(f"https://api.github.com/repos/{PARKING_REPO}/git/trees/main?recursive=1",
                         headers=HEADERS, timeout=120)
@@ -153,5 +183,6 @@ if __name__ == "__main__":
     if not args.skip_osm:
         osm(args.refresh_osm)
     technical_map()
+    surface_model()
     parking()
     tools()

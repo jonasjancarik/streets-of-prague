@@ -1326,6 +1326,8 @@ steps don't download on their own:
   ask for a newer one with `--refresh-osm`;
 - this month's digital technical map from IPR (sets 2 and 3: the surfaces, and the
   kerbs and walls with their surveyed heights; about 400 MB);
+- IPR's 2025 surface model at 1 m, the heights of roofs and tree tops (1.5 GB to
+  download, 3.7 GB unpacked), for the ground cover and the trees;
 - TSK's paid-parking counts, from the copy kept in
   [parkovani-praha](https://github.com/jonasjancarik/parkovani-praha) (TSK's own
   server needs a login).
@@ -1354,7 +1356,7 @@ What `build_map.sh` runs, for `centrum`:
 
 ```bash
 cd pipeline
-uv run fetch_sources.py            # the OSM extract, the technical map, the parking counts
+uv run fetch_sources.py            # the OSM extract, the technical map, the surface model, the parking counts
 uv run build_parking.py centrum    # TSK paid-parking sections (read by build_tiles)
 uv run build_tiles.py centrum --resume --no-assemble     # OSM's buildings, ground, streets → .cache/layers/
 uv run ipr_buildings.py centrum --resume --no-assemble   # IPR's 3D buildings

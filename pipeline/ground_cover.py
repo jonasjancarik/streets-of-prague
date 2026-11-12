@@ -33,8 +33,9 @@ Sources (all downloaded once into pipeline/.cache/cover/):
   IPR Praha orthophoto 2024, colour and colour-infrared, 10 cm/px, ImageServer at
   gs-pub.praha.eu (CC BY 4.0, © IPR Praha); IPR's 2025 digital surface model, 1 m
   (AGO item "Digitální model povrchu - 1m", DSM_1m.zip, 1.5 GB, CC BY 4.0), unzipped
-  into .cache/cover/dsm_ipr/ (without it, or with COVER_DSM=cuzk, ČÚZK's DMP 1G from
-  2009-2013, 2 m, CC BY 4.0, © ČÚZK); IPR's technical land-use map (Mapa technického
+  into .cache/cover/dsm_ipr/ by fetch_sources.py (`build` needs it; the prototype's
+  other commands can take ČÚZK's DMP 1G from 2009-2013 instead, 2 m, CC BY 4.0,
+  © ČÚZK, without it or with COVER_DSM=cuzk); IPR's technical land-use map (Mapa technického
   využití území, DTMP); the tile's own terrain heights (ipr_terrain.py).
 """
 
