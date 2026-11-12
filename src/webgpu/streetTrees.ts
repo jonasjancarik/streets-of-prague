@@ -80,11 +80,8 @@ function material() {
   // A card: leaves until the tree has shed this far, then twigs (the atlas's two halves).
   const card: N = uv();
   const leafy = (): N => step(bareTree(), part.z.mul(0.96).add(0.02));
-  const picture: N = Fn(() => {
-    const leaves: N = sprays.sample(vec2(card.x.mul(0.5), card.y.oneMinus()));
-    const twigs: N = sprays.sample(vec2(card.x.mul(0.5).add(0.5), card.y.oneMinus()));
-    return mix(twigs, leaves, leafy());
-  });
+  // (One read: the half of the atlas is chosen by the card, not both read and mixed.)
+  const picture: N = Fn(() => sprays.sample(vec2(card.x.mul(0.5).add(leafy().oneMinus().mul(0.5)), card.y.oneMinus())));
   m.maskShadowNode = part.x.greaterThan(0.5).or((picture() as N).a.greaterThan(0.35));
 
   m.setupDiffuseColor = function (builder: N) {

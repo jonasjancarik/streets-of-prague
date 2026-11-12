@@ -17,6 +17,8 @@ export const setStreetTreeMaterial = (make: () => THREE.Material, ready: { value
 // How near a page of trees has to come (the nearest point of its sphere, m) to be drawn as
 // street trees; beyond, the crowns made for the view from above do.
 const STREET_REACH = 150;
+// (For measuring: false keeps the top-down crowns in first person too.)
+export const STREET_TREES = { value: true };
 
 // Every page belongs to at most one tile. It keeps its mesh, attributes and shader
 // binding when that tile leaves; only the used ranges and bounds change on reuse.
@@ -156,11 +158,12 @@ export class TreePool {
   private streetMade: THREE.Material | null = null;
   private streetOn = false;
   street(on: boolean, x = 0, z = 0) {
+    on &&= STREET_TREES.value;
     if (!on && !this.streetOn) return;
     this.streetOn = on;
     if (on && !this.streetMade && streetMaterial) {
       this.streetMade = streetMaterial();
-      this.streetShapes = [streetTreeGeometry(5, 7, 4), streetTreeGeometry(9, 10, 5)];
+      this.streetShapes = [streetTreeGeometry(5, 7, 3), streetTreeGeometry(9, 10, 3)];
     }
     const ready = on && !!this.streetMade && streetReady.value;
     for (const page of this.pages) {

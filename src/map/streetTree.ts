@@ -96,7 +96,7 @@ export function streetTreeGeometry(seed: number, boughs: number, sprays: number)
   // side and a shaded one however the cards happen to lie.
   const grown = new THREE.Vector3(), across = new THREE.Vector3(), face = new THREE.Vector3(), centre = new THREE.Vector3(), round = new THREE.Vector3(), corner = new THREE.Vector3(), n = new THREE.Vector3();
   for (const end of ends) for (let s = 0; s < sprays; s++) {
-    const size = 0.36 + r() * 0.16;
+    const size = 0.4 + r() * 0.18;
     grown.set(r() - 0.5, r() - 0.3, r() - 0.5).multiplyScalar(1.1).add(end.dir).normalize();
     across.set(r() - 0.5, (r() - 0.5) * 0.6, r() - 0.5).cross(grown).normalize();
     face.crossVectors(across, grown).normalize();
