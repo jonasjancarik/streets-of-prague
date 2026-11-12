@@ -82,6 +82,7 @@ LIT_WAYS = {"motorway", "motorway_link", "trunk", "trunk_link", "primary", "prim
 NEAR = 8.0  # m: an OSM lamp this close to one of the survey's is the same lamp
 ROADWAYS = ("road", "sett")  # the tiles' kinds of road surface that cars drive on
 MIN_ROADWAY = 3.0  # m: the narrowest a driven street is taken to be
+TRAM_LANE = 3.5  # m: the width a tram takes along its track (a post between two tracks, about 2.3 m from each, is left)
 NEAR_BUILT = 12.0  # m: the same for the works' lamps (a lamp put up again a few steps away in a rebuilt street)
 STEP, STRAIGHTEN, EDGE = 0.25, 1.0, 300.0  # m: lit.bin.gz's unit, how far a way may be straightened, how far past the area's box ways are kept
 
@@ -153,9 +154,10 @@ def osm_lighting(area):
 
 def carriageways(area):
     """The roadways cars drive on, from the area's tiles, as polygons in local metres:
-    the asphalt and setts within each driven street's width of its centre line (a
-    cobbled square is no roadway beyond the street across it, and a bridge's deck has
-    its lamps on it). Empty before the tiles are built."""
+    the asphalt and setts within each driven street's width of its centre line, or
+    along a tram track (Lidická by Anděl is trams and buses only, its lamps hung over
+    the tracks; a cobbled square is no roadway beyond the street across it, and a
+    bridge's deck has its lamps on it). Empty before the tiles are built."""
     out = []
     for path in sorted((OUT / f"{area}_now" / "tiles").glob("*_*.json")):
         if path.name.count(".") > 1:
@@ -163,6 +165,8 @@ def carriageways(area):
         tile = json.loads(path.read_text())
         driven = [LineString(e["pts"]).buffer(max(e.get("width") or 0, MIN_ROADWAY) / 2, cap_style="flat")
                   for e in tile.get("drive", ()) if not e.get("tunnel") and not e.get("bridge") and len(e["pts"]) > 1]
+        driven += [LineString(r["pts"]).buffer(TRAM_LANE / 2, cap_style="flat")
+                   for r in tile.get("rails", ()) if r["kind"] == "tram" and len(r["pts"]) > 1]
         surface = [shape for kind in ROADWAYS for rings in tile.get("roads", {}).get(kind, ()) if len(rings[0]) >= 3
                    for shape in [Polygon(rings[0], [h for h in rings[1:] if len(h) >= 3])] if shape.is_valid]
         if not driven or not surface:
