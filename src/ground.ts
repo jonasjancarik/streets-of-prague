@@ -54,11 +54,13 @@ type GroundGeometry = GroundLayer['geometry'];
 // This part only works out the geometry, as plain arrays, so it runs in the tile
 // workers (tileWorker.ts); surface.ts makes the meshes.
 
+// (The greens and the asphalt were set a little darker, and the asphalt cooler, with the filmic
+// tone curve, grade.ts: it keeps more of a sunlit colour's strength than the curve before it.)
 export const COLORS = {
   pavement: '#92908c', square: '#d7d3cb', squareSetts: '#9c958a', path: '#d8cbb6', dirt: '#bfa87e', worn: '#b49f72',
-  park: '#79a24c', garden: '#80a552', wood: '#394a2b', orchard: '#89a858', pitch: '#6c9c55',
+  park: '#6d9647', garden: '#74994c', wood: '#394a2b', orchard: '#7c9c52', pitch: '#629050',
   field: '#b9b27a', yard: '#a9a69e', dtmYard: '#85837e', ballast: '#99948a', bare: '#bba888',
-  water: '#4d7680', pool: '#62aec2', asphalt: '#6b6a68', sett: '#8a847a', parking: '#72706c',
+  water: '#4d7680', pool: '#62aec2', asphalt: '#626264', sett: '#8a847a', parking: '#6a6968',
   bed: '#6f5b43', shrubBed: '#5d6b3c', iron: '#3f3d3b',
   bridge: '#6d6c6a', trackbed: '#8a8a85', steel: '#3a3b3d', paint: '#efede4', kerb: '#aba79e',
   quay: '#7c776c', funicular: '#6e6a62', slab: '#8e8b84', tunnel: '#46484c', tunnelWall: '#a59f93',
@@ -85,7 +87,7 @@ const DTM_LAND: [string, string, string][] = [
 // layers.merge_cover), above those and under everything mapped. Tree canopy comes
 // as wood.
 const COVER: [string, string, string][] = [
-  ['cover_grass', '#8fa860', 'grass'],
+  ['cover_grass', '#84a05a', 'grass'],
   ['cover_dirt', '#b39d78', 'dirt'], ['cover_gravel', '#a39d92', 'gravel'],
   ['cover_concrete', '#aeaaa0', 'concrete'], ['cover_paving', '#b7b0a3', 'slabs'],
   ['cover_asphalt', '#6e7174', 'asphalt'],

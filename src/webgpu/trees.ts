@@ -14,6 +14,7 @@ import {
 import { BARE, LEAVES, SEASON } from '../shading.ts';
 import { CROWN, STEM } from '../map/vegetation.ts';
 import { lampLit } from './lamps.ts';
+import { OLD_GRADE } from '../grade.ts';
 import { type N, follow, followVec, addPort, uCut, uWet, uSnow, hash12, detail } from './common.ts';
 
 const uBare = follow(BARE), uLeaves = follow(LEAVES), uSeason = followVec(SEASON);
@@ -215,7 +216,11 @@ addPort(/^tufts-cut$/, (node) => {
   node.setupNormal = () => normalize(state.xyz);
   node.setupOutput = function (builder: N, out: N) {
     const lum = dot(out.rgb, vec3(0.3, 0.59, 0.11));
-    const tint = mix(vec3(0.88, 1, 1.06), vec3(1.14, 1.06, 0.7), smoothstep(0.04, 0.3, lum));
+    // (With the filmic curve, grade.ts, the sunlit leaves need less of the warm tint and a little
+    // less light than with the curve before it, under which these numbers were first set: the
+    // crowns came out lime.)
+    const tint = OLD_GRADE ? mix(vec3(0.88, 1, 1.06), vec3(1.14, 1.06, 0.7), smoothstep(0.04, 0.3, lum))
+      : mix(vec3(0.84, 0.96, 1.04), vec3(0.94, 0.9, 0.7), smoothstep(0.04, 0.34, lum));
     return proto.setupOutput.call(this, builder, vec4(out.rgb.mul(tint), out.a));
   };
   lampLit(node);
