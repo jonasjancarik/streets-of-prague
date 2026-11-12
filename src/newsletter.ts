@@ -197,7 +197,7 @@ export function signupFields(d: HTMLElement, { focus = false, done: onDone = () 
     form.hidden = langRow.hidden = checkBox.hidden = done;
     langName.textContent = t('Emails in');
     for (const { b, id } of langChips) b.setAttribute('aria-pressed', String(id === lang()));
-    small.textContent = t('Your address is used only for these emails and is kept by Brevo, the service that sends them. Every email has a link to unsubscribe.');
+    small.textContent = t('Your address is used only for emails about this game and the author\'s other projects, and is kept by Brevo, the service that sends them. Every email has a link to unsubscribe.');
   };
   onLang(label);
 

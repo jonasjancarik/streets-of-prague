@@ -135,7 +135,7 @@ function build(extra: () => string, seen: () => ReturnType<typeof look>) {
     intro.textContent = t('Found a bug, or something you\'d like to see in the game? Write it here.');
     message.ariaLabel = t('Your message');
     email.placeholder = email.ariaLabel = t('Your email address, if you\'d like an answer');
-    tickText.textContent = t('Also send me the game\'s newsletter (you\'ll get an email to confirm)');
+    tickText.textContent = t('Also send me news about the game and the author\'s other projects (you\'ll get an email to confirm)');
     go.textContent = sending ? t('Sending…') : t('Send');
     go.disabled = sending;
     status.textContent = note && t(note);
