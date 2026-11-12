@@ -59,6 +59,31 @@ const SNOWY_GROUND =new THREE.Color('#b9bec6'), LIGHTNING = new THREE.Color('#df
 // Fog and mist, as seen (display colours): by day, at night, at night under clouds.
 const FOG_DAY = new THREE.Color('#b4b9bf'), FOG_NIGHT = new THREE.Color('#1a1e25'), FOG_GLOW = new THREE.Color('#2c2a2b');
 const FOG_SHARE = 0.88; // WebGPU's share of the fog asked for (see Sky.update)
+// The sky as seen from the street (webgpu/dome.ts): its colours overhead and at the horizon,
+// the clouds' lit edges and grey undersides, the sun's or moon's disc and the glow round it
+// (all as what goes in before the tone curve), where the disc stands (w: the cosine of its
+// radius), which way the shadows' light comes from, and the air: x how much the fair-weather
+// clouds show, y how clouded over the sky is, z how well the stars show.
+export const DOME = {
+  zenith: { value: new THREE.Color() }, horizon: { value: new THREE.Color() },
+  cloudLit: { value: new THREE.Color() }, cloudBase: { value: new THREE.Color() },
+  disc: { value: new THREE.Color() }, glow: { value: new THREE.Color() },
+  sun: { value: new THREE.Vector4(0, 1, 0, 0.9999) }, shade: { value: new THREE.Vector4(0, 1, 0, 0) },
+  air: { value: new THREE.Vector4() },
+};
+// The sky's colours as seen (display colours), clear and clouded over, by day and at night;
+// `low`: what a low sun turns the clear ones towards.
+const DOME_LOOK = {
+  zenith: { day: '#3f76c6', dayGrey: '#8f979f', night: '#070b17', nightGrey: '#232021', low: '#4c6aa6' },
+  horizon: { day: '#b9d1e8', dayGrey: '#b4b9bf', night: '#1b2132', nightGrey: '#2c2a2b', low: '#ecc19a' },
+  lit: { day: '#fbfaf6', dayGrey: '#c9ced3', night: '#2d313b', nightGrey: '#3b3533', low: '#f6cfa6' },
+  base: { day: '#b7c0cb', dayGrey: '#8d9399', night: '#161920', nightGrey: '#2a2625', low: '#8f8798' },
+};
+const MOON = new THREE.Color('#e3e9f4');
+// The sky's node, once the WebGPU side has made it (webgpu.ts): main.ts sets it as the scene's
+// background while the horizon can be in view.
+export const DOME_NODE: { value: unknown } = { value: null };
+const da = new THREE.Color(), db = new THREE.Color(), dl = new THREE.Color();
 // The share of lit windows through the day, by the hour.
 const LIT = [0.12, 0.08, 0.06, 0.05, 0.06, 0.12, 0.25, 0.3, 0.15, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.15, 0.25, 0.4, 0.45, 0.45, 0.4, 0.3, 0.2];
 
@@ -145,6 +170,9 @@ export class Sky {
   dark = 0;
   // How hazy the air is (0 clear … about 0.55 in thick mist), for the lights' beams.
   murk = 0;
+  // The view is from the street (first person): the haze there takes the horizon's colour, so
+  // that the far end of a street fades into the sky behind it.
+  street = false;
   // Always there (switching it on and off would compile every shader again); it
   // starts beyond the view when there's nothing to see.
   readonly fog = new THREE.Fog(0xffffff, 1e5, 1e5 + 1);
@@ -256,6 +284,35 @@ export class Sky {
       Math.sin(lightEl) * dist,
       -Math.cos(lightAz) * Math.cos(lightEl) * dist,
     );
+    // The sky from the street. (Each colour: clear to clouded by day, the same at night, then
+    // between day and night; a low sun warms the clear day's.)
+    const low = (1 - THREE.MathUtils.smoothstep(deg, 2, 14)) * (1 - w.cloud), ex = this.renderer.toneMappingExposure;
+    const look = (c: { day: string; dayGrey: string; night: string; nightGrey: string; low: string }, out: THREE.Color) => {
+      da.set(c.day).lerp(dl.set(c.low), low * 0.8).lerp(db.set(c.dayGrey), w.cloud);
+      db.set(c.night).lerp(dl.set(c.nightGrey), w.cloud);
+      return beforeCurve(da.lerp(db, night), ex, out);
+    };
+    look(DOME_LOOK.zenith, DOME.zenith.value);
+    look(DOME_LOOK.horizon, DOME.horizon.value);
+    look(DOME_LOOK.lit, DOME.cloudLit.value);
+    look(DOME_LOOK.base, DOME.cloudBase.value);
+    if (this.street && this.webgpu) this.fog.color.copy(DOME.horizon.value).lerp(this.fog.color, Math.min(1, amount * 2.5));
+    // The sun where it really stands (the light is kept higher for the shadows' sake), the
+    // moon once it is down; behind clouds the disc is gone and the glow is weak.
+    const up = deg > -4, discEl = up ? el : lightEl, discAz = up ? az : lightAz, clear = 1 - w.cloud;
+    DOME.sun.value.set(Math.sin(discAz) * Math.cos(discEl), Math.sin(discEl), -Math.cos(discAz) * Math.cos(discEl), up ? 0.99988 : 0.99975);
+    DOME.shade.value.set(this.offset.x, this.offset.y, this.offset.z, 0).normalize();
+    const sunUp = THREE.MathUtils.smoothstep(deg, -3, 2);
+    if (up) {
+      DOME.disc.value.copy(this.sun.color).multiplyScalar(40 * sunUp * clear * clear);
+      DOME.glow.value.copy(this.sun.color).multiplyScalar((0.1 + 0.25 * low) * sunUp * (0.25 + 0.75 * clear) / Math.max(Math.abs(ex), 0.01) * 0.84);
+    } else {
+      beforeCurve(MOON, ex, DOME.disc.value).multiplyScalar(clear * clear);
+      DOME.glow.value.copy(DOME.disc.value).multiplyScalar(0.02);
+    }
+    const fairSky = (1 - THREE.MathUtils.smoothstep(w.cloud, 0.15, 0.6)) * (1 - w.mist);
+    DOME.air.value.set(fairSky, THREE.MathUtils.smoothstep(w.cloud, 0.1, 0.95), night * clear * (1 - w.mist), 0);
+
     // The water glitters towards it.
     SUN_DIR.value.copy(this.offset).normalize();
     SUN_LIGHT.value.copy(this.sun.color).multiplyScalar(this.sun.intensity);

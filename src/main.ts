@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { renderMirror } from './mirror.ts';
 import { renderProbe } from './probe.ts';
 import { POST, drawPost } from './post.ts';
+import { DOME_NODE } from './sky.ts';
 import { Streaks } from './streaks.ts';
 import proj4 from 'proj4';
 import { Funicular } from './funicular.ts';
@@ -2715,6 +2716,7 @@ async function main() {
     DIG.value.set(hx, -hy, (deep || underway) && cutR > 0.3 ? cutR : 0, 0);
 
     sun.target.position.set(camPos.x, camGround, camPos.z);
+    sky.street = !!eyes;
     sky.update(clock.t % 86400, weather.now, eyes ? 300 : height, season.day);
     // In first person the horizon shows: a sky behind the city, and haze on the far
     // streets so the edge of what's loaded fades out.
@@ -2723,6 +2725,9 @@ async function main() {
       sky.fog.far = Math.min(sky.fog.far, EYES_REACH);
       (scene.background as THREE.Color).copy(sky.haze);
     } else (scene.background as THREE.Color).set(BACKDROP);
+    // (The sky itself, where the renderer can draw it: webgpu/dome.ts. The free camera sees it once it is tilted towards the horizon.)
+    const horizon = eyes || (free && free.tilt > 25) ? DOME_NODE.value : null;
+    if ((scene as { backgroundNode?: unknown }).backgroundNode !== horizon) (scene as { backgroundNode?: unknown }).backgroundNode = horizon;
     const nearPlane = eyes ? 0.2 : 1;
     // A wider view at street level (38° from above, which would feel like a telephoto lens).
     const fov = eyes ? 55 : 38;
