@@ -3,12 +3,15 @@ import type { Trams, TramLine, TramVehicle } from './trams.ts';
 import { t } from './i18n.ts';
 
 // (x, y) is where a tram's front stops, (bx, by) where its back is then: the platform.
-interface StopSpot { line: TramLine; i: number; x: number; y: number; bx: number; by: number; name: string; headsign: string }
-interface DueTram { line: TramLine; headsign: string; eta: number; here: boolean; v: TramVehicle; mine: boolean }
+// `platform`: its letter where OSM has one (Anděl's A to D).
+interface StopSpot { line: TramLine; i: number; x: number; y: number; bx: number; by: number; name: string; headsign: string; platform?: string }
+interface DueTram { line: TramLine; headsign: string; eta: number; here: boolean; v: TramVehicle; mine: boolean; platform?: string }
 // A row of the board: a tram or a bus (src/busstops.ts) on its way.
 // `mine`: it stops where you stand (not at the stop's other platforms, which can be
 // across the street or a hundred metres on).
-interface Row { ref: string; colour: string; headsign: string; eta: number; here: boolean; mine?: boolean }
+// `platform`: the letter of the platform it leaves from, at a stop with more than one;
+// `late`: seconds behind, for a tram held up on its way.
+interface Row { ref: string; colour: string; headsign: string; eta: number; here: boolean; mine?: boolean; platform?: string; late?: number }
 
 // Departure boards. Standing at a tram stop, the HUD lists the next trams due there and
 // counts them down as they come. The times come from where the trams actually are
@@ -23,6 +26,7 @@ const MINE = 25; // m: platforms this near the one you're at count as yours
 const SAME = 150; // m: stops with the same name this close are one stop (both ways, all lines)
 const SHOWN = 6;
 const HORIZON = 30 * 60; // s: trams further off than this aren't listed
+const LATE = 60; // s behind before a tram shows as late
 const CELL = 50;
 
 // How far (x, y) is from a stop's platform.
@@ -65,7 +69,7 @@ export class StopBoard {
     for (const line of trams.lines) {
       line.halts.forEach((h, i) => {
         const p = line.path.at(h.s), b = line.path.at(Math.max(0, h.s - PLATFORM));
-        const spot = { line, i, x: p.x, y: p.y, bx: b.x, by: b.y, name: h.name, headsign: headsignAt(line, h.s) };
+        const spot = { line, i, x: p.x, y: p.y, bx: b.x, by: b.y, name: h.name, headsign: headsignAt(line, h.s), platform: h.platform };
         const k = `${Math.floor((p.x + b.x) / 2 / CELL)},${Math.floor((p.y + b.y) / 2 / CELL)}`;
         if (!this.grid.has(k)) this.grid.set(k, []);
         this.grid.get(k)!.push(spot);
@@ -105,44 +109,52 @@ export class StopBoard {
       return;
     }
     const spots = this.near(at.x, at.y, SAME).filter((s) => s.name === at.name);
+    // Your platform: by its letter where the stop has them, else the ones close by.
+    const letters = new Set(spots.map((s) => s.platform));
+    const lettered = !!at.platform && !letters.has(undefined) && letters.size > 1;
     const due: DueTram[] = [];
     for (const s of spots) {
-      const { line } = s, h = line.halts[s.i], mine = away(s, x, y) < MINE;
+      const { line } = s, h = line.halts[s.i], mine = lettered ? s.platform === at.platform : away(s, x, y) < MINE;
       for (const v of line.trams) {
         const atStop = v.dwell > 0 && v.halt === s.i;
         const d = line.path.ahead(frontOf(v), h.s);
         if (!atStop && d > line.path.length - 30) continue; // just left
         const eta = atStop ? 0 : d / MEAN_SPEED;
-        if (eta < HORIZON) due.push({ line, headsign: s.headsign, eta, here: atStop, v, mine });
+        if (eta < HORIZON) due.push({ line, headsign: s.headsign, eta, here: atStop, v, mine, platform: lettered ? s.platform : undefined });
       }
     }
     // One row per tram (a tram due at both platforms shows for the sooner one).
     due.sort((a, b) => a.eta - b.eta);
     const rows = due.filter((d, i) => due.findIndex((e) => e.v === d.v) === i);
-    this.show('tram', at.name, rows.map((r) => ({ ref: r.line.ref, colour: r.line.colour || '#c4161c', headsign: r.headsign, eta: r.eta, here: r.here, mine: r.mine })));
+    this.show('tram', at.name, rows.map((r) => ({ ref: r.line.ref, colour: r.line.colour || '#c4161c', headsign: r.headsign, eta: r.eta, here: r.here, mine: r.mine, platform: r.platform, late: r.v.late })), lettered ? at.platform : undefined);
   }
 
-  private show(kind: 'tram' | 'bus', name: string, rows: Row[]) {
+  private show(kind: 'tram' | 'bus', name: string, rows: Row[], platform?: string) {
     if (this.shown !== name || this.kind !== kind) { this.expanded = false; this.el.classList.remove('expanded'); }
     this.kind = kind;
     this.shown = name;
     this.next = rows.length ? rows[0].eta : Infinity;
     this.mine = rows.find((r) => r.mine)?.eta ?? Infinity;
-    this.render(name, rows.slice(0, SHOWN));
+    this.render(name, rows.slice(0, SHOWN), platform);
   }
 
-  render(name: string, rows: Row[]) {
+  // `platform`: the letter of the one you stand at. Rows for the stop's other platforms are greyed.
+  render(name: string, rows: Row[], platform?: string) {
     const chars: Record<string, string> = { '&': 'amp', '<': 'lt', '>': 'gt', '"': 'quot' };
     const esc = (s: string) => String(s).replace(/[&<>"]/g, (c) => `&${chars[c]};`);
     const bus = this.kind === 'bus', none = t(bus ? 'No bus due yet' : 'No trams due in the next half hour');
     const when = (r: Row) => (r.here ? t('now') : r.eta < 45 ? t('arriving') : t('{n} min', { n: Math.round(r.eta / 60) }));
+    const late = (r: Row) => ((r.late ?? 0) >= LATE ? t('{n} min late', { n: Math.round(r.late! / 60) }) : '');
     const list = rows.length
-      ? `<ol class="board-rows">${rows.map((r) => `<li><span class="ride-ref" style="background:${esc(r.colour)}">${esc(r.ref)}</span>`
-        + `<span class="board-to">${esc(r.headsign)}</span><span class="board-eta">${when(r)}</span></li>`).join('')}</ol>`
+      ? `<ol class="board-rows">${rows.map((r) => `<li${r.mine === false ? ' class="board-other"' : ''}><span class="ride-ref" style="background:${esc(r.colour)}">${esc(r.ref)}</span>`
+        + `<span class="board-to">${esc(r.headsign)}</span>`
+        + `<span class="board-platform"${r.platform ? ` title="${esc(t('Platform {p}', { p: r.platform }))}"` : ''}>${esc(r.platform ?? '')}</span>`
+        + `<span class="board-eta">${when(r)}${late(r) ? `<small class="board-late">${late(r)}</small>` : ''}</span></li>`).join('')}</ol>`
       : `<div class="board-none">${none}</div>`;
-    const title = esc(t(bus ? 'Buses from {name}' : 'Trams from {name}', { name }));
-    const first = rows[0];
-    const summary = first ? `${esc(first.ref)} · ${esc(first.headsign)} · ${when(first)}` : none;
+    const title = esc(platform ? t('Trams from {name}, platform {p}', { name, p: platform }) : t(bus ? 'Buses from {name}' : 'Trams from {name}', { name }));
+    // (The first due at your platform, as Space waits for.)
+    const first = rows.find((r) => r.mine) ?? rows[0];
+    const summary = first ? `${esc(first.ref)} · ${esc(first.headsign)}${first.platform && !first.mine ? ` · ${esc(t('Platform {p}', { p: first.platform }))}` : ''} · ${when(first)}${late(first) ? ` · ${late(first)}` : ''}` : none;
     const html = `<div class="board-title">${title}</div><button class="board-toggle" aria-expanded="${this.expanded}" aria-controls="board-list">${title}<span>${summary}</span><small>${t('Timetable')} ▾</small></button><div id="board-list">${list}</div>`;
     if (html === this.key) return;
     this.key = html;

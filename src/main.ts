@@ -2511,6 +2511,7 @@ async function main() {
     // It waits for a tram or bus to your platform, not one at the stop's other side, and
     // lets the clock run normally while you walk about. (The same waiting for a taxi on its way.)
     const waiting = (!!board.shown && board.mine > 8 || taxi.state === 'coming') && (input.brake || touch.fast) && !ctl.move;
+    trams.waiting = waiting && !!board.shown && board.kind === 'tram';
     waitScale += ((waiting ? FAST * 2 : 1) - waitScale) * Math.min(1, dt * (waiting ? 1.5 : 4));
     if (Math.abs(waitScale - (waiting ? FAST * 2 : 1)) < 0.02) waitScale = waiting ? FAST * 2 : 1;
     taxi.update(dt);

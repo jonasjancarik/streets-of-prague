@@ -9,11 +9,12 @@ import { lampLit } from './lamps.ts';
 
 export interface RawTramLine {
   ref: string; colour: string | null; night: boolean; from: string; to: string;
-  pts: Point2[]; stops: [number, string][]; ends: [number, number];
+  pts: Point2[]; stops: [number, string, string?][]; ends: [number, number];
   turns: { at: number; to: number; where: string }[]; speed: [number, number][];
   perHour?: Record<'weekday' | 'saturday' | 'sunday', number[]>;
 }
-export interface TramHalt { s: number; dwell: number; name: string; to?: number }
+// `platform`: the stop's platform letter where OSM has one (Anděl's A to D).
+export interface TramHalt { s: number; dwell: number; name: string; to?: number; platform?: string }
 export interface TramPoint { x: number; y: number; ang: number }
 // A track a tram runs along: a line's closed loop, or the open route of a tram someone is driving.
 export interface Path {
@@ -35,6 +36,7 @@ interface TramCell { v: TramVehicle; x: number; y: number; c: number; s: number 
 export interface TramVehicle {
   id: number; kind: string; line: TramLine; s: number; speed: number; dwell: number; halt: number;
   stuck: number; ghost: number; waitFor: TramVehicle | null; blocker: Car | null;
+  late: number; // seconds behind: held up on the way, less what it has made up with shorter stops
   spotted: number; forPlayer: boolean;
   held: number; shove: Car[]; look: TramLook | null; pending: number;
   parts: TramPoint[]; cells?: TramCell[]; levels?: { x: number; y: number; gz?: number }[];
@@ -73,6 +75,7 @@ const ACCEL = 1.1, BRAKE = 1.2, HARD = 4.5; // m/s²: pulling away, braking, sto
 // late and it hits you. Everyone else it sees coming, and stops for in time.
 const REACT = 0.8, EMERGENCY = 2.8; // s, m/s²
 const DWELL = 18, TURN = 40; // seconds at a stop, and at a terminus where the tram reverses
+const SHORTEST = 8; // s: a late tram cuts its stops down to this, to make time up
 const PUSH = 15, CREEP = 1.5; // s a parked car can hold a tram up before the tram pushes it off the track, at this many m/s
 // Without timetables: trips per hour, day lines from 5 in the morning to midnight,
 // night lines (91-99) through the night.
@@ -232,10 +235,10 @@ function prepare(line: RawTramLine): TramLine {
   // terminus is the terminus itself.
   const turns = line.turns.map((t) => ({ s: t.at, dwell: TURN, to: t.to, name: t.where }));
   const halts: TramHalt[] = [];
-  for (const [s, name] of line.stops) {
+  for (const [s, name, platform] of line.stops) {
     if (turns.some((t) => path.ahead(s, t.s) < 40)) continue;
     if (halts.length && s - halts[halts.length - 1].s < 20) continue;
-    halts.push({ s, dwell: DWELL, name });
+    halts.push({ s, dwell: DWELL, name, platform });
   }
   halts.push(...turns);
   halts.sort((a, b) => a.s - b.s);
@@ -257,6 +260,9 @@ export class Trams {
   manageT: number;
   clockT: number; // the clock at the last update, to tell when it jumps
   lines: TramLine[];
+  // Someone is waiting at a stop with the world sped up (main.ts): a tram held up out
+  // of sight is freed within seconds rather than minutes, so it doesn't keep them waiting.
+  waiting = false;
 
   constructor(lines: RawTramLine[], scene: THREE.Scene, { clock, rng = Math.random }: { clock: Clock; rng?: () => number }) {
     this.scene = scene;
@@ -336,7 +342,7 @@ export class Trams {
   }
 
   add(line: TramLine, s: number) {
-    const v: TramVehicle = { id: this.id++, kind: randomKind(this.rng), line, s, speed: 0, dwell: 0, halt: 0, stuck: 0, ghost: 0, waitFor: null, blocker: null, spotted: 0, forPlayer: false, held: 0, shove: [], look: null, pending: this.rng() * FAR_STEP, parts: [] };
+    const v: TramVehicle = { id: this.id++, kind: randomKind(this.rng), line, s, speed: 0, dwell: 0, halt: 0, stuck: 0, ghost: 0, waitFor: null, blocker: null, late: 0, spotted: 0, forPlayer: false, held: 0, shove: [], look: null, pending: this.rng() * FAR_STEP, parts: [] };
     // Not on the short cut across a terminus with no loop.
     for (const h of line.halts) {
       if (h.to !== undefined && h.to !== h.s && line.path.ahead(h.s - HALF, v.s) < line.path.ahead(h.s, h.to) + 2 * HALF) v.s = h.to + HALF;
@@ -395,7 +401,7 @@ export class Trams {
   steal(v: TramVehicle, path: Path, s: number) {
     v.line.trams.splice(v.line.trams.indexOf(v), 1);
     const line: TramLine = { ...v.line, path, halts: [], haltS: [], limitS: [], limitV: [], trams: [v] };
-    Object.assign(v, { line, s, driven: true, rider: true, dwell: 0, speed: Math.max(0, v.speed), hold: false, waitFor: null, blocker: null, shove: [], held: 0, stuck: 0, ghost: 0, ring: v.ring ?? 0 });
+    Object.assign(v, { line, s, driven: true, rider: true, dwell: 0, speed: Math.max(0, v.speed), hold: false, waitFor: null, blocker: null, shove: [], held: 0, stuck: 0, ghost: 0, late: 0, ring: v.ring ?? 0 });
     this.place(v);
   }
 
@@ -535,6 +541,10 @@ export class Trams {
     }
     if (toHalt < 0.6 && v.speed < 0.5) {
       v.dwell = h.dwell * (0.7 + 0.6 * this.rng());
+      // Late, it only lets people on and off.
+      const cut = Math.max(0, Math.min(v.late, v.dwell - SHORTEST));
+      v.dwell -= cut;
+      v.late -= cut;
       v.speed = 0;
       return;
     }
@@ -561,12 +571,16 @@ export class Trams {
     // (A car that is itself standing for this tram, across the track at a junction, would
     // wait for ever: pushed aside almost at once. Not one standing for another tram.)
     const at = v.blocker?.forTram, forMe = !!at && v.parts.some((p) => Math.hypot(p.x - at[0], p.y - at[1]) < SECTION);
-    const patience = v.shove.length ? 1 : v.blocker?.mode === 'traffic' ? (forMe ? 2 : seen(v.blocker.x, v.blocker.y) ? 30 : 12) : PUSH;
+    // (Someone waiting at a stop: a car out of sight gets two seconds.)
+    const hidden = this.waiting && !!v.blocker && !seen(v.blocker.x, v.blocker.y) && !seen(v.parts[1].x, v.parts[1].y);
+    const patience = v.shove.length ? 1 : hidden ? 2 : v.blocker?.mode === 'traffic' ? (forMe ? 2 : seen(v.blocker.x, v.blocker.y) ? 30 : 12) : PUSH;
     if (v.held > patience && v.blocker && v.blocker.mode !== 'player') { v.shove.push(v.blocker); v.held = 0; }
     if (v.shove.length) target = Math.min(target, CREEP);
 
     v.speed = v.speed < target ? Math.min(target, v.speed + ACCEL * dt) : Math.max(target, v.speed - (v.forPlayer ? EMERGENCY : HARD) * dt);
     v.s = path.wrap(v.s + Math.min(v.speed * dt, toHalt)); // never past the stop
+    // Standing for something in the way (a car, a tram ahead, someone on the track) makes it late.
+    if (gap < Infinity && v.speed < 0.3) v.late += dt;
   }
 
   // How far along the track ahead the way is clear (Infinity if it is, as far as `look`).
@@ -598,7 +612,8 @@ export class Trams {
               // A tram queueing behind another waits its turn.
               v.stuck = v.speed < 0.1 ? v.stuck + dt : 0;
               const headOn = o.c * Math.cos(p.ang) + o.s * Math.sin(p.ang) < -0.5;
-              if ((headOn && v.stuck > 25) || (v.stuck > 90 && !seen(p.x, p.y) && !seen(v.parts[1].x, v.parts[1].y))) { v.ghost = 6; v.stuck = 0; }
+              // (Someone waiting at a stop: after half a minute, about a normal queue at a stop.)
+              if ((headOn && v.stuck > 25) || (v.stuck > (this.waiting ? 30 : 90) && !seen(p.x, p.y) && !seen(v.parts[1].x, v.parts[1].y))) { v.ghost = 6; v.stuck = 0; }
               return d;
             }
           }

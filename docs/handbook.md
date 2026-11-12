@@ -246,7 +246,13 @@ that without a new renderer.
   where its front stops. Hold Space (on touch, "Hold to wait") to fast-forward until one
   is within about eight game seconds of your platform, at up to 12× speed. Trams at
   the stop's other platforms (across the street, or a hundred metres on, as at Újezd)
-  are on the board but don't call off the wait. Walking pauses it and standing still
+  are on the board but don't call off the wait. Where the stop's platforms have letters
+  (Anděl's A to D, from OSM's `local_ref`), the board's title names yours and every
+  row the platform the tram leaves from; trams from the other platforms are greyed. A
+  tram held up on its way for a minute or more shows how late it is. While you wait,
+  a tram held up out of sight is freed within seconds: a car in its way is pushed off
+  after 2 seconds, a tram ahead driven through after 30 rather than 90.
+  Walking pauses it and standing still
   picks it up again. Bus stops work the same way, counting only the buses that stop at
   your sign. On touch screens
   the board shows the nearest departure; tap “Timetable” to expand the full list. Stops have blue-and-white plates with a black tram in side view
@@ -660,7 +666,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   underpasses (`pipeline/build_lamps.py`), with the lamps of IPR's second layer (the
   documentation of finished works, which fills whole neighbourhoods the survey misses)
   and those only OSM has. A lamp the layers put on a post in a roadway hangs over
-  the street on cables instead, or stands on the kerb beside it. Where there are still none, the game adds its own on lit
+  the street on cables instead, or stands on the kerb beside it. A tram track on the
+  street's asphalt or setts counts as roadway 3.5 m wide, so the lamps over the tracks
+  where only trams and buses run (Lidická by Anděl) hang too. Where there are still none, the game adds its own on lit
   streets and paths: hung on cables between houses that stand close, on poles
   elsewhere, small globes along footpaths. Lit means tagged lit in OSM, or untagged
   with a lamp near, with buildings along it, or on the way (300 m at most) from such a
@@ -1045,7 +1053,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   on the start screen, a night in the cells or in hospital, the dev panel's time
   slider) every line is laid out afresh for the new hour, keeping only a tram you're on,
   driving or waiting for; the `tram-clock-jump` scenario checks it. The departure boards count down from where the trams really are, so a
-  tram held up in traffic shows up late there too. They stop at
+  tram held up in traffic shows up late there too. Each tram counts the seconds it has
+  stood for something in the way and makes them up by cutting its stops short (to 8
+  seconds at the least). They stop at
   every stop, keep to the track's speed limit, slow down for curves and brake for the
   tram in front and for anything on the track. A car left on the track that holds a
   tram up for 15 seconds gets pushed aside, slowly. A blocked traffic car gets 30
@@ -1060,6 +1070,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   (`assets/trams/build.py` → `public/trams.glb`, `-- --preview DIR` renders them), from
   the real lengths and liveries. They run all over the city at once, so they come into
   view on their own timetable; only the ones near the camera are drawn.
+- **Tram tracks** are OSM's `railway=tram` ways, including those mapped on the same way
+  as a street or a bus lane (`highway=busway` or `service` with `railway=tram`, as on
+  Lidická and round Anděl: about 300 ways across Prague): `pipeline/osm_area.py` takes
+  the track from a way before deciding what kind of street it is.
 - **Overhead wires** (`src/wires.ts`) are built with each tile over its tram tracks: a
   contact wire 5.6 m above every track, where the pantographs reach, and every 30 m or so
   a span wire across the tracks, anchored to a building front when one is within 11 m
@@ -1561,8 +1575,8 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   (in WGS84) for parts of buildings OSM draws as one. After changing it, run
   `build_tiles.py <area> --layers buildings` and then `ipr_buildings.py <area>`.
 - **Tram lines.** `build_lines.py` takes every tram line's two route relations (one
-  per direction) and joins them into a loop along the track network, stops and speed
-  limits included; it prints any line or direction it can't follow. Lines stay whole
+  per direction) and joins them into a loop along the track network, stops (with their
+  platform letters) and speed limits included; it prints any line or direction it can't follow. Lines stay whole
   where they leave the area. With the local extract it takes about 10 seconds. It also
   adds how often each line runs, hour by hour, from PID's timetables:
   `pid_timetable.py` downloads the GTFS feed (about 50 MB, again when it's a week old)

@@ -62,9 +62,13 @@
       .board-toggle { display: none; }
       .board-title { font-weight: 600; }
       .board-rows { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }
-      .board-rows li { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; }
+      .board-rows li { display: grid; grid-template-columns: auto 1fr auto auto; gap: 8px; align-items: center; }
+      .board-rows li.board-other { opacity: 0.5; }
       .board-to { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .board-eta { font-variant-numeric: tabular-nums; color: var(--accent); }
+      .board-platform { min-width: 1.1em; text-align: center; font-weight: 600; font-size: 12px; }
+      .board-platform:not(:empty) { border: 1px solid currentColor; border-radius: 3px; padding: 0 3px; }
+      .board-eta { font-variant-numeric: tabular-nums; color: var(--accent); text-align: right; }
+      .board-late { display: block; font-size: 11px; color: #f2b84b; }
       .board-none { margin-top: 4px; opacity: 0.75; }
       /* The metro: picking a station, then the ride on the line's map. */
       #metro { top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(360px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; z-index: 6; background: rgba(20, 13, 12, 0.94); }
