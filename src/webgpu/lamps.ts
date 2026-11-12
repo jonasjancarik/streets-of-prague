@@ -126,6 +126,7 @@ let map: N = null, mapHigh: N = null, mapOpen: N = null;
 // slope: from 70° to 55°, so steep roofs too but no wall), and from what height over the
 // lit ground it gets no lamplight (m; a doorstep or a low plinth below that still does).
 const ROOF = { facing: [0.34, 0.57], over: [1.2, 2.2] };
+const WALL_MOST = 0.85; // the most lamplight a wall takes (its roll-off's ceiling)
 
 // The lamps' light at a point in the world (0 by day and off the map); with a normal,
 // what faces up and is well above the lamp gets none (lampLightOn).
@@ -190,7 +191,14 @@ export function lampLit(node: N, world: N = positionWorld, roofs = false) {
   let graph = byWorld.get(world);
   if (!graph) graph = Fn(() => {
     const e = vec3(emissive ?? 0).toVar();
-    e.addAssign(diffuseColor.rgb.mul(lampLight(world, normalView, roofs)));
+    const light: N = lampLight(world, normalView, roofs).toVar();
+    // What stands right beside a lamp (the wall its bracket is on, its own pole) takes the
+    // brightest middle of its pool, which from the street is a burnt-out white sheet: on
+    // what doesn't face up the light rolls off towards WALL_MOST. (The map knows the light
+    // on the ground, not how it falls on a wall.)
+    const wall: N = smoothstep(0.3, 0.7, dot(normalView, cameraViewMatrix.mul(vec4(0, 1, 0, 0)).xyz)).oneMinus();
+    light.divAssign(dot(light, LUMA).div(WALL_MOST).mul(wall).add(1));
+    e.addAssign(diffuseColor.rgb.mul(light));
     return e;
   })();
   byWorld.set(world, graph);

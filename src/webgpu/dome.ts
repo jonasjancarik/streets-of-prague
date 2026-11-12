@@ -37,8 +37,8 @@ export const dome: N = Fn(() => {
   const shadowAt: N = at.sub(uShade.xz.div(max(uShade.y, 0.2)).mul(LAYER));
   const rank: N = map.sample(shadowAt.div(CLOUD_SPAN).add(uCloud.xy)).level(float(0)).r;
   const drift: N = uCloud.xy.mul(CLOUD_SPAN);
-  const rough: N = fbm(at.add(drift).div(260)).sub(0.47);
-  const puff: N = rank.add(rough.mul(0.42)).toVar();
+  const rough: N = fbm(at.add(drift).div(380)).sub(0.47);
+  const puff: N = rank.add(rough.mul(0.34)).toVar();
   // (Only the thicker part of what casts a shadow shows as cloud: the thin rim of each is haze.)
   const fair: N = smoothstep(CLOUD_EDGE[0] + 0.06, CLOUD_EDGE[1] + 0.12, puff).mul(uAir.x);
   // The clouded sky: a broad sheet that closes as the weather does.
@@ -50,7 +50,7 @@ export const dome: N = Fn(() => {
   const thick: N = max(smoothstep(CLOUD_EDGE[1] + 0.08, CLOUD_EDGE[1] + 0.45, puff).mul(uAir.x).mul(0.8), smoothstep(from.add(0.25), from.add(0.8), sheet)).mul(mix(0.75, 1, uAir.y));
   const cloud: N = mix(uLit, uBase, thick).add(uGlow.mul(pow(mu, 10)).mul(float(1).sub(thick)).mul(0.6));
   // Far clouds sink into the haze.
-  const near: N = smoothstep(0.02, 0.3, d.y);
+  const near: N = smoothstep(0.03, 0.36, d.y);
   sky.assign(mix(sky, mix(uHorizon, cloud, near.mul(0.75).add(0.25)), cover.mul(near)));
 
   // The sun's or the moon's disc, where no cloud is in front.

@@ -2712,7 +2712,8 @@ async function main() {
     const hole = underway ? underway.r : deep && body ? tunnelHole(world.terrainAt(px(), py()) - (body.gz ?? 0)) : 9;
     cutR += ((under || underway ? hole : 0) - cutR) * Math.min(1, dt * 6);
     const [hx, hy] = underway ? [underway.x, underway.y] : [px(), py()];
-    CUTAWAY.value.set(hx, (underway ? underway.floor : ground(px(), py(), body)) + 2.5, -hy, cutR > 0.3 ? cutR : 0);
+    // (Not in first person: from inside a passage its own vault is what you should see.)
+    CUTAWAY.value.set(hx, (underway ? underway.floor : ground(px(), py(), body)) + 2.5, -hy, cutR > 0.3 && !(eyes && !underway) ? cutR : 0);
     DIG.value.set(hx, -hy, (deep || underway) && cutR > 0.3 ? cutR : 0, 0);
 
     sun.target.position.set(camPos.x, camGround, camPos.z);
