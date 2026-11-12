@@ -668,7 +668,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   and those only OSM has. A lamp the layers put on a post in a roadway hangs over
   the street on cables instead, or stands on the kerb beside it. A tram track on the
   street's asphalt or setts counts as roadway 3.5 m wide, so the lamps over the tracks
-  where only trams and buses run (Lidická by Anděl) hang too. Where there are still none, the game adds its own on lit
+  where only trams and buses run (Lidická by Anděl) hang too; the game strings their
+  cables across the track to the first wall each way, as it does across a street.
+  Where there are still none, the game adds its own on lit
   streets and paths: hung on cables between houses that stand close, on poles
   elsewhere, small globes along footpaths. Lit means tagged lit in OSM, or untagged
   with a lamp near, with buildings along it, or on the way (300 m at most) from such a

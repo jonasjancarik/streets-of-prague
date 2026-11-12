@@ -465,7 +465,7 @@ export class TileWorld {
   builtUp = new Map<string, number>();
   // Fresh walk edges are for the crowd's index; lamps also need the complete tile's
   // paths when a previously forgotten tile rejoins the graphs.
-  onEdges: (drive: DriveEdge[], walk: WalkEdge[], buildings: Point2[][], key: string, paths: WalkEdge[]) => void;
+  onEdges: (drive: DriveEdge[], walk: WalkEdge[], buildings: Point2[][], key: string, paths: WalkEdge[], tracks: Point2[][]) => void;
   // The street graphs keep the tiles within this far (m) beyond the loading radius, and
   // those round each of `anchors` (whatever still drives a route out there: a police
   // car, a fire engine, a taxi on a job). Further off a tile's streets are forgotten
@@ -1309,7 +1309,8 @@ export class TileWorld {
     if (t.drive && !this.driveBy.has(k)) {
       this.driveBy.set(k, this.drive.add(t.drive));
       this.walkBy.set(k, this.walk.add(t.walk ?? []));
-      this.onEdges(this.driveBy.get(k)!, this.walk.fresh, t.buildings.filter(grounded).map((b) => b.rings[0]), k, this.walkBy.get(k)!);
+      this.onEdges(this.driveBy.get(k)!, this.walk.fresh, t.buildings.filter(grounded).map((b) => b.rings[0]), k, this.walkBy.get(k)!,
+        t.rails.filter((r) => r.kind === 'tram').map((r) => r.pts));
     }
     const ms: Record<string, number> = {};
     let t0 = performance.now();

@@ -305,7 +305,7 @@ export class Lamps {
   private surveyed = 0; // how many of the lamps came with the map (the first ones)
   // OSM's lit and dark streets, their segments in a grid (x0, y0, x1, y1, lit); null: the map has none.
   private lit: Map<number, number[]> | null = null;
-  private waiting = new Map<string, [Street[], [number, number][][], Street[]]>();
+  private waiting = new Map<string, [Street[], [number, number][][], Street[], [number, number][][]]>();
   private tiles = new Map<string, LampTile>();
   private free: number[] = []; // generated lamps reuse retired slots; survey indices stay fixed
   private generatedOwners = new Map<number, Set<LampTile>>();
@@ -570,7 +570,7 @@ export class Lamps {
     const lit = fetchBinary(dataUrl(area, 'lit.bin.gz'), true).then((buf) => { if (buf) this.lit = litStreets(buf); }).catch(() => {});
     void Promise.all([lamps, lit]).finally(() => {
       this.loaded = true;
-      for (const [key, [edges, walls, paths]] of this.waiting) this.fill(key, edges, walls, paths);
+      for (const [key, [edges, walls, paths, tracks]] of this.waiting) this.fill(key, edges, walls, paths, tracks);
       this.waiting.clear();
       this.nearAt.x = Infinity;
     });
@@ -675,9 +675,10 @@ export class Lamps {
 
   // Streets as their tiles load: lamps hung over the unlit stretches, on cables to the
   // buildings either side (`buildings`: their outlines; a stretch with none is left dark).
-  // `paths`: the footpaths that came with them.
-  fill(key: string, edges: Street[], buildings: [number, number][][], paths: Street[] = []) {
-    if (!this.loaded) { this.waiting.set(key, [edges, buildings, paths]); return; }
+  // `paths`: the footpaths that came with them; `tracks`: the tram tracks, which the
+  // map's hung lamps follow too where no car may drive (Lidická).
+  fill(key: string, edges: Street[], buildings: [number, number][][], paths: Street[] = [], tracks: [number, number][][] = []) {
+    if (!this.loaded) { this.waiting.set(key, [edges, buildings, paths, tracks]); return; }
     if (this.tiles.has(key)) return;
     const tile: LampTile = { cells: new Set(), lamps: new Set(), hung: new Set() };
     this.tiles.set(key, tile);
@@ -721,7 +722,7 @@ export class Lamps {
       }
     }
     // The map's hung lamps by these streets: cables across the street to the first wall each way.
-    for (const e of edges) {
+    for (const e of [...edges, ...tracks.map((pts) => ({ pts }))]) {
       for (let i = 1; i < e.pts.length; i++) {
         const [ax, ay] = e.pts[i - 1], [bx, by] = e.pts[i], ex = bx - ax, ey = by - ay, len = Math.hypot(ex, ey) || 1;
         for (let cx = Math.floor((Math.min(ax, bx) - HANG_REACH) / CELL); cx <= Math.floor((Math.max(ax, bx) + HANG_REACH) / CELL); cx++) {

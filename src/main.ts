@@ -324,7 +324,7 @@ async function main() {
   const signals = new Signals(scene, AREA, () => clock.t, (x, y, bridge) => (bridge ? world.heightAt(x, y) : world.terrainAt(x, y)), (x, y) => world.onRoad(x, y));
   const streaks = new Streaks(scene);
   if (params.has('ipr')) void import('./iprdebug.ts').then((m) => m.iprOverlay(scene, AREA, (x, y) => world.terrainAt(x, y)));
-  world.onEdges = (d, w, b, key, paths) => { names.add(d); names.add(w); crowd?.index(w); lamps.fill(key, d, b, paths); signals.add(d); };
+  world.onEdges = (d, w, b, key, paths, tracks) => { names.add(d); names.add(w); crowd?.index(w); lamps.fill(key, d, b, paths, tracks); signals.add(d); };
 
   // Parked cars come and go with their tiles; wrecks and abandoned cars are loose too.
   const loose: Car[] = [];
