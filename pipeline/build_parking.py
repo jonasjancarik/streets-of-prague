@@ -3,8 +3,10 @@ how many spaces each street section has and how full it is by day and by night.
 
     uv run build_parking.py          # default: Újezd → public/data/ujezd_parking.json
 
-Reads the monthly occupancy GeoJSON downloaded by ~/projects/parkovani-praha
-(set PARKING_DATA to point elsewhere) and keeps the latest month for every
+Reads TSK's monthly occupancy GeoJSON, which fetch_sources.py downloads into
+.cache/parking/ from github.com/jonasjancarik/parkovani-praha (set PARKING_DATA to
+read another folder, such as that project's data/downloaded/parked_cars), and keeps
+the latest month for every
 district that overlaps the area. TSK counts at night only in some districts and
 some sections; the rest (all of Praha 4, most of Praha 5 and 8) get their night
 figure from the weekday count outside paid hours where there is one, and otherwise
@@ -23,7 +25,7 @@ from shapely.ops import transform
 
 from osm_area import AREAS, OUT, _polys, _rings
 
-SRC = Path(os.environ.get("PARKING_DATA", Path.home() / "projects/parkovani-praha/data/downloaded/parked_cars"))
+SRC = Path(os.environ.get("PARKING_DATA", Path(__file__).parent / ".cache" / "parking"))
 NAME = re.compile(r"^(P\d+)-OB_(\d{6})([DNP])_NA\.json$")  # D day, N night, P weekdays outside paid hours
 
 
@@ -56,8 +58,11 @@ def main(area: str = "ujezd") -> None:
     clip = box(x0, y0, x1, y1)
     bbox = box(w, s, e, n)
 
+    found = latest(SRC.glob("P*-OB_*_NA.json"))
+    if not found:
+        sys.exit(f"build_parking: no TSK counts in {SRC}; run `uv run fetch_sources.py` first")
     sections, months = [], set()
-    for dist, (month, f) in sorted(latest(SRC.glob("P*-OB_*_NA.json")).items()):
+    for dist, (month, f) in sorted(found.items()):
         day = json.loads(f["D"].read_text())["features"]
         night = {ft["properties"]["CODE"]: ft["properties"] for n in f["N"] for ft in json.loads(n.read_text())["features"]}
         for ft in day:
