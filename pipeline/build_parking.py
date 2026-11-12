@@ -87,6 +87,7 @@ def main(area: str = "ujezd") -> None:
 
     out = {"area": area, "source": "TSK Praha, zóny placeného stání", "months": sorted(months), "sections": sections}
     path = OUT / f"{area}_parking.json"
+    path.parent.mkdir(parents=True, exist_ok=True)  # (public/data isn't there in a fresh clone)
     path.write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")))
     spaces = sum(x["spaces"] * x["inside"] for x in sections)
     print(f"{len(sections)} sections, ~{spaces:.0f} spaces inside the area, months {sorted(months)} → {path.name}")
