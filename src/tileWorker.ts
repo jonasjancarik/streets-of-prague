@@ -21,6 +21,7 @@ import { Geo, Grid, fillPolys, strokeLines } from './map/geo.ts';
 import { styleFor, facadeCoords, paintWalls, mansardCoords, finishWalls, WALL_CODES, BLANK } from './facades.ts';
 import type { WallLine } from './facades.ts';
 import { roofClutter, smokingChimneys } from './map/roofClutter.ts';
+import { roofEdges } from './map/roofEdges.ts';
 import { groundLayers, layerBuffers, levelMask } from './ground.ts';
 import { flatTerraces, heightSampler, lineReach, stepLineIndex, terraceAt, withRamps } from './terrain.ts';
 import { withRoadProfile } from './roadProfiles.ts';
@@ -215,6 +216,8 @@ function ipr({ buffer, box: [x0, y0], absolute, ground, bbox, hide, clutter, foo
     if (m && m <= ROOF_WINDOW) for (let v = 0; v < 3; v++) facade[(o * 3 + v) * 4 + 3] = m; // roofs only
   }
   mansardCoords(pos, facade, lines);
+  // The edges of the roofs' faces, for the ridge tiles, gutters and valleys (not the extras: chimneys and roof windows).
+  roofEdges(pos, facade, own);
   // Roof windows (pipeline/roof_details.py): two triangles (A, B, C) and (A, C, D), B
   // across the slope from A and D up it. Their facade coordinates: 0-1 across and up
   // the window, and its width.

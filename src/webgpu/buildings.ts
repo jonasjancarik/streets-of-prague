@@ -12,6 +12,7 @@ import {
 import { FACADE_ATLAS, FACADE_ON, BLANK, F_BAY as BAY_WIDTH, F_UP as UP, F_DOOR as DOOR, F_WALL as WALL, F_MOD as MOD, F_GROUND as GROUND, F_STOREY as STOREY, STOREY_FIT } from '../facades.ts';
 import { WINDOWS, ROOF_DETAIL, ROOF_CLUTTER, LANDMARK_ROOF as R } from '../shading.ts';
 import { lampLit } from './lamps.ts';
+import { EDGE, EDGE_STEP } from '../map/roofEdges.ts';
 import { type N, follow, addPort, uCut, uDirt, uWet, uSnow, vnoise, fbm, fbm2, blocks, hash12, skyAmbient } from './common.ts';
 
 const uFacadeOn = follow(FACADE_ON), uWindows = follow(WINDOWS), uRoofDetail = follow(ROOF_DETAIL), uRoofClutter = follow(ROOF_CLUTTER);
@@ -176,6 +177,42 @@ function roofWeather(c: N, c0: N, wp: N, n: N, wpWidth: N, more: N = float(0)) {
   return m.mul(dark).mul(stain);
 }
 
+// The edges of a roof's faces (map/roofEdges.ts: the facade attribute's x, y and z, each a
+// distance from one edge of the triangle plus EDGE_STEP times what the edge is). On a pitched
+// roof: a row of lighter ridge tiles bedded in mortar along ridges and hips, with the tiles
+// below them a little lighter where rain washes them; valleys lined with sheet metal and
+// darker either side, where leaves and moss gather; a gutter along the eaves; a metal trim up
+// the verges; flashing and dirt where the roof meets a wall above it. On a flat roof: a kerb
+// with a metal coping round it, and the dirt that collects inside it.
+// `w`: metres a pixel. Each line fades by how much of the pixel it covers.
+function roofLines(c0: N, f: N, n: N, w: N) {
+  const kind: N = floor(f.xyz.add(0.01).div(EDGE_STEP)), d: N = max(f.xyz.sub(kind.mul(EDGE_STEP)), 0);
+  const far = float(50);
+  const near = (k: number): N => min(min(select(abs(kind.x.sub(k)).lessThan(0.5), d.x, far), select(abs(kind.y.sub(k)).lessThan(0.5), d.y, far)), select(abs(kind.z.sub(k)).lessThan(0.5), d.z, far));
+  const aa: N = max(w, 0.02);
+  const cover = (x: N, width: number): N => clamp(min(x.add(aa.mul(0.5)), width).sub(max(x.sub(aa.mul(0.5)), 0)).div(aa), 0, 1);
+  const ridge = near(EDGE.ridge), valley = near(EDGE.valley), eave = near(EDGE.eave), verge = near(EDGE.verge), wall = near(EDGE.wall);
+  const c = c0.toVar();
+  If(n.y.greaterThan(0.97), () => {
+    const kerb = min(eave, verge);
+    c.mulAssign(mix(0.8, 1, smoothstep(0.3, 0.9, kerb)));
+    c.assign(mix(c, mix(c, vec3(0.2, 0.2, 0.19), 0.75), cover(kerb, 0.3)));
+    c.assign(mix(c, vec3(0.33, 0.33, 0.32), cover(kerb, 0.09).mul(0.6)));
+    c.mulAssign(mix(0.66, 1, smoothstep(0, 0.9, wall)));
+  }).Else(() => {
+    c.mulAssign(float(1).add(float(1).sub(smoothstep(0.15, 1.1, ridge)).mul(0.07)));
+    c.assign(mix(c, c.mul(1.28).add(0.02), cover(ridge, 0.15)));
+    c.mulAssign(mix(0.72, 1, smoothstep(0, 0.85, valley)));
+    c.assign(mix(c, vec3(0.1, 0.105, 0.11), cover(valley, 0.09).mul(0.7)));
+    c.mulAssign(mix(0.84, 1, smoothstep(0.1, 0.65, eave)));
+    c.assign(mix(c, vec3(0.085, 0.085, 0.09), cover(eave, 0.13).mul(0.85)));
+    c.assign(mix(c, c.mul(0.5).add(vec3(0.11, 0.11, 0.115)), cover(verge, 0.12).mul(0.75)));
+    c.mulAssign(mix(0.68, 1, smoothstep(0, 0.7, wall)));
+    c.assign(mix(c, vec3(0.16, 0.165, 0.17), cover(wall, 0.1).mul(0.6)));
+  });
+  return c;
+}
+
 function facadeWalls(c: N, f: N, bayWidth: N, fWidth: N) {
   const along = f.x, h = f.y, st = fStorey(f);
   const bay = fract(along.div(bayWidth)), storey = fract(h.sub(st.x).div(st.y));
@@ -251,7 +288,7 @@ const buildingColor = Fn(() => {
         .ElseIf(m.greaterThan(7.5), () => { r.assign(plantedRoof(base, bwp, wpWidth)); })
         .ElseIf(m.greaterThan(4.5).and(m.lessThan(6.5)), () => { r.assign(sheetsRoof(base, bwp, wpWidth, select(m.greaterThan(5.5), float(2), float(1)))); })
         .Else(() => { r.assign(flatRoof(base, bwp, wpWidth)); });
-      c.assign(roofWeather(r, base, bwp, bn, wpWidth));
+      c.assign(roofLines(roofWeather(r, base, bwp, bn, wpWidth), f, bn, wpWidth));
     });
   }).ElseIf(bn.y.greaterThan(0.15), () => {
     If(uRoofDetail.greaterThan(0.5), () => {
@@ -266,7 +303,8 @@ const buildingColor = Fn(() => {
           If(grey, () => { c.assign(roofWeather(roofTiles(base, bwp, bn, wpWidth, float(1)), base, bwp, bn, wpWidth)); })
             .Else(() => { c.assign(roofWeather(beaverTiles(base, bwp, bn, wpWidth), base, bwp, bn, wpWidth)); });
         });
-      If(bn.y.lessThan(0.5).and(f.z.greaterThan(0.1)), () => { c.assign(mansardWindows(c, f)); });
+      If(bn.y.lessThan(0.5), () => { If(f.z.greaterThan(0.1), () => { c.assign(mansardWindows(c, f)); }); })
+        .Else(() => { c.assign(roofLines(c, f, bn, wpWidth)); });
     });
   }).Else(() => {
     const bays = fBays(f).toVar();
