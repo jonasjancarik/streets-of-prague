@@ -199,7 +199,8 @@ def blur(grid, sigma):
     return np.apply_along_axis(lambda col: np.convolve(col, k, mode="same"), 0, grid)
 
 
-def main(area="centrum"):
+def grid(area):
+    """How busy each cell of the area is, before scaling: (tf, box, cells)."""
     tf, (x0, y0, x1, y1) = local(area)
     w, h = int(math.ceil((x1 - x0) / CELL)), int(math.ceil((y1 - y0) / CELL))
     print(f"{area}: {w} x {h} cells of {CELL:.0f} m")
@@ -225,18 +226,34 @@ def main(area="centrum"):
     # Blurring spreads each point's weight; per square metre, so a blob's peak
     # doesn't depend on how wide it is drawn.
     total = sum(blur(g, sigma) for sigma, g in layers.items()) / (CELL * CELL)
+    return tf, (x0, y0, x1, y1), total
 
-    # The reference: the peak round the reference hotspot, computed on its own
-    # (it doesn't depend on the area's box), with everything else near it added.
+
+def peak(tf, box, total):
+    """The peak round the reference hotspot, with everything else near it added, or None
+    if the area doesn't reach it. It doesn't depend on the area's box."""
+    x0, _, _, y1 = box
     rx, ry = tf.transform(*HOTSPOTS[REFERENCE][2][0])
     ri, rj = int((rx - x0) / CELL), int((y1 - ry) / CELL)
-    if 0 <= ri < w and 0 <= rj < h:
-        ref = total[max(0, rj - 4):rj + 5, max(0, ri - 4):ri + 5].max()
-        (CACHE / "footfall_reference.json").write_text(json.dumps({"ref": ref}))
-    elif (CACHE / "footfall_reference.json").exists():  # an area without the Old Town
-        ref = json.loads((CACHE / "footfall_reference.json").read_text())["ref"]
-    else:
-        sys.exit("build centrum or praha first: this area has no Old Town Square to measure against")
+    if 0 <= ri < total.shape[1] and 0 <= rj < total.shape[0]:
+        return float(total[max(0, rj - 4):rj + 5, max(0, ri - 4):ri + 5].max())
+    return None
+
+
+def main(area="centrum"):
+    tf, (x0, y0, x1, y1), total = grid(area)
+    h, w = total.shape
+
+    # The reference, as busy as it gets: the Old Town Square. An area without it takes
+    # the last one measured, or measures it on centrum's grid.
+    kept = CACHE / "footfall_reference.json"
+    ref = peak(tf, (x0, y0, x1, y1), total)
+    if ref is None and kept.exists():
+        ref = json.loads(kept.read_text())["ref"]
+    if ref is None:
+        print("measuring the Old Town Square on centrum's grid, for reference")
+        ref = peak(*grid("centrum"))
+    kept.write_text(json.dumps({"ref": ref}))
     share = np.clip(total / ref, 0, 1)
 
     out_dir = OUT / f"{area}_now"
