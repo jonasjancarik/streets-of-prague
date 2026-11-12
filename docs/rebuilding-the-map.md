@@ -2,9 +2,13 @@
 
 <!-- read_when: rebuilding praha, centrum or ujezd after pipeline changes; swapping a new map in; going back to the previous map -->
 
-Written in the night of 5–6 October 2026, short of time: the order and the inputs
-below were read from the code; the swap and the timings are marked where they were
-not tried. The handbook's "Building the map" (`docs/handbook.md`) has the background.
+For rebuilding a map that is already in use: keeping the previous one, the order of
+the layer steps, timings and checks. For a first build, `pipeline/build_map.sh <area>`
+runs the same steps (and the area's other files) in one go; see "Your first build" in
+the handbook (`docs/handbook.md`), which also has the background.
+
+Written in the night of 5–6 October 2026 and kept up to date since; the timings are
+dated where they were measured.
 
 A `build_tiles.py --chunks "ci,cj ..."` trial keeps the chunks it does not name. It
 requires an existing build with the same area, projection, tile size and chunk grid;
@@ -60,6 +64,8 @@ frame-time checks before release. Rebuild outputs keyed by street IDs, including
 ## The steps, in order, for one area
 
     cd pipeline
+    uv run fetch_sources.py          # this month's technical map and parking counts
+    uv run build_parking.py praha
     uv run build_tiles.py praha --resume --no-assemble
     uv run ipr_buildings.py praha --resume --no-assemble
     uv run ipr_terrain.py praha --resume --no-assemble

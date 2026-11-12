@@ -1305,30 +1305,83 @@ that two versions of the roof builder can be compared.
 
 <!-- read_when: rebuilding map layers, changing pipeline caches, or validating staged map generations -->
 
-Requirements: [uv](https://docs.astral.sh/uv/), Node.js, and for a local OSM extract
-`brew install osmium-tool`.
+### Your first build
+
+You need [uv](https://docs.astral.sh/uv/) (it brings Python and the pipeline's packages),
+Node.js, [osmium](https://osmcode.org/osmium-tool/) (`brew install osmium-tool` or
+`apt install osmium-tool`) and, for the landmarks, [Blender](https://www.blender.org/)
+on the PATH (or `$BLENDER`). Then, from the repository's root:
+
+```bash
+pipeline/build_map.sh ujezd      # a few streets under Petřín, about 15 minutes the first time
+npm run dev                      # then http://localhost:5191/?area=ujezd
+```
+
+`build_map.sh` runs every step below in order for one area (`ujezd`, `centrum` or
+`praha`) and makes the same map as the public game, apart from the month of the data
+it downloads. It starts with `pipeline/fetch_sources.py`, which fetches what the
+steps don't download on their own:
+
+- OpenStreetMap: Geofabrik's Czech Republic extract, about 950 MB, kept until you
+  ask for a newer one with `--refresh-osm`;
+- this month's digital technical map from IPR (sets 2 and 3: the surfaces, and the
+  kerbs and walls with their surveyed heights; about 400 MB);
+- TSK's paid-parking counts, from the copy kept in
+  [parkovani-praha](https://github.com/jonasjancarik/parkovani-praha) (TSK's own
+  server needs a login).
+
+Each step downloads the rest itself: IPR's 3D buildings, terrain and bridges, its
+aerial photos and photorealistic mesh, PID's timetables and the bike feeds. Running
+the script again brings a built area up to date and skips what hasn't changed.
+
+`--quick` leaves out the two steps that read IPR's photorealistic mesh, the roof and
+wall colours (`mesh_colours.py`) and the landmarks (`landmarks.py`, which needs
+Blender). For `praha` the colours are a night's run and many gigabytes; the landmarks
+take minutes. Without them the roofs and walls get the colours guessed from OSM and
+the landmarks are missing.
+
+Start with `ujezd`, then `centrum`. `praha` takes from about two hours (with warm
+caches) to a night, and tens of gigabytes in `pipeline/.cache`.
+[Rebuilding the map](rebuilding-the-map.md) has measured times, how to keep the
+previous map while rebuilding, and how to check the result against it.
+
+The public map is built without IPR's LiDAR raster (`ipr_lidar.py`, below): it is
+used only in experiments.
+
+### The steps
+
+What `build_map.sh` runs, for `centrum`:
 
 ```bash
 cd pipeline
+uv run fetch_sources.py            # the OSM extract, the technical map, the parking counts
 uv run build_parking.py centrum    # TSK paid-parking sections (read by build_tiles)
-uv run build_tiles.py centrum      # today's map + street graphs in tiles → public/data/centrum_now/
-uv run mesh_colours.py centrum     # real roof and wall colours from IPR's photo mesh (optional)
-uv run ipr_buildings.py centrum    # IPR's 3D buildings into the tiles
-uv run ipr_terrain.py centrum      # IPR's terrain, bridges and tunnels, hill shading
-uv run --group cover ground_cover.py build centrum   # what the unmapped ground is made of, from aerial photos (optional)
+uv run build_tiles.py centrum --resume --no-assemble     # OSM's buildings, ground, streets → .cache/layers/
+uv run ipr_buildings.py centrum --resume --no-assemble   # IPR's 3D buildings
+uv run mesh_colours.py centrum --resume                  # real roof and wall colours from IPR's photo mesh
+uv run ipr_buildings.py centrum --resume --no-assemble   # again, to put the colours in
+uv run ipr_terrain.py centrum --resume --no-assemble     # IPR's terrain, bridges and tunnels, hill shading
+uv run --group cover ground_cover.py build centrum --no-assemble   # what the unmapped ground is made of, from aerial photos
+uv run ipr_greenery.py build centrum --no-assemble       # IPR's surveyed lawns, shrubs, hedges and flower beds
+uv run ipr_utility.py build centrum --no-assemble        # manhole covers, storm drains, traffic-light poles
+uv run layers.py centrum --strict  # puts the tiles together → public/data/centrum_now/
+uv run build_signals.py centrum    # traffic lights at junctions from OSM → signals.json
+uv run build_river.py centrum      # the river's fairway, weirs and ferries → river.json
 uv run build_lines.py centrum      # tram lines from OSM's route relations → lines.json
 uv run build_metro.py centrum      # the metro from PID's timetables → metro.json
 uv run build_buses.py centrum      # bus lines and stops from PID's timetables → buses.json
 uv run build_footfall.py centrum   # how busy the streets are → footfall.png
 uv run build_lamps.py centrum      # street lamps from IPR's utility map → lamps.bin.gz
-uv run ipr_greenery.py build centrum  # IPR's surveyed lawns, shrubs, hedges and flower beds into the tiles (optional)
-uv run ipr_utility.py build centrum   # manhole covers, storm drains, traffic-light poles into the tiles (optional; before build_signals.py)
-uv run build_signals.py centrum    # traffic lights at junctions from OSM → signals.json
 uv run build_bikes.py centrum      # shared bikes' stations from GBFS feeds → bikes.json
 uv run build_terraces.py centrum   # cafés, restaurants and pubs with tables outside (OSM) → terraces.json
 uv run build_districts.py centrum  # parts of town from OSM's cadastral areas → districts.json
 uv run landmarks.py centrum        # landmarks from IPR's photorealistic mesh → landmarks/
 ```
+
+For `praha` two more layers come before the strict assembly: `young_woods.py build`,
+then a plain `layers.py praha` and `tree_sizes.py build` (the tree sizes are measured
+on assembled tiles). `--no-assemble` keeps the game's tiles as they were until
+`layers.py --strict` checks every layer and writes them all at once.
 
 Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
 
@@ -1516,7 +1569,7 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
 
   ```bash
   cd pipeline
-  uv run python -B -m unittest discover -s . -p 'test_*.py'
+  uv run --group cover python -B -m unittest discover -s . -p 'test_*.py'   # or npm test from the root
   ```
 - **OSM.** With `pipeline/.cache/osm/czech-republic-latest.osm.pbf` from
   [Geofabrik](https://download.geofabrik.de/europe/czech-republic.html) (about 950 MB)
@@ -1534,7 +1587,11 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   about 130 MB) into `pipeline/.cache/dtm/ZPS_OPL/`. They're read once, in about 15
   seconds, into `pipeline/.cache/dtm/surfaces.pkl`; `uv run dtm.py` does the same on
   its own. Offline, it uses whatever it downloaded last; with nothing downloaded, every
-  street is sized from OSM.
+  street is sized from OSM. Set 3, the lines and points (kerbs with their surveyed
+  heights, walls, fences, railings; 57 packages, about 270 MB), is downloaded only by
+  `fetch_sources.py`, into `pipeline/.cache/dtm/ZPS_KR/`. The terrain's survey heights
+  (`dtm_heights.py`) and the walls (`dtm_walls.py`) read it; without it the terrain
+  has no quay or retaining walls and the streets aren't levelled from their kerbs.
 - **IPR.** `ipr_buildings.py` and `ipr_terrain.py` download the SMO-5 sheets they need
   (2.5 × 2 km, about 150 MB each for buildings) into `pipeline/.cache/ipr/` from IPR's
   ArcGIS Online catalogue. Sheets come in blocks of 10 × 10 named after a town, and the
