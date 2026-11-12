@@ -20,6 +20,8 @@ import { setPuffShade } from '../fire.ts';
 import { setSkidShade } from '../skids.ts';
 import { setStreakShade, STREAK_GAIN, STREAK_TIME } from '../streaks.ts';
 import { lampLit, uLampOn } from './lamps.ts';
+import { ungrade } from './grade.ts';
+import { OLD_GRADE } from '../grade.ts';
 import { type N, addPort, follow, followVec, followColor, uWet, uRain, vnoise, fbm2 } from './common.ts';
 
 addPort(/^signal-(pole|head)$/, (node) => { lampLit(node); });
@@ -38,6 +40,7 @@ const unmap = (v: N, add = false): N => Fn(() => {
   const e: N = toneMappingExposure;
   const lin: N = add ? (sRGBTransferEOTF(clamp(vec3(v), 0, 1)) as N).mul(GG) : sRGBTransferEOTF(clamp(vec3(v), 0, 1));
   if (add) return lin;
+  if (!OLD_GRADE) return ungrade(lin);
   const s: N = clamp(lin.sub(lift).div(lift.oneMinus()), 0, 0.9995).toVar();
   const d: N = s.toVar();
   for (let i = 0; i < 4; i++) {

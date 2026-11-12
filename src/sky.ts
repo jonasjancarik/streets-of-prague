@@ -3,6 +3,7 @@ import { SKY_REF, STREET_REF, SUN_DIR, SUN_LIGHT, WINDOWS } from './shading.ts';
 import { CLEAR, MIST } from './weather.ts';
 import { updateClouds } from './clouds.ts';
 import type { Conditions } from './weather.ts';
+import { GRADE, OLD_GRADE, filmic, ungrade } from './grade.ts';
 
 // The light of the time of day: where the sun is over Prague, and the colour and
 // strength of the sunlight and of the sky's light, blended between a few moods by the
@@ -77,27 +78,32 @@ function lightIn(m: Mood, cloud: number, out: Light): Light {
   return out;
 }
 
-// Tone mapping and grading: an extended Reinhard per channel, so bright colours drift
-// towards white as on film, a little less saturation, a gentle S-curve and the
-// shadows lifted a little towards warm. (A lookup table would allow any grade, but it
-// needs the scene drawn to a target first and graded in a pass of its own, which cost
-// as much as it saved at 2×.) It runs in every material, for every ground layer drawn
-// over a pixel; AgX looked much the same and cost about 12% of the frame on a big
-// high-density screen, this about 7%.
+// Tone mapping and grading (grade.ts): a filmic curve per channel and a little more
+// saturation. ?grade=old brings back the curve before it: an extended Reinhard per
+// channel, a little less saturation, a gentle S-curve and the shadows lifted a little
+// towards warm. (A lookup table would allow any grade, but it needs the scene drawn to a
+// target first and graded in a pass of its own.) On the old renderer it runs in every
+// material, for every ground layer drawn over a pixel.
 THREE.ShaderChunk.tonemapping_pars_fragment = THREE.ShaderChunk.tonemapping_pars_fragment.replace(
   'vec3 CustomToneMapping( vec3 color ) { return color; }',
-  `vec3 CustomToneMapping( vec3 color ) {
+  OLD_GRADE ? `vec3 CustomToneMapping( vec3 color ) {
   if ( toneMappingExposure < 0. ) return color * -toneMappingExposure;   // off (see Sky.curve)
   color *= toneMappingExposure;
   vec3 c = color * ( 1. + color / 36. ) / ( 1. + color );
   c = mix( c, vec3( dot( c, vec3( .2126, .7152, .0722 ) ) ), .12 );
   c = mix( c, c * c * ( 3. - 2. * c ), .35 );
   return c + vec3( .016, .012, .006 ) * ( 1. - c );   // the shadows lifted a little, warm
+}` : `vec3 CustomToneMapping( vec3 color ) {
+  if ( toneMappingExposure < 0. ) return color * -toneMappingExposure;   // off (see Sky.curve)
+  vec3 x = max( color * toneMappingExposure, 0. );
+  vec3 y = clamp( x * ( ${GRADE.a.toFixed(4)} * x + ${GRADE.b.toFixed(4)} ) / ( x * ( ${GRADE.c.toFixed(4)} * x + ${GRADE.d.toFixed(4)} ) + ${GRADE.e.toFixed(4)} ), 0., 1. );
+  return clamp( mix( vec3( dot( y, vec3( .2126, .7152, .0722 ) ) ), y, ${GRADE.sat.toFixed(4)} ), 0., 1. );
 }`,
 );
 
 // The same curve for one channel, to match its mid-tones when it's off.
 function toneCurve(x: number) {
+  if (!OLD_GRADE) return filmic(x);
   const c = (x * (1 + x / 36)) / (1 + x);
   const d = c * 0.65 + c * c * (3 - 2 * c) * 0.35;
   return d + 0.012 * (1 - d);
@@ -108,6 +114,7 @@ function toneCurve(x: number) {
 // in before the curve but is meant as a colour on the screen (the fog).
 function beforeCurve(seen: THREE.Color, exposure: number, out: THREE.Color) {
   if (exposure < 0) return out.copy(seen).multiplyScalar(1 / -exposure); // the curve is off (see Sky.curve)
+  if (!OLD_GRADE) { ungrade(seen, exposure, out); return out; }
   const lift = [0.016, 0.012, 0.006], c = [seen.r, seen.g, seen.b].map((y, i) => {
     const h = Math.min(1, Math.max(0, (y - lift[i]) / (1 - lift[i])));
     let lo = 0, hi = 1; // the S-curve rises all the way: halve the interval
@@ -229,6 +236,7 @@ export class Sky {
       this.fog.near = 0.5 * height;
       this.fog.far = this.fog.near + (height - this.fog.near) / x;
     }
+    if (!OLD_GRADE) exposure *= GRADE.gain;
     this.renderer.toneMappingExposure = this.curve ? exposure : -toneCurve(0.18 * exposure) / 0.18;
     // WebGPU mixes the fog in before the tone curve: there it gets the colour the curve turns into
     // the one meant. (Given the screen's colour, it came out far too light: by day a grey of 0.71

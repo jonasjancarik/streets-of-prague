@@ -10,6 +10,8 @@ import {
   sRGBTransferEOTF, toneMappingExposure, fract, ceil, log, pow, sin, cos, exp, normalize, step, smoothstep, length, max, min, select,
 } from 'three/tsl';
 import { setFx, DROP_SPREAD, type FxParts } from '../weather.ts';
+import { ungrade } from './grade.ts';
+import { OLD_GRADE } from '../grade.ts';
 import { type N, follow, followVec, vnoise } from './common.ts';
 import { lampLight } from './lamps.ts';
 import { setLocalMist } from '../localmist.ts';
@@ -25,6 +27,7 @@ const FALL = 9, FLAKE_FALL = 1.1; // m/s, as in ../weather.ts
 // little off at low (the rain and mist).
 const linear = (d: N): N => Fn(() => {
   const y: N = sRGBTransferEOTF(d);
+  if (!OLD_GRADE) return ungrade(y);
   const e: N = toneMappingExposure;
   const lift = vec3(0.016, 0.012, 0.006);
   const h = y.sub(lift).div(lift.oneMinus()).clamp(0, 1);
