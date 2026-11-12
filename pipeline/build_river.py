@@ -360,7 +360,11 @@ def main(area: str = "centrum") -> None:
     nodes, ways = osm(PBF_DIR / f"{area}.osm.pbf", tf)
     line = lambda nds: LineString([nodes[k] for k in nds if k in nodes])  # noqa: E731
     vltava = [line(nds) for tags, nds in ways if tags.get("waterway") == "river" and tags.get("name") == "Vltava" and sum(k in nodes for k in nds) > 1]
-    river = linemerge(unary_union(vltava)).intersection(clip.buffer(-60)) if vltava else None
+    joined = unary_union(vltava) if vltava else None
+    # (linemerge takes only several lines: an area with one piece of the river, ujezd's, has it as it is)
+    if joined is not None and joined.geom_type == "MultiLineString":
+        joined = linemerge(joined)
+    river = joined.intersection(clip.buffer(-60)) if joined is not None else None
     if river is None or river.is_empty:
         print(f"{area}: the Vltava isn't in this area")
         (OUT / f"{area}_now" / "river.json").write_text(json.dumps({"version": VERSION, "fairway": [], "ferries": []}))
