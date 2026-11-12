@@ -35,7 +35,16 @@ VITE_DATA_URL=https://data.streetsofprague.com/$(cat deploy/data-version)/ npm r
 ```
 
 Then open <http://localhost:5191>. The map isn't part of the repository: this command
-borrows the one the public game uses. To build your own map from OpenStreetMap and
+borrows the one the public game uses, over the internet. To have a copy of it on your
+computer instead (to work offline, or for the checks in `scripts/` that read the map
+from disk), download an area and run plain `npm run dev`:
+
+```bash
+node scripts/download-map.mjs centrum   # the historic centre, about 55 MB (or ujezd, or praha: 1 GB)
+npm run dev                             # then http://localhost:5191/?area=centrum
+```
+
+To build your own map from OpenStreetMap and
 IPR Praha's data (needed to change how the map is made), install
 [uv](https://docs.astral.sh/uv/) and [osmium](https://osmcode.org/osmium-tool/), then:
 

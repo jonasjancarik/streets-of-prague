@@ -19,8 +19,11 @@ VITE_DATA_URL=https://data.streetsofprague.com/$(cat deploy/data-version)/ npm r
 ```
 
 This borrows the public game's map, so you can change how the game plays, looks or
-sounds without building a map. To change how the map is made, build your own with
-`pipeline/build_map.sh ujezd --quick`, then run plain `npm run dev`
+sounds without building a map. `node scripts/download-map.mjs centrum` keeps a copy of
+an area in `public/data` instead, for offline work and for the checks that read the map
+from disk; then run plain `npm run dev` and open `http://localhost:5191/?area=centrum`.
+To change how the map is made, build your own with `pipeline/build_map.sh ujezd --quick`
+and open `?area=ujezd` the same way
 ([Your first build](docs/handbook.md#your-first-build) has the details).
 
 ## Finding your way round

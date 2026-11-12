@@ -1307,6 +1307,13 @@ that two versions of the roof builder can be compared.
 
 <!-- read_when: rebuilding map layers, changing pipeline caches, or validating staged map generations -->
 
+There are three ways to get a map. The game can read the public one over the internet
+(`VITE_DATA_URL`, as in the README). `node scripts/download-map.mjs <area>` copies an
+area of it into `public/data` (centrum about 55 MB, ujezd 4 MB, praha 1 GB in 38,000
+files; `--countryside` adds the 283 MB past the map's edge), which is enough for
+everything except changing the map: the pipeline can't rebuild part of a downloaded
+map, as it works from its own caches in `pipeline/.cache`. To change the map, build it:
+
 ### Your first build
 
 You need [uv](https://docs.astral.sh/uv/) (it brings Python and the pipeline's packages),
