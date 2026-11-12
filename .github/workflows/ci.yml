@@ -23,5 +23,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
+      # (Every script, not only those the tests import: a typo can stop one for weeks.)
+      - run: uv run python -m compileall -q -x '/[.](venv|cache)/' .
+        working-directory: pipeline
       - run: uv run --group cover python -B -m unittest discover -s . -p 'test_*.py'
         working-directory: pipeline

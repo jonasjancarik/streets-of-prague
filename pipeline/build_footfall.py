@@ -114,7 +114,7 @@ def pois(area, tf):
     pad = 0.01
     src = cut((w - pad, s - pad, e + pad, n + pad), PBF.parent / f"{area}.osm.pbf") if PBF.exists() else None
     if not src:
-        sys.exit(f"needs the OSM extract {PBF} (see "Building the map" in docs/handbook.md)")
+        sys.exit(f"needs the OSM extract {PBF} (see 'Building the map' in docs/handbook.md)")
     tagged = PBF.parent / f"{area}_poi.osm.pbf"
     expr = [f"nwr/{k}" for k in WEIGHTS] + ["w/highway=pedestrian", "w/area:highway=pedestrian", "w/place=square"]
     subprocess.run(["osmium", "tags-filter", "--overwrite", "-o", str(tagged), str(src), *expr], check=True)
