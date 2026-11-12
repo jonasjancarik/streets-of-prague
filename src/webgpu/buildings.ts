@@ -7,14 +7,16 @@
 import * as THREE from 'three';
 import {
   Fn, If, Discard, uniformArray, float, int, vec2, vec3, vec4, texture, attribute, vertexColor, positionWorld, normalWorld, diffuseColor,
-  materialColor, fract, floor, mod, dot, sin, mix, smoothstep, step, length, abs, max, min, clamp, normalize, dFdx, dFdy, distance, select, cross, sqrt,
+  materialColor, fract, floor, mod, dot, sin, mix, smoothstep, step, length, abs, max, min, clamp, normalize, dFdx, dFdy, distance, select, cross, sqrt, cameraPosition, reflect, pow,
 } from 'three/tsl';
 import { FACADE_ATLAS, FACADE_ON, BLANK, F_BAY as BAY_WIDTH, F_UP as UP, F_DOOR as DOOR, F_WALL as WALL, F_MOD as MOD, F_GROUND as GROUND, F_STOREY as STOREY, STOREY_FIT } from '../facades.ts';
 import { WINDOWS, ROOF_DETAIL, ROOF_CLUTTER, LANDMARK_ROOF as R } from '../shading.ts';
 import { lampLit } from './lamps.ts';
 import { EDGE, EDGE_STEP } from '../map/roofEdges.ts';
-import { type N, follow, addPort, uCut, uDirt, uWet, uSnow, vnoise, fbm, fbm2, blocks, hash12, skyAmbient } from './common.ts';
+import { type N, follow, followColor, addPort, uCut, uDirt, uWet, uSnow, vnoise, fbm, fbm2, blocks, hash12, skyAmbient } from './common.ts';
+import { DOME } from '../sky.ts';
 
+const uZenith: N = followColor(DOME.zenith), uHorizon: N = followColor(DOME.horizon);
 const uFacadeOn = follow(FACADE_ON), uWindows = follow(WINDOWS), uRoofDetail = follow(ROOF_DETAIL), uRoofClutter = follow(ROOF_CLUTTER);
 
 // The atlas loads after the first frames: a one-layer stand-in keeps the binding's type.
@@ -328,8 +330,8 @@ const buildingColor = Fn(() => {
 // the time; shop windows at street level the same.
 const windowGlow = Fn(() => {
   const g = vec3(0).toVar();
-  const bn = normalWorld.normalize(), f = attribute('facade', 'vec4');
-  const bays = fBays(f);
+  const bn = normalWorld.normalize().toVar(), f = attribute('facade', 'vec4').toVar();
+  const bays = fBays(f).toVar();
   If(uWindows.greaterThan(0.005).and(bn.y.lessThan(0.15)).and(f.z.greaterThan(0.1)).and(bays.greaterThan(0.5)), () => {
     const st = fStorey(f);
     const cell = vec2(floor(f.x.div(f.z).mul(bays)), floor(f.y.sub(st.x).div(st.y)));
@@ -348,6 +350,21 @@ const windowGlow = Fn(() => {
     const cell = floor(f.x.div(f.z).mul(max(1, floor(f.z.div(3.2).add(0.5)))));
     const lit = step(fHash(cell.add(f.z.mul(0.37)), float(7)), uWindows);
     g.assign(mix(vec3(1, 0.62, 0.3), vec3(1, 0.8, 0.55), fHash(float(7), cell)).mul(lit).mul(mansardGlass(f, 0)).mul(0.55));
+  });
+  // The sky in the window panes, seen from the street: more of it the flatter you look along
+  // the wall, each window a slightly different patch of it (no two panes are quite in one
+  // plane), less where the street is narrow and the houses opposite fill the glass. From
+  // above a pane mirrors the street below, which is dark: nothing is added.
+  If(bn.y.lessThan(0.15).and(f.z.greaterThan(0.1)).and(bays.greaterThan(0.5)), () => {
+    const st = fStorey(f);
+    const cell = vec2(floor(f.x.div(f.z).mul(bays)), floor(f.y.sub(st.x).div(st.y)));
+    const dark = float(1).sub(smoothstep(0.13, 0.22, luma(diffuseColor.rgb).div(max(luma(vertexColor().rgb), 0.02))));
+    const glass = select(f.y.lessThan(st.x), dark, dark.mul(smoothstep(1.03, 1.12, diffuseColor.b.div(max(diffuseColor.r, 0.01)))));
+    const view: N = normalize(cameraPosition.sub(positionWorld)), facing: N = max(dot(view, bn), 0);
+    const up: N = reflect(view.negate(), bn).y.add(fHash(cell.x.add(fract(f.w).mul(53)), cell.y).sub(0.5).mul(0.22));
+    const fresnel: N = pow(float(1).sub(facing), 4).mul(0.85).add(0.045);
+    const sky: N = mix(uHorizon, uZenith, smoothstep(0, 1.2, up));
+    g.addAssign(sky.mul(fresnel).mul(smoothstep(-0.04, 0.2, up)).mul(glass).mul(mix(0.3, 1, attribute('sky', 'float'))));
   });
   return g;
 });
