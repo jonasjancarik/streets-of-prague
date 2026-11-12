@@ -25,6 +25,7 @@ import { lampLight, uLampOn } from './webgpu/lamps.ts';
 import { MIRROR, MIRROR_BRIGHT, MIRROR_K, MIRROR_MAP, MIRROR_MATRIX } from './mirror.ts';
 import './webgpu/buildings.ts';
 import './webgpu/trees.ts';
+import './webgpu/streetTrees.ts';
 import './webgpu/soft.ts';
 import './webgpu/vehicles.ts';
 import './webgpu/figures.ts';

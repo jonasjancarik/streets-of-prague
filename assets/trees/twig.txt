@@ -1,0 +1,5 @@
+$imagegen
+Asset: game texture, a winter branch card for real-time trees, square 1:1, one image, transparent background
+Request: one flat spray of a bare deciduous tree's branch end in winter seen face on: a thin branch rising from the bottom centre and dividing again and again into many fine twigs that fan out and fill most of the square, a dense tracery with small buds, no leaves at all.
+Look: photographic detail, soft even overcast light, no cast shadow; dark grey-brown bark, the finest twigs a little lighter.
+Constraints: fully transparent background (alpha), nothing else in the picture, no ground, no sky, no border, no text, no watermark. The twigs must not touch the top, left or right edges.

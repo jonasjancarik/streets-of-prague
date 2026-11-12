@@ -1,0 +1,5 @@
+$imagegen
+Asset: game texture, a foliage card for real-time trees, square 1:1, one image, transparent background
+Request: one flat spray of a broadleaf tree's branch end (linden-like, small rounded leaves) seen face on: a few thin twigs fanning out from the bottom centre, densely covered with many small overlapping leaves so the spray fills most of the square in an irregular, ragged outline with gaps of transparency between leaf clusters near the edge.
+Look: photographic leaf detail, soft even overcast light, no cast shadow, no strong highlights; mid green leaves with natural light and dark variation between leaves, slightly darker towards the centre; thin grey-brown twigs.
+Constraints: fully transparent background (alpha), nothing else in the picture, no ground, no sky, no border, no text, no watermark. The spray must not touch the top, left or right edges.

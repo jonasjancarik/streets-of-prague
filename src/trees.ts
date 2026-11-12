@@ -1,13 +1,22 @@
 import * as THREE from 'three';
 import { send } from './gpu.ts';
 import { treePageFactory, OUTLINE, type TreeInstances } from './map/vegetation.ts';
+import { streetTreeGeometry } from './map/streetTree.ts';
 
 export const TREE_PAGE_CAPACITY = [1200, 128, 128, 256] as const;
 export type TreeKind = 0 | 1 | 2 | 3; // broadleaf, shrub, conifer, big broadleaf (vegetation.ts, BIG_CROWN)
 type PerKind = readonly [number, number, number, number];
 const KINDS = [0, 1, 2, 3] as const;
 const OUTLINE_ATTRIBUTES = ['outlineA', 'outlineB'] as const; // (OUTLINE = 8: four in each)
-type Page = { mesh: THREE.InstancedMesh; kind: TreeKind; owner: string | null };
+type Page = { mesh: THREE.InstancedMesh; kind: TreeKind; owner: string | null; street?: THREE.InstancedMesh };
+
+// The trees seen from the street (map/streetTree.ts): their material comes from the WebGPU
+// side (webgpu/streetTrees.ts), which also says when their pictures have loaded.
+let streetMaterial: (() => THREE.Material) | null = null, streetReady: { value: boolean } = { value: false };
+export const setStreetTreeMaterial = (make: () => THREE.Material, ready: { value: boolean }) => { streetMaterial = make; streetReady = ready; };
+// How near a page of trees has to come (the nearest point of its sphere, m) to be drawn as
+// street trees; beyond, the crowns made for the view from above do.
+const STREET_REACH = 150;
 
 // Every page belongs to at most one tile. It keeps its mesh, attributes and shader
 // binding when that tile leaves; only the used ranges and bounds change on reuse.
@@ -137,6 +146,55 @@ export class TreePool {
     page.mesh.visible = false;
     page.mesh.boundingBox = null;
     page.mesh.boundingSphere = null;
+    if (page.street) { page.street.visible = false; page.street.count = 0; }
+  }
+
+  // First person: the broadleaf trees near (x, z) are drawn as street trees, each page's
+  // second mesh over the same instances (made when first wanted); `on` false puts every
+  // page back to its top-down crowns.
+  private streetShapes: THREE.BufferGeometry[] | null = null;
+  private streetMade: THREE.Material | null = null;
+  private streetOn = false;
+  street(on: boolean, x = 0, z = 0) {
+    if (!on && !this.streetOn) return;
+    this.streetOn = on;
+    if (on && !this.streetMade && streetMaterial) {
+      this.streetMade = streetMaterial();
+      this.streetShapes = [streetTreeGeometry(5, 7, 4), streetTreeGeometry(9, 10, 5)];
+    }
+    const ready = on && !!this.streetMade && streetReady.value;
+    for (const page of this.pages) {
+      const mesh = page.mesh, used = page.owner !== null && mesh.count > 0;
+      if (page.kind !== 0 && page.kind !== 3) continue;
+      const sphere = mesh.boundingSphere;
+      const near = ready && used && !!sphere && Math.hypot(sphere.center.x - x, sphere.center.z - z) - sphere.radius < STREET_REACH;
+      if (near && !page.street) page.street = this.streetMesh(page);
+      if (page.street) {
+        page.street.visible = near;
+        if (near) { page.street.count = mesh.count; page.street.boundingSphere = mesh.boundingSphere; page.street.boundingBox = mesh.boundingBox; }
+      }
+      mesh.visible = used && !near;
+    }
+  }
+
+  private streetMesh(page: Page) {
+    const shape = this.streetShapes![page.kind === 3 ? 1 : 0], from = page.mesh;
+    const geom = new THREE.BufferGeometry();
+    geom.setIndex(shape.index);
+    for (const [name, attr] of Object.entries(shape.attributes)) geom.setAttribute(name, attr);
+    // The instances are the page's own: one set of numbers for both meshes.
+    for (const name of ['yearly', ...OUTLINE_ATTRIBUTES]) geom.setAttribute(name, from.geometry.getAttribute(name));
+    const mesh = new THREE.InstancedMesh(geom, this.streetMade!, this.capacity[page.kind]);
+    mesh.instanceMatrix = from.instanceMatrix;
+    mesh.instanceColor = from.instanceColor;
+    mesh.userData.sharedMatrices = true; // (see configureRenderer in webgpu.ts)
+    mesh.count = from.count;
+    mesh.castShadow = mesh.receiveShadow = true;
+    mesh.matrixAutoUpdate = false;
+    mesh.updateMatrix();
+    this.group.add(mesh);
+    mesh.updateMatrixWorld(true);
+    return mesh;
   }
 
   remove(tileKey: string) {
@@ -163,6 +221,12 @@ export class TreePool {
     for (const page of this.pages) {
       page.mesh.geometry.dispose();
       page.mesh.dispose();
+      if (page.street) { page.street.geometry.dispose(); page.street.dispose(); }
+    }
+    this.streetMade?.dispose();
+    if (this.streetShapes) for (const shape of this.streetShapes) {
+      for (const a of [shape.index, ...Object.values(shape.attributes)]) if (a) (a as { shared?: boolean }).shared = false;
+      shape.dispose();
     }
     this.factory.dispose();
     this.pages.length = 0;

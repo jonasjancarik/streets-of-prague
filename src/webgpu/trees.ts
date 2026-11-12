@@ -23,7 +23,7 @@ const TUFT_RIM = 0.5; // how dark a tuft's rim is (the same in vegetation.ts)
 const outlineA: N = attribute('outlineA', 'vec4'), outlineB: N = attribute('outlineB', 'vec4');
 // How far the crown reaches towards `p` in its own frame (vegetation.ts, outlineAt): the
 // horizontal scale of a point of the crown.
-const outlineAt = (p: N): N => {
+export const outlineAt = (p: N): N => {
   const t = atan(p.z.negate(), p.x).div(Math.PI / 4);
   const near = (k: number) => {
     const d = t.sub(k).add(4);

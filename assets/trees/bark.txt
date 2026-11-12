@@ -1,0 +1,5 @@
+$imagegen
+Asset: game texture, seamless tiling tree bark, square 1:1, one image
+Request: the bark of a mature city linden or maple trunk, seen straight on: vertical furrows and ridges of even scale across the whole picture, grey-brown with a little green-grey lichen, no single dominant feature, so that it tiles left to right and top to bottom without visible seams.
+Look: photographic, soft even overcast light from the front, no cast shadows, no highlights, medium contrast.
+Constraints: seamless tile, fills the frame edge to edge, no border, no text, no watermark, no knots or branches.

@@ -2739,6 +2739,8 @@ async function main() {
     if (camera.near !== nearPlane) { camera.near = nearPlane; camera.updateProjectionMatrix(); }
     // From street level the ground hides what's behind it (see GROUND_DEPTH).
     GROUND_DEPTH.visible = !!eyes;
+    // …and the trees near you are the ones made to be stood under (map/streetTree.ts).
+    world.trees.street(!!eyes, camera.position.x, camera.position.z);
     sun.position.copy(sun.target.position).add(sky.offset);
     fitShadow();
     // Street lamps and headlights, and the rain, snow and mist round the view.
