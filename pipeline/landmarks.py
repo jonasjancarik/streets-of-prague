@@ -113,7 +113,8 @@ def footprints(area: str, ids: list[str]):
     local = Transformer.from_crs("EPSG:4326", f"+proj=tmerc +lat_0={(s_ + n) / 2} +lon_0={(w + e) / 2} +k=1 +x_0=0 +y_0=0 "
                                  "+ellps=WGS84 +units=m", always_xy=True)
     for i in ids:
-        if i in MONUMENTS:
+        # (Only one in the area: unlike a building, a monument's outline isn't looked up in its tiles.)
+        if i in MONUMENTS and all(w <= lon <= e and s_ <= lat <= n for lon, lat in MONUMENTS[i]):
             polys[i] = Polygon([local.transform(lon, lat) for lon, lat in MONUMENTS[i]])
     for f in (OUT / f"{area}_now" / "tiles").glob("*.json"):
         for b in json.loads(f.read_text())["buildings"]:
