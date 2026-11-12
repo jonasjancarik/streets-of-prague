@@ -7,8 +7,10 @@ BREVO_LIST_ID=3
 BREVO_DOI_TEMPLATE_ID=1
 BREVO_DOI_TEMPLATE_ID_CS=
 # The contact attribute in Brevo that records the language picked in the form ("en" or
-# "cs"), e.g. LANGUAGE. Create it in Brevo first; left empty, the language isn't kept.
-BREVO_LANGUAGE_ATTRIBUTE=
+# "cs"). The privacy note in the game says the language is kept, so this must stay set.
+# Create a text contact attribute with exactly this name in Brevo (Contacts > Settings >
+# Contact attributes) BEFORE deploying: an unknown attribute may make signups fail.
+BREVO_LANGUAGE_ATTRIBUTE=LANGUAGE
 # The site key of the Turnstile widget that keeps scripts from signing addresses up.
 # Its secret key is a secret on the Worker. Left empty, signups aren't checked.
 TURNSTILE_SITE_KEY=0x4AAAAAAFLKXlUuevM3UXKF
