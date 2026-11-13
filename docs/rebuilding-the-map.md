@@ -201,6 +201,36 @@ tolerances are options (`--size-tolerance`, `--count-tolerance`, `--shrunk`,
 `--new-breaks`); a change that really makes tiles a third bigger needs the tolerance
 raised on purpose.
 
+## Waiting for the next rebuild
+
+Code that guesses what an older map doesn't say, to be removed once every map the game
+accepts says it.
+
+**Stop shelters** (added 13 November 2026). The pipeline marks a building that OSM
+tags `amenity=shelter` (`shelter_type` `public_transport` or none) with `"shelter": 1`
+(`pipeline/osm_area.py`), and the game draws it as a glass-roofed shelter
+(`src/map/stopShelters.ts`). Maps built before that have no mark, so the game guesses:
+a small, narrow building under 4 m with its long side along a tram track within 9 m.
+That guess is right everywhere by the tracks (32 of 32 against OSM's tags), but it
+leaves bus-stop shelters as little houses. It also falls back to the guess in any tile
+of a new map that happens to have no shelter, which does no harm but isn't clean.
+
+1. Rebuild the map with the pipeline change in it, then check that shelters came
+   through: tiles with buildings carrying `shelter`, and on the beta the bus stops with
+   shelters (not only the tram stops) showing them.
+2. Upload it for production (`scripts/upload-data.sh`), as in the deploy skill.
+3. In one commit: set `deploy/data-oldest` to that map, and in
+   `src/map/stopShelters.ts` remove the guess (`KINDS`, `HEIGHT`, `DEPTH`, `LENGTH`,
+   `NARROW`, the tracks-only filter, the `marked` parameter and the `marked` check in
+   `roofs` in `src/tileWorker.ts`) and the comment about older maps. What stays:
+   a building with `shelter` is a shelter, and the tracks and streets only tell which
+   side is its back. Check that `node scripts/check-data-versions.mjs` passes, and
+   update the handbook's "Stop shelters" note.
+4. Release it.
+
+If the code has to change in between, while older maps are still accepted, add a flag
+to the map's index saying it marks shelters and decide by that instead of by the tile.
+
 ## So a running game never sees a half-built map
 
 The pipeline writes into `public/data` of its own checkout (`OUT` in
