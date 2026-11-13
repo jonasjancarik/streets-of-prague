@@ -82,13 +82,16 @@ function material() {
   const leafy = (): N => step(bareTree(), part.z.mul(0.96).add(0.02));
   // (One read: the half of the atlas is chosen by the card, not both read and mixed.)
   const picture: N = Fn(() => sprays.sample(vec2(card.x.mul(0.5).add(leafy().oneMinus().mul(0.5)), card.y.oneMinus())));
-  m.maskShadowNode = part.x.greaterThan(0.5).or((picture() as N).a.greaterThan(0.35));
+  m.maskShadowNode = part.x.greaterThan(0.5).or((picture() as N).a.greaterThan(mix(0.35, 0.55, leafy().oneMinus())).and(leafy().greaterThan(0.5).or(fract(part.z.mul(7.13)).greaterThanEqual(0.4))));
 
   m.setupDiffuseColor = function (builder: N) {
     proto.setupDiffuseColor.call(this, builder);
     const wood: N = bark.sample(vec2(card.x, positionWorld.y.mul(1.1))).rgb.mul(1.7);
     const p: N = picture().toVar();
-    If(part.x.lessThan(0.5).and(p.a.lessThan(0.35)), () => { Discard(); });
+    // (A bare spray is thinner than the same card in leaf, and two cards in five show nothing:
+    // with every card a full fan of twigs a winter crown was a dark thicket.)
+    const thin: N = leafy().oneMinus();
+    If(part.x.lessThan(0.5).and(p.a.lessThan(mix(0.35, 0.55, thin)).or(thin.greaterThan(0.5).and(fract(part.z.mul(7.13)).lessThan(0.4)))), () => { Discard(); });
     // The leaves' colour through the year (yearColour in webgpu/trees.ts, by the card).
     const tree: N = diffuseColor.rgb;
     const pick: N = fract(own.mul(7.31).add(0.13));
