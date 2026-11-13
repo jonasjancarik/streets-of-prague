@@ -17,7 +17,7 @@ import type { N } from './common.ts';
 // own light after the exposure (1 is about what the curve turns nearly white).
 // By day only glints and the brightest sunlit plaster pass it; at night the lamps' pools,
 // lit windows and headlights do.
-const DAY = [0.22, 0.55, 1.35], NIGHT = [0.45, 0.7, 0.42];
+const DAY = [0.22, 0.55, 1.35], NIGHT = [0.4, 0.7, 0.55];
 const VIGNETTE = 0.16;
 const AO = 0.8; // how much of the ambient shading is taken
 // The bloom's first copy, as a share of the picture's width (three.js's own choice is a half: a
