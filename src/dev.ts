@@ -10,6 +10,7 @@ import { MIST, MIST_DEFAULT, MOST_SHEETS, type Kind, type Mist } from './weather
 import { LOCAL_MIST, LOCAL_MIST_DEFAULT, MIST_MODE, supportsLocalMist, type MistMode, type LocalMistSettings } from './localmist.ts';
 import type { Testkit } from './testkit.ts';
 import { gunOn, setGun } from './pistol.ts';
+import { headingUpOn, setHeadingUp } from './headingup.ts';
 import { did } from './telemetry.ts';
 
 // far: a place out of the game's reach, [lat, lon]; going there reloads the game.
@@ -596,6 +597,7 @@ function setupBench(kit: Testkit, $: (id: string) => HTMLElement) {
         <button id="dev-heal">Full health</button>
         <label class="dev-check" title="Crashes, shots and explosions don't hurt you"><input id="dev-unhurt" type="checkbox" /> Nothing hurts</label>
         <label class="dev-check" title="Players have no gun. This hands you the pistol (click, F on foot, RB, the Shoot button), and this browser keeps it"><input id="dev-gun" type="checkbox" /> Pistol</label>
+        <label class="dev-check" title="Experiment: the camera turns with your vehicle, nose to the top of the screen, like a GPS (also ?headingup)"><input id="dev-headingup" type="checkbox" /> Heading-up camera</label>
       </div>
       <div class="dev-row">
         <button id="dev-car" title="A car on clear ground ahead of you, with you in it">Into a new car</button>
@@ -646,6 +648,9 @@ function setupBench(kit: Testkit, $: (id: string) => HTMLElement) {
   const gun = $('dev-gun') as HTMLInputElement;
   gun.checked = gunOn();
   gun.onchange = () => { did('dev: toggled the pistol'); setGun(gun.checked); };
+  const headingUp = $('dev-headingup') as HTMLInputElement;
+  headingUp.checked = headingUpOn();
+  headingUp.onchange = () => { did('dev: toggled the heading-up camera'); setHeadingUp(headingUp.checked); };
   const kind = $('dev-car-kind') as HTMLSelectElement;
   $('dev-car').onclick = async () => {
     did('dev: spawned a vehicle');

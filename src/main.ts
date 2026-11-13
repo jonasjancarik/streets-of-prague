@@ -1,3 +1,4 @@
+import { headingUpOn } from './headingup.ts';
 import { DATA_FORMAT, dataUrl, mapData } from './data.ts';
 import { ANYWHERE, anywhereIndex } from './countrysideTiles.ts';
 import { STATIONS } from './radio.ts';
@@ -523,8 +524,13 @@ async function main() {
   // ground far past the screen's top or bottom. Rounded out to 4 m so small changes
   // don't move it.
   const sunX = new THREE.Vector3(), sunY = new THREE.Vector3(), sunZ = new THREE.Vector3(), corner = new THREE.Vector3();
+  // Heading-up camera (headingup.ts): which way the top of the screen points, as a ground vector
+  // in three.js's axes (north-up is 0, 0, -1), eased so the map turns smoothly.
+  let spin = Math.PI / 2; // (the vehicle's heading the top of the screen follows; π/2 is north)
+  const screenUp = new THREE.Vector3(0, 0, -1);
   const fitShadow = () => {
     const sc = sun.shadow.camera;
+    const sux = screenUp.x, suz = screenUp.z; // (and the screen's right is -suz, sux)
     sunZ.copy(sky.offset).normalize();
     sunX.set(1, 0, 0).addScaledVector(sunZ, -sunZ.x).normalize();
     sunY.crossVectors(sunZ, sunX);
@@ -533,14 +539,15 @@ async function main() {
     const hx = height * tan * camera.aspect, hz = height * tan;
     let low = Infinity, high = -Infinity;
     for (const sx of [-1, 0, 1]) for (const sz of [-1, 0, 1]) {
-      const h = world.terrainAt(camPos.x + sx * hx, -camPos.z - sz * hz) - camGround;
+      const h = world.terrainAt(camPos.x + sx * hx * -suz + sz * hz * sux, -(camPos.z + sx * hx * sux + sz * hz * suz)) - camGround;
       low = Math.min(low, h); high = Math.max(high, h);
     }
     let l = Infinity, r = -Infinity, b = Infinity, t = -Infinity;
     for (const dy of [Math.min(0, low) - 5, Math.max(0, high) + 40]) {
       const d = Math.max(0, height - dy);
       for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-        corner.set(sx * d * tan * camera.aspect, dy, sz * d * tan);
+        const cw = sx * d * tan * camera.aspect, ch = sz * d * tan;
+        corner.set(cw * -suz + ch * sux, dy, cw * sux + ch * suz);
         const u = corner.dot(sunX), v = corner.dot(sunY);
         l = Math.min(l, u); r = Math.max(r, u); b = Math.min(b, v); t = Math.max(t, v);
       }
@@ -2710,7 +2717,9 @@ async function main() {
     const want = (underway ? underway.height : inHeli ? 130 + sp * 2.5 : inCar ? 120 + sp * 3.4 : ride.driving ? 120 + (ride.v?.speed ?? 0) * 3.4 : ride.on ? 125 + (scale - 1) * 12 : 100) * zoom + (inHeli ? inHeli.air : 0);
     heightWanted = want;
     height += (want - height) * Math.min(1, dt * (want > height ? 1.6 : 0.9));
-    const lead = underway ? 0.25 : vehicle || ride.driving ? 0.7 : ride.on ? 0.5 : 0.3;
+    // (Heading-up keeps the vehicle in the middle of the screen instead of looking ahead of it.)
+    const turning = headingUpOn() && !underway && !inHeli && !testkit?.cam && !eyes;
+    const lead = underway ? 0.25 : turning && (vehicle || ride.driving) ? 0.1 : vehicle || ride.driving ? 0.7 : ride.on ? 0.5 : 0.3;
     if (underway) look.set(underway.x + underway.vx * lead, 0, -(underway.y + underway.vy * lead));
     else look.set(px() + (vehicle || walker).vx * lead, 0, -(py() + (vehicle || walker).vy * lead));
     camPos.lerp(look, Math.min(1, dt * 4));
@@ -2778,8 +2787,16 @@ async function main() {
       camera.up.set(0, 0, -1);
     } else {
       chased = null;
+      // Heading-up: the top of the screen follows the vehicle's nose (north again on foot).
+      const nose = turning ? inCar?.h ?? null : null;
+      const turnTo = nose ?? Math.PI / 2;
+      spin += Math.atan2(Math.sin(turnTo - spin), Math.cos(turnTo - spin)) * Math.min(1, dt * (turning ? 5 : 2.5));
+      if (turning || Math.abs(spin - Math.PI / 2) > 0.002) screenUp.set(Math.cos(spin), 0, -Math.sin(spin));
+      else screenUp.set(0, 0, -1);
+      camera.up.copy(screenUp);
       camera.position.set(camPos.x + jx, camGround + height, camPos.z + jz);
       camera.lookAt(camPos.x + jx, camGround, camPos.z + jz);
+      camera.up.set(0, 0, -1);
     }
 
     // In a passage under a building, open a hole in the floors above so you stay in view.
