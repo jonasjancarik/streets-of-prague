@@ -174,7 +174,7 @@ export const CS: Record<string, string> = {
   'This browser didn\'t start the game\'s usual graphics (WebGPU), so the game is using an older mode it isn\'t made for: it may run slowly or look wrong. The latest Chrome or Edge works best.': 'Prohlížeč nespustil obvyklou grafiku hry (WebGPU), takže hra jede ve starším režimu, pro který není dělaná: může se sekat nebo vypadat špatně. Nejlépe funguje aktuální Chrome nebo Edge.',
   'Credits, licences and privacy': 'Poděkování, licence a soukromí',
   // Newsletter signup
-  'Get news about the game by email': 'Novinky o hře e-mailem',
+  'News by email': 'Novinky e-mailem',
   'The game on GitHub': 'Hra na GitHubu',
   // The beta note before the first game
   'Welcome to the beta': 'Vítej v betaverzi',

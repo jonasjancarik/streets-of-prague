@@ -240,7 +240,7 @@ export function newsletterLink(parent: HTMLElement, cls: string, { thanks = fals
   }
   const link = el('button', cls, parent) as HTMLButtonElement;
   link.type = 'button';
-  onLang(() => { link.textContent = t('Get news about the game by email'); });
+  onLang(() => { link.textContent = t('News by email'); });
   link.addEventListener('click', () => {
     before();
     box ??= build();
