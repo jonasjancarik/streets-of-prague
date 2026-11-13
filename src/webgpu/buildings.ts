@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import {
   Fn, If, Discard, uniformArray, float, int, vec2, vec3, vec4, texture, attribute, vertexColor, positionWorld, normalWorld, diffuseColor,
-  materialColor, fract, floor, mod, dot, sin, mix, smoothstep, step, length, abs, max, min, clamp, normalize, dFdx, dFdy, distance, select, cross, sqrt, cameraPosition, reflect, pow, uniform, renderGroup,
+  materialColor, fract, floor, mod, dot, sin, cos, mix, smoothstep, step, length, abs, max, min, clamp, normalize, dFdx, dFdy, distance, select, cross, sqrt, cameraPosition, reflect, pow, uniform, renderGroup,
 } from 'three/tsl';
 import { FACADE_ATLAS, FACADE_ON, BLANK, F_BAY as BAY_WIDTH, F_UP as UP, F_DOOR as DOOR, F_WALL as WALL, F_MOD as MOD, F_GROUND as GROUND, F_STOREY as STOREY, STOREY_FIT } from '../facades.ts';
 import { WINDOWS, ROOF_DETAIL, ROOF_CLUTTER, LANDMARK_ROOF as R, SUN_DIR, SUN_LIGHT } from '../shading.ts';
@@ -174,18 +174,75 @@ function roofGlass(f: N) {
 function roofWindow(f: N) {
   return mix(vec3(0.42, 0.4, 0.38), mix(vec3(0.12, 0.15, 0.19), vec3(0.3, 0.36, 0.43), f.y), roofGlass(f));
 }
-function flatRoof(c: N, wp: N, wpWidth: N) {
-  return c.mul(fbm(wp.mul(0.5)).mul(0.22).add(0.86)).add(vnoise(wp.mul(18)).sub(0.5).mul(0.08).mul(fade(wpWidth, 0.05)));
+// A flat roof's own axes (roofAxes in shading.ts; map/roofEdges.ts puts its grain in w's
+// fraction).
+function roofAxes(wp: N, w: N) {
+  const a = fract(w).mul(3.4906585), g = vec2(cos(a), sin(a));
+  return vec2(dot(wp, g), dot(wp, vec2(g.y.negate(), g.x)));
 }
-// Flat roofs of sheets, planted and paved (sheetsRoof, plantedRoof, pavingRoof in shading.ts).
-function sheetsRoof(c: N, wp: N, wpWidth: N, width: N) {
-  const s = fract(wp.x.div(width));
-  const t = c.mul(float(1).add(float(1).sub(smoothstep(0, 0.025, s)).mul(0.06)).sub(smoothstep(0.97, 1, s).mul(0.03)));
-  return mix(c, t, fade(wpWidth, 0.3)).mul(fbm(wp.mul(0.12)).mul(0.12).add(0.94));
+// Sun-bleached patches and stains where rain stood (flatAge in shading.ts).
+function flatAge(c: N, wp: N, wpWidth: N, seed: N) {
+  const t = c.mul(fbm2(wp.mul(0.045).add(seed.mul(31))).mul(0.2).add(0.9));
+  const pond = fbm2(wp.mul(0.16).add(seed.mul(17)));
+  const rim = smoothstep(0.57, 0.61, pond).sub(smoothstep(0.61, 0.67, pond));
+  return t.mul(float(1).sub(smoothstep(0.6, 0.66, pond).mul(0.08)).sub(rim.mul(0.08).mul(fade(wpWidth, 0.4))));
 }
+// Gravel, or not known (flatRoof in shading.ts).
+function flatRoof(c: N, wp: N, wpWidth: N, seed: N) {
+  const t = c.mul(fbm(wp.mul(0.5)).mul(0.22).add(0.86)).toVar();
+  t.mulAssign(float(1).add(vnoise(wp.mul(7)).sub(0.5).mul(0.22).mul(fade(wpWidth, 0.15))).add(vnoise(wp.mul(23).add(5)).sub(0.5).mul(0.2).mul(fade(wpWidth, 0.05))));
+  t.assign(mix(t, t.mul(0.62), smoothstep(0.64, 0.74, fbm2(wp.mul(0.35).add(seed.mul(7)))).mul(0.6)));
+  return flatAge(t, wp, wpWidth, seed);
+}
+// Bitumen rolls with their laps, and patches over old repairs (bitumenRoof in shading.ts).
+function bitumenRoof(c: N, wp: N, q: N, wpWidth: N, seed: N) {
+  const row = floor(q.y), along = q.x.div(8).add(hash12(vec2(row, seed.mul(91))));
+  const t = c.mul(hash12(vec2(row, floor(along)).add(seed.mul(13))).mul(0.18).add(0.91)).toVar();
+  const s = fract(q.y), e = fract(along).mul(8);
+  t.mulAssign(float(1).sub(float(1).sub(smoothstep(0.02, 0.08, s)).mul(0.3)).add(smoothstep(0.08, 0.14, s).mul(float(1).sub(smoothstep(0.14, 0.3, s))).mul(0.06)));
+  t.mulAssign(float(1).sub(float(1).sub(smoothstep(0, 0.05, min(e, float(8).sub(e)))).mul(0.12)));
+  t.assign(mix(c, t, fade(wpWidth, 0.4)));
+  const cq: N = q.div(vec2(5, 4)).add(seed.mul(3.7)), id: N = floor(cq), f: N = fract(cq);
+  const hx = hash12(id), hy = hash12(id.add(7.3)), hz = hash12(id.add(19.1));
+  const lo = vec2(hx, hy).mul(0.3).add(0.1), hi = min(lo.add(0.25).add(vec2(hy, hz).mul(0.3)), 0.95);
+  const inside = step(lo.x, f.x).mul(step(lo.y, f.y)).mul(step(f.x, hi.x)).mul(step(f.y, hi.y)).mul(step(0.78, hz));
+  const around = step(lo.x.sub(0.015), f.x).mul(step(lo.y.sub(0.015), f.y)).mul(step(f.x, hi.x.add(0.015))).mul(step(f.y, hi.y.add(0.015))).mul(step(0.78, hz)).sub(inside);
+  t.assign(mix(t, mix(vec3(luma(c)), c, 0.6).mul(vnoise(wp.mul(3)).mul(0.08).add(0.84)), inside.mul(fade(wpWidth, 1))));
+  t.assign(mix(t, c.mul(1.18), around.mul(0.7).mul(fade(wpWidth, 0.3))));
+  t.mulAssign(float(1).add(vnoise(wp.mul(25)).sub(0.5).mul(0.1).mul(fade(wpWidth, 0.05))));
+  return flatAge(t, wp, wpWidth, seed);
+}
+// A membrane in two-metre sheets with paler welds, and dirt (membraneRoof in shading.ts).
+function membraneRoof(c: N, wp: N, q: N, wpWidth: N, seed: N) {
+  const s = fract(q.y.div(2));
+  const t = c.mul(float(1).add(float(1).sub(smoothstep(0.01, 0.035, s)).mul(0.1)).sub(smoothstep(0.98, 1, s).mul(0.06))).toVar();
+  t.assign(mix(c, t, fade(wpWidth, 0.3)).mul(vnoise(wp.mul(1.3)).mul(0.1).add(0.95)));
+  t.assign(mix(t, t.mul(vec3(0.72, 0.7, 0.66)), smoothstep(0.55, 0.75, fbm2(wp.mul(0.22).add(seed.mul(5)))).mul(0.6)));
+  return flatAge(t, wp, wpWidth, seed);
+}
+// Sedum mats (plantedRoof in shading.ts).
 function plantedRoof(c: N, wp: N, wpWidth: N) {
-  const t = mix(c.mul(vec3(0.85, 0.78, 0.62)), c.mul(vec3(0.92, 1.12, 0.86)), smoothstep(0.35, 0.7, fbm2(wp.mul(0.6))));
-  return t.mul(float(1).add(vnoise(wp.mul(3)).sub(0.5).mul(0.3).mul(fade(wpWidth, 0.2))));
+  const d1 = fade(wpWidth, 0.3), d2 = fade(wpWidth, 0.1);
+  const grow = smoothstep(0.35, 0.7, fbm2(wp.mul(0.12).add(3)));
+  const t = mix(c.mul(vec3(1.1, 0.88, 0.7)), c.mul(vec3(0.95, 1.25, 0.72)), grow).toVar();
+  t.mulAssign(fbm2(wp.mul(0.7).add(9)).mul(0.3).add(0.82));
+  t.mulAssign(mix(0.5, vnoise(wp.mul(2.6)), d1).mul(0.3).add(0.85));
+  t.mulAssign(float(1).add(vnoise(wp.mul(9).add(3.1)).sub(0.5).mul(0.25).mul(d2)));
+  t.assign(mix(t, c.mul(vec3(1.25, 1.45, 0.75)), smoothstep(0.76, 0.86, vnoise(wp.mul(4.1).add(19))).mul(0.55).mul(d1)));
+  t.assign(mix(t, c.mul(vec3(1.35, 0.95, 0.75)), smoothstep(0.8, 0.88, vnoise(wp.mul(3.7).add(41))).mul(0.45).mul(d1)));
+  return mix(t, c.mul(vec3(1.7, 1.6, 1.3)).add(0.02), smoothstep(0.83, 0.9, vnoise(wp.mul(5.3).add(7))).mul(0.5).mul(d1));
+}
+// Glass over an atrium (glassRoof in shading.ts).
+function glassRoof(c: N, wp: N, q: N, wpWidth: N) {
+  const cs = vec2(1.5, 3), cq: N = q.div(cs), f: N = fract(cq), e: N = min(f, f.oneMinus()).mul(cs);
+  const pane = c.mul(hash12(floor(cq)).mul(0.3).add(0.85)).add(vec3(0.02, 0.03, 0.04).mul(f.y));
+  const bar = float(1).sub(smoothstep(0.015, 0.035, min(e.x, e.y)));
+  return mix(c, mix(pane, mix(c, vec3(0.3, 0.32, 0.34), 0.7), bar.mul(0.7)), fade(wpWidth, 0.5));
+}
+// darkRoofAs in shading.ts: 2 glass, 1 planted, 0 bitumen after all.
+function darkRoofAs(c: N) {
+  const hi = max(c.r, max(c.g, c.b)), sat = hi.sub(min(c.r, min(c.g, c.b))).div(max(hi, 1e-3));
+  return select(sat.lessThan(0.4), float(0), select(c.b.greaterThan(c.r.mul(1.3)).and(c.b.greaterThanEqual(c.g)), float(2), float(1)));
 }
 function pavingRoof(c: N, wp: N, wpWidth: N) {
   const b = blocks(wp, float(0.5), float(0.5));
@@ -318,14 +375,24 @@ const buildingColor = Fn(() => {
   const roofWin = abs(f.w.sub(10)).lessThan(0.5).and(bn.y.greaterThan(0.15));
   If(roofWin, () => { c.assign(roofWindow(f)); }).ElseIf(bn.y.greaterThan(0.97).and(f.w.lessThan(0.5).or(f.w.greaterThan(4.5))), () => {
     If(uRoofDetail.greaterThan(0.5), () => {
-      const m = f.w;
+      const m = floor(f.w.add(0.001)).toVar();
+      const seed = fract(sin(dot(base, vec3(127.1, 311.7, 74.7))).mul(43758.5453));
+      const q = roofAxes(bwp, f.w);
       const r = vec3(0).toVar();
+      If(m.greaterThan(4.5).and(m.lessThan(5.5)), () => {
+        const as = darkRoofAs(base);
+        m.assign(select(as.greaterThan(1.5), float(10), select(as.greaterThan(0.5), float(8), m)));
+      });
       // Membrane and gravel measured off the photos come out nearly white; real ones reflect less.
       If(m.greaterThan(5.5).and(m.lessThan(7.5)), () => { base.mulAssign(min(float(1), float(0.17).div(max(luma(base), 0.01)))); });
-      If(m.greaterThan(8.5), () => { r.assign(pavingRoof(base, bwp, wpWidth)); })
+      // Photos make sheets and gravel more coloured than they are.
+      If(m.lessThan(7.5), () => { base.assign(mix(vec3(luma(base)), base, 0.75)); });
+      If(m.greaterThan(9.5), () => { r.assign(glassRoof(base, bwp, q, wpWidth)); })
+        .ElseIf(m.greaterThan(8.5), () => { r.assign(pavingRoof(base, bwp, wpWidth)); })
         .ElseIf(m.greaterThan(7.5), () => { r.assign(plantedRoof(base, bwp, wpWidth)); })
-        .ElseIf(m.greaterThan(4.5).and(m.lessThan(6.5)), () => { r.assign(sheetsRoof(base, bwp, wpWidth, select(m.greaterThan(5.5), float(2), float(1)))); })
-        .Else(() => { r.assign(flatRoof(base, bwp, wpWidth)); });
+        .ElseIf(m.greaterThan(5.5).and(m.lessThan(6.5)), () => { r.assign(membraneRoof(base, bwp, q, wpWidth, seed)); })
+        .ElseIf(m.greaterThan(4.5).and(m.lessThan(5.5)), () => { r.assign(bitumenRoof(base, bwp, q, wpWidth, seed)); })
+        .Else(() => { r.assign(flatRoof(base, bwp, wpWidth, seed)); });
       c.assign(roofLines(roofWeather(r, base, bwp, bn, wpWidth), f, bn, wpWidth));
     });
   }).ElseIf(bn.y.greaterThan(0.15), () => {

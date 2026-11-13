@@ -449,21 +449,78 @@ float roofGlass(vec4 f) {
 vec3 roofWindow(vec4 f) {
   return mix(vec3(.42, .4, .38), mix(vec3(.12, .15, .19), vec3(.3, .36, .43), f.y), roofGlass(f));
 }
-vec3 flatRoof(vec3 c, vec2 wp) {
+// A flat roof's own axes (map/roofEdges.ts: its grain, the fraction of w, 0-.45 for
+// 0-90°): x along one pair of its walls, y along the other.
+vec2 roofAxes(vec2 wp, float w) {
+  float a = fract(w) * 3.4906585;
+  vec2 g = vec2(cos(a), sin(a));
+  return vec2(dot(wp, g), dot(wp, vec2(-g.y, g.x)));
+}
+// What every flat roof gets with age: broad patches the sun has bleached, and stains
+// where rain stood after a storm, darker at their edge. seed: the building's.
+vec3 flatAge(vec3 c, vec2 wp, float seed) {
+  c *= .9 + .2 * fbm2(wp * .045 + seed * 31.);
+  float pond = fbm2(wp * .16 + seed * 17.);
+  return c * (1. - .08 * smoothstep(.6, .66, pond) - .08 * (smoothstep(.57, .61, pond) - smoothstep(.61, .67, pond)) * detail(wp, .4));
+}
+// Gravel, or a roof we know nothing of: grains and stones, and thin places where the
+// sheet under them shows.
+vec3 flatRoof(vec3 c, vec2 wp, float seed) {
   c *= .86 + .22 * fbm(wp * .5);
-  return c + (vnoise(wp * 18.) - .5) * .08 * detail(wp, .05);
+  c *= 1. + (vnoise(wp * 7.) - .5) * .22 * detail(wp, .15) + (vnoise(wp * 23. + 5.) - .5) * .2 * detail(wp, .05);
+  c = mix(c, c * .62, smoothstep(.64, .74, fbm2(wp * .35 + seed * 7.)) * .6);
+  return flatAge(c, wp, seed);
 }
-// Flat roofs of sheets (bitumen rolls 1 m wide, a membrane's 2 m): smooth, with the
-// welded seams a little lighter and some dirt.
-vec3 sheetsRoof(vec3 c, vec2 wp, float width) {
-  float s = fract(wp.x / width);
-  vec3 t = c * (1. + .06 * (1. - smoothstep(0., .025, s)) - .03 * smoothstep(.97, 1., s));
-  return mix(c, t, detail(wp, .3)) * (.94 + .12 * fbm(wp * .12));
+// Bitumen in rolls a metre wide and about eight long, each a shade of its own, the next
+// one's lap a darker line along the seam; patches of newer sheet over old repairs.
+// q: the roof's own axes.
+vec3 bitumenRoof(vec3 c, vec2 wp, vec2 q, float seed) {
+  float row = floor(q.y), along = q.x / 8. + hash12(vec2(row, seed * 91.));
+  vec3 t = c * (.91 + .18 * hash12(vec2(row, floor(along)) + seed * 13.));
+  float s = fract(q.y), e = fract(along) * 8.;
+  t *= 1. - .3 * (1. - smoothstep(.02, .08, s)) + .06 * smoothstep(.08, .14, s) * (1. - smoothstep(.14, .3, s));
+  t *= 1. - .12 * (1. - smoothstep(0., .05, min(e, 8. - e)));
+  t = mix(c, t, detail(wp, .4));
+  // Patches: one in a few cells of 5 by 4 m, square to the walls.
+  vec2 cs = vec2(5., 4.), cq = q / cs + seed * 3.7, id = floor(cq), f = fract(cq);
+  vec3 h = vec3(hash12(id), hash12(id + 7.3), hash12(id + 19.1));
+  vec2 lo = .1 + .3 * h.xy, hi = lo + .25 + .3 * h.yz;
+  vec2 in2 = step(lo, f) * step(f, min(hi, .95));
+  vec2 rim2 = step(lo - .015, f) * step(f, min(hi, .95) + .015);
+  float patch = in2.x * in2.y * step(.78, h.z), rim = rim2.x * rim2.y * step(.78, h.z) - patch;
+  t = mix(t, mix(vec3(luma(c)), c, .6) * (.84 + .08 * vnoise(wp * 3.)), patch * detail(wp, 1.));
+  t = mix(t, c * 1.18, rim * .7 * detail(wp, .3));
+  t *= 1. + (vnoise(wp * 25.) - .5) * .1 * detail(wp, .05);
+  return flatAge(t, wp, seed);
 }
-// A planted roof: clumps of green and dry brown.
+// A plastic membrane in sheets two metres wide, welded along a paler seam, and dirt.
+vec3 membraneRoof(vec3 c, vec2 wp, vec2 q, float seed) {
+  float s = fract(q.y / 2.);
+  vec3 t = c * (1. + .1 * (1. - smoothstep(.01, .035, s)) - .06 * smoothstep(.98, 1., s));
+  t = mix(c, t, detail(wp, .3)) * (.95 + .1 * vnoise(wp * 1.3));
+  t = mix(t, t * vec3(.72, .7, .66), smoothstep(.55, .75, fbm2(wp * .22 + seed * 5.)) * .6);
+  return flatAge(t, wp, seed);
+}
+// A sedum roof, the usual planted one: mats of little plants, greener where they grow
+// well and dry brown where they don't, with paler specks of dry tips and stones.
 vec3 plantedRoof(vec3 c, vec2 wp) {
-  vec3 t = mix(c * vec3(.85, .78, .62), c * vec3(.92, 1.12, .86), smoothstep(.35, .7, fbm2(wp * .6)));
-  return t * (1. + (vnoise(wp * 3.) - .5) * .3 * detail(wp, .2));
+  float d1 = detail(wp, .3), d2 = detail(wp, .1);
+  float grow = smoothstep(.35, .7, fbm2(wp * .12 + 3.));
+  vec3 t = mix(c * vec3(1.1, .88, .7), c * vec3(.95, 1.25, .72), grow);
+  t *= .82 + .3 * fbm2(wp * .7 + 9.);
+  t *= .85 + .3 * mix(.5, vnoise(wp * 2.6), d1);
+  t *= 1. + (vnoise(wp * 9. + 3.1) - .5) * .25 * d2;
+  t = mix(t, c * vec3(1.25, 1.45, .75), smoothstep(.76, .86, vnoise(wp * 4.1 + 19.)) * .55 * d1);
+  t = mix(t, c * vec3(1.35, .95, .75), smoothstep(.8, .88, vnoise(wp * 3.7 + 41.)) * .45 * d1);
+  return mix(t, c * vec3(1.7, 1.6, 1.3) + .02, smoothstep(.83, .9, vnoise(wp * 5.3 + 7.)) * .5 * d1);
+}
+// A glass roof over an atrium: panes about 1.5 by 3 m between light bars, each pane
+// catching the sky a little differently.
+vec3 glassRoof(vec3 c, vec2 wp, vec2 q) {
+  vec2 cs = vec2(1.5, 3.), cq = q / cs, f = fract(cq), e = min(f, 1. - f) * cs;
+  vec3 pane = c * (.85 + .3 * hash12(floor(cq))) + vec3(.02, .03, .04) * f.y;
+  float bar = 1. - smoothstep(.015, .035, min(e.x, e.y));
+  return mix(c, mix(pane, mix(c, vec3(.3, .32, .34), .7), bar * .7), detail(wp, .5));
 }
 // A terrace: slabs half a metre across with dark joints.
 vec3 pavingRoof(vec3 c, vec2 wp) {
@@ -471,6 +528,12 @@ vec3 pavingRoof(vec3 c, vec2 wp) {
   vec3 t = c * (.93 + .12 * b.y);
   t = mix(t * .72, t, smoothstep(0., .02, b.x));
   return mix(c, t, detail(wp, .5)) * (.93 + .12 * fbm(wp * .2));
+}
+// A dark roof the photos called bitumen, but too coloured to be: blue is glass (2), olive
+// or brown a planted roof gone brown (1); else 0.
+float darkRoofAs(vec3 c) {
+  float hi = max(c.r, max(c.g, c.b)), sat = (hi - min(c.r, min(c.g, c.b))) / max(hi, 1e-3);
+  return sat < .4 ? 0. : c.b > c.r * 1.3 && c.b >= c.g ? 2. : 1.;
 }
 // Age on top of any roof colour: moss in clumps (more on the shaded north slopes), dark
 // streaks running down from the ridge, and stains. Each building ages differently, by a
@@ -668,14 +731,20 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
   bool roofWin = abs(vFacade.w - 10.) < .5 && bn.y > .15;
   if (roofWin) diffuseColor.rgb = roofWindow(vFacade);
   else if (uRoofDetail > .5 && bn.y > .97 && (vFacade.w < .5 || vFacade.w > 4.5)) {
-    float m = vFacade.w;
+    float m = floor(vFacade.w + .001), seed = fract(sin(dot(roofBase, vec3(127.1, 311.7, 74.7))) * 43758.5453);
+    vec2 q = roofAxes(bwp, vFacade.w);
     vec3 r;
+    if (m > 4.5 && m < 5.5) { float as = darkRoofAs(roofBase); m = as > 1.5 ? 10. : as > .5 ? 8. : m; }
     // Membrane and gravel measured off the photos come out nearly white; real ones reflect less.
     if (m > 5.5 && m < 7.5) roofBase *= min(1., .17 / max(luma(roofBase), .01));
-    if (m > 8.5) r = pavingRoof(roofBase, bwp);
+    // Photos make sheets and gravel more coloured than they are.
+    if (m < 7.5) roofBase = mix(vec3(luma(roofBase)), roofBase, .75);
+    if (m > 9.5) r = glassRoof(roofBase, bwp, q);
+    else if (m > 8.5) r = pavingRoof(roofBase, bwp);
     else if (m > 7.5) r = plantedRoof(roofBase, bwp);
-    else if (m > 4.5 && m < 6.5) r = sheetsRoof(roofBase, bwp, m > 5.5 ? 2. : 1.);
-    else r = flatRoof(roofBase, bwp);
+    else if (m > 5.5 && m < 6.5) r = membraneRoof(roofBase, bwp, q, seed);
+    else if (m > 4.5 && m < 5.5) r = bitumenRoof(roofBase, bwp, q, seed);
+    else r = flatRoof(roofBase, bwp, seed);
     diffuseColor.rgb = roofWeather(r, roofBase, bwp, bn);
   }
   else if (uRoofDetail > .5 && bn.y > .15) {

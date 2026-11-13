@@ -916,8 +916,14 @@ record the measurements, merge decisions and pending landmark asset activation.
   in five lets out a wisp of smoke (`src/chimneySmoke.ts`). A roof cover given in
   `roofs.py` or OSM still wins. Only colours and material classes leave the pipeline;
   the game draws its own tiles, slate, metal pans between standing seams (`sheetRoof`
-  in `src/shading.ts` and `src/webgpu/buildings.ts`), sheets, planted roofs and paving
-  on flat roofs, weathering and facades on top. Mansards (roof faces steeper than 60°)
+  in `src/shading.ts` and `src/webgpu/buildings.ts`), and on flat roofs bitumen in metre-wide
+  rolls with their laps and patched repairs, membrane sheets with paler welds, gravel,
+  sedum and paving, all with sun-bleached patches and stains where rain stood. The rolls,
+  patches and glazing bars run square to the roof's walls: `roofEdges.ts` works out each
+  flat roof's direction from its outline and keeps it in the fraction of the material
+  number. A dark roof the photos call bitumen but which is clearly coloured is drawn as
+  what it more likely is: blue as a glass roof, olive or brown as a dried-out sedum roof
+  (`darkRoofAs`). Weathering and facades go on top. Mansards (roof faces steeper than 60°)
   get a row of windows (`mansardCoords` in `src/facades.ts`). Roof windows are found in
   the mesh's colours (level 14, `detect_windows`); chimneys are placed by rule on the
   ridges (`pipeline/roof_details.py`), since the mesh is too coarse to show them; both

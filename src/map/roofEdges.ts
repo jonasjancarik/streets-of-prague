@@ -51,6 +51,11 @@ export function roofEdges(p: Float32Array, out: Float32Array, count: number, ski
       if (list) list.push(t * 3 + e); else edges.set(k, [t * 3 + e]);
     }
   }
+  // Flat faces, joined into whole roofs across their inner edges, and each one's outline
+  // direction (grain, below).
+  const parent = new Int32Array(count).map((_, i) => i);
+  const root = (t: number): number => { while (parent[t] !== t) t = parent[t] = parent[parent[t]]; return t; };
+  const lineX = new Float64Array(count), lineY = new Float64Array(count);
   for (let t = 0; t < count; t++) {
     const ny = nrm[t * 3 + 1];
     if (ny < ROOF_UP || skip?.(t)) continue;
@@ -67,12 +72,23 @@ export function roofEdges(p: Float32Array, out: Float32Array, count: number, ski
         const ux = nrm[u * 3], uy = nrm[u * 3 + 1], uz = nrm[u * 3 + 2];
         const q = u * 9 + (other % 3) * 3; // the neighbour's corner off the edge
         if (uy >= 0.15) {
-          if (nx * ux + ny * uy + nz * uz > 0.995) { inside = true; break; }
+          if (nx * ux + ny * uy + nz * uz > 0.995) {
+            inside = true;
+            if (flat && uy > 0.97) parent[root(u)] = root(t);
+            break;
+          }
           // Which side of this face the neighbour lies on: below it, the two make a ridge.
           const side = nx * (p[q] - p[a]) + ny * (p[q + 1] - p[a + 1]) + nz * (p[q + 2] - p[a + 2]);
           roof = side < 0 ? EDGE.ridge : EDGE.valley;
         } else if (p[q + 1] > Math.max(p[a + 1], p[b + 1]) + 0.3) wallAbove = true;
         else wallBelow = true;
+      }
+      // A flat roof's outline, by its direction modulo 90° (each edge's angle times four),
+      // in the shader's map axes (x east, y north).
+      if (flat && !inside) {
+        const a4 = 4 * Math.atan2(-ez, ex);
+        lineX[t] += len * Math.cos(a4);
+        lineY[t] += len * Math.sin(a4);
       }
       if (inside) kind = EDGE.none;
       else if (roof) kind = roof;
@@ -93,4 +109,22 @@ export function roofEdges(p: Float32Array, out: Float32Array, count: number, ski
       }
     }
   }
+  // Each flat roof's grain: the way its walls run (modulo 90°), so the shader can lay
+  // sheets, patches and glazing bars square to them. It goes in the fraction of the
+  // material in w, 0-GRAIN for 0-90°; the material (0, or 5-9 on flat roofs) stays the
+  // whole part.
+  const sumX = new Float64Array(count), sumY = new Float64Array(count);
+  for (let t = 0; t < count; t++) if (lineX[t] || lineY[t]) { const r = root(t); sumX[r] += lineX[t]; sumY[r] += lineY[t]; }
+  for (let t = 0; t < count; t++) {
+    if (!(nrm[t * 3 + 1] > 0.97) || skip?.(t)) continue;
+    const w = out[t * 12 + 3];
+    if (w !== 0 && !(w >= 5 && w <= 9 && w === Math.floor(w))) continue;
+    const r = root(t);
+    if (!(sumX[r] || sumY[r])) continue;
+    let a = Math.atan2(sumY[r], sumX[r]) / 4;
+    if (a < 0) a += Math.PI / 2;
+    const g = Math.min(GRAIN * a / (Math.PI / 2), GRAIN - 1e-4);
+    for (let v = 0; v < 3; v++) out[(t * 3 + v) * 4 + 3] = w + g;
+  }
 }
+export const GRAIN = 0.45;
