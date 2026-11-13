@@ -1002,8 +1002,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   which buildings raised 3 m or more off the ground (OSM `min_height`, like a covered
   bridge between two houses) leave the way under them open; AI
   traffic that keeps to its lane, brakes for anything ahead, pulls out round a car
-  standing in its way where the street has room (and waits behind it where it hasn't)
-  and gives way to the right (`src/traffic.ts`), and stops at red lights; pedestrians on the footpath network who round its
+  standing in its way where the street has room (and waits behind it where it hasn't),
+  honks at you standing in its lane (the whole queue behind you joins in, later and
+  less often; a cyclist rings the bell), after 5–10 s goes round you too, on whichever
+  side has room and on through a junction the street crosses straight, with the queue
+  following, and gives way to the right (`src/traffic.ts`), and stops at red lights; pedestrians on the footpath network who round its
   corners, step past parked cars and bikes in their way, leap out of the way of fast
   cars and get knocked over, then get up again (`src/people.ts`). Traffic and
   people live within about 330 m of the player.

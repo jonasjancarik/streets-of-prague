@@ -23,7 +23,7 @@ export interface TrafficAgent {
   // How fast `off` is changing (m/s), eased so the car doesn't twitch sideways, and the
   // cars it has chosen a side to pass (true: to their left, towards the middle of the street).
   offV?: number;
-  passSide?: Map<Car, boolean>;
+  passSide?: Map<object, boolean>;
   gone?: boolean;
   // A bus on its line (buses.json): where it is along it and the stops it has served.
   bus?: BusRun;
@@ -41,6 +41,9 @@ export interface TrafficAgent {
   wait?: number;
   beep?: number;
   honks?: number;
+  // Fed up with you standing in its way: for this long (s) it goes round you as it
+  // would round a parked car, where there's room (and so does the car behind it).
+  around?: number;
 }
 
 // How busy the main roads are at each hour (0 = free-flowing, 1 = the slowest hour of
@@ -88,6 +91,8 @@ const BIN_ROOM = 2.5;
 // The lane ahead of the car being moved (Route.ahead), reused from car to car, and
 // each of its pieces as six numbers: start, direction and length, distance along.
 const lane: number[] = [], pieceAt: number[] = [];
+// The key for you on foot among the things a car has chosen a side to pass (passSide).
+const YOU = {};
 
 // The box round the lane's `pieces` (in `lane` and `pieceAt`) measured along and across
 // the lane where the car is, (x, y) heading (hx, hy): its least and greatest distance
@@ -136,6 +141,18 @@ interface Obstacle {
   kind: string; car?: Car;
 }
 
+// How far a car's lane runs on ahead of it (m, plus 2) before it turns at a junction:
+// through junctions it crosses about straight. -Infinity while it is turning through one.
+function straightOn(route: Route) {
+  let d = 0;
+  for (let i = 0; i < route.legs.length && d < 60; i++) {
+    const l = route.legs[i];
+    if (!l.edge && (l.turn ?? 0) > 0.35) return i === 0 ? -Infinity : d + 2;
+    d += l.s1 - (i === 0 ? route.s : l.s0);
+  }
+  return d + 2;
+}
+
 // AI traffic: cars glued to their lane along a Route. They brake for anything in
 // front of them (cars, trams, people, the player), stop at red lights and give way
 // to the right.
@@ -150,7 +167,7 @@ export class Traffic {
   // The bus lines through the area (buses.json); without them buses wander the main roads.
   busLines: BusLine[] = [];
   swerving = new Set<Car>();
-  private seenSides = new Set<Car>();
+  private seenSides = new Set<object>();
   // The traffic lights at junctions.
   signals: Signals | null = null;
   // Emergency vehicles with their sirens on (main.ts sets them each frame): cars in front
@@ -352,6 +369,8 @@ export class Traffic {
       // (Only along a street: through a junction, where the lane turns, across it says
       // little, and a car in the way is waited for as before.)
       const along0 = edge ? a.route.leg.s1 - a.route.s + 2 : -Infinity;
+      // You it goes round where the street runs on straight, junction or not.
+      const alongYou = (a.around ?? 0) > 0 ? straightOn(a.route) : -Infinity;
       // The lane ahead, piece by piece where it bends: a car standing beside a bend or
       // on the far side of a junction is straight ahead of this one, and not in its way.
       // Built at the first standing car that needs it (-1 until then), with the box
@@ -362,7 +381,11 @@ export class Traffic {
       // Cars standing still (parked, left, crashed) near the lane: where this one may be
       // across from its lane (lo to hi) to get past them all, the nearest of them in
       // its way, and whether a car is coming the other way.
-      let lo = -Infinity, hi = Infinity, stillGap = Infinity, still = null, oncoming = false;
+      let lo = -Infinity, hi = Infinity, stillGap = Infinity, still = null, oncoming = false, passingYou = false;
+      // How far it may pull out of its lane, left and right: never far, and within the
+      // street (on a street it knows).
+      const left = Math.min(SWERVE, edge ? edge.laneOffset + edge.width / 2 - W / 2 : SWERVE);
+      const right = Math.min(SWERVE, edge ? Math.max(0, edge.width / 2 - edge.laneOffset - W / 2) : 0.5);
       const sides = a.passSide ??= new Map(), seen = this.seenSides;
       seen.clear();
       const found = near(c.x, c.y, reach + 8);
@@ -379,7 +402,10 @@ export class Traffic {
         const vv = o.vx * o.vx + o.vy * o.vy, ov = vv < 0.08 ? 0 : Math.hypot(o.vx, o.vy);
         let lat = (o.x - here.x) * hy - (o.y - here.y) * hx, along = (o.x - here.x) * hx + (o.y - here.y) * hy;
         // (A dustcart standing at a house is passed like a parked car, where there's room.)
-        if (o.kind === 'car' && (o.car?.mode !== 'traffic' || o.car.working) && ov < 0.3) {
+        // (So are you, standing in its way once it's had enough of waiting: see `around`.)
+        const you = o.kind === 'player' && ov < 0.3 && (a.around ?? 0) > 0;
+        const along1 = you ? alongYou : along0;
+        if ((o.kind === 'car' && (o.car?.mode !== 'traffic' || o.car.working) && ov < 0.3) || you) {
           // Standing: how far along the lane it is and how far to its side, round the bends.
           if (pieces < 0) {
             pieces = a.route.ahead(L / 2 + 3, reach + 4, lane);
@@ -392,7 +418,7 @@ export class Traffic {
               const box = laneBox(pieces, L / 2 + 0.5 + BOX_R, reach + BOX_R, here.x, here.y, hx, hy);
               boxA0 = box[0]; boxA1 = box[1]; boxL0 = box[2]; boxL1 = box[3];
               // (Pulled out round it only along a street, where along0 is set.)
-              boxM = W / 2 + Math.max(along0 > -Infinity ? PASS + SWERVE : 0, TOUCH + Math.abs(a.off)) + 0.05;
+              boxM = W / 2 + Math.max(along0 > -Infinity || alongYou > -Infinity ? PASS + SWERVE : 0, TOUCH + Math.abs(a.off)) + 0.05;
             }
           }
           if (pieces > 1) {
@@ -415,15 +441,23 @@ export class Traffic {
               lat = over ? Math.sign(across || 1) * d : across;
             }
           }
-          const need = W / 2 + o.r + PASS;
-          if (along < along0) {
+          // (A little more room left round you on foot.)
+          const need = W / 2 + o.r + PASS + (you && !o.car ? 0.4 : 0);
+          if (along < along1) {
             // Pass it on the side away from where it stands across the lane, with room.
             if (along > -(L / 2 + o.r + 0.5) && along < reach + o.r && Math.abs(lat) < need + SWERVE) {
               // One side for the whole car, kept while it's being passed: its circles
               // lie either side of the middle of the lane, and the choice mustn't flip.
-              let leftOf = o.car ? sides.get(o.car) : undefined;
-              if (leftOf === undefined) { leftOf = lat >= keepLeft; if (o.car) sides.set(o.car, leftOf); }
-              if (o.car) seen.add(o.car);
+              const key = o.car ?? (you ? YOU : undefined);
+              let leftOf = key ? sides.get(key) : undefined;
+              if (leftOf === undefined) {
+                leftOf = lat >= keepLeft;
+                // (You it goes round on whichever side there's room.)
+                if (you && (leftOf ? lat - need < -left : lat + need > right)) leftOf = !leftOf;
+                if (key) sides.set(key, leftOf);
+              }
+              if (key) seen.add(key);
+              if (you) passingYou = true;
               if (leftOf) hi = Math.min(hi, lat - need);
               else lo = Math.max(lo, lat + need);
             }
@@ -431,9 +465,10 @@ export class Traffic {
           // In the way only if this car, where it is across its lane, would touch it.
           const d = along - L / 2 - o.r - (o.car?.binRound && Math.cos(o.car.h - c.h) > 0.5 ? BIN_ROOM : 0);
           if (along < 0 || along > reach + o.r || Math.abs(lat - a.off) >= W / 2 + o.r + TOUCH) continue;
-          if (along < along0) { if (d < stillGap) { stillGap = d; still = o; } }
-          // (Standing in a junction or beyond it: waited for a while, then squeezed past.)
-          else if (a.ignore <= 0 && d < gap) { gap = d; blocker = o; }
+          if (along < along1) { if (d < stillGap) { stillGap = d; still = o; } }
+          // (Standing in a junction or beyond it: waited for a while, then squeezed past;
+          // never you.)
+          else if ((a.ignore <= 0 || you) && d < gap) { gap = d; blocker = o; }
           continue;
         }
         // (Not for a standing car: it is never followed into a shared lane, as that
@@ -451,7 +486,8 @@ export class Traffic {
         if (o.kind === 'person' && ahead < L / 2 - o.r) continue;
         const side = dx * fy - dy * fx; // + = to the right
         const inPath = Math.abs(side) < W / 2 + o.r + 0.25;
-        if (o.kind === 'car' && ov > 1 && (o.vx * fx + o.vy * fy) / ov < -0.5 && lat < 0.5 && lat > -6) oncoming = true;
+        // (On a one-way street, what comes the other way is on another carriageway.)
+        if (o.kind === 'car' && ov > 1 && (o.vx * fx + o.vy * fy) / ov < -0.5 && lat < 0.5 && lat > -6 && !a.route.head.oneway) oncoming = true;
         // Out of its lane, it goes on past a car coming the other way that has stopped
         // for it, so long as they don't touch.
         if (out.has(c) && o.car?.mode === 'traffic' && Math.cos(o.car.h - c.h) < -0.5 && Math.abs(side) > W / 2 + o.r) continue;
@@ -487,11 +523,9 @@ export class Traffic {
         if (d < gap) { gap = d; blocker = o; }
       }
       // Where to be across the lane: as near its middle as gets past the cars standing
-      // in it, within the street (on a street it knows) and never far out of the lane.
-      // Pulling out towards the other side of the street waits for oncoming traffic.
+      // in it, within `left` and `right`. Pulling out towards the other side of the
+      // street waits for oncoming traffic.
       if (sides.size) for (const k of sides.keys()) if (!seen.has(k)) sides.delete(k);
-      const left = Math.min(SWERVE, edge ? edge.laneOffset + edge.width / 2 - W / 2 : SWERVE);
-      const right = Math.min(SWERVE, edge ? Math.max(0, edge.width / 2 - edge.laneOffset - W / 2) : 0.5);
       let want = clamp(0, lo, hi);
       const room = lo <= hi && want >= -left && want <= right;
       if (!room || a.kerb || (want < a.off - 0.05 && a.off > -0.3 && oncoming)) want = a.kerb ? 0 : a.off;
@@ -552,16 +586,25 @@ export class Traffic {
       // one waiting for the lights to change.
       a.jam = target < 0.3 && blocker && !held ? a.jam + dt : 0;
       a.ignore = Math.max(0, a.ignore - dt);
-      // Held up by you standing in the road: a toot after a few seconds, then again and
-      // again, longer and longer, until you move.
-      if (target < 0.3 && a.speed < 0.3 && blocker?.kind === 'player' && !held) {
+      // Held up by you standing in the road (or by your car), or in the queue behind
+      // someone who is: a toot after a few seconds, then again and again, longer and
+      // longer, until you move. Further back, later and less often, and not everyone.
+      const front = blocker?.car?.mode === 'traffic' ? this.mergeAgents.get(blocker.car) : undefined;
+      const first = blocker?.kind === 'player';
+      if (target < 0.3 && a.speed < 0.3 && (first || !!front?.wait) && !held) {
         a.wait = (a.wait ?? 0) + dt;
-        if (a.wait >= (a.beep ?? 3.5)) {
+        a.beep ??= first ? 3.5 : this.r() < 0.35 ? Infinity : 4.5 + this.r() * 5;
+        if (a.wait >= a.beep) {
           const n = a.honks = (a.honks ?? 0) + 1;
           this.onHonk?.(c, n % 3 === 0);
-          a.beep = a.wait + (n % 3 === 0 ? 2.5 : 0.8) + this.r() * 1.2;
+          a.beep = a.wait + (n % 3 === 0 ? 2.5 : 0.8) + this.r() * (first ? 1.2 : 3.5);
         }
+        // Then, after a while (less of one for the reckless), it goes round you.
+        if (first && a.wait > (a.reckless ? 2.5 : 5 + (a.cruise - 0.9) * 16)) a.around = 8;
       } else if (a.wait) a.wait = a.beep = a.honks = undefined;
+      // Going round you, it keeps at it till it's past; the car behind follows it round.
+      if (a.around) a.around = passingYou ? Math.max(a.around - dt, 1) : Math.max(0, a.around - dt);
+      if (front?.around) a.around = Math.max(a.around ?? 0, Math.min(8, front.around + 3));
 
       // (A bus picks up speed slowly.)
       const acc = target > a.speed ? (c.spec.heavy ? 1.2 : 3) : 9;

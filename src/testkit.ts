@@ -216,11 +216,12 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       me.y = c.y + Math.sin(c.h) * m;
     },
 
-    // The horns drivers sound at you from now on (true for a long one), as the game plays them.
+    // The horns drivers sound at you from now on (true for a long one), as the game plays
+    // them, and in `cars` who sounded each.
     watchHonks() {
-      const log: boolean[] = [], prev = g.traffic.onHonk;
-      g.traffic.onHonk = (c, long) => { log.push(long); prev?.(c, long); };
-      return log;
+      const log: boolean[] & { cars?: Car[] } = [], cars: Car[] = log.cars = [], prev = g.traffic.onHonk;
+      g.traffic.onHonk = (c, long) => { log.push(long); cars.push(c); prev?.(c, long); };
+      return log as boolean[] & { cars: Car[] };
     },
 
     // Scenario preparation uses the ordinary descent/exit controls. Teleporting a

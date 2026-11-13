@@ -306,12 +306,19 @@ export class Sound {
     this.horns.set(on, kind);
   }
 
-  // Another driver's horn, d m away and dx of it to the east: a short toot, or a long one.
+  // Another driver's horn, d m away and dx of it to the east: a short toot, or a long one
+  // (a cyclist rings the bell).
   toot(d: number, dx: number, kind: HornKind = 'car', long = false) {
     const ctx = this.ctx, freqs = HORNS[kind];
-    if (!ctx || ctx.state !== 'running' || !this.on || !freqs.length || d > 120) return;
+    if (!ctx || ctx.state !== 'running' || !this.on || d > 120) return;
     const t = ctx.currentTime, len = long ? 0.9 : 0.32, pan = ctx.createStereoPanner(), g = gain(ctx, 0), lp = filter(ctx, 'lowpass', 2600);
     pan.pan.value = clamp(dx / 45, -0.85, 0.85);
+    if (!freqs.length) {
+      g.gain.value = 25 / (25 + d);
+      g.connect(pan).connect(this.buses.horns);
+      ding(ctx, g, t);
+      return;
+    }
     g.gain.setTargetAtTime(0.16 * (25 / (25 + d)), t, 0.012);
     g.gain.setTargetAtTime(0, t + len, 0.04);
     lp.connect(g).connect(pan).connect(this.buses.horns);
@@ -969,7 +976,7 @@ class Horn {
   set(on: boolean, kind: HornKind) {
     const t = this.ctx.currentTime;
     if (on && kind === 'bike') {
-      if (!this.on) this.ding(t);
+      if (!this.on) ding(this.ctx, this.dest, t);
       this.on = true;
       return;
     }
@@ -981,18 +988,19 @@ class Horn {
     this.out.gain.setTargetAtTime(on ? 0.16 : 0, t, on ? 0.012 : 0.05);
   }
 
-  // A bicycle bell: two bright notes that ring out.
-  private ding(t: number) {
-    for (const f of [2350, 3130]) {
-      const o = this.ctx.createOscillator(), g = gain(this.ctx, 0);
-      o.frequency.value = f;
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(0.22, t + 0.004);
-      g.gain.exponentialRampToValueAtTime(0.0005, t + 0.9);
-      o.connect(g).connect(this.dest);
-      o.start(t);
-      o.stop(t + 1);
-    }
+}
+
+// A bicycle bell: two bright notes that ring out.
+function ding(ctx: AudioContext, dest: AudioNode, t: number) {
+  for (const f of [2350, 3130]) {
+    const o = ctx.createOscillator(), g = gain(ctx, 0);
+    o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.22, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0005, t + 0.9);
+    o.connect(g).connect(dest);
+    o.start(t);
+    o.stop(t + 1);
   }
 }
 
