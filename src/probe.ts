@@ -84,6 +84,9 @@ export function renderProbe(renderer: THREE.WebGLRenderer, scene: THREE.Scene, x
   const shadows = renderer.shadowMap.autoUpdate, background = scene.background, lamps = LAMP_ON.value;
   renderer.shadowMap.autoUpdate = false;
   LAMP_ON.value = 0;
+  // (And no sky, webgpu/dome.ts: what shows no scenery must stay empty, for the made-up sky to fill.)
+  const sky = (scene as { backgroundNode?: unknown }).backgroundNode;
+  (scene as { backgroundNode?: unknown }).backgroundNode = null;
   scene.background = null;
   renderer.setClearColor(0x000000, 0);
   renderer.setRenderTarget(targets[2] as unknown as THREE.WebGLRenderTarget, face);
@@ -95,6 +98,7 @@ export function renderProbe(renderer: THREE.WebGLRenderer, scene: THREE.Scene, x
   renderer.setRenderTarget(before);
   renderer.setClearColor(clear, alpha);
   scene.background = background;
+  (scene as { backgroundNode?: unknown }).backgroundNode = sky;
   renderer.shadowMap.autoUpdate = shadows;
   LAMP_ON.value = lamps;
 

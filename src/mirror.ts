@@ -80,6 +80,9 @@ export function renderMirror(renderer: THREE.WebGLRenderer, scene: THREE.Scene, 
   const before = renderer.getRenderTarget(), clear = renderer.getClearColor(clearColour).getHex(), alpha = renderer.getClearAlpha();
   const shadows = renderer.shadowMap.autoUpdate, background = scene.background;
   renderer.shadowMap.autoUpdate = false;
+  // (And no sky, webgpu/dome.ts: what shows no scenery must stay empty, for the made-up sky to fill.)
+  const sky = (scene as { backgroundNode?: unknown }).backgroundNode;
+  (scene as { backgroundNode?: unknown }).backgroundNode = null;
   scene.background = null;
   renderer.setClearColor(0x000000, 0);
   renderer.setRenderTarget(MIRROR_TARGET);
@@ -88,6 +91,7 @@ export function renderMirror(renderer: THREE.WebGLRenderer, scene: THREE.Scene, 
   renderer.setRenderTarget(before);
   renderer.setClearColor(clear, alpha);
   scene.background = background;
+  (scene as { backgroundNode?: unknown }).backgroundNode = sky;
   renderer.shadowMap.autoUpdate = shadows;
   return true;
 }
