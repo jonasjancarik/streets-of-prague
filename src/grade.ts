@@ -13,7 +13,7 @@ export const OLD_GRADE = asked === 'old';
 
 export const GRADE = {
   // y = x (a x + b) / (x (c x + d) + e)
-  a: 2.51, b: 0.1, c: 2.43, d: 0.59, e: 0.14,
+  a: 2.51, b: 0.15, c: 2.43, d: 0.59, e: 0.14,
   // How much of the light the curve takes in: the moods' exposures (sky.ts) were set for
   // the old curve, whose mid-grey this brings to about the same brightness.
   gain: 0.52,
