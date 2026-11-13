@@ -15,9 +15,18 @@ import { BARE, LEAVES, SEASON } from '../shading.ts';
 import { CROWN, STEM } from '../map/vegetation.ts';
 import { lampLit } from './lamps.ts';
 import { OLD_GRADE } from '../grade.ts';
+import { CANOPY_SHOWN } from '../trees.ts';
 import { type N, follow, followVec, addPort, uCut, uWet, uSnow, hash12, detail } from './common.ts';
 
 const uBare = follow(BARE), uLeaves = follow(LEAVES), uSeason = followVec(SEASON);
+const uCanopy = follow(CANOPY_SHOWN);
+// Under the sprays of leaves laid over a crown (Ultra, from above) its tufts are the shade
+// inside it: this much darker, so the sprays stand out against them as leaves in the light do.
+const UNDER_SPRAYS = 0.58;
+// Gaps in a crown's shadow: this share of every tuft lets the sun through, in patches about
+// a fifth of a tuft across. Where tufts overlap the light is mostly stopped by the next, so a
+// crown's shadow is dense in the middle and breaks up into flecks towards its edge.
+const SHADOW_GAPS = 0.3;
 const tuft: N = attribute('tuft', 'vec3'), yearly: N = attribute('yearly', 'float');
 const TUFT_RIM = 0.5; // how dark a tuft's rim is (the same in vegetation.ts)
 const outlineA: N = attribute('outlineA', 'vec4'), outlineB: N = attribute('outlineB', 'vec4');
@@ -200,12 +209,17 @@ addPort(/^tufts-cut$/, (node) => {
   node.castShadowPositionNode = instanceMatrix().mul(vec4(shaped(), 1)).xyz;
 
   node.maskNode = positionWorld.y.greaterThan(uCut.y).and(distance(positionWorld.xz, uCut.xz).lessThan(uCut.w)).not();
-  node.maskShadowNode = bareTwig(tuft, vBare(), crownXZ(), float(1), crownMix().z).greaterThanEqual(0);
+  node.maskShadowNode = Fn(() => {
+    const gap: N = hash12(floor(tuft.xy.mul(5).add(tuft.z.mul(31.7))).add(3.3)).lessThan(SHADOW_GAPS).and(tuft.z.greaterThanEqual(0));
+    return bareTwig(tuft, vBare(), crownXZ(), float(1), crownMix().z).greaterThanEqual(0).and(gap.not());
+  })();
 
   node.setupDiffuseColor = function (builder: N) {
     proto.setupDiffuseColor.call(this, builder);
     If(twig.lessThan(0), () => { Discard(); });
     const c = yearColour(diffuseColor.rgb).mul(state.w).mul(float(1).sub(uWet.mul(0.18))).toVar();
+    // (Only while the tree is in leaf: a bare one has no sprays over it.)
+    c.mulAssign(mix(1, UNDER_SPRAYS, uCanopy.mul(step(0, tuft.z)).mul(float(1).sub(smoothstep(0, 0.6, vBare())))));
     c.assign(mix(c, vec3(0.23, 0.2, 0.18), twig));
     If(uSnow.greaterThan(0.01), () => {
       const up = dot(state.xyz, cameraViewMatrix.mul(vec4(0, 1, 0, 0)).xyz);

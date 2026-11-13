@@ -31,7 +31,7 @@ assert.notEqual(COLORS.dtmYard, COLORS.pavement);
 // carriageways; a tram's own bed lies over the carriageway beside it.
 const paved = make({ park: poly }, { path: poly, pavement: poly, pavement_asphalt: poly, sett: poly, road: poly, trambed: poly });
 const ribbon = paved.find((item) => item.color === COLORS.path && item.pattern === 'mosaic');
-const mosaic = paved.findLast((item) => item.color === COLORS.path && item.pattern === 'mosaic');
+const mosaic = paved.findLast((item) => item.color === COLORS.path && item.pattern === 'pavement');
 const plain = paved.findLast((item) => item.color === COLORS.pavement && item.pattern === 'asphalt');
 const bed = layer(paved, COLORS.ballast, 'gravel');
 const carriageway = paved.findLast((item) => item.color === COLORS.asphalt && item.pattern === 'asphalt');

@@ -16,7 +16,7 @@ import {
   attribute, positionLocal, modelViewMatrix, cameraProjectionMatrix, screenSize, uniform, renderGroup, uv, cameraPosition, normalize,
 } from 'three/tsl';
 import { GRASS_SEASON, WOOD_SEASON, FIELD_SEASON, HEDGE_SEASON } from './groundSeason.ts';
-import { setPatterned, setHeld, HOLD_PX, SKY_REF, GRIT, GRIT_M, LAMP_MIRROR } from './shading.ts';
+import { setPatterned, setHeld, HOLD_PX, SKY_REF, GRIT, GRIT_M, LAMP_MIRROR, SEASON } from './shading.ts';
 import type { RasterGroundInput } from './shading.ts';
 import {
   type N, follow, uDirt, uWet, uSnow, uStreetSnow, uRain, uCut, uDig, timeOf, followColor, followVec, addPort, hash12, vnoise, fbm, fbm2, detail, blocks, stones, ports, skyAmbient,
@@ -26,6 +26,7 @@ import { MIRROR, MIRROR_BRIGHT, MIRROR_K, MIRROR_MAP, MIRROR_MATRIX } from './mi
 import './webgpu/buildings.ts';
 import './webgpu/trees.ts';
 import './webgpu/streetTrees.ts';
+import './webgpu/shadows.ts';
 import './webgpu/soft.ts';
 import './webgpu/vehicles.ts';
 import './webgpu/figures.ts';
@@ -38,7 +39,7 @@ import { makePost } from './webgpu/post.ts';
 import { dome } from './webgpu/dome.ts';
 import { DOME_NODE, DOME } from './sky.ts';
 import { OLD_GRADE } from './grade.ts';
-import { mosaicStones } from './webgpu/mosaic.ts';
+import { mosaicStones, pavedStones } from './webgpu/mosaic.ts';
 import { uWater, ripples, waves, waveNormal, waterShine, flatMirror } from './webgpu/water.ts';
 
 // PATTERNS_GLSL.
@@ -57,7 +58,9 @@ function pAsphalt(c0: N, p: N) {
   c.mulAssign(mix(1, 0.9, smoothstep(0.62, 0.66, fbm(p.mul(0.07).add(3)))));
   const d = detail(p, 0.06), dc = detail(p, 0.15);
   If(d.greaterThan(0), () => { c.addAssign(vnoise(p.mul(16)).sub(0.5).mul(0.07).mul(d)); });
-  c.mulAssign(float(1).sub(smoothstep(0.6, 0.85, vnoise(p.mul(vec2(0.9, 0.25)).add(23))).mul(0.14)));
+  // (Fainter than it was: these streaks run north to south whichever way the street does, and
+  // what traffic leaves along the lanes is now laid on the street itself, ground.ts streetWear.)
+  c.mulAssign(float(1).sub(smoothstep(0.6, 0.85, vnoise(p.mul(vec2(0.9, 0.25)).add(23))).mul(0.06)));
   If(dc.greaterThan(0), () => {
     const crack = float(1).sub(smoothstep(0, 0.025, abs(vnoise(p.mul(0.7)).sub(0.5))));
     c.mulAssign(float(1).sub(crack.mul(0.3).mul(dc).mul(smoothstep(0.55, 0.7, vnoise(p.mul(0.06).add(2))))));
@@ -75,6 +78,8 @@ function pSetts(c: N, p: N, sx: number, sy: number) {
 }
 // (The stones are a texture: webgpu/mosaic.ts.)
 const pMosaic = (c: N, p: N) => c.mul(mosaicStones(p)).mul(fbm(p.mul(0.25)).mul(0.1).add(0.95));
+// (A surveyed pavement: the same stones in Prague's patterns, webgpu/mosaic.ts.)
+const pPaved = (c: N, p: N) => c.mul(pavedStones(p)).mul(fbm(p.mul(0.25)).mul(0.1).add(0.95));
 function pSlabs(c: N, p: N) {
   const d = detail(p, 0.4), s = c.mul(0.95).toVar();
   If(d.greaterThan(0), () => {
@@ -83,6 +88,8 @@ function pSlabs(c: N, p: N) {
   });
   return s.mul(fbm(p.mul(0.15)).mul(0.14).add(0.93));
 }
+// The year's turn as the trees have it (x autumn, y in blossom, z fresh leaves): the grass's flowers go by it.
+const uBloom: N = followVec(SEASON);
 function pGrass(c0: N, p: N, seasonal: boolean, season: typeof uGroundSeason = uGroundSeason) {
   if (seasonal) c0 = c0.mul(season.rgb);
   const c = c0.mul(fbm(p.mul(0.18)).mul(0.32).add(0.82)).toVar();
@@ -90,8 +97,23 @@ function pGrass(c0: N, p: N, seasonal: boolean, season: typeof uGroundSeason = u
   if (seasonal) dry = clamp(dry.mul(season.w), 0, 1);
   c.assign(mix(c, c.mul(vec3(1.12, 1.05, 0.78)), dry));
   c.assign(mix(c, c.mul(vec3(1.05, 0.9, 0.7)), smoothstep(0.6, 0.8, fbm2(p.mul(0.15).add(3))).mul(0.6)));
+  // Lusher and thinner clumps a metre or two across, which a lawn always has.
+  c.mulAssign(vnoise(p.mul(0.85).add(41)).mul(0.2).add(0.9));
   const d = detail(p, 0.2);
-  If(d.greaterThan(0), () => { c.addAssign(vnoise(p.mul(5)).sub(0.5).mul(0.07).mul(d)); });
+  If(d.greaterThan(0), () => {
+    // The blades themselves, close up: fine streaks that all lean one way over a few metres.
+    const lean = vnoise(p.mul(0.11).add(5)).mul(6.2832);
+    const q = vec2(dot(p, vec2(cos(lean), sin(lean))), dot(p, vec2(sin(lean).negate(), cos(lean))));
+    c.mulAssign(float(1).add(vnoise(q.mul(vec2(3, 13))).sub(0.5).mul(0.26).mul(d)));
+    c.addAssign(vnoise(p.mul(5)).sub(0.5).mul(0.05).mul(d));
+    // Daisies and dandelions while the trees are in blossom: a white or yellow dot here and there.
+    if (seasonal) {
+      const cell = floor(p.mul(2.6)), h = hash12(cell.add(7.7));
+      const at = fract(p.mul(2.6)).sub(vec2(fract(h.mul(13.1)), fract(h.mul(29.3))).mul(0.6).add(0.2));
+      const flower = float(1).sub(smoothstep(0.1, 0.2, length(at))).mul(step(h, uBloom.y.mul(0.16))).mul(d);
+      c.assign(mix(c, mix(vec3(0.82, 0.8, 0.72), vec3(0.8, 0.62, 0.08), step(0.5, fract(h.mul(91.7)))), flower.mul(0.85)));
+    }
+  });
   return c;
 }
 const pWood = (c: N, p: N) => c.mul(fbm(p.mul(0.12)).mul(0.45).add(0.75)).add(vnoise(p.mul(3)).sub(0.5).mul(0.05));
@@ -154,6 +176,7 @@ function pattern(id: number, c: N, p: N, time: N, seasonal: boolean): N {
     case 1: return grit(pAsphalt(c, p), p);
     case 2: return grit(pSetts(c, p, 0.17, 0.14), p);
     case 3: return grit(pMosaic(c, p), p);
+    case 16: return grit(pPaved(c, p), p);
     case 4: return grit(pSlabs(c, p), p);
     case 5: return pGrass(c, p, seasonal);
     case 6: return pWood(seasonal ? c.mul(uWoodSeason) : c, p);
@@ -173,7 +196,7 @@ function pattern(id: number, c: N, p: N, time: N, seasonal: boolean): N {
 // WEATHER_GLSL: the colour, and in .a how much of a mirror the ground is there (shine).
 function weathered(id: number, c0: N, p: N, time: N) {
   if (id === 10) return vec4(c0, select(uWater.greaterThan(0.5), 0, 0.35));
-  const paved = id <= 4 || id === 9, road = id === 1 || id === 2;
+  const paved = id <= 4 || id === 9 || id === 16, road = id === 1 || id === 2;
   const c = vec3(c0).toVar(), shine = float(0).toVar();
   // (Derivatives outside the branches.)
   const ripple = paved ? detail(p, 0.12) : float(0);

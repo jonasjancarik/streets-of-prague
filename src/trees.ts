@@ -21,6 +21,9 @@ const STREET_REACH = 150;
 export const STREET_TREES = { value: true };
 // Whether the crowns seen from above get their sprays of leaves (graphics.ts: Ultra).
 export const CANOPY_LEAVES = { value: false };
+// 1 while they are drawn (from above, on Ultra, their pictures loaded): the tufts under them
+// are then the crown's shaded inside, and are drawn darker (webgpu/trees.ts).
+export const CANOPY_SHOWN = { value: 0 };
 
 // Every page belongs to at most one tile. It keeps its mesh, attributes and shader
 // binding when that tile leaves; only the used ranges and bounds change on reuse.
@@ -214,11 +217,12 @@ export class TreePool {
     on &&= CANOPY_LEAVES.value;
     // (From the street the shrubs and conifers have theirs at every tier, as the trees have their own models there.)
     const shrubs = (on || (street && STREET_TREES.value)) && !!streetMaterial;
-    if (!shrubs && !this.canopyOn) return;
+    if (!shrubs && !this.canopyOn) { CANOPY_SHOWN.value = 0; return; }
     this.canopyOn = shrubs;
     if (shrubs && !this.streetMade && streetMaterial) this.streetMade = streetMaterial();
     if (shrubs && !this.canopyShapes) this.canopyShapes = [canopyGeometry(21, [1, 6, 11, 15]), canopyGeometry(23, [2, 8, 14, 20, 24]), canopyGeometry(27, [1, 5, 9], [12, 12, 12, 10]), coniferGeometry(31)];
     const ready = !!this.streetMade && streetReady.value;
+    CANOPY_SHOWN.value = ready && on && !street ? 1 : 0;
     for (const page of this.pages) {
       // (Shrubs and conifers keep theirs from the street; a broadleaf tree has its own model there.)
       const mesh = page.mesh, show = ready && (page.kind === 1 || page.kind === 2 ? shrubs : on && !street) && page.owner !== null && mesh.count > 0;

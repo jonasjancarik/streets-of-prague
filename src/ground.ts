@@ -56,7 +56,10 @@ type GroundGeometry = GroundLayer['geometry'];
 
 // A kerb: how wide its line of granite is, and how far either side of the carriageway's
 // edge is looked at to tell whether it has one (m).
-const KERB_WIDTH = 0.32, KERB_REACH = 0.6, GUTTER_WIDTH = 1.1, GUTTER_SHADE = 0.34;
+const KERB_WIDTH = 0.32, KERB_REACH = 0.6, GUTTER_WIDTH = 1.1;
+// How dark the street's wear is at most (the shade layer's own), and of that how much the
+// gutter takes at the kerb (the soft shade goes by the square of it).
+const WEAR_SHADE = 0.42, GUTTER_PEAK = 0.9;
 // (The greens and the asphalt were set a little darker, and the asphalt cooler, with the filmic
 // tone curve, grade.ts: it keeps more of a sunlit colour's strength than the curve before it.)
 export const COLORS = {
@@ -172,6 +175,13 @@ function strips(lines: Point2[][], w: number, dash: Point2 | null = null, hold =
 
 // A soft band just outside each ring, fading from `alpha` at the ring to 0.
 function skirts(ringsList: Polygons, width: number, outside: boolean, skip: (a: Point2, b: Point2) => boolean = () => false): GroundGeometry {
+  const { pos, idx, alpha } = skirtParts(ringsList, width, outside, skip);
+  return finish(pos, idx, alpha);
+}
+// The same before it is laid on the ground, to be joined with other shading (`peak`: how
+// dark at the ring, 1 the layer's own shade).
+type Shading = { pos: number[]; idx: number[]; alpha: number[] };
+function skirtParts(ringsList: Polygons, width: number, outside: boolean, skip: (a: Point2, b: Point2) => boolean = () => false, peak = 1): Shading {
   const pos: number[] = [], alpha: number[] = [], idx: number[] = [];
   for (const rings of ringsList) {
     rings.forEach((ring, k) => {
@@ -185,7 +195,7 @@ function skirts(ringsList: Polygons, width: number, outside: boolean, skip: (a: 
       const base = pos.length / 3;
       for (let i = 0; i < n; i++) {
         pos.push(inner[i][0], 0, -inner[i][1], off[i][0], 0, -off[i][1]);
-        alpha.push(1, 0);
+        alpha.push(peak, 0);
       }
       for (let i = 0; i < n; i++) {
         if (skip(inner[i], inner[(i + 1) % n])) continue;
@@ -194,7 +204,95 @@ function skirts(ringsList: Polygons, width: number, outside: boolean, skip: (a: 
       }
     });
   }
-  return finish(pos, idx, alpha);
+  return { pos, idx, alpha };
+}
+
+// What traffic leaves on asphalt, as shading to go with the gutters': a dark stripe of oil
+// down the middle of every lane, heavier where cars wait before a junction, and here and
+// there a patch of newer, darker asphalt where the street was dug up: a rectangle laid along
+// the street, or a long narrow trench. From above these are what make a carriageway look
+// driven on; none of it is surveyed, so which spot has a patch is made up (the same each
+// time, from where the street lies), but lanes, widths and junctions are the map's.
+const OIL = { half: 0.6, base: 0.62, vary: 0.26, wait: 0.34, queue: 24, step: 4 };
+const PATCH = { every: 46, long: [2, 9], wide: [0.8, 2.6], trench: 0.22, dark: [0.62, 0.86] };
+const UNWORN = new Set(['service', 'pedestrian', 'living_street', 'track', 'footway', 'path', 'cycleway', 'steps']);
+function streetWear(edges: GroundRoadEdge[], [x0, y0, x1, y1]: Bounds): Shading {
+  const pos: number[] = [], idx: number[] = [], alpha: number[] = [];
+  const rnd = (x: number, y: number, k: number) => { const v = Math.sin(x * 127.1 + y * 311.7 + k * 74.7) * 43758.5453; return v - Math.floor(v); };
+  const onBorder = (p: Point2) => Math.min(Math.abs(p[0] - x0), Math.abs(p[0] - x1), Math.abs(p[1] - y0), Math.abs(p[1] - y1)) < 0.05;
+  // Junctions: a street's end where three or more ways meet (and not where the tile cut it).
+  const ways = new Map<string, Set<string>>();
+  for (const e of edges) for (const [a, b] of [[e.u, e.v], [e.v, e.u]]) { let w = ways.get(a); if (!w) ways.set(a, (w = new Set())); w.add(b); }
+  const junction = (id: string, p: Point2) => !onBorder(p) && (ways.get(id)?.size ?? 0) >= 3;
+  for (const e of edges) {
+    if (COBBLED.has(e.surface ?? '') || UNWORN.has(e.hw) || e.bridge || e.tunnel) continue;
+    if (!e.oneway && e.u > e.v) continue; // (a two-way street has an edge each way: once)
+    const W = e.width, n = e.lanes || 0;
+    const offsets: number[] = [];
+    if (e.oneway) { const lanes = Math.max(1, n || 1), lw = W / lanes; for (let k = 0; k < lanes; k++) offsets.push(-W / 2 + (k + 0.5) * lw); }
+    else { const per = Math.max(1, Math.floor(Math.max(2, n || 2) / 2)), lw = W / (2 * per); for (let k = 0; k < per; k++) offsets.push((k + 0.5) * lw, -(k + 0.5) * lw); }
+    // The centre line at even steps, with how far along each point is.
+    const pts: Point2[] = [], at: number[] = [];
+    let total = 0;
+    for (let i = 0; i < e.pts.length - 1; i++) {
+      const a = e.pts[i], b = e.pts[i + 1], len = Math.hypot(b[0] - a[0], b[1] - a[1]), steps = Math.max(1, Math.round(len / OIL.step));
+      for (let k = i ? 1 : 0; k <= steps; k++) { pts.push([a[0] + (b[0] - a[0]) * k / steps, a[1] + (b[1] - a[1]) * k / steps]); at.push(total + len * k / steps); }
+      total += len;
+    }
+    if (pts.length < 2 || total < 6) continue;
+    const first = junction(e.u, e.pts[0]), last = junction(e.v, e.pts[e.pts.length - 1]);
+    // (Lighter traffic leaves less: by how wide the street is.)
+    const busy = Math.min(1, 0.55 + W / 16);
+    for (const off of offsets) {
+      const mid = off ? offsetLine(pts, off) : pts, left = offsetLine(pts, off + OIL.half), right = offsetLine(pts, off - OIL.half);
+      if (mid.length !== pts.length || left.length !== pts.length || right.length !== pts.length) continue;
+      const base = pos.length / 3;
+      for (let i = 0; i < pts.length; i++) {
+        const wait = Math.max(first ? 1 - at[i] / OIL.queue : 0, last ? 1 - (total - at[i]) / OIL.queue : 0, 0);
+        const v = (OIL.base + (rnd(Math.round(mid[i][0]), Math.round(mid[i][1]), 1) - 0.5) * 2 * OIL.vary) * busy + OIL.wait * wait * wait;
+        pos.push(left[i][0], 0, -left[i][1], mid[i][0], 0, -mid[i][1], right[i][0], 0, -right[i][1]);
+        alpha.push(0, Math.min(0.95, Math.max(0, v)), 0);
+      }
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = base + i * 3, b = a + 3;
+        idx.push(a, a + 1, b + 1, a, b + 1, b, a + 1, a + 2, b + 2, a + 1, b + 2, b + 1);
+      }
+    }
+    // Patches: every so often along the street, by where it starts.
+    const seedX = Math.round(e.pts[0][0] * 2), seedY = Math.round(e.pts[0][1] * 2);
+    const place = (s: number) => {
+      let i = 0;
+      while (i < at.length - 2 && at[i + 1] < s) i++;
+      const t = (s - at[i]) / Math.max(1e-6, at[i + 1] - at[i]), a = pts[i], b = pts[i + 1], len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+      return { p: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t] as Point2, tx: (b[0] - a[0]) / len, ty: (b[1] - a[1]) / len };
+    };
+    for (let k = 0, s = 5 + rnd(seedX, seedY, 2) * PATCH.every; s < total - 12; k++, s += PATCH.every * (0.4 + rnd(seedX, seedY, 3 + k) * 1.2)) {
+      const trench = rnd(seedX, seedY, 40 + k) < PATCH.trench;
+      const long = trench ? 10 + rnd(seedX, seedY, 60 + k) * 16 : PATCH.long[0] + rnd(seedX, seedY, 60 + k) * (PATCH.long[1] - PATCH.long[0]);
+      const wide = trench ? 0.6 + rnd(seedX, seedY, 80 + k) * 0.3 : Math.min(W - 0.8, PATCH.wide[0] + rnd(seedX, seedY, 80 + k) * (PATCH.wide[1] - PATCH.wide[0]));
+      if (s + long > total - 3 || wide < 0.5) continue;
+      const side = (rnd(seedX, seedY, 100 + k) - 0.5) * Math.max(0, W - wide - 0.6);
+      const v = PATCH.dark[0] + rnd(seedX, seedY, 120 + k) * (PATCH.dark[1] - PATCH.dark[0]);
+      // (In pieces along the street, so a patch follows a bend.)
+      const pieces = Math.max(1, Math.round(long / 4)), base = pos.length / 3;
+      for (let j = 0; j <= pieces; j++) {
+        const { p, tx, ty } = place(s + long * j / pieces);
+        for (const o of [side + wide / 2, side - wide / 2]) { pos.push(p[0] - ty * o, 0, -(p[1] + tx * o)); alpha.push(v); }
+      }
+      for (let j = 0; j < pieces; j++) { const a = base + j * 2; idx.push(a, a + 1, a + 3, a, a + 3, a + 2); }
+    }
+  }
+  return { pos, idx, alpha };
+}
+function joinShading(parts: Shading[]): Shading {
+  const pos: number[] = [], idx: number[] = [], alpha: number[] = [];
+  for (const part of parts) {
+    const base = pos.length / 3;
+    for (const v of part.pos) pos.push(v);
+    for (const v of part.alpha) alpha.push(v);
+    for (const i of part.idx) idx.push(i + base);
+  }
+  return { pos, idx, alpha };
 }
 
 // Split every edge longer than `max` metres (in halves, repeatedly) so a flat mesh can
@@ -904,7 +1002,7 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     // Pavements and traffic islands as the technical map surveyed them, kerb to wall
     // (pipeline/pavements.py): asphalt like the unmapped ground, or Prague's mosaic.
     add(polygons(R.pavement_asphalt || []), COLORS.pavement, 'asphalt');
-    add(polygons(R.pavement || []), COLORS.path, 'mosaic');
+    add(polygons(R.pavement || []), COLORS.path, 'pavement');
     add(polygons(R.sett || []), COLORS.sett, 'setts');
     if (rasterRoads) {
       if (roadRaster) {
@@ -914,11 +1012,11 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
       order++;
     } else add(polygons(R.road || []), COLORS.asphalt, 'asphalt');
     // The gutter: what the rain leaves along the kerb darkens the carriageway's edge; then the kerb.
+    // (With it, in the same mesh, what traffic leaves on the asphalt: streetWear.)
     const kerb = kerbs();
-    if (kerb) {
-      shade(skirts(kerb.edged, GUTTER_WIDTH, false, kerb.plain), GUTTER_SHADE);
-      add(strips(kerb.lines, KERB_WIDTH), COLORS.granite, 'concrete');
-    }
+    const worn = joinShading([...(kerb ? [skirtParts(kerb.edged, GUTTER_WIDTH, false, kerb.plain, GUTTER_PEAK)] : []), ...(paintRoads ? [streetWear(edges, box)] : [])]);
+    shade(finish(worn.pos, worn.idx, worn.alpha), WEAR_SHADE);
+    if (kerb) add(strips(kerb.lines, KERB_WIDTH), COLORS.granite, 'concrete');
     // Where the trams have a bed of their own beside the street: ballast under the tracks.
     add(polygons(R.trambed || []), COLORS.ballast, 'gravel');
     // Bay lines as Prague paints them: a solid blue line in residents' zones, white
