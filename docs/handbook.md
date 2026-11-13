@@ -164,6 +164,7 @@ Graphics (<kbd>G</kbd> cycles it, remembered in the browser):
 | Cones of light in the air, glints on cars and wet ground | On | Off | Off | Off | Off |
 | Bloom round lights and glints, darker corners (WebGPU) | On | Off | Off | Off | Off |
 | Waves and glitter on the river, until you choose | On | Off | Off | Off | Off |
+| Sprays of leaves and needles on trees and shrubs seen from above | On | Off | Off | Off | Off |
 | Maximum crowd | 1200 | 1200 | 1200 | 1200 | 600 |
 
 The sun shadow map covers just what is on screen, as the sun sees it, so shadows stay
@@ -541,9 +542,16 @@ that without a new renderer.
   fork, and at every branch end flat sprays of leaves (`public/street-trees.webp`, from
   `assets/trees/`), in the tree's own colour, turning and falling through the year to
   leave bare twigs. The tree pool makes each page's second mesh over the same instances
-  when first wanted (`TreePool.street`). The hole that opens the floors above you in a
+  when first wanted (`TreePool.street`). Shrubs there are a body of the same sprays, and
+  conifers get whorls of spruce boughs laid over their plain tiers (`canopyGeometry`,
+  `coniferGeometry`; `TreePool.canopy`). On Ultra the view from above has them too: sprays
+  laid like shingles over every broadleaf crown's tufts, which keep its shape, shade and
+  shadow underneath, and over shrubs and conifers; a spray whose leaves have fallen is not
+  drawn. The free camera uses the street models once tilted more than 35°. The hole that opens the floors above you in a
   passage is off, windows mirror the sky by how flat you look along the wall, and what
-  stands beside a lamp takes no more than a ceiling of its light (`WALL_MOST`). Under Testing: pause, one frame at a time, slow
+  stands beside a lamp takes no more than a ceiling of its light (`WALL_MOST`). Seen at a
+  slant the river is a mirror of that sky (`skyAt`, with a darker band for the far bank),
+  and wet ground mirrors the sky low over the far end of the street. Under Testing: pause, one frame at a time, slow
   motion or 2–4×, money, stars, full health, nothing hurts, into a new car of any type,
   the test places, and the scenarios (see Testing above).
   "Helicopter next to me" parks one on the nearest open ground (flown like the one on
@@ -616,6 +624,12 @@ record the measurements, merge decisions and pending landmark asset activation.
   below is a ridge, above a valley, a wall rising above it flashing, nothing an eave or a
   verge) and passes a distance to each in the facade attribute's spare numbers; the shader
   draws the lines (`roofLines` in `src/webgpu/buildings.ts`).
+  A lit window at night shows a room: the pixel's ray is followed from the glass into a box
+  as wide as the bay, as high as the storey and 4.2 m deep, and what it meets first is
+  drawn (`room` in the same file: ceiling with the lamp's glow, walls, a back wall with a
+  dado and a door or picture, the floor; a quarter of the windows have a blind half down).
+  Along the edge of every carriageway runs a kerb of grey granite with a darker gutter
+  inside it (`kerbs` in `src/ground.ts`), wherever what lies beside it is not carriageway.
 - **Facades** are put together bay by bay and storey by storey from 144 parts: windows,
   doors, gateways and shopfronts in thirteen looks (`src/facades.ts`): three for
   19th-century tenements (neo-Renaissance, Art Nouveau and the plain houses of Žižkov

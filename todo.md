@@ -47,8 +47,9 @@ waiting for a look at dark suburbs. Four full scenario runs on the new map: two 
 
 ## Branch `beautify` (night of 12–13 November), waiting for a look
 
-A new tone curve at every tier, roof edges, bloom and the water's waves on Ultra, and for
-first person a sky, street-level trees, window reflections. Before and after pictures are in
+A new tone curve at every tier, roof edges, kerbs, rooms behind lit windows, bloom, leaf
+sprays on the crowns and the water's waves on Ultra, and for first person a sky, trees,
+shrubs and conifers made for the street, window reflections, a river that mirrors the sky. Before and after pictures are in
 `screenshots/beautify/compare/` (not committed); the numbers are in
 `docs/performance-log.md`. Left open:
 
@@ -60,11 +61,15 @@ first person a sky, street-level trees, window reflections. Before and after pic
 - [ ] First person in a wood is about 30 frames a second at 2× on Ultra (on `main` too).
   Leaf cards cut closer to their sprays, or shaded per corner, would cut the street trees'
   share.
-- [ ] Street trees: conifers and shrubs still use the top-down models; nothing sways.
+- [ ] Trees: nothing sways. The leaf sprays from above were only timed where the main thread
+  is the limit (no cost there); time them on a phone or at 4K before offering them below Ultra.
 - [ ] The clouds are smooth shapes, painted rather than photographed, and there are many
   on a clear day (they are tied to the shadows on the ground).
-- [ ] From the street the ground has no kerbs to speak of, and people and cars are the
-  top-down models seen close.
+- [ ] From the street people and cars are the top-down models seen close: blocky mannequins
+  (10 sides to a head). A finer figure for first person is the biggest thing left there: a
+  second mesh on the same skeleton in `assets/figures/build.py`, baked and pooled beside the
+  first in `src/figures.ts` (its animation textures are per vertex, so it needs its own).
+  Kerbs are flat lines: the pavement is not raised.
 - [ ] Ambient shading on Ultra (GTAO, `?ao`) was tried and left off: about 3 ms a frame for
   a gain that is hard to see from above. It may be worth more in first person.
 - [ ] `check-graphics.mjs` fails on a dev server that has served edited modules (it imports
