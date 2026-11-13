@@ -297,6 +297,9 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
                     "church": b in ("church", "cathedral", "chapel") or col(row, "amenity") == "place_of_worship",
                     "part": bool(col(row, "building:part")),
                     **({"cover": cover} if cover else {}),
+                    # A tram or bus stop's shelter mapped as a building (src/map/stopShelters.ts).
+                    **({"shelter": 1} if col(row, "amenity") == "shelter"
+                       and col(row, "shelter_type") in (None, "public_transport") else {}),
                     "rings": _rings(poly),
                 })
             continue
