@@ -23,6 +23,7 @@ import type { WallLine } from './facades.ts';
 import { roofClutter, smokingChimneys } from './map/roofClutter.ts';
 import { roofEdges } from './map/roofEdges.ts';
 import { crownRoofs } from './map/crownRoofs.ts';
+import { shelterOf, shelterParts } from './map/stopShelters.ts';
 import { groundLayers, layerBuffers, levelMask } from './ground.ts';
 import { flatTerraces, heightSampler, lineReach, stepLineIndex, terraceAt, withRamps } from './terrain.ts';
 import { withRoadProfile } from './roadProfiles.ts';
@@ -61,6 +62,11 @@ function detailArrays(sites: RoofSite[], ground: (x: number, y: number) => numbe
   };
   return { position: join('position'), normal: join('normal'), color: join('color'), facade: join('facade') };
 }
+const joinDetails = (a: DetailArrays | null, b: DetailArrays | null): DetailArrays | null => {
+  if (!a || !b) return a ?? b;
+  const cat = (x: Float32Array, y: Float32Array) => { const out = new Float32Array(x.length + y.length); out.set(x); out.set(y, x.length); return out; };
+  return { position: cat(a.position, b.position), normal: cat(a.normal, b.normal), color: cat(a.color, b.color), facade: cat(a.facade, b.facade) };
+};
 const appendTo = (a: BuildingArrays, d: DetailArrays | null, uv?: (x: number, y: number) => [number, number]): BuildingArrays => {
   if (!d) return a;
   const cat = (x: Float32Array, y: Float32Array) => { const out = new Float32Array(x.length + y.length); out.set(x); out.set(y, x.length); return out; };
@@ -81,13 +87,18 @@ function groundAt(g: HeightGrid | null) {
   return withRoadSurfaces(profiled, g.roadSurfaces, ref, g.roadSurfaces ? terraceAt(g.terraces) : null);
 }
 
-function roofs({ buildings, size, origin, ground, bbox, water }: WorkerJobs['roofs']): BuildingArrays {
+function roofs({ buildings, size, origin, ground, bbox, water, stops }: WorkerJobs['roofs']): BuildingArrays {
   const hAt = groundAt(ground);
   // One building at a time, each lifted onto its own ground height (`base`).
   const keys = ['position', 'normal', 'color', 'drapeUv'] as const;
   const parts: Record<(typeof keys)[number], Float32Array[]> = { position: [], normal: [], color: [], drapeUv: [] };
   const sites: RoofSite[] = [];
+  // Stop shelters OSM has as buildings (map/stopShelters.ts) are drawn as shelters.
+  let shelters: DetailArrays | null = null;
+  const marked = buildings.some((b) => b.shelter);
   for (const b of buildings) {
+    const sh = stops ? shelterOf(b, stops, marked) : null;
+    if (sh) { shelters = joinDetails(shelters, partArrays(shelterParts(sh), b.base || 0, hAt)); continue; }
     const built = buildBuildings({ size, origin, buildings: [b] , areas: { water } });
     for (const s of built.sites) sites.push({ ...s, z: s.z + (b.base || 0) });
     const g = built.mesh.geometry;
@@ -106,7 +117,7 @@ function roofs({ buildings, size, origin, ground, bbox, water }: WorkerJobs['roo
   const lines: WallLine[] = [], facade = facadeCoords(arrays.position, hAt, styleAt(bbox), lines);
   const c = arrays.color;
   finishWalls(arrays.position, facade, lines, (t) => [Math.round(c[t * 9] * 255), Math.round(c[t * 9 + 1] * 255), Math.round(c[t * 9 + 2] * 255)]);
-  return appendTo({ ...arrays, facade }, detailArrays(sites, hAt), (x, y) => [(x + ox) / W, (y + oy) / H]);
+  return appendTo({ ...arrays, facade }, joinDetails(detailArrays(sites, hAt), shelters), (x, y) => [(x + ox) / W, (y + oy) / H]);
 }
 
 // Whether (x, y) is inside a polygon (outer ring, then holes).

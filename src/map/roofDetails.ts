@@ -33,6 +33,7 @@ export interface Part {
   rgb: Rgb; // top (and a panel's face)
   side: Rgb;
   top: number; // the top's facade w (see shading.ts)
+  lift?: number; // m its bottom stands above `z` (a stop shelter's roof on its posts)
 }
 type Rgb = [number, number, number];
 
@@ -229,7 +230,8 @@ export function partArrays(parts: Part[], z: number, ground: (x: number, y: numb
     tri([a, c, d], want, rgb, (v) => f(v, [a, b, c, d].indexOf(v)));
   };
   for (const p of parts) {
-    const at = (u: number, v: number, h: number): V3 => [p.x + p.c * u - p.s * v, p.y + p.s * u + p.c * v, z + h];
+    const z0 = z + (p.lift ?? 0);
+    const at = (u: number, v: number, h: number): V3 => [p.x + p.c * u - p.s * v, p.y + p.s * u + p.c * v, z0 + h];
     const hu = p.a / 2, hv = p.b / 2;
     if (p.shape === 'panel') {
       // Axis-aligned, low edge to the south, rising to the north.
@@ -248,7 +250,7 @@ export function partArrays(parts: Part[], z: number, ground: (x: number, y: numb
       [at(hu, hv, 0), at(-hu, hv, 0), [-p.s, p.c, 0]],
       [at(-hu, hv, 0), at(-hu, -hv, 0), [-p.c, -p.s, 0]],
     ];
-    for (const [a, b, out] of sides) quad(a, b, [b[0], b[1], z + p.h], [a[0], a[1], z + p.h], out, p.side, wallF);
+    for (const [a, b, out] of sides) quad(a, b, [b[0], b[1], z0 + p.h], [a[0], a[1], z0 + p.h], out, p.side, wallF);
     const ta = at(-hu, -hv, p.h), tb = at(hu, -hv, p.h), tc = at(hu, hv, p.h), td = at(-hu, hv, p.h);
     if (p.shape === 'skylight') {
       const uv = [[0, 0], [1, 0], [1, 1], [0, 1]];

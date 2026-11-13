@@ -12,7 +12,7 @@ import { neighbourhoodOf, roofShapeFor, pitchedColour, flatColour, hasParapet, i
 export interface BuildingTile extends GeoData {
   // cover: what the roof is covered with, where OSM or pipeline/roofs.py says.
   // `street`: the named street the building stands on, when the tile knows it (roofRules.ts).
-  buildings: { id: string; name?: string | null; street?: string | null; kind: string; h: number; minh: number; church?: boolean; roof?: string | null; cover?: 'tiles' | 'slate' | 'copper'; rings: Point2[][] }[];
+  buildings: { id: string; name?: string | null; street?: string | null; kind: string; h: number; minh: number; church?: boolean; roof?: string | null; cover?: 'tiles' | 'slate' | 'copper'; shelter?: 1; rings: Point2[][] }[];
   // The tile's areas by kind (polygons with holes): `water` tells what is afloat.
   areas?: Record<string, Point2[][][]>;
 }

@@ -885,6 +885,14 @@ record the measurements, merge decisions and pending landmark asset activation.
   big plain faces. The game draws those eight exact colours as a warm grey instead
   (`PINK_FLAT` in `src/tileWorker.ts`), so no rebuild is needed; at the next rebuild of
   the buildings, lower the share in `flat_roof` to 0.12 and the table matches nothing.
+  The level top of a pitched roof (a tenement's or a mansard's crown, the slopes rising
+  to it) is drawn as sheet metal whatever the photos called it (`src/map/crownRoofs.ts`).
+- **Stop shelters.** OSM maps many tram and bus stop shelters as small buildings that IPR
+  doesn't have; the game draws them as a glass-roofed shelter on posts with a bench and an
+  advertising panel, not as a little house (`src/map/stopShelters.ts`). Maps built since
+  the pipeline marks them (`shelter` on the building, from `amenity=shelter`) use the
+  mark; older maps take small narrow buildings along a tram track for shelters, which
+  leaves bus-stop shelters as houses until the next rebuild.
 - **Colours from the photo mesh.** Where `pipeline/mesh_colours.py` has run, IPR's
   buildings take their real colours from IPR's photorealistic mesh instead of the
   palette: each roof face its colour and material (tiles, slate, sheet metal, copper;
