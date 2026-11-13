@@ -24,12 +24,26 @@ const WIDEST = 1.6;    // m: no edge wider than this
 
 const uSoft: N = uniform(0).setGroup(renderGroup).onRenderUpdate(() => SOFT_SHADOWS.value);
 
+// The shadow's own numbers, made once for each shadow: the filter is called for every
+// material, and uniforms made afresh each time were so many more for the renderer to
+// update every frame (a millisecond or two of the main thread on a drive).
+const made = new WeakMap<object, { mapSize: N; radius: N; texelM: N; depthM: N }>();
+const uniformsOf = (shadow: N) => {
+  let u = made.get(shadow);
+  if (!u) {
+    made.set(shadow, (u = {
+      mapSize: reference('mapSize', 'vec2', shadow).setGroup(renderGroup),
+      radius: reference('radius', 'float', shadow).setGroup(renderGroup),
+      // How many metres a texel of the map covers, and how many its whole depth.
+      texelM: uniform(1).setGroup(renderGroup).onRenderUpdate(() => (shadow.camera.right - shadow.camera.left) / shadow.mapSize.x),
+      depthM: uniform(1).setGroup(renderGroup).onRenderUpdate(() => shadow.camera.far - shadow.camera.near),
+    }));
+  }
+  return u;
+};
+
 const filter = Fn(({ depthTexture, shadowCoord, shadow }: N) => {
-  const mapSize: N = reference('mapSize', 'vec2', shadow).setGroup(renderGroup);
-  const radius: N = reference('radius', 'float', shadow).setGroup(renderGroup);
-  // How many metres a texel of the map covers, and how many its whole depth.
-  const texelM: N = uniform(1).setGroup(renderGroup).onRenderUpdate(() => (shadow.camera.right - shadow.camera.left) / shadow.mapSize.x);
-  const depthM: N = uniform(1).setGroup(renderGroup).onRenderUpdate(() => shadow.camera.far - shadow.camera.near);
+  const { mapSize, radius, texelM, depthM } = uniformsOf(shadow);
   const texel: N = vec2(1).div(mapSize);
   const phi: N = (interleavedGradientNoise(screenCoordinate.xy) as N).mul(6.28318530718).toVar();
   const lit = (uv: N): N => (texture(depthTexture, uv) as N).compare(shadowCoord.z);
