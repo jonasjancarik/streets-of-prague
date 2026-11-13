@@ -113,6 +113,9 @@ in compass degrees (0 north, 90 east), speeds in km/h.
   its heading and wall plane, or null. It checks the full car, nearby vehicles, tram
   circles, posts and fences. `wall-crash` coasts from 60 km/h, records actual wall
   impacts and keeps the final speed check below 15 km/h.
+- `t.clearing(r = 18, search = 400)`: moves your car to the nearest open ground at least
+  `r` m from walls, posts, fences, cars and trams (Old Town Square works with
+  `t.clearing(18, 120)`), for sliding about; `handbrake-slide` uses it.
 - `t.nav()`: the directions (`src/satnav.ts`): where they lead, whether the way reaches
   the spot or only the end of the loaded streets, its length, how far along you are and
   the turns. `t.navTo(lat, lon)` picks a spot as the map would, `t.navTo()` stops.

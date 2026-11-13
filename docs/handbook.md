@@ -213,7 +213,10 @@ that without a new renderer.
 - Tank controls on foot and in the car: W/S forwards and back, A/D turn, Shift
   runs, Space is the handbrake. E gets into the nearest car, including one driving
   past (its driver runs off). R puts the car back on the road. Scroll zooms; the
-  camera also pulls up with speed. Braking hard, the handbrake and sliding round a
+  camera also pulls up with speed. The handbrake in a turn locks the back wheels and
+  swings the tail out: the nose comes round while the car slides on the way it was
+  going, and the slide eases off a moment after you let go (longer with the gas held
+  in a rear-wheel-drive car). Braking hard, the handbrake and sliding round a
   corner leave dark tyre marks that fade after a minute (`src/skids.ts`); so do the
   police and cars sent skidding by a crash.
 - In the car, holding Shift is lane assist (`src/assist.ts`): it steers along your

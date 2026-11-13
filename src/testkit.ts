@@ -952,6 +952,31 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       }
     },
 
+    // Move your car to the nearest open ground at least `r` m from any wall, within
+    // `search` m (a square, a car park, a wide crossing), for sliding about; null if none.
+    clearing(r = 18, search = 400) {
+      const c = g.car();
+      if (!c) throw new Error('Not in a car');
+      const open = (x: number, y: number) => {
+        for (let d = 0; d <= r; d += 1.5) {
+          const n = Math.max(1, Math.ceil((2 * Math.PI * d) / 1.5));
+          for (let k = 0; k < n; k++) if (g.grid.at(x + Math.cos((k / n) * 2 * Math.PI) * d, y + Math.sin((k / n) * 2 * Math.PI) * d) !== 0) return false;
+        }
+        return g.carsNear(x, y, r).every((o) => o === c) && g.tramsNear(x, y, r + 20).length === 0
+          && posts.near(x, y, r).every((p) => p.down) && !fences.blocks(x, y, r, -1);
+      };
+      for (let ring = 0; ring <= search; ring += 4) {
+        const n = Math.max(1, Math.ceil((2 * Math.PI * ring) / 4));
+        for (let k = 0; k < n; k++) {
+          const x = c.x + Math.cos((k / n) * 2 * Math.PI) * ring, y = c.y + Math.sin((k / n) * 2 * Math.PI) * ring;
+          if (!open(x, y)) continue;
+          Object.assign(c, { x, y, vx: 0, vy: 0, w: 0 });
+          return { x, y };
+        }
+      }
+      return null;
+    },
+
     // Run the world for this long with these controls (the live loop waits meanwhile).
     async wait(seconds: number, ctl: Partial<Controls> = {}) {
       const was = kit.paused;
