@@ -83,11 +83,11 @@ const lin = (u: number) => (u <= 0.04045 ? u / 12.92 : Math.pow((u + 0.055) / 1.
 const rgb = (hex: string): [number, number, number] => [1, 3, 5].map((i) => lin(parseInt(hex.slice(i, i + 2), 16) / 255)) as [number, number, number];
 // Prague's new shelters (from 2022): near-black steel, a thin flat roof running forward
 // over the platform from posts along the back, an advertising light box at one end that
-// is also a post, a bench along the back, and a low railing carrying on beyond the other
-// end. Their glass back wall and side pane aren't drawn: the game can't make them see-
+// is also a post and a bench along the back. (Some have a low railing beyond the other
+// end; the map doesn't say which, so none gets one.) Their glass back wall and side pane aren't drawn: the game can't make them see-
 // through, and from above they would only cast a shadow the real glass doesn't.
 const STEEL = rgb('#26292b'), POSTER = rgb('#d9dcd6'), BENCH = rgb('#5b4a38');
-const ROOF_AT = 2.6, ROOF = 0.12, POST = 0.1, OVERHANG = 0.4, RAIL = 0.05;
+const ROOF_AT = 2.6, ROOF = 0.12, POST = 0.1, OVERHANG = 0.4;
 
 // A shelter's parts (roofDetails.ts Part, drawn by partArrays at the ground's height).
 export function shelterParts(sh: Shelter): Part[] {
@@ -109,9 +109,5 @@ export function shelterParts(sh: Shelter): Part[] {
     const u = length / 2 - 0.15 - (i * (length - 0.15 - POST)) / (posts - 1);
     parts.push(box(u, backV, POST, POST, ROOF_AT, 0, STEEL));
   }
-  // The railing beyond the other end: two posts and a top rail, 1 m high, 2 m long.
-  const r0 = -length / 2 - 0.3, r1 = r0 - 2;
-  for (const u of [r0, r1]) parts.push(box(u, backV, RAIL, RAIL, 1, 0, STEEL));
-  parts.push(box((r0 + r1) / 2, backV, 2 + RAIL, RAIL, RAIL, 0.95, STEEL), box((r0 + r1) / 2, backV, 2, RAIL * 0.6, RAIL * 0.6, 0.35, STEEL));
   return parts;
 }
