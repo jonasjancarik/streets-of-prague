@@ -1171,8 +1171,17 @@ export class Car {
     // or the car runs wide (front-wheel drive, below).
     const power = this.driven && !S.two ? clamp(throttle, 0, 1) : 0;
     const bend = power * Math.min(1, Math.abs(ctl.steer)) * clamp(Math.abs(vf) / 10, 0, 1);
-    const grip = (ctl.handbrake ? 1.1 : S.grip * (1 - (S.fade ?? 0.45) * fast) * (S.drive === 'rwd' ? 1 - 0.3 * bend : 1)) * road;
+    // A car already sliding keeps sliding more easily (a tyre skidding grips less than
+    // one rolling), so a slide carries on for a moment after the handbrake is let go,
+    // and longer with the gas held in a rear-wheel-drive car.
+    const sliding = clamp((Math.abs(vl) - 1) / 5, 0, 1);
+    const grip = (ctl.handbrake ? 1.1 : S.grip * (1 - (S.fade ?? 0.45) * fast) * (S.drive === 'rwd' ? 1 - (0.3 + 0.5 * sliding) * bend : 1) * (1 - 0.6 * sliding)) * road;
     vl *= Math.exp(-grip * dt);
+    // How much of the car's turning its travel follows. Rolling tyres take it all; with
+    // the back wheels locked by the handbrake the nose swings round while the car goes
+    // on the way it was going, and the difference is the slide.
+    const follow = ctl.handbrake && this.driven ? 1 - 0.8 * clamp((Math.abs(vf) - 3) / 5, 0, 1)
+      : S.drive === 'rwd' ? 1 - 0.6 * bend * sliding : 1;
     // Tyre marks: sliding sideways, the back wheels locked by the handbrake, or all
     // four braking hard.
     const slide = clamp((Math.abs(vl) - 1.5) / 4, 0, 1);
@@ -1182,12 +1191,16 @@ export class Car {
 
     const sgn = vf >= 0 ? 1 : -1;
     const maxW = S.turn * (1 - 0.35 * fast) * (ctl.handbrake ? 1.35 : 1) * (!S.drive || S.drive === 'fwd' ? 1 - 0.12 * bend : 1);
-    const wantW = ctl.steer * Math.min(Math.abs(vf) / (S.radius ?? 3.6), maxW) * sgn;
+    // Sliding, the back keeps swinging round on the car's whole speed, not just the part
+    // still along its nose.
+    const swing = ctl.handbrake ? Math.hypot(vf, vl) : Math.abs(vf);
+    const wantW = ctl.steer * Math.min(swing / (S.radius ?? 3.6), maxW) * sgn;
     if (this.driven) this.w += (wantW - this.w) * Math.min(1, dt * (S.response ?? 9));
     else this.w *= Math.exp(-4 * dt);
     this.h += this.w * dt;
 
-    const nx = Math.cos(this.h), ny = Math.sin(this.h);
+    const travel = this.h - this.w * dt * (1 - follow);
+    const nx = Math.cos(travel), ny = Math.sin(travel);
     this.vx = nx * vf + ny * vl;
     this.vy = ny * vf - nx * vl;
 
