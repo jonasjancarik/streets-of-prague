@@ -61,8 +61,14 @@ const stem: N = floor(yearly.div(STEM.span)).mul(STEM.step);
 const bareTree = (): N => clamp(uBare.mul(1.6).sub(own.mul(0.6)), 0, 1).mul(changes);
 
 // The crown takes the outline the top-down crown has; the lower trunk reaches the ground.
+// A card's leaves are on it until the tree has shed this far (each card its own number).
+const leafy = (): N => step(bareTree(), part.z.mul(0.96).add(0.02));
+// A spray laid over a crown seen from above shows nothing once its leaves are gone: it is
+// folded to a point here, so that a bare wood draws none of them (thrown away pixel by
+// pixel instead, a November wood from above cost 3 ms a frame more for nothing to see).
+const folded = (): N => select(part.y.lessThan(CANOPY + 0.5).and(part.y.greaterThan(BOUGH + 0.5)), leafy(), float(1));
 const shaped = (): N => {
-  const p: N = positionGeometry, wide: N = mix(1, outlineAt(p), smoothstep(0.15, 0.5, length(p.xz)));
+  const p: N = positionGeometry.mul(folded()), wide: N = mix(1, outlineAt(positionGeometry), smoothstep(0.15, 0.5, length(positionGeometry.xz)));
   return vec3(p.x.mul(wide), select(part.y.greaterThanEqual(0), mix(stem.negate().sub(STEM.under), CROWN_FOOT, part.y), p.y), p.z.mul(wide));
 };
 
@@ -79,7 +85,6 @@ function material() {
 
   // A card: leaves until the tree has shed this far, then twigs (the atlas's two halves).
   const card: N = uv();
-  const leafy = (): N => step(bareTree(), part.z.mul(0.96).add(0.02));
   // (One read: which of the atlas's three pictures is chosen by the card, not all read and
   // mixed: leaves, bare twigs, or a conifer's bough.)
   const needles: N = step(part.y, BOUGH + 0.5);
