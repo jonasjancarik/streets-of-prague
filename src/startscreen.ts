@@ -180,6 +180,11 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
   fresh.addEventListener('click', () => { resuming = false; sync(); show(); go.focus(); });
   go.disabled = true;
   newsletterLink(panel, 'ls-news', { thanks: true });
+  const code = el('a', 'ls-news ls-code', panel) as HTMLAnchorElement;
+  code.href = 'https://github.com/jonasjancarik/streets-of-prague';
+  code.target = '_blank';
+  code.rel = 'noopener';
+  relabel.push(() => { code.textContent = t('The game on GitHub'); });
   updateNotice(panel, 'ls-update');
   graphicsWarning(panel, 'ls-warn');
   for (const f of relabel) f();

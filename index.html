@@ -356,6 +356,10 @@
       .slow-hint p { margin: 0; align-self: stretch; }
       button.ls-news { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.25em; cursor: pointer; }
       button.ls-news:hover, .ls-news.done { opacity: 1; }
+      /* The game's code on GitHub: a second quiet link, right under the news one. */
+      a.ls-news { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.25em; }
+      a.ls-news:hover { opacity: 1; }
+      .ls-news + .ls-code { margin-top: 0; }
       /* Focused on its own when the map is ready: lifted like on hover, not boxed in. */
       .ls-start .ls-go:focus-visible { outline: none; background: #e2342b; transform: translate(-0.2vh, -0.2vh); box-shadow: 0.8vh 0.8vh 0 var(--poster-black); }
       .ls-start button:focus-visible { outline: 0.4vh solid var(--poster-paper); outline-offset: 0.3vh; }

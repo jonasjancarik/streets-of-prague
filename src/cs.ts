@@ -175,6 +175,7 @@ export const CS: Record<string, string> = {
   'Credits, licences and privacy': 'Poděkování, licence a soukromí',
   // Newsletter signup
   'Get news about the game by email': 'Novinky o hře e-mailem',
+  'The game on GitHub': 'Hra na GitHubu',
   // The beta note before the first game
   'Welcome to the beta': 'Vítej v betaverzi',
   'Thanks for trying Streets of Prague this early.': 'Díky, že zkoušíš Ulice Prahy takhle brzy.',
