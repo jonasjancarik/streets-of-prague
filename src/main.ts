@@ -18,7 +18,7 @@ import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp, streetShare } f
 import { Car, TYPES, CarPool, collideBodies, contact, loadCars, ordinaryCarBodies, useKit, variantName } from './car.ts';
 import { RestingCars } from './restingCars.ts';
 import { loadKit, FIGURE_SIZE, SCALE, WARDROBE } from './figures.ts';
-import { Traffic, trafficWanted } from './traffic.ts';
+import { Traffic, trafficWanted, type TrafficAgent } from './traffic.ts';
 import { roadHint } from './roadLevels.ts';
 import { preparePeople, pickPerson } from './spawn.ts';
 import { PavementDrivers } from './pavement.ts';
@@ -1936,6 +1936,7 @@ async function main() {
   let spawnT = 0;
 
   // The lists a step makes, kept for the next one (each is filled afresh where it's used).
+  const trafficHits: { ag: TrafficAgent; b: Car; pen: number; closing: number }[] = [], standingNear: Obstacle[] = [];
   const moverList: Car[] = [], copList: Car[] = [], threatList: Car[] = [], activeList: Car[] = [], doneSet = new Set<Car>(), tramList: TramBody[] = [];
 
   // One step of everything that moves (several per frame while a tram ride is sped up).
@@ -2135,6 +2136,48 @@ async function main() {
           if ((a.vx * (b.x - a.x) + a.vy * (b.y - a.y)) / d > 3) police.crime('hitCop', b.x, b.y, b);
         }
       }
+    }
+    // Cars in traffic against the cars standing still (parked, left, wrecked), which the
+    // loop above never pairs: one that drives into a standing car crashes into it and
+    // leaves the traffic; one that noses deep into it, squeezing past, shoves it aside.
+    const hits = trafficHits;
+    hits.length = 0;
+    for (const ag of traffic.agents) {
+      const a = ag.car;
+      if (a.speed < 0.3) continue;
+      standingNear.length = 0;
+      resting.near(a.x, a.y, 8, standingNear);
+      // (Each of the standing cars' circles against the line through this car's, as
+      // wide as they are: no lists made for the many parked cars beside the lane.)
+      const fx = Math.cos(a.h), fy = Math.sin(a.h), end = a.spec.L / 2 - a.r;
+      for (const o of standingNear) {
+        const b = o.car;
+        if (!b || b === a || b.mode === 'traffic') continue;
+        const along = clamp((o.x - a.x) * fx + (o.y - a.y) * fy, -end, end);
+        const dx = o.x - a.x - fx * along, dy = o.y - a.y - fy * along, rr = a.r + o.r;
+        if (dx * dx + dy * dy >= rr * rr || apart(a, b)) continue;
+        // How deep, and how fast it closes in across the contact: brushing past a parked
+        // car is neither a crash nor a shove.
+        const d = Math.sqrt(dx * dx + dy * dy) || 1, pen = rr - d, closing = (a.vx * dx + a.vy * dy) / d;
+        const h = hits.find((h) => h.b === b && h.ag === ag);
+        if (!h) hits.push({ ag, b, pen, closing });
+        else if (pen > h.pen) { h.pen = pen; h.closing = closing; }
+      }
+    }
+    for (const { ag, b, pen, closing } of hits) {
+      const a = ag.car;
+      if (!traffic.agents.includes(ag) || (closing <= 3.5 && pen < 0.25)) continue;
+      const ca = a.circles(), cb = b.circles();
+      if (closing > 3.5) {
+        traffic.release(ag);
+        a.mode = 'loose';
+        loose.push(a);
+        throwRider(a, a.vx, a.vy, closing > HURTS ? 1 : 0);
+        const hit = collideBodies(a, ca, a.r, 1 / a.mass, b, cb, b.r, 1 / b.mass);
+        smash(a, b, hit);
+        if (hit > 8) { a.damage += hit - 8; b.damage += hit - 8; }
+      } else collideBodies(a, ca, a.r, 0, b, cb, b.r, 1 / b.mass);
+      b.settled = false;
     }
     // Trams: nothing moves one, and it shoves aside any car in its way, parked or
     // driving, instead of running over it. A car in traffic it hits leaves the traffic.
