@@ -22,6 +22,7 @@ import { styleFor, facadeCoords, paintWalls, mansardCoords, finishWalls, WALL_CO
 import type { WallLine } from './facades.ts';
 import { roofClutter, smokingChimneys } from './map/roofClutter.ts';
 import { roofEdges } from './map/roofEdges.ts';
+import { crownRoofs } from './map/crownRoofs.ts';
 import { groundLayers, layerBuffers, levelMask } from './ground.ts';
 import { flatTerraces, heightSampler, lineReach, stepLineIndex, terraceAt, withRamps } from './terrain.ts';
 import { withRoadProfile } from './roadProfiles.ts';
@@ -123,6 +124,7 @@ function inPolygon(x: number, y: number, rings: Point2[][]) {
 const MEASURED_WALL = 15; // pipeline/ipr_buildings.py
 const ROOF_WINDOW = 10; // pipeline/roof_details.py
 const CHIMNEY = 11;
+const METAL = 3;
 // Arrays with `d` put in at vertex `at`.
 const insertAt = (a: BuildingArrays, d: DetailArrays, at: number): BuildingArrays => {
   const put = (x: Float32Array, y: Float32Array, size: number) => { const out = new Float32Array(x.length + y.length); out.set(x.subarray(0, at * size)); out.set(y, at * size); out.set(x.subarray(at * size), at * size + y.length); return out; };
@@ -215,6 +217,10 @@ function ipr({ buffer, box: [x0, y0], absolute, ground, bbox, hide, clutter, foo
     const m = low(o);
     if (m && m <= ROOF_WINDOW) for (let v = 0; v < 3; v++) facade[(o * 3 + v) * 4 + 3] = m; // roofs only
   }
+  // The level tops of pitched roofs are sheet metal, whatever the photos made of them.
+  const nrm = g.attributes.normal.array as Float32Array;
+  const crowns = m8 ? crownRoofs(pos, facade, nrm, own) : new Set<number>();
+  const material = (o: number) => (crowns.has(o) ? METAL : low(o));
   mansardCoords(pos, facade, lines);
   // The edges of the roofs' faces, for the ridge tiles, gutters and valleys (not the extras: chimneys and roof windows).
   roofEdges(pos, facade, own);
@@ -235,13 +241,13 @@ function ipr({ buffer, box: [x0, y0], absolute, ground, bbox, hide, clutter, foo
     }
     o++;
   }
-  const result: BuildingArrays = { position: pos, color: col, normal: g.attributes.normal.array as Float32Array, facade };
+  const result: BuildingArrays = { position: pos, color: col, normal: nrm, facade };
   if (!m8) return result;
   const hAt = groundAt(ground);
   // In the order: the buildings, the things on flat roofs, the chimneys and roof windows,
   // then the roof clutter.
-  const flat = detailArrays(iprRoofSites(pos, low, hAt), hAt);
-  const more = clutter ? roofClutter(pos, col, facade, own, low, lines, hAt) : null;
+  const flat = detailArrays(iprRoofSites(pos, material, hAt), hAt);
+  const more = clutter ? roofClutter(pos, col, facade, own, material, lines, hAt) : null;
   const built = flat ? insertAt(result, flat, own * 3) : result;
   const extrasAt = own * 3 + (flat ? flat.position.length / 3 : 0);
   return { ...appendTo(built, more), parts: { extras: extrasAt, clutter: extrasAt + (n - own) * 3 }, chimneys: smokingChimneys(pos, own, low) };
