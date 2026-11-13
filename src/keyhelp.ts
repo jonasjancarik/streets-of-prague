@@ -29,7 +29,7 @@ function keysFor(s: HelpState): { title: string; keys: Keys; note?: string } {
         Shift: ['run', 'Run'], Space: ['jump', 'Jump'],
         E: ['get in', 'Get into the nearest car, onto a bike or motorbike, or onto a tram at a stop'],
         T: ['taxi', 'Get a taxi: wave one down or order one through an app'],
-        J: ['jobs', 'Jobs: ask for work, take the job on offer, or give one up'],
+        J: ['jobs', 'Jobs: ask for work, take the job on offer, turn it down for another, or give one up'],
         N: ['map', 'Map: pick where to drive, and the way there shows on the road'],
         ...(s.gun ? { F: ['shoot', 'Shoot ahead, or where you click (hold it to keep shooting). Bullets never hit people'] as Use } : {}),
       },

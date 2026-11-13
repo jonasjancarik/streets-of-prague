@@ -519,6 +519,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     },
     // The phone: J (ask for work, take the offer, give up: twice), or an offer of one job.
     pressJ() { g.missions.key('KeyJ'); return kit.job(); },
+    pressK() { g.missions.key('KeyK'); return kit.job(); },
     offerJob(id: string) { const def = g.missions.defs.find((d) => d.id === id); return !!def && g.missions.propose(def); },
     // Offers nobody asked for (off in test runs unless turned on).
     autoJobs(on: boolean) { g.missions.auto = on; },

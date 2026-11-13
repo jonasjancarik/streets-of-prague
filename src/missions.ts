@@ -541,8 +541,18 @@ export class Missions {
   onWasted() { if (this.run) this.fail(['You ended up in hospital'], false); else this.offered = null, this.state = 'idle'; }
   onBusted() { if (this.run) this.fail(['You were arrested'], false); else this.offered = null, this.state = 'idle'; }
 
-  // J (or a tap on the card). Returns true when the key was taken.
+  // Turns the offer down and gets the next one at once, so there is no waiting for the old one to run out.
+  decline() {
+    if (this.state !== 'offer') return false;
+    this.offered = null;
+    this.state = 'idle';
+    this.ask();
+    return true;
+  }
+
+  // J (or a tap on the card), K to turn an offer down. Returns true when the key was taken.
   key(code: string) {
+    if (code === 'KeyK') return this.decline();
     if (code !== 'KeyJ') return false;
     if (this.state === 'offer') this.accept();
     else if (this.state === 'on') {
@@ -636,7 +646,7 @@ export class Missions {
       return `<div class="job-from">${esc(t(def.from.name))} · ${t('job offer')}</div>`
         + `<div class="job-text">${esc(t(def.offer, plan.vars))}</div>`
         + `<div class="job-meta">${t('Pay: about {pay}', { pay: kc(plan.pay + (plan.bonus ?? 0) / 2) })}</div>`
-        + `<div class="job-keys">${key(t('take the job'))} · ${Math.ceil(left)} s</div>`;
+        + `<div class="job-keys">${key(t('take the job'))} · ${touch ? `<span class="job-no">${t('Tap here: {what}', { what: t('another one') })}</span>` : padLabels(`<b>K</b> ${t('another one')}`)} · ${Math.ceil(left)} s</div>`;
     }
     const run = this.run;
     // Nothing on: a standing reminder that there's work to ask for.

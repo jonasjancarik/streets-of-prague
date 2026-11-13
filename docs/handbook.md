@@ -318,8 +318,8 @@ that without a new renderer.
   Taxis need money for the fare, and let you out when it reaches your balance. Shared bikes are
   paid as you ride (below).
 - **Jobs** (`src/missions.ts`, `src/jobs.ts`): work that pays. Press J to ask for a
-  job (on touch, tap the job card), J again to take the one on offer, and J twice to
-  give one up. With no job on, the card under the speed says "J look for work" ("Tap
+  job (on touch, tap the job card), J again to take the one on offer, K to turn it down and get
+  another straight away (on touch, tap "another one" on the card), and J twice to give one up. With no job on, the card under the speed says "J look for work" ("Tap
   here: look for work" on touch). On a gamepad, d-pad right is J. On foot, on a bike
   or in an ordinary car, J goes through what's on: a
   courier run (fetch a parcel and bring it across town in time), a sightseeing tour (a

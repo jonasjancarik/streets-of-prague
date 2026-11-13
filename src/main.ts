@@ -1524,7 +1524,7 @@ async function main() {
   missions.allowed = (d) => !d.faction || d.minRep === undefined || repute.of(d.faction) >= d.minRep;
   missions.onDone = (d) => { if (d.faction && d.rep) repute.add(d.faction, d.rep); telemetry.did('finished a job'); };
   missions.onFail = () => telemetry.did('failed or gave up a job');
-  $('job').addEventListener('click', () => { missions.key('KeyJ'); });
+  $('job').addEventListener('click', (e) => { missions.key((e.target as Element).closest('.job-no') ? 'KeyK' : 'KeyJ'); });
   const marker = new Marker(scene, camera, $('mark'), (x, y) => ground(x, y));
   // Directions: to a spot picked on the map, or else to the job's (src/satnav.ts).
   const satnav = new Satnav(scene, drive, (x, y, r) => edgesNear(x, y, r), (x, y, level) => world.surfaceAt(x, y, level),

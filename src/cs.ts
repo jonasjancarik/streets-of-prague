@@ -507,11 +507,12 @@ export const CS: Record<string, string> = {
   'credits.city': 'Zvuky města: nahrávky z <a href="https://freesound.org" target="_blank" rel="noopener">Freesoundu</a>; davy na Starém Městě jsou <a href="https://freesound.org/s/212034/" target="_blank" rel="noopener">Prague, Staro Mesto, City Center</a> od vonfleisch, CC BY 3.0, provoz <a href="https://freesound.org/s/94309/" target="_blank" rel="noopener">Prague Atmo Traffic from 5th floor</a> od aUREa, CC BY 4.0, zbytek CC0.',
   'credits.made': 'Vytvořeno s open-source knihovnami three.js, proj4 a Leaflet. <a href="licenses.txt" target="_blank" rel="noopener">Přečti si jejich licence</a>.',
   // Work (missions.ts, jobs.ts)
-  'Jobs: ask for work, take the job on offer, or give one up': 'Práce: řekni si o ni, vezmi nabídku, nebo ji vzdej',
+  'Jobs: ask for work, take the job on offer, turn it down for another, or give one up': 'Práce: řekni si o ni, vezmi nabídku, odmítni ji a vyžádej jinou, nebo ji vzdej',
   'Map: pick where to drive, and the way there shows on the road': 'Mapa: vyber, kam jet, a cesta se ukáže na silnici',
   'job offer': 'nabídka práce',
   'Pay: about {pay}': 'Odměna: asi {pay}',
   'take the job': 'vzít práci',
+  'another one': 'jinou',
   'give up': 'vzdát to',
   'look for work': 'hledat práci',
   'again to give the job up': 'znovu a je po práci',
