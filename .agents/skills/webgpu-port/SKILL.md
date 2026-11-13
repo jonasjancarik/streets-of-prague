@@ -99,6 +99,15 @@ keeping the GPU 78–91% busy, WebGL at 21% (clear) and 80% (rain), so the pairs
 | Petřín woods | 160 / 167 | 154 / 153 |
 | Drive from Újezd | 115 / 131 | 120 / 136 |
 
+Since 13 November 2026 the tone curve is in `src/grade.ts` (the numbers, and the curve on the
+CPU) and `src/webgpu/grade.ts` (the node, and `ungrade()` for colours meant for the screen:
+use it, don't undo the curve by hand); `?grade=old` keeps the one before. On Ultra the frame
+is drawn through `src/webgpu/post.ts` (a `RenderPipeline`: scene pass, bloom, the curve, a
+vignette), so the scene's target there is the pass's, not the canvas's. From the street the
+scene's `backgroundNode` is the sky of `src/webgpu/dome.ts`, and near trees are a second
+instanced mesh over each page's instances (`src/webgpu/streetTrees.ts`, a node material of
+its own, not a port).
+
 ## How a port is wired
 
 - Keep the GLSL path exactly as it is. The TSL version lives in `src/webgpu.ts`

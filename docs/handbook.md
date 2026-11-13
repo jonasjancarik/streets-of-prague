@@ -162,6 +162,8 @@ Graphics (<kbd>G</kbd> cycles it, remembered in the browser):
 | Shadows in lamplight | Cars, people, trams, posts | Cars | Soft, cars | Soft, cars | Off |
 | Lamps' light map | 2048² | 1024² | 1024² | 1024² | 1024² |
 | Cones of light in the air, glints on cars and wet ground | On | Off | Off | Off | Off |
+| Bloom round lights and glints, darker corners (WebGPU) | On | Off | Off | Off | Off |
+| Waves and glitter on the river, until you choose | On | Off | Off | Off | Off |
 | Maximum crowd | 1200 | 1200 | 1200 | 1200 | 600 |
 
 The sun shadow map covers just what is on screen, as the sun sees it, so shadows stay
@@ -176,8 +178,24 @@ game at 30 frames a second (Chrome's Energy Saver does), a frame whose work fits
 half the time stays at its tier.
 `?graphics=auto|ultra|high|medium|low|lowest` overrides it for one visit; `?dpr=1` fixes
 only the pixel ratio. The Water setting turns on waves, sun glitter and lamp reflections on
-the river (`src/webgpu/water.ts`; WebGPU only, not on Lowest, off unless chosen;
-`?water=on|off` for one visit). WebGL keeps MSAA on at every tier because it cannot change
+the river (`src/webgpu/water.ts`; WebGPU only, not on Lowest; on with Ultra and off below it
+until you choose; `?water=on|off` for one visit).
+
+Every pixel ends with the same tone curve at every tier but Lowest (`src/grade.ts`): a
+filmic curve per channel (Krzysztof Narkowicz's fit to the ACES curve, with a softer toe)
+and a little less saturation, more of it taken from bright colours. Sunlit stone sits on
+the straight middle of the curve, so a roof's sunny and shaded slopes stay apart and shade
+is properly dark. The numbers are in one place for the WebGPU tone-mapping node
+(`src/webgpu/grade.ts`), the old renderer's GLSL and the curve undone for colours meant for
+the screen (fog, rain, smoke). `?grade=old` brings back the curve before it (an extended
+Reinhard, under which everything sunlit sat on the shoulder and read as flat).
+
+On Ultra the frame goes through one more pass (`src/webgpu/post.ts`, three.js's
+`RenderPipeline`): the scene is drawn to a target of its own, what is brighter than a
+threshold spills light round itself (bloom: by day only glints and the brightest plaster,
+at night the lamps' pools, lit windows and headlights), then the tone curve runs and the
+corners are darkened a little. The bloom's first copy is a quarter of the picture's width.
+`?post=on|off` overrides the tier for one visit. WebGL keeps MSAA on at every tier because it cannot change
 that without a new renderer.
 
 ## Playing
@@ -510,7 +528,22 @@ that without a new renderer.
   `src/tiles.ts`). Shadows only reach as far as the view from above would
   show. The ground's layers write no depth (from above nothing is behind the ground), so
   in first person each tile's plain ground goes into the depth first, 0.3 m low, and hides
-  what lies behind a crest or down a slope (`GROUND_DEPTH` in `src/surface.ts`). Under Testing: pause, one frame at a time, slow
+  what lies behind a crest or down a slope (`GROUND_DEPTH` in `src/surface.ts`).
+  From the street there is a sky (`src/webgpu/dome.ts`, the scene's background while the
+  horizon can be in view; the free camera gets it tilted past 25°): blue overhead paling to
+  the horizon, the sun where it really stands or the moon, stars on a clear night, and
+  clouds. The fair-weather clouds are the ones whose shadows drift over the ground: each
+  pixel's ray is followed to a layer 1100 m up and the shadows' pattern read where that
+  cloud's shadow falls. `Sky.update` works out the colours (`DOME` in `src/sky.ts`), and the
+  haze takes the horizon's colour, so the far end of a street fades into the sky. The
+  broadleaf trees within about 150 m are drawn as a second model made to be stood under
+  (`src/map/streetTree.ts`, `src/webgpu/streetTrees.ts`): a trunk with bark, boughs that
+  fork, and at every branch end flat sprays of leaves (`public/street-trees.webp`, from
+  `assets/trees/`), in the tree's own colour, turning and falling through the year to
+  leave bare twigs. The tree pool makes each page's second mesh over the same instances
+  when first wanted (`TreePool.street`). The hole that opens the floors above you in a
+  passage is off, windows mirror the sky by how flat you look along the wall, and what
+  stands beside a lamp takes no more than a ceiling of its light (`WALL_MOST`). Under Testing: pause, one frame at a time, slow
   motion or 2–4×, money, stars, full health, nothing hurts, into a new car of any type,
   the test places, and the scenarios (see Testing above).
   "Helicopter next to me" parks one on the nearest open ground (flown like the one on
@@ -575,6 +608,14 @@ record the measurements, merge decisions and pending landmark asset activation.
   mapped tree covers (a courtyard, a private garden) one is made up for it.
   Buildings get roof tiles laid down
   each face's slope, slate and gravel on flat roofs. It all stays sharp at any zoom.
+  Where a roof's faces meet and end is marked too: lighter ridge and hip tiles, valleys
+  lined with metal and darker either side, a gutter along the eaves, verge trims, flashing
+  under a wall, and a kerb with a coping round a flat roof. The edges are those of IPR's
+  model: the tile worker finds, for every roof triangle, which of its edges lie on the
+  outline of its face and what meets it there (`src/map/roofEdges.ts`; another roof face
+  below is a ridge, above a valley, a wall rising above it flashing, nothing an eave or a
+  verge) and passes a distance to each in the facade attribute's spare numbers; the shader
+  draws the lines (`roofLines` in `src/webgpu/buildings.ts`).
 - **Facades** are put together bay by bay and storey by storey from 144 parts: windows,
   doors, gateways and shopfronts in thirteen looks (`src/facades.ts`): three for
   19th-century tenements (neo-Renaissance, Art Nouveau and the plain houses of Žižkov

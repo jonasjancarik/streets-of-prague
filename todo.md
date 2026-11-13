@@ -45,6 +45,31 @@ trees with it. Not rebuilt: the lamp files (`build_lamps.py ujezd centrum praha`
 waiting for a look at dark suburbs. Four full scenario runs on the new map: two clean,
 `wall-crash` once, `fire-brigade` once (old behaviour of the engines, see "Gameplay").
 
+## Branch `beautify` (night of 12–13 November), waiting for a look
+
+A new tone curve at every tier, roof edges, bloom and the water's waves on Ultra, and for
+first person a sky, street-level trees, window reflections. Before and after pictures are in
+`screenshots/beautify/compare/` (not committed); the numbers are in
+`docs/performance-log.md`. Left open:
+
+- [ ] Decide whether the filmic curve stays at every tier (`?grade=old` compares). Rain,
+  snow and mist were looked at once each, the colours of smoke and spray not at all.
+- [ ] Look at night on a phone: the curve's toe is darker than the old one's, and night was
+  only judged on the Mac.
+- [ ] First person in a wood is about 30 frames a second at 2× on Ultra (on `main` too).
+  Leaf cards cut closer to their sprays, or shaded per corner, would cut the street trees'
+  share.
+- [ ] Street trees: bare crowns read heavy (the twig cards are dense); conifers and shrubs
+  still use the top-down models; nothing sways.
+- [ ] The clouds are smooth blobs. A second, finer layer or lit edges would help; so would
+  fewer of them on a clear day (they are tied to the shadows on the ground).
+- [ ] From the street the ground has no kerbs to speak of, and people and cars are the
+  top-down models seen close.
+- [ ] Ambient shading on Ultra (GTAO) was not tried: the ground writes no depth from above,
+  so it needs the depth-only ground drawn there too.
+- [ ] `check-graphics.mjs` fails on a dev server that has served edited modules (it imports
+  a second copy of `shading.ts`): make it import the game's own copy.
+
 ## Release
 
 Main is about a hundred commits past v0.5.2 and the live map is still 2026-10-03. Waiting to go

@@ -1157,3 +1157,57 @@ traffic. Not measured on the phone.
 bus is still short of the next stop after three minutes (2 of 11 runs before, 3 of 16
 after), so no inspection starts and nobody is let off.
 
+## 12–13 November 2026 — the look on Ultra, and first person (branch `beautify`)
+
+A new tone curve, roof edges, a post-processing pass on Ultra, and for first person a sky,
+street-level trees and window reflections. Headless Chrome on the M5, WebGPU, 2×
+(2880×1800), 14:00 clear unless said; the machine had other apps on the GPU through the
+night (6–82 % busy between runs), so read the pairs, not the absolute numbers.
+
+**The whole branch against `main`** (`--vs`, 20 s a scene):
+
+| Tier | Scene | `main` | Branch |
+|---|---|---|---|
+| High | stand | 6.3, 7.2 ms; reversed 6.5, 7.0, 6.4, 6.2 | 6.9, 7.9 ms; reversed 6.3, 6.9, 7.1, 6.2 |
+| High | drive | 10.0, 10.5 ms | 10.5, 10.4 ms |
+| Ultra | stand | 6.8, 7.6 ms | 7.4, 7.8 ms |
+| Ultra | drive | 9.4, 10.4 ms | 11.0, 11.7 ms |
+| Ultra, 22:00 rain | stand | 16.3 ms | 15.3 ms |
+| Ultra, 22:00 rain | drive | 16.0 ms | 16.2 ms |
+
+Below Ultra nothing measurable changed (the curve is no dearer than the one before it; the
+roof lines and the glass are a few operations on roof and wall pixels). On Ultra the pass
+costs about half a millisecond standing and up to 1.5 ms driving, most of it main-thread
+time for its dozen small draws.
+
+**The pass by itself** (`--ab` toggling `POST.value` in one page): with the bloom's first
+copy at half the picture's width (three.js's own) 10.8 → 12.8 ms standing and 13.9 → 15.8
+driving; at a quarter 8.7 → 9.9 and 13.1 → 13.3. A quarter is what is in.
+
+**The water's waves** (`--ab` toggling the setting at the river): 8.6 ms without, 8.5 with.
+Ultra now has them until the player chooses.
+
+**First person** (`--eval` setting `__test.eyes`, Ultra, 2×; `--ab` in one page):
+
+| Piece | Old Town Square, facing its trees | Petřín woods |
+|---|---|---|
+| Street trees (four and five sprays a branch end, two texture reads) | 10.2 → 13.4 ms | 31.9 → 25.4 ms |
+| Street trees (three sprays, one read: what is in) | 7.9 → 10.2 ms | 33.6 → 29.0 ms |
+| The sky | 11.3 → 12.0 ms | |
+| The pass | 11.0 → 11.2 ms | |
+
+In a wood the street trees are quicker than the top-down crowns they replace; a wood in
+first person is slow either way (about 30 frames a second at 2× on Ultra, on `main` too).
+A pixel of a leaf card pays for its lighting and shadow filter even where the picture is
+transparent (WGSL's `discard` goes on running the shader), so the cost follows the cards'
+area on screen: the lead for making them cheaper is cards cut closer to the spray, or
+shading the sprays per corner.
+
+Checks: `check-graphics` (WebGPU and WebGL), `check-material-sharing --case all`,
+`check-tree-pool --case all`, `check-tree-shadows` and `check-renderer` pass (run
+`check-graphics` against a freshly started dev server: on one that has served edited modules
+its `import('/src/shading.ts')` gets a second copy and fails at "lowest: detail").
+Scenarios `seasonal-ground`, `tunnel-layers`, `lamp-knock`, `wall-crash` and `police-chase`
+pass; `tunnel-mouth` fails the same way on `main` ("in the mouth, not underground", Divadelní).
+Not measured: the phone, Medium and below, and Windows.
+
