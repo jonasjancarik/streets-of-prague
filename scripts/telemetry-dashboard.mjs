@@ -60,7 +60,7 @@ async function fetchRows() {
   writeFileSync(file, sql);
   let out;
   try {
-    out = execFileSync('cf', ['analytics_engine', 'sql', 'query', '--file', file, '--quiet'], { env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: ACCOUNT }, encoding: 'utf8', maxBuffer: 1 << 28, stdio: ['ignore', 'pipe', 'pipe'] });
+    out = execFileSync('cf', ['analytics-engine', 'sql', 'query', '--file', file, '--quiet'], { env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: ACCOUNT }, encoding: 'utf8', maxBuffer: 1 << 28, stdio: ['ignore', 'pipe', 'pipe'] });
   } catch (e) {
     const said = `${e.stdout ?? ''}${e.stderr ?? ''}`;
     // The dataset appears with its first report; before that there is nothing to ask for.
