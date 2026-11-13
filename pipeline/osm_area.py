@@ -480,7 +480,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         if cls != "bridge" and share >= SURVEYED:
             # The survey has this street: it's drawn from there (below); what OSM
             # says is only what it's paved with.
-            surveyed.append((ls, cls == "sett"))
+            surveyed.append((ls, cls == "sett", est["hw"], left, right))
             if cls == "sett":
                 sett_near.append(ls.buffer(max(left, right) + SETT_REACH))
             if not est["tunnel"]:
@@ -491,7 +491,9 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         road_lines.setdefault(cls, []).extend(pieces)
     timer.lap("road_buffers")
     if not surface.is_empty:
-        # Cobbles where a cobbled street is the nearest and close by, asphalt elsewhere,
+        # Each street's own carriageway is paved like the street, the more important
+        # street through the junction (_paving_owners); what's left goes to the nearest
+        # street, cobbles where it's a cobbled one close by, asphalt elsewhere,
         # including the surveyed car parks and lanes OSM doesn't have.
         # (Snapped to a centimetre grid: the survey's surface and the Voronoi cells meet
         # at countless near-coincident edges, which exact overlay trips over. Snapping
@@ -499,8 +501,15 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         surface = _areas(surface)
         setts = Polygon()
         if sett_near:
-            setts = _areas(shapely.intersection(_nearest(surveyed, surface), unary_union(sett_near), grid_size=GRID))
-        road_lines.setdefault("sett", []).append(_areas(shapely.intersection(surface, setts, grid_size=GRID)))
+            region, own = _paving_owners(surveyed, surface)
+            setts = _areas(shapely.intersection(region, unary_union(sett_near), grid_size=GRID))
+            setts = _areas(shapely.intersection(surface, setts, grid_size=GRID))
+            # Only where it carries on a cobbled street's own paving: a corner the
+            # nearest street reaches past another street's carriageway is left as it
+            # is, not made an island of setts.
+            parts = shapely.get_parts(setts)
+            setts = _areas(unary_union(parts[shapely.intersects(parts, own.buffer(.05))])) if len(parts) else setts
+        road_lines.setdefault("sett", []).append(setts)
         road_lines.setdefault("road", []).append(_areas(shapely.difference(surface, setts, grid_size=GRID)))
     timer.lap("cobble_voronoi")
     # Route-only links may cross the housing-estate lawns inferred from blocks,
@@ -992,6 +1001,120 @@ def _plots(block, homes):
             plots[o] = _areas(shapely.make_valid(plots[o].union(plots[k].buffer(0.02, join_style="mitre"))))
             del plots[k]
     return [(homes[k][0], plot) for k, plot in plots.items()]
+
+
+JUNCTION_REACH = 20.0  # m round a cobbled street's meeting with an asphalt one
+# Which street keeps its paving through a junction: the more important one, and
+# asphalt over cobbles between equals (a cobbled side street ends at the main road).
+THROUGH_RANK = ["service", "living_street", "unclassified", "residential", "tertiary_link", "tertiary",
+                "secondary_link", "secondary", "primary_link", "primary", "trunk_link", "trunk",
+                "motorway_link", "motorway"]
+
+
+def _paving_owners(lines, surface):
+    """Where the cobbled streets' paving goes, from (centre line, cobbled?, highway,
+    left, right) of each street: (the region, to be cut to the surface; the cobbled
+    streets' own carriageways, which every piece of cobbles must touch).
+
+    Each street first takes its own carriageway, as wide as the survey has it (parking
+    lanes included), the street that goes through a junction first, so a side street's
+    paving ends in a straight line along the through street's edge instead of in
+    wedges along the bisectors. The rest (corner curves, bays, car parks) goes to the
+    nearest street (_nearest). Only plain street buffers are overlaid here: the
+    surface itself is far bigger and is cut once, by the caller."""
+    def rank(line):
+        return THROUGH_RANK.index(line[2]) if line[2] in THROUGH_RANK else -1, not line[1]
+
+    cobbled_near = [l[0].buffer(max(l[3], l[4]) + 15) for l in lines if l[1]]
+    if not cobbled_near:
+        return Polygon(), Polygon()
+    near = shapely.STRtree(cobbled_near)
+    # Asphalt streets matter only where they meet cobbled ones.
+    lines_near = [l for l in lines if l[1] or len(near.query(l[0], predicate="intersects"))]
+    # Streets of the same rank and paving can share their overlaps, so each such group
+    # is laid as one piece, the through streets first.
+    groups = {}
+    for line, (left, right) in zip(lines_near, _surfaced_widths(lines_near, surface)):
+        ls = line[0]
+        groups.setdefault(rank(line), []).extend([ls.buffer(left, single_sided=True, join_style="mitre"),
+                                                  ls.buffer(-right, single_sided=True, join_style="mitre")])
+    taken, cobbled = Polygon(), []
+    for key in sorted(groups, reverse=True):
+        own = _areas(unary_union(groups[key]))
+        if not key[1]:  # cobbled
+            cobbled.append(_areas(shapely.difference(own, taken)))
+        taken = _areas(shapely.union(taken, own))
+    cobbled = _areas(unary_union(cobbled))
+    nearest = _nearest([l[:2] for l in lines], surface)
+    # Only round the junctions where a cobbled street meets an asphalt one: elsewhere
+    # (two ways side by side, say) the nearest street decides, as it always has.
+    def ends(of, on):
+        pts = shapely.points([c for l in of for c in (l.coords[0], l.coords[-1])])
+        return pts[shapely.dwithin(pts, shapely.union_all(on), 1.0)]
+
+    setts = [l[0] for l in lines_near if l[1]]
+    asphalt = [l[0] for l in lines_near if not l[1]]
+    if not asphalt:
+        return nearest, nearest
+    ends = np.concatenate([ends(setts, asphalt), ends(asphalt, setts)])
+    zone = _areas(shapely.union_all(shapely.buffer(ends, JUNCTION_REACH)))
+    if zone.is_empty:
+        return nearest, nearest
+    region = shapely.union(shapely.intersection(cobbled, zone), shapely.difference(nearest, shapely.intersection(taken, zone)))
+    return _areas(region), _areas(shapely.union(cobbled, shapely.difference(nearest, zone)))
+
+
+def _surfaced_widths(lines, surface, reach=3.0):
+    """How far the survey's surface reaches either side of each street's centre line
+    (left, right): the median across its middle, away from the junctions at its ends,
+    at least to its kerbs and at most `reach` past them. Measured along rays across
+    the street to the nearest edge of the surface."""
+    fs = np.array([.3, .4, .5, .6, .7])
+    ox, oy, ex, ey, owner = [], [], [], [], []
+    for i, (ls, _mark, _hw, left, right) in enumerate(lines):
+        p = shapely.line_interpolate_point(ls, fs, normalized=True)
+        a = shapely.get_coordinates(shapely.line_interpolate_point(ls, fs - .02, normalized=True))
+        b = shapely.get_coordinates(shapely.line_interpolate_point(ls, fs + .02, normalized=True))
+        d = b - a
+        n = np.hypot(*d.T)
+        ok = n > 0
+        if not ok.any():
+            continue
+        p, d, n = shapely.get_coordinates(p)[ok], d[ok], n[ok]
+        normal = np.column_stack([-d[:, 1], d[:, 0]]) / n[:, None]  # to the left
+        for side, sign, kerb in ((0, 1, left), (1, -1, right)):
+            end = p + sign * normal * (kerb + reach)
+            ox.extend(p[:, 0]); oy.extend(p[:, 1]); ex.extend(end[:, 0]); ey.extend(end[:, 1])
+            owner.extend([(i, side)] * len(p))
+    widths = [[left, right] for _ls, _m, _hw, left, right in lines]
+    if not owner:
+        return widths
+    ox, oy, ex, ey = map(np.array, (ox, oy, ex, ey))
+    rays = shapely.linestrings(np.stack([np.column_stack([ox, oy]), np.column_stack([ex, ey])], axis=1))
+    length = np.hypot(ex - ox, ey - oy)
+    segs = []
+    for ring in shapely.get_parts(shapely.boundary(surface)):
+        c = shapely.get_coordinates(ring)
+        segs.append(np.stack([c[:-1], c[1:]], axis=1))
+    if not segs:
+        return widths
+    segs = shapely.linestrings(np.concatenate(segs))
+    hit = length.copy()
+    r, e = shapely.STRtree(segs).query(rays, predicate="intersects")
+    if len(r):
+        pts = shapely.intersection(rays[r], segs[e])
+        dist = shapely.distance(shapely.points(ox[r], oy[r]), pts)
+        np.minimum.at(hit, r, dist)
+    shapely.prepare(surface)
+    inside = shapely.contains_xy(surface, ox, oy)
+    found = {}
+    for k, (key, d) in enumerate(zip(owner, hit)):
+        if inside[k]:
+            found.setdefault(key, []).append(d)
+    for (i, side), d in found.items():
+        kerb = widths[i][side]
+        widths[i][side] = min(kerb + reach, max(kerb, float(np.median(d))))
+    return widths
 
 
 def _nearest(lines, surface):

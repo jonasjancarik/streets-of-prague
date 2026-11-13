@@ -1330,7 +1330,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   under such a deck is left out. OSM only says what a street is
   paved with: each part of the surveyed surface takes the paving of the nearest street,
   and cobbles reach at most 4 m past a cobbled street's kerb (a car park beside it is
-  asphalt). Each side's kerb, for the parked cars, is measured straight across from
+  asphalt). Where a cobbled street meets an asphalt one, the more important street
+  (by OSM's class, asphalt between equals) keeps its paving across the junction, out
+  to the surveyed surface's edge, so the other street's paving ends in a straight line
+  along it instead of in wedges along the halfway lines (`_paving_owners` in
+  `pipeline/osm_area.py`, within 20 m of where the two meet). Each side's kerb, for the parked cars, is measured straight across from
   the street's centre line to where the surveyed surface ends (`pipeline/kerbs.py`).
   Past the city limits, and on the few streets the map doesn't have (about 2 %, mostly
   new ones), the asphalt reaches out to each kerb as OSM suggests: past the lanes to
