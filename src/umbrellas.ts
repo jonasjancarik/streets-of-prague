@@ -47,7 +47,8 @@ function shape() {
 }
 
 const _q = new THREE.Quaternion(), _tilt = new THREE.Quaternion(), _s = new THREE.Vector3(), _m = new THREE.Matrix4(), _c = new THREE.Color();
-const UP = new THREE.Vector3(0, 1, 0), ACROSS = new THREE.Vector3(0, 0, 1);
+const UP = new THREE.Vector3(0, 1, 0), ACROSS = new THREE.Vector3(0, 0, 1), AHEAD = new THREE.Vector3(1, 0, 0);
+const _roll = new THREE.Quaternion(), _at = new THREE.Vector3();
 const PALETTE = COLOURS.map((c) => new THREE.Color(c));
 
 export class Umbrellas {
@@ -76,13 +77,18 @@ export class Umbrellas {
 
   begin() { this.n = 0; }
 
-  // Over someone standing at `at`, facing `h`.
-  put(serial: number, at: THREE.Vector3, h: number) {
+  // Over someone standing at `at`, facing `h`, `phase` (0 to 1) through their stride
+  // and `gait` how fast they go (0 standing): the hand rocks the umbrella a little
+  // from side to side with each pair of steps and bobs it with each step.
+  put(serial: number, at: THREE.Vector3, h: number, phase = 0, gait = 0) {
     if (this.n >= this.mesh.instanceMatrix.count) return;
     const size = Math.min(SCALE, FIGURE_SIZE.value) * (0.92 + 0.16 * chance(serial, 3));
     // Leant into the rain a little, each their own way.
     _q.setFromAxisAngle(UP, h + (chance(serial, 4) - 0.5) * 0.8).multiply(_tilt.setFromAxisAngle(ACROSS, -0.06 - 0.14 * chance(serial, 5)));
-    this.mesh.setMatrixAt(this.n, _m.compose(at, _q, _s.setScalar(size)));
+    const w = Math.PI * 2 * (phase + chance(serial, 7) * 0.1), k = Math.min(1, gait);
+    _q.multiply(_roll.setFromAxisAngle(AHEAD, 0.07 * k * Math.sin(w))).multiply(_tilt.setFromAxisAngle(ACROSS, 0.04 * k * Math.sin(w * 2)));
+    _at.copy(at); _at.y += 0.025 * size * k * Math.cos(w * 2);
+    this.mesh.setMatrixAt(this.n, _m.compose(_at, _q, _s.setScalar(size)));
     this.mesh.setColorAt(this.n, PALETTE[Math.floor(chance(serial, 6) * PALETTE.length)]);
     this.n++;
   }

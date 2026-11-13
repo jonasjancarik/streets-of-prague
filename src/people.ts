@@ -467,7 +467,7 @@ export class Crowd {
       this.fig.set(n, m, p.anim);
       n++;
       // (Dropped by anyone running from a car or knocked over.)
-      if (rain && (p.state === 'walk' || p.state === 'rejoin') && this.umbrellas.up(p.serial)) this.umbrellas.put(p.serial, _p, p.h);
+      if (rain && (p.state === 'walk' || p.state === 'rejoin') && this.umbrellas.up(p.serial)) this.umbrellas.put(p.serial, _p, p.h, p.anim.phase, Math.min(1, p.pace / 1.2));
     }
     this.fig.commit(n);
     this.umbrellas.commit();
