@@ -180,19 +180,25 @@ function roofAxes(wp: N, w: N) {
   const a = fract(w).mul(3.4906585), g = vec2(cos(a), sin(a));
   return vec2(dot(wp, g), dot(wp, vec2(g.y.negate(), g.x)));
 }
-// Sun-bleached patches and stains where rain stood (flatAge in shading.ts).
-function flatAge(c: N, wp: N, wpWidth: N, seed: N) {
-  const t = c.mul(fbm2(wp.mul(0.045).add(seed.mul(31))).mul(0.2).add(0.9));
-  const pond = fbm2(wp.mul(0.16).add(seed.mul(17)));
-  const rim = smoothstep(0.57, 0.61, pond).sub(smoothstep(0.61, 0.67, pond));
-  return t.mul(float(1).sub(smoothstep(0.6, 0.66, pond).mul(0.08)).sub(rim.mul(0.08).mul(fade(wpWidth, 0.4))));
+// Sun-bleached patches, and the grime round each drain with its tide line (flatAge in
+// shading.ts).
+function flatAge(c: N, wp: N, q: N, wpWidth: N, seed: N) {
+  const t = c.mul(fbm2(wp.mul(0.045).add(seed.mul(31))).mul(0.1).add(0.95)).toVar();
+  const dq: N = q.div(14).add(seed.mul(5.3)), id: N = floor(dq);
+  const off: N = fract(dq).sub(0.3).sub(vec2(hash12(id.add(3.1)), hash12(id.add(8.7))).mul(0.4)).mul(14);
+  const has = step(0.3, hash12(id.add(1.3))), r = hash12(id.add(5.9)).mul(2.2).add(2);
+  const d = length(off).div(r).add(fbm2(wp.mul(0.22).add(seed.mul(7))).sub(0.5).mul(1.3)).add(vnoise(wp.mul(0.9)).sub(0.5).mul(0.3));
+  const grime = float(1).sub(smoothstep(0.15, 1, d)).mul(has);
+  const tide = smoothstep(0.8, 0.97, d).mul(float(1).sub(smoothstep(0.97, 1.12, d))).mul(has);
+  t.assign(mix(t, t.mul(vec3(0.74, 0.72, 0.69)), grime.mul(0.7)));
+  t.mulAssign(float(1).sub(tide.mul(0.12).mul(fade(wpWidth, 0.3))));
+  return mix(t, vec3(0.07), float(1).sub(smoothstep(0.12, 0.16, length(off))).mul(has).mul(0.85).mul(fade(wpWidth, 0.2)));
 }
 // Gravel, or not known (flatRoof in shading.ts).
-function flatRoof(c: N, wp: N, wpWidth: N, seed: N) {
+function flatRoof(c: N, wp: N, q: N, wpWidth: N, seed: N) {
   const t = c.mul(fbm(wp.mul(0.5)).mul(0.22).add(0.86)).toVar();
   t.mulAssign(float(1).add(vnoise(wp.mul(7)).sub(0.5).mul(0.22).mul(fade(wpWidth, 0.15))).add(vnoise(wp.mul(23).add(5)).sub(0.5).mul(0.2).mul(fade(wpWidth, 0.05))));
-  t.assign(mix(t, t.mul(0.62), smoothstep(0.64, 0.74, fbm2(wp.mul(0.35).add(seed.mul(7)))).mul(0.6)));
-  return flatAge(t, wp, wpWidth, seed);
+  return flatAge(t, wp, q, wpWidth, seed);
 }
 // Bitumen rolls with their laps, and patches over old repairs (bitumenRoof in shading.ts).
 function bitumenRoof(c: N, wp: N, q: N, wpWidth: N, seed: N) {
@@ -210,15 +216,21 @@ function bitumenRoof(c: N, wp: N, q: N, wpWidth: N, seed: N) {
   t.assign(mix(t, mix(vec3(luma(c)), c, 0.6).mul(vnoise(wp.mul(3)).mul(0.08).add(0.84)), inside.mul(fade(wpWidth, 1))));
   t.assign(mix(t, c.mul(1.18), around.mul(0.7).mul(fade(wpWidth, 0.3))));
   t.mulAssign(float(1).add(vnoise(wp.mul(25)).sub(0.5).mul(0.1).mul(fade(wpWidth, 0.05))));
-  return flatAge(t, wp, wpWidth, seed);
+  return flatAge(t, wp, q, wpWidth, seed);
 }
 // A membrane in two-metre sheets with paler welds, and dirt (membraneRoof in shading.ts).
 function membraneRoof(c: N, wp: N, q: N, wpWidth: N, seed: N) {
-  const s = fract(q.y.div(2));
-  const t = c.mul(float(1).add(float(1).sub(smoothstep(0.01, 0.035, s)).mul(0.1)).sub(smoothstep(0.98, 1, s).mul(0.06))).toVar();
-  t.assign(mix(c, t, fade(wpWidth, 0.3)).mul(vnoise(wp.mul(1.3)).mul(0.1).add(0.95)));
-  t.assign(mix(t, t.mul(vec3(0.72, 0.7, 0.66)), smoothstep(0.55, 0.75, fbm2(wp.mul(0.22).add(seed.mul(5)))).mul(0.6)));
-  return flatAge(t, wp, wpWidth, seed);
+  const row = floor(q.y.div(2)), s = fract(q.y.div(2)).mul(2), along = q.x.div(18).add(hash12(vec2(row, seed.mul(37))));
+  const e = fract(along).mul(18);
+  const t = c.mul(hash12(vec2(row, floor(along)).add(seed.mul(11))).mul(0.08).add(0.96)).toVar();
+  // The weld, the sheet's edge over it, and dirt caught along it.
+  const weld = float(1).sub(smoothstep(0.015, 0.045, s)), edge = float(1).sub(smoothstep(0, 0.015, s));
+  t.mulAssign(float(1).add(weld.mul(0.12)).sub(edge.mul(0.22)));
+  t.assign(mix(c, t, fade(wpWidth, 0.25)));
+  t.mulAssign(float(1).sub(vnoise(wp.mul(2)).mul(0.06).add(0.12).mul(float(1).sub(smoothstep(0.04, 0.16, s))).mul(fade(wpWidth, 0.6))));
+  t.mulAssign(float(1).sub(float(1).sub(smoothstep(0, 0.06, min(e, float(18).sub(e)))).mul(0.14).mul(fade(wpWidth, 0.4))));
+  t.mulAssign(vnoise(wp.mul(1.3)).mul(0.06).add(0.97).add(vnoise(wp.mul(6).add(2)).sub(0.5).mul(0.05).mul(fade(wpWidth, 0.1))));
+  return flatAge(t, wp, q, wpWidth, seed);
 }
 // Sedum mats (plantedRoof in shading.ts).
 function plantedRoof(c: N, wp: N, wpWidth: N) {
@@ -392,7 +404,7 @@ const buildingColor = Fn(() => {
         .ElseIf(m.greaterThan(7.5), () => { r.assign(plantedRoof(base, bwp, wpWidth)); })
         .ElseIf(m.greaterThan(5.5).and(m.lessThan(6.5)), () => { r.assign(membraneRoof(base, bwp, q, wpWidth, seed)); })
         .ElseIf(m.greaterThan(4.5).and(m.lessThan(5.5)), () => { r.assign(bitumenRoof(base, bwp, q, wpWidth, seed)); })
-        .Else(() => { r.assign(flatRoof(base, bwp, wpWidth, seed)); });
+        .Else(() => { r.assign(flatRoof(base, bwp, q, wpWidth, seed)); });
       c.assign(roofLines(roofWeather(r, base, bwp, bn, wpWidth), f, bn, wpWidth));
     });
   }).ElseIf(bn.y.greaterThan(0.15), () => {
