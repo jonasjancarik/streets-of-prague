@@ -13,6 +13,7 @@ import type { Sky } from './sky.ts';
 import { t } from './i18n.ts';
 import { slowHint } from './graphicswarning.ts';
 import * as telemetry from './telemetry.ts';
+import { startRetry } from './renderer.ts';
 
 // Graphics tiers keep the street surfaces and facade pictures at every level. High,
 // Medium and Low keep the dirt, grime, leaves, tone curve and detailed roofs too.
@@ -125,7 +126,7 @@ export class AutoTier {
   // Skip a tier only when all of its effective settings are the same.
   private same: (a: Tier, b: Tier) => boolean;
 
-  constructor(start: Tier, same: (a: Tier, b: Tier) => boolean) {
+  constructor(start: Tier, same: (a: Tier, b: Tier) => boolean, private top: Tier = 'high') {
     this.tier = start;
     this.same = same;
   }
@@ -169,7 +170,7 @@ export class AutoTier {
       return null;
     };
     let next: Tier | null = null;
-    const lower = step(-1), higher = step(1);
+    const lower = step(-1), up = step(1), higher = up && ORDER.indexOf(up) <= ORDER.indexOf(this.top) ? up : null;
     this.stuck = slow && !lower ? this.stuck + 1 : 0;
     if ((slow || this.choppy >= CHOPPY_WINDOWS) && lower) {
       this.failures[this.tier] += 1;
@@ -213,7 +214,11 @@ export class Graphics {
     const pick = (c: string | null) => (CHOICES as string[]).includes(c ?? '') ? c as Choice : null;
     this.choice = pick(asked) ?? pick(saved) ?? 'auto';
     const touch = matchMedia('(pointer: coarse)').matches;
-    this.auto = new AutoTier(touch ? 'medium' : 'high', (a, b) => this.same(a, b));
+    // After a start the graphics broke, this tab stays on Low at most (renderer.ts, startRetry);
+    // a setting chosen above Low is held there too, without changing what is saved.
+    const retried = startRetry() !== '';
+    if (retried && this.choice !== 'auto' && CHOICES.indexOf(this.choice) < CHOICES.indexOf('low')) this.choice = 'low';
+    this.auto = new AutoTier(retried ? 'low' : touch ? 'medium' : 'high', (a, b) => this.same(a, b), retried ? 'low' : 'high');
     this.tier = this.choice === 'auto' ? this.auto.tier : this.choice;
     this.apply();
     document.addEventListener('visibilitychange', () => { if (!document.hidden) this.auto.hold(performance.now(), WARMUP); });

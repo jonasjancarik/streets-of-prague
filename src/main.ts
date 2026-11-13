@@ -49,7 +49,7 @@ import { Water } from './water.ts';
 import { Beacons } from './beacons.ts';
 import { Cannon, TANK, HOSE } from './cannon.ts';
 import { Graphics } from './graphics.ts';
-import { createGameRenderer } from './renderer.ts';
+import { createGameRenderer, retryStart } from './renderer.ts';
 import { StopBoard } from './board.ts';
 import { BusStops, BusRide, busStopZones } from './busstops.ts';
 import { Metro } from './metro.ts';
@@ -3176,6 +3176,7 @@ main().catch((e) => {
   console.error(e);
   if (reloading) return;
   telemetry.error('startup', e);
+  if (retryStart(e)) { status('The graphics failed to start. Trying again…'); return; }
   status(outdated ? 'The game was just updated. Reload the page to continue.'
     : `Something went wrong: ${e instanceof Error ? e.message : String(e)}`);
 });

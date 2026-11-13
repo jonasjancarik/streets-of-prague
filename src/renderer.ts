@@ -37,19 +37,56 @@ function startupWatch() {
   };
 }
 
+function createLegacy(why: string, asked: boolean) {
+  console.info('Renderer: three.js WebGLRenderer');
+  whyWebGL(why);
+  const r = new THREE.WebGLRenderer({ antialias: true, stencil: true });
+  const gl = r.getContext(), names = gl.getExtension('WEBGL_debug_renderer_info');
+  const name = names ? String(gl.getParameter(names.UNMASKED_RENDERER_WEBGL)) : '';
+  if (names) telemetry.setGpu(name);
+  if (isSoftware(name)) reportTrouble('software');
+  else if (!asked) reportTrouble('webgl');
+  return r;
+}
+
+// A start the graphics broke is tried again, once with lighter graphics and then once with
+// WebGL, for as long as the tab stays open. Safari on an iPhone or iPad short of graphics
+// memory makes buffers it can't fill, and three.js then throws "Range consisting of offset
+// and length are out of bounds" before the game has begun.
+const RETRY = 'graphics-retry';
+export type Retry = '' | 'low' | 'webgl';
+export function startRetry(): Retry {
+  try { const v = sessionStorage.getItem(RETRY); return v === 'low' || v === 'webgl' ? v : ''; } catch { return ''; }
+}
+let webgpu = false, gpuTrouble = false;
+// Whether the failed start is the graphics' fault and the page reloads to try again.
+export function retryStart(e: unknown) {
+  if (!webgpu) return false;
+  const text = e instanceof Error ? `${e.message} ${e.stack ?? ''}` : String(e);
+  if (!gpuTrouble && !/three\.webgpu|GPU/.test(text)) return false;
+  const now = startRetry(), next = now === '' ? 'low' : now === 'low' ? 'webgl' : '';
+  if (!next) return false;
+  try { sessionStorage.setItem(RETRY, next); } catch { return false; } // can't remember it: no loop
+  // A moment for the GPU's own error and the reports to go out first.
+  setTimeout(() => location.reload(), 500);
+  return true;
+}
+
+// The GPU's own words, which an exception thrown in three.js doesn't carry (an out-of-memory
+// buffer, for one), for the statistics.
+function watchGpu(renderer: GPU) {
+  const r = renderer as unknown as { onError: (info: { type?: string; message?: string }) => void; onDeviceLost: (info: unknown) => void };
+  const error = r.onError.bind(renderer), lost = r.onDeviceLost.bind(renderer);
+  r.onError = (info) => { gpuTrouble = true; telemetry.error('GPU error', `${info.type ?? 'GPUError'}: ${info.message ?? ''}`); error(info); };
+  r.onDeviceLost = (info) => { gpuTrouble = true; lost(info); };
+}
+
 export async function createGameRenderer(params: URLSearchParams): Promise<THREE.WebGLRenderer> {
+  const retry = startRetry();
+  if (retry) telemetry.error('start tried again', retry === 'low' ? 'with low graphics' : 'with WebGL');
+  if (retry === 'webgl' && params.get('renderer') !== 'webgl') return createLegacy('WebGPU could not start the game on this device', false);
   const asked = params.get('renderer') === 'webgl';
-  const legacy = (why: string) => {
-    console.info('Renderer: three.js WebGLRenderer');
-    whyWebGL(why);
-    const r = new THREE.WebGLRenderer({ antialias: true, stencil: true });
-    const gl = r.getContext(), names = gl.getExtension('WEBGL_debug_renderer_info');
-    const name = names ? String(gl.getParameter(names.UNMASKED_RENDERER_WEBGL)) : '';
-    if (names) telemetry.setGpu(name);
-    if (isSoftware(name)) reportTrouble('software');
-    else if (!asked) reportTrouble('webgl');
-    return r;
-  };
+  const legacy = (why: string) => createLegacy(why, asked);
   if (asked) return legacy('it was asked for in the URL (?renderer=webgl)');
   let why = '';
   let renderer: GPU | undefined;
@@ -102,7 +139,10 @@ export async function createGameRenderer(params: URLSearchParams): Promise<THREE
   watch.stage('materials');
   try {
     const ports = await within(import('./webgpu.ts'), 15000, 'Graphics setup took too long. Reload the page to try again.');
-    return ports.configureRenderer(renderer);
+    const configured = ports.configureRenderer(renderer);
+    webgpu = true;
+    watchGpu(renderer);
+    return configured;
   } catch (error) {
     const failed = renderer;
     // Cleanup must not hold the error screen open or replace the original failure.

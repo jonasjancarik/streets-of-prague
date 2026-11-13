@@ -137,6 +137,7 @@ export const CS: Record<string, string> = {
   'The game was just updated. Reload the page to continue.': 'Hra byla právě aktualizována. Pokračujte obnovením stránky.',
   'Building the streets…': 'Stavba ulic…',
   'Preparing graphics…': 'Příprava grafiky…',
+  'The graphics failed to start. Trying again…': 'Grafika se nespustila. Zkouším to znovu…',
   'Loading people and vehicles…': 'Načítání lidí a vozidel…',
   'Preparing the view…': 'Příprava obrazu…',
   Streets: 'Ulice',
