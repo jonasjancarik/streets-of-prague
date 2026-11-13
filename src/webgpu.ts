@@ -13,7 +13,7 @@ import { PROBE_OPTIONS, PROBE_SIZE, setProbeTargets } from './probe.ts';
 import {
   Fn, If, Discard, float, vec2, vec3, vec4, texture, materialReference, positionWorld, normalView, materialColor, fract, floor, mod, dot,
   mix, smoothstep, step, length, fwidth, abs, sqrt, min, max, distance, cos, sin, select, clamp, transformNormalToView,
-  attribute, positionLocal, modelViewMatrix, cameraProjectionMatrix, screenSize, uniform, renderGroup, uv,
+  attribute, positionLocal, modelViewMatrix, cameraProjectionMatrix, screenSize, uniform, renderGroup, uv, cameraPosition, normalize,
 } from 'three/tsl';
 import { GRASS_SEASON, WOOD_SEASON, FIELD_SEASON, HEDGE_SEASON } from './groundSeason.ts';
 import { setPatterned, setHeld, HOLD_PX, SKY_REF, GRIT, GRIT_M, LAMP_MIRROR } from './shading.ts';
@@ -36,7 +36,7 @@ import { CloudSunNode } from './webgpu/clouds.ts';
 import { gradeCurve } from './webgpu/grade.ts';
 import { makePost } from './webgpu/post.ts';
 import { dome } from './webgpu/dome.ts';
-import { DOME_NODE } from './sky.ts';
+import { DOME_NODE, DOME } from './sky.ts';
 import { OLD_GRADE } from './grade.ts';
 import { mosaicStones } from './webgpu/mosaic.ts';
 import { uWater, ripples, waves, waveNormal, waterShine, flatMirror } from './webgpu/water.ts';
@@ -210,6 +210,9 @@ const uMirrorMatrix: N = (() => {
   u.onRenderUpdate(() => { u.value.copy(MIRROR_MATRIX.value); return u.value; });
   return u;
 })();
+// How much of the horizon's sky wet ground mirrors along the street, for each unit of its shine.
+const WET_SHEEN = 2.5;
+const uHorizon: N = followColor(DOME.horizon);
 const mirrorOf = (shine: N, time: N) => Fn(() => {
   const r = vec3(uSkyRef).toVar();
   If(uMirrorOn.greaterThan(0.5).and(shine.greaterThan(0.001)), () => {
@@ -305,7 +308,14 @@ function groundGraph(id: number, time: { value: number }, { relief, deck, photo,
     emissive: Fn(() => {
       const l = lampLight(slope ? positionWorld.add(vec3(slope.x, 0, slope.y).mul(6)) : positionWorld, normalView).toVar();
       const sky = id !== 10 && !sheltered ? mirrorOf(g.a, timeOf(time)) : uSkyRef;
-      const e = g.rgb.mul(l).add(sky.add(l.mul(smoothstep(LAMP_MIRROR[0], LAMP_MIRROR[1], dot(l, vec3(0.3, 0.59, 0.11))).mul(0.85))).mul(g.a));
+      const e: N = g.rgb.mul(l).add(sky.add(l.mul(smoothstep(LAMP_MIRROR[0], LAMP_MIRROR[1], dot(l, vec3(0.3, 0.59, 0.11))).mul(0.85))).mul(g.a)).toVar();
+      // Seen at a slant (from the street), wet ground mirrors far more than from above: the
+      // sky low over the far end of the street, on what is wet enough to shine.
+      if (id !== 10 && !sheltered) {
+        const slant: N = float(1).sub(max(normalize(cameraPosition.sub(positionWorld)).y, 0));
+        const s2: N = slant.mul(slant);
+        e.addAssign(uHorizon.mul(s2.mul(s2).mul(s2)).mul(min(g.a.mul(WET_SHEEN), 0.6)));
+      }
       return slope ? e.add(waterShine(positionWorld, wp, slope, timeOf(time), uSkyRef, l)) : e;
     })(),
     normal: slope ? transformNormalToView(waveNormal(slope)) : null,
