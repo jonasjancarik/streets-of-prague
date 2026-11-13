@@ -654,6 +654,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   own (`src/webgpu/shadows.ts`): it reads how far above a pixel its caster stands and widens
   the edge by 3.6 cm a metre, so a shadow is sharp at the foot of a wall and soft across the
   street (`?softshadows=on|off`).
+  At night a landmark is lit by the floodlights at its foot all the way up, fading towards
+  its top, spires included (`TALL` in `src/webgpu/lamps.ts`; the floodlights themselves are
+  the surveyed festive lighting). As in Prague, that lighting goes off at midnight and comes
+  back with the street lamps the next evening (`floodlightsAt` in `src/lamps.ts`).
 - **Facades** are put together bay by bay and storey by storey from 144 parts: windows,
   doors, gateways and shopfronts in thirteen looks (`src/facades.ts`): three for
   19th-century tenements (neo-Renaissance, Art Nouveau and the plain houses of Žižkov

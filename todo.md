@@ -45,24 +45,28 @@ trees with it. Not rebuilt: the lamp files (`build_lamps.py ujezd centrum praha`
 waiting for a look at dark suburbs. Four full scenario runs on the new map: two clean,
 `wall-crash` once, `fire-brigade` once (old behaviour of the engines, see "Gameplay").
 
-## Branch `beautify` (night of 12–13 November), waiting for a look
+## Branch `beautify` (12–13 November), waiting for a look
 
-A new tone curve at every tier, roof edges, kerbs, rooms behind lit windows, bloom, leaf
-sprays on the crowns and the water's waves on Ultra, and for first person a sky, trees,
-shrubs and conifers made for the street, window reflections, a river that mirrors the sky. Before and after pictures are in
-`screenshots/beautify/compare/` (not committed); the numbers are in
-`docs/performance-log.md`. Left open:
+What it holds, the measurements and the checks are in `docs/performance-log.md` (the last
+two sections) and the handbook; before and after pictures in `screenshots/beautify/`
+(not committed). Left open:
 
 - [ ] Decide whether the filmic curve stays at every tier (`?grade=old` compares). Rain,
   snow and mist were looked at once each, the colours of smoke and spray not at all.
 - [ ] Look at night and at a winter afternoon on a phone: shade is a little darker than
   under the old curve (the toe was softened once for November, `b` in `src/grade.ts`), and
   both were only judged on the Mac.
+- [ ] Made up, not surveyed, and worth a look for whether they ring true: which stretch of
+  pavement has which mosaic pattern, where the asphalt's patches lie, which way a field of
+  setts runs. The mock-ups also drew fan-pattern setts on the Old Town Square; left out,
+  as nobody checked how it is really laid.
+- [ ] The shadows that soften with distance (Ultra) read each shadow map depth with a
+  `textureLoad`; not tried on a phone's GPU or on Windows.
 - [ ] First person in a wood is about 30 frames a second at 2× on Ultra (on `main` too).
   Leaf cards cut closer to their sprays, or shaded per corner, would cut the street trees'
   share.
 - [ ] Trees: nothing sways. The leaf sprays from above were only timed where the main thread
-  is the limit (no cost there); time them on a phone or at 4K before offering them below Ultra.
+  is the limit; time them on a phone or at 4K before offering them below Ultra.
 - [ ] The clouds are smooth shapes, painted rather than photographed, and there are many
   on a clear day (they are tied to the shadows on the ground).
 - [ ] From the street people and cars are the top-down models seen close: blocky mannequins
@@ -70,6 +74,9 @@ shrubs and conifers made for the street, window reflections, a river that mirror
   second mesh on the same skeleton in `assets/figures/build.py`, baked and pooled beside the
   first in `src/figures.ts` (its animation textures are per vertex, so it needs its own).
   Kerbs are flat lines: the pavement is not raised.
+- [ ] Photo mode has no touch controls (its bar works, the camera needs a mouse), and no
+  depth of field or frames. Fountains: OSM's are not in the map data yet (only counted for
+  footfall); they would need a pipeline step.
 - [ ] Ambient shading on Ultra (GTAO, `?ao`) was tried and left off: about 3 ms a frame for
   a gain that is hard to see from above. It may be worth more in first person.
 - [ ] `check-graphics.mjs` fails on a dev server that has served edited modules (it imports

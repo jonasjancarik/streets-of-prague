@@ -40,7 +40,7 @@ import { Weather, WeatherFx, KINDS, automaticWeather, LIVE_EVERY } from './weath
 import { updateChimneySmoke } from './chimneySmoke.ts';
 import { MIST_MODE } from './localmist.ts';
 import type { Kind } from './weather.ts';
-import { Lamps, type Flashing } from './lamps.ts';
+import { Lamps, type Flashing, floodlightsAt } from './lamps.ts';
 import { bridgeLamp } from './statues.ts';
 import { Signals } from './signals.ts';
 import { Skids } from './skids.ts';
@@ -2778,6 +2778,7 @@ async function main() {
       lightOpt.spots = police.helis.lit;
       lightOpt.wet = weather.now.wet;
       lightOpt.murk = sky.murk;
+      floodlightsAt(clock.t % 86400);
       lamps.update(camPos.x, -camPos.z, viewRadius() + 10, sky.dark, drawn, ground, now, trams.list, lightOpt);
     }
     signals.update(camPos.x, -camPos.z, viewRadius() + 10, now);

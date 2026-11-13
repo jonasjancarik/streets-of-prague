@@ -187,6 +187,14 @@ const PATHS = new Set(['footway', 'path', 'pedestrian', 'steps', 'cycleway']), P
 // Warm LED, old sodium, neutral LED; gas; floodlights.
 const WARM = new THREE.Color('#ffcf8f'), SODIUM = new THREE.Color('#ffa850'), NEUTRAL = new THREE.Color('#f1ece0');
 const GAS = new THREE.Color('#ffbb6e'), FLOOD = new THREE.Color('#ffe0b0');
+// How much of the monuments' festive lighting is on (kind 4): Prague switches it off at
+// midnight, and it comes on again with the street lamps the next evening. `secOfDay`: the
+// game's clock. It fades over ten minutes, not in a blink.
+export const FLOOD_ON = { value: 1 };
+export function floodlightsAt(secOfDay: number) {
+  const h = secOfDay / 3600;
+  FLOOD_ON.value = h >= 12 ? 1 : Math.min(1, Math.max(0, 1 - h * 6));
+}
 const BEACON = new THREE.Color(0.12, 0.38, 1), AMBER_BEACON = new THREE.Color(1, 0.55, 0.1);
 const HEAD = new THREE.Color('#fff4df'), TAIL = new THREE.Color('#ff2a1a'), CABIN = new THREE.Color('#fff0d8');
 const TRAM_SECTION = 10.2; // m (trams.ts)
@@ -1097,7 +1105,9 @@ export class Lamps {
       // Facing its street (once the street is known), a lamp on an arm or a wall lights the
       // street from the end of its arm, more of it along than across.
       const towards = (this.kind[i] === 0 || this.kind[i] === 1) && this.facing.has(i) ? this.facing.get(i)! : null;
-      if (towards === null) add(lx, ly, z, 0, 1, 0, k.r, k.r, colour, k.i, k.raise || k.head < 3 ? 0 : k.head, (post && this.postIndex.get(post)) ?? -1, this.high[i]);
+      // (The monuments' festive lighting goes off at midnight: FLOOD_ON.)
+      if (this.kind[i] === 4 && FLOOD_ON.value <= 0.01) continue;
+      if (towards === null) add(lx, ly, z, 0, 1, 0, k.r, k.r, colour, this.kind[i] === 4 ? k.i * FLOOD_ON.value : k.i, k.raise || k.head < 3 ? 0 : k.head, (post && this.postIndex.get(post)) ?? -1, this.high[i]);
       else {
         const dx = Math.cos(towards), dy = Math.sin(towards), arm = POOL.arm[this.kind[i]];
         add(lx + dx * arm, ly + dy * arm, z, 0, dx, dy, k.r * POOL.across, k.r * POOL.along, colour, k.i, k.head, (post && this.postIndex.get(post)) ?? -1, this.high[i]);

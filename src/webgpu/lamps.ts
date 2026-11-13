@@ -137,7 +137,14 @@ const WALL_MOST = 0.85; // the most lamplight a wall takes (its roll-off's ceili
 // from a little over the ground up, however low the roof (a shed's beside a lamp was lit
 // as if the lamp shone from above it; the map knows the ground a light falls on, not how
 // high its head is). The same arithmetic with other numbers, so it costs a pixel nothing.
-export function lampLight(w: N, n?: N, roofs = false) {
+// `tall`: a landmark, lit by the floodlights at its foot all the way up, fading towards its
+// top (TALL: from where and to where over the lit ground, m, and the most light it takes),
+// on its roofs and spires too. (The ordinary reach, a few metres, left every
+// tower and church dark from the first cornice up. The map can't tell a floodlight's light
+// from a street lamp's, so a landmark beside a street lamp is lit as high; nearly all of
+// them are floodlit, and the ceiling on walls keeps it modest.)
+const TALL = { reach: [10, 62], most: 1.1 };
+export function lampLight(w: N, n?: N, roofs = false, tall = false) {
   map ??= texture(LAMP_MAP.value ?? new THREE.Texture());
   mapHigh ??= texture(LAMP_MAP_HIGH.value ?? new THREE.Texture());
   mapOpen ??= texture(LAMP_MAP_OPEN.value ?? new THREE.Texture());
@@ -149,7 +156,9 @@ export function lampLight(w: N, n?: N, roofs = false) {
   If(uLampOn.greaterThan(0.005).and(inside), () => {
     const at = vec2(uv.x, uv.y.oneMinus()).toVar();
     const facing = roofs ? ROOF.facing : [0.5, 0.8], over = roofs ? ROOF.over : [3.5, 5.5];
-    const up = nv ? smoothstep(facing[0], facing[1], dot(nv, cameraViewMatrix.mul(vec4(0, 1, 0, 0)).xyz)).toVar() : null;
+    const reach = tall ? TALL.reach : [3, 11];
+    // (A landmark's normals all point up, for the sun's sake: which way its faces look can't be asked.)
+    const up = nv && !tall ? smoothstep(facing[0], facing[1], dot(nv, cameraViewMatrix.mul(vec4(0, 1, 0, 0)).xyz)).toVar() : null;
     const from = (tex: N, low: [number, number], open = false) => {
       const l = tex.sample(at).level(float(0)).toVar();
       const dy = w.y.sub(l.a.div(max(dot(l.rgb, LUMA), 1e-4)).add(uLampRef.x)).toVar();
@@ -162,7 +171,7 @@ export function lampLight(w: N, n?: N, roofs = false) {
           l.assign(vec4(mix(l.rgb, o.rgb, smoothstep(OPEN_ABOVE[0], OPEN_ABOVE[1], dy)), l.a));
         });
       }
-      const k = smoothstep(3, 11, dy).oneMinus().mul(smoothstep(low[0], low[1], dy)).toVar();
+      const k = smoothstep(reach[0], reach[1], dy).oneMinus().mul(smoothstep(low[0], low[1], dy)).toVar();
       if (up) k.mulAssign(up.mul(smoothstep(over[0], over[1], dy)).oneMinus());
       return l.rgb.mul(k);
     };
@@ -176,28 +185,29 @@ export function lampLight(w: N, n?: N, roofs = false) {
 // Cache by both graph inputs. In particular, a converted material's own emissive
 // graph may differ even when its port key is the same.
 const caches = () => ({ lit: new WeakMap<N, WeakMap<N, N>>(), unlit: new WeakMap<N, N>() });
-const plainGraphs = caches(), roofGraphs = caches();
+const plainGraphs = caches(), roofGraphs = caches(), tallGraphs = caches();
 const applied = new WeakMap<N, { graph: N }>();
 
 // Adds the lamps' light to what a material already gives out, over its own diffuse colour.
 // `roofs`: a building, whose roofs the lamps leave dark (lampLight).
-export function lampLit(node: N, world: N = positionWorld, roofs = false) {
+export function lampLit(node: N, world: N = positionWorld, roofs = false, tall = false) {
   const previous = applied.get(node);
   if (previous && node.emissiveNode === previous.graph) return;
   const emissive = node.emissiveNode ?? null;
-  const { lit: litGraphs, unlit: unlitGraphs } = roofs ? roofGraphs : plainGraphs;
+  const { lit: litGraphs, unlit: unlitGraphs } = tall ? tallGraphs : roofs ? roofGraphs : plainGraphs;
   let byWorld = emissive === null ? unlitGraphs : litGraphs.get(emissive);
   if (!byWorld) litGraphs.set(emissive, (byWorld = new WeakMap()));
   let graph = byWorld.get(world);
   if (!graph) graph = Fn(() => {
     const e = vec3(emissive ?? 0).toVar();
-    const light: N = lampLight(world, normalView, roofs).toVar();
+    const light: N = lampLight(world, normalView, roofs, tall).toVar();
     // What stands right beside a lamp (the wall its bracket is on, its own pole) takes the
     // brightest middle of its pool, which from the street is a burnt-out white sheet: on
     // what doesn't face up the light rolls off towards WALL_MOST. (The map knows the light
     // on the ground, not how it falls on a wall.)
     const wall: N = smoothstep(0.3, 0.7, dot(normalView, cameraViewMatrix.mul(vec4(0, 1, 0, 0)).xyz)).oneMinus();
-    light.divAssign(dot(light, LUMA).div(WALL_MOST).mul(wall).add(1));
+    if (tall) light.divAssign(dot(light, LUMA).div(TALL.most).add(1)); // (its ceiling, whichever way a face looks)
+    else light.divAssign(dot(light, LUMA).div(WALL_MOST).mul(wall).add(1));
     e.addAssign(diffuseColor.rgb.mul(light));
     return e;
   })();

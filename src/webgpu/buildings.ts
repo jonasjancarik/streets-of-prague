@@ -488,9 +488,10 @@ addPort(/^buildings-procedural$/, (node) => {
 });
 
 // The same hole in the landmarks, trees and the ground's depth pass (cutAway in shading.ts).
-addPort(/^cut-/, (node) => {
+addPort(/^cut-/, (node, legacy) => {
   node.maskNode = cutMask;
-  lampLit(node);
+  // (A landmark is floodlit to its top: lampLight's `tall`.)
+  lampLit(node, positionWorld, false, /landmark/.test(legacy.customProgramCacheKey()));
 });
 
 // Landmarks' roofs: where the photograph shows a red roof, the tile pattern of the other
@@ -519,7 +520,7 @@ const landmarkGraph = landmarkColor();
 addPort(/^landmark-roof$/, (node) => {
   node.maskNode = cutMask;
   node.colorNode = landmarkGraph;
-  lampLit(node);
+  lampLit(node, positionWorld, false, true);
 });
 
 addPort(/^lamp-pole$/, (node) => { lampLit(node); });
