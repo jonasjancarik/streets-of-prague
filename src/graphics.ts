@@ -2,7 +2,7 @@ import { wantStrips } from './reflections.ts';
 import { PROBE_ON } from './probe.ts';
 import { POST } from './post.ts';
 import { CANOPY_LEAVES } from './trees.ts';
-import { SOFT_SHADOWS } from './softshadow.ts';
+import { SOFT_SHADOWS, SHADOW_FILTER } from './softshadow.ts';
 import { CAR_SHADE } from './car.ts';
 import * as THREE from 'three';
 import { DIRT, LEAVES, ROOF_DETAIL, ROOF_CLUTTER, WATER, WEATHER_DETAIL } from './shading.ts';
@@ -248,11 +248,21 @@ export class Graphics {
     PROBE_ON.value = this.tier === 'ultra' ? 1 : 0;
     POST.value = this.tier === 'ultra' ? 1 : 0; // (and the bloom: post.ts)
     CAR_SHADE.value = look ? 1 : 0; // (the soft shade under the cars: car.ts)
-    SOFT_SHADOWS.tier = this.tier === 'ultra' ? 1 : 0; // (and the shadows' edges widening with distance: softshadow.ts)
     CANOPY_LEAVES.value = this.tier === 'ultra'; // (and the sprays of leaves on the crowns seen from above: trees.ts) // (and on Ultra the real one round the middle of the view)
     // (The lamps resize their maps at the next frame; the materials are bound afresh below,
     // which freezes the game for half a second even on an M5, so Auto keeps the size the
     // lamps were given when it began.)
+    // The shadows' edges widening with distance (softshadow.ts): Ultra's own shadow filter,
+    // put on the sun's shadow only while Ultra is chosen. Its code would otherwise sit in
+    // every material's shader at every tier, and a phone's GPU pays for it even where a
+    // switch skips it (a Pixel 5 at Medium: 15 frames a second with it, 32 without).
+    // A change of filter is a change of every lit shader: see the rebuild below.
+    SOFT_SHADOWS.tier = this.tier === 'ultra' ? 1 : 0;
+    const sunShadow = this.sky.sun.shadow as unknown as { filterNode?: unknown };
+    const filter = SOFT_SHADOWS.value > 0 ? SHADOW_FILTER.value ?? null : null;
+    const refiltered = (sunShadow.filterNode ?? null) !== filter;
+    if (refiltered) sunShadow.filterNode = filter;
+    const first = !this.applied;
     const lampSize = this.choice === 'auto' && this.applied ? LAMP_SIZE.value : lampMap, resized = LAMP_SIZE.value !== lampSize;
     LAMP_SIZE.value = lampSize;
     this.applied = true;
@@ -268,7 +278,7 @@ export class Graphics {
       // texture by themselves; WebGL needs a new one.
       if (!(this.renderer as GPURenderer).backend) { shadow.map?.dispose(); shadow.map = null; }
     }
-    if (resized && (this.renderer as GPURenderer).backend) {
+    if ((resized || (refiltered && !first)) && (this.renderer as GPURenderer).backend) {
       // The materials don't notice the lamps' maps being replaced and would go on
       // sampling the destroyed ones. Release their render caches once so every binding
       // is made afresh, including stationary objects. Materials remain reusable.

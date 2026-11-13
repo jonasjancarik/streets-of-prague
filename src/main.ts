@@ -7,7 +7,6 @@ import { renderMirror } from './mirror.ts';
 import { renderProbe } from './probe.ts';
 import { POST, drawPost } from './post.ts';
 import { setupPhoto } from './photo.ts';
-import { SHADOW_FILTER } from './softshadow.ts';
 import { DOME_NODE } from './sky.ts';
 import { Streaks } from './streaks.ts';
 import proj4 from 'proj4';
@@ -280,8 +279,6 @@ async function main() {
 
   // The sun and the sky's light follow the clock (see Sky).
   const sky = new Sky(scene, renderer);
-  // (The sun's shadows through our own filter, where there is one: softshadow.ts.)
-  if (SHADOW_FILTER.value) (sky.sun.shadow as unknown as { filterNode: unknown }).filterNode = SHADOW_FILTER.value;
   const sun = sky.sun;
   // How sharp the picture is and whether the costlier looks are on; Auto adapts.
   const graphics = new Graphics(renderer, sky, params);

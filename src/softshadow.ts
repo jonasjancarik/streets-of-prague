@@ -7,5 +7,5 @@ export const SOFT_SHADOWS = {
   tier: 0,
   get value() { return asked === 'on' ? 1 : asked === 'off' ? 0 : this.tier; },
 };
-// The filter itself, once the WebGPU side has made it: main.ts gives it to the sun's shadow.
+// The filter itself, once the WebGPU side has made it: graphics.ts puts it on the sun's shadow while Ultra is chosen.
 export const SHADOW_FILTER: { value: unknown } = { value: null };
