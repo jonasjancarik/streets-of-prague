@@ -2693,6 +2693,16 @@ async function main() {
       const vehicle = inCar || inHeli, me = vehicle || walker;
       const base = inHeli ? inHeli.z : (deep && body ? body.gz ?? 0 : ground(me.x, me.y, body)) + (inCar ? 0 : walker.z + walker.perch + 1.75);
       eyeH += (base - eyeH) * (Math.abs(base - eyeH) > 5 ? 1 : Math.min(1, dt * 12));
+      if (vehicle) {
+        // Let go of the mouse and the chase camera swings back behind the vehicle, soon
+        // and quickly, so you aren't left driving with the view turned aside.
+        eyes.still = (eyes.still ?? 1) + dt;
+        if (eyes.still > 0.4) {
+          const k = Math.exp(-dt * 5);
+          eyes.yaw = Math.abs(eyes.yaw) < 0.05 ? 0 : eyes.yaw * k;
+          eyes.pitch = Math.abs(eyes.pitch) < 0.05 ? 0 : eyes.pitch * k;
+        }
+      }
       const yaw = THREE.MathUtils.degToRad(eyes.yaw), pitch = THREE.MathUtils.degToRad(eyes.pitch);
       camera.up.set(0, 1, 0);
       if (vehicle) {

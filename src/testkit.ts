@@ -170,8 +170,10 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     // round it).
     cam: null as FreeCam | null,
     // Set: the camera looks out of your eyes (or your car's windscreen) instead of down
-    // from above; yaw and pitch (degrees) turn the view from the way you face.
-    eyes: null as { yaw: number; pitch: number } | null,
+    // from above; yaw and pitch (degrees) turn the view from the way you face. `still` is
+    // how long (seconds) since you last looked round: driving, the view swings back
+    // behind the car once you let go.
+    eyes: null as { yaw: number; pitch: number; still?: number } | null,
 
     toLocal(w: Where): Point2 {
       if (typeof w === 'string') {
@@ -1174,6 +1176,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
   const look = (dx: number, dy: number) => {
     kit.eyes!.yaw = ((kit.eyes!.yaw - dx + 540) % 360) - 180;
     kit.eyes!.pitch = Math.max(-60, Math.min(60, kit.eyes!.pitch - dy));
+    kit.eyes!.still = 0;
   };
   g.canvas.addEventListener('pointermove', (e) => {
     if (document.pointerLockElement === g.canvas) {
