@@ -88,19 +88,24 @@ export function renderProbe(renderer: THREE.WebGLRenderer, scene: THREE.Scene, x
   const sky = (scene as { backgroundNode?: unknown }).backgroundNode;
   (scene as { backgroundNode?: unknown }).backgroundNode = null;
   scene.background = null;
-  renderer.setClearColor(0x000000, 0);
-  renderer.setRenderTarget(targets[2] as unknown as THREE.WebGLRenderTarget, face);
-  renderer.clear(true, true, false);
   hidden.length = 0;
-  for (const o of hide) if (o.visible) { o.visible = false; hidden.push(o); }
-  renderer.render(scene, camera.children[face] as THREE.PerspectiveCamera);
-  for (const o of hidden) o.visible = true;
-  renderer.setRenderTarget(before);
-  renderer.setClearColor(clear, alpha);
-  scene.background = background;
-  (scene as { backgroundNode?: unknown }).backgroundNode = sky;
-  renderer.shadowMap.autoUpdate = shadows;
-  LAMP_ON.value = lamps;
+  // Put everything back even when the render throws (a lost GPU device): the game's own
+  // frame reads scene.background next.
+  try {
+    renderer.setClearColor(0x000000, 0);
+    renderer.setRenderTarget(targets[2] as unknown as THREE.WebGLRenderTarget, face);
+    renderer.clear(true, true, false);
+    for (const o of hide) if (o.visible) { o.visible = false; hidden.push(o); }
+    renderer.render(scene, camera.children[face] as THREE.PerspectiveCamera);
+  } finally {
+    for (const o of hidden) o.visible = true;
+    renderer.setRenderTarget(before);
+    renderer.setClearColor(clear, alpha);
+    scene.background = background;
+    (scene as { backgroundNode?: unknown }).backgroundNode = sky;
+    renderer.shadowMap.autoUpdate = shadows;
+    LAMP_ON.value = lamps;
+  }
 
   if (++face === 6) {
     // Finished: it becomes the newer, the newer the older, and the older is drawn over next.

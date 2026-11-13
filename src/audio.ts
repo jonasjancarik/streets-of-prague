@@ -203,8 +203,8 @@ export class Sound {
   // Silence while the game stands still (a hidden tab, a benchmark in another session).
   hold(still: boolean) {
     if (!this.ctx) return;
-    if (still) { this.radio?.setStreaming(false); this.ctx.suspend(); }
-    else if (this.on && !document.hidden) this.ctx.resume();
+    if (still) { this.radio?.setStreaming(false); this.ctx.suspend().catch(() => {}); }
+    else if (this.on && !document.hidden) this.resume();
   }
 
   // The car radio, on or off; works before the sound has started (a browser only allows it after a key press).
@@ -241,13 +241,20 @@ export class Sound {
     try { localStorage.setItem('sound', this.on ? '' : 'off'); } catch {}
     if (!this.ctx) return;
     this.master.gain.setTargetAtTime(this.on ? 0.8 : 0, this.ctx.currentTime, 0.05);
-    if (this.on) this.ctx.resume();
+    if (this.on) this.resume();
   }
+
+  // Safari refuses now and then ("Failed to start the audio device"); the next key press tries again.
+  private resume() { this.ctx?.resume().catch(() => {}); }
 
   // Only once the player has pressed something (the browser's rule).
   private start() {
-    if (this.ctx) { if (this.on && this.ctx.state !== 'running') this.ctx.resume(); return; }
-    const ctx = (this.ctx = new AudioContext({ latencyHint: 'interactive' }));
+    if (this.ctx) { if (this.on && this.ctx.state !== 'running') this.resume(); return; }
+    const made = new AudioContext({ latencyHint: 'interactive' });
+    // Safari short of memory makes a context with no audio device behind it (sample rate 0),
+    // which can't hold a sound. Stay silent and try again at the next key press.
+    if (!(made.sampleRate > 0)) { made.close().catch(() => {}); return; }
+    const ctx = (this.ctx = made);
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -14;
     comp.ratio.value = 4;
