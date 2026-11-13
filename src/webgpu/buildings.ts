@@ -240,9 +240,14 @@ function plantedRoof(c: N, wp: N, wpWidth: N) {
   t.mulAssign(fbm2(wp.mul(0.7).add(9)).mul(0.3).add(0.82));
   t.mulAssign(mix(0.5, vnoise(wp.mul(2.6)), d1).mul(0.3).add(0.85));
   t.mulAssign(float(1).add(vnoise(wp.mul(9).add(3.1)).sub(0.5).mul(0.25).mul(d2)));
-  t.assign(mix(t, c.mul(vec3(1.25, 1.45, 0.75)), smoothstep(0.76, 0.86, vnoise(wp.mul(4.1).add(19))).mul(0.55).mul(d1)));
-  t.assign(mix(t, c.mul(vec3(1.35, 0.95, 0.75)), smoothstep(0.8, 0.88, vnoise(wp.mul(3.7).add(41))).mul(0.45).mul(d1)));
-  return mix(t, c.mul(vec3(1.7, 1.6, 1.3)).add(0.02), smoothstep(0.83, 0.9, vnoise(wp.mul(5.3).add(7))).mul(0.5).mul(d1));
+  // Single plants: a round speck in some cells of 25 cm.
+  const cq = wp.mul(4), id = floor(cq);
+  const h = hash12(id.add(17)), rr = fract(h.mul(13)).mul(0.03).add(0.045).mul(4);
+  const o = fract(cq).sub(0.5).sub(vec2(fract(h.mul(7)), fract(h.mul(31))).sub(0.5).mul(0.4));
+  const speck = float(1).sub(smoothstep(rr.mul(0.7), rr, length(o))).mul(step(0.45, h)).mul(fade(wpWidth, 0.12));
+  const tint = select(h.lessThan(0.65), c.mul(vec3(1.25, 1.45, 0.75)), select(h.lessThan(0.85), c.mul(vec3(1.4, 0.95, 0.72)), c.mul(vec3(1.7, 1.6, 1.3)).add(0.02)));
+  t.assign(mix(t, tint, speck.mul(0.5)));
+  return mix(t, c.mul(vec3(1.15, 1.3, 0.8)), smoothstep(0.72, 0.85, fbm2(wp.mul(1.1).add(19))).mul(0.35).mul(d1));
 }
 // Glass over an atrium (glassRoof in shading.ts).
 function glassRoof(c: N, wp: N, q: N, wpWidth: N) {
@@ -250,6 +255,15 @@ function glassRoof(c: N, wp: N, q: N, wpWidth: N) {
   const pane = c.mul(hash12(floor(cq)).mul(0.3).add(0.85)).add(vec3(0.02, 0.03, 0.04).mul(f.y));
   const bar = float(1).sub(smoothstep(0.015, 0.035, min(e.x, e.y)));
   return mix(c, mix(pane, mix(c, vec3(0.3, 0.32, 0.34), 0.7), bar.mul(0.7)), fade(wpWidth, 0.5));
+}
+// An air-conditioning unit's fans (fanTop in shading.ts).
+function fanTop(c: N, f: N, wpWidth: N) {
+  const p = vec2(fract(f.x.div(f.z)).sub(0.5), f.y.div(f.z).sub(0.5)).mul(f.z);
+  const r = length(p), R = f.z.mul(0.4);
+  const grille = vec3(0.05, 0.055, 0.06).mul(float(1).add(sin(r.mul(70)).mul(0.5).add(0.5).mul(0.8).mul(fade(wpWidth, 0.15))));
+  const t = mix(c, c.mul(1.08), float(1).sub(smoothstep(R, R.add(0.06), r))).toVar();
+  t.assign(mix(t, grille, float(1).sub(smoothstep(R.sub(0.02), R, r))));
+  return mix(t, vec3(0.2, 0.21, 0.22), float(1).sub(smoothstep(0.08, 0.1, r)));
 }
 // darkRoofAs in shading.ts: 2 glass, 1 planted, 0 bitumen after all.
 function darkRoofAs(c: N) {
@@ -399,7 +413,8 @@ const buildingColor = Fn(() => {
       If(m.greaterThan(5.5).and(m.lessThan(7.5)), () => { base.mulAssign(min(float(1), float(0.17).div(max(luma(base), 0.01)))); });
       // Photos make sheets and gravel more coloured than they are.
       If(m.lessThan(7.5), () => { base.assign(mix(vec3(luma(base)), base, 0.75)); });
-      If(m.greaterThan(9.5), () => { r.assign(glassRoof(base, bwp, q, wpWidth)); })
+      If(m.greaterThan(11.5).and(m.lessThan(12.5)), () => { r.assign(fanTop(base, f, wpWidth)); })
+        .ElseIf(m.greaterThan(9.5), () => { r.assign(glassRoof(base, bwp, q, wpWidth)); })
         .ElseIf(m.greaterThan(8.5), () => { r.assign(pavingRoof(base, bwp, wpWidth)); })
         .ElseIf(m.greaterThan(7.5), () => { r.assign(plantedRoof(base, bwp, wpWidth)); })
         .ElseIf(m.greaterThan(5.5).and(m.lessThan(6.5)), () => { r.assign(membraneRoof(base, bwp, q, wpWidth, seed)); })

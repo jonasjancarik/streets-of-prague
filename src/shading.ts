@@ -522,9 +522,15 @@ vec3 plantedRoof(vec3 c, vec2 wp) {
   t *= .82 + .3 * fbm2(wp * .7 + 9.);
   t *= .85 + .3 * mix(.5, vnoise(wp * 2.6), d1);
   t *= 1. + (vnoise(wp * 9. + 3.1) - .5) * .25 * d2;
-  t = mix(t, c * vec3(1.25, 1.45, .75), smoothstep(.76, .86, vnoise(wp * 4.1 + 19.)) * .55 * d1);
-  t = mix(t, c * vec3(1.35, .95, .75), smoothstep(.8, .88, vnoise(wp * 3.7 + 41.)) * .45 * d1);
-  return mix(t, c * vec3(1.7, 1.6, 1.3) + .02, smoothstep(.83, .9, vnoise(wp * 5.3 + 7.)) * .5 * d1);
+  // Single plants: a round speck in some cells of 25 cm, green, rust or pale.
+  vec2 cq = wp * 4., id = floor(cq);
+  float h = hash12(id + 17.), rr = (.045 + .03 * fract(h * 13.)) * 4.;
+  vec2 o = fract(cq) - .5 - (vec2(fract(h * 7.), fract(h * 31.)) - .5) * .4;
+  float dot_ = (1. - smoothstep(rr * .7, rr, length(o))) * step(.45, h) * detail(wp, .12);
+  vec3 tint = h < .65 ? c * vec3(1.25, 1.45, .75) : h < .85 ? c * vec3(1.4, .95, .72) : c * vec3(1.7, 1.6, 1.3) + .02;
+  t = mix(t, tint, dot_ * .5);
+  // and the same in broader clumps, for the view from further up.
+  return mix(t, c * vec3(1.15, 1.3, .8), smoothstep(.72, .85, fbm2(wp * 1.1 + 19.)) * .35 * d1);
 }
 // A glass roof over an atrium: panes about 1.5 by 3 m between light bars, each pane
 // catching the sky a little differently.
@@ -533,6 +539,16 @@ vec3 glassRoof(vec3 c, vec2 wp, vec2 q) {
   vec3 pane = c * (.85 + .3 * hash12(floor(cq))) + vec3(.02, .03, .04) * f.y;
   float bar = 1. - smoothstep(.015, .035, min(e.x, e.y));
   return mix(c, mix(pane, mix(c, vec3(.3, .32, .34), .7), bar * .7), detail(wp, .5));
+}
+// An air-conditioning unit's top (map/roofDetails.ts; f: metres along and across it, its
+// depth): a fan in each square of it, a dark grille of rings round a hub inside a shroud.
+vec3 fanTop(vec3 c, vec4 f, vec2 wp) {
+  vec2 p = vec2(fract(f.x / f.z) - .5, f.y / f.z - .5) * f.z;
+  float r = length(p), R = f.z * .4, d = detail(wp, .15);
+  vec3 grille = vec3(.05, .055, .06) * (1. + .8 * (.5 + .5 * sin(r * 70.)) * d);
+  vec3 t = mix(c, c * 1.08, 1. - smoothstep(R, R + .06, r));
+  t = mix(t, grille, 1. - smoothstep(R - .02, R, r));
+  return mix(t, vec3(.2, .21, .22), 1. - smoothstep(.08, .1, r));
 }
 // A terrace: slabs half a metre across with dark joints.
 vec3 pavingRoof(vec3 c, vec2 wp) {
@@ -751,7 +767,8 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
     if (m > 5.5 && m < 7.5) roofBase *= min(1., .17 / max(luma(roofBase), .01));
     // Photos make sheets and gravel more coloured than they are.
     if (m < 7.5) roofBase = mix(vec3(luma(roofBase)), roofBase, .75);
-    if (m > 9.5) r = glassRoof(roofBase, bwp, q);
+    if (m > 11.5 && m < 12.5) r = fanTop(roofBase, vFacade, bwp);
+    else if (m > 9.5) r = glassRoof(roofBase, bwp, q);
     else if (m > 8.5) r = pavingRoof(roofBase, bwp);
     else if (m > 7.5) r = plantedRoof(roofBase, bwp);
     else if (m > 5.5 && m < 6.5) r = membraneRoof(roofBase, bwp, q, seed);

@@ -918,7 +918,7 @@ record the measurements, merge decisions and pending landmark asset activation.
   the game draws its own tiles, slate, metal pans between standing seams (`sheetRoof`
   in `src/shading.ts` and `src/webgpu/buildings.ts`), and on flat roofs bitumen in metre-wide
   rolls with their laps and patched repairs, membrane sheets with paler welds, gravel,
-  sedum and paving, all with sun-bleached patches and stains where rain stood. The rolls,
+  sedum and paving, all with sun-bleached patches and grime round the drains. The rolls,
   patches and glazing bars run square to the roof's walls: `roofEdges.ts` works out each
   flat roof's direction from its outline and keeps it in the fraction of the material
   number. A dark roof the photos call bitumen but which is clearly coloured is drawn as
@@ -928,6 +928,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   the mesh's colours (level 14, `detect_windows`); chimneys are placed by rule on the
   ridges (`pipeline/roof_details.py`), since the mesh is too coarse to show them; both
   go into the building's own triangles, so they cast shadows and take the weather.
+  What stands on flat roofs is made up by rule too (`src/map/roofDetails.ts`, roofs from
+  `src/map/iprRoofs.ts` or OSM footprints): lift houses on tall blocks or a hatch on lower
+  ones, rows of air-conditioning units with fans on top and a duct from each row, vents,
+  vent stubs, a walkway of slabs from the way up to the plant on bigger roofs, skylights on
+  halls and solar panels. It's seeded by the roof, so a roof keeps the same things.
   In `centrum`, walls are measured for 42 % of buildings and 93 % of roof faces get a
   colour.
 - **Building import over water.** IPR footprints with at least 60% of their area
