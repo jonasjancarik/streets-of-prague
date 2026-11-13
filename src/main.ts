@@ -2739,7 +2739,7 @@ async function main() {
     if (!eyes && document.pointerLockElement === renderer.domElement) document.exitPointerLock();
     if (camera.near !== nearPlane) { camera.near = nearPlane; camera.updateProjectionMatrix(); }
     // From street level the ground hides what's behind it (see GROUND_DEPTH).
-    GROUND_DEPTH.visible = !!eyes;
+    GROUND_DEPTH.visible = !!eyes || (POST.ao && POST.on);
     // …and the trees near you are the ones made to be stood under (map/streetTree.ts).
     world.trees.street(!!eyes, camera.position.x, camera.position.z);
     sun.position.copy(sun.target.position).add(sky.offset);

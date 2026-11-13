@@ -65,8 +65,8 @@ first person a sky, street-level trees, window reflections. Before and after pic
   fewer of them on a clear day (they are tied to the shadows on the ground).
 - [ ] From the street the ground has no kerbs to speak of, and people and cars are the
   top-down models seen close.
-- [ ] Ambient shading on Ultra (GTAO) was not tried: the ground writes no depth from above,
-  so it needs the depth-only ground drawn there too.
+- [ ] Ambient shading on Ultra (GTAO, `?ao`) was tried and left off: about 3 ms a frame for
+  a gain that is hard to see from above. It may be worth more in first person.
 - [ ] `check-graphics.mjs` fails on a dev server that has served edited modules (it imports
   a second copy of `shading.ts`): make it import the game's own copy.
 

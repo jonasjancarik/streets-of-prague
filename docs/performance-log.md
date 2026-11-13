@@ -1203,6 +1203,13 @@ transparent (WGSL's `discard` goes on running the shader), so the cost follows t
 area on screen: the lead for making them cheaper is cards cut closer to the spray, or
 shading the sprays per corner.
 
+**Ambient shading from depth, tried and left off** (`?ao`: three.js's GTAO at half
+resolution in the Ultra pass, 12 samples, radius 4 m, the depth-only ground drawn for it):
+two runs each way, standing 7.6, 7.6 → 11.1, 10.7 ms and driving 10.8, 12.0 → 13.8, 14.5 ms.
+About 3 ms a frame for a darkening round cars, along walls and in roof valleys that is hard
+to find in the picture from above, where the shadows and the ground's soft shading already
+do that work. It stays behind `?ao`.
+
 Checks: `check-graphics` (WebGPU and WebGL), `check-material-sharing --case all`,
 `check-tree-pool --case all`, `check-tree-shadows` and `check-renderer` pass (run
 `check-graphics` against a freshly started dev server: on one that has served edited modules

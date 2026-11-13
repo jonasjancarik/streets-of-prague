@@ -13,6 +13,8 @@ export const POST = {
   night: 0,
   // Wet ground glints more.
   wet: 0,
+  // A trial (?ao): ambient shading from the picture's depth (webgpu/post.ts).
+  ao: new URLSearchParams(globalThis.location?.search ?? '').has('ao'),
   get on() { return asked === 'on' || (asked !== 'off' && this.value > 0); },
 };
 
