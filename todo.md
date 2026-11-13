@@ -54,15 +54,15 @@ first person a sky, street-level trees, window reflections. Before and after pic
 
 - [ ] Decide whether the filmic curve stays at every tier (`?grade=old` compares). Rain,
   snow and mist were looked at once each, the colours of smoke and spray not at all.
-- [ ] Look at night on a phone: the curve's toe is darker than the old one's, and night was
-  only judged on the Mac.
+- [ ] Look at night and at a winter afternoon on a phone: shade is a little darker than
+  under the old curve (the toe was softened once for November, `b` in `src/grade.ts`), and
+  both were only judged on the Mac.
 - [ ] First person in a wood is about 30 frames a second at 2× on Ultra (on `main` too).
   Leaf cards cut closer to their sprays, or shaded per corner, would cut the street trees'
   share.
-- [ ] Street trees: bare crowns read heavy (the twig cards are dense); conifers and shrubs
-  still use the top-down models; nothing sways.
-- [ ] The clouds are smooth blobs. A second, finer layer or lit edges would help; so would
-  fewer of them on a clear day (they are tied to the shadows on the ground).
+- [ ] Street trees: conifers and shrubs still use the top-down models; nothing sways.
+- [ ] The clouds are smooth shapes, painted rather than photographed, and there are many
+  on a clear day (they are tied to the shadows on the ground).
 - [ ] From the street the ground has no kerbs to speak of, and people and cars are the
   top-down models seen close.
 - [ ] Ambient shading on Ultra (GTAO, `?ao`) was tried and left off: about 3 ms a frame for
