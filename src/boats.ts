@@ -23,6 +23,26 @@ import type { Reach } from './river.ts';
 // in the wide water before it until the other is through. At the end of a stretch they turn round. The water's height
 // changes at a lock, and a boat rises or sinks there at a lock's pace, not in a jump.
 
+// A boat's wake (webgpu/wake.ts makes them; none on the old renderer): a mesh that lies on
+// the water behind the stern, as strong as the boat is fast (its material's opacity).
+type WakeMaker = (length: number, beam: number) => THREE.Mesh;
+let makeWake: WakeMaker | null = null;
+export const setWake = (make: WakeMaker) => { makeWake = make; };
+// Puts a boat's wake where the boat is: `speed` as a share of its full speed.
+export function poseWake(wake: THREE.Mesh, x: number, y: number, z: number, h: number, speed: number, shown: boolean) {
+  wake.visible = shown && speed > 0.12;
+  if (!wake.visible) return;
+  wake.position.set(x, z + 0.07, -y);
+  wake.rotation.set(0, h, 0);
+  wake.updateMatrix();
+  (wake.material as THREE.Material).opacity = clamp((speed - 0.12) / 0.6, 0, 1);
+}
+export const wakeFor = (scene: THREE.Scene, length: number, beam: number) => {
+  const wake = makeWake?.(length, beam) ?? null;
+  if (wake) scene.add(wake);
+  return wake;
+};
+
 export interface Waters {
   waterAt: (x: number, y: number) => boolean | null;
   terrainAt: (x: number, y: number, onWater?: boolean) => number;
@@ -58,6 +78,7 @@ const BOARD_REACH = 4.5, BOARD_STEP = 0.8; // a short step between a low bank an
 
 interface Boat {
   kind: Kind; s: Spec; mesh: THREE.Mesh; live: boolean;
+  wake: THREE.Mesh | null;
   x: number; y: number; h: number; v: number; w: number; phase: number; wander: number; side: number;
   next: number; turn: number; ahead: number; // when to look round again, and what it found
   moored: boolean; // tied up at the bank, waiting to be taken
@@ -237,7 +258,8 @@ export class Boats {
       mesh.visible = false;
       mesh.matrixAutoUpdate = false;
       scene.add(mesh);
-      this.list.push({ kind, s: SPECS[kind], mesh, live: false, x: 0, y: 0, h: 0, v: 0, w: 0, phase: rng() * 10, wander: 0, side: 1, next: 0, turn: 0, ahead: 1, moored: false, course: null, along: 0, dir: 1, about: 0, z: null });
+      const wake = kind === 'cruise' ? wakeFor(scene, SPECS[kind].len, SPECS[kind].beam) : null;
+      this.list.push({ kind, s: SPECS[kind], mesh, wake, live: false, x: 0, y: 0, h: 0, v: 0, w: 0, phase: rng() * 10, wander: 0, side: 1, next: 0, turn: 0, ahead: 1, moored: false, course: null, along: 0, dir: 1, about: 0, z: null });
     };
     for (let i = 0; i < CRUISE; i++) add('cruise', '');
     if (islands) for (let i = 0; i < PEDALS; i++) i % 3 === 2 ? add('swan', '') : add('pedal', PAINTS[i % PAINTS.length]);
@@ -553,5 +575,6 @@ export class Boats {
     m.position.set(b.x, y + A * Math.sin(t * 1.4), -b.y);
     m.rotation.set(A * 0.6 * Math.sin(t * 1.1 + 1), b.h, A * 0.4 * Math.sin(t * 0.9 + 2), 'YXZ');
     m.updateMatrix();
+    if (b.wake) poseWake(b.wake, b.x, b.y, y, b.h, Math.abs(b.v) / b.s.speed, b.live && m.visible);
   }
 }

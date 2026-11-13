@@ -124,6 +124,8 @@ function onceAPixel(m: THREE.Mesh, l: GroundLayer) {
 // The WebGPU trial's own version of the soft shading's material (webgpu/soft.ts).
 let softShadeBy: ((opacity: number) => THREE.Material) | null = null;
 export const setSoftShade = (f: (opacity: number) => THREE.Material) => { softShadeBy = f; };
+// The same soft dark shading for something that isn't a ground layer (the cars' contact shade), where there is one.
+export const softShade = (opacity: number) => softShadeBy?.(opacity) ?? null;
 
 function surfaceMaterial(l: GroundLayer, time: { value: number }, relief: SurfaceTexture | null, mask: SurfaceTexture | null, photo: { texture: THREE.Texture; box: number[] } | null = null, raster: THREE.Texture | null = null) {
   // A bridge deck's slab is solid: drawn with depth, so what's under it is hidden

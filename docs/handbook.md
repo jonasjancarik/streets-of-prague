@@ -165,6 +165,8 @@ Graphics (<kbd>G</kbd> cycles it, remembered in the browser):
 | Bloom round lights and glints, darker corners (WebGPU) | On | Off | Off | Off | Off |
 | Waves and glitter on the river, until you choose | On | Off | Off | Off | Off |
 | Sprays of leaves and needles on trees and shrubs seen from above | On | Off | Off | Off | Off |
+| Shadows that soften with distance from what casts them | On | Off | Off | Off | Off |
+| A soft shade under every car | On | On | On | On | Off |
 | Maximum crowd | 1200 | 1200 | 1200 | 1200 | 600 |
 
 The sun shadow map covers just what is on screen, as the sun sees it, so shadows stay
@@ -196,7 +198,14 @@ On Ultra the frame goes through one more pass (`src/webgpu/post.ts`, three.js's
 threshold spills light round itself (bloom: by day only glints and the brightest plaster,
 at night the lamps' pools, lit windows and headlights), then the tone curve runs and the
 corners are darkened a little. The bloom's first copy is a quarter of the picture's width.
-`?post=on|off` overrides the tier for one visit. WebGL keeps MSAA on at every tier because it cannot change
+`?post=on|off` overrides the tier for one visit.
+
+Photo mode (<kbd>C</kbd>, `src/photo.ts`) stops the game, clears the screen of everything
+but the picture and frees the camera: drag to move, scroll to zoom, right-drag or the
+sliders to tilt and turn, and a slider for the hour. "Save picture" downloads the canvas at
+its full size as a PNG; <kbd>H</kbd> hides the bar; <kbd>C</kbd> or <kbd>Esc</kbd> goes
+back, and the clock returns to what it was. It is the developer panel's free camera
+(`t.cam`) with the game paused. WebGL keeps MSAA on at every tier because it cannot change
 that without a new renderer.
 
 ## Playing
@@ -630,6 +639,21 @@ record the measurements, merge decisions and pending landmark asset activation.
   dado and a door or picture, the floor; a quarter of the windows have a blind half down).
   Along the edge of every carriageway runs a kerb of grey granite with a darker gutter
   inside it (`kerbs` in `src/ground.ts`), wherever what lies beside it is not carriageway.
+  The carriageway itself is worn (`streetWear`, in the gutter's own mesh): a dark stripe of
+  oil down each lane, heavier where cars wait before a junction, and now and then a patch of
+  newer asphalt laid along the street. Lanes, widths and junctions are the map's; which spot
+  has a patch is made up, the same each time. Surveyed pavements are Prague's mosaic in one of
+  three layouts, by stretches of some 44 m (`pavedStones` in `src/webgpu/mosaic.ts`):
+  scattered stones, a chessboard on the diagonal, or a diagonal lattice of dark lines; which
+  stretch has which is not surveyed. Grass has lusher and thinner clumps, blades close up,
+  and daisies and dandelions while the trees are in blossom. Tile rows and metal seams are
+  lit and shaded by where the sun stands (`rowRelief`), and roof windows and metal roofs
+  flash the sun where they lean half-way between it and the camera. Every car has a soft
+  shade under it (`CarPool.under`: one mesh for all of them), and cruise boats and ferries
+  trail a wake (`src/webgpu/wake.ts`). On Ultra the sun's shadows go through a filter of our
+  own (`src/webgpu/shadows.ts`): it reads how far above a pixel its caster stands and widens
+  the edge by 3.6 cm a metre, so a shadow is sharp at the foot of a wall and soft across the
+  street (`?softshadows=on|off`).
 - **Facades** are put together bay by bay and storey by storey from 144 parts: windows,
   doors, gateways and shopfronts in thirteen looks (`src/facades.ts`): three for
   19th-century tenements (neo-Renaissance, Art Nouveau and the plain houses of Žižkov

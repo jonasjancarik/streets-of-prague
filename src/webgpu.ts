@@ -27,6 +27,7 @@ import './webgpu/buildings.ts';
 import './webgpu/trees.ts';
 import './webgpu/streetTrees.ts';
 import './webgpu/shadows.ts';
+import './webgpu/wake.ts';
 import './webgpu/soft.ts';
 import './webgpu/vehicles.ts';
 import './webgpu/figures.ts';
@@ -70,10 +71,16 @@ function pAsphalt(c0: N, p: N) {
 function pSetts(c: N, p: N, sx: number, sy: number) {
   const d = detail(p, sx), s = c.mul(0.85).toVar();
   If(d.greaterThan(0), () => {
-    const b = blocks(p, sx, sy);
+    // The rows run one of four ways, the same over a field some 50 m across: setts are laid
+    // along each street and in fields on a square, never all one way across a town.
+    const way = floor(hash12(floor(p.div(52).add(vec2(0.31, 0.57))).add(2.9)).mul(4)).mul(0.7854);
+    const q = vec2(p.x.mul(cos(way)).sub(p.y.mul(sin(way))), p.x.mul(sin(way)).add(p.y.mul(cos(way))));
+    const b = blocks(q, sx, sy);
     const stone = c.mul(b.y.mul(0.4).add(0.8)).mul(vnoise(p.mul(9)).mul(0.16).add(0.92));
     s.assign(mix(s, mix(c.mul(0.5), stone, smoothstep(0.004, 0.02, b.x)), d));
   });
+  // Where feet and wheels have polished the stones they are lighter, in patches a few metres across.
+  s.mulAssign(smoothstep(0.42, 0.72, fbm2(p.mul(0.17).add(31))).mul(0.13).add(0.96));
   return s.mul(fbm(p.mul(0.2)).mul(0.12).add(0.94));
 }
 // (The stones are a texture: webgpu/mosaic.ts.)

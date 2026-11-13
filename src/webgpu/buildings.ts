@@ -10,7 +10,7 @@ import {
   materialColor, fract, floor, mod, dot, sin, mix, smoothstep, step, length, abs, max, min, clamp, normalize, dFdx, dFdy, distance, select, cross, sqrt, cameraPosition, reflect, pow, uniform, renderGroup,
 } from 'three/tsl';
 import { FACADE_ATLAS, FACADE_ON, BLANK, F_BAY as BAY_WIDTH, F_UP as UP, F_DOOR as DOOR, F_WALL as WALL, F_MOD as MOD, F_GROUND as GROUND, F_STOREY as STOREY, STOREY_FIT } from '../facades.ts';
-import { WINDOWS, ROOF_DETAIL, ROOF_CLUTTER, LANDMARK_ROOF as R, SUN_DIR } from '../shading.ts';
+import { WINDOWS, ROOF_DETAIL, ROOF_CLUTTER, LANDMARK_ROOF as R, SUN_DIR, SUN_LIGHT } from '../shading.ts';
 import { lampLit } from './lamps.ts';
 import { EDGE, EDGE_STEP } from '../map/roofEdges.ts';
 import { type N, follow, followColor, addPort, uCut, uDirt, uWet, uSnow, vnoise, fbm, fbm2, blocks, hash12, skyAmbient } from './common.ts';
@@ -42,6 +42,7 @@ const rowRelief = (n: N, down: N, along: N, lip: number): N => {
 };
 // How dark a tile's edge shadow is and how bright its lit edge, at most.
 const RELIEF = { shade: 0.42, light: 0.3 };
+const uSunLight: N = followColor(SUN_LIGHT);
 const uFacadeOn = follow(FACADE_ON), uWindows = follow(WINDOWS), uRoofDetail = follow(ROOF_DETAIL), uRoofClutter = follow(ROOF_CLUTTER);
 
 // The atlas loads after the first frames: a one-layer stand-in keeps the binding's type.
@@ -434,6 +435,21 @@ const windowGlow = Fn(() => {
     const cell = floor(f.x.div(f.z).mul(max(1, floor(f.z.div(3.2).add(0.5)))));
     const lit = step(fHash(cell.add(f.z.mul(0.37)), float(7)), uWindows);
     g.assign(mix(vec3(1, 0.62, 0.3), vec3(1, 0.8, 0.55), fHash(float(7), cell)).mul(lit).mul(mansardGlass(f, 0)).mul(0.55));
+  });
+  // Glints: a roof window's glass and a metal roof's pans flash the sun at you where they
+  // happen to lean half-way between it and your eye, so as the view moves over the roofs
+  // now one flashes, now another. (Not where a taller house shades them: the map of the
+  // sun's shadows isn't asked here, and such roofs are few.)
+  If(bn.y.greaterThan(0.15), () => {
+    const m: N = f.w, glass: N = abs(m.sub(10)).lessThan(0.5), metal: N = m.greaterThan(2.5).and(m.lessThan(4.5));
+    If(glass.or(metal), () => {
+      const toEye: N = normalize(cameraPosition.sub(positionWorld));
+      // (A metal roof isn't flat: each pan leans a little its own way.)
+      const pan: N = fHash(floor(positionWorld.x.mul(1.6)), floor(positionWorld.z.mul(1.6))).sub(0.5);
+      const lean: N = normalize(bn.add(vec3(pan, 0, pan.negate()).mul(select(glass, 0.02, 0.09))));
+      const flash: N = pow(max(dot(reflect(uSunDir.negate(), lean), toEye), 0), select(glass, 220, 70));
+      g.addAssign(uSunLight.mul(flash).mul(select(glass, roofGlass(f).mul(1.6), float(0.22))));
+    });
   });
   // The sky in the window panes, seen from the street: more of it the flatter you look along
   // the wall, each window a slightly different patch of it (no two panes are quite in one

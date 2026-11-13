@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { renderMirror } from './mirror.ts';
 import { renderProbe } from './probe.ts';
 import { POST, drawPost } from './post.ts';
+import { setupPhoto } from './photo.ts';
 import { SHADOW_FILTER } from './softshadow.ts';
 import { DOME_NODE } from './sky.ts';
 import { Streaks } from './streaks.ts';
@@ -775,6 +776,7 @@ async function main() {
     if (near) moved = teleportTo(near[0], near[1]);
   };
   let testkit: Testkit | null = null;
+  let photo: ReturnType<typeof setupPhoto> | null = null;
   const hurt = (points: number) => { if (!testkit?.unhurt && wastedT <= 0 && health.hurt(points)) wasted(); };
   const police = new Police({
     scene, drive, traffic, grid, height: ground, rng: seeded, edgesNear, walk, walkNear, offscreen, onBusted: busted, kit,
@@ -1583,6 +1585,9 @@ async function main() {
       e.preventDefault();
       return;
     }
+    // Photo mode (photo.ts) takes the keys while it is on, and C starts it.
+    if (photo?.key(e.code)) { e.preventDefault(); return; }
+    if (e.code === 'KeyC' && !e.repeat && photo?.toggle()) { e.preventDefault(); return; }
     // Escape pauses the game by opening the settings, which also hold the saves.
     if (e.code === 'Escape') { if (!e.repeat && !settingsPanel.open) settingsPanel.show(); e.preventDefault(); return; }
     if (e.code === 'KeyN' && !e.repeat) { void openMap(); e.preventDefault(); return; }
@@ -2444,6 +2449,19 @@ async function main() {
     } catch { return null; }
   };
   setScreenshot(() => new Promise((resolve) => { grab.push(resolve); setTimeout(() => resolve(null), 2000); }));
+  // The whole canvas as a PNG, for photo mode: copied in the task that drew the frame, as above.
+  const grabFull: ((picture: Blob | null) => void)[] = [];
+  const takeFull = (done: (picture: Blob | null) => void) => {
+    try {
+      const from = renderer.domElement, to = document.createElement('canvas');
+      to.width = from.width;
+      to.height = from.height;
+      const draw = to.getContext('2d')!;
+      draw.globalCompositeOperation = 'copy';
+      draw.drawImage(from, 0, 0);
+      to.toBlob(done, 'image/png');
+    } catch { done(null); }
+  };
   let soundHeld = false;
   // What makes the frames over 100 ms long, for the statistics: shader builds are new
   // node builder states (WebGPU) or programs (WebGL).
@@ -2983,6 +3001,7 @@ async function main() {
     // A picture of the frame just drawn, asked for by the feedback form: the canvas can only
     // be read in the task that drew it.
     if (grab.length) { const picture = takePicture(); for (const done of grab.splice(0)) done(picture); }
+    for (const done of grabFull.splice(0)) takeFull(done);
   });
 
   window.__drive = {
@@ -3040,6 +3059,11 @@ async function main() {
     season: { set: (when) => { const day = parseDay(when); if (!day) throw new Error(`A season's name, MM-DD or a day of the year, not ${when}`); season.set(day); }, date: () => season.date },
   });
   window.__test = testkit;
+  photo = setupPhoto({
+    kit: testkit, canvas: renderer.domElement,
+    ready: () => !settingsPanel.open && !mapOpen() && !metro.active && !dialog.active && !arrest.active && !testkit!.cam && !testkit!.eyes,
+    capture: () => new Promise((resolve) => { grabFull.push(resolve); setTimeout(() => resolve(null), 3000); }),
+  });
   // ?fps starts in first person, as the developer panel's First person box does.
   if (params.has('fps')) testkit.eyes = { yaw: 0, pitch: 0 };
   dev.attach(testkit);

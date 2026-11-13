@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { body, boatMaterial, FERRY } from './boats.ts';
+import { body, boatMaterial, FERRY, wakeFor, poseWake } from './boats.ts';
 import { Course } from './river.ts';
 import type { FerryLine, Landing } from './river.ts';
 import type { Point2 } from './map/geo.ts';
@@ -83,6 +83,7 @@ export interface Ferry {
   steps: Step[]; // one round trip, landing by landing
   period: number;
   mesh: THREE.Mesh;
+  wake: THREE.Mesh | null; // (boats.ts)
   piers: THREE.Mesh[];
   x: number; y: number; h: number; vx: number; vy: number;
   z: number | null; // the water's height under it (null where the map isn't loaded)
@@ -122,7 +123,7 @@ export class Ferries {
         return pier;
       });
       const p = legs[0].at(0);
-      this.list.push({ line, legs, steps, period: at, mesh, piers, x: p.x, y: p.y, h: p.ang, vx: 0, vy: 0, z: null, stop: 0, to: 1, open: false });
+      this.list.push({ line, legs, steps, period: at, mesh, wake: wakeFor(scene, FERRY.len, FERRY.beam), piers, x: p.x, y: p.y, h: p.ang, vx: 0, vy: 0, z: null, stop: 0, to: 1, open: false });
     }
   }
 
@@ -165,6 +166,7 @@ export class Ferries {
         f.mesh.rotation.set(0, f.h, 0);
         f.mesh.updateMatrix();
       }
+      if (f.wake) poseWake(f.wake, f.x, f.y, f.z ?? 0, f.h, Math.hypot(f.vx, f.vy) / FERRY.speed, f.z !== null);
       f.line.stops.forEach((s, k) => {
         const pier = f.piers[k], z = this.o.water(s.berth[0], s.berth[1]);
         if (pier.visible === (z !== null)) return;

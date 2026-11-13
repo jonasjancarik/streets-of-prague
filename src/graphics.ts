@@ -3,6 +3,7 @@ import { PROBE_ON } from './probe.ts';
 import { POST } from './post.ts';
 import { CANOPY_LEAVES } from './trees.ts';
 import { SOFT_SHADOWS } from './softshadow.ts';
+import { CAR_SHADE } from './car.ts';
 import * as THREE from 'three';
 import { DIRT, LEAVES, ROOF_DETAIL, ROOF_CLUTTER, WATER, WEATHER_DETAIL } from './shading.ts';
 import { LAMP_SHADOWS, LAMP_SIZE, LIGHT_FX } from './lamps.ts';
@@ -246,6 +247,7 @@ export class Graphics {
     wantStrips(look); // (the cars' mirrored streets)
     PROBE_ON.value = this.tier === 'ultra' ? 1 : 0;
     POST.value = this.tier === 'ultra' ? 1 : 0; // (and the bloom: post.ts)
+    CAR_SHADE.value = look ? 1 : 0; // (the soft shade under the cars: car.ts)
     SOFT_SHADOWS.tier = this.tier === 'ultra' ? 1 : 0; // (and the shadows' edges widening with distance: softshadow.ts)
     CANOPY_LEAVES.value = this.tier === 'ultra'; // (and the sprays of leaves on the crowns seen from above: trees.ts) // (and on Ultra the real one round the middle of the view)
     // (The lamps resize their maps at the next frame; the materials are bound afresh below,

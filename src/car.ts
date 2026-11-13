@@ -12,6 +12,7 @@ import { fences } from './fences.ts';
 import { lampLit, LAMP_ON } from './lamps.ts';
 import { SNOW, STREET_SNOW, WET, SKY_REF, STREET_REF, SUN_DIR, SUN_LIGHT } from './shading.ts';
 import { send, sendInstances } from './gpu.ts';
+import { softShade } from './surface.ts';
 import { KINDS, STRIPS, STRIPS_ON } from './reflections.ts';
 import { PROBE_AT, PROBE_K, PROBE_MAP, PROBE_MIX, PROBE_NEAR, PROBE_PREV } from './probe.ts';
 
@@ -1392,6 +1393,11 @@ function place(p: Placing | undefined, c: Car, height: unknown, terrain: number,
   return p;
 }
 
+// The shade under a car (CarPool.under): how dark, how far under the car it is full
+// (half its length, as a share), where it has faded out, how much further out at the sides,
+// and how many cars at most. CAR_SHADE: whether it is drawn (graphics.ts: not on Lowest).
+const UNDER = { shade: 0.5, dark: 0.4, out: 0.6, side: 0.12, most: 1500 };
+export const CAR_SHADE = { value: 1 };
 export class CarPool {
   scene: THREE.Scene;
   // 128 cars (8 KiB of matrices); overflow retains the original page.
@@ -1416,6 +1422,13 @@ export class CarPool {
   area: ((x: number, y: number) => number) | null = null;
   private areas = new WeakMap<Car, { x: number; y: number; k: number }>();
 
+  // A soft dark patch on the ground under every car, a little wider than it: where the
+  // sky can't reach. It is what makes a car sit on the street in shade, where it has no
+  // shadow of its own to stand on. One mesh for all of them; sent again only when a car
+  // drawn has moved.
+  private under: THREE.InstancedMesh | null = null;
+  private underSum = NaN;
+
   constructor(scene: THREE.Scene) {
     if (!kit) throw new Error('Figures kit is not loaded');
     this.scene = scene;
@@ -1427,6 +1440,25 @@ export class CarPool {
     this.scale = new THREE.Matrix4().makeScale(SCALE, SCALE, SCALE);
     this.life = new THREE.Matrix4();
     this.m = new THREE.Matrix4();
+    const shade = softShade(UNDER.shade);
+    if (shade) {
+      // A unit rectangle (the car's length by its width): dark under the car, fading out past its edges.
+      const g = new THREE.BufferGeometry(), pos: number[] = [], alpha: number[] = [];
+      for (const [half, a] of [[UNDER.dark, 1], [UNDER.out, 0]]) for (const [x, z] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { pos.push(x * half, 0.05, z * (half + (a ? 0 : UNDER.side))); alpha.push(a); }
+      const idx = [0, 2, 1, 0, 3, 2];
+      for (let k = 0; k < 4; k++) { const n = (k + 1) % 4; idx.push(k, 4 + n, 4 + k, k, n, 4 + n); }
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('alpha', new THREE.Float32BufferAttribute(alpha, 1));
+      g.setIndex(idx);
+      // (Unlike the ground's shading it is tested against the depth: a car under a bridge doesn't shade the deck.)
+      Object.assign(shade, { depthTest: true, side: THREE.DoubleSide });
+      this.under = new THREE.InstancedMesh(g, shade, UNDER.most);
+      this.under.count = 0;
+      this.under.frustumCulled = false;
+      this.under.renderOrder = -1; // after the ground, before the cars and houses
+      this.under.matrixAutoUpdate = false;
+      scene.add(this.under);
+    }
   }
 
   private page(key: string) {
@@ -1541,7 +1573,8 @@ export class CarPool {
       this.groups.get(c.key)!.push(c);
     }
     const d = this.dummy;
-    let riders = 0, nb = 0;
+    let riders = 0, nb = 0, shaded = 0, sum = 0;
+    const under = this.under && CAR_SHADE.value > 0 ? this.under : null;
     // By night the cars that are driving have their lamps on (as in lamps.ts); the brake
     // lights show by day as well.
     const night = LAMP_ON.value > 0.005;
@@ -1575,6 +1608,10 @@ export class CarPool {
         }
         // A bike or motorbike shrinks with its rider in first person (FIGURE_SIZE).
         m.setMatrixAt(slot, c.two && FIGURE_SIZE.value < SCALE ? this.m.copy(d.matrix).multiply(this.life.makeScale(FIGURE_SIZE.value / SCALE, FIGURE_SIZE.value / SCALE, FIGURE_SIZE.value / SCALE)) : d.matrix);
+        if (under && !c.two && shaded < UNDER.most) {
+          under.setMatrixAt(shaded++, this.m.copy(d.matrix).multiply(this.life.makeScale(c.spec.L, 1, c.spec.W)));
+          sum += c.x * 1.37 + c.y * 0.73 + c.h * 11 + d.matrix.elements[13] * 3.1;
+        }
         let paint = this.colours.get(c.paint);
         if (!paint) { paint = new THREE.Color(c.paint); this.colours.set(c.paint, paint); }
         const on = night && !c.burnt && !(c.mode === 'loose' && c.speed < 0.5);
@@ -1609,6 +1646,10 @@ export class CarPool {
         }
         m.userData.open = open;
       }
+    }
+    if (this.under) {
+      this.under.visible = !!under && shaded > 0;
+      if (under && (sum !== this.underSum || under.count !== shaded)) { under.count = shaded; this.underSum = sum; sendInstances(under); }
     }
     this.riders.commit(riders);
     for (let i = 0; i < this.boards.length; i++) this.boards[i].visible = i < nb;
