@@ -326,12 +326,52 @@ const buildingColor = Fn(() => {
   return vec4(c, 1);
 });
 
+// A lit room behind a window, without any geometry: the pixel's ray is followed from the
+// glass into a box as wide as the bay, as high as the storey and ROOM_DEPTH deep, and what
+// it meets first is what shows: the ceiling with the lamp's glow on it, the walls, the back
+// wall with a darker dado, or the floor. Looking along a street the rooms slide behind their
+// windows; from above one sees down onto their floors by the sill. Some windows have a
+// blind half down (`pick`, the window's own number). Returns how bright, round 1.
+// `at`: where in the bay and storey (0-1); `size`: theirs in metres; `along`: the wall's
+// direction in the world; `ray`: from the eye; `n`: the wall's normal.
+const ROOM_DEPTH = 4.2;
+const room = (at: N, size: N, along: N, ray: N, n: N, pick: N): N => {
+  const d: N = vec3(dot(ray, along), ray.y, max(dot(ray, n).negate(), 0.02)).toVar();
+  const p: N = at.mul(size);
+  const tx: N = select(d.x.greaterThan(0), size.x.sub(p.x), p.x.negate()).div(select(abs(d.x).lessThan(1e-4), float(1e-4), d.x));
+  const ty: N = select(d.y.greaterThan(0), size.y.sub(p.y), p.y.negate()).div(select(abs(d.y).lessThan(1e-4), float(1e-4), d.y));
+  const tz: N = float(ROOM_DEPTH).div(d.z);
+  const t: N = min(min(tx, ty), tz).toVar();
+  const hit: N = vec3(p, 0).add(d.mul(t)).toVar();
+  const deep: N = hit.z.div(ROOM_DEPTH);
+  // The back wall (with a darker dado and a door or a picture on it, by the window's number),
+  // a side wall, or the floor or ceiling, by which was met first; each in its own colour.
+  const across: N = hit.x.div(size.x), up: N = hit.y.div(size.y);
+  const thing: N = step(abs(across.sub(mix(0.25, 0.75, fract(pick.mul(5.7))))), 0.11).mul(step(up, mix(0.55, 0.78, fract(pick.mul(3.1))))).mul(step(mix(0.02, 0.4, step(0.5, fract(pick.mul(9.3)))), up));
+  const back: N = vec3(0.8, 0.74, 0.62).mul(mix(0.6, 1, smoothstep(0.3, 0.34, up))).mul(mix(1, 0.45, thing));
+  const side: N = vec3(0.6, 0.55, 0.46);
+  const glow: N = float(1.5).sub(length(vec2(hit.x.sub(size.x.mul(0.5)), hit.z.sub(ROOM_DEPTH * 0.45))).mul(0.4)).max(0.7);
+  const flat: N = select(d.y.greaterThan(0), vec3(0.95, 0.93, 0.88).mul(glow), vec3(0.36, 0.25, 0.16));
+  const surface: N = select(tz.lessThanEqual(t.add(1e-3)), back, select(tx.lessThanEqual(t.add(1e-3)), side, flat));
+  const lit: N = surface.mul(mix(1.1, 0.6, deep));
+  // A blind half down: the upper part of the window a plain bright sheet.
+  const blind: N = step(pick, 0.28).mul(step(mix(0.45, 0.75, fract(pick.mul(17.3))), at.y));
+  return mix(lit, vec3(0.85, 0.8, 0.7), blind);
+};
+
 // Lit windows at night: dark glass above the ground floor, in a share of the windows by
 // the time; shop windows at street level the same.
 const windowGlow = Fn(() => {
   const g = vec3(0).toVar();
   const bn = normalWorld.normalize().toVar(), f = attribute('facade', 'vec4').toVar();
   const bays = fBays(f).toVar();
+  // Which way along the wall its `x` grows, in the world (derivatives: taken here, outside
+  // the branches), and the ray from the eye, for the rooms behind lit windows.
+  const wall0: N = vec3(bn.z, 0, bn.x.negate());
+  const dwx: N = dFdx(positionWorld), dwy: N = dFdy(positionWorld), dfx: N = dFdx(f.x), dfy: N = dFdy(f.x);
+  const turned: N = (dot(wall0, dwx) as N).mul(dfx).add((dot(wall0, dwy) as N).mul(dfy));
+  const along: N = wall0.mul(select(turned.lessThan(0), float(-1), float(1))).toVar();
+  const eye: N = normalize(positionWorld.sub(cameraPosition)).toVar();
   If(uWindows.greaterThan(0.005).and(bn.y.lessThan(0.15)).and(f.z.greaterThan(0.1)).and(bays.greaterThan(0.5)), () => {
     const st = fStorey(f);
     const cell = vec2(floor(f.x.div(f.z).mul(bays)), floor(f.y.sub(st.x).div(st.y)));
@@ -339,7 +379,12 @@ const windowGlow = Fn(() => {
     const dark = float(1).sub(smoothstep(0.13, 0.22, luma(diffuseColor.rgb).div(max(luma(vertexColor().rgb), 0.02))));
     // Upper floors: only the bluish glass, not the dark shadowed mouldings and sills round it.
     const glass = select(f.y.lessThan(st.x), dark, dark.mul(smoothstep(1.03, 1.12, diffuseColor.b.div(max(diffuseColor.r, 0.01)))));
-    g.assign(mix(vec3(1, 0.62, 0.3), vec3(1, 0.8, 0.55), fHash(cell.y, cell.x)).mul(lit).mul(glass).mul(0.55));
+    const lamp: N = mix(vec3(1, 0.62, 0.3), vec3(1, 0.8, 0.55), fHash(cell.y, cell.x));
+    // The room behind the glass, where the detail is on (ROOF_DETAIL: not on Lowest).
+    const ground: N = f.y.lessThan(st.x);
+    const inBay: N = vec2(fract(f.x.div(f.z).mul(bays)), select(ground, clamp(f.y.div(st.x), 0, 1), fract(f.y.sub(st.x).div(st.y))));
+    const seen: N = select(uRoofDetail.greaterThan(0.5), room(inBay, vec2(f.z.div(bays), select(ground, st.x, st.y)), along, eye, bn, fHash(cell.x.add(3.7), cell.y.add(fract(f.w).mul(31)))).mul(0.78), vec3(1));
+    g.assign(lamp.mul(lit).mul(glass).mul(0.55).mul(seen));
   }).ElseIf(uWindows.greaterThan(0.005).and(abs(f.w.sub(10)).lessThan(0.5)).and(bn.y.greaterThan(0.15)), () => {
     // Roof windows (roofGlass).
     const w = positionWorld;
