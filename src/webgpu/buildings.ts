@@ -478,10 +478,15 @@ const ROOM_DEPTH = 4.2;
 const room = (at: N, size: N, along: N, ray: N, n: N, pick: N): N => {
   const d: N = vec3(dot(ray, along), ray.y, max(dot(ray, n).negate(), 0.02)).toVar();
   const p: N = at.mul(size);
-  const tx: N = select(d.x.greaterThan(0), size.x.sub(p.x), p.x.negate()).div(select(abs(d.x).lessThan(1e-4), float(1e-4), d.x));
-  const ty: N = select(d.y.greaterThan(0), size.y.sub(p.y), p.y.negate()).div(select(abs(d.y).lessThan(1e-4), float(1e-4), d.y));
+  // (Distances to the side walls and to the floor or ceiling, divided by how fast the ray
+  // goes that way, never by a sign-flipped stand-in: when the ray ran almost along a wall,
+  // 1e-4 in place of a tiny negative turned the distance hugely negative, the room's far
+  // end came out dozens of times brighter, and the bloom made that one window a lamp
+  // flashing on and off as the view moved.)
+  const tx: N = select(d.x.greaterThan(0), size.x.sub(p.x), p.x).div(max(abs(d.x), 1e-4));
+  const ty: N = select(d.y.greaterThan(0), size.y.sub(p.y), p.y).div(max(abs(d.y), 1e-4));
   const tz: N = float(ROOM_DEPTH).div(d.z);
-  const t: N = min(min(tx, ty), tz).toVar();
+  const t: N = clamp(min(min(tx, ty), tz), 0, tz).toVar();
   const hit: N = vec3(p, 0).add(d.mul(t)).toVar();
   const deep: N = hit.z.div(ROOM_DEPTH);
   // The back wall (with a darker dado and a door or a picture on it, by the window's number),
