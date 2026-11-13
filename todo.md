@@ -60,8 +60,13 @@ two sections) and the handbook; before and after pictures in `screenshots/beauti
   pavement has which mosaic pattern, where the asphalt's patches lie, which way a field of
   setts runs. The mock-ups also drew fan-pattern setts on the Old Town Square; left out,
   as nobody checked how it is really laid.
-- [ ] The shadows that soften with distance (Ultra) read each shadow map depth with a
-  `textureLoad`; not tried on a phone's GPU or on Windows.
+- [ ] The shadows that soften with distance are Ultra's alone since the Pixel 5 showed what
+  their shader costs a phone (see the performance log); Ultra itself was not tried on a
+  phone or on Windows. On the phone's drive the slowest frames looked longer than on `main`
+  (two runs each): measure again with `--hitches`.
+- [ ] Below Ultra the branch's shading costs 0.5–0.8 ms a frame at 2× on an M5 (roof lines
+  and relief, setts, mosaic, kerbs and street wear). If that matters, the kerb strip and the
+  wear's shade are two draws a tile that could go on High and up only.
 - [ ] First person in a wood is about 30 frames a second at 2× on Ultra (on `main` too).
   Leaf cards cut closer to their sprays, or shaded per corner, would cut the street trees'
   share.

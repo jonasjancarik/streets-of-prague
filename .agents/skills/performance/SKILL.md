@@ -132,6 +132,15 @@ headless **Google Chrome** on the GPU at fixed places (`stand`, `drive`, `woods`
   that fails (`Vertex input variable … exceeds the maximum (16)`, `Invalid
   RenderPipeline`) leaves its objects undrawn: fewer triangles, and a frame that looks
   quicker than it is.
+- **The drive scene varies between page loads by more than most changes cost.** On 13
+  November the same build measured 4.3, 5.6 and 9.1 ms a frame on three loads (High, 1×).
+  `--vs` pairs and `--ab` windows hold up; two single runs don't. And when untouched code
+  (traffic, people) is slower in a profile of one build than the other, suspect the
+  machine or the GPU holding the main thread back, not that code.
+- **Uniforms made inside a function that runs for every material are made for every
+  material.** A shadow filter that made its `reference()`s and `uniform()`s inside its `Fn`
+  gave the renderer hundreds more to update a frame (`updateByType` in the profile). Keep
+  them per shadow or at module level, as three.js's own filters do.
 - **Count work, not only time.** Counts are less sensitive to machine load, but
   compare the same route, loaded tiles and population: a slower simulation or
   missing scenery can change the work too. Wrap
@@ -548,6 +557,14 @@ core count: `--init "Object.defineProperty(navigator, 'hardwareConcurrency', { g
   and higher run), by its 16–18 ms of JavaScript at 1×. So a main-thread saving shows
   on the phone only at 1× or Low: the matrix upload fix that doubled the M5's frame rate
   in the woods measured nothing on the phone at Medium 1.5×.
+- **Code in every lit material's shader costs the phone even where a switch skips it.** On
+  13 November a shadow filter of our own (`src/webgpu/shadows.ts`: five depth reads and a
+  wider filter behind an `If` on a uniform) was given to the sun's shadow at every tier and
+  switched on only on Ultra. The M5 showed nothing below Ultra; the Pixel 5 at Medium went
+  from 28 to 15 frames a second standing on the Old Town Square. It is now put on the
+  shadow only while Ultra is chosen. Measure anything that goes into every material on the
+  phone before committing it, and find such a regression by measuring the branch's history
+  there (three runs found the commit).
 - **Where the Pixel 5's GPU time goes at 2×** (left out by `--ab`, 49 ms a frame): the
   whole ground 30 %, of which its patterns 8 % and the sun's shadow on it 8 %; the
   buildings 14 %. About 7 ms of the ground is still unattributed (lighting, the relief

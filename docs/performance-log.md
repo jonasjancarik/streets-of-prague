@@ -1218,3 +1218,61 @@ Scenarios `seasonal-ground`, `tunnel-layers`, `lamp-knock`, `wall-crash` and `po
 pass; `tunnel-mouth` fails the same way on `main` ("in the mouth, not underground", Divadelní).
 Not measured: the phone, Medium and below, and Windows.
 
+## 13 November 2026 — the second round of the look, and what the phone showed (branch `beautify`)
+
+Added that day: leaf sprays over the crowns from above (Ultra), kerbs and gutters, street
+wear, mosaic patterns, grass detail, roof relief and glints, a shade under cars, rooms behind
+lit windows, floodlit landmarks, wakes, photo mode, and on Ultra shadows that soften with
+distance. Headless Chrome on the M5, WebGPU, 2× unless said; the GPU was shared with other
+apps all day (2–92 % busy between runs).
+
+**The branch against `main` at the end** (`--vs`, three pairs, 16 s a scene, 14:00 clear, 13
+November so the trees are mostly bare):
+
+| Tier | Scene | `main` | Branch |
+|---|---|---|---|
+| High | stand | 6.2, 6.5 ms (and one 3.8) | 7.0, 7.0 ms (and one 5.7) |
+| High | drive | 6.7, 8.5, 9.5 ms | 8.0, 8.8, 9.2 ms |
+| Ultra | stand | 7.5, 7.4, 6.7 ms | 9.3, 8.6, 8.4 ms |
+| Ultra | drive | 9.9, 10.1, 8.8 ms | 13.2, 11.7, 11.2 ms |
+
+High at 1× (where the main thread is the limit): standing 4.4 → 4.5 ms. So below Ultra the
+branch costs the main thread next to nothing standing (a CPU profile of both: 4.91 → 5.03 ms a
+frame) and its shading 0.5–0.8 ms a frame at 2× on the Old Town Square. Main against main,
+as a control: within 0.5 ms either way, and the order of a pair made no difference.
+
+**Ultra's pieces** (`--ab` in one page): the pass with its bloom 0.5 ms standing and 1.0
+driving; the soft shadows 1.3 ms standing as first written, 0.5 once most pixels stop after
+six reads; the leaf sprays about 0.5 driving past Petřín (in November: 3.3 ms in a wood
+before the bare ones were folded away in the vertex shader, not timed again in summer); the
+water's waves nothing. Street wear and kerbs (two more draws a tile): 0.3 ms standing on High.
+The shade under cars: 0.1 ms.
+
+**Two mistakes found by measuring, both in the shadow filter:**
+
+- It made its uniforms inside the function that runs for every material, so the renderer had
+  hundreds more to update a frame (`updateByType` 2.7 % of a profile's samples, `writeBuffer`
+  up from 2.1 to 3.2 %). They are kept per shadow now.
+- It was on the sun's shadow at every tier, with a switch in the shader. **On the Pixel 5 that
+  halved the frame rate at Medium**: standing on the Old Town Square, `main` 28 frames a
+  second, the branch 15, the branch without the filter 32 (20 s each, tier's own pixel ratio,
+  30–35 °C). Found by measuring the branch's history there: 27 and 26 frames a second at the
+  ends of the first two days, 11 after the commit that added the filter. It is now put on the
+  shadow only while Ultra is chosen (`Graphics.apply`; the lit shaders are rebuilt when it
+  changes, half a second). After that, on the phone: 25 and 32 frames a second standing
+  against 28, and on the drive 18 and 18 against 17 and 24 (30 s each, 35–36 °C; the
+  slowest 1 % of the branch's frames were longer, 480 against 190–300 ms, on two runs each:
+  not settled).
+
+The drive scene varied between page loads by more than anything here costs (the same build:
+4.3, 5.6 and 9.1 ms a frame at 1× on High), which is why single runs of it prove nothing.
+
+Checks: `check-graphics` (WebGPU and WebGL, on a freshly started server),
+`check-material-sharing`, `check-tree-pool`, `check-tree-shadows`, `check-renderer`,
+`check-ground-areas`, `check-ground-season`, `check-roof-clutter`; scenarios `photo-mode`
+(new), `lamp-knock`, `wall-crash`, `police-chase`, `seasonal-ground`, `tunnel-layers`,
+`boat-boarding`, `ferry-ride`, `cruise-lock`, `car-doors`, `lamp-break`,
+`pedestrians-escape`, `bike-hit` and `job-taxi` pass. `check-lamp-forget` and
+`check-display-text` fail on `main` too (Node 26 and a JSON import). Not measured: Windows,
+Low and Lowest, Ultra on the phone, the leaf sprays in summer.
+
