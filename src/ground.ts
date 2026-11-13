@@ -54,6 +54,9 @@ type GroundGeometry = GroundLayer['geometry'];
 // This part only works out the geometry, as plain arrays, so it runs in the tile
 // workers (tileWorker.ts); surface.ts makes the meshes.
 
+// A kerb: how wide its line of granite is, and how far either side of the carriageway's
+// edge is looked at to tell whether it has one (m).
+const KERB_WIDTH = 0.32, KERB_REACH = 0.6, GUTTER_WIDTH = 1.1, GUTTER_SHADE = 0.34;
 // (The greens and the asphalt were set a little darker, and the asphalt cooler, with the filmic
 // tone curve, grade.ts: it keeps more of a sunlit colour's strength than the curve before it.)
 export const COLORS = {
@@ -62,7 +65,7 @@ export const COLORS = {
   field: '#b9b27a', yard: '#a9a69e', dtmYard: '#85837e', ballast: '#99948a', bare: '#bba888',
   water: '#4d7680', pool: '#62aec2', asphalt: '#626264', sett: '#8a847a', parking: '#6a6968',
   bed: '#6f5b43', shrubBed: '#5d6b3c', iron: '#3f3d3b',
-  bridge: '#6d6c6a', trackbed: '#8a8a85', steel: '#3a3b3d', paint: '#efede4', kerb: '#aba79e',
+  bridge: '#6d6c6a', trackbed: '#8a8a85', steel: '#3a3b3d', paint: '#efede4', kerb: '#aba79e', granite: '#9a9893',
   quay: '#7c776c', funicular: '#6e6a62', slab: '#8e8b84', tunnel: '#46484c', tunnelWall: '#a59f93',
 };
 // Paint of parking bays by paid-parking zone: [zone, colour, dashes].
@@ -773,6 +776,54 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     shade(skirts(real(grass), WOOD_EDGE_WIDTH, false, inner), WOOD_EDGE_SHADE);
   };
 
+  // Kerbs: a line of granite along the edge of the carriageway (asphalt, setts, parking
+  // bays) wherever what lies beside it is not carriageway too: a pavement, a path, a verge,
+  // the unmapped ground. Found on a small picture of the carriageway rather than by asking
+  // every polygon about every edge. (Where there is no canvas to draw on, in the tests
+  // outside a browser, there are none.)
+  const kerbs = (): { lines: Point2[][]; edged: Polygons; plain: (a: Point2, b: Point2) => boolean } | null => {
+    if (typeof OffscreenCanvas === 'undefined') return null;
+    const kinds = [R.road || [], R.sett || [], A.parking || []], edged = kinds.flat();
+    const res = 2, w = Math.ceil((x1 - x0) * res) + 2, h = Math.ceil((y1 - y0) * res) + 2;
+    const canvas = new OffscreenCanvas(w, h), ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.fillStyle = '#fff';
+    for (const polys of [...kinds, R.trambed || [], R.bridge || [], A.bridge || []]) for (const rings of polys) {
+      ctx.beginPath();
+      for (const ring of rings) {
+        ring.forEach(([x, y], i) => (i ? ctx.lineTo((x - x0) * res + 1, (y - y0) * res + 1) : ctx.moveTo((x - x0) * res + 1, (y - y0) * res + 1)));
+        ctx.closePath();
+      }
+      ctx.fill('evenodd');
+    }
+    const data = ctx.getImageData(0, 0, w, h).data;
+    canvas.width = canvas.height = 0;
+    // (Past the tile's edge nothing is known: taken as carriageway, so no kerb is made up there.)
+    const carriage = (x: number, y: number) => {
+      const i = Math.floor((x - x0) * res + 1), j = Math.floor((y - y0) * res + 1);
+      return i < 1 || j < 1 || i >= w - 1 || j >= h - 1 || data[(j * w + i) * 4 + 3] > 127;
+    };
+    // An edge with no kerb: one along the tile's border, or with carriageway on both sides.
+    const plain = (a: Point2, b: Point2) => {
+      const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
+      if (!len || cut(a, b)) return true;
+      const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, nx = (-dy / len) * KERB_REACH, ny = (dx / len) * KERB_REACH;
+      return carriage(mx + nx, my + ny) === carriage(mx - nx, my - ny);
+    };
+    const lines: Point2[][] = [];
+    for (const rings of edged) for (const ring of rings) {
+      let cur: Point2[] = [];
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], b = ring[(i + 1) % ring.length];
+        if (plain(a, b)) { if (cur.length > 1) lines.push(cur); cur = []; continue; }
+        if (!cur.length) cur.push(a);
+        cur.push(b);
+      }
+      if (cur.length > 1) lines.push(cur);
+    }
+    return { lines, edged, plain };
+  };
+
   // Base: everything unmapped between streets and houses is paved; gardens round
   // family houses come from the pipeline (osm_area.py, _gardens).
   const [x0, y0, x1, y1] = box;
@@ -862,6 +913,12 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
       }
       order++;
     } else add(polygons(R.road || []), COLORS.asphalt, 'asphalt');
+    // The gutter: what the rain leaves along the kerb darkens the carriageway's edge; then the kerb.
+    const kerb = kerbs();
+    if (kerb) {
+      shade(skirts(kerb.edged, GUTTER_WIDTH, false, kerb.plain), GUTTER_SHADE);
+      add(strips(kerb.lines, KERB_WIDTH), COLORS.granite, 'concrete');
+    }
     // Where the trams have a bed of their own beside the street: ballast under the tracks.
     add(polygons(R.trambed || []), COLORS.ballast, 'gravel');
     // Bay lines as Prague paints them: a solid blue line in residents' zones, white
