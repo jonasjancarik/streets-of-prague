@@ -8,8 +8,9 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
-  Fn, If, float, vec2, vec3, uniform, renderGroup, cameraPosition, normalize, reflect, dot, pow, max, floor, fract, length, abs, smoothstep,
+  Fn, If, float, vec2, vec3, uniform, renderGroup, cameraPosition, normalize, reflect, dot, pow, max, floor, fract, length, abs, smoothstep, mix,
 } from 'three/tsl';
+import { skyAt } from './dome.ts';
 import { WATER, SUN_DIR, SUN_LIGHT } from '../shading.ts';
 import { type N, follow, followColor, uRain, hash12, vnoise, detail } from './common.ts';
 
@@ -23,6 +24,12 @@ const uSunDir: N = (() => {
 
 const SWELL = 0.3, RIPPLE = 0.16; // how steep the two layers get
 const SKY = 5.3;                  // SKY_REF is 0.06 of the sky's light; a mirror shows about a third of it
+const FLAT_MIRROR = 0.2;          // from how much of a mirror the water reads the real sky
+const BANK = 0.3;                 // how dark the far bank's band is in it
+
+// How much of a mirror still water is from here (0.05 from straight above, 0.95 along it):
+// that much less of its own colour shows (webgpu.ts, pWater).
+export const flatMirror = (w: N): N => pow(float(1).sub(max(normalize(cameraPosition.sub(w)).y, 0)), 3).mul(0.9).add(0.05);
 
 // Rings spreading from a drop in each cell (the puddles' and the water's).
 export function ripples(p0: N, time: N) {
@@ -58,8 +65,17 @@ export function waterShine(w: N, p: N, s: N, time: N, skyRef: N, lamps: N) {
     const v = normalize(cameraPosition.sub(w)).toVar(), n = waveNormal(s).toVar();
     const r = reflect(v.negate(), n);
     // More of a mirror the more it leans away, and the sky is lighter towards the horizon.
-    const mirror = pow(float(1).sub(max(dot(n, v), 0)), 3).mul(0.9).add(0.05);
+    const mirror = pow(float(1).sub(max(dot(n, v), 0)), 3).mul(0.9).add(0.05).toVar();
     out.assign(skyRef.mul(SKY).mul(float(1.5).sub(r.y.mul(0.5))).mul(mirror));
+    // Seen at a slant (from the street, a bridge, a boat) it is a real mirror: the sky in the
+    // direction it reflects, clouds, the sun's glow and its disc broken up by the ripples, and
+    // low down a darker band for the far bank. From above the slant never gets this far, and
+    // the sky is not read (webgpu/dome.ts: eight noise reads).
+    If(mirror.greaterThan(FLAT_MIRROR), () => {
+      const up: N = vec3(r.x, max(r.y, 0.03), r.z);
+      const seen: N = skyAt(up, w.xz).rgb.mul(mix(BANK, 1, smoothstep(0.03, 0.14, up.y)));
+      out.assign(mix(out, seen.mul(mirror), smoothstep(FLAT_MIRROR, FLAT_MIRROR + 0.15, mirror)));
+    });
     // Only the facets that lean catch a lamp: broken streaks, not a lit sheet.
     out.addAssign(lamps.mul(smoothstep(0.05, 0.2, length(s)).mul(0.45)));
     If(near.greaterThan(0), () => {

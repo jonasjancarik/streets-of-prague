@@ -39,7 +39,7 @@ import { dome } from './webgpu/dome.ts';
 import { DOME_NODE } from './sky.ts';
 import { OLD_GRADE } from './grade.ts';
 import { mosaicStones } from './webgpu/mosaic.ts';
-import { uWater, ripples, waves, waveNormal, waterShine } from './webgpu/water.ts';
+import { uWater, ripples, waves, waveNormal, waterShine, flatMirror } from './webgpu/water.ts';
 
 // PATTERNS_GLSL.
 const uGroundSeason = followVec(GRASS_SEASON.park), uMeadowSeason = followVec(GRASS_SEASON.meadow), uLawnSeason = followVec(GRASS_SEASON.lawn), uGardenSeason = followVec(GRASS_SEASON.garden), uPitchSeason = followVec(GRASS_SEASON.pitch), uWoodSeason = followColor(WOOD_SEASON), uFieldSeason = followColor(FIELD_SEASON);
@@ -131,6 +131,8 @@ function pWater(c0: N, p: N, time: N) {
   If(uWater.greaterThan(0.5), () => {
     // Deep and green, lighter over the shallows: what it mirrors comes on top (webgpu/water.ts).
     c.mulAssign(vec3(0.56, 0.69, 0.63).mul(fbm2(p.mul(vec2(0.05, 0.012)).add(vec2(0, time.mul(0.03)))).mul(0.3).add(0.85)));
+    // (Less of it the more of a mirror the water is from here.)
+    c.mulAssign(flatMirror(positionWorld).mul(0.9).oneMinus());
   }).Else(() => {
     c.mulAssign(fbm(p.mul(vec2(0.05, 0.012)).add(vec2(0, time.mul(0.03)))).mul(0.2).add(0.88));
     If(d.greaterThan(0), () => {

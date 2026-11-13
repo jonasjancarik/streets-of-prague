@@ -23,8 +23,9 @@ const uLit: N = followColor(DOME.cloudLit), uBase: N = followColor(DOME.cloudBas
 const uDisc: N = followColor(DOME.disc), uGlow: N = followColor(DOME.glow);
 const uSun: N = followVec(DOME.sun), uShade: N = followVec(DOME.shade), uAir: N = followVec(DOME.air);
 
-export const dome: N = Fn(() => {
-  const d: N = normalize(positionWorldDirection).toVar();
+// The sky's colour in a direction, seen from over a spot on the ground (`over`: world x, z).
+export const skyAt = (direction: N, over: N): N => Fn(() => {
+  const d: N = normalize(direction).toVar();
   const up: N = max(d.y, 0);
   const sky: N = mix(uZenith, uHorizon, pow(float(1).sub(up), 4)).toVar();
   const mu: N = max(dot(d, uSun.xyz), 0).toVar();
@@ -33,7 +34,7 @@ export const dome: N = Fn(() => {
 
   // Where the ray meets the cloud layer, and the shadows' pattern for the cloud there.
   const reach: N = float(LAYER).div(max(d.y, 0.02));
-  const at: N = cameraPosition.xz.add(d.xz.mul(reach)).toVar();
+  const at: N = over.add(d.xz.mul(reach)).toVar();
   const shadowAt: N = at.sub(uShade.xz.div(max(uShade.y, 0.2)).mul(LAYER));
   const rank: N = map.sample(shadowAt.div(CLOUD_SPAN).add(uCloud.xy)).level(float(0)).r;
   const drift: N = uCloud.xy.mul(CLOUD_SPAN);
@@ -71,3 +72,5 @@ export const dome: N = Fn(() => {
   // Below the horizon: the haze.
   return vec4(mix(uHorizon, sky, smoothstep(-0.02, 0.01, d.y)) as N, 1);
 })();
+
+export const dome: N = skyAt(positionWorldDirection, cameraPosition.xz);
