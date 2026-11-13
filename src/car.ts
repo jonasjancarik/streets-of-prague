@@ -962,6 +962,10 @@ export class Car {
   _tx?: number; _ty?: number; resting?: boolean; restAt?: [number, number, number];
   restFields?: { gz?: number; r: number; vx: number; vy: number; offsetsRef: readonly number[]; n: number };
   stamp?: number;
+  // Looked over since it last stood still: not inside another car (main.ts). Two
+  // standing cars aren't checked against each other, so one that stops inside another,
+  // or is put down there, gets steps until nothing pushes it any more.
+  settled?: boolean;
 
   constructor(type: string, r: () => number, x = 0, y = 0, h = 0, colour?: string, box?: string) {
     this.type = type;

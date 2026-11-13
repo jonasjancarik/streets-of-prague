@@ -335,7 +335,8 @@ async function main() {
   const standing = new Map<Car, number>(); // loose wrecks and left cars out of sight: seconds so far
   const TOW_AFTER = 60; // s
   let restingStale = true; // see syncResting
-  world.onCars = (cars) => { for (const c of cars) { loose.push(c); tileCars.add(c); } restingStale = true; };
+  // (The map's parked cars stand clear of each other: no need to look them over.)
+  world.onCars = (cars) => { for (const c of cars) { c.settled = true; loose.push(c); tileCars.add(c); } restingStale = true; };
   world.onDrop = (tile) => {
     const gone = new Set(tile.cars.filter((c) => c.mode === 'loose'));
     for (let i = loose.length - 1; i >= 0; i--) if (gone.has(loose[i])) { tileCars.delete(loose[i]); loose.splice(i, 1); }
@@ -1982,7 +1983,11 @@ async function main() {
 
     const movers = moverList;
     movers.length = 0;
-    for (const c of loose) if (moving(c)) movers.push(c);
+    // A car that has just stopped, or was just put down, takes one more step (out of any
+    // wall it stands in) and its turn in the collisions below; pushed, it takes another.
+    for (const c of loose) {
+      if (moving(c)) { movers.push(c); c.settled = false; } else if (!c.settled) { movers.push(c); c.settled = true; }
+    }
     for (const c of movers) c.update(dt, null, grid);
     const me = inCar || inHeli || walker;
     police.update(dt, { x: me.x, y: me.y, z: inHeli ? inHeli.z : ground(me.x, me.y, inCar || walker), level: inHeli ? 0 : world.track(inCar || walker), vx: me.vx, vy: me.vy, speed: Math.hypot(me.vx, me.vy), car: inCar, air: (!!inHeli && !inHeli.landed) || ride.on || passenger(), riding: ride.on || passenger() });
@@ -2109,6 +2114,7 @@ async function main() {
             if (a === inCar) fires.blame(b);
           } else {
             const hit = collideBodies(a, ca, a.r, 1 / a.mass, b, cb, b.r, 0);
+            if (hit) a.settled = false;
             smash(a, b, hit);
             if (a === inCar) jolt = Math.max(jolt, hit);
             if (a === inCar && b.type === 'police' && (a.vx * (b.x - a.x) + a.vy * (b.y - a.y)) / d > 3) police.crime('hitCop', b.x, b.y, b);
@@ -2116,6 +2122,7 @@ async function main() {
           continue;
         }
         const hit = collideBodies(a, ca, a.r, 1 / a.mass, b, cb, b.r, 1 / b.mass);
+        if (hit) a.settled = b.settled = false;
         smash(a, b, hit);
         if (a === inCar || b === inCar) jolt = Math.max(jolt, hit);
         if (hit > 8) { a.damage += hit - 8; b.damage += hit - 8; }
