@@ -253,6 +253,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     mapped_rails = []  # crash barriers as OSM maps them
     sidewalks = []  # footways and paths with their half widths, which may run along a street
     drivable = []  # every car way as the road it covers, to keep inferred parking off it
+    below = []  # (outline, orientation) of car parks under the streets (layer < 0)
     service = []  # those of them that aren't streets: they run through blocks of gardens
     maybe = []  # ways that are passages if they run through buildings (passage_tags)
     trams = []  # tram tracks at street level, open where they run through buildings (TRAM_PASSAGE)
@@ -396,6 +397,12 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             elif kind == "square":
                 outline = col(row, "place") == "square" and not col(row, "area:highway")
                 squares.append((g.buffer(0), col(row, "surface"), outline))
+            elif kind == "parking" and _below(col(row, "layer")):
+                # A car park on a level under the streets (layer < 0) shows only where
+                # nothing runs over it: decided once the carriageways are known.
+                if col(row, "parking") not in UNDER_COVER:
+                    below.append((g.buffer(0), col(row, "orientation")))
+                continue
             elif kind:
                 areas.setdefault(kind, []).append(g.buffer(0))
             if kind == "parking" and col(row, "parking") not in UNDER_COVER:
@@ -467,12 +474,15 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     shares = kerbs.surveyed(lines)
     timer.lap("kerb_measure")
     surveyed, sett_near = [], []  # (centre line, cobbled?) of streets drawn from the survey
+    overhead = []  # the carriageways of car ways not in a tunnel, which hide what lies under them
     for (ls, est, cls, street), (left, right), share in zip(car_ways, measured, shares):
         # Each side out to its kerb, and round ends so streets join up at crossroads.
         # (The pieces are merged with all the others below, so not one by one here.)
         pieces = [ls.buffer(left, single_sided=True), ls.buffer(-right, single_sided=True),
                   ls.buffer(min(left, right), cap_style="round", join_style="round")]
         drivable.extend(pieces)
+        if not est["tunnel"]:
+            overhead.extend(pieces)
         if street:
             streets.extend(pieces)
         else:
@@ -490,6 +500,21 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             continue
         road_lines.setdefault(cls, []).extend(pieces)
     timer.lap("road_buffers")
+    # The car parks under the streets, less what of them a street on the ground covers: the
+    # one on the main station's lower drive (way 1293039163, layer -1) runs on under
+    # Wilsonova, and its residents' blue bay lines were painted across the six lanes.
+    if below:
+        over = unary_union(overhead) if overhead else Polygon()
+        for g, o in below:
+            open_ = g.difference(over) if not over.is_empty else g
+            # (Not the slivers left between a street's carriageways: too small to park in.)
+            kept = [part for part in _polys(open_) if part.area >= BELOW_MIN_AREA and not part.buffer(-1.0).is_empty]
+            if not kept:
+                continue
+            open_ = unary_union(kept)
+            areas.setdefault("parking", []).append(open_)
+            for poly in _polys(open_.intersection(clip)):
+                lots.append({"o": o if o in ORIENTATIONS else None, "poly": poly})
     if not surface.is_empty:
         # Each street's own carriageway is paved like the street, the more important
         # street through the junction (_paving_owners); what's left goes to the nearest
@@ -784,6 +809,15 @@ def use_overpass_mirror():
 ORIENTATIONS = ("parallel", "diagonal", "perpendicular")
 # Car parks with no cars to see from above.
 UNDER_COVER = ("underground", "multi-storey", "rooftop")
+BELOW_MIN_AREA = 15.0  # m²: what's left of a car park under the streets, to count as one
+
+
+def _below(layer):
+    """Whether OSM's `layer` puts a thing under the ground's level."""
+    try:
+        return float(str(layer).split(";")[0]) < 0
+    except (TypeError, ValueError):
+        return False
 
 
 def _area_kind(row, col):
