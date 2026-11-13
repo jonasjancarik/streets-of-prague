@@ -2,10 +2,13 @@
 // The dashboard for the game's anonymous statistics (docs/telemetry.md): reads the
 // reports stored by worker/stats.js through your `cf` login and writes one HTML page.
 //
-//   node scripts/telemetry-dashboard.mjs              the last 14 days, then opens the page
-//   node scripts/telemetry-dashboard.mjs --days 30
+//   node scripts/telemetry-dashboard.mjs              serve the page on http://127.0.0.1:5197 and open it:
+//                                                     pick the dates and filters, press Refresh for new reports
+//   node scripts/telemetry-dashboard.mjs --static     write one HTML file instead (a snapshot, never refreshes)
 //   node scripts/telemetry-dashboard.mjs --sample     made-up numbers, to see the page
-//   --out <file>   where to write it (.telemetry/dashboard.html)     --no-open
+//   --days <n>     how far back to read (default 90, the most Analytics Engine keeps)
+//   --port <n>  --host <address>   for the server (127.0.0.1 only unless you say otherwise)
+//   --out <file>   where --static writes (.telemetry/dashboard.html)     --no-open
 //
 // Reading needs the "Account Analytics: Read" permission, which the `cf` login doesn't
 // have: put an API token with it in ~/.config/streets-of-prague/analytics-token (or in
@@ -14,6 +17,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { COMMON, SCHEMA } from '../worker/stats.js';
 
@@ -22,8 +26,9 @@ const ACCOUNT = '7756b12931ecfb3900a31049e157d706', DATASET = 'streets_telemetry
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(name);
 const option = (name, fallback) => (args.includes(name) ? args[args.indexOf(name) + 1] : fallback);
-const DAYS = Math.max(1, Math.min(90, Number(option('--days', 14)) || 14)); // (Analytics Engine keeps three months)
+const DAYS = Math.max(1, Math.min(90, Number(option('--days', 90)) || 90)); // (Analytics Engine keeps three months)
 const OUT = resolve(option('--out', join(ROOT, '.telemetry/dashboard.html')));
+const PORT = Number(option('--port', 5197)), HOST = option('--host', '127.0.0.1');
 
 // ---- The reports ----------------------------------------------------------------
 // One stored row back into a report with named fields (the reverse of the Worker).
@@ -39,11 +44,11 @@ function named(row) {
 
 const TOKEN_FILE = join(homedir(), '.config/streets-of-prague/analytics-token');
 
-async function fetchRows() {
+async function fetchRows(days = DAYS) {
   const blobs = COMMON.length + Math.max(...Object.values(SCHEMA).map((s) => s.blobs.length));
   const doubles = Math.max(...Object.values(SCHEMA).map((s) => s.doubles.length));
   const columns = ['timestamp', ...Array.from({ length: blobs }, (_, i) => `blob${i + 1}`), ...Array.from({ length: doubles }, (_, i) => `double${i + 1}`)];
-  const sql = `SELECT ${columns.join(', ')} FROM ${DATASET} WHERE timestamp > NOW() - INTERVAL '${DAYS}' DAY ORDER BY timestamp FORMAT JSON`;
+  const sql = `SELECT ${columns.join(', ')} FROM ${DATASET} WHERE timestamp > NOW() - INTERVAL '${days}' DAY ORDER BY timestamp FORMAT JSON`;
   const token = process.env.CLOUDFLARE_API_TOKEN || (existsSync(TOKEN_FILE) ? readFileSync(TOKEN_FILE, 'utf8').trim() : '');
   if (token) {
     const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${ACCOUNT}/analytics_engine/sql`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: sql });
@@ -51,9 +56,7 @@ async function fetchRows() {
     if (r.ok) return JSON.parse(said).data ?? [];
     // The dataset appears with its first report; before that there is nothing to ask for.
     if (/unknown table|does not exist/i.test(said)) return [];
-    console.error(`The statistics could not be read (${r.status}): ${said.trim()}`);
-    if (r.status === 401 || r.status === 403) console.error('\nThe API token needs the "Account Analytics: Read" permission for this account.');
-    process.exit(1);
+    throw new Error(`The statistics could not be read (${r.status}): ${said.trim()}${r.status === 401 || r.status === 403 ? '\nThe API token needs the "Account Analytics: Read" permission for this account.' : ''}`);
   }
   // Without a token, try the `cf` login.
   const file = join(tmpdir(), `streets-telemetry-${process.pid}.sql`);
@@ -65,11 +68,9 @@ async function fetchRows() {
     const said = `${e.stdout ?? ''}${e.stderr ?? ''}`;
     // The dataset appears with its first report; before that there is nothing to ask for.
     if (/unknown table|does not exist|not found/i.test(said)) return [];
-    console.error(said.trim() || e.message);
-    console.error(/403|Authorization/.test(said)
+    throw new Error(`${said.trim() || e.message}${/403|Authorization/.test(said)
       ? `\nThe \`cf\` login may not read the statistics. Create an API token with the "Account Analytics: Read"\npermission and save it in ${TOKEN_FILE} (docs/telemetry.md).`
-      : '\nThe statistics could not be read. Is `cf` logged in? Try `cf auth whoami`.');
-    process.exit(1);
+      : '\nThe statistics could not be read. Is `cf` logged in? Try `cf auth whoami`.'}`);
   }
   const parsed = JSON.parse(out.slice(out.indexOf('{')));
   return parsed.data ?? parsed.result?.data ?? [];
@@ -80,7 +81,7 @@ function sampleRows() {
   let seed = 7;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   const pick = (list) => { let x = rnd() * list.reduce((a, [, w]) => a + w, 0); for (const [v, w] of list) if ((x -= w) < 0) return v; return list[0][0]; };
-  const rows = [];
+  const SPAN = 14, rows = [];
   const put = (at, event, version, session, country, fields) => {
     const old = version === 'v0.3.0';
     const row = { timestamp: at.toISOString().slice(0, 19).replace('T', ' '), blob1: event, blob2: version, blob3: session, blob4: country, blob5: old || parseInt(session, 16) % 4 === 0 ? 'streets.jonasjancarik.cz' : 'streetsofprague.com', blob6: old ? '2026-09-20' : '2026-10-01-b2' };
@@ -90,8 +91,8 @@ function sampleRows() {
   };
   const GPUS = [['apple metal-3', 5, 11], ['nvidia geforce rtx 3060', 4, 9], ['intel iris xe graphics', 4, 24], ['amd radeon rx 6600', 2, 10], ['qualcomm adreno 740', 3, 22], ['intel uhd graphics 620', 2, 41], ['ANGLE (Intel, Mesa Intel HD 4000)', 1, 62]];
   for (let i = 0; i < 260; i++) {
-    const day = Math.floor(rnd() * rnd() * DAYS), at = new Date(Date.now() - day * 864e5 - rnd() * 6e7);
-    const s = i.toString(16).padStart(16, '0'), version = day > DAYS * 0.4 ? 'v0.3.0' : 'v0.4.0', country = pick([['CZ', 60], ['SK', 9], ['DE', 8], ['US', 7], ['GB', 4], ['PL', 3], ['NL', 2]]);
+    const day = Math.floor(rnd() * rnd() * SPAN), at = new Date(Date.now() - day * 864e5 - rnd() * 6e7);
+    const s = i.toString(16).padStart(16, '0'), version = day > SPAN * 0.4 ? 'v0.3.0' : 'v0.4.0', country = pick([['CZ', 60], ['SK', 9], ['DE', 8], ['US', 7], ['GB', 4], ['PL', 3], ['NL', 2]]);
     const [gpu, , base] = GPUS[Math.floor(pick(GPUS.map((g, k) => [k, g[1]])))];
     const touch = /adreno/.test(gpu) || rnd() < 0.08, legacy = /Mesa/.test(gpu);
     const renderer = legacy ? 'WebGL (legacy)' : rnd() < 0.08 ? 'WebGL 2' : 'WebGPU';
@@ -135,8 +136,7 @@ function sampleRows() {
 // ---- The page -------------------------------------------------------------------
 // Everything in `app` runs in the page: it holds every report and adds them up again
 // whenever a filter changes.
-function app(REPORTS, DAYS) {
-  for (const r of REPORTS) r.at = new Date(r.at);
+function app(INITIAL, DAYS, LIVE) {
   const median = (xs) => { const s = xs.filter(Number.isFinite).sort((a, b) => a - b); return s.length ? (s[(s.length - 1) >> 1] + s[s.length >> 1]) / 2 : NaN; };
   const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN);
   const tally = (xs) => { const m = new Map(); for (const x of xs) m.set(x || 'Unknown', (m.get(x || 'Unknown') ?? 0) + 1); return [...m].sort((a, b) => b[1] - a[1]); };
@@ -146,13 +146,13 @@ function app(REPORTS, DAYS) {
   const pct = (x) => (Number.isFinite(x) ? `${(x * 100).toFixed(x > 0 && x < 0.1 ? 1 : 0)} %` : '–');
   const num = (x, digits = 0) => (Number.isFinite(x) ? x.toFixed(digits) : '–');
 
-  function addUp(reports) {
+  function addUp(reports, buckets, bucketOf) {
     const of = (e) => reports.filter((r) => r.event === e);
     const starts = of('start'), frames = lastPer(of('frames')), play = lastPer(of('play')), errors = of('error'), settings = of('setting');
     const framesBy = new Map(frames.map((f) => [f.session, f]));
-    const days = Array.from({ length: DAYS }, (_, i) => new Date(Date.now() - (DAYS - 1 - i) * 864e5).toISOString().slice(0, 10));
-    const perDay = new Map(days.map((d) => [d, 0]));
-    for (const s of starts) { const d = s.at.toISOString().slice(0, 10); if (perDay.has(d)) perDay.set(d, perDay.get(d) + 1); }
+    const perDay = new Map(buckets.map((b) => [b, 0]));
+    for (const s of starts) { const b = bucketOf(s.at); if (perDay.has(b)) perDay.set(b, perDay.get(b) + 1); }
+    const LENGTHS = [['Under 1', 0, 1], ['1–2', 1, 2], ['2–5', 2, 5], ['5–10', 5, 10], ['10–20', 10, 20], ['20–30', 20, 30], ['30–60', 30, 60], ['60 or more', 60, Infinity]];
     const FPS = [['60 or more', 60, Infinity], ['40 to 59', 40, 60], ['30 to 39', 30, 40], ['20 to 29', 20, 30], ['Under 20', 0, 20]];
     const total = play.reduce((a, p) => a + p.seconds, 0) || 1;
     const cards = new Map();
@@ -184,6 +184,7 @@ function app(REPORTS, DAYS) {
       fps: 1000 / median(frames.map((f) => f.medianMs)),
       withErrors: starts.length ? new Set(errors.map((e) => e.session)).size / starts.length : NaN,
       perDay: [...perDay],
+      lengths: LENGTHS.map(([label, lo, hi]) => [label, play.filter((p) => p.seconds / 60 >= lo && p.seconds / 60 < hi).length]),
       fpsGroups: FPS.map(([label, lo, hi]) => [label, frames.filter((f) => f.medianMs > 0 && 1000 / f.medianMs >= lo && 1000 / f.medianMs < hi).length]),
       renderers: tally(starts.map((s) => s.renderer)),
       tiers: tally(frames.map((f) => f.tier)),
@@ -226,10 +227,10 @@ function app(REPORTS, DAYS) {
     }).join('') : '<p class="empty">Nothing reported yet.</p>';
     return `<section class="card"><h2>${esc(title)}</h2>${note ? `<p class="note">${esc(note)}</p>` : ''}${body}</section>`;
   }
-  function columns(title, rows) {
-    const most = Math.max(...rows.map(([, n]) => n), 1), every = Math.ceil(rows.length / 10);
-    const body = rows.map(([day, n], i) => `<div class="col" title="${esc(day)}: ${n}"><span class="col-value">${n || ''}</span><span class="col-bar" style="height:${(n / most) * 100}%"></span><span class="col-label">${i % every === 0 ? esc(`${Number(day.slice(8))}. ${Number(day.slice(5, 7))}.`) : ''}</span></div>`).join('');
-    return `<section class="card wide"><h2>${esc(title)}</h2><div class="cols">${body}</div></section>`;
+  function columns(title, rows, labelOf, note = '') {
+    const most = Math.max(...rows.map(([, n]) => n), 1), every = Math.max(1, Math.ceil(rows.length / 10));
+    const body = rows.map(([day, n], i) => `<div class="col" title="${esc(labelOf ? labelOf(day) : day.replace('T', ' ') + (day.length > 10 ? ':00' : ''))}: ${n}"><span class="col-value">${n || ''}</span><span class="col-bar" style="height:${(n / most) * 100}%"></span><span class="col-label">${labelOf ? esc(labelOf(day)) : i % every === 0 ? esc(day.length > 10 ? `${day.slice(11)}:00` : `${Number(day.slice(8))}. ${Number(day.slice(5, 7))}.`) : ''}</span></div>`).join('');
+    return `<section class="card wide"><h2>${esc(title)}</h2>${note ? `<p class="note">${esc(note)}</p>` : ''}<div class="cols">${body}</div></section>`;
   }
   function table(title, head, rows, note = '') {
     const body = rows.length ? `<div class="scroll"><table><thead><tr>${head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : '<p class="empty">Nothing reported yet.</p>';
@@ -247,7 +248,8 @@ function app(REPORTS, DAYS) {
 </div>
 <h3>Players</h3>
 <div class="grid">
-  ${columns('Games started each day', d.perDay)}
+  ${columns(d.perDay.length > 0 && d.perDay[0][0].length > 10 ? 'Games started each hour' : 'Games started each day', d.perDay)}
+  ${columns('How long games last', d.lengths, (l) => l, 'Games by minutes played, counting only those that reported how they went.')}
   ${bars('Country', d.countries)}
   ${bars('Where they came from', d.referrers)}
   ${bars('Domain', d.hosts)}
@@ -287,26 +289,95 @@ function app(REPORTS, DAYS) {
 </div>`;
   }
 
-  // The filters: each lists what was reported, most games first. The choice is kept in
-  // the address, so a filtered view survives a reload and can be bookmarked.
+  // ---- Dates, filters and reloading ------------------------------------------------
+  // The choice (dates and the three lists) is kept in the address, so a view survives a
+  // reload and can be bookmarked. Dates are days in your own time zone.
+  const pad = (n) => String(n).padStart(2, '0');
+  const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const shift = (day, n) => { const d = new Date(`${day}T12:00`); d.setDate(d.getDate() + n); return ymd(d); };
   const FILTERS = [['version', 'Game version', 'All versions'], ['host', 'Domain', 'All domains'], ['map', 'Map data', 'All maps']];
+  const PRESETS = [['Today', 1], ['Last 7 days', 7], ['Last 14 days', 14], ['Last 30 days', 30], ['Everything', 0]];
   const chosen = new URLSearchParams(location.hash.slice(1));
-  const starts = REPORTS.filter((r) => r.event === 'start');
-  const box = document.getElementById('filters');
-  for (const [key, label, all] of FILTERS) {
-    const options = tally(starts.map((s) => s[key]));
-    box.insertAdjacentHTML('beforeend', `<label>${esc(label)}<select data-key="${key}"><option value="">${esc(all)}</option>${options.map(([v, n]) => `<option value="${esc(v)}"${chosen.get(key) === v ? ' selected' : ''}>${esc(v)} (${n})</option>`).join('')}</select></label>`);
+  const state = { from: chosen.get('from') || '', to: chosen.get('to') || '' };
+  const box = document.getElementById('filters'), fromBox = document.getElementById('from'), toBox = document.getElementById('to'), presets = document.getElementById('presets');
+  let REPORTS = [];
+  presets.innerHTML = PRESETS.map(([label, n]) => `<button type="button" data-days="${n}">${esc(label)}</button>`).join('');
+
+  // A game belongs to the day it started, together with everything it reported later.
+  function load(rows) {
+    for (const r of rows) r.at = new Date(r.at);
+    REPORTS = rows;
+    render(true);
   }
-  const draw = () => {
+  function render(refill) {
+    const startDay = new Map();
+    for (const r of REPORTS) if (r.event === 'start' && !startDay.has(r.session)) startDay.set(r.session, ymd(r.at));
+    const dayOf = (r) => startDay.get(r.session) ?? ymd(r.at);
+    const today = ymd(new Date()), first = REPORTS.reduce((a, r) => { const d = dayOf(r); return d < a ? d : a; }, today);
+    const from = state.from || first, to = state.to || today;
+    fromBox.value = from; toBox.value = to;
+    for (const b of presets.children) {
+      const n = Number(b.dataset.days);
+      b.classList.toggle('on', n ? state.to === '' && state.from === shift(today, 1 - n) : !state.from && !state.to);
+    }
+    const inRange = REPORTS.filter((r) => { const d = dayOf(r); return d >= from && d <= to; });
+    if (refill) {
+      const starts = inRange.filter((r) => r.event === 'start');
+      const now = new Map([...box.querySelectorAll('select')].map((s) => [s.dataset.key, s.value || chosen.get(s.dataset.key) || '']));
+      box.innerHTML = FILTERS.map(([key, label, all]) => {
+        const options = tally(starts.map((s) => s[key])), want = now.get(key) || chosen.get(key) || '';
+        if (want && !options.some(([v]) => v === want)) options.push([want, 0]);
+        return `<label>${esc(label)}<select data-key="${key}"><option value="">${esc(all)}</option>${options.map(([v, n]) => `<option value="${esc(v)}"${want === v ? ' selected' : ''}>${esc(v)} (${n})</option>`).join('')}</select></label>`;
+      }).join('');
+      chosen.delete('version'); chosen.delete('host'); chosen.delete('map');
+    }
     const picked = [...box.querySelectorAll('select')].filter((s) => s.value).map((s) => [s.dataset.key, s.value]);
-    history.replaceState(null, '', picked.length ? `#${new URLSearchParams(picked)}` : location.pathname + location.search);
-    document.getElementById('view').innerHTML = view(addUp(REPORTS.filter((r) => picked.every(([k, v]) => (r[k] || 'Unknown') === v))));
-  };
-  box.addEventListener('change', draw);
-  draw();
+    const keep = [...picked, ...(state.from ? [['from', state.from]] : []), ...(state.to ? [['to', state.to]] : [])];
+    history.replaceState(null, '', keep.length ? `#${new URLSearchParams(keep)}` : location.pathname + location.search);
+    // One column for each day, or each hour when only a day or two is shown.
+    const days = [];
+    for (let d = from; d <= to && days.length < 400; d = shift(d, 1)) days.push(d);
+    const hourly = days.length <= 2;
+    const buckets = hourly ? days.flatMap((d) => Array.from({ length: 24 }, (_, h) => `${d}T${pad(h)}`)) : days;
+    const bucketOf = (at) => (hourly ? `${ymd(at)}T${pad(at.getHours())}` : ymd(at));
+    const html = from > to ? '<p class="sub">The first date is after the last one.</p>'
+      : view(addUp(inRange.filter((r) => picked.every(([k, v]) => (r[k] || 'Unknown') === v)), buckets, bucketOf));
+    document.getElementById('view').innerHTML = html;
+  }
+  box.addEventListener('change', () => render(false));
+  for (const [input, key] of [[fromBox, 'from'], [toBox, 'to']]) input.addEventListener('change', () => { state[key] = input.value; render(true); });
+  presets.addEventListener('click', (e) => {
+    const n = e.target.dataset?.days;
+    if (n === undefined) return;
+    const today = ymd(new Date());
+    state.from = Number(n) ? shift(today, 1 - Number(n)) : ''; state.to = '';
+    render(true);
+  });
+
+  // The served page reads the reports from the script and can read them again.
+  if (!LIVE) load(INITIAL);
+  else {
+    const button = document.getElementById('refresh'), said = document.getElementById('updated');
+    let busy = false;
+    const refresh = async () => {
+      if (busy) return;
+      busy = true; button.disabled = true; said.textContent = 'Reading…';
+      try {
+        const r = await fetch(`reports.json?days=${DAYS}`);
+        if (!r.ok) throw new Error((await r.text()).trim() || `HTTP ${r.status}`);
+        const rows = await r.json();
+        load(rows);
+        said.textContent = `${rows.length} reports, read ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+      } catch (e) { said.textContent = `Could not read: ${e.message}`; }
+      busy = false; button.disabled = false;
+    };
+    button.addEventListener('click', refresh);
+    setInterval(() => { if (!document.hidden) refresh(); }, 5 * 60 * 1000);
+    refresh();
+  }
 }
 
-function page(reports, sample) {
+function page(reports, sample, live) {
   const made = new Date().toISOString().slice(0, 16).replace('T', ' ');
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -320,9 +391,15 @@ function page(reports, sample) {
   h1 { margin: 0 0 4px; font-size: 24px; }
   .sub { margin: 0 0 16px; color: var(--ink-2); }
   .sample { display: inline-block; margin-left: 8px; padding: 1px 8px; border: 1px solid var(--line); border-radius: 99px; font-size: 12px; vertical-align: middle; }
-  #filters { display: flex; flex-wrap: wrap; gap: 12px; margin: 0 0 20px; }
-  #filters label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--ink-2); }
-  #filters select { min-width: 190px; padding: 6px 8px; font: inherit; font-size: 14px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+  #controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin: 0 0 20px; }
+  #filters { display: contents; }
+  #controls label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--ink-2); }
+  #presets { display: flex; flex-wrap: wrap; gap: 6px; }
+  #controls button { padding: 6px 10px; font: inherit; font-size: 13px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+  #controls button.on { border-color: var(--bar); color: var(--bar); }
+  #controls button:disabled { opacity: 0.5; cursor: default; }
+  #live { display: flex; align-items: center; gap: 8px; margin-left: auto; font-size: 12px; color: var(--muted); }
+  #controls input, #filters select { min-width: 150px; padding: 6px 8px; font: inherit; font-size: 14px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
   h3 { margin: 30px 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-2); }
   .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 12px; }
   .tile, .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; min-width: 0; }
@@ -355,18 +432,51 @@ function page(reports, sample) {
 </style></head>
 <body><main>
 <h1>Streets of Prague statistics${sample ? '<span class="sample">Made-up numbers</span>' : ''}</h1>
-<p class="sub">The last ${DAYS} days, read ${made} UTC. Only players who left anonymous statistics switched on are counted.</p>
-<div id="filters"></div>
+<p class="sub">${live ? 'Reads new reports every five minutes while this page is open.' : `Read ${made} UTC; run the script again to see newer reports.`} Only players who left anonymous statistics switched on are counted. Days are in your time zone.</p>
+<div id="controls">
+  <div id="presets"></div>
+  <label>From<input type="date" id="from"></label>
+  <label>To<input type="date" id="to"></label>
+  <div id="filters"></div>
+  ${live ? '<div id="live"><button type="button" id="refresh">Refresh</button><span id="updated"></span></div>' : ''}
+</div>
 <div id="view"></div>
 </main>
-<script>(${app.toString()})(${JSON.stringify(reports).replaceAll('<', '\\u003c')}, ${DAYS});</script>
+<script>(${app.toString()})(${JSON.stringify(reports).replaceAll('<', '\\u003c')}, ${DAYS}, ${live});</script>
 </body></html>
 `;
 }
 
 const sample = flag('--sample');
-const reports = (sample ? sampleRows() : await fetchRows()).map(named).filter(Boolean);
-mkdirSync(dirname(OUT), { recursive: true });
-writeFileSync(OUT, page(reports, sample));
-console.log(`${reports.length} reports → ${OUT}`);
-if (!flag('--no-open')) { try { execFileSync('open', [OUT]); } catch {} }
+const readReports = async (days = DAYS) => (sample ? sampleRows() : await fetchRows(days)).map(named).filter(Boolean);
+const openPage = (target) => { if (!flag('--no-open')) { try { execFileSync('open', [target]); } catch {} } };
+
+if (flag('--static')) {
+  let reports;
+  try { reports = await readReports(); } catch (e) { console.error(e.message); process.exit(1); }
+  mkdirSync(dirname(OUT), { recursive: true });
+  writeFileSync(OUT, page(reports, sample, false));
+  console.log(`${reports.length} reports → ${OUT}`);
+  openPage(OUT);
+} else {
+  // One page, and one address that reads the reports again each time it is asked. A failed
+  // read is shown on the page and the next Refresh tries again.
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url, 'http://localhost');
+    if (url.pathname === '/') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end(page([], sample, true)); return; }
+    if (url.pathname === '/reports.json') {
+      const days = Math.max(1, Math.min(90, Number(url.searchParams.get('days')) || DAYS));
+      try {
+        const rows = await readReports(days);
+        res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(rows));
+      } catch (e) { res.writeHead(500, { 'content-type': 'text/plain' }); res.end(String(e.message || e)); }
+      return;
+    }
+    res.writeHead(404); res.end('Not found');
+  });
+  server.listen(PORT, HOST, () => {
+    const address = `http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}/`;
+    console.log(`Statistics${sample ? ' (made-up numbers)' : ''} on ${address}`);
+    openPage(address);
+  });
+}

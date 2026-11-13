@@ -105,17 +105,22 @@ runs, checks what the endpoint takes and refuses.
 ## The dashboard
 
 ```bash
-node scripts/telemetry-dashboard.mjs             # the last 14 days
-node scripts/telemetry-dashboard.mjs --days 30
+node scripts/telemetry-dashboard.mjs             # serve the page on http://127.0.0.1:5197 and open it
+node scripts/telemetry-dashboard.mjs --static    # write .telemetry/dashboard.html instead (a snapshot)
 node scripts/telemetry-dashboard.mjs --sample    # made-up numbers, to see the page
 ```
 
-It reads the rows with `cf analytics_engine sql query` and writes
-`.telemetry/dashboard.html` (not committed), then opens it. The page holds every
-report and adds them up itself, so the three lists at the top narrow everything on it
-to one game version, one domain or one map data version; the choice is kept in the
-page's address. The page is a file on
-your machine; nothing is published. Reading needs the **Account Analytics: Read**
+The script reads the rows with `cf analytics-engine sql query` and serves one page on this
+machine, on `127.0.0.1` only unless you pass `--host`. It reads up to 90 days (`--days`), the
+most Analytics Engine keeps. The page holds every report and adds them up itself: buttons for
+Today, the last 7, 14 and 30 days and everything, or any two dates; and the three lists
+(game version, domain, map data), which narrow everything on the page. A single day is shown
+by the hour. A game counts on the day it started, with everything it reported later. Days are
+in your time zone. The choice is kept in the page's address. Refresh reads the reports again,
+and the page does so every five minutes while it is open and visible. A `--static` file never
+refreshes; it is a copy of the moment it was written. Nothing is published.
+
+Reading needs the **Account Analytics: Read**
 permission. The `cf` login has it now (checked 2026-11-09; it didn't on 2026-10-01), and
 the script uses it when no token is set. Otherwise, create an API token with just that permission for the account, at
 <https://dash.cloudflare.com/profile/api-tokens>, and save it in
