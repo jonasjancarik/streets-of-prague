@@ -444,9 +444,13 @@ const windowGlow = Fn(() => {
     const m: N = f.w, glass: N = abs(m.sub(10)).lessThan(0.5), metal: N = m.greaterThan(2.5).and(m.lessThan(4.5));
     If(glass.or(metal), () => {
       const toEye: N = normalize(cameraPosition.sub(positionWorld));
-      // (A metal roof isn't flat: each pan leans a little its own way.)
-      const pan: N = fHash(floor(positionWorld.x.mul(1.6)), floor(positionWorld.z.mul(1.6))).sub(0.5);
-      const lean: N = normalize(bn.add(vec3(pan, 0, pan.negate()).mul(select(glass, 0.02, 0.09))));
+      // (A metal roof isn't flat: each of its sheets leans a little its own way. The sheets are
+      // sheetRoof's: pans 0.6 m wide between the standing seams, 2.4 m long down the slope, so
+      // a glint is a long strip running with the seams, never a square across them.)
+      const down: N = normalize(vec2(bn.x, bn.z.negate()).add(vec2(0, 0.0001))), wp: N = vec2(positionWorld.x, positionWorld.z.negate());
+      const strip: N = floor(dot(wp, vec2(down.y.negate(), down.x)).div(0.6)), sheet: N = floor(dot(wp, down).div(2.4));
+      const pan: N = fHash(strip, sheet.mul(0.37).add(strip.mul(1.7))).sub(0.5), turn: N = fHash(sheet, strip.add(5.3)).sub(0.5);
+      const lean: N = normalize(bn.add(vec3(pan, 0, turn).mul(select(glass, 0.02, 0.09))));
       const flash: N = pow(max(dot(reflect(uSunDir.negate(), lean), toEye), 0), select(glass, 220, 70));
       g.addAssign(uSunLight.mul(flash).mul(select(glass, roofGlass(f).mul(1.6), float(0.22))));
     });
