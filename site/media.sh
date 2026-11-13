@@ -35,3 +35,9 @@ still "$CLIPS/clip-square.mp4" 0.5 1280 70 hero
 # The trailer, at a size a static host accepts (Cloudflare: 25 MB a file).
 ffmpeg -v error -y -i trailer/release.mp4 -vf scale=1280:-2 -c:v libx264 -preset slow -crf 26 -pix_fmt yuv420p \
   -movflags +faststart -c:a aac -b:a 112k "$OUT/trailer.mp4"
+
+# The card link previews show (Open Graph / Twitter): the square still at 1200x630, as JPEG
+# because not every site that unfurls links reads WebP. The game's page uses the same file
+# from public/, since it has to answer at the game's own address.
+ffmpeg -v error -y -ss 2.2 -i "$CLIPS/clip-square.mp4" -frames:v 1 -vf "scale=1200:-2,crop=1200:630" -q:v 3 "$OUT/og.jpg"
+cp "$OUT/og.jpg" public/og.jpg
