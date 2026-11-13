@@ -27,7 +27,9 @@ const FALL = 9, FLAKE_FALL = 1.1; // m/s, as in ../weather.ts
 // little off at low (the rain and mist).
 const linear = (d: N): N => Fn(() => {
   const y: N = sRGBTransferEOTF(d);
-  if (!OLD_GRADE) return ungrade(y);
+  // (No brighter than a light grey on the screen: a white flake or drop is otherwise bright
+  // enough to pass Ultra's bloom threshold, and every snowflake glowed like a lamp.)
+  if (!OLD_GRADE) return ungrade(y.min(0.7));
   const e: N = toneMappingExposure;
   const lift = vec3(0.016, 0.012, 0.006);
   const h = y.sub(lift).div(lift.oneMinus()).clamp(0, 1);
