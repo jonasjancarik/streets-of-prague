@@ -21,8 +21,9 @@ import * as telemetry from './telemetry.ts';
 // Lowest drops MSAA on WebGPU, roof detail and those looks, and halves the crowd cap;
 // it also leaves out the drifting mist, the mist over the river and the raindrops' rings
 // in the puddles (the thin haze over the view, the rain and the wet ground stay).
-// The water's waves and reflections (webgpu/water.ts) are a setting of their own, off
-// unless chosen (their cost isn't measured yet) and never drawn on Lowest; ?water=on|off
+// The water's waves and reflections (webgpu/water.ts) are a setting of their own: on with
+// Ultra and off below it until the player chooses (at the river on an M5 at 2× they measured
+// no cost: 8.6 against 8.5 ms a frame), and never drawn on Lowest; ?water=on|off
 // overrides it for one visit.
 // What the wet streets reflect is one too: nothing but the sky, the lights' streaks
 // (streaks.ts, the default) or the whole scene in a mirror (mirror.ts, costly: a second
@@ -182,7 +183,9 @@ export class AutoTier {
 export class Graphics {
   choice: Choice;
   tier: Tier;
-  water = false;
+  // The player's choice of water, or null while they haven't made one (then Ultra has the waves).
+  private waterChoice: boolean | null = null;
+  get water() { return this.waterChoice ?? this.tier === 'ultra'; }
   reflections: Reflections = 'lights';
   private clutter: boolean | null = null; // ?clutter=on|off
   private auto: AutoTier;
@@ -197,8 +200,8 @@ export class Graphics {
     this.fixedRatio = Number(params.get('dpr')) || null;
     let saved: string | null = null;
     try { saved = localStorage.getItem('graphics'); } catch {}
-    try { this.water = localStorage.getItem('water') === 'on'; } catch {}
-    if (params.has('water')) this.water = params.get('water') !== 'off';
+    try { const w = localStorage.getItem('water'); if (w) this.waterChoice = w === 'on'; } catch {}
+    if (params.has('water')) this.waterChoice = params.get('water') !== 'off';
     try { const r = localStorage.getItem('reflections'); if (REFLECTIONS.includes(r as Reflections)) this.reflections = r as Reflections; } catch {}
     const r = params.get('reflections');
     if (REFLECTIONS.includes(r as Reflections)) this.reflections = r as Reflections;
@@ -282,7 +285,7 @@ export class Graphics {
   }
 
   setWater(on: boolean) {
-    this.water = on;
+    this.waterChoice = on;
     try { localStorage.setItem('water', on ? 'on' : 'off'); } catch {}
     this.apply();
   }
