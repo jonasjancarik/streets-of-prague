@@ -213,8 +213,11 @@ function skirtParts(ringsList: Polygons, width: number, outside: boolean, skip: 
 // the street, or a long narrow trench. From above these are what make a carriageway look
 // driven on; none of it is surveyed, so which spot has a patch is made up (the same each
 // time, from where the street lies), but lanes, widths and junctions are the map's.
+// On a street of several lanes a patch keeps to one lane: laid across the lane lines, a
+// dark rectangle read as a painted zone (a player took one on Wilsonova for a blue
+// parking zone, November 2026).
 const OIL = { half: 0.6, base: 0.62, vary: 0.26, wait: 0.34, queue: 24, step: 4 };
-const PATCH = { every: 46, long: [2, 9], wide: [0.8, 2.6], trench: 0.22, dark: [0.62, 0.86] };
+const PATCH = { every: 46, long: [2, 9], wide: [0.8, 2.6], trench: 0.22, dark: [0.5, 0.74], laneMargin: 0.5 };
 const UNWORN = new Set(['service', 'pedestrian', 'living_street', 'track', 'footway', 'path', 'cycleway', 'steps']);
 function streetWear(edges: GroundRoadEdge[], [x0, y0, x1, y1]: Bounds): Shading {
   const pos: number[] = [], idx: number[] = [], alpha: number[] = [];
@@ -269,9 +272,17 @@ function streetWear(edges: GroundRoadEdge[], [x0, y0, x1, y1]: Bounds): Shading 
     for (let k = 0, s = 5 + rnd(seedX, seedY, 2) * PATCH.every; s < total - 12; k++, s += PATCH.every * (0.4 + rnd(seedX, seedY, 3 + k) * 1.2)) {
       const trench = rnd(seedX, seedY, 40 + k) < PATCH.trench;
       const long = trench ? 10 + rnd(seedX, seedY, 60 + k) * 16 : PATCH.long[0] + rnd(seedX, seedY, 60 + k) * (PATCH.long[1] - PATCH.long[0]);
-      const wide = trench ? 0.6 + rnd(seedX, seedY, 80 + k) * 0.3 : Math.min(W - 0.8, PATCH.wide[0] + rnd(seedX, seedY, 80 + k) * (PATCH.wide[1] - PATCH.wide[0]));
+      let wide = trench ? 0.6 + rnd(seedX, seedY, 80 + k) * 0.3 : Math.min(W - 0.8, PATCH.wide[0] + rnd(seedX, seedY, 80 + k) * (PATCH.wide[1] - PATCH.wide[0]));
+      // In one of the lanes (the lane centres are the oil stripes' offsets), or anywhere
+      // across a street of one lane.
+      let side: number;
+      if (offsets.length > 1) {
+        const lane = W / offsets.length;
+        wide = Math.min(wide, lane - 2 * PATCH.laneMargin);
+        const centre = offsets[Math.min(offsets.length - 1, Math.floor(rnd(seedX, seedY, 100 + k) * offsets.length))];
+        side = centre + (rnd(seedX, seedY, 140 + k) - 0.5) * Math.max(0, lane - wide - 2 * PATCH.laneMargin);
+      } else side = (rnd(seedX, seedY, 100 + k) - 0.5) * Math.max(0, W - wide - 0.6);
       if (s + long > total - 3 || wide < 0.5) continue;
-      const side = (rnd(seedX, seedY, 100 + k) - 0.5) * Math.max(0, W - wide - 0.6);
       const v = PATCH.dark[0] + rnd(seedX, seedY, 120 + k) * (PATCH.dark[1] - PATCH.dark[0]);
       // (In pieces along the street, so a patch follows a bend.)
       const pieces = Math.max(1, Math.round(long / 4)), base = pos.length / 3;
