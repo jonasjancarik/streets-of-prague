@@ -52,6 +52,7 @@ const UNIT_TOP = ['#c9cbc8', '#bfc2c1', '#d3d3cd'].map(srgb);
 const STUB = ['#55585a', '#6e7174', '#9a9d9f'].map(srgb);
 const SLAB = ['#8f8d88', '#97948d', '#878580'].map(srgb);
 const FAN_TOP = 12; // facade w: an air-conditioning unit's top, fans drawn on it (shading.ts)
+const SOLAR = 13; // facade w: a solar panel's face, modules and cells drawn on it
 
 const SOLAR_BIG = new Set(['school', 'kindergarten', 'university', 'public', 'civic', 'government', 'hospital', 'dormitory']);
 const SOLAR_MID = new Set(['commercial', 'office', 'retail', 'supermarket', 'warehouse', 'industrial', 'hangar', 'manufacture', 'sports_hall']);
@@ -224,7 +225,7 @@ export function planDetails(site: RoofSite): Part[] {
   if (area >= 120 && hash(site.id + ':solar') < share) {
     const maxRows = Math.min(6, 1 + Math.floor(area / 250)), depth = 1.6, pitch = 3.1;
     const rgb = pickOf(PANEL, r());
-    const cell = (x: number, y: number, a: number): Part => ({ shape: 'panel', x, y, a, b: depth, c: 1, s: 0, h: depth * Math.tan(TILT), rgb, side: PANEL_BACK, top: 3 });
+    const cell = (x: number, y: number, a: number): Part => ({ shape: 'panel', x, y, a, b: depth, c: 1, s: 0, h: depth * Math.tan(TILT), rgb, side: PANEL_BACK, top: SOLAR });
     let made = 0, rows = 0;
     for (let y = y0 + MARGIN + depth / 2; y <= y1 - MARGIN && rows < maxRows && made < 14; y += pitch) {
       let run = 0, from = 0;
@@ -293,8 +294,9 @@ type V3 = [number, number, number];
 // The parts as triangles: `z` is the roof's height in the world, `ground(x, y)` the ground's
 // there (for the facade coordinate that says how high a wall stands). Walls get BLANK
 // plaster and no windows; a skylight's top is a roof window (facade w 10), a panel's face
-// sheet metal (w 3), a lift house's top bitumen sheets (w 5), and an air-conditioning
-// unit's top fans (w 12, with its x and y in metres and its depth).
+// solar modules (w 13, with metres across and up it), a lift house's top bitumen sheets
+// (w 5), and an air-conditioning unit's top fans (w 12, with its x and y in metres and
+// its depth).
 export function partArrays(parts: Part[], z: number, ground: (x: number, y: number) => number): DetailArrays {
   const pos: number[] = [], nor: number[] = [], col: number[] = [], fac: number[] = [];
   const tri = (p: V3[], want: V3, rgb: Rgb, f: (v: V3, i: number) => number[]) => {
@@ -323,7 +325,9 @@ export function partArrays(parts: Part[], z: number, ground: (x: number, y: numb
       const lo = 0.15, hi = lo + p.h;
       const sw = at(-hu, -hv, lo), se = at(hu, -hv, lo), ne = at(hu, hv, hi), nw = at(-hu, hv, hi);
       const n: V3 = [0, -Math.sin(TILT), Math.cos(TILT)];
-      quad(sw, se, ne, nw, n, p.rgb, (v) => [v[0], v[2] - ground(v[0], v[1]), 0, p.top]);
+      // Metres across the row and up the slope, for the modules.
+      const uv = [[0, 0], [1, 0], [1, 1], [0, 1]], up = p.b / Math.cos(TILT);
+      quad(sw, se, ne, nw, n, p.rgb, (_v, i) => [uv[i][0] * p.a, uv[i][1] * up, 0, p.top]);
       quad(at(-hu, hv, 0), at(hu, hv, 0), ne, nw, [0, 1, 0], p.side, wallF);
       tri([at(-hu, -hv, 0), at(-hu, hv, 0), nw], [-1, 0, 0], p.side, wallF);
       tri([at(hu, hv, 0), at(hu, -hv, 0), ne], [1, 0, 0], p.side, wallF);

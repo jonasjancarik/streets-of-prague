@@ -6,12 +6,15 @@ import { PARAPET_MIN_AREA } from './roofRules.ts';
 // material is bitumen, membrane or gravel (pipeline/ipr_buildings.py) and that face straight
 // up, joined where they share a corner. Each roof becomes a RoofSite for planDetails, with
 // the triangles themselves as the area it may build on: a lift house IPR models already
-// is a hole in it.
+// is a hole in it, and so is anything else of IPR's that stands up out of it (a light
+// well's walls, a chimney, the wall of a taller wing beside it), though the roof's
+// triangles may run on under it.
 
 const CELL = 0.5; // m, of the grid that tells whether a spot is on the roof
 const MAX_CELLS = 360;
 const MAX_SPREAD = 0.5; // m of height between a roof's lowest and highest corner
 const FLAT_MATERIALS = new Set([5, 6, 7]);
+const RISE = 0.6; // m over the roof (more than MAX_SPREAD) from which something blocks it
 
 // `pos` is a tile's triangles as the building meshes have them (x, height, -y), `material(o)`
 // the roof material of triangle o, `ground(x, y)` the ground's height.
@@ -39,6 +42,17 @@ export function iprRoofSites(pos: Float32Array, material: (o: number) => number,
       else root[find(f)] = find(at);
     }
   });
+  // Every triangle's footprint box and top, for what stands up out of a roof.
+  const tb = new Float32Array(n * 5);
+  for (let o = 0; o < n; o++) {
+    const i = o * 9;
+    let a0 = Infinity, b0 = Infinity, a1 = -Infinity, b1 = -Infinity, top = -Infinity;
+    for (let v = 0; v < 3; v++) {
+      const x = pos[i + v * 3], y = -pos[i + v * 3 + 2];
+      a0 = Math.min(a0, x); a1 = Math.max(a1, x); b0 = Math.min(b0, y); b1 = Math.max(b1, y); top = Math.max(top, pos[i + v * 3 + 1]);
+    }
+    tb.set([a0, b0, a1, b1, top], o * 5);
+  }
   const groups = new Map<number, number[]>();
   flat.forEach((o, f) => { const r = find(f); groups.has(r) ? groups.get(r)!.push(o) : groups.set(r, [o]); });
 
@@ -80,6 +94,37 @@ export function iprRoofSites(pos: Float32Array, material: (o: number) => number,
         const a = `${Math.round(ex * 100)},${Math.round(ey * 100)}`, b = `${Math.round(fx * 100)},${Math.round(fy * 100)}`;
         const k = a < b ? `${a}|${b}` : `${b}|${a}`;
         if (edges.has(k)) edges.delete(k); else edges.set(k, [ex, ey, fx, fy]);
+      }
+    }
+    // What stands up out of the roof: a top covers the cells under it; a wall the cells
+    // along it, and one more either side.
+    for (let o = 0; o < n; o++) {
+      const k = o * 5;
+      if (tb[k + 4] <= zMin + RISE || tb[k + 2] < x0 - 1 || tb[k] > x1 + 1 || tb[k + 3] < y0 - 1 || tb[k + 1] > y1 + 1) continue;
+      const i = o * 9;
+      const p = [0, 1, 2].map((v) => [pos[i + v * 3], -pos[i + v * 3 + 2], pos[i + v * 3 + 1]]);
+      const ux = p[1][0] - p[0][0], uy = p[1][1] - p[0][1], uz = p[1][2] - p[0][2];
+      const vx = p[2][0] - p[0][0], vy = p[2][1] - p[0][1], vz = p[2][2] - p[0][2];
+      const nz = ux * vy - uy * vx, nl = Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, nz);
+      const block = (x: number, y: number, r: number) => {
+        const gx = Math.floor((x - x0) / CELL), gy = Math.floor((y - y0) / CELL);
+        for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+          const qx = gx + dx, qy = gy + dy;
+          if (qx >= 0 && qy >= 0 && qx < w && qy < h) on[qy * w + qx] = 0;
+        }
+      };
+      if (Math.abs(nz) > 0.3 * nl) {
+        const gx0 = Math.max(0, Math.floor((tb[k] - x0) / CELL)), gx1 = Math.min(w - 1, Math.ceil((tb[k + 2] - x0) / CELL));
+        const gy0 = Math.max(0, Math.floor((tb[k + 1] - y0) / CELL)), gy1 = Math.min(h - 1, Math.ceil((tb[k + 3] - y0) / CELL));
+        for (let gy = gy0; gy <= gy1; gy++) for (let gx = gx0; gx <= gx1; gx++) {
+          const x = x0 + (gx + 0.5) * CELL - p[0][0], y = y0 + (gy + 0.5) * CELL - p[0][1];
+          const l1 = (x * vy - vx * y) / nz, l2 = (ux * y - x * uy) / nz;
+          if (l1 >= -0.1 && l2 >= -0.1 && l1 + l2 <= 1.1) on[gy * w + gx] = 0;
+        }
+      }
+      for (let v = 0; v < 3; v++) {
+        const [ax, ay] = p[v], [bx, by] = p[(v + 1) % 3], len = Math.hypot(bx - ax, by - ay);
+        for (let t = 0, steps = Math.max(1, Math.ceil(len / (CELL / 2))); t <= steps; t++) block(ax + (bx - ax) * t / steps, ay + (by - ay) * t / steps, 1);
       }
     }
     const mx = cx / (area || 1), my = cy / (area || 1);

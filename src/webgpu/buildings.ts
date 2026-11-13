@@ -265,6 +265,15 @@ function fanTop(c: N, f: N, wpWidth: N) {
   t.assign(mix(t, grille, float(1).sub(smoothstep(R.sub(0.02), R, r))));
   return mix(t, vec3(0.2, 0.21, 0.22), float(1).sub(smoothstep(0.08, 0.1, r)));
 }
+// A solar panel's modules and cells (solarPanel in shading.ts).
+function solarPanel(f: N, wpWidth: N) {
+  const m = vec2(f.x, f.y.div(1.68)), id = floor(m), g: N = fract(m);
+  const c = vec3(0.022, 0.03, 0.052).mul(hash12(id.add(3)).mul(0.2).add(0.9)).add(vec3(0.012, 0.016, 0.024).mul(g.y)).toVar();
+  const cell: N = fract(g.mul(vec2(6, 10))), ce: N = min(cell, cell.oneMinus()).div(vec2(6, 10));
+  c.assign(mix(c, vec3(0.06, 0.075, 0.1), float(1).sub(smoothstep(0.004, 0.01, min(ce.x, ce.y.mul(1.68)))).mul(fade(wpWidth, 0.08)).mul(0.7)));
+  const edge = min(min(g.x, g.x.oneMinus()), min(g.y, g.y.oneMinus()).mul(1.68));
+  return mix(c, vec3(0.33, 0.34, 0.35), float(1).sub(smoothstep(0.02, 0.035, edge)).mul(fade(wpWidth, 0.2)));
+}
 // darkRoofAs in shading.ts: 2 glass, 1 planted, 0 bitumen after all.
 function darkRoofAs(c: N) {
   const hi = max(c.r, max(c.g, c.b)), sat = hi.sub(min(c.r, min(c.g, c.b))).div(max(hi, 1e-3));
@@ -426,7 +435,8 @@ const buildingColor = Fn(() => {
     If(uRoofDetail.greaterThan(0.5), () => {
       // The roof's material (tileWorker.ts: the facade attribute's w on roofs).
       const m = f.w;
-      If(m.greaterThan(2.5).and(m.lessThan(4.5)), () => { c.assign(roofWeather(sheetRoof(base, bwp, bn, wpWidth, step(3.5, m)), base, bwp, bn, wpWidth)); })
+      If(m.greaterThan(12.5).and(m.lessThan(13.5)), () => { c.assign(solarPanel(f, wpWidth)); })
+        .ElseIf(m.greaterThan(2.5).and(m.lessThan(4.5)), () => { c.assign(roofWeather(sheetRoof(base, bwp, bn, wpWidth, step(3.5, m)), base, bwp, bn, wpWidth)); })
         .ElseIf(m.greaterThan(0.5).and(m.lessThan(1.5)), () => { c.assign(roofWeather(beaverTiles(base, bwp, bn, wpWidth), base, bwp, bn, wpWidth, uRoofClutter)); })
         .ElseIf(m.greaterThan(1.5).and(m.lessThan(2.5)), () => { c.assign(roofWeather(roofTiles(base, bwp, bn, wpWidth, float(1)), base, bwp, bn, wpWidth)); })
         .Else(() => {
@@ -436,7 +446,7 @@ const buildingColor = Fn(() => {
             .Else(() => { c.assign(roofWeather(beaverTiles(base, bwp, bn, wpWidth), base, bwp, bn, wpWidth)); });
         });
       If(bn.y.lessThan(0.5), () => { If(f.z.greaterThan(0.1), () => { c.assign(mansardWindows(c, f)); }); })
-        .Else(() => { c.assign(roofLines(c, f, bn, wpWidth)); });
+        .ElseIf(m.lessThan(12.5), () => { c.assign(roofLines(c, f, bn, wpWidth)); });
     });
   }).Else(() => {
     const bays = fBays(f).toVar();

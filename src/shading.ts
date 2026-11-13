@@ -550,6 +550,17 @@ vec3 fanTop(vec3 c, vec4 f, vec2 wp) {
   t = mix(t, grille, 1. - smoothstep(R - .02, R, r));
   return mix(t, vec3(.2, .21, .22), 1. - smoothstep(.08, .1, r));
 }
+// A solar panel (map/roofDetails.ts; f: metres across the row and up its slope): modules
+// a metre wide in a silver frame, each of 6 by 10 dark cells, a little sky in the glass
+// towards the top.
+vec3 solarPanel(vec4 f, vec2 wp) {
+  vec2 m = vec2(f.x, f.y / 1.68), id = floor(m), g = fract(m);
+  vec3 c = vec3(.022, .03, .052) * (.9 + .2 * hash12(id + 3.)) + vec3(.012, .016, .024) * g.y;
+  vec2 cell = fract(g * vec2(6., 10.)), ce = min(cell, 1. - cell) / vec2(6., 10.);
+  c = mix(c, vec3(.06, .075, .1), (1. - smoothstep(.004, .01, min(ce.x, ce.y * 1.68))) * detail(wp, .08) * .7);
+  float edge = min(min(g.x, 1. - g.x), min(g.y, 1. - g.y) * 1.68);
+  return mix(c, vec3(.33, .34, .35), (1. - smoothstep(.02, .035, edge)) * detail(wp, .2));
+}
 // A terrace: slabs half a metre across with dark joints.
 vec3 pavingRoof(vec3 c, vec2 wp) {
   vec2 b = blocks(wp, vec2(.5));
@@ -780,12 +791,15 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
     // The roof's material (tileWorker.ts: the facade attribute's w on roofs).
     float m = vFacade.w;
     vec3 r;
-    if (m > 2.5 && m < 4.5) r = sheetRoof(roofBase, bwp, bn, step(3.5, m));
-    else if (m > .5 && m < 1.5) r = beaverTiles(roofBase, bwp, bn);
-    else if (m > 1.5 && m < 2.5) r = roofTilesAs(roofBase, bwp, bn, 1.);
-    else r = roofTiles(roofBase, bwp, bn);
-    r = roofWeatherMore(r, roofBase, bwp, bn, uRoofClutter * step(.5, m) * step(m, 1.5));
-    if (bn.y < .5 && vFacade.z > .1) r = mansardWindows(r, vFacade);
+    if (m > 12.5 && m < 13.5) r = solarPanel(vFacade, bwp);
+    else {
+      if (m > 2.5 && m < 4.5) r = sheetRoof(roofBase, bwp, bn, step(3.5, m));
+      else if (m > .5 && m < 1.5) r = beaverTiles(roofBase, bwp, bn);
+      else if (m > 1.5 && m < 2.5) r = roofTilesAs(roofBase, bwp, bn, 1.);
+      else r = roofTiles(roofBase, bwp, bn);
+      r = roofWeatherMore(r, roofBase, bwp, bn, uRoofClutter * step(.5, m) * step(m, 1.5));
+      if (bn.y < .5 && vFacade.z > .1) r = mansardWindows(r, vFacade);
+    }
     diffuseColor.rgb = r;
   }
   else if (bn.y <= .15) {
