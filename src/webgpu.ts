@@ -79,9 +79,10 @@ function pSetts(c: N, p: N, sx: number, sy: number) {
     const stone = c.mul(b.y.mul(0.4).add(0.8)).mul(vnoise(p.mul(9)).mul(0.16).add(0.92));
     s.assign(mix(s, mix(c.mul(0.5), stone, smoothstep(0.004, 0.02, b.x)), d));
   });
-  // Where feet and wheels have polished the stones they are lighter, in patches a few metres across.
-  s.mulAssign(smoothstep(0.42, 0.72, fbm2(p.mul(0.17).add(31))).mul(0.13).add(0.96));
-  return s.mul(fbm(p.mul(0.2)).mul(0.12).add(0.94));
+  // Where feet and wheels have polished the stones they are lighter, in patches a few metres
+  // across: the lighter parts of the broad variation, lifted a little more (no noise read of its own).
+  const broad = fbm(p.mul(0.2)).toVar();
+  return s.mul(broad.mul(0.12).add(0.94)).mul(smoothstep(0.5, 0.68, broad).mul(0.1).add(0.97));
 }
 // (The stones are a texture: webgpu/mosaic.ts.)
 const pMosaic = (c: N, p: N) => c.mul(mosaicStones(p)).mul(fbm(p.mul(0.25)).mul(0.1).add(0.95));
@@ -104,10 +105,10 @@ function pGrass(c0: N, p: N, seasonal: boolean, season: typeof uGroundSeason = u
   if (seasonal) dry = clamp(dry.mul(season.w), 0, 1);
   c.assign(mix(c, c.mul(vec3(1.12, 1.05, 0.78)), dry));
   c.assign(mix(c, c.mul(vec3(1.05, 0.9, 0.7)), smoothstep(0.6, 0.8, fbm2(p.mul(0.15).add(3))).mul(0.6)));
-  // Lusher and thinner clumps a metre or two across, which a lawn always has.
-  c.mulAssign(vnoise(p.mul(0.85).add(41)).mul(0.2).add(0.9));
   const d = detail(p, 0.2);
   If(d.greaterThan(0), () => {
+    // Lusher and thinner clumps a metre or two across, which a lawn always has (close up only).
+    c.mulAssign(float(1).add(vnoise(p.mul(0.85).add(41)).sub(0.5).mul(0.2).mul(d)));
     // The blades themselves, close up: fine streaks that all lean one way over a few metres.
     const lean = vnoise(p.mul(0.11).add(5)).mul(6.2832);
     const q = vec2(dot(p, vec2(cos(lean), sin(lean))), dot(p, vec2(sin(lean).negate(), cos(lean))));
