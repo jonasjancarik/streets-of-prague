@@ -452,6 +452,17 @@ const CORE = -1, BARK = -2, FOOT = -3, LITTER = -4;
 // goes in `yearly` in steps of STEM.step (STEM.span times its number), and the foot of the
 // trunk reaches STEM.under further, into the ground. (The same in webgpu/trees.ts.)
 export const STEM = { step: 1 / 32, span: 4, most: 1023, under: 0.3 };
+// Where a broadleaf crown begins, seen from the side. Its top is where the surface models
+// have it, but the crown made for the view from above filled only the top third of that
+// height: a ball of leaves on a long bare pole, which from the street or across the river
+// read as a palm. The lower part of the crown (in its own frame, from `low`, the core's
+// underside, up to `from`) is therefore drawn out downwards in the shaders, to where a
+// city tree's crown really begins: `share` of the tree's height above the ground (a 20 m
+// tree's at 3.4 m), and
+// never lower than `least` metres. From above nothing moves sideways, so the outlines stay;
+// the shadows grow by the crown's new depth. (The same in webgpu/trees.ts and
+// webgpu/streetTrees.ts.)
+export const CROWN_BASE = { share: 0.17, least: 2.2, from: 0.2, low: -0.56, top: 0.52 };
 function crownShape(seed0: number, RIM: number, tiers: Tier[], coreSize = 0.56, coreShade = 0.32, boughs = 0) {
   const r = rng(seed0);
   const pos: number[] = [], nor: number[] = [], col: number[] = [], tuft: number[] = [], idx: number[] = [];

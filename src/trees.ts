@@ -170,7 +170,7 @@ export class TreePool {
     if (on && !this.streetMade && streetMaterial) {
       this.streetMade = streetMaterial();
     }
-    if (on && !this.streetShapes) this.streetShapes = [streetTreeGeometry(5, 7, 3), streetTreeGeometry(9, 10, 3)];
+    if (on && !this.streetShapes) this.streetShapes = [streetTreeGeometry(5, 9, 3), streetTreeGeometry(9, 13, 3)];
     const ready = on && !!this.streetMade && streetReady.value;
     for (const page of this.pages) {
       const mesh = page.mesh, used = page.owner !== null && mesh.count > 0;

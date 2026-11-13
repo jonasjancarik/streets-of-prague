@@ -810,6 +810,12 @@ record the measurements, merge decisions and pending landmark asset activation.
   "Young woods" under Unmapped ground) get small, dense ones. The dark woodland floor fades out
   over the grass beside it (`woodEdges` in `src/ground.ts`). Rebuild them with
   `uv run build_tiles.py <area> --layers ground`, then `ipr_terrain.py <area>`.
+  A crown's top is where the surface models have it; its lower part is drawn out downwards
+  in the shaders to where a city tree's crown begins, a sixth of the tree's height above the
+  ground and never under 2.2 m (`CROWN_BASE` in `src/map/vegetation.ts`). Left as made for
+  the view from above, the crown filled only the top third of the tree, a ball of leaves on
+  a long bare pole that read as a palm from the street or across the river. From above
+  nothing moves sideways; the shadows are longer by the crown's new depth.
   A broadleaf tree is its crown of tufts on a trunk, with a few boughs up into the crown
   (`crownShape`): the trunk's foot is put on the ground in the vertex shader, from how
   far below the crown the ground is, which rides in each tree's `yearly` number (`STEM`).

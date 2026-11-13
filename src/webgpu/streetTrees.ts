@@ -12,10 +12,10 @@ import {
 } from 'three/tsl';
 import { BARE, SEASON } from '../shading.ts';
 import { STEM } from '../map/vegetation.ts';
-import { CROWN_FOOT, CANOPY, BOUGH } from '../map/streetTree.ts';
+import { CROWN_FOOT, TREE_FROM, CANOPY, BOUGH } from '../map/streetTree.ts';
 import { setStreetTreeMaterial } from '../trees.ts';
 import { lampLit } from './lamps.ts';
-import { instanceMatrix, shareInstances, outlineAt } from './trees.ts';
+import { instanceMatrix, shareInstances, outlineAt, crownBase } from './trees.ts';
 import { type N, follow, followVec, uWet, uSnow } from './common.ts';
 
 const uBare = follow(BARE), uSeason = followVec(SEASON);
@@ -67,9 +67,19 @@ const leafy = (): N => step(bareTree(), part.z.mul(0.96).add(0.02));
 // folded to a point here, so that a bare wood draws none of them (thrown away pixel by
 // pixel instead, a November wood from above cost 3 ms a frame more for nothing to see).
 const folded = (): N => select(part.y.lessThan(CANOPY + 0.5).and(part.y.greaterThan(BOUGH + 0.5)), leafy(), float(1));
+// The crown is made in a tall frame (map/streetTree.ts) and fitted to each tree: what lies
+// below TREE_FROM is drawn out or in so that its foot comes to the tree's own crown base
+// (crownBase: a sixth of the tree's height, never under 2.2 m). The lower trunk then runs
+// from the ground to there.
+const fitted = (y: N): N => {
+  const k: N = float(TREE_FROM).sub(crownBase(stem)).div(TREE_FROM - CROWN_FOOT);
+  return select(y.lessThan(TREE_FROM), float(TREE_FROM).sub(float(TREE_FROM).sub(y).mul(k)), y);
+};
 const shaped = (): N => {
   const p: N = positionGeometry.mul(folded()), wide: N = mix(1, outlineAt(positionGeometry), smoothstep(0.15, 0.5, length(positionGeometry.xz)));
-  return vec3(p.x.mul(wide), select(part.y.greaterThanEqual(0), mix(stem.negate().sub(STEM.under), CROWN_FOOT, part.y), p.y), p.z.mul(wide));
+  const tree: N = part.y.greaterThan(-1.5); // (the street tree itself: not a spray laid over a crown, a shrub's or a conifer's bough)
+  const y: N = select(part.y.greaterThanEqual(0), mix(stem.negate().sub(STEM.under), fitted(float(CROWN_FOOT)), part.y), select(tree, fitted(p.y), p.y));
+  return vec3(p.x.mul(wide), y, p.z.mul(wide));
 };
 
 function material() {

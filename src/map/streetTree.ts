@@ -16,7 +16,11 @@
 import * as THREE from 'three';
 import { rng } from './geo.ts';
 
-export const CROWN_FOOT = -0.38; // where the lower trunk ends, in the crown's frame
+// Where the lower trunk ends and the crown begins, in the crown's frame as this model is
+// made: well below the top-down crown's, since a tree seen from the side has leaves most of
+// the way down. The shader moves it to each tree's own crown base (CROWN_BASE in
+// vegetation.ts), drawing the part below TREE_FROM out or in to fit.
+export const CROWN_FOOT = -1.3, TREE_FROM = 0.2;
 // `part.y` of a spray laid over the crown seen from above (canopyGeometry): such a card is
 // not drawn once its leaves are gone (the tufts' own bare twigs show instead).
 export const CANOPY = -2;
@@ -59,7 +63,7 @@ export function streetTreeGeometry(seed: number, boughs: number, sprays: number)
   tube([
     // (The lower rings' heights here only keep them apart: the shader puts them by `rise`.)
     [new THREE.Vector3(0, CROWN_FOOT - 1, 0), 0.07, 0], [new THREE.Vector3(0, CROWN_FOOT - 0.95, 0), 0.048, 0.04], [new THREE.Vector3(0, CROWN_FOOT - 0.8, 0), 0.041, 0.18],
-    [new THREE.Vector3(0, CROWN_FOOT - 0.4, 0), 0.038, 0.6], [axis(CROWN_FOOT), 0.035, 1], [axis(-0.15), 0.03, -1], [axis(0.1), 0.021, -1], [axis(0.38), 0.01, -1], [axis(0.6), 0.003, -1],
+    [new THREE.Vector3(0, CROWN_FOOT - 0.4, 0), 0.038, 0.6], [axis(CROWN_FOOT), 0.035, 1], [axis(-0.85), 0.031, -1], [axis(-0.4), 0.026, -1], [axis(0), 0.019, -1], [axis(0.38), 0.01, -1], [axis(0.6), 0.003, -1],
   ], 8, 2);
 
   // Boughs: off the upper trunk, out and up in a bow, each forking into two or three
@@ -83,10 +87,11 @@ export function streetTreeGeometry(seed: number, boughs: number, sprays: number)
   };
   const turn = r() * Math.PI * 2;
   for (let i = 0; i < boughs; i++) {
-    const k = i / boughs, a = turn + i * 2.4 + (r() - 0.5) * 0.5; // (the golden angle: no two above each other)
-    const y0 = -0.32 + k * 0.55, reach = 0.74 - k * 0.32 + (r() - 0.5) * 0.12;
-    const from = axis(y0), to = new THREE.Vector3(Math.cos(a) * reach, y0 + 0.1 + k * 0.3 + r() * 0.22, Math.sin(a) * reach);
-    const bough = grow(from, to, 0.022 - k * 0.008, 0.006, 5, true);
+    const k = i / Math.max(1, boughs - 1), a = turn + i * 2.4 + (r() - 0.5) * 0.5; // (the golden angle: no two above each other)
+    // From just above the crown's foot to near its top, reaching furthest a little below the middle.
+    const y0 = CROWN_FOOT + 0.1 + k * 1.45, reach = 0.36 + 0.44 * Math.sin(Math.PI * (0.12 + 0.8 * k)) + (r() - 0.5) * 0.1;
+    const from = axis(y0), to = new THREE.Vector3(Math.cos(a) * reach, y0 + 0.1 + r() * 0.22, Math.sin(a) * reach);
+    const bough = grow(from, to, 0.022 - k * 0.01, 0.006, 5, true);
     const forks = 2 + (r() < 0.6 ? 1 : 0);
     for (let f = 0; f < forks; f++) {
       const b = a + (f - (forks - 1) / 2) * 1.0 + (r() - 0.5) * 0.5, far = reach * (0.7 + r() * 0.35);
@@ -106,9 +111,10 @@ export function streetTreeGeometry(seed: number, boughs: number, sprays: number)
     across.set(r() - 0.5, (r() - 0.5) * 0.6, r() - 0.5).cross(grown).normalize();
     face.crossVectors(across, grown).normalize();
     centre.copy(end.at).addScaledVector(grown, size * 0.42);
-    round.set(centre.x, (centre.y - 0.05) * 1.3, centre.z);
-    const deep = Math.min(1, round.length() / 0.9), own = r(), flip = r() < 0.5;
-    round.normalize();
+    // (How near the crown's surface the spray is: by how far out it stands for its height, or how near the top.)
+    const height = (centre.y - CROWN_FOOT) / (0.6 - CROWN_FOOT), girth = 0.4 + 0.5 * Math.sin(Math.PI * (0.1 + 0.8 * Math.min(1, Math.max(0, height))));
+    const deep = Math.min(1, Math.max(Math.hypot(centre.x, centre.z) / girth, (centre.y - 0.1) / 0.45)), own = r(), flip = r() < 0.5;
+    round.set(centre.x, (centre.y + 0.35) * 0.55, centre.z).normalize();
     const first = pos.length / 3;
     for (const [cx, cy] of [[-1, 0], [1, 0], [1, 1], [-1, 1]]) {
       corner.copy(end.at).addScaledVector(grown, (cy - 0.08) * size).addScaledVector(across, cx * size * 0.5);

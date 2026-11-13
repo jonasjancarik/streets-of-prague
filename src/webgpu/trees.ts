@@ -12,7 +12,7 @@ import {
   normalize, cross, sqrt, fwidth, distance, select, clamp, storage, buffer, instanceIndex,
 } from 'three/tsl';
 import { BARE, LEAVES, SEASON } from '../shading.ts';
-import { CROWN, STEM } from '../map/vegetation.ts';
+import { CROWN, STEM, CROWN_BASE } from '../map/vegetation.ts';
 import { lampLit } from './lamps.ts';
 import { OLD_GRADE } from '../grade.ts';
 import { CANOPY_SHOWN } from '../trees.ts';
@@ -139,6 +139,18 @@ export const shareInstances = (builder: N) => {
 };
 const inView = (v: N) => modelViewMatrix.mul(vec4(instanceMatrix().mul(vec4(v, 0)).xyz, 0)).xyz;
 
+// The crown's lower part drawn out downwards to where the crown begins (CROWN_BASE in
+// map/vegetation.ts): `y` in the crown's frame, `stem` how far below its middle the ground
+// is. Only trees that have a trunk's length (broadleaf ones), and never squeezed.
+export const crownBase = (stem: N): N => {
+  const unit: N = instanceMatrix().mul(vec4(0, 1, 0, 0)).xyz.length();
+  return max(stem.add(CROWN_BASE.top).mul(CROWN_BASE.share), float(CROWN_BASE.least).div(max(unit, 0.1))).sub(stem);
+};
+const lowered = (y: N, stem: N): N => {
+  const k: N = max(float(CROWN_BASE.from).sub(crownBase(stem)).div(CROWN_BASE.from - CROWN_BASE.low), 1);
+  return select(stem.greaterThan(0.3).and(y.lessThan(CROWN_BASE.from)), float(CROWN_BASE.from).sub(float(CROWN_BASE.from).sub(y).mul(k)), y);
+};
+
 // The leaves' layout: returns (normal, crease) in view space. tw and sd are the
 // footprint of the tuft and of its small leaves (derivatives, so worked out first).
 const leafState = Fn(() => {
@@ -199,7 +211,7 @@ addPort(/^tufts-cut$/, (node) => {
   const stem = floor(yearly.div(STEM.span)).mul(STEM.step);
   const shaped = (): N => {
     const p: N = positionGeometry.mul(shrink()), o: N = outlineAt(positionGeometry).mul(select(litter, step(0.01, fallen), 1));
-    return vec3(p.x.mul(o), select(litter, float(0.02).sub(stem), select(tuft.z.lessThan(-2.5), stem.add(STEM.under).negate(), p.y)), p.z.mul(o));
+    return vec3(p.x.mul(o), select(litter, float(0.02).sub(stem), select(tuft.z.lessThan(-2.5), stem.add(STEM.under).negate(), lowered(p.y, stem))), p.z.mul(o));
   };
   node.setupPosition = function (builder: N) {
     shareInstances(builder);
