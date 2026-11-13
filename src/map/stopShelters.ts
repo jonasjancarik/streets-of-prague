@@ -5,10 +5,9 @@
 // (`shelter`, pipeline/osm_area.py). In older maps, which don't, a building is taken for
 // one by its outline and place: small, narrow and low, its long side along a tram track
 // close by. (Along streets too, that caught substations, garages and a bakery: 36 of 121
-// across Prague were not shelters; by the tracks all 32 were.) Instead of a house, a
-// shelter as Prague's are stands in the outline: a flat glass roof in a dark
-// frame on posts along the back, an advertising panel across one end and a bench under
-// the roof. Made up: the shelter's parts and where they go; the place and size are OSM's.
+// across Prague were not shelters; by the tracks all 32 were.) Instead of a house, one of
+// Prague's new shelters stands in the outline (shelterParts). Made up: that every stop
+// has the new design, and where its parts go; the place and size are OSM's.
 //
 // Coordinates are the tile's (x east, y north, z up), as in roofDetails.ts.
 import type { Point2 } from './geo.ts';
@@ -82,25 +81,37 @@ export function stopLines(t: { rails?: { kind: string; pts: Point2[] }[]; drive?
 
 const lin = (u: number) => (u <= 0.04045 ? u / 12.92 : Math.pow((u + 0.055) / 1.055, 2.4));
 const rgb = (hex: string): [number, number, number] => [1, 3, 5].map((i) => lin(parseInt(hex.slice(i, i + 2), 16) / 255)) as [number, number, number];
-const FRAME = rgb('#3d4346'), GLASS = rgb('#7f949b'), PANEL = rgb('#d9dcd6'), WOOD = rgb('#7a6448');
-const ROOF_AT = 2.45, ROOF = 0.1, POST = 0.08;
+// Prague's new shelters (from 2022): near-black steel, a thin flat roof running forward
+// over the platform from posts along the back, an advertising light box at one end that
+// is also a post, a bench along the back, and a low railing carrying on beyond the other
+// end. Their glass back wall and side pane aren't drawn: the game can't make them see-
+// through, and from above they would only cast a shadow the real glass doesn't.
+const STEEL = rgb('#26292b'), POSTER = rgb('#d9dcd6'), BENCH = rgb('#5b4a38');
+const ROOF_AT = 2.6, ROOF = 0.12, POST = 0.1, OVERHANG = 0.4, RAIL = 0.05;
 
 // A shelter's parts (roofDetails.ts Part, drawn by partArrays at the ground's height).
 export function shelterParts(sh: Shelter): Part[] {
   const { c, s, length, back } = sh, depth = Math.max(1.5, Math.min(2.2, sh.depth));
   const put = (u: number, v: number) => ({ x: sh.x + c * u - s * v, y: sh.y + s * u + c * v, c, s });
+  const box = (u: number, v: number, a: number, b: number, h: number, lift: number, rgb: Part['rgb'], side = STEEL): Part =>
+    ({ shape: 'box', ...put(u, v), a, b, h, lift, rgb, side, top: 0 });
+  const backV = back * (depth / 2 - POST); // the line of the posts
   const parts: Part[] = [
-    // The roof: glass in a dark frame (a roof window's look, facade w 10).
-    { shape: 'skylight', ...put(0, 0), a: length, b: depth, h: ROOF, lift: ROOF_AT, rgb: GLASS, side: FRAME, top: 10 },
-    // An advertising panel across one end.
-    { shape: 'box', ...put(length / 2 - 0.15, 0), a: 0.18, b: Math.min(1.3, depth - 0.2), h: 2.15, lift: 0.1, rgb: FRAME, side: PANEL, top: 0 },
+    // The roof, reaching a little further forward than the outline.
+    box(0, -back * OVERHANG / 2, length, depth + OVERHANG, ROOF, ROOF_AT, STEEL),
+    // The light box across one end, from the back nearly to the roof's front edge.
+    box(length / 2 - 0.15, back * 0.1, 0.25, Math.min(1.4, depth - 0.3), ROOF_AT, 0, STEEL, POSTER),
     // A bench along the back.
-    { shape: 'box', ...put(-0.3, back * (depth / 2 - 0.45)), a: Math.min(2.4, length - 1.4), b: 0.4, h: 0.45, rgb: WOOD, side: FRAME, top: 0 },
+    box(-0.2, back * (depth / 2 - 0.4), Math.min(2.4, length - 1.4), 0.4, 0.45, 0, BENCH),
   ];
   const posts = Math.max(2, Math.round(length / 3) + 1);
-  for (let i = 0; i < posts; i++) {
-    const u = -length / 2 + POST + (i * (length - 2 * POST)) / (posts - 1);
-    parts.push({ shape: 'box', ...put(u, back * (depth / 2 - POST)), a: POST, b: POST, h: ROOF_AT, rgb: FRAME, side: FRAME, top: 0 });
+  for (let i = 1; i < posts; i++) { // (the light box stands for the first)
+    const u = length / 2 - 0.15 - (i * (length - 0.15 - POST)) / (posts - 1);
+    parts.push(box(u, backV, POST, POST, ROOF_AT, 0, STEEL));
   }
+  // The railing beyond the other end: two posts and a top rail, 1 m high, 2 m long.
+  const r0 = -length / 2 - 0.3, r1 = r0 - 2;
+  for (const u of [r0, r1]) parts.push(box(u, backV, RAIL, RAIL, 1, 0, STEEL));
+  parts.push(box((r0 + r1) / 2, backV, 2 + RAIL, RAIL, RAIL, 0.95, STEEL), box((r0 + r1) / 2, backV, 2, RAIL * 0.6, RAIL * 0.6, 0.35, STEEL));
   return parts;
 }
