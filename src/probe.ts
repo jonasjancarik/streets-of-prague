@@ -98,13 +98,14 @@ export function renderProbe(renderer: THREE.WebGLRenderer, scene: THREE.Scene, x
     for (const o of hide) if (o.visible) { o.visible = false; hidden.push(o); }
     renderer.render(scene, camera.children[face] as THREE.PerspectiveCamera);
   } finally {
+    // The scene first: on a failing GPU the renderer's own calls can throw as well.
     for (const o of hidden) o.visible = true;
-    renderer.setRenderTarget(before);
-    renderer.setClearColor(clear, alpha);
     scene.background = background;
     (scene as { backgroundNode?: unknown }).backgroundNode = sky;
     renderer.shadowMap.autoUpdate = shadows;
     LAMP_ON.value = lamps;
+    renderer.setRenderTarget(before);
+    renderer.setClearColor(clear, alpha);
   }
 
   if (++face === 6) {

@@ -91,11 +91,12 @@ export function renderMirror(renderer: THREE.WebGLRenderer, scene: THREE.Scene, 
     renderer.clear(true, true, false);
     renderer.render(scene, cam);
   } finally {
-    renderer.setRenderTarget(before);
-    renderer.setClearColor(clear, alpha);
+    // The scene first: on a failing GPU the renderer's own calls can throw as well.
     scene.background = background;
     (scene as { backgroundNode?: unknown }).backgroundNode = sky;
     renderer.shadowMap.autoUpdate = shadows;
+    renderer.setRenderTarget(before);
+    renderer.setClearColor(clear, alpha);
   }
   return true;
 }
