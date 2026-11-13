@@ -612,7 +612,7 @@ function setupBench(kit: Testkit, $: (id: string) => HTMLElement) {
         <button id="dev-all" title="Runs every scenario as fast as it can and lists which pass">Run all</button>
       </div>
       <div class="dev-row">
-        <button id="dev-snap" title="Copies where you are, the time, the weather, your money, stars and car as the start of a scenario, to paste into a conversation">Copy this situation</button>
+        <button id="dev-snap" title="Copies where you are, the time, the weather, your money, stars and car, and how you're looking (camera, first person, zoom, graphics, window size), as the start of a scenario, to paste into a conversation">Copy this situation</button>
       </div>
       <div id="dev-out"></div>`)}`;
   const free = $('dev-free') as HTMLInputElement;

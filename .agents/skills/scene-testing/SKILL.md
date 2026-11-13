@@ -226,7 +226,11 @@ one in real time, "Run all" lists which pass.
   going.
 - **"Copy this situation"**: a few lines starting with `await t.go(...)` (place,
   heading, time, weather, money, stars, car, camera). Paste it into `eval` as it is to
-  get to the same state, then investigate or turn it into a scenario.
+  get to the same state, then investigate or turn it into a scenario. It also gives how
+  they were looking: the free camera (`t.camera`), first person (`t.eyes = { yaw, pitch }`)
+  or the zoom (`t.view`), and a last comment line with the graphics setting, reflections,
+  renderer and window size; replay those with `serve --size WxH --graphics <tier>` (and
+  `--extra "&reflections=mirror"` when it says mirror).
 - Google Maps / Mapy.cz links work in the panel's search; to use one here, take the
   numbers out (`parseSpot` in `src/dev.ts` shows the formats).
 

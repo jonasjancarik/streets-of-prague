@@ -83,6 +83,9 @@ interface Game {
   loose: Car[];
   simulate: (dt: number, ctl?: Partial<Controls>) => void;
   view: (zoom: number) => void;
+  // How the picture is made: the ordinary camera's zoom, the graphics setting in use, the
+  // reflections setting and the renderer (for "Copy this situation").
+  look: () => { zoom: number; tier: string; reflections: string; gpu: boolean };
   loaded: (x: number, y: number) => Promise<void>;
   grid: { at: (x: number, y: number) => number; view?: (who: Car) => { at: (x: number, y: number) => number } };
   steps: (x: number, y: number, r: number) => { edges: StepEdge[]; crossings: { x: number; y: number; dx: number; dy: number; drop: number; hw: string }[] };
@@ -1107,7 +1110,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     // Where you are now as the start of a scenario: paste it into a conversation to
     // show the spot and the situation.
     snapshot() {
-      const p = kit.probe(), c = g.car(), cam = kit.cam;
+      const p = kit.probe(), c = g.car(), cam = kit.cam, look = g.look();
       const [clon, clat] = cam ? g.toLonLat(cam.x, cam.y) : [0, 0];
       return [
         `// ${p.street ?? 'here'} · https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lon}`,
@@ -1119,6 +1122,11 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
         ...(c ? [`await t.drive('${c.type}');`, `t.push(${Math.round(c.speed * 3.6)}, ${Math.round(deg(c.h))});`] : []),
         ...(p.mode !== 'foot' && !c ? [`// (you were ${p.mode})`] : []),
         ...(cam ? [`await t.camera({ at: [${round(clat, 5)}, ${round(clon, 5)}], height: ${Math.round(cam.height)}, tilt: ${Math.round(cam.tilt)}, heading: ${Math.round(cam.heading)} });`] : []),
+        ...(!cam && kit.eyes ? [`t.eyes = { yaw: ${round(kit.eyes.yaw)}, pitch: ${round(kit.eyes.pitch)} };`] : []),
+        ...(!cam && !kit.eyes && Math.abs(look.zoom - 1) > 0.01 ? [`t.view(${round(look.zoom, 2)});`] : []),
+        // (What the picture depends on that a scenario can't set: replay it with
+        // scene.mjs --size and --graphics, and --extra for the reflections.)
+        `// ${look.tier} graphics, reflections ${look.reflections}, ${look.gpu ? 'WebGPU' : 'WebGL'}, window ${innerWidth}x${innerHeight} at ${round(devicePixelRatio, 2)}x`,
       ].join('\n');
     },
 
