@@ -108,7 +108,8 @@ export class SteerGuide {
       const sliding = clamp((Math.abs(vl) - 1) / 5, 0, 1);
       const grip = (held.handbrake ? 1.1 : S.grip * (1 - (S.fade ?? 0.45) * fast) * (S.drive === 'rwd' ? 1 - (0.3 + 0.5 * sliding) * bend : 1) * (1 - 0.6 * sliding)) * road;
       vl *= Math.exp(-grip * dt);
-      const follow = held.handbrake ? 1 - 0.8 * clamp((Math.abs(vf) - 3) / 5, 0, 1) : S.drive === 'rwd' ? 1 - 0.6 * bend * sliding : 1;
+      const loose = 1.8 * (1 - road) * clamp((Math.abs(vf) - 4) / 10, 0, 1);
+      const follow = held.handbrake ? 1 - 0.8 * clamp((Math.abs(vf) - 3) / 5, 0, 1) : (S.drive === 'rwd' ? 1 - 0.6 * bend * sliding : 1) * (1 - loose);
       const maxW = S.turn * (1 - 0.35 * fast) * (held.handbrake ? 1.35 : 1) * (!S.drive || S.drive === 'fwd' ? 1 - 0.12 * bend : 1);
       const swing = held.handbrake ? Math.hypot(vf, vl) : Math.abs(vf);
       const wantW = steer * Math.min(swing / (S.radius ?? 3.6), maxW) * (vf >= 0 ? 1 : -1);

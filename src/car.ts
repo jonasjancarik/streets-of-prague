@@ -1180,8 +1180,11 @@ export class Car {
     // How much of the car's turning its travel follows. Rolling tyres take it all; with
     // the back wheels locked by the handbrake the nose swings round while the car goes
     // on the way it was going, and the difference is the slide.
+    // A wet or snowy road lets the car drift wide in any brisk turn, a little in the rain
+    // and more on snow.
+    const loose = 1.8 * (1 - road) * clamp((Math.abs(vf) - 4) / 10, 0, 1);
     const follow = ctl.handbrake && this.driven ? 1 - 0.8 * clamp((Math.abs(vf) - 3) / 5, 0, 1)
-      : S.drive === 'rwd' ? 1 - 0.6 * bend * sliding : 1;
+      : (S.drive === 'rwd' ? 1 - 0.6 * bend * sliding : 1) * (1 - loose);
     // Tyre marks: sliding sideways, the back wheels locked by the handbrake, or all
     // four braking hard.
     const slide = clamp((Math.abs(vl) - 1.5) / 4, 0, 1);

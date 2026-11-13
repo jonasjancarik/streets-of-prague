@@ -9,7 +9,7 @@ const slip = (c: Car) => {
 };
 
 export default {
-  title: 'The handbrake in a turn swings the back out; an ordinary turn at the same speed holds the road',
+  title: 'The handbrake in a turn swings the back out; an ordinary turn holds the road, and slides a little on snow',
   async run(t) {
     await t.go('staromak', { heading: 90 });
     t.time('14:00');
@@ -39,6 +39,20 @@ export default {
     t.check('an ordinary turn barely slides', runs.turn.slip < 8, runs.turn);
     t.check('the handbrake swings the back out', runs.handbrake.slip > 25 && runs.handbrake.kmh > 5, runs.handbrake);
     t.check('letting go of the handbrake, the car straightens within a second', after < 5, { after, ...runs });
+
+    // Fresh snow before the streets are cleared: an ordinary brisk turn drifts wide.
+    t.time('05:00');
+    t.weather('snow');
+    Object.assign(car, { x: spot!.x - 12, y: spot!.y, w: 0 });
+    t.push(50, 90, car);
+    let snowy = 0;
+    for (let i = 0; i < 24; i++) {
+      await t.wait(0.05, { move: 0.3, turn: 1 });
+      snowy = Math.max(snowy, slip(car));
+    }
+    await t.wait(1, { move: 1 });
+    t.check('on fresh snow an ordinary turn slides a little, then holds again', snowy > 10 && snowy < 45 && slip(car) < 5, { slip: Math.round(snowy), after: Math.round(slip(car)) });
+    t.weather('auto');
     t.unhurt = false;
   },
 } satisfies Scenario;

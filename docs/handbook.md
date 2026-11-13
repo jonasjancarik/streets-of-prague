@@ -216,7 +216,8 @@ that without a new renderer.
   camera also pulls up with speed. The handbrake in a turn locks the back wheels and
   swings the tail out: the nose comes round while the car slides on the way it was
   going, and the slide eases off a moment after you let go (longer with the gas held
-  in a rear-wheel-drive car). Braking hard, the handbrake and sliding round a
+  in a rear-wheel-drive car). On a wet road a brisk turn drifts a little wide, and on
+  snow not yet cleared from the streets clearly more. Braking hard, the handbrake and sliding round a
   corner leave dark tyre marks that fade after a minute (`src/skids.ts`); so do the
   police and cars sent skidding by a crash.
 - In the car, holding Shift is lane assist (`src/assist.ts`): it steers along your
