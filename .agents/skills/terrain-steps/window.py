@@ -200,7 +200,7 @@ def main():
         bridge_ways=[] if args.no_cuttings else bridge_lines,
         drawn=drawn, level_across=not args.no_level,
         cuts=[LineString(way["pts"]).buffer(way["w"] / 2) for way in ways if way.get("cut")], sharp=False,
-        scan=ipr_lidar.range_sampler(ipr_lidar.CACHE)[0], sunk_kerbs=not args.no_sunk_kerbs, scan_levels=not args.no_scan_levels,
+        scan=ipr_lidar.range_sampler(ipr_lidar.CACHE)[0] if all(p.exists() for p in ipr_lidar.source_paths(ipr_lidar.CACHE)) else None, sunk_kerbs=not args.no_sunk_kerbs, scan_levels=not args.no_scan_levels,
         street_sides=list(kerbs.values()), scan_streets=not args.no_scan_streets)
     labels, terraces = surveyed.pop("labels"), surveyed.pop("terraces")
     print(f"  survey: {surveyed}")
