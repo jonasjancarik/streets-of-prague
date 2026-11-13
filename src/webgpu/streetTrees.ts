@@ -12,7 +12,7 @@ import {
 } from 'three/tsl';
 import { BARE, SEASON } from '../shading.ts';
 import { STEM } from '../map/vegetation.ts';
-import { CROWN_FOOT, CANOPY } from '../map/streetTree.ts';
+import { CROWN_FOOT, CANOPY, BOUGH } from '../map/streetTree.ts';
 import { setStreetTreeMaterial } from '../trees.ts';
 import { lampLit } from './lamps.ts';
 import { instanceMatrix, shareInstances, outlineAt } from './trees.ts';
@@ -80,8 +80,11 @@ function material() {
   // A card: leaves until the tree has shed this far, then twigs (the atlas's two halves).
   const card: N = uv();
   const leafy = (): N => step(bareTree(), part.z.mul(0.96).add(0.02));
-  // (One read: the half of the atlas is chosen by the card, not both read and mixed.)
-  const picture: N = Fn(() => sprays.sample(vec2(card.x.mul(0.5).add(leafy().oneMinus().mul(0.5)), card.y.oneMinus())));
+  // (One read: which of the atlas's three pictures is chosen by the card, not all read and
+  // mixed: leaves, bare twigs, or a conifer's bough.)
+  const needles: N = step(part.y, BOUGH + 0.5);
+  const column: N = mix(leafy().oneMinus(), 2, needles);
+  const picture: N = Fn(() => sprays.sample(vec2(card.x.mul(0.96).add(0.02).add(column).div(3), card.y.oneMinus())));
   m.maskShadowNode = part.x.greaterThan(0.5).or((picture() as N).a.greaterThan(mix(0.35, 0.55, leafy().oneMinus())).and(leafy().greaterThan(0.5).or(fract(part.z.mul(7.13)).greaterThanEqual(0.4))));
 
   m.setupDiffuseColor = function (builder: N) {

@@ -1,12 +1,12 @@
 """Pack the street-level trees' textures into public/street-trees.webp and public/bark.webp.
 
 leaf.webp and twig.webp (generated from the briefs in leaf.txt and twig.txt) are a spray
-of a broadleaf branch in leaf and a bare one in winter, each on a transparent ground;
-bark.webp (bark.txt) is a trunk's bark. The game hangs the sprays in a tree's crown as
+of a broadleaf branch in leaf and a bare one in winter, needle.webp (needle.txt) a spruce
+bough, each on a transparent ground; bark.webp (bark.txt) is a trunk's bark. The game hangs the sprays in a tree's crown as
 flat cards (src/map/streetTree.ts) and wraps the bark round its trunk and boughs.
 
-public/street-trees.webp: 1024 × 512, the leaves in the left half and the twigs in the
-right. The leaves are stored without their hue, as light and dark only (the game gives
+public/street-trees.webp: 1536 × 512, three pictures side by side: the leaves, the twigs,
+the spruce bough. The leaves and the bough are stored without their hue, as light and dark only (the game gives
 each tree its own colour and turns it through the year), brightened so that an average
 leaf is nearly white. What is transparent takes the colour of what is nearest, so that
 the edges don't darken where the picture is drawn small; the twigs are thickened a
@@ -57,7 +57,7 @@ def card(name: str, grey: bool, thicken: float) -> np.ndarray:
 
 
 def main():
-    atlas = np.hstack([card("leaf", True, 0), card("twig", False, 1.6)])
+    atlas = np.hstack([card("leaf", True, 0), card("twig", False, 1.6), card("needle", True, 0)])
     Image.fromarray((atlas * 255 + 0.5).astype(np.uint8), "RGBA").save(PUBLIC / "street-trees.webp", quality=90, method=6, exact=True)
     bark = Image.open(HERE / "bark.webp").convert("RGB")
     w, h = bark.size

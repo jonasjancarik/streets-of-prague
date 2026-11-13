@@ -20,6 +20,8 @@ export const CROWN_FOOT = -0.38; // where the lower trunk ends, in the crown's f
 // `part.y` of a spray laid over the crown seen from above (canopyGeometry): such a card is
 // not drawn once its leaves are gone (the tufts' own bare twigs show instead).
 export const CANOPY = -2;
+// …and of a conifer's bough (coniferGeometry): its card shows the atlas's third picture.
+export const BOUGH = -3;
 
 export function streetTreeGeometry(seed: number, boughs: number, sprays: number) {
   const r = rng(seed);
@@ -133,7 +135,9 @@ export function streetTreeGeometry(seed: number, boughs: number, sprays: number)
 // tufts underneath keep the crown's shape, its shade and its shadow; these give it real
 // leaves and a ragged outline in place of the tufts' smooth lobes. `rings`: how many
 // sprays in each ring, from the top outwards.
-export function canopyGeometry(seed: number, rings: number[]) {
+// `skirt`: a shrub's: more rings carry on down its sides to the ground it sits on (a shrub's
+// crown is its whole body), each spray growing outwards and a little up, as a bush's do.
+export function canopyGeometry(seed: number, rings: number[], skirt: number[] = []) {
   const r = rng(seed);
   const pos: number[] = [], nor: number[] = [], uv: number[] = [], part: number[] = [], idx: number[] = [];
   // The crown's top surface: how high it is at a distance from the middle (the tufts' tiers
@@ -164,6 +168,85 @@ export function canopyGeometry(seed: number, rings: number[]) {
       idx.push(first, first + 2, first + 1, first, first + 3, first + 2);
     }
   });
+  skirt.forEach((count, ring) => {
+    const y = 0.1 - (ring / Math.max(1, skirt.length - 1)) * 0.66, turn = r() * Math.PI * 2;
+    for (let i = 0; i < count; i++) {
+      // (Alternate sprays start deeper in, so the bush has a body and not only a shell.)
+      const a = turn + (i / count) * Math.PI * 2 + (r() - 0.5) * 0.5, d = (i % 2 ? 0.2 : 0.5) + r() * 0.22;
+      const size = 0.5 + r() * 0.18;
+      out.set(Math.cos(a), 0, Math.sin(a));
+      grown.copy(out).applyAxisAngle(new THREE.Vector3(0, 1, 0), (r() - 0.5) * 1.1).setY(0.15 + r() * 0.6).normalize();
+      across.set(-grown.z, (r() - 0.5) * 0.5, grown.x).normalize();
+      at.copy(out).multiplyScalar(d).setY(y + (r() - 0.5) * 0.1);
+      const own = r(), flip = r() < 0.5, first = pos.length / 3;
+      for (const [cx, cy] of [[-1, 0], [1, 0], [1, 1], [-1, 1]]) {
+        corner.copy(at).addScaledVector(grown, (cy - 0.12) * size).addScaledVector(across, cx * size * 0.5);
+        round.set(corner.x, 0.35, corner.z).normalize();
+        n.copy(round).addScaledVector(across, cx * 0.18).addScaledVector(grown, (cy - 0.5) * 0.18).normalize();
+        pos.push(corner.x, corner.y, corner.z); nor.push(n.x, n.y, n.z); uv.push((cx > 0) !== flip ? 1 : 0, cy);
+        // (Darker towards the ground, under the bush's own overhang.)
+        part.push(0, CANOPY, own, 0.55 + 0.4 * (1 - ring / Math.max(1, skirt.length - 1)) + (r() - 0.5) * 0.15);
+      }
+      idx.push(first, first + 2, first + 1, first, first + 3, first + 2);
+    }
+  });
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geom.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  geom.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geom.setAttribute('part', new THREE.Float32BufferAttribute(part, 4));
+  geom.setIndex(idx);
+  for (const a of [geom.index, ...Object.values(geom.attributes)]) if (a) (a as { shared?: boolean }).shared = true;
+  return geom;
+}
+
+// A conifer for the view from the street and, on Ultra, from above: boughs of needles in
+// whorls round the trunk, laid over the top-down model's tiers of skirts (vegetation.ts,
+// pineGeometry: the same frame, from -1.5 at its foot to 1.4 at its tip), which stay as the
+// tree's dark body behind them. Each bough is a flat card with a spruce bough on it, its
+// stem at the trunk, growing outwards and drooping, the lower ones longest; a few small
+// ones stand up round the tip.
+export function coniferGeometry(seed: number) {
+  const r = rng(seed);
+  const pos: number[] = [], nor: number[] = [], uv: number[] = [], part: number[] = [], idx: number[] = [];
+  const at = new THREE.Vector3(), out = new THREE.Vector3(), grown = new THREE.Vector3(), across = new THREE.Vector3(), corner = new THREE.Vector3(), n = new THREE.Vector3();
+  const bough = (a: number, y: number, length: number, droop: number, shade: number) => {
+    out.set(Math.cos(a), 0, Math.sin(a));
+    grown.copy(out).setY(-droop).normalize();
+    across.set(-out.z, (r() - 0.5) * 0.25, out.x).normalize();
+    at.copy(out).multiplyScalar(0.02).setY(y);
+    const own = r(), flip = r() < 0.5, first = pos.length / 3, width = length * 0.78;
+    for (const [cx, cy] of [[-1, 0], [1, 0], [1, 1], [-1, 1]]) {
+      corner.copy(at).addScaledVector(grown, cy * length).addScaledVector(across, cx * width * 0.5);
+      // Lit from above and from outside, as the whole tree is.
+      n.copy(out).multiplyScalar(0.55).setY(0.8).addScaledVector(across, cx * 0.2).normalize();
+      pos.push(corner.x, corner.y, corner.z); nor.push(n.x, n.y, n.z); uv.push((cx > 0) !== flip ? 1 : 0, cy);
+      part.push(0, BOUGH, own, shade * (0.75 + 0.25 * cy) + (r() - 0.5) * 0.1);
+    }
+    idx.push(first, first + 2, first + 1, first, first + 3, first + 2);
+  };
+  const WHORLS = 9;
+  for (let i = 0; i < WHORLS; i++) {
+    // (Longer than the skirts behind them are wide, and starting above each: they stand out from the body.)
+    const t = i / (WHORLS - 1), y = -1.12 + t * 2.2, reach = 1.3 * (1 - t * 0.78), count = Math.round(10 - t * 4), turn = r() * Math.PI * 2;
+    for (let j = 0; j < count; j++) bough(turn + (j / count) * Math.PI * 2 + (r() - 0.5) * 0.4, y + (r() - 0.5) * 0.12, reach * (0.9 + r() * 0.25), 0.34 - t * 0.2 + r() * 0.14, 0.7 + 0.35 * t);
+  }
+  // The tip: three small boughs standing up.
+  for (let j = 0; j < 3; j++) {
+    const a = j * 2.1 + r();
+    out.set(Math.cos(a), 0, Math.sin(a));
+    grown.set(out.x * 0.25, 1, out.z * 0.25).normalize();
+    across.set(-out.z, 0, out.x);
+    at.set(0, 1.0, 0);
+    const first = pos.length / 3, own = r();
+    for (const [cx, cy] of [[-1, 0], [1, 0], [1, 1], [-1, 1]]) {
+      corner.copy(at).addScaledVector(grown, cy * 0.5).addScaledVector(across, cx * 0.17);
+      n.copy(out).setY(0.6).normalize();
+      pos.push(corner.x, corner.y, corner.z); nor.push(n.x, n.y, n.z); uv.push(cx > 0 ? 1 : 0, cy);
+      part.push(0, BOUGH, own, 1.05);
+    }
+    idx.push(first, first + 2, first + 1, first, first + 3, first + 2);
+  }
   const geom = new THREE.BufferGeometry();
   geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   geom.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));

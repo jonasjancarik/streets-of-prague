@@ -2741,8 +2741,10 @@ async function main() {
     // From street level the ground hides what's behind it (see GROUND_DEPTH).
     GROUND_DEPTH.visible = !!eyes || (POST.ao && POST.on);
     // …and the trees near you are the ones made to be stood under (map/streetTree.ts).
-    world.trees.street(!!eyes, camera.position.x, camera.position.z);
-    world.trees.canopy(!eyes);
+    // (The free camera too, once it is tilted well off straight down.)
+    const fromStreet = !!eyes || (!!free && free.tilt > 35);
+    world.trees.street(fromStreet, free ? free.x : camera.position.x, free ? -free.y : camera.position.z);
+    world.trees.canopy(true, fromStreet);
     sun.position.copy(sun.target.position).add(sky.offset);
     fitShadow();
     // Street lamps and headlights, and the rain, snow and mist round the view.

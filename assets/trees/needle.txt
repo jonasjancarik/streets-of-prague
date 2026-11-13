@@ -1,0 +1,5 @@
+$imagegen
+Asset: game texture, a conifer bough card for real-time trees, square 1:1, one image, transparent background
+Request: one flat bough of a Norway spruce seen face on from above: a main twig running from the bottom centre straight up to near the top, with many side twigs branching off left and right in a herringbone, all densely covered with short dark needles, so the bough is a long leaf-like fan, widest in its lower third and tapering to a point at the top, with small gaps of transparency between the side twigs near the edges.
+Look: photographic needle detail, soft even overcast light, no cast shadow, no strong highlights; deep green needles with natural light and dark variation, a little lighter at the tips; thin brown twigs showing in places.
+Constraints: fully transparent background (alpha), nothing else in the picture, no ground, no sky, no border, no text, no watermark. The bough must not touch the top, left or right edges.

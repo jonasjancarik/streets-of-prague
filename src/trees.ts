@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { send } from './gpu.ts';
 import { treePageFactory, OUTLINE, type TreeInstances } from './map/vegetation.ts';
-import { streetTreeGeometry, canopyGeometry } from './map/streetTree.ts';
+import { streetTreeGeometry, canopyGeometry, coniferGeometry } from './map/streetTree.ts';
 
 export const TREE_PAGE_CAPACITY = [1200, 128, 128, 256] as const;
 export type TreeKind = 0 | 1 | 2 | 3; // broadleaf, shrub, conifer, big broadleaf (vegetation.ts, BIG_CROWN)
@@ -204,24 +204,33 @@ export class TreePool {
     return mesh;
   }
 
-  // From above (Ultra): sprays of leaves laid over every broadleaf crown in view
-  // (canopyGeometry), a third mesh over the page's instances; the tufts stay under them.
+  // From above (Ultra): sprays of leaves laid over every broadleaf crown and shrub in view
+  // (canopyGeometry), another mesh over the page's instances; the tufts stay under them.
+  // `street`: the view is from the street, where the trees have their own models and only
+  // the shrubs get sprays.
   private canopyShapes: THREE.BufferGeometry[] | null = null;
   private canopyOn = false;
-  canopy(on: boolean) {
+  canopy(on: boolean, street = false) {
     on &&= CANOPY_LEAVES.value;
-    if (!on && !this.canopyOn) return;
-    this.canopyOn = on;
-    if (on && !this.streetMade && streetMaterial) this.streetMade = streetMaterial();
-    if (on && !this.canopyShapes) this.canopyShapes = [canopyGeometry(21, [1, 6, 11, 15]), canopyGeometry(23, [2, 8, 14, 20, 24])];
-    const ready = on && !!this.streetMade && streetReady.value;
+    // (From the street the shrubs and conifers have theirs at every tier, as the trees have their own models there.)
+    const shrubs = (on || (street && STREET_TREES.value)) && !!streetMaterial;
+    if (!shrubs && !this.canopyOn) return;
+    this.canopyOn = shrubs;
+    if (shrubs && !this.streetMade && streetMaterial) this.streetMade = streetMaterial();
+    if (shrubs && !this.canopyShapes) this.canopyShapes = [canopyGeometry(21, [1, 6, 11, 15]), canopyGeometry(23, [2, 8, 14, 20, 24]), canopyGeometry(27, [1, 5, 9], [12, 12, 12, 10]), coniferGeometry(31)];
+    const ready = !!this.streetMade && streetReady.value;
     for (const page of this.pages) {
-      if (page.kind !== 0 && page.kind !== 3) continue;
-      const mesh = page.mesh, show = ready && page.owner !== null && mesh.count > 0;
-      if (show && !page.canopy) page.canopy = this.streetMesh(page, this.canopyShapes![page.kind === 3 ? 1 : 0], false);
+      // (Shrubs and conifers keep theirs from the street; a broadleaf tree has its own model there.)
+      const mesh = page.mesh, show = ready && (page.kind === 1 || page.kind === 2 ? shrubs : on && !street) && page.owner !== null && mesh.count > 0;
+      if (show && !page.canopy) page.canopy = this.streetMesh(page, this.canopyShapes![[0, 2, 3, 1][page.kind]], false);
       if (page.canopy) {
         page.canopy.visible = show;
         if (show) { page.canopy.count = mesh.count; page.canopy.boundingSphere = mesh.boundingSphere; page.canopy.boundingBox = mesh.boundingBox; }
+      }
+      // (From the street a shrub is its sprays alone: its tufts' rim showed under them as a dark faceted skirt.)
+      if (page.kind === 1) {
+        mesh.visible = page.owner !== null && mesh.count > 0 && !(street && show);
+        if (page.canopy) page.canopy.castShadow = street;
       }
     }
   }
