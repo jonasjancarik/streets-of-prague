@@ -17,6 +17,9 @@ import * as THREE from 'three';
 import { rng } from './geo.ts';
 
 export const CROWN_FOOT = -0.38; // where the lower trunk ends, in the crown's frame
+// `part.y` of a spray laid over the crown seen from above (canopyGeometry): such a card is
+// not drawn once its leaves are gone (the tufts' own bare twigs show instead).
+export const CANOPY = -2;
 
 export function streetTreeGeometry(seed: number, boughs: number, sprays: number) {
   const r = rng(seed);
@@ -123,3 +126,51 @@ export function streetTreeGeometry(seed: number, boughs: number, sprays: number)
   for (const a of [geom.index, ...Object.values(geom.attributes)]) if (a) (a as { shared?: boolean }).shared = true;
   return geom;
 }
+
+// Leaves for the crown seen from above: the same sprays laid over the top-down crown's
+// tufts like shingles, each growing outwards and down the crown's slope from a stem nearer
+// the middle, a little clear of the tufts, the outermost hanging over the crown's edge. The
+// tufts underneath keep the crown's shape, its shade and its shadow; these give it real
+// leaves and a ragged outline in place of the tufts' smooth lobes. `rings`: how many
+// sprays in each ring, from the top outwards.
+export function canopyGeometry(seed: number, rings: number[]) {
+  const r = rng(seed);
+  const pos: number[] = [], nor: number[] = [], uv: number[] = [], part: number[] = [], idx: number[] = [];
+  // The crown's top surface: how high it is at a distance from the middle (the tufts' tiers
+  // in vegetation.ts run from 0.5 at the top to -0.08 at the rim).
+  const dome = (d: number) => 0.6 - 0.62 * Math.pow(Math.min(d, 1.15), 1.7);
+  const at = new THREE.Vector3(), out = new THREE.Vector3(), grown = new THREE.Vector3(), across = new THREE.Vector3(), corner = new THREE.Vector3(), n = new THREE.Vector3(), round = new THREE.Vector3();
+  rings.forEach((count, ring) => {
+    const d0 = rings.length > 1 ? (ring / (rings.length - 1)) * 0.74 : 0, turn = r() * Math.PI * 2;
+    for (let i = 0; i < count; i++) {
+      const a = turn + (i / count) * Math.PI * 2 + (r() - 0.5) * 0.5, d = Math.max(0, d0 + (r() - 0.5) * 0.14);
+      const size = 0.46 + r() * 0.16, lift = 0.05 + r() * 0.06;
+      out.set(Math.cos(a), 0, Math.sin(a));
+      // Down the slope from the stem, swung a little to one side, never steeper than the dome.
+      const slope = (dome(d + 0.2) - dome(d)) / 0.2;
+      grown.copy(out).applyAxisAngle(new THREE.Vector3(0, 1, 0), (r() - 0.5) * 0.9).setY(slope * 0.8 + 0.08).normalize();
+      across.set(-grown.z, (r() - 0.5) * 0.3, grown.x).normalize();
+      at.copy(out).multiplyScalar(d).setY(dome(d) + lift);
+      const own = r(), flip = r() < 0.5, first = pos.length / 3;
+      for (const [cx, cy] of [[-1, 0], [1, 0], [1, 1], [-1, 1]]) {
+        corner.copy(at).addScaledVector(grown, (cy - 0.12) * size).addScaledVector(across, cx * size * 0.5);
+        // Lit as the crown's round shape is there, each corner a little its own way.
+        round.set(corner.x, Math.max(0.25, 0.9 - corner.length() * 0.5), corner.z).normalize();
+        n.copy(round).addScaledVector(across, cx * 0.18).addScaledVector(grown, (cy - 0.5) * 0.18).normalize();
+        pos.push(corner.x, corner.y, corner.z); nor.push(n.x, n.y, n.z); uv.push((cx > 0) !== flip ? 1 : 0, cy);
+        // (No wood, a canopy card at its own height, its own number; fully in the light, a little less at the rim.)
+        part.push(0, CANOPY, own, 1 - 0.25 * Math.min(1, d) + (r() - 0.5) * 0.2);
+      }
+      idx.push(first, first + 2, first + 1, first, first + 3, first + 2);
+    }
+  });
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geom.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  geom.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geom.setAttribute('part', new THREE.Float32BufferAttribute(part, 4));
+  geom.setIndex(idx);
+  for (const a of [geom.index, ...Object.values(geom.attributes)]) if (a) (a as { shared?: boolean }).shared = true;
+  return geom;
+}
+

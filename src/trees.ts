@@ -1,14 +1,14 @@
 import * as THREE from 'three';
 import { send } from './gpu.ts';
 import { treePageFactory, OUTLINE, type TreeInstances } from './map/vegetation.ts';
-import { streetTreeGeometry } from './map/streetTree.ts';
+import { streetTreeGeometry, canopyGeometry } from './map/streetTree.ts';
 
 export const TREE_PAGE_CAPACITY = [1200, 128, 128, 256] as const;
 export type TreeKind = 0 | 1 | 2 | 3; // broadleaf, shrub, conifer, big broadleaf (vegetation.ts, BIG_CROWN)
 type PerKind = readonly [number, number, number, number];
 const KINDS = [0, 1, 2, 3] as const;
 const OUTLINE_ATTRIBUTES = ['outlineA', 'outlineB'] as const; // (OUTLINE = 8: four in each)
-type Page = { mesh: THREE.InstancedMesh; kind: TreeKind; owner: string | null; street?: THREE.InstancedMesh };
+type Page = { mesh: THREE.InstancedMesh; kind: TreeKind; owner: string | null; street?: THREE.InstancedMesh; canopy?: THREE.InstancedMesh };
 
 // The trees seen from the street (map/streetTree.ts): their material comes from the WebGPU
 // side (webgpu/streetTrees.ts), which also says when their pictures have loaded.
@@ -19,6 +19,8 @@ export const setStreetTreeMaterial = (make: () => THREE.Material, ready: { value
 const STREET_REACH = 150;
 // (For measuring: false keeps the top-down crowns in first person too.)
 export const STREET_TREES = { value: true };
+// Whether the crowns seen from above get their sprays of leaves (graphics.ts: Ultra).
+export const CANOPY_LEAVES = { value: false };
 
 // Every page belongs to at most one tile. It keeps its mesh, attributes and shader
 // binding when that tile leaves; only the used ranges and bounds change on reuse.
@@ -149,6 +151,7 @@ export class TreePool {
     page.mesh.boundingBox = null;
     page.mesh.boundingSphere = null;
     if (page.street) { page.street.visible = false; page.street.count = 0; }
+    if (page.canopy) { page.canopy.visible = false; page.canopy.count = 0; }
   }
 
   // First person: the broadleaf trees near (x, z) are drawn as street trees, each page's
@@ -163,8 +166,8 @@ export class TreePool {
     this.streetOn = on;
     if (on && !this.streetMade && streetMaterial) {
       this.streetMade = streetMaterial();
-      this.streetShapes = [streetTreeGeometry(5, 7, 3), streetTreeGeometry(9, 10, 3)];
     }
+    if (on && !this.streetShapes) this.streetShapes = [streetTreeGeometry(5, 7, 3), streetTreeGeometry(9, 10, 3)];
     const ready = on && !!this.streetMade && streetReady.value;
     for (const page of this.pages) {
       const mesh = page.mesh, used = page.owner !== null && mesh.count > 0;
@@ -180,8 +183,8 @@ export class TreePool {
     }
   }
 
-  private streetMesh(page: Page) {
-    const shape = this.streetShapes![page.kind === 3 ? 1 : 0], from = page.mesh;
+  private streetMesh(page: Page, shape = this.streetShapes![page.kind === 3 ? 1 : 0], shadows = true) {
+    const from = page.mesh;
     const geom = new THREE.BufferGeometry();
     geom.setIndex(shape.index);
     for (const [name, attr] of Object.entries(shape.attributes)) geom.setAttribute(name, attr);
@@ -192,12 +195,35 @@ export class TreePool {
     mesh.instanceColor = from.instanceColor;
     mesh.userData.sharedMatrices = true; // (see configureRenderer in webgpu.ts)
     mesh.count = from.count;
-    mesh.castShadow = mesh.receiveShadow = true;
+    mesh.castShadow = shadows;
+    mesh.receiveShadow = true;
     mesh.matrixAutoUpdate = false;
     mesh.updateMatrix();
     this.group.add(mesh);
     mesh.updateMatrixWorld(true);
     return mesh;
+  }
+
+  // From above (Ultra): sprays of leaves laid over every broadleaf crown in view
+  // (canopyGeometry), a third mesh over the page's instances; the tufts stay under them.
+  private canopyShapes: THREE.BufferGeometry[] | null = null;
+  private canopyOn = false;
+  canopy(on: boolean) {
+    on &&= CANOPY_LEAVES.value;
+    if (!on && !this.canopyOn) return;
+    this.canopyOn = on;
+    if (on && !this.streetMade && streetMaterial) this.streetMade = streetMaterial();
+    if (on && !this.canopyShapes) this.canopyShapes = [canopyGeometry(21, [1, 6, 11, 15]), canopyGeometry(23, [2, 8, 14, 20, 24])];
+    const ready = on && !!this.streetMade && streetReady.value;
+    for (const page of this.pages) {
+      if (page.kind !== 0 && page.kind !== 3) continue;
+      const mesh = page.mesh, show = ready && page.owner !== null && mesh.count > 0;
+      if (show && !page.canopy) page.canopy = this.streetMesh(page, this.canopyShapes![page.kind === 3 ? 1 : 0], false);
+      if (page.canopy) {
+        page.canopy.visible = show;
+        if (show) { page.canopy.count = mesh.count; page.canopy.boundingSphere = mesh.boundingSphere; page.canopy.boundingBox = mesh.boundingBox; }
+      }
+    }
   }
 
   remove(tileKey: string) {
@@ -225,9 +251,10 @@ export class TreePool {
       page.mesh.geometry.dispose();
       page.mesh.dispose();
       if (page.street) { page.street.geometry.dispose(); page.street.dispose(); }
+      if (page.canopy) { page.canopy.geometry.dispose(); page.canopy.dispose(); }
     }
     this.streetMade?.dispose();
-    if (this.streetShapes) for (const shape of this.streetShapes) {
+    for (const shape of [...(this.streetShapes ?? []), ...(this.canopyShapes ?? [])]) {
       for (const a of [shape.index, ...Object.values(shape.attributes)]) if (a) (a as { shared?: boolean }).shared = false;
       shape.dispose();
     }

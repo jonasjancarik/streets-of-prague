@@ -12,7 +12,7 @@ import {
 } from 'three/tsl';
 import { BARE, SEASON } from '../shading.ts';
 import { STEM } from '../map/vegetation.ts';
-import { CROWN_FOOT } from '../map/streetTree.ts';
+import { CROWN_FOOT, CANOPY } from '../map/streetTree.ts';
 import { setStreetTreeMaterial } from '../trees.ts';
 import { lampLit } from './lamps.ts';
 import { instanceMatrix, shareInstances, outlineAt } from './trees.ts';
@@ -91,7 +91,7 @@ function material() {
     // (A bare spray is thinner than the same card in leaf, and two cards in five show nothing:
     // with every card a full fan of twigs a winter crown was a dark thicket.)
     const thin: N = leafy().oneMinus();
-    If(part.x.lessThan(0.5).and(p.a.lessThan(mix(0.35, 0.55, thin)).or(thin.greaterThan(0.5).and(fract(part.z.mul(7.13)).lessThan(0.4)))), () => { Discard(); });
+    If(part.x.lessThan(0.5).and(p.a.lessThan(mix(0.35, 0.55, thin)).or(thin.greaterThan(0.5).and(fract(part.z.mul(7.13)).lessThan(0.4).or(part.y.lessThan(CANOPY + 0.5))))), () => { Discard(); });
     // The leaves' colour through the year (yearColour in webgpu/trees.ts, by the card).
     const tree: N = diffuseColor.rgb;
     const pick: N = fract(own.mul(7.31).add(0.13));

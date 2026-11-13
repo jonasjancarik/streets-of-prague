@@ -1,6 +1,7 @@
 import { wantStrips } from './reflections.ts';
 import { PROBE_ON } from './probe.ts';
 import { POST } from './post.ts';
+import { CANOPY_LEAVES } from './trees.ts';
 import * as THREE from 'three';
 import { DIRT, LEAVES, ROOF_DETAIL, ROOF_CLUTTER, WATER, WEATHER_DETAIL } from './shading.ts';
 import { LAMP_SHADOWS, LAMP_SIZE, LIGHT_FX } from './lamps.ts';
@@ -243,7 +244,8 @@ export class Graphics {
     MIRROR_ON.value = look && this.reflections === 'mirror' ? 1 : 0;
     wantStrips(look); // (the cars' mirrored streets)
     PROBE_ON.value = this.tier === 'ultra' ? 1 : 0;
-    POST.value = this.tier === 'ultra' ? 1 : 0; // (and the bloom: post.ts) // (and on Ultra the real one round the middle of the view)
+    POST.value = this.tier === 'ultra' ? 1 : 0; // (and the bloom: post.ts)
+    CANOPY_LEAVES.value = this.tier === 'ultra'; // (and the sprays of leaves on the crowns seen from above: trees.ts) // (and on Ultra the real one round the middle of the view)
     // (The lamps resize their maps at the next frame; the materials are bound afresh below,
     // which freezes the game for half a second even on an M5, so Auto keeps the size the
     // lamps were given when it began.)

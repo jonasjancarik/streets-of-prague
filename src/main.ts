@@ -2742,6 +2742,7 @@ async function main() {
     GROUND_DEPTH.visible = !!eyes || (POST.ao && POST.on);
     // …and the trees near you are the ones made to be stood under (map/streetTree.ts).
     world.trees.street(!!eyes, camera.position.x, camera.position.z);
+    world.trees.canopy(!eyes);
     sun.position.copy(sun.target.position).add(sky.offset);
     fitShadow();
     // Street lamps and headlights, and the rain, snow and mist round the view.
