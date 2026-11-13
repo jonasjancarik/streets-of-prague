@@ -7,16 +7,41 @@
 import * as THREE from 'three';
 import {
   Fn, If, Discard, uniformArray, float, int, vec2, vec3, vec4, texture, attribute, vertexColor, positionWorld, normalWorld, diffuseColor,
-  materialColor, fract, floor, mod, dot, sin, mix, smoothstep, step, length, abs, max, min, clamp, normalize, dFdx, dFdy, distance, select, cross, sqrt, cameraPosition, reflect, pow,
+  materialColor, fract, floor, mod, dot, sin, mix, smoothstep, step, length, abs, max, min, clamp, normalize, dFdx, dFdy, distance, select, cross, sqrt, cameraPosition, reflect, pow, uniform, renderGroup,
 } from 'three/tsl';
 import { FACADE_ATLAS, FACADE_ON, BLANK, F_BAY as BAY_WIDTH, F_UP as UP, F_DOOR as DOOR, F_WALL as WALL, F_MOD as MOD, F_GROUND as GROUND, F_STOREY as STOREY, STOREY_FIT } from '../facades.ts';
-import { WINDOWS, ROOF_DETAIL, ROOF_CLUTTER, LANDMARK_ROOF as R } from '../shading.ts';
+import { WINDOWS, ROOF_DETAIL, ROOF_CLUTTER, LANDMARK_ROOF as R, SUN_DIR } from '../shading.ts';
 import { lampLit } from './lamps.ts';
 import { EDGE, EDGE_STEP } from '../map/roofEdges.ts';
 import { type N, follow, followColor, addPort, uCut, uDirt, uWet, uSnow, vnoise, fbm, fbm2, blocks, hash12, skyAmbient } from './common.ts';
 import { DOME } from '../sky.ts';
 
 const uZenith: N = followColor(DOME.zenith), uHorizon: N = followColor(DOME.horizon);
+// Which way the sun (or at night the moon) stands, for the relief of the roofs' tiles and seams.
+const uSunDir: N = (() => {
+  const u = uniform(SUN_DIR.value.clone()).setGroup(renderGroup);
+  u.onRenderUpdate(() => { u.value.copy(SUN_DIR.value); return u.value; });
+  return u;
+})();
+// What a row of tiles or a seam standing a little proud of the roof does to the light: its
+// lower edge casts a line of shadow on the row below when the sun stands behind it up the
+// slope, and catches the light when the sun stands in front. `n`: the roof's normal;
+// `down`: the way down the slope on the map (x east, y north); `along`: 0 at a row's upper
+// edge to 1 at its lower one. Returns what to multiply the colour by.
+// `lip`: how far the edge stands out, as a share of the row's depth.
+const rowRelief = (n: N, down: N, along: N, lip: number): N => {
+  // (The way down the slope in the world: level along `down`, dropping by the slope.)
+  const flat: N = vec3(down.x, 0, down.y.negate());
+  const d3: N = normalize(flat.sub(n.mul(dot(flat, n))));
+  const facing: N = dot(uSunDir, d3), onto: N = max(dot(uSunDir, n), 0.12);
+  // The shadow's reach down the next row, and the lit edge.
+  const reach: N = clamp(facing.negate().div(onto).mul(lip), 0, 0.6);
+  const shadow: N = float(1).sub(smoothstep(reach.mul(0.6), reach.add(0.02), along)).mul(step(0.01, reach));
+  const lit: N = smoothstep(0.82, 0.97, along).mul(max(facing, 0));
+  return float(1).sub(shadow.mul(RELIEF.shade)).add(lit.mul(RELIEF.light));
+};
+// How dark a tile's edge shadow is and how bright its lit edge, at most.
+const RELIEF = { shade: 0.42, light: 0.3 };
 const uFacadeOn = follow(FACADE_ON), uWindows = follow(WINDOWS), uRoofDetail = follow(ROOF_DETAIL), uRoofClutter = follow(ROOF_CLUTTER);
 
 // The atlas loads after the first frames: a one-layer stand-in keeps the binding's type.
@@ -72,14 +97,18 @@ function beaverTiles(c0: N, wp: N, n: N, wpWidth: N) {
   const col = floor(x), fx = fract(x);
   const h = hash12(vec2(col, row.mul(2).add(top.oneMinus())));
   const patch = vnoise(vec2(col, row).mul(0.23));
-  const t = c0.mul(h.mul(0.28).add(0.8)).mul(float(1.08).sub(smoothstep(0.55, 0.85, patch).mul(0.28))).toVar();
+  // (Single tiles differ more than patches of them do: a roof of one colour in broad
+  // blotches read as camouflage from above.)
+  const t = c0.mul(h.mul(0.36).add(0.78)).mul(float(1.05).sub(smoothstep(0.55, 0.85, patch).mul(0.13))).toVar();
   t.mulAssign(mix(vec3(1.06, 0.97, 0.9), vec3(0.9, 0.94, 1), fract(h.mul(7.3))));
-  t.mulAssign(smoothstep(0, 0.6, fy).mul(0.14).add(0.9));
+  t.mulAssign(smoothstep(0, 0.6, fy).mul(0.1).add(0.92));
   t.mulAssign(mix(float(1), mix(0.45, 0.72, under), top.oneMinus()));
-  t.mulAssign(mix(0.62, 1, smoothstep(0, 0.05, min(fx, fx.oneMinus()))));
+  t.mulAssign(mix(0.7, 1, smoothstep(0, 0.05, min(fx, fx.oneMinus()))));
+  // Each row stands proud of the one below it: lit and shaded by where the sun is.
+  t.mulAssign(rowRelief(n, down, fy, 0.16));
   const c = mix(c0.mul(0.95), t, fade(wpWidth, 0.18)).toVar();
-  c.mulAssign(fbm(wp.mul(0.22)).mul(0.2).add(0.9));
-  return mix(c, c.mul(vec3(0.86, 0.9, 0.8)), smoothstep(0.62, 0.75, fbm(wp.mul(0.09).add(4))).mul(0.7));
+  c.mulAssign(fbm(wp.mul(0.22)).mul(0.14).add(0.93));
+  return mix(c, c.mul(vec3(0.86, 0.9, 0.8)), smoothstep(0.62, 0.75, fbm(wp.mul(0.09).add(4))).mul(0.45));
 }
 
 // Clay tiles, or slate on grey roofs where the material isn't known (`slate` not given).
@@ -93,11 +122,12 @@ function roofTiles(c0: N, wp: N, n: N, wpWidth: N, slateGiven?: N) {
   const d = float(1).sub(smoothstep(size.y.mul(0.2), size.y.mul(0.7), wpWidth));
   const t = c0.mul(b.y.mul(0.2).add(0.9)).toVar();
   t.mulAssign(mix(vec3(1.07, 0.95, 0.86), vec3(0.95, 1, 1.05), fract(b.y.mul(7.3))));
-  t.mulAssign(smoothstep(0, 0.4, row).mul(0.25).add(0.8));
-  t.assign(mix(t.mul(0.72), t, smoothstep(0, 0.012, b.x)));
+  t.mulAssign(smoothstep(0, 0.4, row).mul(0.16).add(0.86));
+  t.assign(mix(t.mul(0.76), t, smoothstep(0, 0.012, b.x)));
+  t.mulAssign(rowRelief(n, down, row, 0.14));
   const c = mix(c0.mul(0.95), t, d).toVar();
-  c.mulAssign(fbm(wp.mul(0.22)).mul(0.24).add(0.88));
-  return mix(c, c.mul(vec3(0.86, 0.9, 0.8)), smoothstep(0.62, 0.75, fbm(wp.mul(0.09).add(4))).mul(0.7));
+  c.mulAssign(fbm(wp.mul(0.22)).mul(0.16).add(0.92));
+  return mix(c, c.mul(vec3(0.86, 0.9, 0.8)), smoothstep(0.62, 0.75, fbm(wp.mul(0.09).add(4))).mul(0.45));
 }
 // Sheet metal and copper (sheetRoof in shading.ts): pans between thin standing seams,
 // each pan a shade of its own and laid in sheets of about 2.4 m down the slope, now and
@@ -115,7 +145,12 @@ function sheetRoof(c0: N, wp: N, n: N, wpWidth: N, copper: N) {
   const odd = float(1).sub(copper);
   tone.assign(mix(tone, tone.mul(1.12), step(0.93, sheet).mul(step(sheet, 0.97)).mul(odd)));
   tone.assign(mix(tone, tone.mul(vec3(1.02, 0.8, 0.62)), step(0.97, sheet).mul(odd)));
+  // A standing seam is a rib 3 cm high: its side towards the sun is lit, and it lays a
+  // thin shadow on the pan beyond it.
+  const acrossMap: N = vec2(down.y.negate(), down.x), rib: N = dot(uSunDir, vec3(acrossMap.x, 0, acrossMap.y.negate()));
   const t = tone.mul(float(1).add(float(1).sub(smoothstep(0, 0.035, seam)).mul(0.07)).sub(smoothstep(0.94, 1, seam).mul(0.06))).toVar();
+  t.mulAssign(float(1).add(float(1).sub(smoothstep(0.02, 0.07, seam)).mul(max(rib, 0)).mul(0.3)).sub(smoothstep(0.84, 0.97, seam).mul(max(rib, 0)).mul(0.28)));
+  t.mulAssign(float(1).add(smoothstep(0.93, 0.98, seam).mul(max(rib.negate(), 0)).mul(0.3)).sub(float(1).sub(smoothstep(0.03, 0.16, seam)).mul(max(rib.negate(), 0)).mul(0.28)));
   t.assign(mix(t, t.mul(vec3(0.82, 1.1, 1.02)).add(vec3(0.02, 0.06, 0.05)), copper.mul(smoothstep(0.45, 0.8, fbm(wp.mul(0.25)))).mul(0.7)));
   const sheen = fbm(wp.mul(0.04)).mul(0.1).add(0.95);
   return mix(mix(c0, tone, fade(wpWidth, 0.6)), t, fade(wpWidth, 0.3)).mul(sheen);
@@ -365,13 +400,17 @@ const windowGlow = Fn(() => {
   const g = vec3(0).toVar();
   const bn = normalWorld.normalize().toVar(), f = attribute('facade', 'vec4').toVar();
   const bays = fBays(f).toVar();
-  // Which way along the wall its `x` grows, in the world (derivatives: taken here, outside
-  // the branches), and the ray from the eye, for the rooms behind lit windows.
-  const wall0: N = vec3(bn.z, 0, bn.x.negate());
-  const dwx: N = dFdx(positionWorld), dwy: N = dFdy(positionWorld), dfx: N = dFdx(f.x), dfy: N = dFdy(f.x);
-  const turned: N = (dot(wall0, dwx) as N).mul(dfx).add((dot(wall0, dwy) as N).mul(dfy));
-  const along: N = wall0.mul(select(turned.lessThan(0), float(-1), float(1))).toVar();
-  const eye: N = normalize(positionWorld.sub(cameraPosition)).toVar();
+  // Which way along the wall its `x` grows, in the world, and the ray from the eye, for the
+  // rooms behind lit windows. (Derivatives must be taken outside branches that differ from
+  // pixel to pixel; a branch on a uniform is allowed, so by day none of this is worked out.)
+  const along: N = vec3(1, 0, 0).toVar(), eye: N = vec3(0, -1, 0).toVar();
+  If(uWindows.greaterThan(0.005), () => {
+    const wall0: N = vec3(bn.z, 0, bn.x.negate());
+    const dwx: N = dFdx(positionWorld), dwy: N = dFdy(positionWorld), dfx: N = dFdx(f.x), dfy: N = dFdy(f.x);
+    const turned: N = (dot(wall0, dwx) as N).mul(dfx).add((dot(wall0, dwy) as N).mul(dfy));
+    along.assign(wall0.mul(select(turned.lessThan(0), float(-1), float(1))));
+    eye.assign(normalize(positionWorld.sub(cameraPosition)));
+  });
   If(uWindows.greaterThan(0.005).and(bn.y.lessThan(0.15)).and(f.z.greaterThan(0.1)).and(bays.greaterThan(0.5)), () => {
     const st = fStorey(f);
     const cell = vec2(floor(f.x.div(f.z).mul(bays)), floor(f.y.sub(st.x).div(st.y)));
