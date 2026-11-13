@@ -236,7 +236,7 @@ const ROOFS = 30; // m above the ground: higher than that, the buildings don't m
 const TALL = 4; // m: the room it needs under a bridge
 // What's under and over a point in the air (see TileWorld.below).
 type Below = (x: number, y: number, z: number) => { level: number; h: number; roof: number };
-const FLY = { top: 42, accel: 14, yaw: 1.7, climb: 9 };
+const FLY = { top: 250 / 3.6, accel: 20, yaw: 1.7, climb: 9 }; // top is 250 km/h
 
 export class Chopper {
   grid: { at(x: number, y: number): number };
