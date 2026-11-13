@@ -274,6 +274,9 @@ steeper than VALLEY anywhere, which took steps over 1 m from 71 to 38.
   inside `SURVEY_OFFSET`, and it sank the square into a pit players drove into. A vertex
   more than `SUNK` (15 m) below all the terrain within 16 m is now rejected too. At 8 m
   it also dropped real kerbs at the foot of Radotín's quarry and lifted the street.
+  The stairs down to that floor got through (their vertices 7–17 m down) and sank the end
+  of Ibsenova 12 m (November 2026): a vertex within 8 m of a sunk one and over 3 m under
+  the ground goes too (`SUNK_STAIRS`).
 - Smaller sunk vertices are caught by IPR's 2023 LiDAR raster where it's imported
   (`ipr_lidar.py`), even when it isn't the ground: a vertex more than `OFF_SCAN` (1 m)
   below every height the scan has within 2 m of it is moved up to the lowest of them

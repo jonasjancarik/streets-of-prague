@@ -127,6 +127,13 @@ SURVEY_OFFSET = 30.0  # m from the bare terrain: gross errors, not the few metre
 # terrain further on anyway. (At 8 m it also took kerbs at the foot of Radotín's quarry,
 # 8–12 m under the terrain model's smoothed edge, and lifted the street there.)
 SUNK, SUNK_REACH = 15.0, 16.0
+# The stairs and escalators down to such a sunk floor are surveyed too, their vertices
+# anywhere between the street and the floor: a vertex within SUNK_STAIRS of a sunk one and
+# more than SUNK_STAIRS_DROP below the lowest bare terrain round it goes with it. At
+# náměstí Míru the metro vestibule's floor (222 m, 20 m down) was rejected but its stairs'
+# vertices at 225–236 m were not, and they sank the end of Ibsenova into a pit 12 m deep
+# (November 2026). Only next to a vertex SUNK deep, so an underpass's ramp stays.
+SUNK_STAIRS, SUNK_STAIRS_DROP = 8.0, 3.0
 # m: a vertex more than OFF_SCAN below every height the 2023 LiDAR raster has within
 # SCAN_REACH of it is under the ground the scan saw, and is moved up to the lowest of
 # them. The range, not the scan's height at the vertex, so a kerb at the foot of a wall
@@ -419,7 +426,14 @@ def _survey_points(lines, to_local, at, lowest=None, scan=None, counts=None, spa
         floor = np.full(len(local), np.nan)
         floor[finite_xy] = lowest(local[finite_xy, :2])
         with np.errstate(invalid="ignore"):
-            valid &= ~(np.isfinite(floor) & (local[:, 2] < floor - SUNK))
+            deep = np.isfinite(floor) & (local[:, 2] < floor - SUNK)
+            valid &= ~deep
+            if deep.any():
+                below = valid & np.isfinite(floor) & (local[:, 2] < floor - SUNK_STAIRS_DROP)
+                if below.any():
+                    k = np.flatnonzero(below)
+                    d, _ = cKDTree(local[deep, :2]).query(local[k, :2], distance_upper_bound=SUNK_STAIRS)
+                    valid[k[np.isfinite(d)]] = False
     if scan is not None:
         lo, _ = scan(raw[:, 0], raw[:, 1], SCAN_REACH)
         with np.errstate(invalid="ignore"):

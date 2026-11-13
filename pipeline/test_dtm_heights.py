@@ -51,6 +51,23 @@ class SurveyVertexTests(unittest.TestCase):
         self.assertEqual(rejected, 2)
         np.testing.assert_array_equal(points[:, 2], [243.6, 243.8])
 
+    def test_stairs_down_to_sunk_floor_rejected(self):
+        # náměstí Míru: stairs from the square (243 m) to the metro vestibule (222 m); the
+        # floor is SUNK deep, the flight's middle vertices aren't, and both must go.
+        flat = lambda p: np.full(len(p), 243.0)  # noqa: E731
+        stairs = np.array([(0, 0, 243.5), (2, 0, 235.8), (4, 0, 229.9), (6, 0, 224.0), (8, 0, 222.5)], dtype=float)
+        points, rejected = dh._survey_points([stairs], Identity(), flat, flat)
+        self.assertEqual(rejected, 4)
+        np.testing.assert_array_equal(points[:, 2], [243.5])
+
+    def test_underpass_ramp_without_sunk_floor_retained(self):
+        # A ramp 8 m down with nothing SUNK deep beside it is an underpass, not stairs.
+        flat = lambda p: np.full(len(p), 243.0)  # noqa: E731
+        ramp = np.array([(0, 0, 243.0), (10, 0, 239.0), (20, 0, 235.0)], dtype=float)
+        points, rejected = dh._survey_points([ramp], Identity(), flat, flat)
+        self.assertEqual(rejected, 0)
+        self.assertAlmostEqual(points[:, 2].min(), 235.0)
+
     def test_sunk_near_lower_ground_retained(self):
         # A quay 21 m below the street 10 m away is low ground nearby, not an error.
         points, rejected = dh._survey_points([np.array([(0, 0, 222.0), (8, 0, 222.0)], dtype=float)], Identity(),
