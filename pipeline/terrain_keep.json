@@ -18,5 +18,15 @@
    50.1135
   ],
   "why": "a pit in the grass beside the bridge"
+ },
+ {
+  "name": "náměstí Míru, where Ibsenova comes in on the square's west side",
+  "box": [
+   14.43604,
+   50.07592,
+   14.43632,
+   50.07613
+  ],
+  "why": "both kerbs of the short stretch are the square's raised edge, 0.7 m over the road: the street was levelled up to them, a 0.8 m step across the carriageway to the next stretch"
  }
 ]

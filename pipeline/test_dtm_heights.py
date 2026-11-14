@@ -60,6 +60,26 @@ class SurveyVertexTests(unittest.TestCase):
         self.assertEqual(rejected, 4)
         np.testing.assert_array_equal(points[:, 2], [243.5])
 
+    def test_top_of_flight_joined_to_rejected_stairs_rejected(self):
+        # náměstí Míru: the flight's top step (239.9 m, 2 m down) is 11 m from the nearest
+        # rejected vertex, but a surveyed line joins them; the kerb it starts from stays.
+        flat = lambda p: np.full(len(p), 242.0)  # noqa: E731
+        lines = [np.array([(0, 0, 242.1), (2, 0, 239.9)], dtype=float),
+                 np.array([(2, 0, 239.9), (13, 0, 228.8)], dtype=float),
+                 np.array([(13, 0, 228.8), (16, 0, 225.6)], dtype=float)]
+        points, rejected = dh._survey_points(lines, Identity(), flat, flat)
+        self.assertEqual(rejected, 5)
+        np.testing.assert_array_equal(points[:, 2], [242.1])
+
+    def test_low_vertex_not_joined_to_stairs_retained(self):
+        # A kerb 2 m down with no rejected stairs on its lines is left to the other rules.
+        flat = lambda p: np.full(len(p), 242.0)  # noqa: E731
+        lines = [np.array([(0, 0, 242.0), (4, 0, 240.0)], dtype=float),
+                 np.array([(30, 0, 242.0), (40, 0, 225.0)], dtype=float)]
+        points, rejected = dh._survey_points(lines, Identity(), flat, flat)
+        self.assertEqual(rejected, 1)
+        self.assertAlmostEqual(points[:, 2].min(), 240.0)
+
     def test_underpass_ramp_without_sunk_floor_retained(self):
         # A ramp 8 m down with nothing SUNK deep beside it is an underpass, not stairs.
         flat = lambda p: np.full(len(p), 243.0)  # noqa: E731

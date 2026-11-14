@@ -134,6 +134,12 @@ SUNK, SUNK_REACH = 15.0, 16.0
 # vertices at 225–236 m were not, and they sank the end of Ibsenova into a pit 12 m deep
 # (November 2026). Only next to a vertex SUNK deep, so an underpass's ramp stays.
 SUNK_STAIRS, SUNK_STAIRS_DROP = 8.0, 3.0
+# Then along the flights: a vertex joined to a rejected one by a surveyed line (in the same
+# line, or a line starting where the other's vertex is) and more than SUNK_STAIRS_TOP below
+# the lowest bare terrain goes too, and so on up the line. The top step of a flight at
+# náměstí Míru (239.9 m, 2 m down and 11 m from the nearest rejected vertex) left single
+# lattice points 1–2 m deep in the kerb of the square's road.
+SUNK_STAIRS_TOP = 1.0
 # m: a vertex more than OFF_SCAN below every height the 2023 LiDAR raster has within
 # SCAN_REACH of it is under the ground the scan saw, and is moved up to the lowest of
 # them. The range, not the scan's height at the vertex, so a kerb at the foot of a wall
@@ -401,6 +407,35 @@ def _along(c, spacing=SPACING):
     return np.concatenate(out)
 
 
+def _up_the_flights(lines, local, floor, rejected, valid):
+    """Rejects, in place in `valid`, what SUNK_STAIRS_TOP says: vertices joined by a surveyed
+    line to a rejected stairs vertex and more than SUNK_STAIRS_TOP below the bare terrain."""
+    low = valid & np.isfinite(floor) & (local[:, 2] < floor - SUNK_STAIRS_TOP)
+    if not rejected.any() or not low.any():
+        return
+    # Neighbours: the vertices before and after in each line, and vertices at the same spot.
+    ends = np.cumsum([len(c) for c in lines])
+    starts = ends - np.array([len(c) for c in lines])
+    a = np.arange(len(local) - 1)
+    a = a[~np.isin(a + 1, starts)]
+    pairs = [np.column_stack([a, a + 1])]
+    finite = np.flatnonzero(np.isfinite(local[:, :2]).all(axis=1))
+    same = cKDTree(local[finite, :2]).query_pairs(0.05, output_type="ndarray")
+    if len(same):
+        pairs.append(finite[same])
+    pairs = np.concatenate(pairs)
+    pairs = np.concatenate([pairs, pairs[:, ::-1]])
+    frontier = rejected.copy()
+    while True:
+        hit = frontier[pairs[:, 0]] & low[pairs[:, 1]] & valid[pairs[:, 1]]
+        if not hit.any():
+            return
+        k = np.unique(pairs[hit, 1])
+        valid[k] = False
+        frontier[:] = False
+        frontier[k] = True
+
+
 def _survey_points(lines, to_local, at, lowest=None, scan=None, counts=None, spared=None):
     """Validate original vertices against bare terrain, then sample only intact runs.
 
@@ -434,6 +469,7 @@ def _survey_points(lines, to_local, at, lowest=None, scan=None, counts=None, spa
                     k = np.flatnonzero(below)
                     d, _ = cKDTree(local[deep, :2]).query(local[k, :2], distance_upper_bound=SUNK_STAIRS)
                     valid[k[np.isfinite(d)]] = False
+                _up_the_flights(lines, local, floor, deep | (below & ~valid), valid)
     if scan is not None:
         lo, _ = scan(raw[:, 0], raw[:, 1], SCAN_REACH)
         with np.errstate(invalid="ignore"):
