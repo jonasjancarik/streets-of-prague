@@ -26,7 +26,8 @@ is still an experiment, mostly because of the ground at eye height:
   that are bilinear in each 4 m cell, so slopes show creases and flat streets roll
   gently. Detail finer than 4 m isn't in the map at all.
 - **No kerbs.** A kerb is a granite strip painted on ground of one height: the pavement
-  isn't raised. The survey has the kerb lines (DTM ZPS, set 3).
+  isn't raised. The survey has the kerb lines (DTM ZPS, set 3), but not how high they
+  are (see stage 2).
 - **Walls between lattice points.** A quay or retaining wall is an outline between
   lattice points of two labels. The step lines trial (`--step-lines`) gives each side a
   smooth height along it, but the ground next to the wall is still the lattice's.
@@ -180,13 +181,23 @@ match, and the numbers are in. Stop if the size or the cost is already over the 
 ### 2. Kerbs and walls from the survey
 
 Breaklines from the DTM ZPS: kerb lines, walls, steps, the edges of carriageways and
-pavements. Each side's height comes from the survey's heights where it has them. Where
-it doesn't, the kerb is left out rather than given a made-up height (or, if the user
-prefers, a standard height marked as guessed). Physics reads the kerbs too; see
-"Room to decide".
+pavements. Walls take each side's height from today's ground, as the step lines do.
+Cars and walkers feel the kerbs (decided 14 November).
 
-Done when the first-person pairs show raised pavements and clean walls, the road checks
-are no worse, and the size is still within the limit.
+The survey says where a kerb is, not how high: each kerb line has one height per
+vertex, mostly the road's. In Praha 1 it lies a median 1 cm above the road as the LiDAR
+has it, and it hardly ever comes paired with a second line for the kerb's top. The
+LiDAR does show the step. Across 5,471 runs of 10 m in Praha 1 with a clean cross
+section (`docs/evidence/kerbs/`, local), half the kerbs are 9 cm or more, and about one
+in six reads as flush (under 3 cm). Most flush kerbs are in pedestrian streets
+(Železná, Ovocný trh), but a few are in ordinary streets (Platnéřská, Betlémská), where
+the pavement starts at the road's level and rises a few per cent to the houses. So a
+kerb's height comes from the scan, and this stage needs the LiDAR switched on for kerbs
+(walls don't). Still to check: whether the scan's ground under a parked car (filled in
+where the car was taken out) hides a kerb and makes it read as flush.
+
+Done when the first-person pairs show raised pavements and clean walls, flush kerbs stay
+flush, the road checks are no worse, and the size is still within the limit.
 
 ### 3. Detail from the LiDAR
 
@@ -202,10 +213,12 @@ first person.
 ### 4. The default, and what it replaces
 
 Making the TIN the map's default, and retiring what it replaces, are the user's calls.
-The candidates: the road overlays (`?roadfit`, `?roadsurfaces`, the corridors), the
-step lines, and possibly the lattice itself (kept as a coarse derived file if the sky
-view or the boats still want it). The handbook, `rebuilding-the-map.md` and the
-terrain-steps skill change with it.
+The candidates are the road overlays (`?roadfit`, `?roadsurfaces`, the corridors) and
+the step lines. The lattice leaves the map (decided 14 November): the boats, lamps and
+everything else that goes through `terrainAt` follow the switch, and the sky view and
+the hill shade are moved to the TIN. It stays inside the build for as long as the rules
+in `dtm_heights.py` work on a grid, and for one release both ship, so the map can go
+back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change with it.
 
 ## How to work
 
@@ -218,18 +231,18 @@ terrain-steps skill change with it.
 
 ## Room to decide
 
-- **Cars at kerbs.** With kerbs in physics, a car mounting a pavement gets a jolt of
-  about 12 cm.
-  That's realistic and tells the player they've left the road. The other choice is cars
-  reading a surface with the kerbs smoothed out. Recommended: both cars and walkers ride
-  the TIN as drawn.
-- **Without the LiDAR.** Stages 1 and 2 don't need it. If the trial doesn't adopt the
-  scan, they still bring the kerbs and walls.
-- **The lattice afterwards.** Keep it as a small derived file, or drop it once nothing
-  reads it.
-- **Missing kerb heights.** Leave such kerbs out, or give them a standard height marked
-  as guessed.
+- **Cars at kerbs.** Decided 14 November: cars and walkers ride the TIN as drawn, so a
+  car mounting a pavement gets a jolt of about 12 cm.
+- **The lattice afterwards.** Decided 14 November: it leaves the map at stage 4 (see
+  there).
+- **Kerbs the scan can't read.** Flush kerbs are real, so a missing height can't simply
+  become a standard one. The user is looking at the flush stretches in Platnéřská and
+  Betlémská on Street View first. After that: leave such kerbs flush, or give them a
+  standard height marked as guessed.
+- **Without the LiDAR.** Stage 1 and the walls of stage 2 don't need it; the kerbs do.
 
 ## Progress
 
-- 14 November 2026: plan written. Not started.
+- 14 November 2026: plan written. Not started. Decided the same day: kerbs in physics,
+  the lattice out of the map at stage 4. Measured: the survey has kerbs' positions, the
+  LiDAR their heights.
