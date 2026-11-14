@@ -42,6 +42,7 @@ interface SurfaceOptions {
 export const GROUND_DEPTH = cutAway(new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide }), 'ground-depth');
 GROUND_DEPTH.visible = false;
 const GROUND_DEPTH_DROP = 0.3; // m
+const WALL_DEPTH_BACK = 0.05; // m: a step's wall in the depth, behind its face
 
 export class Surfaces {
   group: THREE.Group;
@@ -79,6 +80,17 @@ export class Surfaces {
         const back = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.BackSide }));
         back.renderOrder = -3000;
         this.group.add(back);
+        // From street level a wall's face hides what stands behind it too: trees on the
+        // terrace above and the city beyond were drawn over it. Its depth goes in with
+        // the plain ground's, a little behind the face so the face stays in front.
+        const p = l.geometry.position, nrm = l.geometry.normal, behind = new Float32Array(p.length);
+        for (let i = 0; i < p.length; i++) behind[i] = p[i] - nrm[i] * WALL_DEPTH_BACK;
+        const dg = new THREE.BufferGeometry();
+        dg.setAttribute('position', new THREE.BufferAttribute(behind, 3));
+        dg.setIndex(g.index);
+        const depth = new THREE.Mesh(dg, GROUND_DEPTH);
+        depth.renderOrder = -3001;
+        this.group.add(depth);
       }
       if (!l.slab && !l.deck && !l.tunnel && l.order >= -1000 && l.order < -800) onceAPixel(m, l);
       if (l.shade === undefined && !l.tunnel) m.receiveShadow = true;
