@@ -47,9 +47,24 @@ class PadTests(unittest.TestCase):
         from shapely.geometry import LineString
         way = {"pts": [(0.0, 0.0), (20.0, 0.0)], "w": 8.0, "raised": {0: (18.0, 274.0)}}
         streets = [(LineString([(-40.0, 0.0), (0.0, 0.0)]), 4.0), (LineString([(-9.0, -30.0), (-9.0, 30.0)]), 3.0)]
-        (pad, _), = structures.pads([way], streets, clear=1.5)
+        ground = lambda xs, ys: np.full(len(xs), 268.0)  # noqa: E731 (the street under, 6 m down)
+        (pad, _), = structures.pads([way], streets, clear=1.5, ground=ground)
         inside = shapely.contains_xy(pad, [-9.0, -9.0, -2.0, -16.0], [0.0, 3.0, 0.0, 0.0]).tolist()
         assert inside == [False, False, True, True], inside
+
+    def test_a_street_at_the_bridge_s_level_beside_the_raised_metres_leaves_them_whole(self):
+        # Hořejší nábřeží at Palackého most's end: the street runs north–south under the
+        # deck's first metres, half a metre below the bridge's end, its carriageway reaching
+        # into the street's last metres west of the end. Those keep the pad, whose outline
+        # is the step between the two; only the lip under the deck gives way.
+        import shapely
+        from shapely.geometry import LineString
+        way = {"pts": [(0.0, 0.0), (20.0, 0.0)], "w": 8.0, "raised": {0: (5.0, 264.0)}}
+        streets = [(LineString([(-30.0, 0.0), (0.0, 0.0)]), 4.0), (LineString([(2.0, -30.0), (2.0, 30.0)]), 3.0)]
+        ground = lambda xs, ys: np.full(len(xs), 263.5)  # noqa: E731
+        (pad, _), = structures.pads([way], streets, ground=ground)
+        inside = shapely.contains_xy(pad, [-1.0, -4.5, 1.0], [0.0, 2.0, 0.0]).tolist()
+        assert inside == [True, True, False], inside
 
 
 class StructureHeightTests(unittest.TestCase):
