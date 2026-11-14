@@ -186,7 +186,10 @@ if (cmd === 'serve') {
         }
         const out = await handle(game, body).catch((e) => ({ error: e.message }));
         slot.rest();
-        res.end(JSON.stringify(out));
+        // (A value that refers to itself, a mesh say, is the command's mistake, not the server's.)
+        let reply;
+        try { reply = JSON.stringify(out); } catch (e) { reply = JSON.stringify({ error: `the result can't be sent: ${e.message.split('\n')[0]}` }); }
+        res.end(reply);
       });
     });
   });
