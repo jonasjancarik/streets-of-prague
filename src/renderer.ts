@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { WebGPURenderer as GPU } from 'three/webgpu';
 import * as telemetry from './telemetry.ts';
 import { isSoftware, reportTrouble, whyWebGL } from './graphicswarning.ts';
+import { gpuMemoryReport, trackGpuMemory } from './gpumemory.ts';
 
 // A browser/driver can leave requestAdapter or requestDevice pending indefinitely.
 // Finish startup with the legacy renderer instead of leaving the map loading forever.
@@ -64,6 +65,7 @@ export function retryStart(e: unknown) {
   if (!webgpu) return false;
   const text = e instanceof Error ? `${e.message} ${e.stack ?? ''}` : String(e);
   if (!gpuTrouble && !/three\.webgpu|GPU/.test(text)) return false;
+  telemetry.error('GPU memory at failed start', gpuMemoryReport());
   const now = startRetry(), next = now === '' ? 'low' : now === 'low' ? 'webgl' : '';
   if (!next) return false;
   try { sessionStorage.setItem(RETRY, next); } catch { return false; } // can't remember it: no loop
@@ -78,7 +80,10 @@ function watchGpu(renderer: GPU) {
   const r = renderer as unknown as { onError: (info: { type?: string; message?: string }) => void; onDeviceLost: (info: unknown) => void };
   const error = r.onError.bind(renderer), lost = r.onDeviceLost.bind(renderer);
   r.onError = (info) => { gpuTrouble = true; telemetry.error('GPU error', `${info.type ?? 'GPUError'}: ${info.message ?? ''}`); error(info); };
-  r.onDeviceLost = (info) => { gpuTrouble = true; lost(info); };
+  r.onDeviceLost = (info) => { gpuTrouble = true; telemetry.error('GPU memory at lost device', gpuMemoryReport()); lost(info); };
+  // What it holds, for those two reports (gpumemory.ts).
+  const device = (renderer as unknown as { backend?: { device?: Parameters<typeof trackGpuMemory>[0] } }).backend?.device;
+  if (device) trackGpuMemory(device);
 }
 
 export async function createGameRenderer(params: URLSearchParams): Promise<THREE.WebGLRenderer> {
