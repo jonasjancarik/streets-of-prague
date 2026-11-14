@@ -189,15 +189,26 @@ vertex, mostly the road's. In Praha 1 it lies a median 1 cm above the road as th
 has it, and it hardly ever comes paired with a second line for the kerb's top. The
 LiDAR does show the step. Across 5,471 runs of 10 m in Praha 1 with a clean cross
 section (`docs/evidence/kerbs/`, local), half the kerbs are 9 cm or more, and about one
-in six reads as flush (under 3 cm). Most flush kerbs are in pedestrian streets
-(Železná, Ovocný trh), but a few are in ordinary streets (Platnéřská, Betlémská), where
-the pavement starts at the road's level and rises a few per cent to the houses. So a
-kerb's height comes from the scan, and this stage needs the LiDAR switched on for kerbs
-(walls don't). Still to check: whether the scan's ground under a parked car (filled in
-where the car was taken out) hides a kerb and makes it read as flush.
+in six reads as flush (under 3 cm), most of them in pedestrian streets (Železná, Ovocný
+trh). The scan can't be trusted when it says a kerb is flush, though. In Platnéřská and
+Betlémská it reads 0 cm, with the pavement rising a few per cent towards the houses,
+but on Street View both kerbs are raised by about 10 cm (the user's look, 14 November).
+Why the scan loses them isn't known: parked cars filled in, narrow pavements, or the
+scan's own smoothing.
 
-Done when the first-person pairs show raised pavements and clean walls, flush kerbs stay
-flush, the road checks are no worse, and the size is still within the limit.
+The rule, then (proposed):
+
+- A kerb between a carriageway and a pavement is raised. It takes the scan's step where
+  the scan shows a clean one of 10 cm or more, and otherwise 10 cm, marked as guessed.
+- It's lowered (2 cm) or flush only where the data says so: OSM's kerb tags at crossings
+  (in Prague 5,662 lowered, 1,432 flush, 1,443 raised), the survey's driveway ramps
+  (Nájezd, though only 10 in Praha 1), and pedestrian streets with no carriageway.
+- Without the LiDAR, every kerb gets the guessed height except at those places. The
+  scan makes kerbs more exact, but the stage doesn't need it.
+
+Done when the first-person pairs show raised pavements and clean walls, lowered kerbs at
+crossings stay lowered, the road checks are no worse, and the size is still within the
+limit. Spot checks on Street View at a few kerbs of each kind come with it.
 
 ### 3. Detail from the LiDAR
 
@@ -235,14 +246,15 @@ back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change w
   car mounting a pavement gets a jolt of about 12 cm.
 - **The lattice afterwards.** Decided 14 November: it leaves the map at stage 4 (see
   there).
-- **Kerbs the scan can't read.** Flush kerbs are real, so a missing height can't simply
-  become a standard one. The user is looking at the flush stretches in Platnéřská and
-  Betlémská on Street View first. After that: leave such kerbs flush, or give them a
-  standard height marked as guessed.
-- **Without the LiDAR.** Stage 1 and the walls of stage 2 don't need it; the kerbs do.
+- **Kerbs the scan can't read.** It read two raised kerbs as flush, so flush comes only
+  from the data (OSM's kerb tags, driveway ramps, pedestrian streets). Other kerbs get
+  10 cm, marked as guessed (proposed in stage 2).
+- **Without the LiDAR.** Stages 1 and 2 don't need it; the scan makes the kerbs more
+  exact.
 
 ## Progress
 
 - 14 November 2026: plan written. Not started. Decided the same day: kerbs in physics,
-  the lattice out of the map at stage 4. Measured: the survey has kerbs' positions, the
-  LiDAR their heights.
+  the lattice out of the map at stage 4. Measured: the survey has kerbs' positions, and
+  the LiDAR shows most of their heights but loses some low ones (two "flush" kerbs are
+  about 10 cm on Street View).
