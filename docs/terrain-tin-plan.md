@@ -284,3 +284,30 @@ back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change w
   hard limits for bumps, 4 for leaning, 2 for twisting, none for steps. Its step check:
   8.1 km of edge, 287 teeth (35 per km), and 761 m of parapet whose top jumps by over
   5 cm.
+- 14 November 2026: stage 1 stopped at its first measurement, the size. The prototype
+  is `scripts/tin-target.mjs` (today's heights through the game's sampler, every 0.5 m,
+  and the steps' outlines with each side's height) and `pipeline/tin.py` (breaklines,
+  tile edges, greedy insertion on a conforming Delaunay). For `ujezd`'s 25 tiles, which
+  are the dense middle of the city:
+
+  | Tolerance | Vertices a tile | Triangles a tile | gzip a tile | `praha` by tile count |
+  |---|---|---|---|---|
+  | 2 cm everywhere | 14,800 | 28,200 | 194 KB | 2.8 GB |
+  | 2 cm paved, 25 cm elsewhere | 6,200 | 10,900 | 77 KB | 1.1 GB |
+  | 10 cm paved, 25 cm elsewhere | 3,200 | 5,300 | 38 KB | 560 MB |
+  | the steps alone, 2 cm | 300 | – | 1.5 KB | 22 MB |
+
+  Today's height file is 2.5 KB a tile (median). The limit was a fifth more map, about
+  200 MB. Even if the outer tiles cost a third of these, a TIN within 2 cm of the paved
+  ground is over it. The reason is the lattice's own shape: 45 % of its cells (all that
+  aren't flat) are bilinear patches that bend by over 2 cm, so copying them takes
+  several vertices a cell, each costing about 12 bytes against the lattice's one. A
+  TIN is cheaper than a grid only where the ground is flat for long stretches.
+  Building takes about 0.9 s a tile (2 cm paved, 25 cm elsewhere). The prototype still
+  puts some samples in triangles of the wrong side (about 5,000 in `2_2`). That's to
+  fix if this goes on.
+
+  Proposed instead (not decided): keep the lattice for the smooth ground and add the
+  steps, and in stage 2 the kerbs, as breaklines with each side's height. That's about
+  1.5 KB a tile. The worker cuts the layers along them and takes heights near them from
+  them. Stage 0 found the walls and kerbs the trouble in first person, not the creases.
