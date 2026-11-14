@@ -1164,9 +1164,10 @@ PORTAL = 12.0  # m a tunnel reaches out of its portal, at the portal's height
 
 PAD_INTO = 2.0  # m under a bridge's first metres that the street's pad before it reaches (see pads)
 PAD_CLEAR = 4.0  # m that reach keeps off the other streets' kerbs: a lattice cell
+PAD_UNDER = 2.5  # m below a bridge's end that a street passes under it (see pads)
 
 
-def pads(ways, streets=(), clear=None):
+def pads(ways, streets=(), clear=None, ground=None):
     """Where the ground has to come up to a bridge's end: [(polygon, height)], the
     street's last metres between the edge of the wall the bridge comes off and where the
     map has the bridge begin (see abutment). They'd hang down to the quay below. And on
@@ -1176,7 +1177,10 @@ def pads(ways, streets=(), clear=None):
     now its step is cut under the deck. Not on a car street on the ground passing under
     the bridge's end, `streets` [(line, half width)] (Hořejší nábřeží under Palackého
     most), which keeps its own height there, nor within `clear` of its kerbs (a lattice
-    corner raised beside it would lift its edge). A street running on from a bridge's end
+    corner raised beside it would lift its edge): under the deck, wherever such a street
+    comes that near, and on the street's last metres only where one's carriageway reaches
+    into them at least PAD_UNDER below the bridge's end, by `ground` (Ryšavého under the
+    D1). A street running on from a bridge's end
     at about this height (its own, or the one beside it, as 5. května's link road) isn't
     passing under."""
     clear = PAD_CLEAR if clear is None else clear
@@ -1201,16 +1205,34 @@ def pads(ways, streets=(), clear=None):
         on = (b[0] + ux * far, b[1] + uy * far)
         pad = LineString([b, on]).buffer(w["w"] / 2 + 1.0, cap_style="flat") if far > 0 else None
         into = min(PAD_INTO, d / 2)
-        if into > 0:
-            lip = LineString([(b[0] - ux * into, b[1] - uy * into), b]).buffer(w["w"] / 2 + 1.0, cap_style="flat")
-            if tree is not None:
-                under = [streets[k][0].buffer(streets[k][1] + clear) for k in tree.query(lip.buffer(clear))
-                         if not any(abs(h - height) < 1.0 for h in runs_on.get(k, ()))]
-                if under:
-                    lip = lip.difference(unary_union(under))
-            pad = lip if pad is None else pad.union(lip)
-        if pad is not None and not pad.is_empty:
-            out.append((pad, height))
+        lip = LineString([(b[0] - ux * into, b[1] - uy * into), b]).buffer(w["w"] / 2 + 1.0, cap_style="flat") if into > 0 else None
+        if tree is not None:
+            passing = lambda area: [k for k in tree.query(area.buffer(clear))  # noqa: E731
+                                    if not any(abs(h - height) < 1.0 for h in runs_on.get(k, ()))]
+            clear_of = lambda ks: unary_union([streets[k][0].buffer(streets[k][1] + clear) for k in ks])  # noqa: E731
+            if lip is not None and (under := passing(lip)):
+                lip = lip.difference(clear_of(under))
+            # The street's last metres give way only to a street passing well under them with
+            # its carriageway reaching in: with Ryšavého on the LiDAR, the pad stood 6 m up
+            # across it under the D1. By a street at about the bridge's level (Hořejší
+            # nábřeží at Palackého most's end, Záběhlická) or one that only comes within
+            # `clear` (by a slip road in Nusle) they stay whole, as their outline is the
+            # step between the two: cut away, the lattice leant Hořejší nábřeží 70 % up
+            # towards the bridge and the slip road 47 % down to the street beside it.
+            if pad is not None and ground is not None:
+                through = []
+                for k in passing(pad):
+                    line, half = streets[k]
+                    if line.buffer(half).intersects(pad):
+                        p = shapely.get_coordinates(shapely.shortest_line(line, pad))[0]
+                        h = ground([p[0]], [p[1]])[0]
+                        if np.isfinite(h) and height - h >= PAD_UNDER:
+                            through.append(k)
+                if through:
+                    pad = pad.difference(clear_of(through))
+        parts = [p for p in (pad, lip) if p is not None and not p.is_empty]
+        if parts:
+            out.append((unary_union(parts), height))
     return out
 
 
