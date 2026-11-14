@@ -299,6 +299,11 @@ SCAN_MIX = 1.0  # m: further than this from what the street had, the scan counts
 # lies in: left on the bank, it tilted the street's edge up it.
 SCAN_SHOULDER = 4.5  # m
 SCAN_BESIDE = 2.0  # m
+# All of the scan round the point, not just some of it: beside a retaining wall the scan
+# within a metre of a point on its top reaches down the wall's face to the street, and the
+# top's first row of points came down to the street (Československého exilu: the wall's
+# top dipped 8 m to the street twice; the step lines read it from those points).
+SCAN_SHOULDER_WHOLE = False  # (trial, 15 November 2026: walls better, roads worse; see the plan)
 # (The scan round the point: within SCAN_POINT of it. Within 2 m, a point on the edge of
 # a wall's top had the foot's height in reach too, and the street at the foot took it:
 # nábřeží Edvarda Beneše over the quay road lost a row of points and leant 135 %.)
@@ -831,6 +836,8 @@ def _scan_streets(grid, on, streets, sides, scan_here, apart, sure, x_of, y_of, 
     with np.errstate(invalid="ignore"):
         slack = np.where(kerbed, SCAN_OFF, SCAN_BESIDE)
         mine = (target[near] >= lo - slack) & (target[near] <= hi + slack)
+        if SCAN_SHOULDER_WHOLE:
+            mine &= kerbed | ((hi <= target[near] + SCAN_BESIDE) & (lo >= target[near] - SCAN_BESIDE))
     gj, gi, near = gj[mine], gi[mine], near[mine]
     if not len(gj):
         return done

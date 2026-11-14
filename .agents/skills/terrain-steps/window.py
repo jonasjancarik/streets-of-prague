@@ -83,6 +83,7 @@ def main():
     for name in ("cuttings", "level", "feather", "sunk-kerbs", "scan-levels", "scan-streets", "bridges"):
         ap.add_argument(f"--no-{name}", action="store_true")
     ap.add_argument("--survey-scan", action="store_true", help="the survey checked against IPR's 2023 LiDAR, as ipr_terrain.py --survey-scan")
+    ap.add_argument("--step", type=float, default=ipr_terrain.STEP, help="the lattice's step, roughly (as ipr_terrain.py --step); not 4 m: the window's map has no ring of built tiles")
     ap.add_argument("--step-lines-scan", action="store_true", help="the step lines read the LiDAR beside each step, as ipr_terrain.py --step-lines-scan")
     args = ap.parse_args()
     if args.data and args.data.resolve() == OUT.resolve():
@@ -100,7 +101,7 @@ def main():
     T = meta["tile"]
     ox, oy = meta["origin"]
     local = f"+proj=tmerc +lat_0={(s + n) / 2} +lon_0={(w + e) / 2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m"
-    N, step = ipr_terrain.grid_step(T)
+    N, step = ipr_terrain.grid_step(T, args.step)
     gx0, gy0 = -ox, -oy
     px, py = Transformer.from_crs("EPSG:4326", local, always_xy=True).transform(args.lon, args.lat)
     ti, tj = int((px + ox) // T), int((py + oy) // T)
@@ -263,6 +264,11 @@ def write_map(out, built, tiles, labels, terraces, found, steep, tile_water, box
         old.unlink()
     inner = set(tiles)
     plain = np.zeros((N + 1, N + 1), dtype=np.uint8)
+    index = json.loads((built / "index.json").read_text())
+    own_grid = index["terrain"]["n"] != N + 1  # (another lattice: its own index, no ring of the built map's tiles)
+    if own_grid:
+        index["terrain"] = {**index["terrain"], "n": N + 1, "step": step}
+        (out / "index.json").write_text(json.dumps(index))
     own = step_lines.lattice_reader(tiles, labels, N, T, step, gx0, gy0)
     if scan_at is not None:
         own = step_lines.scan_reader(own, scan_at, decks)
@@ -271,6 +277,8 @@ def write_map(out, built, tiles, labels, terraces, found, steep, tile_water, box
         for j in range(tj - reach - 1, tj + reach + 2):
             k = f"{i}_{j}"
             if (i, j) not in inner:
+                if own_grid:
+                    continue
                 for p in (built / "tiles").glob(f"{k}.*"):
                     if not p.name.startswith(f"{k}.ipr"):
                         (out / "tiles" / p.name).symlink_to(p)
