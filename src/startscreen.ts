@@ -179,8 +179,11 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
   go.type = fresh.type = 'button';
   fresh.addEventListener('click', () => { resuming = false; sync(); show(); go.focus(); });
   go.disabled = true;
-  newsletterLink(panel, 'ls-news', { thanks: true });
-  const code = el('a', 'ls-news ls-code', panel) as HTMLAnchorElement;
+  // News by email and the code on GitHub, side by side, so the menu stays short enough
+  // to clear a phone browser's bottom bar.
+  const links = el('div', 'ls-links', panel);
+  newsletterLink(links, 'ls-news', { thanks: true });
+  const code = el('a', 'ls-news ls-code', links) as HTMLAnchorElement;
   code.href = 'https://github.com/jonasjancarik/streets-of-prague';
   code.target = '_blank';
   code.rel = 'noopener';

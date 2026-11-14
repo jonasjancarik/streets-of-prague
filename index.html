@@ -372,11 +372,13 @@
       .slow-hint p { margin: 0; align-self: stretch; }
       button.ls-news { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.25em; cursor: pointer; }
       button.ls-news:hover, .ls-news.done { opacity: 1; }
-      /* The game's code on GitHub: a second quiet link, right under the news one. */
+      /* The game's code on GitHub: a second quiet link, beside the news one. */
       a.ls-code { display: inline-flex; align-items: center; gap: 0.45em; text-decoration: none; }
       a.ls-code svg { width: 1.05em; height: 1.05em; margin-top: -0.15em; }
       a.ls-code:hover { opacity: 1; }
-      .ls-news + .ls-code { margin-top: 0; }
+      .ls-links { display: flex; flex-wrap: wrap; align-items: flex-start; margin-top: calc(1.6 * var(--u)); }
+      .ls-links .ls-news { margin-top: 0; }
+      .ls-links .ls-news + .ls-news { margin-left: 0; }
       /* Focused on its own when the map is ready: lifted like on hover, not boxed in. */
       .ls-start .ls-go:focus-visible { outline: none; background: #e2342b; transform: translate(-0.2vh, -0.2vh); box-shadow: 0.8vh 0.8vh 0 var(--poster-black); }
       .ls-start button:focus-visible { outline: 0.4vh solid var(--poster-paper); outline-offset: 0.3vh; }
@@ -439,13 +441,15 @@
         .ls-label { flex: 0 0 52px; padding-top: 0; }
         .ls-face:nth-child(1) { display: none; }
       }
-      /* A screen upright: the dark ground behind all of the menu, one figure below it. */
+      /* A screen upright: the dark ground behind all of the menu, one figure below it.
+         Sized by the height left with the browser's bars showing (svh), so on a phone
+         the bottom of the menu isn't under the address bar. */
       @media (max-aspect-ratio: 4/5) {
-        #loading { --u: 1vh; --slack: 0px; }
-        .ls-title { top: 5vh; font-size: 17vw; line-height: 0.9; }
-        .ls-start { width: 90vw; top: calc(8vh + 31vw); font-size: min(2.2vh, 4vw); }
+        #loading { --u: 1svh; --slack: 0px; }
+        .ls-title { top: 5svh; font-size: 17vw; line-height: 0.9; }
+        .ls-start { width: 90vw; top: calc(8svh + 31vw); font-size: min(2.2svh, 4vw); }
         .ls-wedge { clip-path: polygon(0 0, 100% 0, 100% 60%, 0 76%); }
-        .ls-cast { right: -6vw; height: 32vh; }
+        .ls-cast { right: -6vw; height: 32svh; }
         .ls-sun { display: none; } /* the wedge covers its sky; it would only show through as a grey disc */
         .ls-face:nth-child(1), .ls-face:nth-child(3) { display: none; }
       }
