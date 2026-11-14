@@ -207,6 +207,10 @@ with the ground joining it at explicit edges ("Proposed road model" in the findi
 The game, the cars and the checks must all read it. It's the biggest change in the
 list; don't start it until the earlier steps show it's needed.
 
+Since 14 November 2026 this is part of a wider plan, a triangulated ground for the whole
+map with kerbs and walls as breaklines, wanted for the first-person view
+([terrain-tin-plan.md](terrain-tin-plan.md), its stage 4).
+
 ## How to work
 
 - **Compare like with like.** A before and after are the same commit with the change
