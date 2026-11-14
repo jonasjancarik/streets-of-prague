@@ -82,6 +82,7 @@ def main():
     ap.add_argument("--walls", type=Path, help="another terrain_walls.json to try")
     for name in ("cuttings", "level", "feather", "sunk-kerbs", "scan-levels", "scan-streets", "bridges"):
         ap.add_argument(f"--no-{name}", action="store_true")
+    ap.add_argument("--survey-scan", action="store_true", help="the survey checked against IPR's 2023 LiDAR, as ipr_terrain.py --survey-scan")
     args = ap.parse_args()
     if args.data and args.data.resolve() == OUT.resolve():
         ap.error("--data is the built map's own folder")
@@ -200,7 +201,7 @@ def main():
         bridge_ways=[] if args.no_cuttings else bridge_lines,
         drawn=drawn, level_across=not args.no_level,
         cuts=[LineString(way["pts"]).buffer(way["w"] / 2) for way in ways if way.get("cut")], sharp=False,
-        scan=ipr_lidar.range_sampler(ipr_lidar.CACHE)[0] if all(p.exists() for p in ipr_lidar.source_paths(ipr_lidar.CACHE)) else None, sunk_kerbs=not args.no_sunk_kerbs, scan_levels=not args.no_scan_levels,
+        scan=ipr_lidar.range_sampler(ipr_lidar.CACHE)[0] if args.survey_scan else None, sunk_kerbs=not args.no_sunk_kerbs, scan_levels=not args.no_scan_levels,
         street_sides=list(kerbs.values()), scan_streets=not args.no_scan_streets)
     labels, terraces = surveyed.pop("labels"), surveyed.pop("terraces")
     print(f"  survey: {surveyed}")

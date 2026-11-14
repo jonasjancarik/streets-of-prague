@@ -211,6 +211,10 @@ steeper than VALLEY anywhere, which took steps over 1 m from 71 to 38.
   pit 3 m deep. Within 6 m of a bridge, where a lattice point's nearest surveyed points
   are more than 3 m apart in height, the upper ones count (`LEVELS`, `UNDER_BRIDGE`).
   Everywhere, it moved 78,000 points and added 20 steps.
+- The rules below that use IPR's 2023 LiDAR run only with `ipr_terrain.py
+  --survey-scan` (or `--ipr-lidar`; `window.py --survey-scan` the same). The public map
+  is built without them (14 November 2026), and their figures come from builds with
+  the scan. Copying the scan into `pipeline/.cache` changes no build by itself.
 - Since November 2026 the LiDAR decides (`aloft`, `DECK_SIDE` in `dtm_heights.py`): a
   kerb more than 3 m over the highest the bare-earth scan has within 2 m is up on
   something. Inside one of the map's bridges it's the deck's and no lattice point takes
@@ -277,10 +281,10 @@ steeper than VALLEY anywhere, which took steps over 1 m from 71 to 38.
   The stairs down to that floor got through (their vertices 7–17 m down) and sank the end
   of Ibsenova 12 m (November 2026): a vertex within 8 m of a sunk one and over 3 m under
   the ground goes too (`SUNK_STAIRS`).
-- Smaller sunk vertices are caught by IPR's 2023 LiDAR raster where it's imported
-  (`ipr_lidar.py`), even when it isn't the ground: a vertex more than `OFF_SCAN` (1 m)
+- With `--survey-scan`, smaller sunk vertices are caught by IPR's 2023 LiDAR raster
+  (`ipr_lidar.py` imports it), even when it isn't the ground: a vertex more than `OFF_SCAN` (1 m)
   below every height the scan has within 2 m of it is moved up to the lowest of them
-  (`survey:` counts them as `off_scan`; `--no-survey-scan` to compare). The range, not
+  (`survey:` counts them as `off_scan`; leave `--survey-scan` out to compare). The range, not
   the scan's height at the vertex, so a kerb at a wall's foot stays. Found at Svornosti
   by Palackého most: a kerb drawn as one straight 89 m line with its corner 2.2 m under
   the junction sank the crossing into a pit 2 m deep. Dropping such vertices instead

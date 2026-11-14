@@ -143,6 +143,10 @@ This switch samples IPR's 1 m bare-earth elevations in Bpv onto the existing
 terrain lattice before the street survey, water and bridges are applied. CityGML
 supplies the samples where the raster has no coverage. Builds without the switch
 use the existing CityGML terrain source, and `--dmr5g` is a separate experiment.
+`--ipr-lidar` also checks the survey against the scan (`--no-survey-scan` not to);
+`--survey-scan` does only that, keeping the existing ground. Neither is on unless the
+command asks: a cache in `pipeline/.cache/ipr_lidar/2023` changes no build by itself,
+and a build that asks for a missing or broken one stops.
 The map index records the raster's source and archive checksum when it is used.
 Credit IPR Praha under CC BY for maps built with the raster.
 [IPR catalogue and licence](https://www.arcgis.com/sharing/rest/content/items/97d2c9c11aa9478cb21b469b8a4f820e/info/metadata/metadata.xml?format=default&output=html).

@@ -1,3 +1,4 @@
+import argparse
 import hashlib
 import importlib.util
 import json
@@ -66,6 +67,30 @@ class LidarTests(unittest.TestCase):
                 path.write_bytes(b"finished")
             self.assertNotEqual(before, build_cache.sources(ipr_terrain.source_paths("ujezd", options)))
             self.assertEqual(baseline, build_cache.sources(ipr_terrain.source_paths("ujezd", {})))
+
+    def test_the_survey_is_checked_against_the_scan_only_when_asked(self):
+        # The same command builds the same map whether or not the scan is in .cache.
+        def args(**given):
+            return argparse.Namespace(**{"survey_scan": False, "no_survey_scan": False, "ipr_lidar": None,
+                                         "no_survey": False, **given})
+        with tempfile.TemporaryDirectory() as tmp:
+            heights, manifest = ipr_lidar.source_paths(tmp)
+            np.save(heights, np.array([[200, 202], [206, 208]], dtype="<f4"))
+            manifest.write_text(json.dumps({"format": ipr_lidar.CACHE_FORMAT, "source": ipr_lidar.SOURCE,
+                                            "archiveSha256": ipr_lidar.ARCHIVE_SHA256, "origin": ORIGIN, "shape": [2, 2]}))
+            here = Path(tmp).resolve()
+            with patch.object(ipr_lidar, "CACHE", Path(tmp)):
+                self.assertIsNone(ipr_terrain.survey_scan(args()))
+                self.assertEqual(ipr_terrain.survey_scan(args(survey_scan=True)), here)
+                self.assertEqual(ipr_terrain.survey_scan(args(ipr_lidar=Path(tmp))), here)
+                self.assertIsNone(ipr_terrain.survey_scan(args(ipr_lidar=Path(tmp), no_survey_scan=True)))
+                self.assertIsNone(ipr_terrain.survey_scan(args(ipr_lidar=Path(tmp), no_survey=True)))
+                with self.assertRaisesRegex(ValueError, "--no-survey"):
+                    ipr_terrain.survey_scan(args(survey_scan=True, no_survey=True))
+            with patch.object(ipr_lidar, "CACHE", Path(tmp) / "nowhere"):
+                self.assertIsNone(ipr_terrain.survey_scan(args()))
+                with self.assertRaisesRegex(ValueError, "Import DTM.zip"):
+                    ipr_terrain.survey_scan(args(survey_scan=True))
 
     def test_rejects_partial_archive_without_publishing(self):
         with tempfile.TemporaryDirectory() as tmp:

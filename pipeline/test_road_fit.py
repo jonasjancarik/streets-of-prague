@@ -121,15 +121,18 @@ class AfterAssembleTests(unittest.TestCase):
         self.out = self.dir / "road-fit.json"
         self.out.write_text("{}")  # left from the map's earlier build
 
-    def after(self, bbox, present=True):
+    PRAHA = [14.2244, 49.9419, 14.7068, 50.1774]
+
+    def after(self, bbox, present=True, options=None):
         here = self.dir if present else self.dir / "nowhere"
+        index = {"bbox_wgs84": bbox, "terrainOptions": {"survey_scan": "2023"} if options is None else options}
         with mock.patch.object(road_fit, "run", return_value={}) as run, \
                 mock.patch.multiple(road_fit, LIDAR=here, SURVEY=here, DSM=here):
-            road_fit.after_assemble({"bbox_wgs84": bbox}, self.dir, self.dir / "report")
+            road_fit.after_assemble(index, self.dir, self.dir / "report")
         return run
 
     def test_the_areas_on_the_map_are_fitted(self):
-        run = self.after([14.2244, 49.9419, 14.7068, 50.1774])  # praha
+        run = self.after(self.PRAHA)
         self.assertEqual(run.call_args.args[1], list(road_fit.AREAS))
 
     def test_a_map_without_an_area_has_no_fit(self):
@@ -137,9 +140,14 @@ class AfterAssembleTests(unittest.TestCase):
         run.assert_not_called()
         self.assertFalse(self.out.exists())
 
-    def test_without_the_lidar_the_old_fit_goes(self):
-        run = self.after([14.2244, 49.9419, 14.7068, 50.1774], present=False)
+    def test_a_map_built_without_the_lidar_has_no_fit_even_with_the_scan_in_the_cache(self):
+        run = self.after(self.PRAHA, options={})
         run.assert_not_called()
+        self.assertFalse(self.out.exists())
+
+    def test_a_map_built_with_the_lidar_stops_when_its_sources_are_missing(self):
+        with self.assertRaisesRegex(SystemExit, "is missing"):
+            self.after(self.PRAHA, present=False)
         self.assertFalse(self.out.exists())
 
 

@@ -106,8 +106,9 @@ Add `&roadfit` to load the road fit over the inner city (Vinohrady, Nusle, Zlíc
 Smíchov, the centre and Žižkov) from
 `road-fit.json`: one smooth surface over the streets, fitted to IPR's LiDAR. Every
 step that puts the map together (`layers.assemble`) fits it again, so it always
-matches the map; without IPR's LiDAR and surface model in `pipeline/.cache` the map
-has none.
+matches the map. Only a map whose terrain was built with the LiDAR
+(`ipr_terrain.py --survey-scan` or `--ipr-lidar`) has one, and then the build stops
+if IPR's LiDAR or surface model is missing from `pipeline/.cache`.
 [How it is made and what it changes](road-surface-findings.md#road-fit-pilot-vinohradynusle).
 
 A prototype puts the LiDAR into the map itself instead: `uv run ipr_terrain.py <area>
@@ -1478,7 +1479,11 @@ hours (with warm caches) to a night, and tens of gigabytes.
 previous map while rebuilding, and how to check the result against it.
 
 The public map is built without IPR's LiDAR raster (`ipr_lidar.py`, below): it is
-used only in experiments.
+used only in experiments. A build uses it only when the command asks for it
+(`ipr_terrain.py --survey-scan` or `--ipr-lidar`), so importing it into
+`pipeline/.cache` doesn't change what the same commands build, and a build that asks
+for it stops if it's missing. `terrainOptions` in the map's `index.json` says whether
+it was used.
 
 ### The steps
 
@@ -1613,11 +1618,12 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   a retaining wall the height it has clear of the ramp. Original street vertices more
   than 30 m from the bare terrain are rejected before interpolation; their attached
   segments are skipped, keeping gross source errors from spreading into the ground.
-  Where IPR's 2023 LiDAR raster has been imported (`pipeline/ipr_lidar.py`), a vertex
+  With `--survey-scan` (IPR's 2023 LiDAR raster, imported by `pipeline/ipr_lidar.py`;
+  not on the public map), a vertex
   more than a metre below every height the scan has within 2 m of it is moved up to the
   lowest of them (a kerb's corner 2 m under the junction of Svornosti and Lidická sank
-  the crossing into a pit), except by the map's bridges and in its tunnels. Without the raster the build says so and skips this;
-  `--no-survey-scan` skips it to compare.
+  the crossing into a pit), except by the map's bridges and in its tunnels. `--ipr-lidar`
+  does this too, unless `--no-survey-scan`.
   Separate components of a survey line stay separate. The survey log reports rejected
   vertices, and in `off_scan` those moved up to the scan. See `docs/river-terrain-findings.md` for the checks and remaining limits.
   A car street is then level from kerb to kerb, with the pavement a grid cell beyond:

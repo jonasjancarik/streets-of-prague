@@ -340,6 +340,22 @@ def source_paths(area, options):
     return paths
 
 
+def survey_scan(args):
+    """The LiDAR the survey's points are checked against, or None. Only when the command
+    names it (--survey-scan, or --ipr-lidar for the ground), never because it happens to
+    be in .cache: the same command builds the same map on every machine. Asked for and
+    missing or broken, it's a ValueError saying how to import it."""
+    if args.no_survey_scan or not (args.survey_scan or args.ipr_lidar):
+        return None
+    if args.no_survey:  # (no survey to check: --ipr-lidar is the ground alone)
+        if args.survey_scan:
+            raise ValueError("--survey-scan checks the survey, and --no-survey leaves it out")
+        return None
+    directory = Path(args.ipr_lidar or ipr_lidar.CACHE).resolve()
+    ipr_lidar.range_sampler(directory)  # (memory-mapped: this only checks it)
+    return directory
+
+
 def main() -> None:
     command_started = time.perf_counter()
     timings = build_cache.Timings()
@@ -347,8 +363,12 @@ def main() -> None:
     ap.add_argument("area", nargs="?", default="centrum", choices=AREAS)
     ap.add_argument("--jobs", type=int, default=max(1, min(8, (os.cpu_count() or 2) - 2)), help="sheets read side by side")
     ap.add_argument("--no-survey", action="store_true", help="the terrain model's heights as they are, without the survey's (dtm_heights.py)")
-    ap.add_argument("--no-survey-scan", action="store_true",
-                    help="leave the survey's points however far under IPR's 2023 LiDAR they are (to compare; dtm_heights.OFF_SCAN)")
+    scan = ap.add_mutually_exclusive_group()
+    scan.add_argument("--survey-scan", action="store_true",
+                      help="check the survey against IPR's 2023 LiDAR in .cache/ipr_lidar/2023 (ipr_lidar.py imports it): "
+                           "sunk kerbs lifted, two levels decided, car streets from the scan's road. Off unless asked")
+    scan.add_argument("--no-survey-scan", action="store_true",
+                      help="with --ipr-lidar, don't also check the survey against it (to compare)")
     ap.add_argument("--no-feather", action="store_true", help="the ground beside surveyed streets as the terrain model has it (to compare)")
     raster = ap.add_mutually_exclusive_group()
     raster.add_argument("--dmr5g", action="store_true", help="prototype: ČÚZK's DMR 5G as the terrain in dmr5g.BOXES")
@@ -396,14 +416,11 @@ def main() -> None:
         options["ipr_lidar"] = str(args.ipr_lidar.resolve())
     if args.survey_companion_decks:
         options["survey_companion_decks"] = True
-    # The survey's points are checked against IPR's 2023 LiDAR wherever it's been imported
-    # (ipr_lidar.py), whether or not it's the ground.
-    scan_dir = args.ipr_lidar or ipr_lidar.CACHE
-    if not args.no_survey and not args.no_survey_scan:
-        if all(p.exists() for p in ipr_lidar.source_paths(scan_dir)):
-            options["survey_scan"] = str(Path(scan_dir).resolve())
-        else:
-            print(f"  note: no LiDAR in {scan_dir}, so the survey isn't checked against it (ipr_lidar.py imports it)")
+    try:
+        if scan_dir := survey_scan(args):
+            options["survey_scan"] = str(scan_dir)
+    except ValueError as exc:
+        ap.error(str(exc))
     if args.step != STEP:
         options["step"] = args.step
     if args.lidar_ground:

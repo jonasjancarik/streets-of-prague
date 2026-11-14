@@ -729,16 +729,22 @@ def run(data, areas, out, report, survey=SURVEY, lidar=LIDAR, verbose=True):
 def after_assemble(index, out_dir, report_dir):
     """Fit every area of AREAS that lies wholly on the map just put together (layers.assemble).
     The game takes road-fit.json only when it carries the map's build, and every step
-    that puts the map together gives it a new one: refitting here keeps the two together."""
+    that puts the map together gives it a new one: refitting here keeps the two together.
+    Only on a map whose terrain was built with IPR's 2023 LiDAR (ipr_terrain.py's
+    --survey-scan or --ipr-lidar, in index.json's terrainOptions), never because the scan
+    happens to be in .cache; then the scan, survey and surface model must all be there."""
     out = out_dir / "road-fit.json"
+    out.unlink(missing_ok=True)  # one left from an earlier build would no longer match
     w, s, e, n = index["bbox_wgs84"]
     inside = [k for k, (a, b, c, d) in AREAS.items() if a >= w and b >= s and c <= e and d <= n]
-    missing = [str(p) for p in (LIDAR, SURVEY, DSM) if not p.exists()] if inside else []
-    if not inside or missing:
-        if missing:
-            print(f"road fit: none, missing {', '.join(missing)}")
-        out.unlink(missing_ok=True)  # one left from an earlier build would no longer match
+    options = index.get("terrainOptions") or {}
+    if not inside:
         return
+    if not (options.get("survey_scan") or options.get("ipr_lidar")):
+        print("road fit: none, the terrain is built without the LiDAR (ipr_terrain.py --survey-scan)")
+        return
+    if missing := [str(p) for p in (LIDAR, SURVEY, DSM) if not p.exists()]:
+        raise SystemExit(f"road fit: the terrain is built with the LiDAR, but {', '.join(missing)} is missing")
     started = time.perf_counter()
     report_dir.mkdir(parents=True, exist_ok=True)
     reports = run(out_dir, inside, out, report_dir / "report.json", verbose=False)
