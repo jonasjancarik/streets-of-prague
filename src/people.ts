@@ -90,6 +90,7 @@ export class Crowd {
     this.kit = kit;
     this.people = [];
     this.fig = new Figures(kit, count + 16);
+    this.fig.lifeSize = true;
     scene.add(this.fig.mesh);
     this.umbrellas = new Umbrellas(scene, count + 16);
     this.totalLen = walk.edges.reduce((a, e) => a + e.path.length, 0);

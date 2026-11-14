@@ -1102,6 +1102,18 @@ record the measurements, merge decisions and pending landmark asset activation.
   `src/figures.ts`): coats in the cold months, bare arms mostly in summer. In rain (not in
   snow) three in five of the walkers put up an umbrella (`src/umbrellas.ts`): one
   more instanced mesh over the crowd, drawn only while it rains.
+- **Life-size people in first person** (`src/rocketbox.ts`): from street level the 24
+  passers-by nearest you (within 30 m, less in a crowd) are drawn as avatars from the
+  Microsoft Rocketbox library instead, walking, jogging, running and standing with that
+  library's motion-captured clips; their feet keep pace with how fast they actually move.
+  Only the crowd's people, and only while they walk, jog, run or stand: falling, fleeing,
+  getting up, police, couriers and riders stay the usual figures. The files (about 18 MB,
+  in `public/rocketbox/`) load the first time first person is on. `?rocketbox=0` keeps the
+  usual figures, to compare (`window.__drive.lifeSize.enabled` from a script or `bench.mjs --ab`).
+  Rebuild with `assets/rocketbox/build.sh`; the avatars' list is in both it and `AVATARS`.
+  The clips are read from Rocketbox's original FBX files and moved onto the avatars' own
+  bone axes (`assets/rocketbox/clips.mjs`): converting them in Blender gives each file
+  different axes, and the knees bent backwards.
 - **Birds** (`src/birds.ts`): by day in dry weather, flocks of pigeons arrive from beyond
   the view, wheel round a spot above the roofs for a minute or so and leave; over the
   river they're a few gulls gliding. Every bird is a flat shape in one instanced mesh

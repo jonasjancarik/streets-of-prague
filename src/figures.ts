@@ -19,6 +19,10 @@ export const SCALE = 1.35; // people (and what they ride) are drawn bigger than 
 // bigger people tower over the cars. Anyone set bigger is shrunk to it in the shader (so
 // it holds for every group of people), their bikes by the car pool.
 export const FIGURE_SIZE = { value: SCALE };
+// First person: someone near the camera can be drawn as a life-size Rocketbox person
+// instead (src/rocketbox.ts sets `claim`). A claimed person's instance is drawn at zero size.
+export const LIFE_SIZE: { claim: ((group: Figures, id: number, matrix: THREE.Matrix4, anim: Anim) => boolean) | null } = { claim: null };
+const NOWHERE = new THREE.Matrix4().makeScale(0, 0, 0);
 const FPS = 24;
 const PARTS = ['Skin', 'Shirt', 'Sleeve', 'Trousers', 'Shoes', 'Hair'];
 
@@ -227,6 +231,8 @@ export class Figures {
   mesh: THREE.InstancedMesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>;
   capacity: number;
   sleeves: Uint8Array;
+  // Whether this group's people may be drawn life size in first person (LIFE_SIZE).
+  lifeSize = false;
 
   constructor(kit: FigureKit, capacity: number) {
     this.kit = kit;
@@ -288,7 +294,8 @@ export class Figures {
   }
 
   set(i: number, matrix: THREE.Matrix4, anim: Anim) {
-    this.mesh.setMatrixAt(i, matrix);
+    const claimed = this.lifeSize && !!LIFE_SIZE.claim?.(this, this.wearing[i] >= 0 ? this.wearing[i] : i, matrix, anim);
+    this.mesh.setMatrixAt(i, claimed ? NOWHERE : matrix);
     anim.write(this.attr.aAnimA, this.attr.aAnimB, i, this.sleeves[i]);
   }
 

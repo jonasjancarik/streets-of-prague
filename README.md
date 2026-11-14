@@ -120,6 +120,9 @@ libraries to `dist/licenses.txt`.
 - Recorded car engine (on the sound test page so far): three recordings of a
   [Hyundai Kona](https://freesound.org/s/845607/) by KVV_Audio,
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+- People close up in first person: the [Microsoft Rocketbox](https://github.com/microsoft/Microsoft-Rocketbox)
+  avatars and animations, © 2020 Microsoft, MIT; repacked as GLB by
+  [CodePawl](https://huggingface.co/datasets/codepawl/rocketbox-avatars-glb).
 - Drawing: [three.js](https://threejs.org/) (MIT); map projections:
   [proj4js](https://proj4js.github.io/proj4js/) (MIT).
 - Maps on the start screen and in the developer panel:

@@ -19,6 +19,7 @@ import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp, streetShare } f
 import { Car, TYPES, CarPool, collideBodies, contact, loadCars, ordinaryCarBodies, useKit, variantName } from './car.ts';
 import { RestingCars } from './restingCars.ts';
 import { loadKit, FIGURE_SIZE, SCALE, WARDROBE } from './figures.ts';
+import { LifeSize } from './rocketbox.ts';
 import { Traffic, trafficWanted, type TrafficAgent } from './traffic.ts';
 import { roadHint } from './roadLevels.ts';
 import { preparePeople, pickPerson } from './spawn.ts';
@@ -274,6 +275,10 @@ async function main() {
   renderer.domElement.addEventListener('webglcontextlost', () => telemetry.error('graphics lost', 'WebGL context lost'));
 
   const scene = new THREE.Scene();
+  // First person: life-size people near you (rocketbox.ts), loaded the first time it's on.
+  const lifeSize = new LifeSize(scene, renderer);
+  // (?rocketbox=0 keeps the usual figures, to compare.)
+  lifeSize.enabled = params.get('rocketbox') !== '0';
   scene.background = new THREE.Color(BACKDROP);
   const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 1, 6000);
   camera.up.set(0, 0, -1);
@@ -3062,6 +3067,7 @@ async function main() {
 
     dev.update();
     // (Ultra: the street round the middle of the view, for the cars to mirror.)
+    lifeSize.frame(dt, !!eyes && !underway, camera);
     hitches.render(() => {
       POST.night = sky.dark; POST.wet = weather.now.wet;
       const probed = renderProbe(renderer, scene, camPos.x, camGround, camPos.z, carPool.allMeshes());
@@ -3080,7 +3086,7 @@ async function main() {
   });
 
   window.__drive = {
-    hitches, birds, birdsView, scene, camera, traffic, crowd, loose, restingByCar, restingIndex, get resting() { return resting; }, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, refuse, health, fires, trams, ride, taxi, clock, board, busStops, busRide, metro, funicular, ferries, graphics, sound, weather, lamps, sky, skids, bikeShare, carPool, spawnWork, bags,
+    hitches, birds, birdsView, lifeSize, scene, camera, traffic, crowd, loose, restingByCar, restingIndex, get resting() { return resting; }, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, refuse, health, fires, trams, ride, taxi, clock, board, busStops, busRide, metro, funicular, ferries, graphics, sound, weather, lamps, sky, skids, bikeShare, carPool, spawnWork, bags,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,
