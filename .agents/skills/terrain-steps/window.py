@@ -13,8 +13,13 @@ check-bridge-decks.mjs and check-step-edges.mjs) with `--near <lat>,<lon>,120`: 
 further, or the checks walk streets across the window's edge, where this build meets the
 built map's tiles in a seam that counts as a step. Compare two such folders, both built
 here; not one with the built map.
---set NAME=value: a constant of dtm_heights.py or structures.py for this run.
+--set NAME=value: a constant of dtm_heights.py, structures.py, ipr_terrain.py or
+step_lines.py for this run.
 --walls: another terrain_walls.json.
+--step 2: the window on a 2 m lattice (ipr_terrain.py --step). Its map folder has its
+own index and no ring of the built map's tiles, so only the window's own tiles can be
+checked; compare it with a 4 m window built the same way, not with the built map.
+--step-lines-scan: the step lines read the LiDAR beside each step (a trial).
 
 The tiles at the window's rim lack what reaches in from outside (walls, feathering, a
 bridge's far end), so only the middle counts: with --tiles 2, the three by three tiles
