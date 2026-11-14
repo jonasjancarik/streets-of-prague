@@ -85,6 +85,8 @@ interface Tile {
   // `dressing` that its meshes are on the way, `drawn` holds them once they're in the scene.
   source: TileSource; shown: boolean; dressing: Promise<void> | null; drawn: TileMeshes | null;
   drawMs: Record<string, number>; drawAfter: number;
+  // The ground's triangles (the plain ground and the walls at its steps), when drawn.
+  groundTriangles?: { ground: number; walls: number };
   // The walls, fences and wires: made with the tile (cars knock the fences and poles
   // down wherever they are) and put in the scene with the rest.
   fixtures: THREE.Mesh[];
@@ -1553,10 +1555,12 @@ export class TileWorld {
       }
       return this.landmarkModels.get(l.name)!;
     }));
-    const [{ layers }, iprArrays, roofArrays] = await jobs;
+    const [{ layers, ms: groundMs, triangles }, iprArrays, roofArrays] = await jobs;
     const landmarks = (await models).filter((m): m is THREE.Group => m !== null);
     if (gone()) return;
     lap('workers');
+    if (groundMs !== undefined) ms.ground = Math.round(groundMs);
+    tile.groundTriangles = triangles;
     // How much sky the ground and the walls see: the ground's texture, and a value for each wall vertex.
     const arraysOf = [iprArrays, roofArrays].filter((arrays): arrays is BuildingArrays => arrays !== null);
     const skyBox = [x0, y0, x0 + Math.ceil(Math.max(x1 - x0, y1 - y0) / SKY_STEP) * SKY_STEP, y0 + Math.ceil(Math.max(x1 - x0, y1 - y0) / SKY_STEP) * SKY_STEP];

@@ -31,7 +31,8 @@ export interface GroundTileData {
   utility?: UtilityMark[]; // surveyed covers and drains (pipeline/ipr_utility.py)
 }
 export interface LevelMask { level: number; w: number; h: number; cells: Uint8Array; box: Bounds }
-export interface GroundResult { layers: GroundLayer[]; masks: LevelMask[] }
+// `ms` and `triangles`: what the tile's ground cost to build (dev panel and the TIN plan's baseline).
+export interface GroundResult { layers: GroundLayer[]; masks: LevelMask[]; ms?: number; triangles?: { ground: number; walls: number } }
 export interface GroundRoadEdge {
   u: string; v: string; hw: string; pts: Point2[]; width: number;
   lanes?: number | null; oneway?: boolean; bridge?: boolean; tunnel?: boolean; surface?: string;

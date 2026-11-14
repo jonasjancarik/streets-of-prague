@@ -417,12 +417,16 @@ worker.onmessage = async (event: MessageEvent<unknown>) => {
       }
       case 'ground': {
         const { d, ground, levels, ...opts } = event.data.data;
+        const started = performance.now();
         const result = groundLayers(d, {
           ...opts, height: ground ? groundAt(ground) : null, roadProfile: ground?.roadProfile,
           roadSurfaceBoxes: ground?.roadSurfaces?.map((p) => p.box),
           steps: ground?.labels ? ground.terraces ?? [] : null,
           levels: levels ? levels.map((l) => ({ level: l.level, kind: l.kind, polys: l.polys, height: groundAt(l.heights) })) : null,
         });
+        result.ms = performance.now() - started;
+        result.triangles = { ground: 0, walls: 0 };
+        for (const l of result.layers) result.triangles[l.wall ? 'walls' : 'ground'] += l.geometry.index.length / 3;
         worker.postMessage({ id, result } satisfies WorkerResponse, layerBuffers(result));
         break;
       }

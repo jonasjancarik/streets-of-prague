@@ -34,7 +34,21 @@ is still an experiment, mostly because of the ground at eye height:
 - **Places the lattice can't hold.** An underpass ramp narrower than a cell (Dobříšská
   in the LiDAR trial) needs an edge where the ground breaks, not finer heights.
 
-Stage 0 checks this list with first-person screenshots before any code changes.
+Stage 0 checked this list with first-person shots at 13 spots (14 November 2026). The
+walls are worse than the list said, and the kerbs are as it says:
+
+- At a retaining wall on a slope (Chotkova, Thunovská) there is no wall to see. The
+  ground climbs it as a crumpled sheet, torn into slabs with dark gaps between them,
+  and in Thunovská the slabs hang over the street. This is the worst of first person.
+  From above, the same places look fine.
+- Kerbs are flat granite strips everywhere (Platnéřská, Újezd, Smetanovo nábřeží,
+  Nerudova).
+- On the streets, the creases are mild. In `ujezd`, 0.3 % of the metres along the
+  streets have a 2 m wave over 10 cm. Nerudova reads smooth at eye height, and the
+  cobbles of steep Thunovská show the creases.
+- Underpasses: at Dobříšská, the ramp's walls stand clean and upright, but a patch of
+  the road beside them has a ragged edge. At Na Veselí a low wall runs across the
+  carriageway, with road markings on both sides of it.
 
 ## What a TIN changes and what it doesn't
 
@@ -258,3 +272,15 @@ back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change w
   the lattice out of the map at stage 4. Measured: the survey has kerbs' positions, and
   the LiDAR shows most of their heights but loses some low ones (two "flush" kerbs are
   about 10 cm on Street View).
+- 14 November 2026: stage 0 done except the Pixel 5 frame time (the phone wasn't
+  connected). The shots, the checks and the numbers are in `docs/evidence/tin/stage0`
+  (local); "Why" above has what they showed. The scripts that took them are
+  `docs/evidence/tin/baseline.js` and `tiles.js`. The tiles report the ground's build
+  time (`drawMs.ground`) and triangles (`groundTriangles`) since this stage. Round the
+  13 spots (104 tiles), a tile's ground has 71,000 triangles (median; at most 135,000)
+  and 500 in the walls at its steps (at most 2,800). Its worker takes 95 ms (median;
+  at most 522 ms), measured in headless Chrome on the M5 while the machine was busy, so
+  compare only with runs made the same way. `ujezd`'s road check: 2 streets over the
+  hard limits for bumps, 4 for leaning, 2 for twisting, none for steps. Its step check:
+  8.1 km of edge, 287 teeth (35 per km), and 761 m of parapet whose top jumps by over
+  5 cm.
