@@ -30,6 +30,7 @@ GAP = 2 * SIGMA  # m along the line from the nearest reading: past it a side has
 STEP_MIN = 0.3  # m between the sides: a lower step is none, both at their mean
 CROSS = 1.0  # m either side of a line where a car street crossing it is looked for
 SIDE = 0.2  # m either side of an outline where its sides' labels are looked up
+MARGIN = 0.0  # m: a lattice corner nearer the line than this counts for neither side
 WATER = 1
 
 
@@ -107,7 +108,7 @@ def runs(rings, box, at):
     return out
 
 
-def heights(run, read, at, box):
+def heights(run, read, at, box, flat=()):
     """Each side's height at the run's points: the ground read at OUT on that side, a
     straight line through it carried in to the line, then smoothed along the line over
     SIGMA (past an end at the tile's edge the line runs on straight, so the neighbour,
@@ -142,12 +143,14 @@ def heights(run, read, at, box):
         if getattr(read, "sided", False):
             k = np.repeat(np.arange(len(pts)), len(OUT))
             side = {"away": (pts[k, 0], pts[k, 1], sign * normal[k, 0], sign * normal[k, 1])}
-        z = read(xs.ravel(), ys.ravel(), label, **side)
+        # (A flat terrace is flat at its own height: the lattice's side, not the scan's.)
+        reader = getattr(read, "lattice", read) if label in flat else read
+        z = reader(xs.ravel(), ys.ravel(), label, **side)
         inside = (xs.ravel() > box[0]) & (xs.ravel() < box[2]) & (ys.ravel() > box[1]) & (ys.ravel() < box[3])
         z[inside & (at(xs.ravel(), ys.ravel()) != label)] = np.nan
         z = z.reshape(xs.shape)
         on_line = {"away": (pts[:, 0], pts[:, 1], sign * normal[:, 0], sign * normal[:, 1])} if side else {}
-        h = _carried_in_rows(z, read(pts[:, 0], pts[:, 1], label, **on_line))
+        h = _carried_in_rows(z, reader(pts[:, 0], pts[:, 1], label, **on_line))
         # Smoothed along the line (the points with no height left out), and no height
         # where the nearest reading along it is further than GAP.
         ok = np.isfinite(h)
@@ -216,10 +219,11 @@ def for_tile(box, water, terraces, read, driven=None):
     own_water = next((t["polys"] for t in terraces if t["label"] == WATER), None)
     water = own_water if own_water is not None else water
     at = sides(water, terraces)
+    flat = {t["label"] for t in terraces if t.get("h") is not None}
     rings = [r for p in water for r in p] + [r for t in terraces if t["label"] != WATER for p in t["polys"] for r in p]
     lines = []
     for run in runs(rings, box, at):
-        pts, hl, hr = heights(run, read, at, box)
+        pts, hl, hr = heights(run, read, at, box, flat)
         if not len(pts):
             continue
         # Hardly a step: the ground runs on across the line, at the two sides' mean.
@@ -288,7 +292,7 @@ def lattice_reader(tiles, labels, N, T, step, gx0, gy0):
                 def beyond(qq, pp, k=slice(None)):
                     # (Whether lattice corners (column pp, row qq) lie on points k's side.)
                     cx, cy = gx0 + key[0] * T + pp * step, gy0 + key[1] * T + qq * step
-                    return (cx - px[k]) * nx[k] + (cy - py[k]) * ny[k] > 0
+                    return (cx - px[k]) * nx[k] + (cy - py[k]) * ny[k] > MARGIN
             u = np.clip((xs[sel] - gx0 - key[0] * T) / step, 0, N - 0.001)
             v = np.clip((ys[sel] - gy0 - key[1] * T) / step, 0, N - 0.001)
             a, b = np.floor(u).astype(int), np.floor(v).astype(int)
@@ -323,4 +327,33 @@ def lattice_reader(tiles, labels, N, T, step, gx0, gy0):
             out[sel] = res
         return out
     read.sided = True
+    return read
+
+
+def scan_reader(own, scan_at, decks=()):
+    """The ground's height at points from IPR's 2023 LiDAR (`scan_at(xs, ys)`, the bare
+    earth every metre), else from the lattice's own side (`own`, lattice_reader): for the
+    water, for a flat terrace (heights() asks `.lattice` for those), under a bridge's
+    deck (`decks`, polygons: the scan there is the ground under it) and where the scan
+    has nothing. On the 4 m lattice a wall is a ramp across a cell, and a point of the
+    lattice next to the wall's line may have its foot's height on its top's side: read
+    from the lattice, the top dipped to the street over metres (Československého exilu,
+    7 m). The scan has the ground a metre or two from the wall as it is."""
+    tree = shapely.STRtree(list(decks)) if len(decks) else None
+
+    def read(xs, ys, label, away=None):
+        xs, ys = np.asarray(xs, dtype=float), np.asarray(ys, dtype=float)
+        out = own(xs, ys, label, away)
+        if label == WATER or not len(xs):
+            return out
+        z = np.asarray(scan_at(xs, ys), dtype=float)
+        use = np.isfinite(z)
+        if tree is not None and use.any():
+            under = np.zeros(len(xs), dtype=bool)
+            under[np.unique(tree.query(shapely.points(xs, ys), predicate="intersects")[0])] = True
+            use &= ~under
+        out[use] = z[use]
+        return out
+    read.sided = True
+    read.lattice = own
     return read

@@ -76,9 +76,6 @@ class ForTileTests(unittest.TestCase):
         self.assertAlmostEqual(west[2], 203.0, places=1)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class SidedTests(unittest.TestCase):
     def test_the_lattice_reader_takes_only_corners_on_the_reading_s_side(self):
@@ -99,3 +96,25 @@ class SidedTests(unittest.TestCase):
         from shapely.geometry import LineString, box
         driven = sl.crossing([(LineString([(0, 0), (10, 0)]), 3.0)], [box(8, -5, 20, 5)])
         assert driven(np.array([5.0, 9.0, 15.0]), np.array([0.0, 0.0, 0.0])).tolist() == [True, False, False]
+
+    def test_the_scan_reader_keeps_the_lattice_for_water_decks_flat_terraces_and_gaps(self):
+        # The scan is the ground wherever it has a height, except the water, under a
+        # deck and on a flat terrace, which keep the lattice's own side.
+        from shapely.geometry import box
+        own = lambda xs, ys, label, away=None: np.full(len(xs), 1.0)  # noqa: E731
+        scan = lambda xs, ys: np.where(np.asarray(xs) < 50, 5.0, np.nan)  # noqa: E731
+        read = sl.scan_reader(own, scan, [box(20, -1, 30, 1)])
+        xs, ys = np.array([10.0, 25.0, 60.0]), np.zeros(3)
+        assert read(xs, ys, 0).tolist() == [5.0, 1.0, 1.0]
+        assert read(xs, ys, sl.WATER).tolist() == [1.0, 1.0, 1.0]
+        assert read.lattice is own and read.sided
+        # A flat terrace's side reads the lattice: the square's side is 3, the scan 5.
+        lattice = lambda xs, ys, label, away=None: np.where(inside(xs, ys), 3.0, 0.0)  # noqa: E731
+        flat = [{**SQUARE[0], "h": 3.0}]
+        read = sl.scan_reader(lattice, lambda xs, ys: np.full(len(xs), 5.0))
+        got = heights_at(sl.for_tile(BOX, [], flat, read), 110, 100)
+        assert got[2] == 3.0 and got[0] == 5.0
+
+
+if __name__ == "__main__":
+    unittest.main()

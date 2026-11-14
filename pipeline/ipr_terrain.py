@@ -392,6 +392,8 @@ def main() -> None:
                     help="prototype: the LiDAR is the ground and the survey only says where the walls, streets and water are; heights in centimetres")
     ap.add_argument("--step-lines", action="store_true",
                     help="trial: each step's outline with the ground's height on either side of it (step_lines.py)")
+    ap.add_argument("--step-lines-scan", action="store_true",
+                    help="trial: the step lines read the ground beside each step from the LiDAR (--survey-scan's), not the lattice")
     ap.add_argument("--resume", action="store_true", help="reuse completed terrain output if its inputs and binary files match")
     ap.add_argument("--no-assemble", action="store_true", help="leave output staged; assemble the complete generation separately")
     args = ap.parse_args()
@@ -429,6 +431,10 @@ def main() -> None:
         options["lidar_window"] = args.lidar_window
     if args.step_lines:
         options["step_lines"] = True
+    if args.step_lines_scan:
+        if not args.step_lines:
+            ap.error("--step-lines-scan needs --step-lines")
+        options["step_lines_scan"] = True
     inputs = layers.stage_inputs(area, "terrain", options, meta)
     if args.resume and layers.resume_stage(area, "terrain", inputs, args.no_assemble):
         return
@@ -616,8 +622,13 @@ def main() -> None:
     lines_by_tile = {}
     if args.step_lines and labels:
         own = step_lines.lattice_reader(tiles, labels, N, T, step, gx0, gy0)
+        decks = [LineString(w["pts"]).buffer(w["w"] / 2) for w in ways if w["kind"] == "bridge" and len(w["pts"]) > 1]
         read = (lambda xs, ys, label, away=None: own(xs, ys, label, away) if label == step_lines.WATER else lidar_at(xs, ys)) if args.lidar_ground else own
-        driven = step_lines.crossing(list(streets.values()), [LineString(w["pts"]).buffer(w["w"] / 2) for w in ways if w["kind"] == "bridge" and len(w["pts"]) > 1])
+        if args.step_lines_scan and not args.lidar_ground:
+            if not options.get("survey_scan"):
+                ap.exit(1, "--step-lines-scan reads the scan of --survey-scan\n")
+            read = step_lines.scan_reader(own, ipr_lidar.sampler(options["survey_scan"], local)[0], decks)
+        driven = step_lines.crossing(list(streets.values()), decks)
         for key, listed in terraces.items():
             got = step_lines.for_tile(boxes[key].bounds, tile_water.get(key, []), listed, read, driven)
             if got:
