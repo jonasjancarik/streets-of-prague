@@ -1439,7 +1439,8 @@ export class TileWorld {
       return hAt(x, y);
     };
     const roads = [...(t.roads.road || []), ...(t.roads.sett || []), ...(t.roads.dirt || [])];
-    const { meshes: wires, posts: poles } = overheadWires(t.rails.filter((r) => r.kind === 'tram').map((r) => r.pts), outlines.map((b) => b.rings[0]), trackAt, hAt, (x, y) => roads.some((rings) => inPoly(x, y, rings)));
+    const { meshes: wires, posts: poles } = overheadWires(t.rails.filter((r) => r.kind === 'tram').map((r) => r.pts), outlines.map((b) => b.rings[0]), trackAt, hAt, (x, y) => roads.some((rings) => inPoly(x, y, rings)),
+      (x, y) => x >= x0 && x < x1 && y >= y0 && y < y1);
     const grid = new Grid(geo, RES, null, land.cells);
     lap('meshes');
 
