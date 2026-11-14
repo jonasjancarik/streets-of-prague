@@ -408,10 +408,15 @@ function canopyTrees(geo: Geo, grid: Grid, trees: Tree[], standing: Standing) {
   const open = (x: number, y: number) => grid.at(x, y) !== 0 && [0, 1, 2, 3, 4, 5, 6, 7].every((k) =>
     grid.at(x + Math.cos(k * Math.PI / 4) * 1.2, y + Math.sin(k * Math.PI / 4) * 1.2) > FENCE);
   const STEP = 3.5, SIZE = [0, 1.6, 2.8, 3.6], MORE = [0, 1, 1.4, 1.6]; // (each band's smallest crown, and how much larger one can be)
-  for (let j = Math.ceil(geo.minY / STEP); j * STEP < geo.maxY; j++) {
-    for (let i = Math.ceil(geo.minX / STEP); i * STEP < geo.maxX; i++) {
+  // A lattice cell can straddle the tile's edge: each tile plants only the spots on its own
+  // side. Past the edge the raster knows nothing (the next tile's road, say) and reads open.
+  const own = (x: number, y: number) => x >= geo.minX && x < geo.maxX && y >= geo.minY && y < geo.maxY;
+  for (let j = Math.floor(geo.minY / STEP); j * STEP < geo.maxY; j++) {
+    for (let i = Math.floor(geo.minX / STEP); i * STEP < geo.maxX; i++) {
       const g = rng(Math.imul(i, 73856093) ^ Math.imul(j, 19349663) ^ 0x6c3a);
-      const x = (i + 0.15 + g() * 0.7) * STEP, y = (j + 0.15 + g() * 0.7) * STEP, band = standing(x, y);
+      const x = (i + 0.15 + g() * 0.7) * STEP, y = (j + 0.15 + g() * 0.7) * STEP;
+      if (!own(x, y)) continue;
+      const band = standing(x, y);
       if (band < 1 || !open(x, y) || covered(x, y)) continue;
       const rad = (SIZE[band] + g() * MORE[band]) / (band === 1 ? 0.65 : band === 3 ? 1.2 : 1); // (toBand scales it back)
       trees.push(toBand(conifer(x, y, CONIFERS[1]) ? [x, y, rad * 0.8, CONIFER] : [x, y, rad, 1], band, g()));
