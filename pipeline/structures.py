@@ -1203,12 +1203,15 @@ def pads(ways, streets=(), clear=None):
         into = min(PAD_INTO, d / 2)
         if into > 0:
             lip = LineString([(b[0] - ux * into, b[1] - uy * into), b]).buffer(w["w"] / 2 + 1.0, cap_style="flat")
-            if tree is not None:
-                under = [streets[k][0].buffer(streets[k][1] + clear) for k in tree.query(lip.buffer(clear))
-                         if not any(abs(h - height) < 1.0 for h in runs_on.get(k, ()))]
-                if under:
-                    lip = lip.difference(unary_union(under))
             pad = lip if pad is None else pad.union(lip)
+        # (The street's last metres too: OSM can end a bridge past the street it crosses,
+        # and with that street on the LiDAR the pad stood 6 m up across Ryšavého under
+        # the D1.)
+        if pad is not None and tree is not None:
+            under = [streets[k][0].buffer(streets[k][1] + clear) for k in tree.query(pad.buffer(clear))
+                     if not any(abs(h - height) < 1.0 for h in runs_on.get(k, ()))]
+            if under:
+                pad = pad.difference(unary_union(under))
         if pad is not None and not pad.is_empty:
             out.append((pad, height))
     return out

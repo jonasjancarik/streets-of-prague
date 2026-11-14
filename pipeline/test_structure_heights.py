@@ -39,6 +39,18 @@ class PadTests(unittest.TestCase):
         inside = shapely.contains_xy(pad, [-4.0, 1.5, 1.0, 1.0], [0.0, 3.5, 1.5, -4.0]).tolist()
         assert inside == [True, False, False, True], inside
 
+    def test_a_street_passing_under_the_raised_metres_keeps_its_own_height(self):
+        # OSM ends the bridge past the street it crosses (Ryšavého under the D1): that
+        # street runs north–south across the raised metres west of the bridge's end and
+        # stays out of the pad, which still lifts the street on either side of it.
+        import shapely
+        from shapely.geometry import LineString
+        way = {"pts": [(0.0, 0.0), (20.0, 0.0)], "w": 8.0, "raised": {0: (18.0, 274.0)}}
+        streets = [(LineString([(-40.0, 0.0), (0.0, 0.0)]), 4.0), (LineString([(-9.0, -30.0), (-9.0, 30.0)]), 3.0)]
+        (pad, _), = structures.pads([way], streets, clear=1.5)
+        inside = shapely.contains_xy(pad, [-9.0, -9.0, -2.0, -16.0], [0.0, 3.0, 0.0, 0.0]).tolist()
+        assert inside == [False, False, True, True], inside
+
 
 class StructureHeightTests(unittest.TestCase):
     def pins(self, net, heights):
