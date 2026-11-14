@@ -18,9 +18,12 @@ window.addEventListener('beforeinstallprompt', (e) => {
 });
 window.addEventListener('appinstalled', () => { deferred = null; changed(); });
 
-/** Running as the installed app rather than in a browser tab. */
+/** Running as the installed app rather than in a browser tab. A computer's browser
+ *  says `display-mode: fullscreen` for any window put in full screen (on a Mac, with
+ *  its toolbar still showing), so that only counts on a touch screen, where the
+ *  installed app is what opens full screen. */
 export function runningAsApp() {
-  return matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches
+  return matchMedia('(display-mode: standalone), (display-mode: fullscreen) and (pointer: coarse)').matches
     || (navigator as Navigator & { standalone?: boolean }).standalone === true;
 }
 

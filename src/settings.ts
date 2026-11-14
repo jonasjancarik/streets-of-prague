@@ -76,10 +76,12 @@ export function setupSettings({ sound, graphics, weather, saves }: {
   // Full screen, where the browser allows it. In a phone's landscape it also locks the
   // screen that way, as far as the browser lets it. An iPhone's browser has no full
   // screen, so there the button points to the settings' Add to Home Screen instead;
-  // the installed app opens full screen anyway, so it needs no button.
+  // the installed app opens full screen anyway, so on a phone or tablet it needs no
+  // button. A computer always gets it: there the window can be in full screen with the
+  // browser's toolbar still showing (Chrome on a Mac), and the button hides that too.
   const full = el('button', 'corner-btn', corner) as HTMLButtonElement;
   full.type = 'button';
-  const fullHidden = () => matchMedia('(display-mode: fullscreen)').matches || !(document.fullscreenEnabled || installWay() === 'share');
+  const fullHidden = () => matchMedia('(display-mode: fullscreen) and (pointer: coarse)').matches || !(document.fullscreenEnabled || installWay() === 'share');
   full.hidden = fullHidden();
   const orientation = screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> };
   full.addEventListener('click', async () => {
