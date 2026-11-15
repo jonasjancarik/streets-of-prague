@@ -163,7 +163,10 @@ def carriageways(area):
         if path.name.count(".") > 1:
             continue
         tile = json.loads(path.read_text())
-        driven = [LineString(e["pts"]).buffer(max(e.get("width") or 0, MIN_ROADWAY) / 2, cap_style="flat")
+        # Round ends: where a street is split into two ways at a slight bend, flat ends
+        # leave a thin wedge open across it, and a post beside the joint looked like
+        # one on a kerb (Sokolská). Past the street's end the asphalt still limits it.
+        driven = [LineString(e["pts"]).buffer(max(e.get("width") or 0, MIN_ROADWAY) / 2, cap_style="round")
                   for e in tile.get("drive", ()) if not e.get("tunnel") and not e.get("bridge") and len(e["pts"]) > 1]
         driven += [LineString(r["pts"]).buffer(TRAM_LANE / 2, cap_style="flat")
                    for r in tile.get("rails", ()) if r["kind"] == "tram" and len(r["pts"]) > 1]

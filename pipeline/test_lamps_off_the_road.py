@@ -43,6 +43,30 @@ class OffTheRoadTest(unittest.TestCase):
         self.assertEqual(posts_in_road([(50, 0), (50, 6), (80, 1)], [0, 0, 7], self.road), [0])
 
 
+class CarriagewaysTest(unittest.TestCase):
+    def test_a_street_split_at_a_bend_has_no_gap_beside_the_joint(self):
+        # Sokolská: one street as two ways meeting at a slight bend, a post 3.3 m off the
+        # centre line by the joint, on an asphalt band wider than the street.
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+
+        import build_lamps
+        with tempfile.TemporaryDirectory() as out:
+            tiles = Path(out) / "test_now" / "tiles"
+            tiles.mkdir(parents=True)
+            asphalt = [[[-20, -50], [20, -50], [20, 50], [-20, 50]]]
+            tile = {"drive": [{"pts": [[0, -50], [0, 0]], "width": 10.75}, {"pts": [[0, 0], [-0.7, 50]], "width": 14.0}],
+                    "roads": {"road": [asphalt]}}
+            (tiles / "0_0.json").write_text(json.dumps(tile))
+            with mock.patch.object(build_lamps, "OUT", Path(out)):
+                roads = build_lamps.carriageways("test")
+        self.assertEqual(posts_in_road([(3.35, 0.1)], [0], roads), [0])
+        xy, kinds, _ = off_the_road([(3.35, 0.1)], [0], roads, [box(10, -50, 20, 50)])
+        self.assertEqual(kinds, [HUNG])
+
+
 def check_area(area):
     """The area's built lamps.bin.gz against its tiles' roadways: the posts standing in one."""
     import gzip
