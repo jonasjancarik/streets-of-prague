@@ -1075,6 +1075,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   the main roads and is replaced once out of sight; without `buses.json` all buses just
   drive the main roads. You can take one like any car, but it's slow to pick up speed,
   wide in the turns and shoves smaller cars aside.
+- **Bus timetables.** The departure board at a bus stop shows the next scheduled boarding
+  departure per line at that platform alongside countdowns for simulated buses approaching
+  the stop. Schedules use representative weekday, Saturday and Sunday service in game time.
+  The map loads the platform's timetable when you approach a stop. See [the bus timetable plan](../plans/038-bus-timetables.md).
 - **Bus stops and riding a bus** (`src/busstops.ts`, `scenarios/bus-ride.ts`). Every stop of
   the bus lines has a sign on the pavement beside where the bus pulls up: a blue plate with
   a black bus, lying flat so it reads from above, and the stop's name on the pole. It goes
@@ -1531,7 +1535,7 @@ uv run build_signals.py centrum    # traffic lights at junctions from OSM → si
 uv run build_river.py centrum      # the river's fairway, weirs and ferries → river.json
 uv run build_lines.py centrum      # tram lines from OSM's route relations → lines.json
 uv run build_metro.py centrum      # the metro from PID's timetables → metro.json
-uv run build_buses.py centrum      # bus lines and stops from PID's timetables → buses.json
+uv run build_buses.py centrum      # PID routes and platform timetables → buses.json and bus-timetable-*.json
 uv run build_footfall.py centrum   # how busy the streets are → footfall.png
 uv run build_lamps.py centrum      # street lamps from IPR's utility map → lamps.bin.gz
 uv run build_bikes.py centrum      # shared bikes' stations from GBFS feeds → bikes.json
