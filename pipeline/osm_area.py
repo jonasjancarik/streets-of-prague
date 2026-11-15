@@ -534,8 +534,8 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             # Only where it carries on a cobbled street's own paving: a corner the
             # nearest street reaches past another street's carriageway is left as it
             # is, not made an island of setts.
-            parts = shapely.get_parts(setts)
-            setts = _areas(unary_union(parts[shapely.intersects(parts, own.buffer(.05))])) if len(parts) else setts
+            pieces = shapely.get_parts(setts)
+            setts = _areas(unary_union(pieces[shapely.intersects(pieces, own.buffer(.05))])) if len(pieces) else setts
         road_lines.setdefault("sett", []).append(setts)
         road_lines.setdefault("road", []).append(_areas(shapely.difference(surface, setts, grid_size=GRID)))
     timer.lap("cobble_voronoi")
