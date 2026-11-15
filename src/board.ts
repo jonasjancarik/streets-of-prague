@@ -11,7 +11,7 @@ interface DueTram { line: TramLine; headsign: string; eta: number; here: boolean
 // across the street or a hundred metres on).
 // `platform`: the letter of the platform it leaves from, at a stop with more than one;
 // `late`: seconds behind, for a tram held up on its way.
-interface Row { ref: string; colour: string; headsign: string; eta: number; here: boolean; mine?: boolean; platform?: string; late?: number; scheduled?: string; scheduledDay?: string }
+interface Row { ref: string; colour: string; headsign: string; eta: number; here: boolean; mine?: boolean; platform?: string; late?: number; scheduled?: string; scheduledDay?: string; trip?: string; departure?: number }
 
 // Departure boards. Standing at a tram stop, the HUD lists the next trams due there and
 // counts them down as they come. The times come from where the trams actually are
@@ -135,7 +135,10 @@ export class StopBoard {
     this.shown = name;
     this.next = rows.length ? rows[0].eta : Infinity;
     this.mine = rows.find((r) => r.mine)?.eta ?? Infinity;
-    this.render(name, [...rows.slice(0, SHOWN), ...scheduled], platform);
+    const shown = rows.slice(0, SHOWN);
+    const remaining = scheduled.filter((r) => !shown.some((live) =>
+      live.mine && live.trip && live.trip === r.trip && live.departure === r.departure));
+    this.render(name, [...shown, ...remaining], platform);
   }
 
   // `platform`: the letter of the one you stand at. Rows for the stop's other platforms are greyed.

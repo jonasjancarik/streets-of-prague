@@ -16,6 +16,8 @@ import { Ferries } from './ferries.ts';
 import { parseRiver } from './river.ts';
 import { busTimetableShard, parseBusLines, scheduledBuses } from './buses.ts';
 import type { BusDepartures } from './buses.ts';
+import { BusPilot } from './busPilot.ts';
+import type { BusPilotData } from './busPilot.ts';
 import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp, streetShare } from './network.ts';
 import { Car, TYPES, CarPool, collideBodies, contact, loadCars, ordinaryCarBodies, useKit, variantName } from './car.ts';
 import { CarOutline } from './carOutline.ts';
@@ -246,9 +248,9 @@ async function main() {
   const busLines = fetch(dataUrl(AREA, 'buses.json'))
     .then(async (r) => {
       const data = r.ok ? await r.json() : null;
-      return { lines: parseBusLines(data), timetables: new Set<number>(data?.timetables) };
+      return { lines: parseBusLines(data), timetables: new Set<number>(data?.timetables), pilot: data?.pilot227 as BusPilotData | undefined };
     })
-    .catch(() => ({ lines: [], timetables: new Set<number>() }));
+    .catch(() => ({ lines: [], timetables: new Set<number>(), pilot: undefined }));
   // The metro (pipeline/build_metro.py); without it there are no entrances.
   const metroData: Promise<{ lines: MetroLine[] }> = fetch(dataUrl(AREA, 'metro.json'))
     .then(async (r) => r.ok ? parseMetroLines(await r.json()) : { lines: [] })
@@ -433,6 +435,8 @@ async function main() {
   traffic.signals = signals;
   const busData = await busLines;
   traffic.busLines = busData.lines;
+  const busPilot = new BusPilot(busData.pilot);
+  traffic.scheduled227 = busPilot.trips.length > 0;
   const pavementDrivers = new PavementDrivers(traffic, seeded);
   const carPool = new CarPool(scene);
   const carOutline = new CarOutline(scene);
@@ -593,6 +597,7 @@ async function main() {
     solid: (x, y) => grid.at(x, y) === 255,
     loaded: (x, y) => world.loaded.has(world.keyAt(x, y)), onRoad: (x, y) => world.onRoad(x, y),
     send: (line, along) => {
+      if (traffic.scheduled227 && line.ref === '227') return false;
       const p = line.path.at(along);
       return traffic.sendBus(line, along, (x, y) => offscreen(x, y) && lifeSpots(px(), py(), 25)(x, y), edgesNear(p.x, p.y, 60));
     },
@@ -619,7 +624,7 @@ async function main() {
     if (!s) return null;
     const { line, i } = s.lines[0];
     const platform = line.stops[i][2];
-    return { name: s.name, rows: busStops.due(s, dt), scheduled: scheduledBuses(timetable(platform), platform, clock.t) };
+    return { name: s.name, rows: busStops.due(s, dt, clock.t), scheduled: scheduledBuses(timetable(platform), platform, clock.t) };
   };
   const busRide = new BusRide(traffic, world, $('busride'), FAST);
   // On a bus or in a taxi, a passenger.
@@ -2083,7 +2088,7 @@ async function main() {
     for (const f of funiBodies) for (const [x, y] of f.circles) hash.add(obstacle(x, y, f.gz, f.line.spec.w / 2, f.vx, f.vy, 'tram'));
 
     traffic.emergency = [...police.chasing, ...brigade.engines.filter((e) => e.phase === 'go' && !e.wrecked), ...ambulances.rigs.filter((r) => r.phase === 'go' && !r.wrecked)].map((e) => e.car);
-    traffic.update(dt, obstacles);
+    traffic.update(dt, obstacles, clock.t);
     // In view or not, each car keeps track of whether it's on a bridge or under it.
     for (const a of traffic.agents) world.track(a.car);
 
@@ -2392,6 +2397,19 @@ async function main() {
     lifeT -= dt;
     if (lifeT < 0) {
       lifeT = 0.5;
+      if (traffic.scheduled227 && !testkit?.quiet) {
+        const x = px(), y = py(), clear = lifeSpots(x, y, 25);
+        const active = new Set(traffic.agents.flatMap((a) => a.bus?.schedule ? [a.bus] : []));
+        const atStop = !inCar && !inHeli ? busStop?.lines[0] : undefined;
+        const platform = atStop?.line.stops[atStop.i][2];
+        busPilot.update(clock.t, active, (sx, sy) => Math.hypot(sx - x, sy - y) < LIFE_RADIUS, platform,
+          (line, along, max, schedule) => {
+            const p = line.path.at(along);
+            return traffic.sendScheduledBus(line, along, max, schedule,
+              (sx, sy) => offscreen(sx, sy) && clear(sx, sy) && world.loaded.has(world.keyAt(sx, sy)),
+              edgesNear(p.x, p.y, 190));
+          });
+      }
       if (pavementDrivers.update(0.5, loose, px(), py(), (x, y) => !offscreen(x, y), (x, y) => grid.at(x, y) !== 0)) restingStale = true;
       // (And cars stuck in a queue that hasn't moved for a while, and buses that have
       // left their line, where nobody sees them go.)

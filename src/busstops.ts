@@ -66,7 +66,7 @@ export interface BusStop {
   placed: boolean; mesh: THREE.Group | null; shown: boolean;
 }
 // `mine`: it stops at the sign you stand by, not across the street.
-export interface DueBus { ref: string; colour: string; headsign: string; eta: number; here: boolean; mine: boolean; key: unknown }
+export interface DueBus { ref: string; colour: string; headsign: string; eta: number; here: boolean; mine: boolean; key: unknown; trip?: string; departure?: number; late?: number }
 
 const topMaterial = (() => {
   const c = document.createElement('canvas');
@@ -246,18 +246,31 @@ export class BusStops {
 
   // The buses coming to the stop `s` (and the stops of its name across the street),
   // soonest first; one is sent when none is on its way. For the board.
-  due(s: BusStop, dt: number) {
+  due(s: BusStop, dt: number, clock = 0) {
     const spots = this.near(s.x, s.y, SAME).filter((o) => o.name === s.name);
     const out: DueBus[] = [];
     for (const a of this.o.traffic.agents) {
       const run = a.bus;
       if (!run || run.lost) continue;
       let best: DueBus | null = null;
-      for (const o of spots) for (const l of o.lines) {
-        if (l.line !== run.line || l.i < run.stop) continue;
-        const here = run.dwell > 0 && run.stop === l.i;
-        const eta = here ? 0 : Math.max(0, l.at - run.along) / PACE;
-        if (eta < HORIZON && (!best || eta < best.eta)) best = { ref: run.line.ref, colour: BUS_COLOUR, headsign: run.line.to, eta, here, mine: s.lines.some((m) => m.line === run.line), key: a };
+      for (const o of spots) {
+        const platform = o.lines[0].line.stops[o.lines[0].i][2];
+        const calls = run.schedule
+          ? run.line.stops.flatMap(([at, , id], i) => id === platform ? [{ at, i }] : [])
+          : o.lines.filter((l) => l.line === run.line);
+        for (const { at, i } of calls) {
+          if (i < run.stop) continue;
+          const here = run.dwell > 0 && run.stop === i;
+          const eta = here ? 0 : Math.max(0, at - run.along) / PACE;
+          const schedule = run.schedule?.followClock ? run.schedule : undefined;
+          const departure = schedule && schedule.start + schedule.departures[i];
+          const arrival = schedule && schedule.start + schedule.arrivals[i];
+          if (eta < HORIZON && (!best || eta < best.eta)) {
+            best = { ref: run.line.ref, colour: BUS_COLOUR, headsign: run.line.to, eta, here,
+              mine: o === s, key: a, trip: schedule?.trip, departure,
+              late: arrival === undefined ? undefined : Math.max(0, clock + eta - arrival) };
+          }
+        }
       }
       if (best) out.push(best);
     }

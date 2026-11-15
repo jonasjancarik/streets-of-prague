@@ -166,6 +166,7 @@ export class Traffic {
   agents: TrafficAgent[];
   // The bus lines through the area (buses.json); without them buses wander the main roads.
   busLines: BusLine[] = [];
+  scheduled227 = false;
   swerving = new Set<Car>();
   private seenSides = new Set<object>();
   // The traffic lights at junctions.
@@ -240,6 +241,16 @@ export class Traffic {
     return !!start;
   }
 
+  sendScheduledBus(line: BusLine, along: number, max: number, schedule: NonNullable<BusRun['schedule']>,
+    avoid: (x: number, y: number) => boolean, edges: DriveEdge[]) {
+    const start = busAt(line, along, edges, (x, y) => avoid(x, y) && !this.agents.some((a) => Math.hypot(a.car.x - x, a.car.y - y) < 20),
+      (node) => this.g.out.get(node) || [], max);
+    if (!start) return undefined;
+    start.run.schedule = schedule;
+    this.addBus(start);
+    return start.run;
+  }
+
   private addBus({ edge, s, run }: { edge: DriveEdge; s: number; run: BusRun }) {
     const p = edge.path.at(s);
     const car = new Car(busType(run.line.ref), this.r, p.x, p.y, p.ang);
@@ -256,7 +267,7 @@ export class Traffic {
     for (const a of this.agents) if (a.car.type === 'bus' || a.car.type === 'minibus') n++;
     if (n >= want) return;
     if (this.busLines.length) {
-      const start = busStart(this.busLines, edges, this.r, (x, y) => avoid(x, y) && !this.agents.some((a) => Math.hypot(a.car.x - x, a.car.y - y) < 20), this.agents.flatMap((a) => a.bus ?? []), (node) => this.g.out.get(node) || []);
+      const start = busStart(this.scheduled227 ? this.busLines.filter((line) => line.ref !== '227') : this.busLines, edges, this.r, (x, y) => avoid(x, y) && !this.agents.some((a) => Math.hypot(a.car.x - x, a.car.y - y) < 20), this.agents.flatMap((a) => a.bus ?? []), (node) => this.g.out.get(node) || []);
       if (start) this.addBus(start);
       return;
     }
@@ -341,7 +352,7 @@ export class Traffic {
   }
 
   // near(x, y, r): the obstacles ({ x, y, z, r, vx, vy, kind }) around a point.
-  update(dt: number, near: (x: number, y: number, radius: number) => ArrayLike<Obstacle>) {
+  update(dt: number, near: (x: number, y: number, radius: number) => ArrayLike<Obstacle>, clock = 0) {
     // The cars out of their lanes, going round something: oncoming traffic stops for them.
     const out = this.swerving;
     out.clear();
@@ -553,16 +564,23 @@ export class Traffic {
       if (run && !run.lost) {
         run.track(c.x, c.y);
         const stop = run.line.stops[run.stop];
+        const schedule = run.schedule?.followClock ? run.schedule : undefined;
+        const relative = schedule ? clock - schedule.start : 0;
         if (run.dwell > 0) {
           target = 0;
-          run.dwell -= dt;
+          run.dwell = schedule && relative < schedule.departures[run.stop]
+            ? Math.max(1, run.dwell - dt) : run.dwell - dt;
           if (run.dwell <= 0) run.stop++;
         } else if (stop && !run.away) {
           // (The front of the bus pulls up by the stop's sign.)
           const left = stop[0] - run.along - L / 2 + 1;
           if (left < -4) run.stop++;
           else if (left < 1 && a.speed < 0.6) run.dwell = 10 + this.r() * 5;
-          else target = Math.min(target, Math.sqrt(2 * 1.1 * Math.max(0, left)) + 0.3);
+          else {
+            target = Math.min(target, Math.sqrt(2 * 1.1 * Math.max(0, left)) + 0.3);
+            const remaining = schedule ? schedule.arrivals[run.stop] - relative : 0;
+            if (remaining > 0 && left > 1) target = Math.min(target, Math.max(0.6, left / remaining));
+          }
         }
       }
       // Stopping at a red light (and at amber, if it can do so easily).

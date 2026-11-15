@@ -1079,6 +1079,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   departure per line at that platform alongside countdowns for simulated buses approaching
   the stop. Schedules use representative weekday, Saturday and Sunday service in game time.
   The map loads the platform's timetable when you approach a stop. See [the bus timetable plan](../plans/038-bus-timetables.md).
+  The Prague map also contains a pilot for line 227. Its buses join loaded roads out of sight
+  and follow the published stop sequence for each trip. They wait at a stop if early, and
+  actual road traffic can delay them. The board uses the live countdown when it can match
+  the simulated bus to the scheduled trip at that platform.
 - **Bus stops and riding a bus** (`src/busstops.ts`, `scenarios/bus-ride.ts`). Every stop of
   the bus lines has a sign on the pavement beside where the bus pulls up: a blue plate with
   a black bus, lying flat so it reads from above, and the stop's name on the pole. It goes

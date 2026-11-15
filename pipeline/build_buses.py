@@ -55,16 +55,19 @@ def main(area: str = "centrum") -> None:
     # Each direction's most used shape, and a headsign for it.
     service_days = services_on(z, typical_dates(z))
     trips = {}
+    pilot_trips = {}
     shapes, heads = defaultdict(Counter), defaultdict(Counter)
     for t in rows(z, "trips.txt"):
         if t["route_id"] in routes and service_days.get(t["service_id"]):
             trips[t["trip_id"]] = (routes[t["route_id"]]["route_short_name"], t["trip_headsign"], service_days[t["service_id"]])
+            if area == "praha" and trips[t["trip_id"]][0] == "227" and t["shape_id"]:
+                pilot_trips[t["trip_id"]] = t["shape_id"]
         if t["route_id"] in routes and t["shape_id"]:
             key = (t["route_id"], t["direction_id"])
             shapes[key][t["shape_id"]] += 1
             heads[key][t["trip_headsign"]] += 1
     wanted = {key: c.most_common(1)[0][0] for key, c in shapes.items()}
-    want_ids = set(wanted.values())
+    want_ids = set(wanted.values()) | set(pilot_trips.values())
     pts = defaultdict(list)
     for r in rows(z, "shapes.txt"):
         if r["shape_id"] in want_ids:
@@ -115,9 +118,12 @@ def main(area: str = "centrum") -> None:
         })
         print(f"bus {ref} → {lines[-1]['to']}: {ls.length / 1000:.1f} km, {len(on)} stops")
 
+    pilot_calls = defaultdict(list)
     departures = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
     for r in rows(z, "stop_times.txt"):
         stop, trip = platform_ids.get(r["stop_id"], r["stop_id"]), r["trip_id"]
+        if trip in pilot_trips and r["stop_id"] in stops and r["departure_time"] and r["arrival_time"]:
+            pilot_calls[trip].append((int(r["stop_sequence"]), r["stop_id"], seconds(r["arrival_time"]), seconds(r["departure_time"])))
         if stop not in platforms or trip not in trips or r["pickup_type"] == "1" or not r["departure_time"]:
             continue
         ref, to, days = trips[trip]
@@ -139,8 +145,36 @@ def main(area: str = "centrum") -> None:
         atomic(directory / f"bus-timetable-{shard}.json",
                json.dumps(calls, ensure_ascii=False, separators=(",", ":")).encode())
 
+    pilot_shapes = {}
+    for shape in sorted(set(pilot_trips.values())):
+        xy = [tf.transform(lon, lat) for _, lon, lat in sorted(pts[shape])]
+        if len(xy) >= 2:
+            pilot_shapes[shape] = LineString(xy).simplify(1.0)
+    pilot = []
+    for trip, calls in sorted(pilot_calls.items()):
+        shape = pilot_trips[trip]
+        path = pilot_shapes.get(shape)
+        if path is None:
+            continue
+        visits = []
+        for _, sid, arrival, departure in sorted(calls):
+            name, x, y = stops[sid]
+            point = Point(x, y)
+            at = path.project(point)
+            if path.distance(point) > NEAR_STOP or (visits and at <= visits[-1][0]):
+                break
+            visits.append([round(at, 1), name, platform_ids.get(sid, sid), arrival, departure])
+        if len(visits) == len(calls) and len(visits) >= 2:
+            _, destination, days = trips[trip]
+            pilot.append([trip, shape, destination, sorted(days), visits])
+    pilot_data = {
+        "shapes": {sid: [[round(x, 1), round(y, 1)] for x, y in path.coords]
+                   for sid, path in pilot_shapes.items()},
+        "trips": pilot,
+    }
+
     out = directory / "buses.json"
-    atomic(out, json.dumps({"lines": lines, "timetables": sorted(shards)}, ensure_ascii=False, separators=(",", ":")).encode())
+    atomic(out, json.dumps({"lines": lines, "timetables": sorted(shards), "pilot227": pilot_data if pilot else None}, ensure_ascii=False, separators=(",", ":")).encode())
     print(f"{len(lines)} bus routes, {out.stat().st_size / 1e3:.0f} kB → {out.relative_to(OUT.parent)}")
 
 

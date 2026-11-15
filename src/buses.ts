@@ -64,6 +64,7 @@ export class BusRun {
   stop: number; // index of the next stop
   dwell = 0; // seconds left standing at a stop
   lost = false;
+  schedule?: { key: string; trip: string; start: number; followClock: boolean; arrivals: number[]; departures: number[] };
   // The streets out of a junction (the street network): for seeing past a short street
   // to the one after it, and for finding a way round where the line has no street.
   out: ((node: string) => DriveEdge[]) | null;
@@ -249,7 +250,7 @@ function laneAt(lanes: Lane[], p: { x: number; y: number; ang: number }) {
 
 // A bus joining `line` at `along` (or the first place a little further on where a
 // street of `edges` takes it), for a bus sent for someone waiting at a stop.
-export function busAt(line: BusLine, along: number, edges: DriveEdge[], ok: (x: number, y: number) => boolean, out: ((node: string) => DriveEdge[]) | null = null) {
+export function busAt(line: BusLine, along: number, edges: DriveEdge[], ok: (x: number, y: number) => boolean, out: ((node: string) => DriveEdge[]) | null = null, max = Infinity) {
   const lanes: Lane[] = [];
   for (const e of edges) {
     if (e.bridge || e.tunnel || e.path.length < 16) continue;
@@ -257,11 +258,14 @@ export function busAt(line: BusLine, along: number, edges: DriveEdge[], ok: (x: 
     for (const q of e.path.pts) { a = Math.min(a, q[0]); b = Math.min(b, q[1]); c = Math.max(c, q[0]); d = Math.max(d, q[1]); }
     lanes.push([e, a, b, c, d]);
   }
-  for (let at = along; at < along + 150 && at < line.path.length - 50; at += 15) {
+  for (let at = along; at < Math.min(max, along + 150, line.path.length - 50); at += 15) {
     const p = line.path.at(at);
     if (!ok(p.x, p.y)) continue;
     const best = laneAt(lanes, p);
-    if (best) return { ...best, run: new BusRun(line, at, out) };
+    if (best) {
+      const lane = best.edge.path.at(best.s);
+      if (ok(lane.x, lane.y)) return { ...best, run: new BusRun(line, at, out) };
+    }
   }
   return null;
 }
@@ -277,13 +281,13 @@ export function scheduledBuses(departures: BusDepartures | undefined, platform: 
   const lines = platform && departures?.[platform];
   if (!lines) return [];
   return Object.entries(lines).flatMap(([ref, byDay]) => {
-    let next: { eta: number; headsign: string; departure: number } | undefined;
+    let next: { eta: number; headsign: string; departure: number; trip: string } | undefined;
     for (let offset = -1; offset <= 7; offset++) {
       const serviceDay = day + offset;
       const start = serviceDay * DAY_SECONDS;
       const call = byDay[serviceKind((serviceDay + 7) % 7)]?.find(([at]) => start + at >= now);
       if (call && (!next || start + call[0] - now < next.eta)) {
-        next = { eta: start + call[0] - now, headsign: call[1], departure: start + call[0] };
+        next = { eta: start + call[0] - now, headsign: call[1], departure: start + call[0], trip: call[2] };
       }
       if (next && next.departure < start + DAY_SECONDS) break;
     }
@@ -292,7 +296,7 @@ export function scheduledBuses(departures: BusDepartures | undefined, platform: 
     const time = [Math.floor(minute / 60), minute % 60].map((n) => String(n).padStart(2, '0')).join(':');
     const departureDay = Math.floor(next.departure / DAY_SECONDS);
     return [{ ref, colour: '#0a72b8', headsign: next.headsign, eta: next.eta, here: false, mine: true,
-      scheduled: time, scheduledDay: departureDay === day ? undefined : weekdays[departureDay % 7] }];
+      scheduled: time, trip: next.trip, departure: next.departure, scheduledDay: departureDay === day ? undefined : weekdays[departureDay % 7] }];
   }).sort((a, b) => a.eta - b.eta || Number(a.ref) - Number(b.ref));
 }
 
