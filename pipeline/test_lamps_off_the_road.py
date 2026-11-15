@@ -14,8 +14,17 @@ class OffTheRoadTest(unittest.TestCase):
 
     def test_post_in_the_middle_between_houses_is_hung(self):
         xy, kinds, (kerbed, hung, far) = off_the_road([(50, 0.2)], [0], self.road, self.houses)
-        self.assertEqual((kinds, xy, hung), ([HUNG], [(50, 0.2)], 1), "it hangs where it was")
+        self.assertEqual((kinds, hung), ([HUNG], 1))
+        self.assertAlmostEqual(xy[0][0], 50, places=3)
+        self.assertAlmostEqual(xy[0][1], 0, places=2, msg="over the middle of the street")
         self.assertEqual(posts_in_road(xy, kinds, self.road), [])
+
+    def test_a_hung_lamp_moves_over_the_middle_across_a_tile_edge(self):
+        # Sokolská: the post 2 m off the middle; the roadway cut in two by a tile's edge.
+        roads = [box(0, -7, 300, 0), box(0, 0, 300, 7)]
+        xy, kinds, _ = off_the_road([(50, 2.0)], [0], roads, [box(0, 10, 100, 20)])
+        self.assertEqual(kinds, [HUNG])
+        self.assertAlmostEqual(xy[0][1], 0, places=2)
 
     def test_post_just_inside_the_kerb_is_put_on_the_pavement(self):
         xy, kinds, (kerbed, hung, far) = off_the_road([(50, 3.2)], [0], self.road, self.houses)

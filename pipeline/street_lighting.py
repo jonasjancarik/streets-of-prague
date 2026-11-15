@@ -173,6 +173,7 @@ IN_ROAD = 0.3       # m: further than this inside a carriageway's edge is in it
 KERB = 1.5          # m: one no deeper than this is a kerb's lamp, moved out to the pavement
 ONTO = 0.5          # m: how far past the edge it is put
 HOUSES = 20.0       # m: with a building this near, a lamp deep in the roadway hangs between the houses
+CENTRE = 4.0        # m: how far a hung lamp may be moved across its street to hang over the middle
 
 
 def off_the_road(xy, kinds, roads, buildings):
@@ -205,6 +206,7 @@ def off_the_road(xy, kinds, roads, buildings):
         among = houses is not None and len(houses.query(points[n], predicate="dwithin", distance=HOUSES))
         if depth[n] > KERB and among:
             kinds[i] = HUNG
+            xy[i] = over_the_middle(points[n], roads, tree)
             hung += 1
             continue
         # Out past the nearest edge, if that isn't in another roadway; hung all the same if it is.
@@ -220,6 +222,26 @@ def off_the_road(xy, kinds, roads, buildings):
             moved += depth[n] <= KERB
             far += depth[n] > KERB
     return xy, kinds, (moved, hung, far)
+
+
+def over_the_middle(point, roads, tree):
+    """Where a lamp inside a carriageway hangs over its middle: halfway between
+    the nearest kerb and the one across from it (the survey gives its post a little to one
+    side, Sokolská). Tiles cut the carriageways, so those round it are joined first. Left
+    where it is if the middle is more than CENTRE away or the other kerb isn't found."""
+    near = shapely.union_all(roads[tree.query(point, predicate="dwithin", distance=40)]).buffer(0.01)
+    edge = shapely.ops.nearest_points(near.boundary, point)[0]
+    dx, dy = point.x - edge.x, point.y - edge.y
+    size = float(np.hypot(dx, dy))
+    if size < 0.5:
+        return (point.x, point.y)
+    dx, dy = dx / size, dy / size
+    across = shapely.intersection(LineString([(point.x, point.y), (point.x + dx * 40, point.y + dy * 40)]), near.boundary)
+    hits = [float(np.hypot(g.x - point.x, g.y - point.y)) for g in getattr(across, "geoms", [across]) if g.geom_type == "Point"]
+    if not hits:
+        return (point.x, point.y)
+    shift = (min(hits) - size) / 2
+    return (point.x + dx * shift, point.y + dy * shift) if abs(shift) <= CENTRE else (point.x, point.y)
 
 
 def posts_in_road(xy, kinds, roads):
