@@ -1756,15 +1756,17 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         if TOP_STRIP and not top and not lifts:
             tops.append((line.buffer(-low * TOP_STRIP, single_sided=True).buffer(0), at_foot(line, low), len(strips) if foot else 0))
     # (Not the pieces a street on the top leaves between its lanes: their outlines crossed it.)
-    wall_tops = 0
+    wall_tops = freed = 0  # `freed`: cells given back to a car street
     for strip, leave, foot in tops:
+        bx0, by0, bx1, by1 = strip.bounds
+        ia, ib = max(0, int(np.floor((bx0 - x_of(0)) / step)) - 1), min(grid.shape[1] - 1, int(np.ceil((bx1 - x_of(0)) / step)) + 1)
+        ja, jb = max(0, int(np.floor((by0 - y_of(0)) / step)) - 1), min(grid.shape[0] - 1, int(np.ceil((by1 - y_of(0)) / step)) + 1)
+        here = terrace[ja:jb + 1, ia:ib + 1]
+        was = here.copy()
         wall_tops += mark(strip, leave, TOP_LEAST)
         # The points on the top's side with the foot's height (`leave`), its car streets'
         # too, go with the foot: the top's ground must not read them.
         if foot:
-            bx0, by0, bx1, by1 = strip.bounds
-            ia, ib = max(0, int(np.floor((bx0 - x_of(0)) / step))), min(grid.shape[1] - 1, int(np.ceil((bx1 - x_of(0)) / step)))
-            ja, jb = max(0, int(np.floor((by0 - y_of(0)) / step))), min(grid.shape[0] - 1, int(np.ceil((by1 - y_of(0)) / step)))
             gi, gj = np.meshgrid(np.arange(ia, ib + 1), np.arange(ja, jb + 1))
             gi, gj = gi.ravel(), gj.ravel()
             free = shapely.contains_xy(strip, x_of(gi), y_of(gj)) & ~wet[gj, gi] & (terrace[gj, gi] == 0) & ~np.isnan(grid[gj, gi])
@@ -1772,6 +1774,24 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
             if len(gi):
                 low_ = leave(gi, gj)
                 terrace[gj[low_], gi[low_]] = foot
+        # A car street beside the strip or through it is plain ground, and the game reads it from
+        # the plain corners of its cell. Where this strip took the last of them (K Celinám,
+        # a living street between a wall's foot and the top of the next wall, narrower
+        # than a cell: a step of 4.4 m), the corners it took go back to plain ground.
+        hits = lane_tree.query(strip, predicate="dwithin", distance=step) if lane_tree is not None else []
+        changed = here != was
+        if len(hits) and changed.any():
+            driven = shapely.union_all(lanes[hits])
+            plain = (here == 0) & ~wet[ja:jb + 1, ia:ib + 1]
+            some = plain[:-1, :-1] | plain[1:, :-1] | plain[:-1, 1:] | plain[1:, 1:]
+            took = changed[:-1, :-1] | changed[1:, :-1] | changed[:-1, 1:] | changed[1:, 1:]
+            rr, cc = np.nonzero(~some & took)
+            if len(rr) and not driven.is_empty:
+                on = shapely.intersects(shapely.box(x_of(ia + cc), y_of(ja + rr), x_of(ia + cc + 1), y_of(ja + rr + 1)), driven)
+                for r, c in zip(rr[on], cc[on]):
+                    cell = here[r:r + 2, c:c + 2]
+                    cell[changed[r:r + 2, c:c + 2]] = 0
+                    freed += 1
 
     # Places where all this makes things worse (terrain_keep.json): as the terrain model has them.
     kept = 0
@@ -1849,6 +1869,6 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
             outlines[(i, j)] = listed
     changed = ~np.isnan(bare) & (np.abs(grid - bare) > 0.05)
     return {"survey_rejected_vertices": rejected, "off_scan": counts.get("off_scan", 0), "sunk_kerbs": int(sunk.sum()), "aloft": int(aloft.sum()), "deck_kerbs": int(decked.sum()), "over_kerbs": int(over_kerbs.sum()), "end_kerbs": int(at_end.sum()), "kerbs_skipped": counts.get("kerbs_skipped", 0), "scan_lower": counts.get("scan_lower", 0), "scan_upper": counts.get("scan_upper", 0), **({"kept_aloft": counts["kept_aloft"]} if "kept_aloft" in counts else {}), "surfaces": surfaces, "street_points": street_points, "levelled_across": levelled_points, "streets_from_scan": scanned, "two_levels": two_levels, "under_points": under, "feathered": feathered, "overhang_points": overhang, "water_points": int(wet.sum()), "water_levelled": levelled, "valley_points": valley, "bank_points": bank_points,
-            "kept_by_hand": kept, "cut_streets": cuts, "retaining_walls": len(strips) - cuts - wall_tops, "wall_tops": wall_tops, "retaining_metres": round(wall_length), "cuttings": len(cuttings), "terrace_off_streets_m2": round(off_streets), "wall_points": wall_points, "lone_points": lone_points,
+            "kept_by_hand": kept, "cut_streets": cuts, "retaining_walls": len(strips) - cuts - wall_tops, "wall_tops": wall_tops, "street_cells": freed, "retaining_metres": round(wall_length), "cuttings": len(cuttings), "terrace_off_streets_m2": round(off_streets), "wall_points": wall_points, "lone_points": lone_points,
             "changed": int(changed.sum()), "mean_change": float(np.abs(grid - bare)[changed].mean()) if changed.any() else 0.0,
             "labels": labels, "terraces": outlines, "terrace_ids": ids}
