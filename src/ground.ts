@@ -40,6 +40,8 @@ export interface GroundRoadEdge {
   named?: boolean; // false: the map gives it no street name (true or unknown otherwise)
   name?: string; // on a bridge: the street's name (for BALUSTRADES)
   level?: number; // on a bridge or in a tunnel: its level, where the map says (see groundLayers)
+  kerb?: [number | null, number | null]; // the kerbs' distance from the centre line, [right, left]
+  park?: [string | null, string | null]; // how OSM says cars park on the [right, left]
 }
 // side: at a step in the ground, which side's height (terrain.ts, heightSampler).
 type HeightAt = (x: number, y: number, side?: number | boolean) => number;
@@ -1146,8 +1148,9 @@ function roadPaint(edges: GroundRoadEdge[], trams: Point2[][]) {
   if (!paintRoads) return { dashed: [] as Point2[][], solid: [] as Point2[][] };
   const near = (p: Point2) => trams.some((pts) => pts.some((q, i) => i > 0 && segDistPts(p, pts[i - 1], q) < 3));
   const dashed: Point2[][] = [], solid: Point2[][] = [];
-  const edgeLines = (e: GroundRoadEdge, W: number) => {
-    for (const line of [offsetLine(e.pts, W / 2 - 0.4), offsetLine(e.pts, -W / 2 + 0.4)]) solid.push(...offOtherRoads(line, e, edges));
+  // (Offsets from the centre line, positive to the right.)
+  const edgeLines = (e: GroundRoadEdge, right: number, left: number) => {
+    for (const line of [offsetLine(e.pts, right - 0.4), offsetLine(e.pts, left + 0.4)]) solid.push(...offOtherRoads(line, e, edges));
   };
   for (const e of edges) {
     const n = e.lanes || 0;
@@ -1155,9 +1158,13 @@ function roadPaint(edges: GroundRoadEdge[], trams: Point2[][]) {
     if (!e.oneway && e.u > e.v) continue; // a two-way street has an edge each way: paint it once
     const W = e.width, pts = e.pts;
     if (e.oneway) {
+      // The lanes from the right kerb leftwards, as the survey has it, so a street that
+      // OSM splits where it gains a lane keeps its lines (Sokolská: three lanes, then four
+      // with a turning lane on the left, then three); centred on OSM's line otherwise.
       const lanes = Math.max(1, n || 1), lw = W / lanes;
-      for (let k = 1; k < lanes; k++) dashed.push(offsetLine(pts, -W / 2 + k * lw));
-      if (EDGE_LINES.has(e.hw) || lanes > 1 || e.hw.endsWith('_link') || (MAJOR.has(e.hw) && ((e.maxspeed ?? 0) >= FAST || e.named === false))) edgeLines(e, W);
+      const right = laneEdge(e, W), left = Math.max(right - W, -(e.kerb?.[1] ?? Infinity));
+      for (let k = 1; k < lanes; k++) dashed.push(offsetLine(pts, right - k * lw));
+      if (EDGE_LINES.has(e.hw) || lanes > 1 || e.hw.endsWith('_link') || (MAJOR.has(e.hw) && ((e.maxspeed ?? 0) >= FAST || e.named === false))) edgeLines(e, right, left);
       continue;
     }
     const per = Math.max(1, Math.floor(Math.max(2, n || 2) / 2)), lw = W / (2 * per);
@@ -1166,9 +1173,21 @@ function roadPaint(edges: GroundRoadEdge[], trams: Point2[][]) {
       else dashed.push(pts);
     }
     for (let k = 1; k < per; k++) dashed.push(offsetLine(pts, k * lw), offsetLine(pts, -k * lw));
-    if (EDGE_LINES.has(e.hw)) edgeLines(e, W);
+    if (EDGE_LINES.has(e.hw)) edgeLines(e, W / 2, -W / 2);
   }
   return { dashed, solid };
+}
+
+// Where a one-way street's right-hand lane ends, from its centre line: at the surveyed
+// kerb, less the cars OSM says park along it, unless that is far from OSM's own idea of
+// the street (half its width), as where the kerb is a lay-by's or the street's line is off.
+const PARKED = { parallel: 2, diagonal: 5, perpendicular: 5 } as Record<string, number>; // m (pipeline/kerbs.py)
+const LANE_SHIFT = 2.5; // m
+function laneEdge(e: Pick<GroundRoadEdge, 'kerb' | 'park'>, W: number) {
+  const kerb = e.kerb?.[0];
+  if (kerb == null) return W / 2;
+  const edge = kerb - (PARKED[e.park?.[0] ?? ''] ?? 0);
+  return Math.abs(edge - W / 2) <= LANE_SHIFT ? edge : W / 2;
 }
 
 // The parts of an edge line of road `own` that lie on no other road's lanes: off every

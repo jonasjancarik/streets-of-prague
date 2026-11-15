@@ -754,7 +754,8 @@ record the measurements, merge decisions and pending landmark asset activation.
   underpasses (`pipeline/build_lamps.py`), with the lamps of IPR's second layer (the
   documentation of finished works, which fills whole neighbourhoods the survey misses)
   and those only OSM has. A lamp the layers put on a post in a roadway hangs over
-  the street on cables instead, or stands on the kerb beside it. A tram track on the
+  the street on cables instead, over the middle between its kerbs (the post is often
+  surveyed a little to one side), or stands on the kerb beside it. A tram track on the
   street's asphalt or setts counts as roadway 3.5 m wide, so the lamps over the tracks
   where only trams and buses run (Lidická by Anděl) hang too; the game strings their
   cables across the track to the first wall each way, as it does across a street.
@@ -1335,7 +1336,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   view sets off along the pavement at walking pace before it bumps down into the
   street (`src/pavement.ts`).
 - **Roads** are marked from OSM `lanes`: dashed dividers, double centre lines on four
-  lanes or more, edge lines on the main roads. In Prague their shape comes from the
+  lanes or more, edge lines on the main roads. A one-way street's lanes are laid out
+  from its surveyed right kerb (less any parking OSM tags there), so where OSM splits a
+  street as it gains a turning lane the other lines run on and the new one starts on
+  the left; without a kerb, or one more than 2.5 m from half OSM's width, they are
+  centred on OSM's line (`roadPaint` in `src/ground.ts`). In Prague their shape comes from the
   city's digital technical map (`pipeline/dtm.py`), which has every carriageway,
   lay-by and parking bay as surveyed, so the asphalt ends where the real kerb does,
   rounded street corners and traffic islands included. The survey draws a corner's
