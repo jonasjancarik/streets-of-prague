@@ -3,7 +3,7 @@ import { onPolygons, signedArea } from './map/geo.ts';
 import { WATER } from './terrain.ts';
 import { roadProfileBounds } from './roadProfiles.ts';
 import type { RoadProfile } from './roadProfiles.ts';
-import { stepSides } from './stepEdges.ts';
+import { shared, stepSides } from './stepEdges.ts';
 import { TerrainStepIndex, cutTerrainSteps } from './terrain-cut.ts';
 import { edgeHeightSampler, conformTerrainEdges } from './terrain-edges.ts';
 import type { Terrace } from './terrain.ts';
@@ -360,6 +360,7 @@ let groundHeight: HeightAt | null = null;
 // them, so the ground on each side lies at its own height right up to the step.
 let sideOf: ((x: number, y: number) => number) | null = null;
 let terraceOutlines: Polygons = []; // (the water's among them)
+let terraceOwners: number[] = []; // the label of each (stepSides)
 let stepIndex: TerrainStepIndex | null = null;
 let groundBox: Bounds | null = null;
 let roadBoxes: Bounds[] | null = null;
@@ -395,17 +396,17 @@ function cutAtSteps(pos: number[], idx: number[], extra: number[] | null, at: (x
 // The walls at the steps: along the outlines of the water and the terraces, between the
 // heights of the ground on either side (a quay wall, a retaining wall; a natural bank is
 // hardly a step), facing the lower side.
-function stepWalls(lines: Point2[][]): GroundGeometry {
+function stepWalls(lines: Point2[][], owners: number[]): GroundGeometry {
   const q = quads(), H = groundHeight, at = sideOf;
   if (!H || !at) return polygons([]);
-  for (const pts of lines) {
+  for (const [o, pts] of lines.entries()) {
     for (let i = 0; i < pts.length - 1; i++) {
       const a = pts[i], b = pts[i + 1], dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
       if (len < 1e-6) continue;
       // The sides on the left of a → b and on its right.
       const nx = -dy / len, ny = dx / len, mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
       const left = at(mx + nx * 0.2, my + ny * 0.2), right = at(mx - nx * 0.2, my - ny * 0.2);
-      if (left === right) continue;
+      if (left === right || shared(owners[o], left, right)) continue;
       const n = Math.max(1, Math.ceil(len / STEP_FINE));
       for (let k = 0; k < n; k++) {
         const p = [a[0] + dx * (k / n), a[1] + dy * (k / n)], r = [a[0] + dx * ((k + 1) / n), a[1] + dy * ((k + 1) / n)];
@@ -486,8 +487,9 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
     roadBoxes = height ? roadSurfaceBoxes ?? (roadProfile ? [roadProfileBounds(roadProfile)] : null) : null;
     sideOf = at;
     terraceOutlines = outlines;
+    terraceOwners = sides?.owners ?? [];
     stepIndex = at ? new TerrainStepIndex(outlines) : null;
-    try { return build(); } finally { groundHeight = sideOf = null; terraceOutlines = []; stepIndex = null; groundBox = roadBoxes = null; }
+    try { return build(); } finally { groundHeight = sideOf = null; terraceOutlines = []; terraceOwners = []; stepIndex = null; groundBox = roadBoxes = null; }
   };
   if (!levels) return { layers: stepped(() => layers(d, { box, edges, buildings, parkingZones, rasterRoads })), masks: [] };
   const T = height || (() => 0);
@@ -1003,7 +1005,9 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
       shade(skirts(A.water || [], 6, false, cut), 0.35);
     } finally { afloat = false; }
     add(strips(outlines(A.water || []), 0.9), COLORS.quay, 'slabs');
-    add(stepWalls(outlines(terraceOutlines)), COLORS.quay, 'slabs');
+    const wallLines: Point2[][] = [], wallOwners: number[] = [];
+    terraceOutlines.forEach((poly, o) => { for (const line of outlines([poly])) { wallLines.push(line); wallOwners.push(terraceOwners[o]); } });
+    add(stepWalls(wallLines, wallOwners), COLORS.quay, 'slabs');
     if (out[out.length - 1].order === order - 1) out[out.length - 1].wall = true;
     add(strips(d.weirs || [], 2.4), '#9a978d', 'concrete');
     add(strips((d.weirs || []).map((w) => offsetLine(w, -1.6)), 2.2), '#dfe6e2');

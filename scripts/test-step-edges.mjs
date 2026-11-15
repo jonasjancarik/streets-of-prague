@@ -17,6 +17,13 @@ test('a step of 3 m is an edge all along, facing the higher ground', () => {
   assert.ok(edges[0].first && edges.at(-1).last && !edges[1].first);
 });
 
+test('an edge two terraces share (a wall\'s foot and its top) counts once', () => {
+  const both = [...terrace, { label: 3, polys: [[[[50, 0], [80, 0], [80, 100], [50, 100]]]] }];
+  const H = (x, y, side) => (side === 2 ? 0 : 3);
+  const edges = stepEdges(both, [], H, box, []);
+  assert.ok(Math.abs(metres(edges) - 100) < 1e-6, `${metres(edges)} m`);
+});
+
 test('a low step is none, and a ramp is open where it is low', () => {
   assert.equal(stepEdges(terrace, [], height(EDGE_DROP - 0.1), box, []).length, 0);
   const edges = stepEdges(terrace, [], height((y) => y * 0.05), box, []); // 0 m at the south end, 5 m at the north

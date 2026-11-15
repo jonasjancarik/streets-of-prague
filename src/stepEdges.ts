@@ -23,7 +23,11 @@ export interface Crosser { pts: Point2[]; half: number; hw?: string }
 export interface StepEdge { a: Point2; b: Point2; nx: number; ny: number; ha: number; hb: number; drop: number; wet: boolean; parapet: boolean; first: boolean; last: boolean }
 
 // Which side of the steps a point is on (its label), and the steps' outlines: the water
-// as the terrain has it (else the map's) and the terraces. null with no steps.
+// as the terrain has it (else the map's) and the terraces, with the label of each in
+// `owners`. null with no steps.
+// Two terraces side by side (a wall's foot and its top) share the edge between them: it
+// counts in the outline of the higher label only (`shared`), or its wall and parapet were
+// drawn twice, one over the other, and flickered.
 export function stepSides(steps: Terrace[] | null | undefined, mapWater: Polygons) {
   const water = steps?.find((t) => t.label === WATER)?.polys ?? mapWater;
   const terraces = (steps ?? []).filter((t) => t.label !== WATER);
@@ -36,8 +40,13 @@ export function stepSides(steps: Terrace[] | null | undefined, mapWater: Polygon
     for (let k = 0; k < on.length; k++) if (terraces[k].h === undefined && on[k](x, y)) return terraces[k].label;
     return 0;
   };
-  return { at, outlines: [...water, ...terraces.flatMap((t) => t.polys)] };
+  const owners = [...water.map(() => WATER), ...terraces.flatMap((t) => t.polys.map(() => t.label))];
+  return { at, outlines: [...water, ...terraces.flatMap((t) => t.polys)], owners };
 }
+
+// Whether an edge of the outline of `own` with the sides `left` and `right` is drawn from
+// another outline (see stepSides).
+export const shared = (own: number, left: number, right: number) => (left === own || right === own) && Math.max(left, right) !== own;
 
 // The edges to stop at in a tile. `height`: the terrain with its sides (heightSampler);
 // `box`: the tile, whose border the clipped outlines run along; `ways`: what may cross;
@@ -48,7 +57,7 @@ export function stepEdges(steps: Terrace[] | null | undefined, mapWater: Polygon
   if (!sides) return [];
   const cut = (a: Point2, b: Point2) => ([[0, x0], [0, x1], [1, y0], [1, y1]] as [0 | 1, number][]).some(([k, v]) => Math.abs(a[k] - v) < 0.05 && Math.abs(b[k] - v) < 0.05);
   const found: StepEdge[] = [];
-  for (const rings of sides.outlines) {
+  for (const [o, rings] of sides.outlines.entries()) {
     for (const ring of rings) {
       for (let i = 0; i < ring.length; i++) {
         const a = ring[i], b = ring[(i + 1) % ring.length], dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
@@ -56,7 +65,7 @@ export function stepEdges(steps: Terrace[] | null | undefined, mapWater: Polygon
         // The sides on the left of a → b and on its right, as the walls are drawn (ground.ts).
         const nx = -dy / len, ny = dx / len, mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
         const left = sides.at(mx + nx * 0.2, my + ny * 0.2), right = sides.at(mx - nx * 0.2, my - ny * 0.2);
-        if (left === right) continue;
+        if (left === right || shared(sides.owners[o], left, right)) continue;
         const n = Math.max(1, Math.ceil(len / PIECE));
         for (let k = 0; k < n; k++) {
           const p: Point2 = [a[0] + dx * (k / n), a[1] + dy * (k / n)], r: Point2 = [a[0] + dx * ((k + 1) / n), a[1] + dy * ((k + 1) / n)];
