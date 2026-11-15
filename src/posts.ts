@@ -121,7 +121,7 @@ export function bump(car: Car, p: { x: number; y: number; r: number; tough: numb
     hit.over = true;
     car.vx -= p.give * vn * nx;
     car.vy -= p.give * vn * ny;
-    car.damage += p.give * 2;
+    car.takeImpactDamage(p.give * 2);
     car.knock(p.x, p.y, -vn * p.give);
     return -vn * p.give;
   }
@@ -132,7 +132,7 @@ export function bump(car: Car, p: { x: number; y: number; r: number; tough: numb
   // Off-centre hits make the car spin.
   const rx = p.x - car.x, ry = p.y - car.y;
   car.w += (rx * ny - ry * nx) * vn * 0.09;
-  car.damage += Math.max(0, -vn - (car.spec.tough ?? 3));
+  car.takeImpactDamage(Math.max(0, -vn - (car.spec.tough ?? 3)));
   car.knock(p.x, p.y, -vn);
   return -vn;
 }

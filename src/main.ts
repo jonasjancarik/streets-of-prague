@@ -2013,6 +2013,7 @@ async function main() {
       held = ctl.aim && !assisted ? { h: ctl.aim.h, throttle: ctl.move, handbrake: ctl.brake } : null;
       // Keeping to the lane, you keep to the speed limit too.
       const cap = assisted ? (assist.limit ?? 50) / 3.6 : null;
+      inCar.touchDriving = touch.active;
       const hit = inCar.update(dt, { throttle: ctl.move, steer, handbrake: ctl.brake, cap }, grid);
       if (hit > 6) { shake = Math.min(1.2, shake + hit * 0.04); hapticCrash(hit); }
       jolt = hit;
@@ -2156,7 +2157,7 @@ async function main() {
             const hit = collideBodies(a, ca, a.r, 1 / a.mass, b, cb, b.r, 1 / b.mass);
             smash(a, b, hit);
             if (a === inCar) jolt = Math.max(jolt, hit);
-            if (hit > 8) { a.damage += hit - 8; b.damage += hit - 8; }
+            if (hit > 8) { a.takeImpactDamage(hit - 8); b.takeImpactDamage(hit - 8); }
             if (a === inCar) fires.blame(b);
           } else {
             const hit = collideBodies(a, ca, a.r, 1 / a.mass, b, cb, b.r, 0);
@@ -2171,7 +2172,7 @@ async function main() {
         if (hit) a.settled = b.settled = false;
         smash(a, b, hit);
         if (a === inCar || b === inCar) jolt = Math.max(jolt, hit);
-        if (hit > 8) { a.damage += hit - 8; b.damage += hit - 8; }
+        if (hit > 8) { a.takeImpactDamage(hit - 8); b.takeImpactDamage(hit - 8); }
         if (hit > 8 && a === inCar) fires.blame(b);
         else if (hit > 8 && b === inCar) fires.blame(a);
         if (hit > 6 && (a === inCar || b === inCar)) { shake = Math.min(1.2, shake + hit * 0.04); hapticCrash(hit); }
@@ -2220,7 +2221,7 @@ async function main() {
         throwRider(a, a.vx, a.vy, closing > HURTS ? 1 : 0);
         const hit = collideBodies(a, ca, a.r, 1 / a.mass, b, cb, b.r, 1 / b.mass);
         smash(a, b, hit);
-        if (hit > 8) { a.damage += hit - 8; b.damage += hit - 8; }
+        if (hit > 8) { a.takeImpactDamage(hit - 8); b.takeImpactDamage(hit - 8); }
       } else collideBodies(a, ca, a.r, 0, b, cb, b.r, 1 / b.mass);
       b.settled = false;
     }

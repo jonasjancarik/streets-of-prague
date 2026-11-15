@@ -471,7 +471,9 @@ that without a new renderer.
   on. Gunfire is a crime (a star when the police hear it close by), and shooting a
   police car brings its crew out after you (`src/pistol.ts`).
 - **Burning cars.** A car that's taken enough knocks (crashes, police bullets, a blast
-  nearby) starts to smoke, then catches fire and a few seconds later blows up, leaving
+  nearby) starts to smoke, then catches fire and a few seconds later blows up.
+  Cars take less damage from collisions, with extra protection for the car you drive
+  when touch controls are active. An explosion leaves
   a charred wreck that smoulders for a while and can't be driven. If your own car
   catches fire, get out: still inside when it goes, you're wasted. The blast knocks
   people over, hurts you if you're near, shoves the cars around and can set them going

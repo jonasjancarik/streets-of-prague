@@ -915,6 +915,7 @@ export class Car {
   vx: number; vy: number; w: number;
   mode: string;
   damage: number;
+  touchDriving = false;
   rider: Look | null;
   lean: number;
   r: number;
@@ -1251,6 +1252,12 @@ export class Car {
     return this.samples.map(([a, b]) => [this.x + c * a - s * b, this.y + s * a + c * b]);
   }
 
+  // Scale damage separately from the force of a collision.
+  takeImpactDamage(amount: number) {
+    const scale = this.two ? 1 : this.mode === 'player' && this.touchDriving ? 0.7 : 0.85;
+    this.damage += amount * scale;
+  }
+
   collideGrid(grid: CarGrid) {
     const escape = this.mode === 'player' && grid.trunkAt ? this.treeEscape : undefined;
     const ignored = escape?.ignored, seeking = escape?.seeking;
@@ -1285,7 +1292,7 @@ export class Car {
     // Off-centre hits make the car spin.
     const rx = cx / hits - this.x, ry = cy / hits - this.y;
     this.w += (rx * ny - ry * nx) * vn * 0.09;
-    this.damage += Math.max(0, -vn - (this.spec.tough ?? 3));
+    this.takeImpactDamage(Math.max(0, -vn - (this.spec.tough ?? 3)));
     this.knock(cx / hits, cy / hits, -vn);
     return -vn;
   }

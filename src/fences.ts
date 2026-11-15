@@ -165,7 +165,7 @@ class Fences {
       this.through = true;
       car.vx -= RAIL.give * vn * nx;
       car.vy -= RAIL.give * vn * ny;
-      car.damage += RAIL.give * 4;
+      car.takeImpactDamage(RAIL.give * 4);
       car.knock(px, py, -vn * RAIL.give);
       this.lay(f, car);
       return -vn * RAIL.give;
@@ -179,7 +179,7 @@ class Fences {
     car.vx *= scrape;
     car.vy *= scrape;
     car.w += ((px - car.x) * ny - (py - car.y) * nx) * vn * 0.03;
-    car.damage += Math.max(0, -vn - (car.spec.tough ?? 3));
+    car.takeImpactDamage(Math.max(0, -vn - (car.spec.tough ?? 3)));
     car.knock(px, py, -vn);
     return -vn;
   }
