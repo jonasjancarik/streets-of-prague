@@ -19,6 +19,7 @@ stepSides: the flat terraces, then the water, then the other terraces, else 0.
 """
 
 import math
+import warnings
 
 import numpy as np
 import shapely
@@ -34,6 +35,13 @@ MARGIN = 0.0  # m: a lattice corner nearer the line than this counts for neither
 WALK = np.arange(0.0, 6.01, 0.5)  # m out from the line where a walk (walk_reader) reads the scan
 FLAT = 0.5  # rise per metre under which the ground past a wall counts as its top or foot
 MEDIAN = 3.0  # m either way along the line: a walked side's running median, before smoothing
+WALK_ACROSS = False  # a walk may cross other terraces' outlines (it stops at the first flat ground).
+# (Tried: the foot of Vyšehrad's rampart is on the strip of the wall below it and kept
+# the lattice's, 4 m under the scan; across, its foot broke open and Československého
+# exilu's top got a notch down to the street.)
+TAPER = 6.0  # m: over this from a wall's end its walked heights come back to the lattice's
+SPAN = 6.0  # m either side of the line: the scan's rise across it caps a half-walked step
+STEP_SLACK = 0.5  # m over the scan's rise a half-walked step may be
 WALKED = 0.6  # share of a side's points the walk must find a height for, or the side isn't walked
 WATER = 1
 
@@ -138,7 +146,7 @@ def heights(run, read, at, box, flat=()):
     ahead /= np.maximum(np.linalg.norm(ahead, axis=1, keepdims=True), 1e-9)
     normal = np.column_stack([-ahead[:, 1], ahead[:, 0]])
     s = np.concatenate([[0], np.cumsum(np.linalg.norm(np.diff(pts, axis=0), axis=1))]) if len(pts) > 1 else np.zeros(1)
-    out = []
+    out, walks = [], []
     for sign, label in ((1, run["lr"][0]), (-1, run["lr"][1])):
         xs = pts[:, 0, None] + sign * normal[:, 0, None] * OUT
         ys = pts[:, 1, None] + sign * normal[:, 1, None] * OUT
@@ -158,10 +166,13 @@ def heights(run, read, at, box, flat=()):
         # (A reader that walks, walk_reader: where the scan flattens out past the wall,
         # with a running median along the line, so a gate or a gap in the scan doesn't
         # take the top down with it.)
+        walked = None
         walk = getattr(read, "walk", None)
         if walk is not None and label not in flat and label != WATER:
             def keep(qx, qy, label=label):
                 inside = (qx > box[0]) & (qx < box[2]) & (qy > box[1]) & (qy < box[3])
+                if WALK_ACROSS:  # (only not into the water)
+                    return ~inside | (at(qx, qy) != WATER)
                 return ~inside | (at(qx, qy) == label)
             hw = _running_median(s, walk(pts, sign * normal, keep), MEDIAN)
             # (All or nothing on a side: where it flattens along most of it, the gaps
@@ -169,18 +180,59 @@ def heights(run, read, at, box, flat=()):
             # line made a top jump between them.)
             got = np.isfinite(hw)
             if got.mean() >= WALKED:
-                h = np.interp(s, s[got], hw[got])
-        # Smoothed along the line (the points with no height left out), and no height
-        # where the nearest reading along it is further than GAP.
-        ok = np.isfinite(h)
-        if ok.any():
-            w = np.exp(-((s[:, None] - s[None, ok]) ** 2) / (2 * SIGMA * SIGMA))
-            with np.errstate(invalid="ignore"):  # far from any reading: no height, below
-                h = (w * h[ok]).sum(axis=1) / w.sum(axis=1)
-            h[np.abs(s[:, None] - s[None, ok]).min(axis=1) > GAP] = np.nan
-        out.append(h)
+                walked = _smoothed(s, np.interp(s, s[got], hw[got]))
+        out.append(_smoothed(s, h))
+        walks.append(walked)
+    if any(w is not None for w in walks):
+        out = _walked(s, out, walks, run, pts, normal, read)
     keep = slice(before, len(pts) - after)
     return pts[keep], out[0][keep], out[1][keep]
+
+
+def _smoothed(s, h):
+    """Smoothed along the line over SIGMA (the points with no height left out), and no
+    height where the nearest reading along it is further than GAP."""
+    ok = np.isfinite(h)
+    if ok.any():
+        w = np.exp(-((s[:, None] - s[None, ok]) ** 2) / (2 * SIGMA * SIGMA))
+        with np.errstate(invalid="ignore"):  # far from any reading: no height, below
+            h = (w * h[ok]).sum(axis=1) / w.sum(axis=1)
+        h[np.abs(s[:, None] - s[None, ok]).min(axis=1) > GAP] = np.nan
+    return h
+
+
+def _walked(s, read_, walks, run, pts, normal, read):
+    """Each side's heights with its walk (heights()), where it has one: brought back to
+    what was read without it over TAPER from an end of the step, where the line ends
+    short of the tile's edge or the other side has no height (the game takes the
+    lattice past it: a walked top 4 m over the lattice's ended in a cliff, Vyšehrad);
+    and where one side is walked and the other not, the step no higher than the scan's
+    own rise across the line, SPAN either way, and STEP_SLACK (on a sloping bank the
+    walk found a top 8 m over the lattice's foot where the scan rises 5)."""
+    out = []
+    for k, (h, w) in enumerate(zip(read_, walks)):
+        if w is None:
+            out.append(h)
+            continue
+        other = read_[1 - k] if walks[1 - k] is None else walks[1 - k]
+        ends = [s[0]] if not run["edge_start"] else []
+        ends += [s[-1]] if not run["edge_end"] else []
+        gone = ~np.isfinite(other)
+        flip = np.flatnonzero(gone[1:] != gone[:-1])
+        ends += [(s[q] + s[q + 1]) / 2 for q in flip]
+        far = np.min(np.abs(s[:, None] - np.array(ends)[None, :]), axis=1) if ends else np.full(len(s), np.inf)
+        f = np.clip(far / TAPER, 0.0, 1.0)
+        out.append(np.where(np.isfinite(h), h + f * (w - h), w))
+    walked = [w is not None for w in walks]
+    if walked[0] != walked[1] and getattr(read, "span", None) is not None:
+        rise = read.span(pts, normal)
+        k = 0 if not walked[0] else 1  # (the side that wasn't walked moves)
+        a, b = out[k], out[1 - k]
+        with np.errstate(invalid="ignore"):
+            over = np.abs(b - a) - (rise + STEP_SLACK)
+            move = np.isfinite(over) & (over > 0)
+        out[k] = np.where(move, a + np.sign(b - a) * np.where(move, over, 0.0), a)
+    return out
 
 
 def _carried_in(z, line):
@@ -431,9 +483,20 @@ def walk_reader(own, scan_at, decks=()):
                     break
         return out
 
+    def span(pts, normal):
+        # (The scan's highest less its lowest across the line, SPAN either way.)
+        offs = np.arange(-SPAN, SPAN + 0.01, 0.5)
+        xs = pts[:, 0, None] + normal[:, 0, None] * offs
+        ys = pts[:, 1, None] + normal[:, 1, None] * offs
+        z = np.asarray(scan_at(xs.ravel(), ys.ravel()), dtype=float).reshape(xs.shape)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)  # (no scan there: NaN, no cap)
+            return np.nanmax(z, axis=1) - np.nanmin(z, axis=1)
+
     def read(xs, ys, label, away=None):
         return own(xs, ys, label, away)
     read.sided = True
     read.lattice = own
     read.walk = walk
+    read.span = span
     return read

@@ -441,3 +441,24 @@ back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change w
   the lattice has. The sawtooth along nábřeží Edvarda Beneše isn't heights: it's the
   survey's wall pieces, each rising and falling to nothing. Pictures:
   `docs/evidence/tin/walk/cmp-walk-*.jpg` (local).
+- 15 November 2026: the walk's ends. Brought back to the lattice's reading over the
+  last 6 m before a line ends or the other side loses its height (`TAPER`), and a
+  half-walked step capped at the scan's own rise across the line plus 0.5 m (`SPAN`,
+  `STEP_SLACK`). Also fixed: the walk's first reading is on the line itself, on
+  neither side's outline, and the walk stopped there half the time. On the nine
+  windows the sags over 2 m come to 158 points (204 on the lines build) and the tops
+  jumping over 15 cm to 1,029 (639). Letting the walk cross other terraces' outlines
+  (`WALK_ACROSS`) made it worse: 1,114, and in the pictures Vyšehrad's bastion broke
+  open at its foot. Left off.
+
+  Most of the jumps that count are where walls of very different heights meet
+  (Vyšehrad: a 17 m rampart and a 3 m wall at one corner), on the old build too; the
+  walk makes the tall walls their real height, so the jumps there grow. The measure
+  doesn't tell a real corner from a broken one, and the pictures show little change
+  at Vyšehrad either way. What the pictures do show: Československého exilu's top
+  runs level, but has a notch down to the street where two of the survey's wall
+  pieces end with a gap between them. That, and Beneše's sawtooth, is the walls'
+  outlines, not their heights: joining a wall's pieces across short gaps, and
+  letting a wall come down to nothing over its last metres instead of ending square,
+  is the next thing to try (`strips` in `dtm_heights.apply`). Pictures:
+  `docs/evidence/tin/walk/cmp-walk4.jpg`, `cmp-walk5.jpg` (local).
