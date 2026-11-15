@@ -17,6 +17,7 @@
 | [024: The game on play.streetsofprague.com](024-game-on-play-subdomain.md) | The game and its `/api` move to `play.streetsofprague.com`, the homepage in `site/` takes the root as a second Worker, saved games and settings follow the player, old links to the game keep working | DONE (live since 8 October 2026, v0.5.5: the root redirects to `play.`, no handover of saves, homepage offline) |
 | [023: Seasons](023-seasons.md) | A fixed game date; seasonal trees, ground, fields, hedges, light, weather and birds; season choices on the start screen | STEPS 1–4 IN MAIN AND LIVE IN v0.5.2 (ground cost unresolved) |
 | [037: Cars that mirror the street](037-cars-that-mirror-the-street.md) | Car paint and glass reflect a scene: a reflection shader for every tier, a band of surroundings from Codex-made street panoramas by kind of area, and a reflection probe of the real street on Ultra | DONE (27 October 2026) |
+| [038: Bus timetables](038-bus-timetables.md) | Scheduled departures by platform, then a scheduled spawning pilot on line 227 | DEPARTURE BOARD BUILT LOCALLY |
 
 ### Overnight status, 3 October 2026
 

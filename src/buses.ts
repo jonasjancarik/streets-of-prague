@@ -11,7 +11,7 @@ import type { Point2 } from './map/geo.ts';
 import { Polyline } from './network.ts';
 import type { DriveEdge } from './network.ts';
 
-export interface BusLine { ref: string; to: string; path: Polyline; stops: [number, string][] }
+export interface BusLine { ref: string; to: string; path: Polyline; stops: [number, string, string?][] }
 
 // The lines through the centre that run small buses.
 const MINIBUS = new Set(['194', '207']);
@@ -29,7 +29,7 @@ export function parseBusLines(raw: unknown): BusLine[] {
   const out: BusLine[] = [];
   for (const l of lines as { ref?: unknown; to?: unknown; pts?: unknown; stops?: unknown }[]) {
     if (typeof l?.ref !== 'string' || !Array.isArray(l.pts) || l.pts.length < 2) continue;
-    const stops = Array.isArray(l.stops) ? (l.stops as [number, string][]).filter((s) => Array.isArray(s) && typeof s[0] === 'number') : [];
+    const stops = Array.isArray(l.stops) ? (l.stops as [number, string, string?][]).filter((s) => Array.isArray(s) && typeof s[0] === 'number') : [];
     out.push({ ref: l.ref, to: typeof l.to === 'string' ? l.to : '', path: new Polyline(l.pts as Point2[]), stops });
   }
   return out;
@@ -136,7 +136,7 @@ export class BusRun {
     if (!out) return null;
     const cost = new Map<string, number>([[e.v, 0]]), via = new Map<string, DriveEdge>();
     // (A few hundred junctions at most: a plain list does as a queue.)
-    const open: [number, string][] = [[0, e.v]];
+    const open: [number, string, string?][] = [[0, e.v]];
     while (open.length) {
       let k = 0;
       for (let i = 1; i < open.length; i++) if (open[i][0] < open[k][0]) k = i;
@@ -264,4 +264,41 @@ export function busAt(line: BusLine, along: number, edges: DriveEdge[], ok: (x: 
     if (best) return { ...best, run: new BusRun(line, at, out) };
   }
   return null;
+}
+
+type BoardingCall = [seconds: number, destination: string, trip: string];
+export type BusDepartures = Record<string, Record<string, Partial<Record<string, BoardingCall[]>>>>;
+const DAY_SECONDS = 86400;
+const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const serviceKind = (day: number) => day === 5 ? 'saturday' : day === 6 ? 'sunday' : 'weekday';
+
+export function scheduledBuses(departures: BusDepartures | undefined, platform: string | undefined, now: number) {
+  const day = Math.floor(now / DAY_SECONDS);
+  const lines = platform && departures?.[platform];
+  if (!lines) return [];
+  return Object.entries(lines).flatMap(([ref, byDay]) => {
+    let next: { eta: number; headsign: string; departure: number } | undefined;
+    for (let offset = -1; offset <= 7; offset++) {
+      const serviceDay = day + offset;
+      const start = serviceDay * DAY_SECONDS;
+      const call = byDay[serviceKind((serviceDay + 7) % 7)]?.find(([at]) => start + at >= now);
+      if (call && (!next || start + call[0] - now < next.eta)) {
+        next = { eta: start + call[0] - now, headsign: call[1], departure: start + call[0] };
+      }
+      if (next && next.departure < start + DAY_SECONDS) break;
+    }
+    if (!next) return [];
+    const minute = Math.floor((next.departure % DAY_SECONDS) / 60);
+    const time = [Math.floor(minute / 60), minute % 60].map((n) => String(n).padStart(2, '0')).join(':');
+    const departureDay = Math.floor(next.departure / DAY_SECONDS);
+    return [{ ref, colour: '#0a72b8', headsign: next.headsign, eta: next.eta, here: false, mine: true,
+      scheduled: time, scheduledDay: departureDay === day ? undefined : weekdays[departureDay % 7] }];
+  }).sort((a, b) => a.eta - b.eta || Number(a.ref) - Number(b.ref));
+}
+
+// Keep this hash in sync with build_buses.py.
+export function busTimetableShard(platform: string) {
+  let shard = 0;
+  for (const character of platform) shard = (31 * shard + character.charCodeAt(0)) % 64;
+  return shard;
 }

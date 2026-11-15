@@ -126,7 +126,12 @@ export class BusStops {
     for (const line of lines) {
       line.stops.forEach(([at, name], i) => {
         const p = line.path.at(at);
-        const same = this.near(p.x, p.y, MERGE).find((s) => s.name === name && Math.cos(s.ang - p.ang) > 0.5);
+        const platform = line.stops[i][2];
+        const same = this.near(p.x, p.y, MERGE).find((s) => {
+          const first = s.lines[0];
+          const other = first.line.stops[first.i][2];
+          return platform && other ? platform === other : s.name === name && Math.cos(s.ang - p.ang) > 0.5;
+        });
         if (same) { same.lines.push({ line, at, i }); return; }
         const stop: BusStop = { x: p.x, y: p.y, ang: p.ang, name, lines: [{ line, at, i }], placed: false, mesh: null, shown: false };
         this.order.set(stop, this.stops.length);

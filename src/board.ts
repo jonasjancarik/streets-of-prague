@@ -11,7 +11,7 @@ interface DueTram { line: TramLine; headsign: string; eta: number; here: boolean
 // across the street or a hundred metres on).
 // `platform`: the letter of the platform it leaves from, at a stop with more than one;
 // `late`: seconds behind, for a tram held up on its way.
-interface Row { ref: string; colour: string; headsign: string; eta: number; here: boolean; mine?: boolean; platform?: string; late?: number }
+interface Row { ref: string; colour: string; headsign: string; eta: number; here: boolean; mine?: boolean; platform?: string; late?: number; scheduled?: string; scheduledDay?: string }
 
 // Departure boards. Standing at a tram stop, the HUD lists the next trams due there and
 // counts them down as they come. The times come from where the trams actually are
@@ -49,7 +49,7 @@ export class StopBoard {
   expanded = false;
   kind: 'tram' | 'bus' = 'tram';
   // The bus stop you stand at and the buses due there, if any.
-  buses: ((x: number, y: number, dt: number) => { name: string; rows: Row[] } | null) | null = null;
+  buses: ((x: number, y: number, dt: number) => { name: string; rows: Row[]; scheduled?: Row[] } | null) | null = null;
 
   constructor(trams: Trams, el: HTMLElement) {
     this.trams = trams;
@@ -98,7 +98,7 @@ export class StopBoard {
     const at = here ? this.near(x, y, r).sort((a, b) => away(a, x, y) - away(b, x, y))[0] : null;
     const bus = !at && here && this.buses ? this.buses(x, y, 0.25) : null;
     if (bus) {
-      this.show('bus', bus.name, bus.rows);
+      this.show('bus', bus.name, bus.rows, undefined, bus.scheduled);
       return;
     }
     if (!at) {
@@ -129,13 +129,13 @@ export class StopBoard {
     this.show('tram', at.name, rows.map((r) => ({ ref: r.line.ref, colour: r.line.colour || '#c4161c', headsign: r.headsign, eta: r.eta, here: r.here, mine: r.mine, platform: r.platform, late: r.v.late })), lettered ? at.platform : undefined);
   }
 
-  private show(kind: 'tram' | 'bus', name: string, rows: Row[], platform?: string) {
+  private show(kind: 'tram' | 'bus', name: string, rows: Row[], platform?: string, scheduled: Row[] = []) {
     if (this.shown !== name || this.kind !== kind) { this.expanded = false; this.el.classList.remove('expanded'); }
     this.kind = kind;
     this.shown = name;
     this.next = rows.length ? rows[0].eta : Infinity;
     this.mine = rows.find((r) => r.mine)?.eta ?? Infinity;
-    this.render(name, rows.slice(0, SHOWN), platform);
+    this.render(name, [...rows.slice(0, SHOWN), ...scheduled], platform);
   }
 
   // `platform`: the letter of the one you stand at. Rows for the stop's other platforms are greyed.
@@ -143,22 +143,25 @@ export class StopBoard {
     const chars: Record<string, string> = { '&': 'amp', '<': 'lt', '>': 'gt', '"': 'quot' };
     const esc = (s: string) => String(s).replace(/[&<>"]/g, (c) => `&${chars[c]};`);
     const bus = this.kind === 'bus', none = t(bus ? 'No bus due yet' : 'No trams due in the next half hour');
-    const when = (r: Row) => (r.here ? t('now') : r.eta < 45 ? t('arriving') : t('{n} min', { n: Math.round(r.eta / 60) }));
+    const when = (r: Row) => (r.scheduled ? esc([r.scheduledDay && t(r.scheduledDay), r.scheduled].filter(Boolean).join(' ')) : r.here ? t('now') : r.eta < 45 ? t('arriving') : t('{n} min', { n: Math.round(r.eta / 60) }));
     const late = (r: Row) => ((r.late ?? 0) >= LATE ? t('{n} min late', { n: Math.round(r.late! / 60) }) : '');
     const list = rows.length
       ? `<ol class="board-rows">${rows.map((r) => `<li${r.mine === false ? ' class="board-other"' : ''}><span class="ride-ref" style="background:${esc(r.colour)}">${esc(r.ref)}</span>`
         + `<span class="board-to">${esc(r.headsign)}</span>`
         + `<span class="board-platform"${r.platform ? ` title="${esc(t('Platform {p}', { p: r.platform }))}"` : ''}>${esc(r.platform ?? '')}</span>`
-        + `<span class="board-eta">${when(r)}${late(r) ? `<small class="board-late">${late(r)}</small>` : ''}</span></li>`).join('')}</ol>`
+        + `<span class="board-eta">${when(r)}${r.scheduled ? `<small class="board-scheduled">${esc(t('Scheduled'))}</small>` : ''}${late(r) ? `<small class="board-late">${late(r)}</small>` : ''}</span></li>`).join('')}</ol>`
       : `<div class="board-none">${none}</div>`;
     const title = esc(platform ? t('Trams from {name}, platform {p}', { name, p: platform }) : t(bus ? 'Buses from {name}' : 'Trams from {name}', { name }));
     // (The first due at your platform, as Space waits for.)
     const first = rows.find((r) => r.mine) ?? rows[0];
-    const summary = first ? `${esc(first.ref)} · ${esc(first.headsign)}${first.platform && !first.mine ? ` · ${esc(t('Platform {p}', { p: first.platform }))}` : ''} · ${when(first)}${late(first) ? ` · ${late(first)}` : ''}` : none;
+    const summary = first ? `${esc(first.ref)} · ${esc(first.headsign)}${first.platform && !first.mine ? ` · ${esc(t('Platform {p}', { p: first.platform }))}` : ''} · ${when(first)}${first.scheduled ? ` · ${esc(t('Scheduled'))}` : ''}${late(first) ? ` · ${late(first)}` : ''}` : none;
     const html = `<div class="board-title">${title}</div><button class="board-toggle" aria-expanded="${this.expanded}" aria-controls="board-list">${title}<span>${summary}</span><small>${t('Timetable')} ▾</small></button><div id="board-list">${list}</div>`;
     if (html === this.key) return;
+    const scroll = this.el.querySelector('#board-list')?.scrollTop ?? 0;
     this.key = html;
     this.el.innerHTML = html;
+    const departures = this.el.querySelector('#board-list');
+    if (departures && scroll) departures.scrollTop = scroll;
     this.el.hidden = false;
   }
 }

@@ -84,6 +84,8 @@
       .board-platform { min-width: 1.1em; text-align: center; font-weight: 600; font-size: 12px; }
       .board-platform:not(:empty) { border: 1px solid currentColor; border-radius: 3px; padding: 0 3px; }
       .board-eta { font-variant-numeric: tabular-nums; color: var(--accent); text-align: right; }
+      #board-list:has(.board-scheduled) { max-height: 40dvh; overflow: auto; }
+      .board-scheduled { display: block; font-size: 11px; color: var(--ink); }
       .board-late { display: block; font-size: 11px; color: #f2b84b; }
       .board-none { margin-top: 4px; opacity: 0.75; }
       /* The metro: picking a station, then the ride on the line's map. */

@@ -14,7 +14,8 @@ import proj4 from 'proj4';
 import { Funicular } from './funicular.ts';
 import { Ferries } from './ferries.ts';
 import { parseRiver } from './river.ts';
-import { parseBusLines } from './buses.ts';
+import { busTimetableShard, parseBusLines, scheduledBuses } from './buses.ts';
+import type { BusDepartures } from './buses.ts';
 import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp, streetShare } from './network.ts';
 import { Car, TYPES, CarPool, collideBodies, contact, loadCars, ordinaryCarBodies, useKit, variantName } from './car.ts';
 import { CarOutline } from './carOutline.ts';
@@ -243,8 +244,11 @@ async function main() {
     .catch(() => ({ lines: [] }));
   // Bus lines (pipeline/build_buses.py); without them buses wander the main roads.
   const busLines = fetch(dataUrl(AREA, 'buses.json'))
-    .then(async (r) => r.ok ? parseBusLines(await r.json()) : [])
-    .catch(() => []);
+    .then(async (r) => {
+      const data = r.ok ? await r.json() : null;
+      return { lines: parseBusLines(data), timetables: new Set<number>(data?.timetables) };
+    })
+    .catch(() => ({ lines: [], timetables: new Set<number>() }));
   // The metro (pipeline/build_metro.py); without it there are no entrances.
   const metroData: Promise<{ lines: MetroLine[] }> = fetch(dataUrl(AREA, 'metro.json'))
     .then(async (r) => r.ok ? parseMetroLines(await r.json()) : { lines: [] })
@@ -364,7 +368,7 @@ async function main() {
   const there = proj4('EPSG:4326', `+proj=tmerc +lat_0=${lat0} +lon_0=${lon0} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`, [slon, slat]);
   const [sx, sy] = inside(slon, slat) || world.hasAt(there[0], there[1]) ? there : [0, 0];
   // (Nobody parks at a bus stop: known before the first tiles park their cars.)
-  world.noParking = busStopZones(await busLines);
+  world.noParking = busStopZones((await busLines).lines);
   status('Building the streets…');
   // (The view at the start is about 85 m across; what's beyond is loaded but not yet drawn.)
   await world.loadNow(sx, sy, 380, 85 + world.drawBeyond);
@@ -427,7 +431,8 @@ async function main() {
   ride.passengers = new Passengers(trams, () => crowd, seeded);
   const traffic = new Traffic(drive, scene, seeded, trafficWanted(clock.t));
   traffic.signals = signals;
-  traffic.busLines = await busLines;
+  const busData = await busLines;
+  traffic.busLines = busData.lines;
   const pavementDrivers = new PavementDrivers(traffic, seeded);
   const carPool = new CarPool(scene);
   const carOutline = new CarOutline(scene);
@@ -593,9 +598,28 @@ async function main() {
     },
   });
   let busStop: ReturnType<typeof busStops.at> | null = null;
+  const busTimetables = new Map<number, BusDepartures | null>();
+  const timetable = (platform: string | undefined) => {
+    if (!platform) return undefined;
+    const shard = busTimetableShard(platform);
+    if (!busData.timetables.has(shard)) return undefined;
+    if (!busTimetables.has(shard)) {
+      busTimetables.set(shard, null);
+      void fetch(dataUrl(AREA, `bus-timetable-${shard}.json`))
+        .then(async (r) => {
+          if (!r.ok) throw new Error(`Bus timetable request failed: ${r.status}`);
+          busTimetables.set(shard, await r.json());
+        })
+        .catch(() => window.setTimeout(() => busTimetables.delete(shard), 30_000));
+    }
+    return busTimetables.get(shard) ?? undefined;
+  };
   board.buses = (x, y, dt) => {
     const s = busStop = busStops.at(x, y, busStop);
-    return s ? { name: s.name, rows: busStops.due(s, dt) } : null;
+    if (!s) return null;
+    const { line, i } = s.lines[0];
+    const platform = line.stops[i][2];
+    return { name: s.name, rows: busStops.due(s, dt), scheduled: scheduledBuses(timetable(platform), platform, clock.t) };
   };
   const busRide = new BusRide(traffic, world, $('busride'), FAST);
   // On a bus or in a taxi, a passenger.

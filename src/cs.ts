@@ -342,6 +342,7 @@ export const CS: Record<string, string> = {
   'Take over the bus': 'Převzít autobus',
   'Held up in traffic': 'Stojí v zácpě',
   'Buses from {name}': 'Autobusy ze zastávky {name}',
+  'Scheduled': 'Dle jízdního řádu',
   'No bus due yet': 'Zatím nejede žádný autobus',
   'Waiting for a bus · {n}× speed': 'Čekání na autobus · {n}× rychleji',
   'Hold <b>Space</b> to wait for a bus': 'Podržením <b>mezerníku</b> počkáš na autobus',

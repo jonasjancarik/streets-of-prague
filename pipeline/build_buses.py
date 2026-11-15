@@ -10,7 +10,7 @@ street network and pulls up at the stops.
 
 Each line in buses.json: `ref`, `dir` (0 or 1), `to` (the headsign), `pts` (the
 path in the area's local metres, in driving order) and `stops` ([distance along
-the path, name] of each stop on it).
+the path, name, platform ID] of each stop on it).
 """
 
 import csv
@@ -24,8 +24,9 @@ from collections import Counter, defaultdict
 from pyproj import Transformer
 from shapely.geometry import LineString, Point
 
+from build_cache import atomic
 from osm_area import AREAS, OUT
-from pid_timetable import feed
+from pid_timetable import feed, seconds, services_on, typical_dates
 
 MARGIN = 400  # metres of route kept round the area, so buses come in from off the map
 NEAR_STOP = 30  # a stop further than this from the path isn't on it (m)
@@ -52,8 +53,12 @@ def main(area: str = "centrum") -> None:
     routes = {r["route_id"]: r for r in rows(z, "routes.txt")
               if r["route_type"] == "3" and r["is_night"] == "0" and r["is_substitute_transport"] == "0"}
     # Each direction's most used shape, and a headsign for it.
+    service_days = services_on(z, typical_dates(z))
+    trips = {}
     shapes, heads = defaultdict(Counter), defaultdict(Counter)
     for t in rows(z, "trips.txt"):
+        if t["route_id"] in routes and service_days.get(t["service_id"]):
+            trips[t["trip_id"]] = (routes[t["route_id"]]["route_short_name"], t["trip_headsign"], service_days[t["service_id"]])
         if t["route_id"] in routes and t["shape_id"]:
             key = (t["route_id"], t["direction_id"])
             shapes[key][t["shape_id"]] += 1
@@ -65,11 +70,15 @@ def main(area: str = "centrum") -> None:
         if r["shape_id"] in want_ids:
             pts[r["shape_id"]].append((int(r["shape_pt_sequence"]), float(r["shape_pt_lon"]), float(r["shape_pt_lat"])))
     stops = {r["stop_id"]: (r["stop_name"], *tf.transform(float(r["stop_lon"]), float(r["stop_lat"]))) for r in rows(z, "stops.txt")}
+    # PID uses a P suffix for some modes at the same physical platform.
+    platform_ids = {sid: sid[:-1] for sid, row in stops.items()
+                    if sid.endswith("P") and stops.get(sid[:-1]) == row}
     order = defaultdict(list)
     for r in rows(z, "route_stops.txt"):
         order[(r["route_id"], r["direction_id"])].append((int(r["stop_sequence"]), r["stop_id"]))
 
     lines = []
+    platforms = set()
     for (rid, d), sid in sorted(wanted.items(), key=lambda kv: (int("".join(c for c in routes[kv[0][0]]["route_short_name"] if c.isdigit()) or 0), kv[0][1])):
         xy = [tf.transform(lon, lat) for _, lon, lat in sorted(pts[sid])]
         # From the first point near the area to the last one.
@@ -94,7 +103,9 @@ def main(area: str = "centrum") -> None:
             at = ls.project(p)
             if at <= last or at < 10 or at > ls.length - 5:
                 continue
-            on.append([round(at, 1), name])
+            platform = platform_ids.get(stop, stop)
+            on.append([round(at, 1), name, platform])
+            platforms.add(platform)
             last = at
         ref = routes[rid]["route_short_name"]
         lines.append({
@@ -104,8 +115,32 @@ def main(area: str = "centrum") -> None:
         })
         print(f"bus {ref} → {lines[-1]['to']}: {ls.length / 1000:.1f} km, {len(on)} stops")
 
-    out = OUT / f"{area}_now" / "buses.json"
-    out.write_text(json.dumps({"lines": lines}, ensure_ascii=False, separators=(",", ":")))
+    departures = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    for r in rows(z, "stop_times.txt"):
+        stop, trip = platform_ids.get(r["stop_id"], r["stop_id"]), r["trip_id"]
+        if stop not in platforms or trip not in trips or r["pickup_type"] == "1" or not r["departure_time"]:
+            continue
+        ref, to, days = trips[trip]
+        for day in days:
+            departures[stop][ref][day].append([seconds(r["departure_time"]), r["stop_headsign"] or to, trip])
+    for platform in departures.values():
+        for line in platform.values():
+            for calls in line.values():
+                calls.sort()
+
+    shards = defaultdict(dict)
+    for platform, calls in sorted(departures.items()):
+        shard = 0
+        for character in platform:
+            shard = (31 * shard + ord(character)) % 64
+        shards[shard][platform] = calls
+    directory = OUT / f"{area}_now"
+    for shard, calls in shards.items():
+        atomic(directory / f"bus-timetable-{shard}.json",
+               json.dumps(calls, ensure_ascii=False, separators=(",", ":")).encode())
+
+    out = directory / "buses.json"
+    atomic(out, json.dumps({"lines": lines, "timetables": sorted(shards)}, ensure_ascii=False, separators=(",", ":")).encode())
     print(f"{len(lines)} bus routes, {out.stat().st_size / 1e3:.0f} kB → {out.relative_to(OUT.parent)}")
 
 

@@ -100,7 +100,9 @@ const landmarks = JSON.parse((await get(url(`${area}_now/landmarks.json`), { opt
 // What the game reads (src/tiles.ts): every tile's JSON and heights, IPR's buildings
 // where the index says the tile has them, the levels of bridges and tunnels, and the
 // bare ground's heights where there are any.
-const files = [...AREA_FILES.map((f) => [f, true]), ...landmarks.map((l) => [l.file, false])];
+const buses = JSON.parse((await get(url(`${area}_now/buses.json`), { optional: true })) || '{}');
+const files = [...AREA_FILES.map((f) => [f, true]), ...landmarks.map((l) => [l.file, false]),
+  ...(buses.timetables ?? []).map((shard) => [`bus-timetable-${shard}.json`, false])];
 for (const [i, j, , ipr] of index.tiles) {
   const k = `${i}_${j}`;
   files.push([`tiles/${k}.json`, false]);
