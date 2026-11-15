@@ -414,6 +414,8 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             elif (col(row, "man_made") == "bridge" or col(row, "bridge")) and not b:
                 areas.setdefault("bridge", []).append(g.buffer(0))
 
+    if area == "praha":
+        _add_moravkova_1685(buildings, tf, clip)
     timer.lap("feature_loop")
     if stats is not None:
         stats.update(buildings=len(buildings), car_ways=len(car_ways), sidewalks=len(sidewalks))
@@ -1209,6 +1211,45 @@ def _areas(g):
     parts = shapely.get_parts(g)
     keep = parts[np.isin(shapely.get_type_id(parts), (3, 6))]  # Polygon, MultiPolygon
     return shapely.union_all(keep) if len(keep) else Polygon()
+
+
+# ČÚZK RÚIAN building 146965833 (Morávkova 1685/8 and 1685/10).
+# The jogs in the cadastral outline locate the seam between the two roof sections.
+MORAVKOVA_1685 = (
+    (14.597219583, 50.033310489), (14.597289946, 50.033261816),
+    (14.597283804, 50.033258196), (14.597358169, 50.033207240),
+    (14.597435998, 50.033253850), (14.597365219, 50.033302486),
+    (14.597371343, 50.033306195), (14.597297374, 50.033357276),
+)
+
+
+def _add_moravkova_1685(buildings, tf, clip):
+    points = [tf.transform(*point) for point in MORAVKOVA_1685]
+    footprint = Polygon(points)
+    if not footprint.intersects(clip):
+        return
+    a, b, c, d, e, f, g, h = points
+    west = tuple((x + y) / 2 for x, y in zip(b, c))
+    east = tuple((x + y) / 2 for x, y in zip(f, g))
+    for entrance, height, ring in (
+        (8, 5.8, [west, c, d, e, f, east]),
+        (10, 6.0, [a, b, west, east, g, h]),
+    ):
+        section = Polygon(ring).intersection(clip)
+        if section.area < 4:
+            continue
+        # Retire the supplement when a building covering this section comes from OSM.
+        if any(not other["part"] and not other["minh"]
+               and section.intersection(Polygon(other["rings"][0], other["rings"][1:])).area > section.area / 2
+               for other in buildings):
+            continue
+        buildings.append({
+            "id": f"ruian/146965833-{entrance}", "name": f"Morávkova 1685/{entrance}",
+            "kind": "semidetached_house", "h": height, "minh": 0, "roof": "flat",
+            # The IPR model at this tile predates the house.
+            "cover": "slate", "church": False, "part": False, "noIpr": True,
+            "rings": _rings(section, tolerance=0),
+        })
 
 
 def _height(row, col, osm_id, area):

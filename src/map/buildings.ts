@@ -139,7 +139,7 @@ export function buildBuildings(data: BuildingTile) {
       const pts = rings[0].map(([x, y]) => new THREE.Vector2(x, y));
       const holes = rings.slice(1).map((r) => r.map(([x, y]) => new THREE.Vector2(x, y)));
       const all = [...rings[0], ...rings.slice(1).flat()];
-      const flatCol = isWall ? cWall : boat ? cRoof : tmp.set(flatColour(b, hv)).offsetHSL(0, 0, (hash(b.id) - 0.5) * 0.04).clone();
+      const flatCol = isWall ? cWall : boat || b.cover === 'slate' ? cRoof : tmp.set(flatColour(b, hv)).offsetHSL(0, 0, (hash(b.id) - 0.5) * 0.04).clone();
       for (const [i, j, k] of THREE.ShapeUtils.triangulateShape(pts, holes)) {
         tri([...all[i], eaves], [...all[j], eaves], [...all[k], eaves], flatCol, [0, 0, 1]);
       }
