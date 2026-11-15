@@ -17,6 +17,7 @@ import { parseRiver } from './river.ts';
 import { parseBusLines } from './buses.ts';
 import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp, streetShare } from './network.ts';
 import { Car, TYPES, CarPool, collideBodies, contact, loadCars, ordinaryCarBodies, useKit, variantName } from './car.ts';
+import { CarOutline } from './carOutline.ts';
 import { RestingCars } from './restingCars.ts';
 import { loadKit, FIGURE_SIZE, SCALE, WARDROBE } from './figures.ts';
 import { LifeSize } from './rocketbox.ts';
@@ -429,6 +430,7 @@ async function main() {
   traffic.busLines = await busLines;
   const pavementDrivers = new PavementDrivers(traffic, seeded);
   const carPool = new CarPool(scene);
+  const carOutline = new CarOutline(scene);
   // What the cars mirror (plan 037): the street of their kind of area, the riverbank where
   // there's water near (reflections.ts).
   const square = proj4('EPSG:4326', `+proj=tmerc +lat_0=${lat0} +lon_0=${lon0} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`, [14.4206, 50.0873]) as [number, number];
@@ -2843,6 +2845,9 @@ async function main() {
     // …and the trees near you are the ones made to be stood under (map/streetTree.ts).
     // (The free camera too, once it is tilted well off straight down.)
     const fromStreet = !!eyes || (!!free && free.tilt > 35);
+    // Keep the player's ring visible through tree crowns in the overhead view.
+    walker.ring.material.depthTest = fromStreet;
+    carOutline.update(fromStreet ? null : inCar, carPool);
     world.trees.street(fromStreet, free ? free.x : camera.position.x, free ? -free.y : camera.position.z);
     world.trees.canopy(true, fromStreet);
     sun.position.copy(sun.target.position).add(sky.offset);

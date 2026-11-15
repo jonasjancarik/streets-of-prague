@@ -10,6 +10,16 @@ const KINDS = [0, 1, 2, 3] as const;
 const OUTLINE_ATTRIBUTES = ['outlineA', 'outlineB'] as const; // (OUTLINE = 8: four in each)
 type Page = { mesh: THREE.InstancedMesh; kind: TreeKind; owner: string | null; street?: THREE.InstancedMesh; canopy?: THREE.InstancedMesh };
 
+// The ground uses ranks 1–200. Draw crowns after the other solid meshes so only
+// foliage in front of them marks pixels for the player's car outline.
+export const CROWN_STENCIL = 255;
+function markCrown(mesh: THREE.InstancedMesh<THREE.BufferGeometry, THREE.Material>) {
+  mesh.renderOrder = 1;
+  Object.assign(mesh.material, {
+    stencilWrite: true, stencilRef: CROWN_STENCIL, stencilZPass: THREE.ReplaceStencilOp,
+  });
+}
+
 // The trees seen from the street (map/streetTree.ts): their material comes from the WebGPU
 // side (webgpu/streetTrees.ts), which also says when their pictures have loaded.
 let streetMaterial: (() => THREE.Material) | null = null, streetReady: { value: boolean } = { value: false };
@@ -50,6 +60,7 @@ export class TreePool {
 
   private create(kind: TreeKind, overflow: boolean) {
     const mesh = this.factory.create(kind, this.capacity[kind]);
+    markCrown(mesh);
     const page: Page = { mesh, kind, owner: null };
     this.pages.push(page);
     this.group.add(mesh);
@@ -194,6 +205,7 @@ export class TreePool {
     // The instances are the page's own: one set of numbers for both meshes.
     for (const name of ['yearly', ...OUTLINE_ATTRIBUTES]) geom.setAttribute(name, from.geometry.getAttribute(name));
     const mesh = new THREE.InstancedMesh(geom, this.streetMade!, this.capacity[page.kind]);
+    markCrown(mesh);
     mesh.instanceMatrix = from.instanceMatrix;
     mesh.instanceColor = from.instanceColor;
     mesh.userData.sharedMatrices = true; // (see configureRenderer in webgpu.ts)
