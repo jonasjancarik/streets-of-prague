@@ -18,6 +18,8 @@ const FENCE_REPEAT = 2.4; // m of fence the fence texture repeats over (a post a
 // The fence looks, rows of one texture from the bottom up: a wire mesh on posts, wooden
 // boards, metal bars. How often each is put up, in a garden suburb.
 const LOOKS = 3;
+const ATLAS_ROWS = LOOKS + 1;
+const SLATTED_GATE = LOOKS;
 const LOOK_SHARE = [0.55, 0.25, 0.2];
 const LOOK_AREA = 20; // m: fences within one square of this size look the same
 // Which look a fence starting at (x, y) has: the same for the pieces of one plot's fence
@@ -59,8 +61,9 @@ export function fenceArrays(data: FenceTile, height: (x: number, y: number) => n
     const m = hedge ? out.hedge : rail ? out.rail : out.fence;
     const repeat = hedge ? 2 : rail ? RAIL_POSTS : FENCE_REPEAT;
     // The texture rows a fence's faces take (a small gap left either side of each).
-    const look = !hedge && !rail ? fenceLook(line.pts[0][0], line.pts[0][1]) : 0;
-    const rows: [number, number] = rail ? [0, 1] : [(look + 0.03) / LOOKS, (look + 0.97) / LOOKS];
+    const look = line.kind === 'slatted_gate' ? SLATTED_GATE
+      : !hedge && !rail ? fenceLook(line.pts[0][0], line.pts[0][1]) : 0;
+    const rows: [number, number] = rail ? [0, 1] : [(look + 0.03) / ATLAS_ROWS, (look + 0.97) / ATLAS_ROWS];
     let along = 0;
     // Where the line bends, a hedge's two sides meet on the bisector of the bend, so no
     // wedge is left open on the outside of a plot's corner: `mitre(i)` is the offset of
@@ -181,12 +184,12 @@ function barrier() {
 function pickets() {
   if (picketMap) return picketMap;
   const W = 128, H = 64, c = document.createElement('canvas');
-  c.width = W; c.height = H * LOOKS;
+  c.width = W; c.height = H * ATLAS_ROWS;
   const g = c.getContext('2d')!;
   let seed = 11;
   const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   // Row k of the texture is the k-th from the bottom (the canvas is flipped onto it).
-  const top = (k: number) => (LOOKS - 1 - k) * H;
+  const top = (k: number) => (ATLAS_ROWS - 1 - k) * H;
   // A wire mesh: diamonds of thin wire between posts, a tension wire along the top.
   let y0 = top(0) + 2;
   g.fillStyle = '#4f5b52';
@@ -216,6 +219,17 @@ function pickets() {
   for (let x = 6; x < W - 4; x += 7) g.fillRect(x, y0 + 2, 2, H - 8);
   g.fillRect(0, y0 + 4, W, 3);
   g.fillRect(0, y0 + H - 12, W, 3);
+  g.fillRect(0, y0, 5, H - 4);
+  g.fillRect(W - 5, y0, 5, H - 4);
+  // Dark horizontal slats and square steel posts on the Morávkova gates.
+  y0 = top(SLATTED_GATE) + 2;
+  for (let y = 0; y < H - 5; y += 7) {
+    g.fillStyle = '#393438';
+    g.fillRect(0, y0 + y, W, 6);
+    g.fillStyle = '#51484e';
+    g.fillRect(0, y0 + y, W, 1);
+  }
+  g.fillStyle = '#29272a';
   g.fillRect(0, y0, 5, H - 4);
   g.fillRect(W - 5, y0, 5, H - 4);
   picketMap = new THREE.CanvasTexture(c);

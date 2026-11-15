@@ -418,6 +418,34 @@ def pipeline_commit() -> str:
         return ""
 
 
+def add_moravkova_frontage(tile):
+    """Street boundary traced from the Morávkova 1685 reference photo."""
+    sections = {b["id"]: b["rings"][0] for b in tile["buildings"] if b["id"].startswith("ruian/146965833-")}
+    if len(sections) != 2:
+        return
+    ax, ay = max(sections["ruian/146965833-8"], key=lambda p: p[0])
+    bx, by = max(sections["ruian/146965833-10"], key=lambda p: p[1])
+    length = ((bx - ax)**2 + (by - ay)**2)**0.5
+    ox, oy = 3.0 * (by - ay) / length, 3.0 * (ax - bx) / length
+    def point(fraction):
+        return (ax + fraction * (bx - ax) + ox, ay + fraction * (by - ay) + oy)
+
+    from shapely.geometry import LineString, box
+
+    bounds = box(*tile["box"])
+    for kind, start, end, height in (
+        ("slatted_gate", 0, 0.41, 1.6),
+        ("wall", 0.41, 0.60, 1.45),
+        ("slatted_gate", 0.60, 0.76, 1.6),
+        ("wall", 0.76, 1, 1.45),
+    ):
+        line = LineString([point(start), point(end)]).intersection(bounds)
+        if isinstance(line, LineString) and line.length > 0.05:
+            target = "walls" if kind == "wall" else "fences"
+            tile[target].append({"kind": kind, "h": height,
+                                 "pts": [[round(x, 2), round(y, 2)] for x, y in line.coords]})
+
+
 def assemble(area: str, strict=False) -> dict:
     """Write the game's tiles, index.json and names.json from the layers, then the road
     fit over them (road_fit.after_assemble), which must carry the same build."""
@@ -509,6 +537,7 @@ def put_together(area: str, strict=False) -> dict:
     out_of_date = young_out_of_date = 0
     for i, j, t in tiles(area, meta):
         k = f"{i}_{j}"
+        add_moravkova_frontage(t)
         merged_green = False
         # Where its woods are young, if made for the woods and heights as they are now.
         if young and k in young["inputs"]:
