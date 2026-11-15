@@ -7,7 +7,7 @@
 //   land    trees, walls, the collision grid, and where the bridges and tunnels are
 // Everything stands on the tile's terrain, sampled from the heights sent along.
 import * as THREE from 'three';
-import { buildBuildings, wallArrays } from './map/buildings.ts';
+import { buildBuildings, moravkovaEntrance, wallArrays } from './map/buildings.ts';
 import { planDetails, partArrays } from './map/roofDetails.ts';
 import type { DetailArrays, RoofSite } from './map/roofDetails.ts';
 import { iprRoofSites } from './map/iprRoofs.ts';
@@ -93,6 +93,8 @@ function roofs({ buildings, size, origin, ground, bbox, water, stops }: WorkerJo
   const keys = ['position', 'normal', 'color', 'drapeUv'] as const;
   const parts: Record<(typeof keys)[number], Float32Array[]> = { position: [], normal: [], color: [], drapeUv: [] };
   const sites: RoofSite[] = [];
+  const modeledFacades: [number, number][] = [];
+  let vertices = 0;
   // Stop shelters OSM has as buildings (map/stopShelters.ts) are drawn as shelters.
   let shelters: DetailArrays | null = null;
   const marked = buildings.some((b) => b.shelter);
@@ -104,6 +106,9 @@ function roofs({ buildings, size, origin, ground, bbox, water, stops }: WorkerJo
     const g = built.mesh.geometry;
     const pos = g.attributes.position.array as Float32Array;
     for (let i = 1; i < pos.length; i += 3) pos[i] += b.base || 0;
+    const end = vertices + pos.length / 3;
+    if (moravkovaEntrance(b.id)) modeledFacades.push([vertices, end]);
+    vertices = end;
     for (const k of keys) parts[k].push(g.attributes[k].array as Float32Array);
   }
   const arrays: Record<(typeof keys)[number], Float32Array> = { position: new Float32Array(0), normal: new Float32Array(0), color: new Float32Array(0), drapeUv: new Float32Array(0) };
@@ -117,6 +122,8 @@ function roofs({ buildings, size, origin, ground, bbox, water, stops }: WorkerJo
   const lines: WallLine[] = [], facade = facadeCoords(arrays.position, hAt, styleAt(bbox), lines);
   const c = arrays.color;
   finishWalls(arrays.position, facade, lines, (t) => [Math.round(c[t * 9] * 255), Math.round(c[t * 9 + 1] * 255), Math.round(c[t * 9 + 2] * 255)]);
+  // The authored openings already have geometry and colour.
+  for (const [start, end] of modeledFacades) facade.fill(0, start * 4, end * 4);
   return appendTo({ ...arrays, facade }, joinDetails(detailArrays(sites, hAt), shelters), (x, y) => [(x + ox) / W, (y + oy) / H]);
 }
 

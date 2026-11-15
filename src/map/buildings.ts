@@ -23,6 +23,13 @@ const ROOF_SLATE = ['#6c6d70', '#5e6064', '#77746f'];
 const ROOF_COPPER = '#6f9483';
 const WALLS = TENEMENT_PLASTER;
 
+export function moravkovaEntrance(id: string): 8 | 10 | null {
+  if (id === 'ruian/146965833-8') return 8;
+  if (id === 'ruian/146965833-10') return 10;
+  return null;
+}
+
+
 // What the map draws as a building on the water is a boat tied up at the quay (a botel, a
 // restaurant boat, a landing stage): white sides over a dark hull, a flat deck, no taller
 // than a deck or two. As a house with a tiled roof it read as a house standing in the river.
@@ -74,6 +81,51 @@ export function buildBuildings(data: BuildingTile) {
     push(c, n, cols[2]);
   };
 
+  // Morávkova faces northeast. Coordinates along its CCW front edge increase
+  // from left to right as seen from the street. Reuse the merged wall mesh.
+  const moravkovaFront = (entrance: 8 | 10, a: Point2, b: Point2, base: number, top: number, out: number[]) => {
+    const white = new THREE.Color('#e0dcd5');
+    const plaster = new THREE.Color(entrance === 8 ? '#5b505c' : '#8a6b5c');
+    const glass = new THREE.Color('#37383a');
+    const sill = new THREE.Color('#b2ada5');
+    const length = Math.hypot(out[0], out[1]);
+    const panel = (left: number, right: number, bottom: number, high: number, color: THREE.Color, offset = 0) => {
+      const point = (u: number, z: number) => [
+        a[0] + (b[0] - a[0]) * u + offset * out[0] / length,
+        a[1] + (b[1] - a[1]) * u + offset * out[1] / length,
+        base + z,
+      ];
+      const bl = point(left, bottom), br = point(right, bottom), tr = point(right, high), tl = point(left, high);
+      tri(bl, br, tr, color, out);
+      tri(bl, tr, tl, color, out);
+    };
+    const mirroredFromLeft = (left: number, right: number): [number, number] =>
+      entrance === 8 ? [left, right] : [1 - right, 1 - left];
+    const opening = (left: number, right: number, bottom: number, high: number, split: 'vertical' | 'horizontal' | 'none') => {
+      const [l, r] = mirroredFromLeft(left, right);
+      const trim = 0.065 / length;
+      panel(l, r, bottom, high, white, 0.025);
+      panel(l + trim, r - trim, bottom + 0.065, high - 0.065, glass, 0.035);
+      if (split === 'vertical') {
+        const mid = (l + r) / 2;
+        panel(mid - trim / 2, mid + trim / 2, bottom, high, white, 0.045);
+      } else if (split === 'horizontal') {
+        panel(l, r, bottom + 0.85, bottom + 0.92, white, 0.045);
+      }
+      if (bottom > 0.2) panel(l - trim / 2, r + trim / 2, bottom - 0.055, bottom, sill, 0.065);
+    };
+
+    const storey = (top - base) * 0.48;
+    panel(0, 1, 0, storey, white);
+    panel(0, 1, storey, top - base, plaster);
+    const [accentStart, accentEnd] = mirroredFromLeft(0.38, 0.76);
+    panel(accentStart, accentEnd, 0, 2.05, plaster, 0.01);
+    opening(0.56, 0.83, top - base - 1.20, top - base - 0.48, 'vertical');
+    opening(0.10, 0.38, 1.34, 2.05, 'vertical');
+    opening(0.56, 0.63, 1.34, 2.05, 'none');
+    opening(0.70, 0.83, 0.08, 2.05, 'horizontal');
+  };
+
   const water = data.areas?.water ?? [];
   // Afloat: the middle of its outline and most of its corners are over water.
   const afloat = (ring: Point2[]) => {
@@ -85,6 +137,7 @@ export function buildBuildings(data: BuildingTile) {
 
   for (const b of data.buildings) {
     const hv = hash(b.id + b.rings[0].length);
+    const entrance = moravkovaEntrance(b.id);
     const cell = neighbourhoodOf(data.origin, b.rings[0], b.street);
     const boat = afloat(b.rings[0]);
     const isWall = /zeď/i.test(b.name || '');
@@ -129,6 +182,10 @@ export function buildBuildings(data: BuildingTile) {
         const [x1, y1] = ring[i];
         const [x2, y2] = ring[(i + 1) % ring.length];
         const out = [y2 - y1, -(x2 - x1), 0];
+        if (entrance && out[0] > 2 && out[1] > 2) {
+          moravkovaFront(entrance, [x1, y1], [x2, y2], base, eaves + rim, out);
+          continue;
+        }
         const a0 = [x1, y1, base], b0 = [x2, y2, base], a1 = [x1, y1, eaves + rim], b1 = [x2, y2, eaves + rim];
         tri(a0, b0, b1, [dark, dark, cWall], out);
         tri(a0, b1, a1, [dark, cWall, cWall], out);

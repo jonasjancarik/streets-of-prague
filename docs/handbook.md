@@ -1809,7 +1809,8 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   balance again and prints the constants to put in the script.
 - **Missing footprints.** Morávkova 1685/8 and 1685/10 share one cadastral footprint.
   The map uses the ČÚZK outline for RÚIAN building 146965833 and models its two low,
-  dark roof sections. The supplement yields to a matching footprint in OpenStreetMap.
+  dark roof sections. The street façade uses the two paint colours, pale band, windows
+  and doors from the reference photo. The supplement yields to a matching footprint in OpenStreetMap.
   For a local preview, rebuild the Prague buildings layer for chunk `13,5`.
 - **Roof corrections.** `pipeline/roofs.py` lists landmarks by OSM id, and outlines
   (in WGS84) for parts of buildings OSM draws as one. After changing it, run
