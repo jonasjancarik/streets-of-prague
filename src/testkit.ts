@@ -205,8 +205,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       await frame();
     },
 
-    // Exactly here, on foot (go() first: it loads the place, and then stands you on the
-    // nearest walkable ground, which can be a step or two away).
+    // Put the player or their car exactly here. Use go() first to load the place.
     stand(w: Where) {
       const m = g.me();
       [m.x, m.y] = kit.toLocal(w);

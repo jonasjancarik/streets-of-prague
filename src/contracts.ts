@@ -127,6 +127,8 @@ export interface BuildingArrays {
   chimneys?: Float32Array;
 }
 
+export interface TreeTrunk { x: number; y: number; radius: number }
+
 export interface LandResult {
   furniture: FurnitureInstances;
   trees: { matrices: Float32Array; colours: Float32Array; yearly: Float32Array; outlines: Float32Array; count: number; big: number; shrubs: number; conifers: number };
@@ -134,6 +136,7 @@ export interface LandResult {
   fences: FenceBuffers;
   sheds: ShedBuffers;
   cells: Uint8Array;
+  trunkCells: Map<number, TreeTrunk>;
   masks: LevelMask[];
 }
 

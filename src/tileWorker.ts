@@ -32,7 +32,7 @@ import { skyView } from './map/skyView.ts';
 import { stepEdges, stampEdges, parapetArrays } from './stepEdges.ts';
 import type { StepEdge } from './stepEdges.ts';
 import type { Bounds, Point2 } from './map/geo.ts';
-import type { HeightGrid, BuildingArrays, LandResult, WorkerJobs, WorkerRequest, WorkerResponse } from './contracts.ts';
+import type { HeightGrid, BuildingArrays, LandResult, TreeTrunk, WorkerJobs, WorkerRequest, WorkerResponse } from './contracts.ts';
 
 type LandData = WorkerJobs['land']['data'];
 type StyleAt = (x: number, y: number, height: number) => number;
@@ -318,22 +318,31 @@ function tileGrid(geo: Geo<LandData>, t: LandData, seeds: Float64Array, edges: S
   return grid;
 }
 
-// Tree trunks are solid.
+// Keep the owner of cells that would be free without one particular trunk.
 function stampTrunks(grid: Grid, geo: Geo<LandData>, { matrices, count }: LandResult['trees']) {
+  const owners = new Map<number, TreeTrunk>();
   for (let i = 0; i < count; i++) {
     const e = matrices.subarray(i * 16, i * 16 + 16);
     const x = e[12], y = -e[14];
     const rad = 0.35 + Math.hypot(e[0], e[1], e[2]) * 0.06;
     const [u, v] = geo.px(x, y, RES);
+    const col = Math.floor(u), row = Math.floor(v);
+    // Include the corners of the raster cells in the clearance test.
+    const trunk = { x: (col + 0.5) / RES - geo.ox, y: geo.H - (row + 0.5) / RES - geo.oy, radius: rad + Math.SQRT1_2 / RES };
     const R = Math.ceil(rad * RES);
     for (let j = -R; j <= R; j++) {
       for (let k = -R; k <= R; k++) {
         if (Math.hypot(j, k) > rad * RES) continue;
-        const cu = Math.floor(u) + k, cv = Math.floor(v) + j;
-        if (cu >= 0 && cv >= 0 && cu < grid.w && cv < grid.h) grid.cells[cv * grid.w + cu] = 255;
+        const cu = col + k, cv = row + j;
+        if (cu < 0 || cv < 0 || cu >= grid.w || cv >= grid.h) continue;
+        const cell = cv * grid.w + cu;
+        if (grid.cells[cell] === 0) owners.set(cell, trunk);
+        else owners.delete(cell); // Another trunk, wall, or fixture also blocks it.
+        grid.cells[cell] = 255;
       }
     }
   }
+  return owners;
 }
 
 function joinWalls(a: LandResult['walls'], b: LandResult['walls']): LandResult['walls'] {
@@ -360,7 +369,6 @@ function land({ data, seeds, ground, bridges, box, structures }: WorkerJobs['lan
   const fences = fenceArrays(data, hAt);
   const sheds = shedArrays(data.sheds, hAt);
   const grid = tileGrid(geo, data, seeds, edges);
-  stampTrunks(grid, geo, trees);
   const furniture = ground && data.furnitureEnabled ? furnitureInstances(new Geo({ ...data, buildings: data.furnitureBuildings }), trees, hAt) : { matrices: furnitureMatrices([]), spots: [] };
   // The surveyed hydrants and phone boxes stand where the survey has them.
   if (ground && data.furnitureEnabled && data.utility?.length) {
@@ -379,7 +387,8 @@ function land({ data, seeds, ground, bridges, box, structures }: WorkerJobs['lan
       if (Math.abs(c * x + s * y) <= hx + 0.15 && Math.abs(-s * x + c * y) <= hy + 0.15 && col >= 0 && row >= 0 && col < grid.w && row < grid.h) grid.cells[row * grid.w + col] = 255;
     }
   }
-  return { trees, walls, fences, sheds, furniture, cells: grid.cells, masks: structures.map((l) => levelMask(box, l.polys, l.level)) };
+  const trunkCells = stampTrunks(grid, geo, trees);
+  return { trees, walls, fences, sheds, furniture, cells: grid.cells, trunkCells, masks: structures.map((l) => levelMask(box, l.polys, l.level)) };
 }
 
 function isRequest(value: unknown): value is WorkerRequest {

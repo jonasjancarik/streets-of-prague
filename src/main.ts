@@ -973,6 +973,7 @@ async function main() {
     [walker.x, walker.y] = spot || (walker.level ? [c.x, c.y] : nearestWalkable(grid, c.x, c.y));
     walker.h = c.h;
     c.mode = 'loose';
+    c.treeEscape = undefined;
     c.rider = null;
     c.setBox(); // (the bag you carry goes back on your back)
     loose.push(c);

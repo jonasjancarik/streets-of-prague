@@ -213,6 +213,8 @@ that without a new renderer.
 
 - On foot, the yellow ring stays visible from above when you walk under trees.
   When driving, a yellow outline shows where foliage covers your car.
+- If you get stuck against a tree, hold the accelerator or reverse. After about a
+  second of barely moving, your car can pass that trunk until it clears it.
 - Tank controls on foot and in the car: W/S forwards and back, A/D turn, Shift
   runs, Space is the handbrake. E gets into the nearest car, including one driving
   past (its driver runs off). R puts the car back on the road. Scroll zooms; the

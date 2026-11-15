@@ -26,7 +26,7 @@ import type { Point2, Bounds, Polygons } from './map/geo.ts';
 import { DriveGraph } from './network.ts';
 import type { DriveEdge, WalkEdge, WalkGraph } from './network.ts';
 import type { Car } from './car.ts';
-import type { Landmark, TileJSON, MapIndex, TilePassage, BuildingArrays, HeightGrid, LevelInput, LandResult, WorkerJobs, WorkerResults } from './contracts.ts';
+import type { Landmark, TileJSON, MapIndex, TilePassage, BuildingArrays, HeightGrid, LevelInput, LandResult, TreeTrunk, WorkerJobs, WorkerResults } from './contracts.ts';
 import type { LevelMask } from './ground.ts';
 import { isTileJSON } from './contracts.ts';
 import { TileWorkers } from './tileWorkers.ts';
@@ -79,7 +79,7 @@ interface Picks {
 interface TileMeshes { group: THREE.Group; surfaces: Surfaces; own: THREE.Mesh[]; smoke: THREE.Object3D | null }
 interface Tile {
   k: string; i: number; j: number; box: Bounds; passages: TilePassage[]; raised: Point2[][][];
-  grid: Grid; levels: TileLevel[];
+  grid: Grid; trunkCells: LandResult['trunkCells']; levels: TileLevel[];
   cars: Car[]; ms: Record<string, number>;
   // Drawn only near the view (see TileWorld.update): `shown` says it should be,
   // `dressing` that its meshes are on the way, `drawn` holds them once they're in the scene.
@@ -110,7 +110,14 @@ export interface Tracked {
   // Kept on the ground, whatever is under it or over it (a car in traffic on a street
   // at ground level, see Traffic.update).
   grounded?: boolean;
-  e?: { bridge?: boolean; tunnel?: boolean; level?: number }; _view?: { res: number; height: (x: number, y: number) => number; at: (x: number, y: number) => number };
+  e?: { bridge?: boolean; tunnel?: boolean; level?: number }; _view?: TrackedGrid;
+}
+
+interface TrackedGrid {
+  res: number;
+  height: (x: number, y: number) => number;
+  at: (x: number, y: number) => number;
+  trunkAt: (x: number, y: number) => TreeTrunk | undefined;
 }
 
 // Streams the map in square tiles (pipeline/build_tiles.py) around the camera. Each
@@ -519,7 +526,7 @@ export class TileWorld {
   private bridgeSurfacePreview: Promise<ReturnType<typeof readBridgeSurfacePreview>> | null;
   grid: {
     res: number; height: (x: number, y: number) => number; at: (x: number, y: number) => number;
-    view: (who: Tracked) => { res: number; height: (x: number, y: number) => number; at: (x: number, y: number) => number };
+    view: (who: Tracked) => TrackedGrid;
   };
 
   constructor({ area, index, scene, drive, walk, time, night, osmBuildings = false, ortho = false, countryside = false as boolean | 'live' }: {
@@ -921,6 +928,11 @@ export class TileWorld {
       res: RES,
       height: (x, y) => this.surfaceAt(x, y, who.level),
       at: (x, y) => this.cellAt(x, y, who.level ?? 0, who.gz ?? 0),
+      trunkAt: (x, y) => {
+        if (who.level !== 0) return;
+        const tile = this.tileAt(x, y);
+        return tile?.trunkCells.get(tile.grid.indexAt(x, y));
+      },
     });
   }
 
@@ -1464,7 +1476,7 @@ export class TileWorld {
     if (sliced) { ms.parkingWait = ms.parking - Math.round(busy); ms.parking = Math.round(busy); }
     for (const c of cars) c.level = 0; // (nobody parks on a bridge or in a tunnel)
     const tile: Tile = {
-      k, i: t.i, j: t.j, box: t.box, passages: t.passages || [], raised: t.buildings.filter((b) => !grounded(b)).map((b) => b.rings), grid, levels: onLevels, cars, ms,
+      k, i: t.i, j: t.j, box: t.box, passages: t.passages || [], raised: t.buildings.filter((b) => !grounded(b)).map((b) => b.rings), grid, trunkCells: land.trunkCells, levels: onLevels, cars, ms,
       source, shown: false, dressing: null, drawn: null, drawMs: {}, drawAfter: 0, fixtures: [walls, fenceRows.fence, fenceRows.hedge, fenceRows.rail, ...(sheds ? [sheds] : []), ...wires, ...statues],
       roads, crossers, poles, fences: fenceSections, furniture, relief: shade, sample: shade?.sample,
       water: (t.areas.water || []).map((rings) => {

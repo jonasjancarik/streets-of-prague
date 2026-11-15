@@ -9,6 +9,8 @@ import type { FigureKit, Look } from './figures.ts';
 import type { Point2 } from './map/geo.ts';
 import { posts } from './posts.ts';
 import { fences } from './fences.ts';
+import { TreeEscape } from './treeEscape.ts';
+import type { TreeTrunk } from './contracts.ts';
 import { lampLit, LAMP_ON } from './lamps.ts';
 import { SNOW, STREET_SNOW, WET, SKY_REF, STREET_REF, SUN_DIR, SUN_LIGHT } from './shading.ts';
 import { send, sendInstances } from './gpu.ts';
@@ -35,6 +37,7 @@ export interface CarGrid {
   at(x: number, y: number): number;
   height?: (x: number, y: number) => number;
   view?: (car: Car) => CarGrid;
+  trunkAt?: (x: number, y: number) => TreeTrunk | undefined;
 }
 export interface Body { x: number; y: number; vx: number; vy: number; w?: number }
 
@@ -954,6 +957,7 @@ export class Car {
   // How crumpled the corners and sides are (see DENT).
   crush = [0, 0, 0, 0, 0, 0];
   braking = false;
+  treeEscape?: TreeEscape;
   // A police car with the frame on its nose, which keeps its headlamps from breaking.
   ram?: boolean;
   // The resting index's last obstacle state (main.ts, restingCars.ts). The pose is
@@ -1212,6 +1216,8 @@ export class Car {
     this.vy = ny * vf - nx * vl;
 
     // Substeps so a fast car can't skip through a thin wall.
+    const escape = this.mode === 'player' && grid.trunkAt ? (this.treeEscape ??= new TreeEscape()) : undefined;
+    escape?.begin(this, !ctl.handbrake && Math.abs(throttle) >= 0.2 ? Math.sign(throttle) : 0);
     const steps = Math.max(1, Math.ceil((this.speed * dt) / 0.25));
     let impact = 0;
     for (let i = 0; i < steps; i++) {
@@ -1219,6 +1225,7 @@ export class Car {
       this.y += (this.vy * dt) / steps;
       impact = Math.max(impact, posts.collide(this), fences.collide(this), this.collideGrid(grid));
     }
+    escape?.end(this, dt);
     this.sync();
     return impact;
   }
@@ -1245,10 +1252,13 @@ export class Car {
   }
 
   collideGrid(grid: CarGrid) {
-    const solid = (x: number, y: number) => (grid.at(x, y) ? 1 : 0);
+    const escape = this.mode === 'player' && grid.trunkAt ? this.treeEscape : undefined;
+    const ignored = escape?.ignored, seeking = escape?.seeking;
+    const solid = (x: number, y: number) => grid.at(x, y) && (!ignored || grid.trunkAt?.(x, y) !== ignored) ? 1 : 0;
     let nx = 0, ny = 0, hits = 0, cx = 0, cy = 0;
     for (const [x, y] of this.worldOutline()) {
       if (!solid(x, y)) continue;
+      if (seeking) escape?.hit(grid.trunkAt?.(x, y));
       const d = 0.7;
       nx += solid(x - d, y) - solid(x + d, y);
       ny += solid(x, y - d) - solid(x, y + d);

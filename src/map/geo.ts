@@ -161,10 +161,14 @@ export class Grid {
     c.width = c.height = 0; // let the canvas go now
   }
 
-  at(x: number, y: number) {
+  indexAt(x: number, y: number) {
     const i = Math.floor((x + this.ox) * this.res), j = Math.floor((this.H - (y + this.oy)) * this.res);
-    if (i < 0 || j < 0 || i >= this.w || j >= this.h) return 255;
-    return this.cells[j * this.w + i];
+    return i < 0 || j < 0 || i >= this.w || j >= this.h ? -1 : j * this.w + i;
+  }
+
+  at(x: number, y: number) {
+    const index = this.indexAt(x, y);
+    return index < 0 ? 255 : this.cells[index];
   }
 }
 
