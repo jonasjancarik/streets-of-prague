@@ -11,7 +11,7 @@ interface DueTram { line: TramLine; headsign: string; eta: number; here: boolean
 // across the street or a hundred metres on).
 // `platform`: the letter of the platform it leaves from, at a stop with more than one;
 // `late`: seconds behind, for a tram held up on its way.
-interface Row { ref: string; colour: string; headsign: string; eta: number; here: boolean; mine?: boolean; platform?: string; late?: number; scheduled?: string; scheduledDay?: string; trip?: string; departure?: number }
+interface Row { ref: string; colour: string; headsign: string; eta: number; here: boolean; mine?: boolean; platform?: string; late?: number; scheduled?: string; scheduledDay?: string; trip?: string; departure?: number; position?: () => { x: number; y: number } }
 
 // Departure boards. Standing at a tram stop, the HUD lists the next trams due there and
 // counts them down as they come. The times come from where the trams actually are
@@ -44,6 +44,7 @@ export class StopBoard {
   next: number;
   // Seconds until the first tram or bus to the platform you stand at (Space waits for it).
   mine = Infinity;
+  approaching: Row['position'];
   t: number;
   key: string;
   expanded = false;
@@ -104,6 +105,7 @@ export class StopBoard {
     if (!at) {
       this.shown = null;
       this.next = this.mine = Infinity;
+      this.approaching = undefined;
       this.el.hidden = true;
       this.key = '';
       return;
@@ -126,7 +128,7 @@ export class StopBoard {
     // One row per tram (a tram due at both platforms shows for the sooner one).
     due.sort((a, b) => a.eta - b.eta);
     const rows = due.filter((d, i) => due.findIndex((e) => e.v === d.v) === i);
-    this.show('tram', at.name, rows.map((r) => ({ ref: r.line.ref, colour: r.line.colour || '#c4161c', headsign: r.headsign, eta: r.eta, here: r.here, mine: r.mine, platform: r.platform, late: r.v.late })), lettered ? at.platform : undefined);
+    this.show('tram', at.name, rows.map((r) => ({ ref: r.line.ref, colour: r.line.colour || '#c4161c', headsign: r.headsign, eta: r.eta, here: r.here, mine: r.mine, platform: r.platform, late: r.v.late, position: () => r.v.line.path.at(r.v.s) })), lettered ? at.platform : undefined);
   }
 
   private show(kind: 'tram' | 'bus', name: string, rows: Row[], platform?: string, scheduled: Row[] = []) {
@@ -134,7 +136,9 @@ export class StopBoard {
     this.kind = kind;
     this.shown = name;
     this.next = rows.length ? rows[0].eta : Infinity;
-    this.mine = rows.find((r) => r.mine)?.eta ?? Infinity;
+    const first = rows.find((r) => r.mine);
+    this.mine = first?.eta ?? Infinity;
+    this.approaching = first?.position;
     const shown = rows.slice(0, SHOWN);
     const remaining = scheduled.filter((r) => !shown.some((live) =>
       live.mine && live.trip && live.trip === r.trip && live.departure === r.departure));

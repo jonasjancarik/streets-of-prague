@@ -66,7 +66,7 @@ export interface BusStop {
   placed: boolean; mesh: THREE.Group | null; shown: boolean;
 }
 // `mine`: it stops at the sign you stand by, not across the street.
-export interface DueBus { ref: string; colour: string; headsign: string; eta: number; here: boolean; mine: boolean; key: unknown; trip?: string; departure?: number; late?: number }
+export interface DueBus { ref: string; colour: string; headsign: string; eta: number; here: boolean; mine: boolean; key: unknown; trip?: string; departure?: number; late?: number; position: () => { x: number; y: number } }
 
 const topMaterial = (() => {
   const c = document.createElement('canvas');
@@ -267,7 +267,7 @@ export class BusStops {
           const arrival = schedule && schedule.start + schedule.arrivals[i];
           if (eta < HORIZON && (!best || eta < best.eta)) {
             best = { ref: run.line.ref, colour: BUS_COLOUR, headsign: run.line.to, eta, here,
-              mine: o === s, key: a, trip: schedule?.trip, departure,
+              mine: o === s, key: a, position: () => a.car, trip: schedule?.trip, departure,
               late: arrival === undefined ? undefined : Math.max(0, clock + eta - arrival) };
           }
         }

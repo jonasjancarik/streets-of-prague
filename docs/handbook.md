@@ -572,6 +572,8 @@ that without a new renderer.
   and wet ground mirrors the sky low over the far end of the street. Under Testing: pause, one frame at a time, slow
   motion or 2–4×, money, stars, full health, nothing hurts, into a new car of any type,
   the test places, and the scenarios (see Testing above).
+  **Watch approaching buses and trams** follows the next vehicle to your platform
+  while you hold Space. Release Space to return to the player.
   "Helicopter next to me" parks one on the nearest open ground (flown like the one on
   Palackého náměstí, see Playing).
 

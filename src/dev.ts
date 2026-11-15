@@ -13,6 +13,8 @@ import { gunOn, setGun } from './pistol.ts';
 import { headingUpOn, setHeadingUp } from './headingup.ts';
 import { did } from './telemetry.ts';
 
+export let watchTransitWhileWaiting = false;
+
 // far: a place out of the game's reach, [lat, lon]; going there reloads the game.
 interface DevHit { label: string; x: number; y: number; far?: [number, number] }
 // The middle of Prague's map, and how far from it the countryside reaches (a little
@@ -573,6 +575,7 @@ function setupBench(kit: Testkit, $: (id: string) => HTMLElement) {
         <label class="dev-check" title="The camera stops following you. Searching or picking a spot on the map now moves the camera, not you."><input id="dev-free" type="checkbox" /> Free camera</label>
         <label class="dev-check" title="See the street the way you'd see it standing in it; driving, from just behind your car"><input id="dev-eyes" type="checkbox" /> First person</label>
       </div>
+      <label class="dev-check" title="Follow the next bus or tram to your platform while you hold Space."><input id="dev-watch-transit" type="checkbox" /> Watch approaching buses and trams</label>
       <div class="dev-note" id="dev-free-hint" hidden>Drag to pan · scroll to zoom · right-drag or Shift-drag to orbit</div>
       <div class="dev-note" id="dev-eyes-hint" hidden>Click to look round with the mouse (Esc to let go), or right-drag · <button id="dev-ahead" class="dev-inline">Look ahead again</button></div>
       <div id="dev-free-row" class="dev-body" hidden>
@@ -648,6 +651,9 @@ function setupBench(kit: Testkit, $: (id: string) => HTMLElement) {
   const gun = $('dev-gun') as HTMLInputElement;
   gun.checked = gunOn();
   gun.onchange = () => { did('dev: toggled the pistol'); setGun(gun.checked); };
+  const watchTransit = $('dev-watch-transit') as HTMLInputElement;
+  watchTransit.checked = watchTransitWhileWaiting;
+  watchTransit.onchange = () => { watchTransitWhileWaiting = watchTransit.checked; };
   const headingUp = $('dev-headingup') as HTMLInputElement;
   headingUp.checked = headingUpOn();
   headingUp.onchange = () => { did('dev: toggled the heading-up camera'); setHeadingUp(headingUp.checked); };

@@ -1181,7 +1181,7 @@ export class TileWorld {
   // Called every frame: starts building the nearest missing tiles within r and drops
   // far ones; of those loaded, the ones within `drawn` of the point get their meshes
   // (with a `view`, only the ones it looks towards).
-  update(x: number, y: number, r: number, drawn = r, view: View | null = null) {
+  update(x: number, y: number, r: number, drawn = r, view: View | null = null, retain?: ReadonlySet<string>) {
     const now = performance.now();
     this.turns.shift()?.();
     this.street = !!view;
@@ -1207,9 +1207,9 @@ export class TileWorld {
         this.inFlight.delete(next);
       });
     }
-    for (const k of [...this.loaded.keys()]) if (!keep.has(k)) this.drop(k);
+    for (const k of [...this.loaded.keys()]) if (!keep.has(k) && !retain?.has(k)) this.drop(k);
     if (now - this.trimmed > 1000) { this.trimmed = now; this.forget(x, y, r); }
-    if (keepDrawn) for (const tile of this.loaded.values()) if (tile.shown && !keepDrawn.has(tile.k)) this.undress(tile);
+    if (keepDrawn) for (const tile of this.loaded.values()) if (tile.shown && !keepDrawn.has(tile.k) && !retain?.has(tile.k)) this.undress(tile);
     // Files fetched ahead for tiles that are now far behind aren't needed any more.
     for (const k of [...this.pending.keys()]) if (!keep.has(k) && !this.loaded.has(k) && !this.inFlight.has(k)) this.pending.delete(k);
     // Photos start with prefetching too: a failed or never-built tile has no drop()

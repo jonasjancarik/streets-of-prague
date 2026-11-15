@@ -66,7 +66,7 @@ import { TileWorld } from './tiles.ts';
 import { loadFacadeAtlas } from './facades.ts';
 import { groundSamples, GROUND_DEPTH } from './surface.ts';
 import { CUTAWAY, DIG, WEATHER_DETAIL } from './shading.ts';
-import { setupDev } from './dev.ts';
+import { setupDev, watchTransitWhileWaiting } from './dev.ts';
 import { setupSettings } from './settings.ts';
 import { setScreenshot } from './feedback.ts';
 import { readSave, writeSave, clearSave, listSaves, newSlot, unreadable, describe } from './save.ts';
@@ -1831,6 +1831,7 @@ async function main() {
     police.forget(w);
   };
   let waitScale = 1, clockShown = '';
+  let waitingViewTiles: ReadonlySet<string> | undefined;
   let ticketWas = false;
   let rideAt: boolean | null = null, busAt: boolean | null = null, funiAt: number | null | undefined, ferryAt: number | null | undefined;
   let street: string | null = null, bannerT = 0, lifeT = 0;
@@ -2618,7 +2619,7 @@ async function main() {
     // (A tile joins the scene just after a frame's update, so this frame draws it first.)
     const tilesFrom = performance.now(), joined = world.joined !== joinedWas;
     joinedWas = world.joined;
-    world.update(camPos.x, -camPos.z, eyes ? EYES_REACH : viewRadius() + 220, testkit?.cam ? Infinity : eyes ? EYES_REACH : viewRadius(Math.max(height, heightWanted)) + world.drawBeyond, eyes ? view : null);
+    world.update(camPos.x, -camPos.z, eyes ? EYES_REACH : viewRadius() + 220, testkit?.cam ? Infinity : eyes ? EYES_REACH : viewRadius(Math.max(height, heightWanted)) + world.drawBeyond, eyes ? view : null, waitingViewTiles);
     hitches.tiles(performance.now() - tilesFrom, joined);
 
     // Player: keyboard and touch controls together. In the car, Shift is lane assist:
@@ -2638,6 +2639,9 @@ async function main() {
     // It waits for a tram or bus to your platform, not one at the stop's other side, and
     // lets the clock run normally while you walk about. (The same waiting for a taxi on its way.)
     const waiting = (!!board.shown && board.mine > 8 || taxi.state === 'coming') && (input.brake || touch.fast) && !ctl.move;
+    const watchTransit = watchTransitWhileWaiting && input.brake && !ctl.move && !ctl.turn &&
+      !inCar && !inHeli && !ride.on && !passenger() && !metro.active && !boats.me &&
+      !funicular.me && !ferries.me && !dialog.active && !testkit?.cam && !eyes;
     trams.waiting = waiting && !!board.shown && board.kind === 'tram';
     waitScale += ((waiting ? FAST * 2 : 1) - waitScale) * Math.min(1, dt * (waiting ? 1.5 : 4));
     if (Math.abs(waitScale - (waiting ? FAST * 2 : 1)) < 0.02) waitScale = waiting ? FAST * 2 : 1;
@@ -2770,16 +2774,27 @@ async function main() {
     // (Heading-up keeps the vehicle in the middle of the screen instead of looking ahead of it.)
     const turning = headingUpOn() && !underway && !inHeli && !testkit?.cam && !eyes;
     const lead = underway ? 0.25 : turning && (vehicle || ride.driving) ? 0.1 : vehicle || ride.driving ? 0.7 : ride.on ? 0.5 : 0.3;
-    if (underway) look.set(underway.x + underway.vx * lead, 0, -(underway.y + underway.vy * lead));
+    const approaching = watchTransit ? board.approaching?.() : undefined;
+    const wasWatching = !!waitingViewTiles;
+    if (approaching) {
+      waitingViewTiles ??= new Set(world.around(walker.x, walker.y, 160, false));
+      look.set(approaching.x, 0, -approaching.y);
+    } else if (underway) look.set(underway.x + underway.vx * lead, 0, -(underway.y + underway.vy * lead));
     else look.set(px() + (vehicle || walker).vx * lead, 0, -(py() + (vehicle || walker).vy * lead));
-    camPos.lerp(look, Math.min(1, dt * 4));
+    // Cut to distant vehicles so tile loading follows the vehicle instead of the
+    // streets between it and the stop. Keep the platform ready for the return.
+    if ((approaching || wasWatching) && camPos.distanceToSquared(look) > 250 ** 2) {
+      camPos.copy(look);
+      camGround = world.terrainAt(look.x, -look.z);
+    } else camPos.lerp(look, Math.min(1, dt * 4));
+    if (!approaching && camPos.distanceToSquared(look) < 25) waitingViewTiles = undefined;
     shake *= Math.exp(-6 * dt);
     const jx = (Math.random() - 0.5) * shake * 2, jz = (Math.random() - 0.5) * shake * 2;
     // Follow the ground under the view, smoothed so the camera doesn't bob over kerbs.
     // In a tunnel, the ground above it: the view looks down into the tunnel through
     // the hole round you (below), deep as it may be.
     // (On the metro, the ground above the train: see Metro.view.)
-    const body = inHeli || underway ? null : inCar || walker;
+    const body = inHeli || underway || approaching ? null : inCar || walker;
     const deep = !!body && world.buried(body);
     const below = underway ? underway.ground
       : deep ? Math.max(world.terrainAt(px(), py()), body.gz ?? 0) : ground(camPos.x, -camPos.z, body);
