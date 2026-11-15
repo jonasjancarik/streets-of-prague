@@ -490,4 +490,23 @@ back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change w
   larger gzipped. Pictures: `docs/evidence/tin/top/cmp-*.jpg` (local). Left: the
   corner of Československého exilu where the survey's line turns back on itself (a
   flat shaded band on the wall, a hole before), and Vyšehrad's corners where walls of
-  very different heights meet. Needs a city build to confirm.
+  very different heights meet.
+
+  The city build (`ipr_terrain.py praha --survey-scan --step-lines`, then `layers.py`,
+  22 minutes) against the lines build: parapet tops jumping over 15 cm 6.6 → 4.1 km,
+  over 5 cm 21.7 → 13.3 km; car-street steps over 1 m 7 → 4, bumps over 0.5 m 259 →
+  256, leaning over 15 % 941 → 923, twisting over 12 % 712 → 692, waves over 0.6 m
+  840 → 823, 99 % of carriageway within 0.3 m of the LiDAR as before. On the nine
+  places (5 × 5 tiles each, 18,400 m of wall) the top sags over 1 m along 1,101 →
+  850 m, over 2 m 563 → 478 m. 298 km of edge (267), sharp turns 39.5 → 40.5 per km.
+
+  It gave K Celinám (50.00447, 14.35263) a step of 4.4 m: a living street at a wall's
+  foot with the next wall's top a metre past its kerb, narrower than a cell, and the
+  top strip took the cell's last plain corner. Where a car street crosses a cell
+  whose plain corners a top strip took, those corners go back to plain ground (39
+  cells in the city); the step is 1.3 m now and nothing else measured moved.
+
+  Left: by a path in Podolí (50.04845, 14.40551) a wall's top strip ends square across
+  the path, a wall across it where the lines build had a ramp, and the roughest
+  parapet in the city went from 6.6 to 13 m there. Pictures:
+  `docs/evidence/tin/top/city/cmp-*.jpg` (local; left the lines build, right this).
