@@ -563,7 +563,7 @@ def main() -> None:
         ways = [w for w in ways if w["id"] not in dropped] + cut_bridges
         print(f"  {len(dropped)} underpasses in an open cutting: on the ground, {len(cut_bridges)} streets over them on bridges")
     # Streets and water from the survey on the ground (dtm_heights.py).
-    labels, terraces = {}, {}
+    labels, terraces, ids = {}, {}, {}
     if not args.no_survey:
         surveyed = dtm_heights.apply(area, AREAS[area], krovak_to_local(local), tiles, N, step, gx0, gy0, unary_union(water) if water else None, boxes, by_water,
                                       [(LineString(w["pts"]), w["w"]) for w in ways if w["kind"] == "tunnel" and len(w["pts"]) > 1], kept_places(local), driven, [] if args.walls_on_streets else list(streets.values()), args.no_feather, not args.shoulder, args.cut_streets, weirs=weirs, unknown=unknown, valley_smooth=not args.valley_nearest,
@@ -575,7 +575,7 @@ def main() -> None:
                                       scan=ipr_lidar.range_sampler(options["survey_scan"])[0] if options.get("survey_scan") else None,
                                       sunk_kerbs=not args.no_sunk_kerbs, scan_levels=not args.no_scan_levels,
                                       street_sides=[] if args.walls_on_streets else list(kerbs.values()), scan_streets=not args.no_scan_streets)
-        labels, terraces = surveyed.pop("labels"), surveyed.pop("terraces")
+        labels, terraces, ids = surveyed.pop("labels"), surveyed.pop("terraces"), surveyed.pop("terrace_ids")
         print(f"  survey: {surveyed}")
         timings.lap("survey")
     # Bridges and tunnels, above and below the bare ground (structures.py).
@@ -595,7 +595,7 @@ def main() -> None:
         # mostly, so the lattice alone couldn't say it).
         ring = lambda r: np.round(shapely.get_coordinates(r)[:-1], 2).tolist()  # noqa: E731
         lifted = 0
-        for pad, height in structures.pads(ways, list(streets.values()), ground=sampler(tiles, N, T, step, gx0, gy0, labels)):
+        for n_pad, (pad, height) in enumerate(structures.pads(ways, list(streets.values()), ground=sampler(tiles, N, T, step, gx0, gy0, labels))):
             bx0, by0, bx1, by1 = pad.bounds
             for i in range(math.floor((bx0 - gx0) / T), math.floor((bx1 - gx0) / T) + 1):
                 for j in range(math.floor((by0 - gy0) / T), math.floor((by1 - gy0) / T) + 1):
@@ -612,6 +612,7 @@ def main() -> None:
                     on = shapely.contains_xy(pad, xs, ys)
                     arr[on] = height
                     labels.setdefault((i, j), np.zeros((N + 1, N + 1), dtype=np.uint8))[on] = label
+                    ids.setdefault((i, j), {})[label] = -1 - n_pad  # (one number for the pad in every tile)
                     lifted += 1
         print(f"  {lifted} flat terraces under the street before bridges drawn from past their wall")
         met = pull_to_bridges(tiles, labels, found, N)
@@ -621,7 +622,7 @@ def main() -> None:
     # from the scan where it's the ground, else from the lattice's own side.
     lines_by_tile = {}
     if args.step_lines and labels:
-        own = step_lines.lattice_reader(tiles, labels, N, T, step, gx0, gy0)
+        own = step_lines.lattice_reader(tiles, labels, N, T, step, gx0, gy0, ids)
         decks = [LineString(w["pts"]).buffer(w["w"] / 2) for w in ways if w["kind"] == "bridge" and len(w["pts"]) > 1]
         read = (lambda xs, ys, label, away=None: own(xs, ys, label, away) if label == step_lines.WATER else lidar_at(xs, ys)) if args.lidar_ground else own
         if args.step_lines_scan and not args.lidar_ground:
@@ -630,6 +631,7 @@ def main() -> None:
             read = step_lines.scan_reader(own, ipr_lidar.sampler(options["survey_scan"], local)[0], decks)
         driven = step_lines.crossing(list(streets.values()), decks)
         for key, listed in terraces.items():
+            own.home = key
             got = step_lines.for_tile(boxes[key].bounds, tile_water.get(key, []), listed, read, driven)
             if got:
                 lines_by_tile[f"{key[0]}_{key[1]}"] = got

@@ -462,3 +462,32 @@ back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change w
   letting a wall come down to nothing over its last metres instead of ending square,
   is the next thing to try (`strips` in `dtm_heights.apply`). Pictures:
   `docs/evidence/tin/walk/cmp-walk4.jpg`, `cmp-walk5.jpg` (local).
+- 15 November 2026: the walls' outlines. The notch at Československého exilu wasn't a
+  gap between the survey's pieces (they are one line there) and the step line there was
+  level: the game's sampler gave way to the lattice. The wall's foot strip stops at the
+  car street's kerbs, a footway's width, and the street past it and the wall's top were
+  both plain ground; where the wall runs across the lattice at an angle a cell had
+  corners of both, and the top sagged to the street. Beneše's sawtooth is the same.
+  Now each retaining wall gets a strip on its top too (`TOP_STRIP`, 8 m, on by
+  default); lattice points on the top's side that kept a footway's height go with the
+  foot; pieces under 32 m² that a street on the top leaves are dropped (`TOP_LEAST`).
+  Two bugs this showed: the game drew an edge two terraces share twice, wall and
+  parapet one over the other, flickering (`shared` in `src/stepEdges.ts`); and the
+  step lines read the next tile's terraces by the tile's own label numbers, so near a
+  tile's edge they read another terrace (a 7 m hole at the corner of Československého
+  exilu; `terrace_ids`, `lattice_reader`).
+
+  A new measure reads the game's sampler a metre either side of every surveyed wall
+  (the old ones read the step lines, which were fine where the game wasn't). Nine
+  windows, 9,600 m of wall:
+
+  | | top sags over 1 m | over 2 m | step under half | rough parapet (m) |
+  |---|---|---|---|---|
+  | lines build | 623 m | 359 m | 418 m | 510 |
+  | with top strips | 481 m | 302 m | 359 m | 416 |
+
+  Street checks unchanged or better (leaning over 15 %: Jaroše 8 → 6); tiles 4.5 %
+  larger gzipped. Pictures: `docs/evidence/tin/top/cmp-*.jpg` (local). Left: the
+  corner of Československého exilu where the survey's line turns back on itself (a
+  flat shaded band on the wall, a hole before), and Vyšehrad's corners where walls of
+  very different heights meet. Needs a city build to confirm.

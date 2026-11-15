@@ -1668,8 +1668,13 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   lists nearby survey objects, their placement levels, measured height ranges and
   source quality. Both commands use the local DTM packages.
   Each grid point also has a label
-  (plain ground, water, or a terrace at a retaining wall's foot, whose outline is in the
-  tile's `terraces`), stored after the heights in `<tile>.height.bin`. Where the labels
+  (plain ground, water, or a terrace at a retaining wall's foot or on its top, whose
+  outline is in the tile's `terraces`), stored after the heights in `<tile>.height.bin`.
+  A wall has a terrace on both sides (`STRIP`, `TOP_STRIP` in `pipeline/dtm_heights.py`),
+  so the street past the foot's strip and the wall's top never share a label in a cell;
+  an edge two terraces share is drawn once, from the higher label (`shared` in
+  `src/stepEdges.ts`). Labels are numbered per tile; the step lines read across a tile's
+  edge by numbers that are the same in every tile (`terrace_ids`). Where the labels
   in a grid cell differ, the game reads the height at a point from the corners with that
   point's own label (`heightSampler` in `src/terrain.ts`), cuts the ground's layers
   along the actual outlines (`src/terrain-cut.ts`, including enclosed terraces and

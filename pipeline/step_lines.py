@@ -335,7 +335,7 @@ def crossing(streets, decks=()):
     return driven
 
 
-def lattice_reader(tiles, labels, N, T, step, gx0, gy0):
+def lattice_reader(tiles, labels, N, T, step, gx0, gy0, ids=None):
     """The ground's height at points from the lattice, on one side of the steps: the
     cell's corners with that label, else that label's points a cell further out (the
     nearer the more), else NaN. `tiles`, `labels`: per tile (i, j), its (N + 1)² heights
@@ -345,8 +345,18 @@ def lattice_reader(tiles, labels, N, T, step, gx0, gy0):
     behind the terrace's strip on its top, and where the line passed a few centimetres
     from one of the street's points, the foot took a share of the street's height: 5.
     května's carriageway before its bridge over Hvězdova came down to the wall's foot
-    over 4 m, torn, instead of stepping down at the wall."""
+    over 4 m, torn, instead of stepping down at the wall.
+    `ids`: per tile, its terraces' labels as numbers the same in every tile (dtm_heights);
+    `read.home`: the tile whose labels `label` is in. A tile numbers its terraces from 2,
+    so past its edge another terrace had the label, and a wall's top strip read the
+    neighbouring tile's foot there (a 7 m hole at Československého exilu)."""
+    ids = ids or {}
+    common = {key: (np.vectorize(lambda v, m=ids[key]: m.get(int(v), int(v)), otypes=[np.int64])(lab) if key in ids else lab.astype(np.int64))
+              for key, lab in labels.items()}
+
     def read(xs, ys, label, away=None):
+        if read.home is not None:
+            label = ids.get(read.home, {}).get(int(label), label)
         out = np.full(len(xs), np.nan)
         i = np.floor((xs - gx0) / T).astype(int)
         j = np.floor((ys - gy0) / T).astype(int)
@@ -354,7 +364,7 @@ def lattice_reader(tiles, labels, N, T, step, gx0, gy0):
             arr = tiles.get(key)
             if arr is None:
                 continue
-            lab = labels.get(key)
+            lab = common.get(key)
             own = (lab == label) if lab is not None else np.full(arr.shape, label == 0)
             sel = (i == key[0]) & (j == key[1])
             if away is not None:
@@ -398,6 +408,7 @@ def lattice_reader(tiles, labels, N, T, step, gx0, gy0):
             out[sel] = res
         return out
     read.sided = True
+    read.home = None
     return read
 
 

@@ -212,7 +212,7 @@ def main():
         cuts=[LineString(way["pts"]).buffer(way["w"] / 2) for way in ways if way.get("cut")], sharp=False,
         scan=ipr_lidar.range_sampler(ipr_lidar.CACHE)[0] if args.survey_scan else None, sunk_kerbs=not args.no_sunk_kerbs, scan_levels=not args.no_scan_levels,
         street_sides=list(kerbs.values()), scan_streets=not args.no_scan_streets)
-    labels, terraces = surveyed.pop("labels"), surveyed.pop("terraces")
+    labels, terraces, ids = surveyed.pop("labels"), surveyed.pop("terraces"), surveyed.pop("terrace_ids")
     print(f"  survey: {surveyed}")
     found, steep = {}, {}
     if not args.no_bridges:
@@ -221,7 +221,7 @@ def main():
                                  ipr_terrain.sampler(tiles, N, T, step, gx0, gy0, labels), local, tiles, N, T, step, gx0, gy0, boxes,
                                  way_levels=[], ramps_out=steep, streets=[line for line, _ in streets.values()])
         ring = lambda r: np.round(shapely.get_coordinates(r)[:-1], 2).tolist()  # noqa: E731
-        for pad, height in structures.pads(ways, list(streets.values()), ground=ipr_terrain.sampler(tiles, N, T, step, gx0, gy0, labels)):
+        for n_pad, (pad, height) in enumerate(structures.pads(ways, list(streets.values()), ground=ipr_terrain.sampler(tiles, N, T, step, gx0, gy0, labels))):
             bx0, by0, bx1, by1 = pad.bounds
             for i in range(math.floor((bx0 - gx0) / T), math.floor((bx1 - gx0) / T) + 1):
                 for j in range(math.floor((by0 - gy0) / T), math.floor((by1 - gy0) / T) + 1):
@@ -238,6 +238,7 @@ def main():
                     on = shapely.contains_xy(pad, xs, ys)
                     arr[on] = height
                     labels.setdefault((i, j), np.zeros((N + 1, N + 1), dtype=np.uint8))[on] = label
+                    ids.setdefault((i, j), {})[label] = -1 - n_pad
         ipr_terrain.pull_to_bridges(tiles, labels, found, N)
 
     if args.npz:
@@ -258,11 +259,11 @@ def main():
                   N, T, step, gx0, gy0, ti, tj, args.tiles,
                   [LineString(way["pts"]).buffer(way["w"] / 2) for way in ways if way["kind"] == "bridge" and len(way["pts"]) > 1],
                   ipr_lidar.sampler(ipr_lidar.CACHE, local)[0] if args.step_lines_scan or args.wall_walk else None,
-                  args.wall_walk)
+                  args.wall_walk, ids)
     print(f"{len(tiles)} tiles round {ti}_{tj} in {time.perf_counter() - started:.0f} s")
 
 
-def write_map(out, built, tiles, labels, terraces, found, steep, tile_water, boxes, streets, N, T, step, gx0, gy0, ti, tj, reach, decks=(), scan_at=None, wall_walk=False):
+def write_map(out, built, tiles, labels, terraces, found, steep, tile_water, boxes, streets, N, T, step, gx0, gy0, ti, tj, reach, decks=(), scan_at=None, wall_walk=False, ids=None):
     """A map folder for the offline checks: the window's tiles as built here (their
     heights and labels, bridge and tunnel levels, terraces and step lines, as
     ipr_terrain.main and layers.assemble write them), and a ring of tiles round them and
@@ -277,7 +278,7 @@ def write_map(out, built, tiles, labels, terraces, found, steep, tile_water, box
     if own_grid:
         index["terrain"] = {**index["terrain"], "n": N + 1, "step": step}
         (out / "index.json").write_text(json.dumps(index))
-    own = step_lines.lattice_reader(tiles, labels, N, T, step, gx0, gy0)
+    own = step_lines.lattice_reader(tiles, labels, N, T, step, gx0, gy0, ids)
     if scan_at is not None:
         own = step_lines.walk_reader(own, scan_at, decks) if wall_walk else step_lines.scan_reader(own, scan_at, decks)
     driven = step_lines.crossing(list(streets.values()), decks)
@@ -307,6 +308,7 @@ def write_map(out, built, tiles, labels, terraces, found, steep, tile_water, box
                 print(f"  note: tile {k} has other bridge and tunnel levels here than in the built map ({was}); its streets' levels are the built map's")
             if terraces.get((i, j)):
                 t["terraces"] = terraces[(i, j)]
+                own.home = (i, j)
                 lines = step_lines.for_tile(boxes[(i, j)].bounds, tile_water.get((i, j), []), terraces[(i, j)], own, driven)
                 if lines:
                     t["stepLines"] = lines

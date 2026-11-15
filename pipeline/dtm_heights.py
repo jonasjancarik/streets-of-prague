@@ -251,6 +251,17 @@ REACH = 10.0  # m either side of a retaining wall: as far as the terrain model's
 CUT_RISE, CUT_OUT, CUT_RUN = 2.5, 1.0, 40.0  # m
 LONE = 2.0  # m: a surveyed point this far above or below every point round it is a spike or a pit
 STRIP = 8.0  # m: the width of the terrace marked at a wall's foot (two lattice cells)
+# A terrace this wide on a retaining wall's top too (0: none). The foot's strip stops at
+# a car street's kerbs, often after the footway, a cell or less: the street past it and
+# the ground on the wall's top were then both plain ground, and where the wall runs
+# across the lattice at an angle a cell had corners of both, so the game read the top
+# from the street's corners too and the wall's top sagged to the street (Československého
+# exilu, nábřeží Edvarda Beneše's sawtooth). Marked after every wall's foot, and not over
+# any. On nine test places (15 November 2026), read through the game's own sampler a
+# metre either side of each surveyed wall: the top sagging over 1 m 623 → 481 m of 9,600,
+# the step under half its usual height 418 → 359 m; the streets' checks no worse.
+TOP_STRIP = 8.0  # m
+TOP_LEAST = 32.0  # m²: a smaller piece of it is left out (two lattice cells)
 # A car street's cross-section: its height is the mean of each kerb's surveyed points
 # within ALONG either way along the street (the nearer the more), the two kerbs counting
 # alike; a kerb with none so near looks out to ALONG_FAR. Survey points out to KERB_OUT
@@ -1636,6 +1647,67 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
     lane_tree = STRtree(lanes) if len(lanes) else None
     off_streets = 0.0  # m² of terrace taken off the car streets
     cuttings = _cuttings(bridge_ways, streets, at)
+
+    def mark(strip, leave=None, least=4.0):
+        """A wall's strip as the next terrace, off the car streets, the water and the
+        terraces so far; whether anything of it was left. `leave(gi, gj)`: the lattice
+        points inside it not to mark; `least`: m², smaller pieces are dropped."""
+        nonlocal off_streets
+        hits = lane_tree.query(strip, predicate="intersects") if lane_tree is not None else []
+        if len(hits):
+            was = strip.area
+            strip = strip.difference(shapely.union_all(lanes[hits]))
+            off_streets += was - strip.area
+        if water is not None and water.intersects(strip):
+            strip = strip.difference(water)
+        if strip.is_empty:
+            return False
+        for k in sorted({k for sq in squares(strip) for k in nearby.get(sq, ())}):
+            if strips[k].intersects(strip):
+                strip = strip.difference(strips[k])
+        parts = [g for g in shapely.get_parts(strip) if g.geom_type == "Polygon" and g.area >= least]
+        if not parts:
+            return False
+        strip = shapely.union_all(parts)
+        for sq in squares(strip):
+            nearby.setdefault(sq, []).append(len(strips))
+        strips.append(strip)
+        bx0, by0, bx1, by1 = strip.bounds
+        ia, ib = max(0, int(np.floor((bx0 - x_of(0)) / step))), min(grid.shape[1] - 1, int(np.ceil((bx1 - x_of(0)) / step)))
+        ja, jb = max(0, int(np.floor((by0 - y_of(0)) / step))), min(grid.shape[0] - 1, int(np.ceil((by1 - y_of(0)) / step)))
+        gi, gj = np.meshgrid(np.arange(ia, ib + 1), np.arange(ja, jb + 1))
+        inside = shapely.contains_xy(strip, x_of(gi), y_of(gj)) & ~wet[ja:jb + 1, ia:ib + 1] & (terrace[ja:jb + 1, ia:ib + 1] == 0)
+        if leave is not None and inside.any():
+            inside[inside] = ~leave(gi[inside], gj[inside])
+        terrace[ja:jb + 1, ia:ib + 1][inside] = len(strips)
+        return True
+
+    def at_foot(line, low):
+        """For a wall's top strip (mark's `leave`): the points whose height is nearer the
+        foot's than the top's. The survey's footway runs on under the wall's line here and
+        there, and a lattice point a metre past it kept the footway's height; on the top's
+        terrace, the game read the top from it."""
+        def leave(gi, gj):
+            p = np.column_stack([x_of(gi), y_of(gj)])
+            u = shapely.line_locate_point(line, shapely.points(p))
+            # (Only beside the line: past its ends, which side a point is on says nothing.)
+            near = (u > 1e-6) & (u < line.length - 1e-6)
+            foot = shapely.get_coordinates(shapely.line_interpolate_point(line, u))
+            ahead = shapely.get_coordinates(shapely.line_interpolate_point(line, np.minimum(u + 0.1, line.length))) \
+                - shapely.get_coordinates(shapely.line_interpolate_point(line, np.maximum(u - 0.1, 0)))
+            up = -low * np.column_stack([-ahead[:, 1], ahead[:, 0]]) / np.maximum(np.hypot(ahead[:, 0], ahead[:, 1]), 1e-9)[:, None]
+            now = lambda q: _bilinear(grid, (q[:, 0] - x_of(0)) / step, (q[:, 1] - y_of(0)) / step)  # noqa: E731
+            with np.errstate(invalid="ignore"), warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                below = np.nanmin([now(foot - up * r) for r in np.linspace(ramp.near, ramp.reach, 5)], axis=0)
+                above = np.nanmax([now(foot + up * r) for r in np.linspace(ramp.near, ramp.reach, 5)], axis=0)
+                h = grid[gj, gi]
+                # (Not where the two read alike: at a sharp bend the foot's reading lands
+                # on the top beyond the other leg.)
+                return near & (above - below > 1.0) & (np.abs(h - below) < np.abs(h - above))
+        return leave
+
+    tops = []  # the strips on the retaining walls' tops (TOP_STRIP), marked after every foot's
     # (line, low, top, lifts): `top`, the terrace on the wall's top; `lifts`, the streets
     # beside it take its heights (a drawn wall's: the survey has the line along its top).
     for line, low, top, lifts in [(shapely.LineString(run), low, False, False) for run, low in _retaining(walls, at, dry)] + [(*w, True) for w in _drawn(drawn, at)] + [(*w, False) for w in cuttings]:
@@ -1678,33 +1750,28 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
             lowered[gj[ok & below], gi[ok & below]] = True
             wall_points += int(ok.sum())
         # (A drawn wall's terrace is on top: the street at its foot isn't stepped.)
-        strip = line.buffer(ramp.strip * (-low if top else low), single_sided=True).buffer(0)
-        hits = lane_tree.query(strip, predicate="intersects") if lane_tree is not None else []
-        if len(hits):
-            was = strip.area
-            strip = strip.difference(shapely.union_all(lanes[hits]))
-            off_streets += was - strip.area
-        if water is not None and water.intersects(strip):
-            strip = strip.difference(water)
-        if strip.is_empty:
-            continue
-        for k in sorted({k for sq in squares(strip) for k in nearby.get(sq, ())}):
-            if strips[k].intersects(strip):
-                strip = strip.difference(strips[k])
-        parts = [g for g in shapely.get_parts(strip) if g.geom_type == "Polygon" and g.area >= 4]
-        if not parts:
-            continue
-        strip = shapely.union_all(parts)
-        for sq in squares(strip):
-            nearby.setdefault(sq, []).append(len(strips))
-        strips.append(strip)
-        wall_length += line.length
-        bx0, by0, bx1, by1 = strip.bounds
-        ia, ib = max(0, int(np.floor((bx0 - x_of(0)) / step))), min(grid.shape[1] - 1, int(np.ceil((bx1 - x_of(0)) / step)))
-        ja, jb = max(0, int(np.floor((by0 - y_of(0)) / step))), min(grid.shape[0] - 1, int(np.ceil((by1 - y_of(0)) / step)))
-        gi, gj = np.meshgrid(np.arange(ia, ib + 1), np.arange(ja, jb + 1))
-        inside = shapely.contains_xy(strip, x_of(gi), y_of(gj)) & ~wet[ja:jb + 1, ia:ib + 1] & (terrace[ja:jb + 1, ia:ib + 1] == 0)
-        terrace[ja:jb + 1, ia:ib + 1][inside] = len(strips)
+        foot = mark(line.buffer(ramp.strip * (-low if top else low), single_sided=True).buffer(0))
+        if foot:
+            wall_length += line.length
+        if TOP_STRIP and not top and not lifts:
+            tops.append((line.buffer(-low * TOP_STRIP, single_sided=True).buffer(0), at_foot(line, low), len(strips) if foot else 0))
+    # (Not the pieces a street on the top leaves between its lanes: their outlines crossed it.)
+    wall_tops = 0
+    for strip, leave, foot in tops:
+        wall_tops += mark(strip, leave, TOP_LEAST)
+        # The points on the top's side with the foot's height (`leave`), its car streets'
+        # too, go with the foot: the top's ground must not read them.
+        if foot:
+            bx0, by0, bx1, by1 = strip.bounds
+            ia, ib = max(0, int(np.floor((bx0 - x_of(0)) / step))), min(grid.shape[1] - 1, int(np.ceil((bx1 - x_of(0)) / step)))
+            ja, jb = max(0, int(np.floor((by0 - y_of(0)) / step))), min(grid.shape[0] - 1, int(np.ceil((by1 - y_of(0)) / step)))
+            gi, gj = np.meshgrid(np.arange(ia, ib + 1), np.arange(ja, jb + 1))
+            gi, gj = gi.ravel(), gj.ravel()
+            free = shapely.contains_xy(strip, x_of(gi), y_of(gj)) & ~wet[gj, gi] & (terrace[gj, gi] == 0) & ~np.isnan(grid[gj, gi])
+            gi, gj = gi[free], gj[free]
+            if len(gi):
+                low_ = leave(gi, gj)
+                terrace[gj[low_], gi[low_]] = foot
 
     # Places where all this makes things worse (terrain_keep.json): as the terrain model has them.
     kept = 0
@@ -1753,7 +1820,9 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
 
     # Per tile: its heights, its labels (0 plain ground, 1 water, 2… its terraces) and the
     # terraces' outlines within it.
-    labels, outlines = {}, {}
+    # `ids`: per tile, its terraces' labels as numbers that are the same in every tile
+    # (step_lines.lattice_reader reads past the tile's edge).
+    labels, outlines, ids = {}, {}, {}
     ring = lambda r: np.round(shapely.get_coordinates(r)[:-1], 2).tolist()  # noqa: E731
     for (i, j), arr in tiles.items():
         rows, cols = slice(j * N - j0, j * N - j0 + N + 1), slice(i * N - i0, i * N - i0 + N + 1)
@@ -1768,6 +1837,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
                 continue
             listed.append({"label": 2 + len(listed), "polys": [[ring(q.exterior), *(ring(r) for r in q.interiors)] for q in here]})
             label[(terrace[rows, cols] == g) & (label == 0)] = listed[-1]["label"]
+            ids.setdefault((i, j), {})[listed[-1]["label"]] = int(g) + 1
         labels[(i, j)] = label
         # Its water, where streets were taken out of it.
         if mapped is not None and label.any():
@@ -1779,6 +1849,6 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
             outlines[(i, j)] = listed
     changed = ~np.isnan(bare) & (np.abs(grid - bare) > 0.05)
     return {"survey_rejected_vertices": rejected, "off_scan": counts.get("off_scan", 0), "sunk_kerbs": int(sunk.sum()), "aloft": int(aloft.sum()), "deck_kerbs": int(decked.sum()), "over_kerbs": int(over_kerbs.sum()), "end_kerbs": int(at_end.sum()), "kerbs_skipped": counts.get("kerbs_skipped", 0), "scan_lower": counts.get("scan_lower", 0), "scan_upper": counts.get("scan_upper", 0), **({"kept_aloft": counts["kept_aloft"]} if "kept_aloft" in counts else {}), "surfaces": surfaces, "street_points": street_points, "levelled_across": levelled_points, "streets_from_scan": scanned, "two_levels": two_levels, "under_points": under, "feathered": feathered, "overhang_points": overhang, "water_points": int(wet.sum()), "water_levelled": levelled, "valley_points": valley, "bank_points": bank_points,
-            "kept_by_hand": kept, "cut_streets": cuts, "retaining_walls": len(strips) - cuts, "retaining_metres": round(wall_length), "cuttings": len(cuttings), "terrace_off_streets_m2": round(off_streets), "wall_points": wall_points, "lone_points": lone_points,
+            "kept_by_hand": kept, "cut_streets": cuts, "retaining_walls": len(strips) - cuts - wall_tops, "wall_tops": wall_tops, "retaining_metres": round(wall_length), "cuttings": len(cuttings), "terrace_off_streets_m2": round(off_streets), "wall_points": wall_points, "lone_points": lone_points,
             "changed": int(changed.sum()), "mean_change": float(np.abs(grid - bare)[changed].mean()) if changed.any() else 0.0,
-            "labels": labels, "terraces": outlines}
+            "labels": labels, "terraces": outlines, "terrace_ids": ids}

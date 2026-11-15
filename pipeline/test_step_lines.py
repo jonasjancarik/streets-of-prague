@@ -90,6 +90,21 @@ class SidedTests(unittest.TestCase):
         assert read(xs, ys, 0, away=(xs, ys, np.array([1.0]), np.array([0.0])))[0] == 10.0
         assert read(xs, ys, 0, away=(xs, ys, np.array([-1.0]), np.array([0.0])))[0] == 20.0
 
+    def test_the_lattice_reader_knows_a_terrace_by_its_number_in_the_next_tile(self):
+        # Two tiles side by side. A wall's top strip is terrace 7 (label 3 in the west
+        # tile, 2 in the east one); the east tile's label 3 is another wall's foot.
+        # Read from the west tile past the edge, label 3 is the top, not that foot.
+        N, step = 4, 4.0
+        west, east = np.full((N + 1, N + 1), 30.0), np.full((N + 1, N + 1), 30.0)
+        east[:, 2:] = 5.0
+        lw, le = np.full((N + 1, N + 1), 3, np.uint8), np.full((N + 1, N + 1), 2, np.uint8)
+        le[:, 2:] = 3
+        ids = {(0, 0): {3: 7}, (1, 0): {2: 7, 3: 9}}
+        read = sl.lattice_reader({(0, 0): west, (1, 0): east}, {(0, 0): lw, (1, 0): le}, N, N * step, step, 0.0, 0.0, ids)
+        read.home = (0, 0)
+        xs, ys = np.array([20.0, 26.0]), np.array([6.0, 6.0])
+        assert np.allclose(read(xs, ys, 3), 30.0)
+
     def test_a_street_under_a_bridge_s_deck_crosses_no_line(self):
         # The carriageway is drawn up to where its bridge begins; under the deck it's the
         # bridge's, and a wall there keeps its heights.
