@@ -116,5 +116,24 @@ class SidedTests(unittest.TestCase):
         assert got[2] == 3.0 and got[0] == 5.0
 
 
+    def test_the_walk_takes_the_top_past_the_scan_s_slope_over_a_wall(self):
+        # The bare-earth scan bridges a wall with a slope: 254 m at the line, rising
+        # 1.6 m a metre for 5 m, 262 m beyond (the terrace is the high side, inside
+        # the square). Read at 1.5-4 m, the top lands on the slope; walked, it's 262.
+        def scan(xs, ys):
+            d = np.minimum.reduce([xs - 100, 120 - xs, ys - 100, 120 - ys])  # inside: > 0
+            return np.where(d <= 0, 254.0, np.minimum(254.0 + 1.6 * d, 262.0))
+        lattice = lambda xs, ys, label, away=None: np.full(len(xs), 258.0 if label == 2 else 254.0)  # noqa: E731
+        read = sl.walk_reader(lattice, scan)
+        lines = sl.for_tile(BOX, [], SQUARE, read)
+        hi = [max(p[2], p[3]) for ln in lines for p in ln["pts"]]
+        lo = [min(p[2], p[3]) for ln in lines for p in ln["pts"]]
+        # (Near the square's corners the scan's slope is narrower than the walk's
+        # metre of flat: those points take less.)
+        self.assertAlmostEqual(max(hi), 262.0, delta=0.3)
+        self.assertGreater(float(np.median(hi)), 260.0)
+        self.assertAlmostEqual(float(np.median(lo)), 254.0, delta=0.3)
+
+
 if __name__ == "__main__":
     unittest.main()

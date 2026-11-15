@@ -412,3 +412,32 @@ back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change w
   walls, and its rules would need going through near bridges first: not worth it for
   now. The wall tops need their own work on any lattice: the heights beside a
   street's shoulder, and the survey's foot lines.
+- 15 November 2026: walls from the LiDAR directly, first trials (both off).
+  IPR's bare-earth scan leaves the walls out and bridges each one with a slope 3–6 m
+  wide (Československého exilu: 254 to 262 m over 6 m, the survey's line at the foot),
+  so a side read at a fixed 1.5–4 m lands on that slope. Two changes, on the nine
+  windows (sums against the 4 m lines build):
+
+  | Build | Steps over 1 m | Leaning over 15 % | Top sagging over 2 m (points) | Top jumping over 15 cm (points) |
+  |---|---|---|---|---|
+  | 4 m lines | 6 | 38 | 204 | 639 |
+  | Walk | 6 | 39 | 132 | 960 |
+  | Shoulder stops at walls | 9 | 48 | 163 | 586 |
+  | Both | 9 | 50 | 130 | 941 |
+
+  - The walk (`step_lines.walk_reader`, `window.py --wall-walk`): out from the line
+    on each side until the scan flattens (under 0.5 m a metre), all or nothing per
+    side, gaps filled along the line. Československého exilu, Linhartova, Italská and
+    the car park lose their sags (the exil wall's top now runs level, with one notch
+    left). Vyšehrad gets rougher: on a sloping bank the walk makes a wall 8 m tall
+    where the scan has 4, and where the line ends the top drops to the lattice.
+  - The street's shoulder stops at the survey's wall lines (`SCAN_SHOULDER_WALLS` in
+    `dtm_heights.py`): the walls a little better, the streets a little worse, as with
+    `SCAN_SHOULDER_WHOLE`: on 4 m the street's edge and the wall's top share lattice
+    points.
+
+  Next: a wall's ends (the walked top brought down to the lattice over the last
+  metres, not at the end), and a limit on how far the walk may take a top above what
+  the lattice has. The sawtooth along nábřeží Edvarda Beneše isn't heights: it's the
+  survey's wall pieces, each rising and falling to nothing. Pictures:
+  `docs/evidence/tin/walk/cmp-walk-*.jpg` (local).

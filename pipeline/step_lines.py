@@ -31,6 +31,10 @@ STEP_MIN = 0.3  # m between the sides: a lower step is none, both at their mean
 CROSS = 1.0  # m either side of a line where a car street crossing it is looked for
 SIDE = 0.2  # m either side of an outline where its sides' labels are looked up
 MARGIN = 0.0  # m: a lattice corner nearer the line than this counts for neither side
+WALK = np.arange(0.0, 6.01, 0.5)  # m out from the line where a walk (walk_reader) reads the scan
+FLAT = 0.5  # rise per metre under which the ground past a wall counts as its top or foot
+MEDIAN = 3.0  # m either way along the line: a walked side's running median, before smoothing
+WALKED = 0.6  # share of a side's points the walk must find a height for, or the side isn't walked
 WATER = 1
 
 
@@ -151,6 +155,21 @@ def heights(run, read, at, box, flat=()):
         z = z.reshape(xs.shape)
         on_line = {"away": (pts[:, 0], pts[:, 1], sign * normal[:, 0], sign * normal[:, 1])} if side else {}
         h = _carried_in_rows(z, reader(pts[:, 0], pts[:, 1], label, **on_line))
+        # (A reader that walks, walk_reader: where the scan flattens out past the wall,
+        # with a running median along the line, so a gate or a gap in the scan doesn't
+        # take the top down with it.)
+        walk = getattr(read, "walk", None)
+        if walk is not None and label not in flat and label != WATER:
+            def keep(qx, qy, label=label):
+                inside = (qx > box[0]) & (qx < box[2]) & (qy > box[1]) & (qy < box[3])
+                return ~inside | (at(qx, qy) == label)
+            hw = _running_median(s, walk(pts, sign * normal, keep), MEDIAN)
+            # (All or nothing on a side: where it flattens along most of it, the gaps
+            # between along the line; else the reading stands. Mixing the two along a
+            # line made a top jump between them.)
+            got = np.isfinite(hw)
+            if got.mean() >= WALKED:
+                h = np.interp(s, s[got], hw[got])
         # Smoothed along the line (the points with no height left out), and no height
         # where the nearest reading along it is further than GAP.
         ok = np.isfinite(h)
@@ -356,4 +375,65 @@ def scan_reader(own, scan_at, decks=()):
         return out
     read.sided = True
     read.lattice = own
+    return read
+
+
+def _running_median(s, h, reach):
+    """Per point, the median of the finite heights within `reach` along the line (s, the
+    distance along it); NaN where there are none."""
+    out = np.full(len(h), np.nan)
+    ok = np.isfinite(h)
+    if not ok.any():
+        return out
+    for k in range(len(h)):
+        near = ok & (np.abs(s - s[k]) <= reach)
+        if near.any():
+            out[k] = np.median(h[near])
+    return out
+
+
+def walk_reader(own, scan_at, decks=()):
+    """The lattice's own side (`own`, lattice_reader), and a walk for each side of a wall
+    (heights() asks `.walk`): IPR's bare-earth scan leaves the walls out and bridges the
+    gap with a slope, 3–6 m wide where the wall is high (Československého exilu: 254 to
+    262 m over 6 m, the line at its foot). A side read at a fixed distance lands on that
+    slope, and the top sagged by metres. The walk goes out along the normal and takes the
+    first height past which the ground rises or falls less than FLAT a metre over the
+    next metre: the top's edge on the high side, the foot's on the low side. Not under a
+    bridge's deck (`decks`), not across another label (`keep`), and none where the
+    ground doesn't flatten within WALK: then the lattice's reading stands."""
+    tree = shapely.STRtree(list(decks)) if len(decks) else None
+
+    def walk(pts, normal, keep):
+        n = len(pts)
+        xs = pts[:, 0, None] + normal[:, 0, None] * WALK
+        ys = pts[:, 1, None] + normal[:, 1, None] * WALK
+        z = np.asarray(scan_at(xs.ravel(), ys.ravel()), dtype=float)
+        ok = np.isfinite(z) & keep(xs.ravel(), ys.ravel())
+        if tree is not None and ok.any():
+            k = np.flatnonzero(ok)
+            under = tree.query(shapely.points(xs.ravel()[k], ys.ravel()[k]), predicate="intersects")[0]
+            ok[k[np.unique(under)]] = False
+        z, ok = z.reshape(n, -1), ok.reshape(n, -1)
+        # (A side's own stretch: up to the first point that isn't on it. The line's own
+        # point is on neither side's outline: it doesn't count.)
+        ok[:, 0] = True
+        ok = np.cumprod(ok, axis=1).astype(bool)
+        dz = WALK[1] - WALK[0]
+        span = int(round(1.0 / dz))  # samples in a metre
+        out = np.full(n, np.nan)
+        for i in range(n):
+            for k in range(1, len(WALK) - span):  # (not the line itself: a wall's middle)
+                if not ok[i, k + span]:
+                    break
+                if abs(z[i, k + span] - z[i, k]) < FLAT and all(abs(z[i, k + q + 1] - z[i, k + q]) < FLAT * dz * 1.5 for q in range(span)):
+                    out[i] = z[i, k]
+                    break
+        return out
+
+    def read(xs, ys, label, away=None):
+        return own(xs, ys, label, away)
+    read.sided = True
+    read.lattice = own
+    read.walk = walk
     return read

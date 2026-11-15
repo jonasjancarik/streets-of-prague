@@ -20,6 +20,7 @@ step_lines.py for this run.
 own index and no ring of the built map's tiles, so only the window's own tiles can be
 checked; compare it with a 4 m window built the same way, not with the built map.
 --step-lines-scan: the step lines read the LiDAR beside each step (a trial).
+--wall-walk: each side of a wall from where the LiDAR flattens out past it (a trial).
 
 The tiles at the window's rim lack what reaches in from outside (walls, feathering, a
 bridge's far end), so only the middle counts: with --tiles 2, the three by three tiles
@@ -90,6 +91,7 @@ def main():
     ap.add_argument("--survey-scan", action="store_true", help="the survey checked against IPR's 2023 LiDAR, as ipr_terrain.py --survey-scan")
     ap.add_argument("--step", type=float, default=ipr_terrain.STEP, help="the lattice's step, roughly (as ipr_terrain.py --step); not 4 m: the window's map has no ring of built tiles")
     ap.add_argument("--step-lines-scan", action="store_true", help="the step lines read the LiDAR beside each step, as ipr_terrain.py --step-lines-scan")
+    ap.add_argument("--wall-walk", action="store_true", help="each side of a wall from where the LiDAR flattens out past it (step_lines.walk_reader)")
     args = ap.parse_args()
     if args.data and args.data.resolve() == OUT.resolve():
         ap.error("--data is the built map's own folder")
@@ -255,11 +257,12 @@ def main():
         write_map(args.data / f"{area}_now", OUT / f"{area}_now", tiles, labels, terraces, found, steep, tile_water, boxes, streets,
                   N, T, step, gx0, gy0, ti, tj, args.tiles,
                   [LineString(way["pts"]).buffer(way["w"] / 2) for way in ways if way["kind"] == "bridge" and len(way["pts"]) > 1],
-                  ipr_lidar.sampler(ipr_lidar.CACHE, local)[0] if args.step_lines_scan else None)
+                  ipr_lidar.sampler(ipr_lidar.CACHE, local)[0] if args.step_lines_scan or args.wall_walk else None,
+                  args.wall_walk)
     print(f"{len(tiles)} tiles round {ti}_{tj} in {time.perf_counter() - started:.0f} s")
 
 
-def write_map(out, built, tiles, labels, terraces, found, steep, tile_water, boxes, streets, N, T, step, gx0, gy0, ti, tj, reach, decks=(), scan_at=None):
+def write_map(out, built, tiles, labels, terraces, found, steep, tile_water, boxes, streets, N, T, step, gx0, gy0, ti, tj, reach, decks=(), scan_at=None, wall_walk=False):
     """A map folder for the offline checks: the window's tiles as built here (their
     heights and labels, bridge and tunnel levels, terraces and step lines, as
     ipr_terrain.main and layers.assemble write them), and a ring of tiles round them and
@@ -276,7 +279,7 @@ def write_map(out, built, tiles, labels, terraces, found, steep, tile_water, box
         (out / "index.json").write_text(json.dumps(index))
     own = step_lines.lattice_reader(tiles, labels, N, T, step, gx0, gy0)
     if scan_at is not None:
-        own = step_lines.scan_reader(own, scan_at, decks)
+        own = step_lines.walk_reader(own, scan_at, decks) if wall_walk else step_lines.scan_reader(own, scan_at, decks)
     driven = step_lines.crossing(list(streets.values()), decks)
     for i in range(ti - reach - 1, ti + reach + 2):
         for j in range(tj - reach - 1, tj + reach + 2):

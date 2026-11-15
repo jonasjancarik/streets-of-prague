@@ -304,6 +304,9 @@ SCAN_BESIDE = 2.0  # m
 # top's first row of points came down to the street (Československého exilu: the wall's
 # top dipped 8 m to the street twice; the step lines read it from those points).
 SCAN_SHOULDER_WHOLE = False  # (trial, 15 November 2026: walls better, roads worse; see the plan)
+# Nor past a wall: a point whose way to its street crosses one of the survey's wall lines
+# is the wall's top (or a garden behind it), whatever the scan round it says.
+SCAN_SHOULDER_WALLS = False  # (trial)
 # (The scan round the point: within SCAN_POINT of it. Within 2 m, a point on the edge of
 # a wall's top had the foot's height in reach too, and the street at the foot took it:
 # nábřeží Edvarda Beneše over the quay road lost a row of points and leant 135 %.)
@@ -719,7 +722,7 @@ def _cross_sections(grid, gj, gi, station, ps, side, pz):
     return int(ok.sum())
 
 
-def _scan_streets(grid, on, streets, sides, scan_here, apart, sure, x_of, y_of, step, spacing=1.0, free=None):
+def _scan_streets(grid, on, streets, sides, scan_here, apart, sure, x_of, y_of, step, spacing=1.0, free=None, fences=()):
     """The car streets on the ground from the LiDAR (see SCAN_ACROSS): every lattice point
     of a street's carriageway, and of the surveyed street surface out to LEVEL_OUT past
     its kerbs, takes the height the scan has along the street there, level from kerb to
@@ -838,6 +841,12 @@ def _scan_streets(grid, on, streets, sides, scan_here, apart, sure, x_of, y_of, 
         mine = (target[near] >= lo - slack) & (target[near] <= hi + slack)
         if SCAN_SHOULDER_WHOLE:
             mine &= kerbed | ((hi <= target[near] + SCAN_BESIDE) & (lo >= target[near] - SCAN_BESIDE))
+    if SCAN_SHOULDER_WALLS and len(fences):
+        k = np.flatnonzero(mine & ~kerbed)
+        if len(k):
+            ways = shapely.linestrings(np.stack([xy[k], dense[near[k]]], axis=1))
+            crossed = shapely.STRtree(list(fences)).query(ways, predicate="intersects")[0]
+            mine[k[np.unique(crossed)]] = False
     gj, gi, near = gj[mine], gi[mine], near[mine]
     if not len(gj):
         return done
@@ -1375,7 +1384,8 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         apart = ndimage.distance_transform_edt(~clash).astype(np.float32) * step if clash.any() else np.full(grid.shape, np.inf, dtype=np.float32)
         sure = ndimage.distance_transform_edt(~borne).astype(np.float32) * step if borne.any() else np.full(grid.shape, np.inf, dtype=np.float32)
         sides = street_sides if street_sides is not None and len(street_sides) == len(streets) else [(half, half) for _, half in streets]
-        from_scan = _scan_streets(grid, street & ~beneath, streets, sides, scan_at, apart, sure, x_of, y_of, step, free=~under_roof)
+        from_scan = _scan_streets(grid, street & ~beneath, streets, sides, scan_at, apart, sure, x_of, y_of, step, free=~under_roof,
+                                  fences=[shapely.LineString(w) for w in walls if len(w) > 1])
         street |= from_scan
         scanned = int(from_scan.sum())
 
