@@ -75,6 +75,18 @@ class ForTileTests(unittest.TestCase):
         west = heights_at(lines_for(read, street), 100, 110)
         self.assertAlmostEqual(west[2], 203.0, places=1)
 
+    def test_a_cut_end_runs_level(self):
+        # The square's south side is where a top strip was cut, not a wall: no step
+        # there (Podolí, a wall across a path); the west side keeps its wall.
+        from shapely.geometry import LineString
+        read = lambda xs, ys, label: np.where(inside(xs, ys), 203.0, 200.0)  # noqa: E731
+        lines = sl.for_tile(BOX, [], SQUARE, read, None, LineString([(102, 100), (118, 100)]))
+        got = heights_at(lines, 110, 100)
+        self.assertAlmostEqual(got[2], got[0])
+        self.assertAlmostEqual(got[2], 201.5, places=1)
+        west = heights_at(lines, 100, 110)
+        self.assertAlmostEqual(west[2] - west[0], 3.0, places=1)
+
 
 
 class SidedTests(unittest.TestCase):

@@ -96,6 +96,7 @@ import zipfile
 import numpy as np
 import shapely
 from pyproj import Transformer
+from shapely.ops import substring
 from scipy import ndimage
 from scipy.spatial import cKDTree
 from shapely import STRtree
@@ -262,6 +263,13 @@ STRIP = 8.0  # m: the width of the terrace marked at a wall's foot (two lattice 
 # the step under half its usual height 418 → 359 m; the streets' checks no worse.
 TOP_STRIP = 8.0  # m
 TOP_LEAST = 32.0  # m²: a smaller piece of it is left out (two lattice cells)
+# A top strip's square ends are where the strip was cut, not a wall: a step line there runs
+# level (`soft_edges`, step_lines.py). Where a 14 m wall in Podolí (50.04845, 14.40551) ends
+# at a path, the strip's end stood 5 m over the ground falling away past it, a wall across
+# the path. (Its far side too made the walls' tops rougher: jumps over 15 cm along them
+# 166 → 229 m round Vyšehrad, 19 → 36 m by Beneše's.)
+SOFT_NEAR = 1.0  # m from a wall's line, still the wall
+SOFT_END = 0.5  # m: an outline past the line's end shortened by this is the strip's end
 # A car street's cross-section: its height is the mean of each kerb's surveyed points
 # within ALONG either way along the street (the nearer the more), the two kerbs counting
 # alike; a kerb with none so near looks out to ALONG_FAR. Survey points out to KERB_OUT
@@ -1707,10 +1715,12 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
                 return near & (above - below > 1.0) & (np.abs(h - below) < np.abs(h - above))
         return leave
 
+    wall_lines = []  # every wall's line, for the top strips' `soft_edges`
     tops = []  # the strips on the retaining walls' tops (TOP_STRIP), marked after every foot's
     # (line, low, top, lifts): `top`, the terrace on the wall's top; `lifts`, the streets
     # beside it take its heights (a drawn wall's: the survey has the line along its top).
     for line, low, top, lifts in [(shapely.LineString(run), low, False, False) for run, low in _retaining(walls, at, dry)] + [(*w, True) for w in _drawn(drawn, at)] + [(*w, False) for w in cuttings]:
+        wall_lines.append(line)
         bx0, by0, bx1, by1 = line.bounds
         ia, ib = max(0, int(np.floor((bx0 - ramp.reach - x_of(0)) / step))), min(grid.shape[1] - 1, int(np.ceil((bx1 + ramp.reach - x_of(0)) / step)))
         ja, jb = max(0, int(np.floor((by0 - ramp.reach - y_of(0)) / step))), min(grid.shape[0] - 1, int(np.ceil((by1 + ramp.reach - y_of(0)) / step)))
@@ -1754,16 +1764,24 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         if foot:
             wall_length += line.length
         if TOP_STRIP and not top and not lifts:
-            tops.append((line.buffer(-low * TOP_STRIP, single_sided=True).buffer(0), at_foot(line, low), len(strips) if foot else 0))
+            tops.append((line.buffer(-low * TOP_STRIP, single_sided=True).buffer(0), at_foot(line, low), len(strips) if foot else 0, line))
     # (Not the pieces a street on the top leaves between its lanes: their outlines crossed it.)
     wall_tops = freed = 0  # `freed`: cells given back to a car street
-    for strip, leave, foot in tops:
+    cut_edges = []  # the top strips' ends
+    for strip, leave, foot, line in tops:
         bx0, by0, bx1, by1 = strip.bounds
         ia, ib = max(0, int(np.floor((bx0 - x_of(0)) / step)) - 1), min(grid.shape[1] - 1, int(np.ceil((bx1 - x_of(0)) / step)) + 1)
         ja, jb = max(0, int(np.floor((by0 - y_of(0)) / step)) - 1), min(grid.shape[0] - 1, int(np.ceil((by1 - y_of(0)) / step)) + 1)
         here = terrace[ja:jb + 1, ia:ib + 1]
         was = here.copy()
-        wall_tops += mark(strip, leave, TOP_LEAST)
+        if mark(strip, leave, TOP_LEAST):
+            wall_tops += 1
+            edge = strips[-1].boundary
+            if line.length > 2 * SOFT_END:
+                inner = substring(line, SOFT_END, line.length - SOFT_END)
+                edge = edge.difference(inner.buffer(TOP_STRIP + 2, cap_style="flat"))
+            if not edge.is_empty:
+                cut_edges.append(edge)
         # The points on the top's side with the foot's height (`leave`), its car streets'
         # too, go with the foot: the top's ground must not read them.
         if foot:
@@ -1842,7 +1860,11 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
     # terraces' outlines within it.
     # `ids`: per tile, its terraces' labels as numbers that are the same in every tile
     # (step_lines.lattice_reader reads past the tile's edge).
-    labels, outlines, ids = {}, {}, {}
+    soft = None
+    if cut_edges:
+        soft = shapely.union_all(cut_edges).difference(shapely.union_all(shapely.buffer(np.array(wall_lines, dtype=object), SOFT_NEAR)))
+        shapely.prepare(soft)
+    labels, outlines, ids, soft_edges = {}, {}, {}, {}
     ring = lambda r: np.round(shapely.get_coordinates(r)[:-1], 2).tolist()  # noqa: E731
     for (i, j), arr in tiles.items():
         rows, cols = slice(j * N - j0, j * N - j0 + N + 1), slice(i * N - i0, i * N - i0 + N + 1)
@@ -1858,6 +1880,10 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
             listed.append({"label": 2 + len(listed), "polys": [[ring(q.exterior), *(ring(r) for r in q.interiors)] for q in here]})
             label[(terrace[rows, cols] == g) & (label == 0)] = listed[-1]["label"]
             ids.setdefault((i, j), {})[listed[-1]["label"]] = int(g) + 1
+        if soft is not None and listed:
+            here = soft.intersection(boxes[(i, j)].buffer(2 * step))
+            if not here.is_empty:
+                soft_edges[(i, j)] = here
         labels[(i, j)] = label
         # Its water, where streets were taken out of it.
         if mapped is not None and label.any():
@@ -1871,4 +1897,4 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
     return {"survey_rejected_vertices": rejected, "off_scan": counts.get("off_scan", 0), "sunk_kerbs": int(sunk.sum()), "aloft": int(aloft.sum()), "deck_kerbs": int(decked.sum()), "over_kerbs": int(over_kerbs.sum()), "end_kerbs": int(at_end.sum()), "kerbs_skipped": counts.get("kerbs_skipped", 0), "scan_lower": counts.get("scan_lower", 0), "scan_upper": counts.get("scan_upper", 0), **({"kept_aloft": counts["kept_aloft"]} if "kept_aloft" in counts else {}), "surfaces": surfaces, "street_points": street_points, "levelled_across": levelled_points, "streets_from_scan": scanned, "two_levels": two_levels, "under_points": under, "feathered": feathered, "overhang_points": overhang, "water_points": int(wet.sum()), "water_levelled": levelled, "valley_points": valley, "bank_points": bank_points,
             "kept_by_hand": kept, "cut_streets": cuts, "retaining_walls": len(strips) - cuts - wall_tops, "wall_tops": wall_tops, "street_cells": freed, "retaining_metres": round(wall_length), "cuttings": len(cuttings), "terrace_off_streets_m2": round(off_streets), "wall_points": wall_points, "lone_points": lone_points,
             "changed": int(changed.sum()), "mean_change": float(np.abs(grid - bare)[changed].mean()) if changed.any() else 0.0,
-            "labels": labels, "terraces": outlines, "terrace_ids": ids}
+            "labels": labels, "terraces": outlines, "terrace_ids": ids, "soft_edges": soft_edges}

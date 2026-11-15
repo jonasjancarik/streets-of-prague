@@ -563,7 +563,7 @@ def main() -> None:
         ways = [w for w in ways if w["id"] not in dropped] + cut_bridges
         print(f"  {len(dropped)} underpasses in an open cutting: on the ground, {len(cut_bridges)} streets over them on bridges")
     # Streets and water from the survey on the ground (dtm_heights.py).
-    labels, terraces, ids = {}, {}, {}
+    labels, terraces, ids, soft = {}, {}, {}, {}
     if not args.no_survey:
         surveyed = dtm_heights.apply(area, AREAS[area], krovak_to_local(local), tiles, N, step, gx0, gy0, unary_union(water) if water else None, boxes, by_water,
                                       [(LineString(w["pts"]), w["w"]) for w in ways if w["kind"] == "tunnel" and len(w["pts"]) > 1], kept_places(local), driven, [] if args.walls_on_streets else list(streets.values()), args.no_feather, not args.shoulder, args.cut_streets, weirs=weirs, unknown=unknown, valley_smooth=not args.valley_nearest,
@@ -575,7 +575,7 @@ def main() -> None:
                                       scan=ipr_lidar.range_sampler(options["survey_scan"])[0] if options.get("survey_scan") else None,
                                       sunk_kerbs=not args.no_sunk_kerbs, scan_levels=not args.no_scan_levels,
                                       street_sides=[] if args.walls_on_streets else list(kerbs.values()), scan_streets=not args.no_scan_streets)
-        labels, terraces, ids = surveyed.pop("labels"), surveyed.pop("terraces"), surveyed.pop("terrace_ids")
+        labels, terraces, ids, soft = surveyed.pop("labels"), surveyed.pop("terraces"), surveyed.pop("terrace_ids"), surveyed.pop("soft_edges")
         print(f"  survey: {surveyed}")
         timings.lap("survey")
     # Bridges and tunnels, above and below the bare ground (structures.py).
@@ -632,7 +632,7 @@ def main() -> None:
         driven = step_lines.crossing(list(streets.values()), decks)
         for key, listed in terraces.items():
             own.home = key
-            got = step_lines.for_tile(boxes[key].bounds, tile_water.get(key, []), listed, read, driven)
+            got = step_lines.for_tile(boxes[key].bounds, tile_water.get(key, []), listed, read, driven, soft.get(key))
             if got:
                 lines_by_tile[f"{key[0]}_{key[1]}"] = got
         print(f"  {sum(len(v) for v in lines_by_tile.values())} step lines, {sum(len(l['pts']) for v in lines_by_tile.values() for l in v)} points")

@@ -29,6 +29,7 @@ OUT = np.arange(1.5, 4.01, 0.5)  # m out from the line where each side's ground 
 SIGMA = 2.0  # m: how far along the line its heights are smoothed (a Gaussian's sigma)
 GAP = 2 * SIGMA  # m along the line from the nearest reading: past it a side has no height
 STEP_MIN = 0.3  # m between the sides: a lower step is none, both at their mean
+SOFT = 0.5  # m from an outline that was only cut (for_tile's `soft`)
 CROSS = 1.0  # m either side of a line where a car street crossing it is looked for
 SIDE = 0.2  # m either side of an outline where its sides' labels are looked up
 MARGIN = 0.0  # m: a lattice corner nearer the line than this counts for neither side
@@ -280,13 +281,15 @@ def _carried_in_rows(z, line):
     return np.where(count == 0, line, out)
 
 
-def for_tile(box, water, terraces, read, driven=None):
+def for_tile(box, water, terraces, read, driven=None, soft=None):
     """The tile's step lines (see the top), from its map water (polygons as rings) and
     its terraces (dtm_heights.py; a label-1 one is its water as the terrain has it).
     `read(xs, ys, label)`: the ground's height on that side at the points. `driven(xs,
     ys)`: whether points are on a car street's carriageway; where one crosses a line (on
     both sides of it), the line has no heights and the lattice's ramp stays: a car
-    street meets no sharp step."""
+    street meets no sharp step. `soft`: where an outline was only cut (a wall's top
+    strip's ends and far side, dtm_heights.SOFT_NEAR): a line within SOFT of it is level,
+    at the sides' mean."""
     own_water = next((t["polys"] for t in terraces if t["label"] == WATER), None)
     water = own_water if own_water is not None else water
     at = sides(water, terraces)
@@ -300,6 +303,12 @@ def for_tile(box, water, terraces, read, driven=None):
         # Hardly a step: the ground runs on across the line, at the two sides' mean.
         low = np.abs(hl - hr) < STEP_MIN
         hl[low] = hr[low] = (hl[low] + hr[low]) / 2
+        if soft is not None:
+            cut = shapely.distance(soft, shapely.points(pts)) < SOFT
+            if cut.any():
+                with np.errstate(invalid="ignore"):
+                    mean = np.where(np.isfinite(hl) & np.isfinite(hr), (hl + hr) / 2, np.where(np.isfinite(hl), hl, hr))
+                hl[cut], hr[cut] = mean[cut], mean[cut]
         if driven is not None and len(pts) > 1:
             ahead = np.gradient(pts, axis=0)
             ahead /= np.maximum(np.linalg.norm(ahead, axis=1, keepdims=True), 1e-9)

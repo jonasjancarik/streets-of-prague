@@ -212,7 +212,7 @@ def main():
         cuts=[LineString(way["pts"]).buffer(way["w"] / 2) for way in ways if way.get("cut")], sharp=False,
         scan=ipr_lidar.range_sampler(ipr_lidar.CACHE)[0] if args.survey_scan else None, sunk_kerbs=not args.no_sunk_kerbs, scan_levels=not args.no_scan_levels,
         street_sides=list(kerbs.values()), scan_streets=not args.no_scan_streets)
-    labels, terraces, ids = surveyed.pop("labels"), surveyed.pop("terraces"), surveyed.pop("terrace_ids")
+    labels, terraces, ids, soft = surveyed.pop("labels"), surveyed.pop("terraces"), surveyed.pop("terrace_ids"), surveyed.pop("soft_edges")
     print(f"  survey: {surveyed}")
     found, steep = {}, {}
     if not args.no_bridges:
@@ -259,11 +259,11 @@ def main():
                   N, T, step, gx0, gy0, ti, tj, args.tiles,
                   [LineString(way["pts"]).buffer(way["w"] / 2) for way in ways if way["kind"] == "bridge" and len(way["pts"]) > 1],
                   ipr_lidar.sampler(ipr_lidar.CACHE, local)[0] if args.step_lines_scan or args.wall_walk else None,
-                  args.wall_walk, ids)
+                  args.wall_walk, ids, soft)
     print(f"{len(tiles)} tiles round {ti}_{tj} in {time.perf_counter() - started:.0f} s")
 
 
-def write_map(out, built, tiles, labels, terraces, found, steep, tile_water, boxes, streets, N, T, step, gx0, gy0, ti, tj, reach, decks=(), scan_at=None, wall_walk=False, ids=None):
+def write_map(out, built, tiles, labels, terraces, found, steep, tile_water, boxes, streets, N, T, step, gx0, gy0, ti, tj, reach, decks=(), scan_at=None, wall_walk=False, ids=None, soft=None):
     """A map folder for the offline checks: the window's tiles as built here (their
     heights and labels, bridge and tunnel levels, terraces and step lines, as
     ipr_terrain.main and layers.assemble write them), and a ring of tiles round them and
@@ -309,7 +309,7 @@ def write_map(out, built, tiles, labels, terraces, found, steep, tile_water, box
             if terraces.get((i, j)):
                 t["terraces"] = terraces[(i, j)]
                 own.home = (i, j)
-                lines = step_lines.for_tile(boxes[(i, j)].bounds, tile_water.get((i, j), []), terraces[(i, j)], own, driven)
+                lines = step_lines.for_tile(boxes[(i, j)].bounds, tile_water.get((i, j), []), terraces[(i, j)], own, driven, (soft or {}).get((i, j)))
                 if lines:
                     t["stepLines"] = lines
             (out / "tiles" / f"{k}.json").write_text(layers.dumps(t))
