@@ -506,7 +506,19 @@ back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change w
   whose plain corners a top strip took, those corners go back to plain ground (39
   cells in the city); the step is 1.3 m now and nothing else measured moved.
 
-  Left: by a path in Podolí (50.04845, 14.40551) a wall's top strip ends square across
-  the path, a wall across it where the lines build had a ramp, and the roughest
-  parapet in the city went from 6.6 to 13 m there. Pictures:
-  `docs/evidence/tin/top/city/cmp-*.jpg` (local; left the lines build, right this).
+  By a path in Podolí (50.04845, 14.40551) a wall's top strip ended square across the
+  path: a wall 5 m high across it where the lines build had a ramp. A top strip's
+  ends are where it was cut, not a wall, and the step lines there now run level
+  (`soft_edges`, `SOFT_END`): the path climbs past the wall's end. Levelling the
+  strip's far side too fixed it as well but roughened the walls' tops more (in the
+  test windows round Vyšehrad, parapet jumps over 15 cm 166 → 229 m; ends only 214 m).
+  City build against the one before: 17 km less edge (298 → 281 km), sharp turns 40.5
+  → 39.0 per km, the streets' checks and the wall tops' sags on the nine places as
+  before (sags over 1 m 850 → 846 m). Parapet jumps over 15 cm went 4.1 → 6.3 km:
+  2,400 new spots with a median of 0.24 m, the last metres where a wall now ends
+  instead of turning the corner along its strip's end (the worst, at Chotkova,
+  50.09348, 14.40885, is a wall ending beside a path up the bank). The roughest
+  parapet in the city is still the 13 m at Podolí's wall end, where the 14 m wall
+  stops. Pictures: `docs/evidence/tin/top/city/cmp-*.jpg` (local; left the lines
+  build, right with top strips) and `cmp-ends-city-*.jpg` (left with top strips,
+  right with level ends).

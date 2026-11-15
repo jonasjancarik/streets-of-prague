@@ -1673,7 +1673,9 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   A wall has a terrace on both sides (`STRIP`, `TOP_STRIP` in `pipeline/dtm_heights.py`),
   so the street past the foot's strip and the wall's top never share a label in a cell;
   an edge two terraces share is drawn once, from the higher label (`shared` in
-  `src/stepEdges.ts`). Labels are numbered per tile; the step lines read across a tile's
+  `src/stepEdges.ts`). The top's strip ends square where its wall ends; those ends
+  aren't walls, and the step lines there run level (`soft_edges`), so no wall stands
+  across a path past a wall's end. Labels are numbered per tile; the step lines read across a tile's
   edge by numbers that are the same in every tile (`terrace_ids`). Where the labels
   in a grid cell differ, the game reads the height at a point from the corners with that
   point's own label (`heightSampler` in `src/terrain.ts`), cuts the ground's layers
