@@ -938,6 +938,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   colour.
 - **Building import over water.** IPR footprints with at least 60% of their area
   over mapped water are omitted, keeping moored boats out of the building model.
+- **Underground buildings.** OSM buildings tagged `location=underground` (the passage
+  under the main station's forecourt, civil-defence shelters, underground garages) are
+  left out (`extract` in `pipeline/osm_area.py`). Where IPR had nothing over them, the
+  game used to extrude them as boxes, and they were solid to cars.
 - **Crossing widths.** At junctions where road surfaces merge, zebra bars are limited
   to the crossed street's width plus 2 m on each side, adjusted for the crossing angle.
 - **Terrain.** IPR's bare-earth model on a 4 m grid per tile: the ground, buildings,

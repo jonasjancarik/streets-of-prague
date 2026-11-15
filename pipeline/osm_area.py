@@ -282,7 +282,9 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             parts += [{"id": osm_id, "cover": cover, "rings": _rings(poly)}
                       for poly in _polys(g.buffer(0).intersection(clip)) if poly.area >= 1]
         if b and isinstance(g, (Polygon, MultiPolygon)):
-            if b == "construction":
+            # Under the ground: a passage under a station's forecourt, a shelter or
+            # a car park. Nothing of it stands above the street.
+            if b == "construction" or col(row, "location") == "underground":
                 continue
             g = g.buffer(0).intersection(clip)
             for poly in _polys(g):
@@ -532,8 +534,8 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             # Only where it carries on a cobbled street's own paving: a corner the
             # nearest street reaches past another street's carriageway is left as it
             # is, not made an island of setts.
-            parts = shapely.get_parts(setts)
-            setts = _areas(unary_union(parts[shapely.intersects(parts, own.buffer(.05))])) if len(parts) else setts
+            pieces = shapely.get_parts(setts)
+            setts = _areas(unary_union(pieces[shapely.intersects(pieces, own.buffer(.05))])) if len(pieces) else setts
         road_lines.setdefault("sett", []).append(setts)
         road_lines.setdefault("road", []).append(_areas(shapely.difference(surface, setts, grid_size=GRID)))
     timer.lap("cobble_voronoi")
