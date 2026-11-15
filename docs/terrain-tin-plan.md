@@ -311,3 +311,104 @@ back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change w
   steps, and in stage 2 the kerbs, as breaklines with each side's height. That's about
   1.5 KB a tile. The worker cuts the layers along them and takes heights near them from
   them. Stage 0 found the walls and kerbs the trouble in first person, not the creases.
+- 14–15 November 2026: the lattice plus wall lines (option 1), built for the whole
+  city with the LiDAR streets (`--survey-scan --step-lines`), against today's map:
+
+  | | Today | Lines + LiDAR |
+  |---|---|---|
+  | Car-street steps over 1 m | 34 | 7 |
+  | Bumps over 0.5 m | 537 | 259 |
+  | Leaning over 15 % | 2,932 | 941 |
+  | Twisting over 12 % | 2,361 | 712 |
+  | Waves over 0.6 m (5 m either side) | 2,227 | 840 |
+  | Carriageway within 0.3 m of the LiDAR | 86.4 % | 99.0 % |
+  | Wall top jumping over 15 cm | 17.2 km | 6.6 km |
+  | Wall top jumping over 5 cm | 38.1 km | 21.7 km |
+  | Sharp turns along a wall, per km | 39.9 | 39.5 |
+
+  Most of the road gain is the LiDAR streets; the wall-top gain is the lines. The
+  sharp turns are the square ends of the survey's wall strips, not the lattice, and
+  stay. In the pictures (`docs/evidence/tin/walls`, local) Thunovská's overhanging
+  slabs, Chotkova's toothed ramp, Michle and most of Beneše's sawtooth are gone, and
+  the first-person fix (walls hide what's behind them) stops the city showing through
+  walls.
+
+  What's left on the walls: of 274 km of wall line, the top sags more than 1 m below
+  a straight line through the metres either side along 8.9 km, and more than 2 m
+  along 2.1 km. At Československého exilu and Linhartova the cause is the LiDAR
+  streets' shoulder: past the kerb, a lattice point takes the street's height when the
+  scan within a metre of it reaches the street's height, and beside a retaining wall
+  that scan runs down the wall's face. So the first row of points on the top comes
+  down to the street, and the line reads the top's height from them. (The survey's
+  retaining-wall lines, "Hranice zdi", are surveyed at the wall's foot, not its crown,
+  so they can't give the top either.) Three fixes tried, all left off:
+
+  - Lattice corners within 1–2 m of the line count for neither side (`MARGIN` in
+    `step_lines.py`): fixes those two, worse at Vyšehrad and Malá Strana.
+  - The lines read each side's height from the LiDAR instead of the lattice
+    (`--step-lines-scan`): fewer sags, but noisier tops everywhere, and beside a
+    narrow terrace the foot climbs the wall.
+  - The shoulder only where all of the scan near a point is at the street's height
+    (`SCAN_SHOULDER_WHOLE` in `dtm_heights.py`): walls better, streets worse. On nine
+    windows (below) steps over 1 m 6 → 9, leaning over 15 % 38 → 51. On a 4 m lattice
+    the street's edge and the wall's top share cells, and only one of them can be
+    right.
+
+  Still broken, each its own case: a car park full of wall slivers (50.10355,
+  14.45724), Dobříšská's cutting, and torn walls in the ground under several road
+  bridges (Na Botiči under Jižní spojka, the trunk road at 49.94233, 14.36734), which
+  today's map has too. What looked like a crater at nábřeží Kapitána Jaroše
+  (50.09785, 14.43698) is the game's hole round a player under a deck: the street
+  under Hlávkův most's approach is 7 m below it in today's map as well.
+
+  The 2 m lattice (option 3), on nine windows of 5 × 5 tiles round the places above
+  (Československého exilu, Kapitána Jaroše, Linhartova, the car park, Beneše,
+  Vyšehrad, Malá Strana, Na Veselí, Italská), summed:
+
+  | Build | Steps over 1 m | Bumps over 0.5 m | Leaning over 15 % | Twisting over 12 % | Waves over 0.6 m | Wall top jumping over 15 cm (points) | Top sagging over 2 m (points) |
+  |---|---|---|---|---|---|---|---|
+  | 4 m | 6 | 15 | 38 | 46 | 48 | 639 | 204 |
+  | 4 m, strict shoulder | 9 | 16 | 51 | 58 | 57 | 628 | 178 |
+  | 2 m | 2 | 10 | 17 | 17 | 23 | 653 | 195 |
+  | 2 m, strict shoulder | 5 | 10 | 23 | 23 | 30 | 607 | 175 |
+
+  On 2 m the streets lose half to two thirds of what's left; the walls hardly change
+  (Vyšehrad's sags and the car park are worse). For `ujezd`, already clean, 2 m
+  and 4 m come out nearly the same, and the ground has the same number of triangles
+  (68,900 against 68,300 a tile, median): the game's mesh doesn't follow the lattice.
+  The worker takes longer, 165 against 123 ms a tile (median; at most 1,031 against
+  787 ms, headless). The height file is 7.6 against 2.9 KB a tile in the dense
+  windows.
+
+  The whole city on 2 m (`ipr_terrain.py praha --survey-scan --step-lines --step 2`,
+  then `layers.py`): 31 minutes for the terrain at 13.3 GB peak, 8 for the layers.
+  The height files are 67 MB against 27 MB on 4 m (the map grows by 4 %). Against
+  the 4 m lines build:
+
+  | | 4 m | 2 m |
+  |---|---|---|
+  | Car-street steps over 1 m | 7 | 45 |
+  | Bumps over 0.5 m | 259 | 346 |
+  | Leaning over 15 % | 941 | 929 |
+  | Twisting over 12 % | 712 | 666 |
+  | Waves over 0.6 m (5 m either side) | 840 | 840 |
+  | Waves over 1.5 m (12 m either side) | 428 | 521 |
+  | Carriageway within 0.3 m of the LiDAR | 99.0 % | 99.1 % |
+  | Wall top jumping over 15 cm | 6.6 km | 7.7 km |
+  | Wall top sagging over 2 m | 2.1 km | 2.0 km |
+
+  The windows didn't predict this. Of the 42 streets that get a step over 1 m on
+  2 m (4 lose one), 23 are within 30 m of a bridge or tunnel, and most are trunk
+  roads and motorway links at interchanges: under the decks the ground on 2 m is
+  torn into more pieces, with lone spikes (Na Botiči: one point 17 m over its
+  neighbours). The rules were tuned on 4 m; which of them go wrong on 2 m isn't
+  known yet. Pictures:
+  `docs/evidence/tin/grid/cmp-city-*.jpg` (local).
+
+  Decided overnight (to review): no TIN, for its size, and because the walls aren't a
+  storage problem: the lines already carry them. The 4 m lattice stays, with the
+  lines and the LiDAR streets (`--survey-scan --step-lines`) proposed for the next
+  map. The 2 m lattice gains a little on leaning and twisting and nothing on the
+  walls, and its rules would need going through near bridges first: not worth it for
+  now. The wall tops need their own work on any lattice: the heights beside a
+  street's shoulder, and the survey's foot lines.
