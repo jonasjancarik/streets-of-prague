@@ -543,7 +543,7 @@ back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change w
   Podolí 101 → 77, Malá Strana 51 → 32), parapet jumps over 15 cm 622 → 584 m. The
   streets about the same (they take the LiDAR's road): waves over 0.6 m 56 → 61,
   leaning over 15 % 44 → 46, steps over 1 m 7 → 7. From above the pictures hardly
-  differ (`docs/evidence/tin/dense/cmp-*.jpg`, local). Not yet built for the city.
+  differ (`docs/evidence/tin/dense/cmp-*.jpg`, local). Built for the city below.
 
   Tuning the rules for the dense model (same eleven windows, averages). The rules took
   the ground further from the LiDAR because two of them were made for the coarse one:
@@ -569,3 +569,26 @@ back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change w
   m of the measured walls (358 coarse): worse round Vyšehrad (+24), Holešovice (+17)
   and Beneše (+9), better at Na Veselí, Modřany and Linhartova. The dense model finds
   more retaining walls (round Vyšehrad 7.9 → 9.0 km).
+
+  **The city with the dense model** (16 November 2026, `ipr_terrain.py praha --dense
+  --survey-scan`, without handling areas), against the coarse city build with the same
+  rules but the handling areas still in (`docs/evidence/tin/dense/`, local). The
+  whole ground against the 2023 LiDAR: plain ground within 0.3 m 75.2 → 86.7 %, over
+  1 m off 3.4 → 1.7 %, mean 0.30 → 0.17 m; terraces within 0.3 m 43.7 → 47.5 %.
+  Streets (`check-road-flatness`): steps over 1 m 4 → 5, bumps over 0.5 m 256 → 216,
+  leaning over 15 % 923 → 890, twisting over 12 % 692 → 665, waves (5 m) over 0.6 m
+  823 → 773, stretches over 2 m off the LiDAR 391 → 355, carriageway within 0.3 m of
+  the LiDAR 99.0 → 99.1 %. Steps in the ground (`check-step-edges`): 281 → 308 km of
+  edges, parapet jumps over 15 cm 6.3 → 6.8 km, sharp turns 39.0 → 37.8 a km. Wall
+  tops on the nine places: sagging over 1 m 846 → 798 m, over 2 m 477 → 396 m, the
+  step under half its height 834 → 866 m. From above, the walls' tops are straighter
+  (Československého exilu, Bašta sv. Ludmily) and nothing new is broken in the
+  pictures.
+
+  The one new step over 1 m is K Přehradám (49.95625, 14.39252), where the street
+  crosses a brook on a short bridge. The coarse model had no gully there, and the
+  deck's level ran 2.5 m downhill under the street; the dense model has the brook's
+  bed 4–5 m down and the deck level at the street's height, but the street's edges
+  just off the deck's end come down onto the gully's side (1.7 m at the edge, 1.2 m at
+  the deck's join). Not fixed: the deck's outline would need to reach the full width
+  of the street.
