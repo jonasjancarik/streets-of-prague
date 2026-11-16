@@ -367,7 +367,7 @@ class ChunkBuildTests(unittest.TestCase):
         self.stack.enter_context(patch.object(layers.time, "gmtime", return_value=layers.time.gmtime(0)))
 
         def run_stage(module, *flags):
-            options = ["--no-roof-details"] if module == ipr_buildings else []
+            options = ["--no-roof-details"] if module == ipr_buildings else ["--coarse"]  # (the fixture's sheet is CityGML)
             with patch("sys.argv", [Path(module.__file__).name, "ujezd", "--jobs", "1", *options, *flags]):
                 module.main()
 

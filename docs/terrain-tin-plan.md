@@ -529,7 +529,7 @@ back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change w
   about 2 m² against 74 m²; the extra points sit 18 cm off the thinned surface in the
   median, 16 % of them over 0.5 m). Both are public ArcGIS Online items of IPR's
   (`TER_<sheet>_gml`, `_shp`). `ipr_terrain.py --dense` (`DENSE_TIN`, `--set
-  DENSE_TIN=1` in `window.py`) reads the Shapefile ones, kept zipped in
+  DENSE_TIN=1` in `window.py`) read the Shapefile ones, kept zipped in
   `pipeline/.cache/ipr/`; the triangles go onto the lattice vectorised now (same
   heights, ten times faster).
 
@@ -599,3 +599,7 @@ back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change w
   stays wherever the deck ends, because the cutting runs on beside the street, and near
   a deck the street doesn't take the LiDAR's road. What it needs is the cutting's
   wall along the street's edge, as a step in the ground; the survey has none there.
+
+  **The default since 16 November 2026**, with the city map above on the beta.
+  `ipr_terrain.py --coarse` (`--set DENSE_TIN=0` in `window.py`) reads the CityGML
+  sheets as before.

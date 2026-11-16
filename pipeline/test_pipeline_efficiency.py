@@ -128,6 +128,7 @@ class IprSourceTests(unittest.TestCase):
         self.stack.enter_context(patch.object(ipr_terrain, "CACHE", self.root))
         self.stack.enter_context(patch.object(ipr_buildings, "krovak_to_local", IdentityTransform))
         self.stack.enter_context(patch.object(ipr_terrain, "krovak_to_local", IdentityTransform))
+        self.stack.enter_context(patch.object(ipr_terrain, "DENSE_TIN", False))  # (these are the CityGML sheets)
 
     def test_failed_terrain_download_does_not_cache_a_partial_source(self):
         archive = io.BytesIO()

@@ -123,8 +123,9 @@ CATALOGUE = "catalogue_ter.json"
 # The same sheets come in two densities. The CityGML one is thinned (on TER_Krav_6-9,
 # 26,000 points and triangles of about 74 m²); the Shapefile one has every point of it
 # and 126,000 more (triangles of about 2 m², the faces of banks and walls steeper), and
-# isn't thinned. `--dense` reads the Shapefile one, kept as its zip.
-DENSE_TIN = False
+# isn't thinned. The Shapefile one, kept as its zip, since 16 November 2026 (closer to
+# the 2023 LiDAR everywhere; see docs/terrain-tin-plan.md); `--coarse` the CityGML one.
+DENSE_TIN = True
 CATALOGUE_DENSE = "catalogue_ter_shp.json"
 
 
@@ -403,7 +404,8 @@ def main() -> None:
                            "sunk kerbs lifted, two levels decided, car streets from the scan's road. Off unless asked")
     scan.add_argument("--no-survey-scan", action="store_true",
                       help="with --ipr-lidar, don't also check the survey against it (to compare)")
-    ap.add_argument("--dense", action="store_true", help="IPR's terrain model from its dense sheets (Shapefile), not the thinned CityGML ones")
+    ap.add_argument("--coarse", dest="dense", action="store_false", help="IPR's terrain model from its thinned sheets (CityGML), not the dense Shapefile ones (the default since 16 November 2026)")
+    ap.add_argument("--dense", dest="dense", action="store_true", default=True, help=argparse.SUPPRESS)  # (the default now)
     ap.add_argument("--no-feather", action="store_true", help="the ground beside surveyed streets as the terrain model has it (to compare)")
     raster = ap.add_mutually_exclusive_group()
     raster.add_argument("--dmr5g", action="store_true", help="prototype: ČÚZK's DMR 5G as the terrain in dmr5g.BOXES")
