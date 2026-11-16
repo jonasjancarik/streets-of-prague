@@ -37,6 +37,7 @@ import time
 from pathlib import Path
 
 import requests
+from shapely import points
 from pyproj import Transformer
 from shapely.geometry import LineString, Point, Polygon
 from shapely.ops import unary_union
@@ -76,10 +77,8 @@ KINDS = {
 OSM = Path(__file__).parent / ".cache" / "osm"
 MOUNTS = {"wall": 1, "ceiling": 5, "ground": 6}
 HUNG_MOUNTS = ("suspended", "cable", "wire", "catenary")
-# The survey calls these cable fixtures pole lamps, including those outside the
-# narrow mapped carriageway. Match only the row of lamps close to the centre line.
-CABLE_STREETS = {"Plaská", "Mělnická"}
-CABLE_STREET_REACH = 3.0  # metres from the centre line
+# Limit inference to local streets, where a tight row is less likely to be on a median.
+CABLE_ROADS = {"residential", "living_street", "unclassified"}
 PAIRED_CABLE = 9
 PAIR_REACH = 4.0  # metres from the centre line for Zborovská's surveyed fixtures
 PAIR_OFFSET = 3.2  # metres each side of the centre line on Zborovská
@@ -130,8 +129,8 @@ def download(url=URL, cache=CACHE):
 def osm_lighting(area):
     """What the area's OSM cut says about lighting: its street lamps as (lon, lat, kind),
     its streets as (1 lit / 0 dark / None untagged, highway class, [(lon, lat), …]; none
-    of those in tunnels), its buildings' outlines and known cable-lit street lines
-    as (name, [(lon, lat), …]). None without the cut."""
+    of those in tunnels), its buildings' outlines and candidate cable-lit street
+    lines as (name, highway class, [(lon, lat), …]). None without the cut."""
     pbf = OSM / f"{area}.osm.pbf"
     if not pbf.exists():
         return None
@@ -158,53 +157,50 @@ def osm_lighting(area):
                     if lit is not None or tags.get("tunnel", "no") == "no":
                         ways.append((lit, tags["highway"], geom["coordinates"]))
                     name = tags.get("name")
-                    if (name in CABLE_STREETS or name == "Zborovská") and tags.get("tunnel", "no") == "no" and tags.get("bridge", "no") == "no":
-                        cable_streets.append((name, geom["coordinates"]))
+                    if tags.get("tunnel", "no") == "no" and tags.get("bridge", "no") == "no":
+                        cable_streets.append((name, tags["highway"], geom["coordinates"]))
                 elif tags.get("building") and geom["type"] in ("Polygon", "MultiPolygon"):
                     buildings += [geom["coordinates"][0]] if geom["type"] == "Polygon" else [p[0] for p in geom["coordinates"]]
     return lamps, ways, buildings, cable_streets
 
 
-def suspend_street_lamps(xy, kinds, streets, paired=()):
-    """Centre the surveyed street lamps that belong to known cable-lit streets."""
-    streets = [*streets, *paired]
+def suspend_paired_lamps(xy, kinds, streets):
+    """Replace each surveyed station on a documented cable with two lamp heads."""
+    if not streets:
+        return
     tree = STRtree(streets)
     pairs = {}
     for i, kind in enumerate(kinds):
         if kind != 0:
             continue
         point = Point(xy[i])
-        nearby = tree.query(point, predicate="dwithin", distance=PAIR_REACH if paired else CABLE_STREET_REACH)
+        nearby = tree.query(point, predicate="dwithin", distance=PAIR_REACH)
         if not len(nearby):
             continue
         street = streets[min(nearby, key=lambda j: point.distance(streets[j]))]
         along = street.project(point)
         centre = street.interpolate(along)
-        if street in paired:
-            # Only rows along this block. A lamp beyond either junction belongs elsewhere.
-            if not PAIR_JUNCTION_CLEARANCE < along < street.length - PAIR_JUNCTION_CLEARANCE:
-                continue
-            a, b = street.interpolate(max(0, along - 1)), street.interpolate(along + 1)
-            dx, dy = b.x - a.x, b.y - a.y
-            scale = PAIR_OFFSET / math.hypot(dx, dy)
-            xy[i] = (centre.x - dy * scale, centre.y + dx * scale)
-            pairs[i] = (centre.x + dy * scale, centre.y - dx * scale)
-            kinds[i] = PAIRED_CABLE
-        elif point.distance(centre) <= CABLE_STREET_REACH:
-            xy[i] = (centre.x, centre.y)
-            kinds[i] = street_lighting.HUNG
+        if not PAIR_JUNCTION_CLEARANCE < along < street.length - PAIR_JUNCTION_CLEARANCE:
+            continue
+        a, b = street.interpolate(max(0, along - 1)), street.interpolate(along + 1)
+        dx, dy = b.x - a.x, b.y - a.y
+        scale = PAIR_OFFSET / math.hypot(dx, dy)
+        xy[i] = (centre.x - dy * scale, centre.y + dx * scale)
+        pairs[i] = (centre.x + dy * scale, centre.y - dx * scale)
+        kinds[i] = PAIRED_CABLE
     for i, position in reversed(list(pairs.items())):
         xy.insert(i + 1, position)
         kinds.insert(i + 1, PAIRED_CABLE)
 
 
-def carriageways(area):
+def road_geometry(area):
     """The roadways cars drive on, from the area's tiles, as polygons in local metres:
     the asphalt and setts within each driven street's width of its centre line, or
     along a tram track (Lidická by Anděl is trams and buses only, its lamps hung over
     the tracks; a cobbled square is no roadway beyond the street across it, and a
-    bridge's deck has its lamps on it). Empty before the tiles are built."""
-    out = []
+    bridge's deck has its lamps on it). Also returns the full paved road surfaces,
+    which can extend past the mapped lane widths."""
+    out, surfaces = [], []
     for path in sorted((OUT / f"{area}_now" / "tiles").glob("*_*.json")):
         if path.name.count(".") > 1:
             continue
@@ -220,9 +216,11 @@ def carriageways(area):
                    for shape in [Polygon(rings[0], [h for h in rings[1:] if len(h) >= 3])] if shape.is_valid]
         if not driven or not surface:
             continue
-        both = unary_union(driven).intersection(unary_union(surface))
+        paving = unary_union(surface)
+        surfaces.extend(p for p in getattr(paving, "geoms", [paving]) if p.geom_type == "Polygon")
+        both = unary_union(driven).intersection(paving)
         out += [g for g in getattr(both, "geoms", [both]) if g.geom_type == "Polygon" and g.area > 1]
-    return out
+    return out, surfaces
 
 
 def build(area):
@@ -260,16 +258,21 @@ def build(area):
         added = add(osm[0])
     # No lamp on a post in a roadway (street_lighting.off_the_road): it hangs over the
     # street or stands on the kerb. Before the streets are judged, which go by the lamps.
-    roads = carriageways(area)
+    roads, surfaces = road_geometry(area)
     local = lambda pts: tf.transform([p[0] for p in pts], [p[1] for p in pts])
     positions = list(zip(xs, ys))
-    if osm:
-        streets = [LineString(list(zip(*local(pts)))) for name, pts in osm[3] if name in CABLE_STREETS]
-        # The photographed Zborovská block between the two junctions.
-        paired = [LineString(list(zip(*local(pts)))) for name, pts in osm[3]
-                  if name == "Zborovská" and 50.07541 < sum(p[1] for p in pts) / len(pts) < 50.07612]
-        suspend_street_lamps(positions, kinds, streets, paired)
     houses = [b for b in (Polygon(list(zip(*local(pts)))) for pts in (osm[2] if osm else []) if len(pts) >= 4) if b.is_valid]
+    if osm:
+        streets = [(name, hw, LineString(list(zip(*local(pts))))) for name, hw, pts in osm[3]]
+        # The photographed Zborovská block between the two junctions.
+        paired = [line for (name, _, pts), (_, _, line) in zip(osm[3], streets)
+                  if name == "Zborovská" and 50.07541 < sum(p[1] for p in pts) / len(pts) < 50.07612]
+        paired_stations = set(STRtree(paired).query(
+            points(positions), predicate="dwithin", distance=PAIR_REACH)[0]) if paired else set()
+        inferred = street_lighting.infer_suspended_lamps(
+            positions, kinds, surveyed + built, streets, CABLE_ROADS, houses, surfaces, paired_stations)
+        suspend_paired_lamps(positions, kinds, paired)
+        print(f"{area}: {inferred} surveyed lamps suspended from street and façade geometry")
     if roads:
         positions, kinds, (kerbed, hung, far) = street_lighting.off_the_road(positions, kinds, roads, houses)
         left = len(street_lighting.posts_in_road(positions, kinds, roads))

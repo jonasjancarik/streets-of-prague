@@ -768,8 +768,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   street's asphalt or setts counts as roadway 3.5 m wide, so the lamps over the tracks
   where only trams and buses run (Lidická by Anděl) hang too; the game strings their
   cables across the track to the first wall each way, as it does across a street.
-  On Plaská and Mělnická, the surveyed lamps along the centre line are treated as
-  cable-mounted even where they fall outside the mapped carriageway.
+  On narrow streets such as Plaská and Mělnická, a regularly spaced row of surveyed
+  lamps near the centre can also hang from cables when façades face each other
+  across the street. This check uses the full paved road surface and requires
+  clearance from the kerb, including where the mapped driving lanes are narrower.
   On the Zborovská block by the police station, each cable carries two lamps across
   the width of the street.
   Where there are still none, the game adds its own on lit

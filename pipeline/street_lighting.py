@@ -18,7 +18,7 @@ a park or a field's corner, and leaves a lone farm half a kilometre out by itsel
 """
 
 import heapq
-from collections import Counter
+from collections import Counter, defaultdict
 
 import numpy as np
 import shapely
@@ -174,6 +174,82 @@ KERB = 1.5          # m: one no deeper than this is a kerb's lamp, moved out to 
 ONTO = 0.5          # m: how far past the edge it is put
 HOUSES = 20.0       # m: with a building this near, a lamp deep in the roadway hangs between the houses
 CENTRE = 4.0        # m: how far a hung lamp may be moved across its street to hang over the middle
+
+
+def infer_suspended_lamps(xy, kinds, surveyed, streets, eligible, buildings, surfaces, excluded=()):
+    """Recover recurring rows of cable lamps on narrow streets with façades on both sides."""
+    reach, max_span, kerb_clearance = 3.0, 18.0, 2.0
+    if not streets or not buildings or not surfaces:
+        return 0
+    # Merge named street fragments so a split at an OSM junction does not break a row.
+    groups = defaultdict(list)
+    for name, hw, line in streets:
+        key = (name, hw) if name else (None, hw, len(groups))
+        groups[key].append(line)
+    lines, classes = [], []
+    for key, parts in groups.items():
+        joined = parts if len(parts) == 1 else shapely.get_parts(shapely.line_merge(shapely.MultiLineString(parts)))
+        for line in joined:
+            lines.append(line)
+            classes.append(key[1])
+
+    candidates = [i for i in range(surveyed) if kinds[i] == 0 and i not in excluded]
+    if not candidates:
+        return 0
+    points = shapely.points([xy[i] for i in candidates])
+    nearest = STRtree(lines).query_nearest(points, max_distance=reach, all_matches=False)
+    houses = STRtree(buildings)
+    paving = STRtree(surfaces)
+    rows = defaultdict(list)
+    for point_id, street_id in zip(*nearest):
+        if classes[street_id] not in eligible:
+            continue
+        point, street = points[point_id], lines[street_id]
+        along = street.project(point)
+        if not 0 < along < street.length:
+            continue
+        centre = street.interpolate(along)
+        # Use the mapped asphalt and setts here. The lane widths can omit parking
+        # lanes and put a surveyed fixture outside the narrower driving polygon.
+        footprint = point.buffer(kerb_clearance)
+        surface_ids = paving.query(footprint, predicate="intersects")
+        if not len(surface_ids) or not shapely.union_all(paving.geometries[surface_ids]).covers(footprint):
+            continue
+        before, after = street.interpolate(max(0, along - 1)), street.interpolate(along + 1)
+        dx, dy = after.x - before.x, after.y - before.y
+        length = np.hypot(dx, dy)
+        if length < 0.01:
+            continue
+        nx, ny = -dy / length, dx / length
+        distances = []
+        for side in (-1, 1):
+            ray = LineString([centre, (centre.x + side * nx * max_span, centre.y + side * ny * max_span)])
+            hits = houses.query(ray, predicate="intersects")
+            if not len(hits):
+                break
+            walls = shapely.intersection(ray, houses.geometries[hits])
+            distances.append(float(shapely.distance(centre, walls).min()))
+        between_facades = len(distances) == 2 and min(distances) >= 4 and sum(distances) <= max_span
+        rows[street_id].append((along, candidates[point_id], (centre.x, centre.y), between_facades))
+
+    changed = 0
+    for row in rows.values():
+        row.sort()
+        # Allow a gap of up to 55 m where a junction fixture belongs to a crossing
+        # street. A lone fixture or a pair supplies too little evidence.
+        run_start = 0
+        for end in range(1, len(row) + 1):
+            if end < len(row) and 12 <= row[end][0] - row[end - 1][0] <= 55:
+                continue
+            supported = [j for j in range(run_start, end) if row[j][3]]
+            if len(supported) >= 3 and all(b - a <= 2 for a, b in zip(supported, supported[1:])):
+                # Carry a proven row through a short gap in the façades, such as
+                # a side-street opening. Its endpoints still need two façades.
+                for _, i, centre, _ in row[supported[0]:supported[-1] + 1]:
+                    xy[i], kinds[i] = centre, HUNG
+                    changed += 1
+            run_start = end
+    return changed
 
 
 def off_the_road(xy, kinds, roads, buildings):

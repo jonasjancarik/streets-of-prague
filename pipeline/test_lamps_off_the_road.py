@@ -3,7 +3,7 @@ import unittest
 
 from shapely.geometry import LineString, box
 
-from street_lighting import HUNG, off_the_road, posts_in_road
+from street_lighting import HUNG, infer_suspended_lamps, off_the_road, posts_in_road
 
 
 class OffTheRoadTest(unittest.TestCase):
@@ -54,20 +54,32 @@ class OffTheRoadTest(unittest.TestCase):
 
 class CarriagewaysTest(unittest.TestCase):
     def test_cable_street_lamps_hang_even_outside_the_mapped_roadway(self):
-        from build_lamps import suspend_street_lamps
-
-        lamps = [(10, 2.4), (20, 4), (30, 2.4)]
-        kinds = [0, 0, 1]
-        suspend_street_lamps(lamps, kinds, [LineString([(0, 0), (100, 0)])])
-        self.assertEqual(lamps, [(10, 0), (20, 4), (30, 2.4)])
-        self.assertEqual(kinds, [HUNG, 0, 1])
+        stations = (15, 40, 65, 90)
+        cables = [(x, 2.4) for x in stations]
+        kerb_posts = [(x, 22.8) for x in stations]
+        streets = [
+            ("First", "residential", LineString([(0, 0), (50, 0)])),
+            ("First", "residential", LineString([(50, 0), (120, 0)])),
+            ("Second", "residential", LineString([(0, 20), (120, 20)])),
+        ]
+        # The first street's row continues across a gap in one façade. The second
+        # has an equally regular row close to the centre line, but on the kerb.
+        houses = [box(0, -10, 120, -7), box(0, 7, 60, 10), box(70, 7, 120, 10),
+                  box(0, 12, 120, 14), box(0, 26, 120, 29)]
+        paving = [box(0, -5, 120, 5), box(0, 17, 120, 23)]
+        lamps = cables + kerb_posts
+        kinds = [0] * len(lamps)
+        self.assertEqual(infer_suspended_lamps(
+            lamps, kinds, len(lamps), streets, {"residential"}, houses, paving), 4)
+        self.assertEqual(lamps, [(x, 0) for x in stations] + kerb_posts)
+        self.assertEqual(kinds, [HUNG] * 4 + [0] * 4)
 
     def test_a_paired_cable_keeps_two_heads_across_the_street(self):
-        from build_lamps import PAIRED_CABLE, PAIR_OFFSET, suspend_street_lamps
+        from build_lamps import PAIRED_CABLE, PAIR_OFFSET, suspend_paired_lamps
 
         lamps = [(10, 3.5), (-2, 0)]
         kinds = [0, 0]
-        suspend_street_lamps(lamps, kinds, [], [LineString([(0, 0), (100, 0)])])
+        suspend_paired_lamps(lamps, kinds, [LineString([(0, 0), (100, 0)])])
         self.assertEqual(lamps, [(10, PAIR_OFFSET), (10, -PAIR_OFFSET), (-2, 0)])
         self.assertEqual(kinds, [PAIRED_CABLE, PAIRED_CABLE, 0])
 
@@ -88,7 +100,7 @@ class CarriagewaysTest(unittest.TestCase):
                     "roads": {"road": [asphalt]}}
             (tiles / "0_0.json").write_text(json.dumps(tile))
             with mock.patch.object(build_lamps, "OUT", Path(out)):
-                roads = build_lamps.carriageways("test")
+                roads, _ = build_lamps.road_geometry("test")
         self.assertEqual(posts_in_road([(3.35, 0.1)], [0], roads), [0])
         xy, kinds, _ = off_the_road([(3.35, 0.1)], [0], roads, [box(10, -50, 20, 50)])
         self.assertEqual(kinds, [HUNG])
@@ -103,7 +115,8 @@ def check_area(area):
     buf = gzip.decompress((build_lamps.OUT / f"{area}_now" / "lamps.bin.gz").read_bytes())
     n = struct.unpack_from("<I", buf)[0]
     xy = [struct.unpack_from("<ff", buf, 4 + i * 8) for i in range(n)]
-    return [xy[i] for i in posts_in_road(xy, list(buf[4 + n * 8:4 + n * 9]), build_lamps.carriageways(area))], n
+    roads, _ = build_lamps.road_geometry(area)
+    return [xy[i] for i in posts_in_road(xy, list(buf[4 + n * 8:4 + n * 9]), roads)], n
 
 
 if __name__ == "__main__":
