@@ -359,7 +359,8 @@ def build_chunk(job):
         lines["crossings"] = [LineString(c) for c in crossings]
         lines["marks"] = [LineString(m) for m in x["marks"] if len(m) > 1]
         trees = {key: STRtree(v) for key, v in lines.items()}
-        x["trees"] = ipr_trees.merge(x["trees"], bbox, tf)
+        x["trees"] = ipr_trees.merge(x["trees"], bbox, tf, road=x["tree_road"], survey=x["surveyed_surface"],
+                                     parking=x["areas"].get("parking", Polygon()), stats=stats)
         tree_xy = shapely.points([tr[:2] for tr in x["trees"]]) if x["trees"] else None
         drive_xy = shapely.points([(d["x"], d["y"]) for d in x["drives"]]) if x["drives"] else None
         # What stands on the plots of family houses (plots.py): each plot and shed in the

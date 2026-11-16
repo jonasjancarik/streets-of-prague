@@ -824,9 +824,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   and domes), which covers the whole city. OSM buildings that the model doesn't have
   (newer ones, sheds, anything past the city limits) are extruded from their footprints.
 - **Trees** are IPR's surveyed ones (`pipeline/ipr_trees.py`)
-  plus OSM's; where both have a tree within 2.5 m, IPR's stands. On Národní, the build
-  skips five misplaced OSM nodes in the travel lane and uses IPR's surveyed trunks
-  between the parking bays. IPR says which are
+  plus OSM's; where both have a tree within 2.5 m, IPR's stands. The build also drops
+  rows of OSM points in a surveyed travel lane when at least three distinct IPR
+  trunks beside it show the same sideways shift. On Národní it skips five known
+  misplaced OSM nodes and uses IPR's surveyed trunks between the parking bays. IPR says which are
   conifers and which fruit trees, and so does OSM sometimes (`leaf_type`, `genus`).
   Conifers are their own shape (`pineGeometry` in `src/map/vegetation.ts`, evergreen in
   winter), fruit trees are small. The woods, parks and gardens are filled up with made-up

@@ -676,6 +676,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     return {
         "area": area, "bbox": (w, s, e, n), "box": (x0, y0, x1, y1), "clip": clip,
         "buildings": buildings, "parts": parts, "areas": area_polys, "roads": road_polys, "rails": rails,
+        "tree_road": carriageway, "surveyed_surface": surface,
         "walls": walls, "fences": fences, "trees": trees, "weirs": weirs, "crossings": crossings, "passages": passages,
             "ground_ways": ground_ways, "marks": marks,
         # Every street and path on the ground with half its width: what a surveyed wall
