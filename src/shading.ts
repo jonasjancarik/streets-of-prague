@@ -287,7 +287,7 @@ vec3 pattern(int id, vec3 c, vec2 p) {
   if (id == 7) return pPitch(c, p);
   if (id == 8) return pDirt(c, p);
   if (id == 9) return grit(pConcrete(c, p), p);
-  if (id == 10) return pWater(c, p);
+  if (id == 10 || id == 17) return pWater(c, p);
   if (id == 11) return pGravel(c, p);
   if (id == 12) return pField(c, p);
   if (id == 13) return pGrass(c, p, uMeadowSeason);
@@ -315,7 +315,7 @@ float ripples(vec2 p) {
   return (1. - t) * smoothstep(.07, 0., abs(length(f - c) - t * .45));
 }
 vec3 weathered(int id, vec3 c, vec2 p, inout float shine) {
-  if (id == 10) { shine = .35; return c; }
+  if (id == 10 || id == 17) { shine = .35; return c; }
   bool paved = id <= 4 || id == 9 || id == 16, road = id == 1 || id == 2;
   // Streets cleared of snow are wet with the slush.
   float wet = paved && uSnow > .01 ? max(uWet, uSnow * (1. - uStreetSnow) * .8) : uWet;
@@ -361,7 +361,7 @@ vec3 mirrorOf(vec3 w, vec2 p) {
 }
 `;
 
-export const PATTERN: Record<string, number> = { flat: 0, asphalt: 1, setts: 2, mosaic: 3, slabs: 4, grass: 5, wood: 6, pitch: 7, dirt: 8, concrete: 9, water: 10, gravel: 11, field: 12, meadow: 13, lawn: 14, garden: 15, pavement: 16 };
+export const PATTERN: Record<string, number> = { flat: 0, asphalt: 1, setts: 2, mosaic: 3, slabs: 4, grass: 5, wood: 6, pitch: 7, dirt: 8, concrete: 9, water: 10, gravel: 11, field: 12, meadow: 13, lawn: 14, garden: 15, pavement: 16, quietWater: 17 };
 
 // Buildings: tiles laid in rows down the slope of every roof face (the slope comes
 // from the face normal), slate in smaller rows, gravel on flat roofs, and a grid of

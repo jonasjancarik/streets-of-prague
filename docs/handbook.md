@@ -183,7 +183,8 @@ half the time stays at its tier.
 `?graphics=auto|ultra|high|medium|low|lowest` overrides it for one visit; `?dpr=1` fixes
 only the pixel ratio. The Water setting turns on waves, sun glitter and lamp reflections on
 the river (`src/webgpu/water.ts`; WebGPU only, not on Lowest; on by default from Low
-through Ultra; `?water=on|off` for one visit).
+through Ultra; `?water=on|off` for one visit). Small ponds and park basins with a
+complete outline inside a tile get gentler ripples and keep their rain rings.
 
 Every pixel ends with the same tone curve at every tier but Lowest (`src/grade.ts`): a
 filmic curve per channel (Krzysztof Narkowicz's fit to the ACES curve, with a softer toe)

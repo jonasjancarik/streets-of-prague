@@ -1304,3 +1304,11 @@ effects off → on averaged 261.0 → 264.5 ms/frame. With the order reversed th
 comparison was 259.4 → 264.0 ms/frame. The 1–2% cost was small compared with the
 roughly four FPS baseline. High now enables the beams and glints by default.
 
+## Small pond ripples, 17 November 2026
+
+Desktop Chrome WebGPU, Ultra, clear at 13:00. At the same street-height view
+in Park Přátelství, three five-second samples each way gave 20.5 → 21.3 ms
+with the original water first, and 20.6 → 21.0 ms with the quieter water first.
+The second run was slower in either order. Across both orders, the original
+averaged 20.7 ms and the quieter water 21.0 ms. Draw counts ranged from 56 to
+58. There was no GPU timing, so this comparison does not isolate shader cost.

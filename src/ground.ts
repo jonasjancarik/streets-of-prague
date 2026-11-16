@@ -16,6 +16,7 @@ import { coverGeometry } from './map/utility.ts';
 import type { UtilityMark } from './map/utility.ts';
 import type { StationTracks } from './stationTracks.ts';
 import { stairGeometry, type MappedStair } from './map/stairs.ts';
+import { splitQuietWater } from './map/waterBody.ts';
 
 export interface GroundTileData {
   areas: Record<string, Polygons | undefined>;
@@ -1005,7 +1006,9 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     add(polygons(A.pool || []), COLORS.pool); // garden pools (tiles.ts, withPatches)
     afloat = true;
     try {
-      add(polygons(A.water || []), COLORS.water, 'water');
+      const { open, quiet } = splitQuietWater(A.water ?? [], box);
+      add(polygons(open), COLORS.water, 'water');
+      add(polygons(quiet), COLORS.water, 'quietWater');
       shade(skirts(A.water || [], 6, false, cut), 0.35);
     } finally { afloat = false; }
     add(strips(outlines(A.water || []), 0.9), COLORS.quay, 'slabs');
