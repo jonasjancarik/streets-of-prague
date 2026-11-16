@@ -7,7 +7,7 @@ const arg = process.argv.indexOf('--url');
 const url = (arg >= 0 ? process.argv[arg + 1] : null) || 'http://localhost:5201/';
 const check = `(async () => {
   const d = window.__drive, r = d.renderer, g = d.graphics;
-  const { DIRT, LEAVES, ROOF_DETAIL } = await import('/src/shading.ts');
+  const { DIRT, LEAVES, ROOF_DETAIL, WATER } = await import('/src/shading.ts');
   const { LAMP_SHADOWS } = await import('/src/lamps.ts');
   const { AutoTier } = await import('/src/graphics.ts');
   const assert = (ok, message) => { if (!ok) throw new Error(message); };
@@ -21,6 +21,8 @@ const check = `(async () => {
     assert(d.sky.sun.shadow.map.width === size, tier + ': actual shadow size');
     assert(d.sky.sun.shadow.radius === blur, tier + ': shadow edge softening');
     assert(DIRT.value === look && LEAVES.value === look && ROOF_DETAIL.value === look, tier + ': detail');
+    const waves = ['ultra', 'high', 'medium'].includes(tier);
+    assert(g.water === waves && WATER.value === Number(waves), tier + ': default water');
     assert(LAMP_SHADOWS.value === cars && g.crowd === crowd, tier + ': lamps/crowd');
     assert(r.getPixelRatio() === 1, tier + ': fixed DPR');
     if (r.backend?.isWebGPUBackend) {
@@ -71,6 +73,14 @@ const check = `(async () => {
   g.set('auto');
   assert(g.tier === 'high', 'Auto goes no higher than High');
   g.set('high');
+  g.setWater(false);
+  g.set('medium');
+  assert(!g.water && WATER.value === 0, 'Water Off overrides Medium');
+  g.setWater(true);
+  g.set('low');
+  assert(g.water && WATER.value === 1, 'Water On overrides Low');
+  g.set('lowest');
+  assert(WATER.value === 0, 'Lowest skips water effects');
   return 'Graphics checks passed: ' + (r.backend ? 'WebGPU' : 'WebGL');
 })()`;
 for (const extra of ['', '&renderer=webgl&dev']) {

@@ -187,9 +187,9 @@ export class AutoTier {
 export class Graphics {
   choice: Choice;
   tier: Tier;
-  // The player's choice of water, or null while they haven't made one (then Ultra has the waves).
+  // The player's choice of water, or null to follow the graphics tier.
   private waterChoice: boolean | null = null;
-  get water() { return this.waterChoice ?? this.tier === 'ultra'; }
+  get water() { return this.waterChoice ?? (this.tier !== 'low' && this.tier !== 'lowest'); }
   reflections: Reflections = 'lights';
   private clutter: boolean | null = null; // ?clutter=on|off
   private auto: AutoTier;
