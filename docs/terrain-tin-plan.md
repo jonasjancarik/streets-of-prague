@@ -603,3 +603,31 @@ back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change w
   **The default since 16 November 2026**, with the city map above on the beta.
   `ipr_terrain.py --coarse` (`--set DENSE_TIN=0` in `window.py`) reads the CityGML
   sheets as before.
+
+  **IPR's dense TIN cut at the walls, tried as the ground itself (16 November 2026).**
+  Not the stage 1 TIN above (today's heights triangulated): IPR's own dense points,
+  without the points within 0.3 m of a step line (the wall's face), and the game's step
+  lines doubled 3 cm either side, each copy at that side's height. On the nine places
+  (5 × 5 tiles each), against today's ground as the game samples it
+  (`scripts/tin-target.mjs`):
+
+  | | today | dense TIN | with steps, sides from IPR's points | with steps, sides from the step lines |
+  |---|---|---|---|---|
+  | streets within 0.3 m of the LiDAR | 88.1 % | 84.4 % | 84.9 % | 84.9 % |
+  | other ground within 0.3 m | 74.1 % | 73.9 % | 75.1 % | 75.1 % |
+  | wall tops sagging over 1 m (18.4 km of wall) | 955 m | 2,436 m | 2,260 m | 1,817 m |
+  | over 2 m | 527 m | 876 m | 1,389 m | 1,013 m |
+  | step under half its height | 971 m | 932 m | 1,440 m | 1,188 m |
+
+  Not taken. The dense model has few points at the walls the game knows: within a metre
+  of the step lines, an IPR point at 6–23 % of the line's points, and within 4 m about
+  one, so a side's height rarely comes from IPR (1–23 % of the line) and the ground
+  between the line and the next points is a long ramp of a triangle. The streets lose
+  the LiDAR's road (`_scan_streets`) and come out faceted. Other ground gains a point.
+  From above (pictures in `docs/evidence/steptin`, local) the walls are clean but the
+  ground beside them is toothed and the streets crumpled; today's ground is smoother,
+  with 4 m blocks on slopes. Over the middle tile the TIN with its lines takes 20–230 KB
+  gzipped against 2–5 KB of heights (a plain encoding; the lines are doubled every
+  0.5 m). The measures for walls were made for, and the rules tuned on, these nine places,
+  which favours today's ground. A TIN still looks like the way to get the shape between
+  points right, but with today's heights on the streets and at walls, as stage 1 plans.
