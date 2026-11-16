@@ -94,6 +94,7 @@ export const CS: Record<string, string> = {
   'Start new game': 'Začít novou hru',
   'New game': 'Nová hra',
   Place: 'Místo',
+  'Location from link': 'Místo z odkazu',
   'Random street': 'Náhodná ulice',
   'Pick on the map': 'Vybrat na mapě',
   'Where do you want to start?': 'Kde chcete začít?',

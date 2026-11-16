@@ -39,7 +39,7 @@ export interface StartChoice {
   season: number;
   // Carry on from the saved game (time and weather are then the save's own).
   resume: boolean;
-  // Where to begin, as [lon, lat], picked on the map; null for a random street.
+  // Where to begin, as [lon, lat], from the link or the map; null for a random street.
   at: [number, number] | null;
 }
 
@@ -53,6 +53,7 @@ const el = (tag: string, cls: string, parent: HTMLElement, text = '') => {
 
 interface StartOptions {
   now: string;
+  linkedStart: [number, number] | null;
   season: number;
   dateLinked: boolean;
   weather: Kind;
@@ -94,7 +95,7 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
   onLang(() => { for (const f of relabel) f(); });
 
   // A row of buttons of which one is picked.
-  function row<T extends string>(label: string, items: { id: T; label: () => string }[], picked: T, pick: (id: T) => void) {
+  function row<T extends string>(label: string, items: { id: T; label: () => string }[], picked: T, pick: (id: T) => void | false) {
     const r = el('div', 'ls-row', panel);
     const name = el('span', 'ls-label', r);
     relabel.push(() => { name.textContent = t(label); });
@@ -107,8 +108,7 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
       b.type = 'button';
       b.setAttribute('aria-pressed', String(it.id === picked));
       b.addEventListener('click', () => {
-        pick(it.id);
-        for (const o of buttons) o.setAttribute('aria-pressed', String(o === b));
+        if (pick(it.id) !== false) for (const o of buttons) o.setAttribute('aria-pressed', String(o === b));
         show();
       });
       return b;
@@ -118,15 +118,32 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
 
   const fixed = (s: string) => () => s;
   row<Lang>('Language', LANGS.map((l) => ({ id: l.id, label: fixed(l.label) })), getLang(), setLang);
-  // A random street, or a spot on the map: the second chip then shows the spot's name,
-  // and opens the map again to pick another. Closing the map keeps what was there.
-  const placeRow = row('Place', [{ id: 'random', label: () => t('Random street') }, { id: 'map', label: () => spot ? spot.name : t('Pick on the map') }], 'random', (id) => {
-    if (id === 'random') { spot = null; showPlace(); return; }
-    void pickStart(root, spot).then((s) => { if (s) spot = s; showPlace(); placeRow.buttons[spot ? 1 : 0].focus(); });
+  type PlaceChoice = 'link' | 'random' | 'map';
+  let place: PlaceChoice = opts.linkedStart ? 'link' : 'random';
+  const places: { id: PlaceChoice; label: () => string }[] = [
+    { id: 'random', label: () => t('Random street') },
+    { id: 'map', label: () => spot ? spot.name : t('Pick on the map') },
+  ];
+  if (opts.linkedStart) places.unshift({ id: 'link', label: () => t('Location from link') });
+  const placeRow = row('Place', places, place, (id) => {
+    if (id === 'map') {
+      void pickStart(root, spot).then((s) => {
+        if (s) { spot = s; place = 'map'; }
+        showPlace();
+        placeRow.buttons[places.findIndex((p) => p.id === place)].focus();
+      });
+    } else {
+      place = id;
+      spot = null;
+      showPlace();
+    }
+    return false;
   });
   const showPlace = () => {
-    placeRow.buttons.forEach((b, i) => b.setAttribute('aria-pressed', String(i === (spot ? 1 : 0))));
-    placeRow.buttons[1].textContent = spot ? spot.name : t('Pick on the map');
+    placeRow.buttons.forEach((b, i) => {
+      b.setAttribute('aria-pressed', String(places[i].id === place));
+      b.textContent = places[i].label();
+    });
   };
   const seasonRow = row('Season', SEASONS.map(id => ({ id, label: () => t(SEASON_NAMES[id]) })), seasonOfDay(day), (id) => {
     const today = pragueToday();
@@ -234,7 +251,8 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
           const startDay = resuming ? opts.savedLook?.season ?? day : useToday ? pragueToday() : day;
           // A page or beta note kept open across midnight still starts in today's Prague.
           const startWeather = !resuming && startDay !== day && usingLive ? 'clear' : weather;
-          resolve({ time: t ? t.sec : null, weather: startWeather, live: !resuming && usingLive && startWeather === weather && liveAvailable(), sound, season: startDay, resume: resuming, at: !resuming && spot ? [spot.lon, spot.lat] : null });
+          const at: StartChoice['at'] = resuming ? null : place === 'link' ? opts.linkedStart : spot ? [spot.lon, spot.lat] : null;
+          resolve({ time: t ? t.sec : null, weather: startWeather, live: !resuming && usingLive && startWeather === weather && liveAvailable(), sound, season: startDay, resume: resuming, at });
         });
       }, { once: true }));
     },

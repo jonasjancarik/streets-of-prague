@@ -212,7 +212,11 @@ async function main() {
   try { savedSound = localStorage.getItem('sound') ?? ''; } catch {}
   // The game saved by itself last time, unless it's a test run (?go).
   const saved = params.has('go') || anywhere ? null : readSave('auto', AREA);
-  const start = params.has('go') ? null : startScreen($('loading'), { now: Clock.nowLabel(), season: season.day, dateLinked: parseDay(params.get('date')) !== null || parseDay(params.get('season')) !== null, weather: weather.kind, weatherFixed: weather.fixed,
+  const startParts = params.get('start')?.split(',').map((part) => part.trim()) ?? [];
+  const [startLon, startLat] = startParts.map(Number);
+  const linkedStart: [number, number] | null = startParts.length === 2 && startParts.every(Boolean)
+    && Math.abs(startLon) <= 180 && Math.abs(startLat) <= 90 ? [startLon, startLat] : null;
+  const start = params.has('go') ? null : startScreen($('loading'), { now: Clock.nowLabel(), linkedStart, season: season.day, dateLinked: parseDay(params.get('date')) !== null || parseDay(params.get('season')) !== null, weather: weather.kind, weatherFixed: weather.fixed,
     sound: savedSound !== 'off', saved: saved && (() => describe(saved)), savedLook: saved ? { clock: saved.clock, weather: saved.weather.fixed ? saved.weather.kind : automaticWeather(saved.weather.kind), season: saved.season } : undefined, lost: !saved && !params.has('go') && unreadable('auto', AREA) });
   // The weather in Prague now, for the start screen (the URL's ?weather wins).
   if (start && !params.has('weather')) void liveWeather().then((k) => { if (k) start.live(k); });
@@ -363,7 +367,10 @@ async function main() {
   const named = PLACES[params.get('place') ?? ''];
   const starts = STARTS.filter(([, lon, lat]) => inside(lon, lat));
   const random = starts.length ? starts[Math.floor(Math.random() * starts.length)] : null;
-  const [slon, slat] = named ? [named.at[1], named.at[0]] : params.get('start')?.split(',').map(Number) ?? (random ? [random[1], random[2]] : [lon0, lat0]);
+  const randomStart: [number, number] = random ? [random[1], random[2]] : [lon0, lat0];
+  const namedStart: [number, number] | null = named ? [named.at[1], named.at[0]] : null;
+  const initialStart = start && linkedStart ? linkedStart : namedStart ?? linkedStart ?? randomStart;
+  const [slon, slat] = initialStart;
   // The pipeline's local metres: a transverse Mercator centred on the area.
   // (Past the map's edge too, where the countryside is made: once its file is open.)
   await world.country?.opened;
@@ -2503,9 +2510,10 @@ async function main() {
       weather.begin(choice.weather, clock.t, choice.live);
       // Beta mist can only reach this choice through an explicit selection.
       if (choice.weather === 'mist') weather.fixed = true;
-      if (choice.at) {
+      const at = choice.at ?? (linkedStart ? randomStart : initialStart);
+      if (at[0] !== slon || at[1] !== slat) {
         status('Building the streets…');
-        await startAt(...choice.at);
+        await startAt(...at);
         status('');
       }
     }
