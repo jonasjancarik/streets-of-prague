@@ -585,10 +585,17 @@ back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change w
   (Československého exilu, Bašta sv. Ludmily) and nothing new is broken in the
   pictures.
 
-  The one new step over 1 m is K Přehradám (49.95625, 14.39252), where the street
-  crosses a brook on a short bridge. The coarse model had no gully there, and the
-  deck's level ran 2.5 m downhill under the street; the dense model has the brook's
-  bed 4–5 m down and the deck level at the street's height, but the street's edges
-  just off the deck's end come down onto the gully's side (1.7 m at the edge, 1.2 m at
-  the deck's join). Not fixed: the deck's outline would need to reach the full width
-  of the street.
+  The one new step over 1 m is K Přehradám (49.95625, 14.39252). A service way (113651153)
+  passes under it at a slant in a cutting 5 m deep, and `structures.cuttings` makes the
+  street a short bridge over it, 19 m long, judged along the street's middle. The dense
+  model has the cutting reach further under the street's east edge and then run on
+  right beside it, 1.6 m past the kerb; the coarse model had neither. Where the deck
+  ends, the edge reads the cutting's side: a step of 1.2 m.
+
+  Tried on a window and taken back out: lengthening the bridge, judged under the
+  street's edges too or ended 4–6 m past the cutting instead of 2 m, with its ends at
+  the street's height either side (the abutment rule put the end on the cutting's far
+  bank, 1 m over the street). The best brought the step to 0.77 m, but a 1 m wave
+  stays wherever the deck ends, because the cutting runs on beside the street, and near
+  a deck the street doesn't take the LiDAR's road. What it needs is the cutting's
+  wall along the street's edge, as a step in the ground; the survey has none there.
