@@ -1286,3 +1286,12 @@ Both states were under 4 FPS in the rain, which makes that run a poor measure of
 small costs. An earlier rainy run was discarded because the driver never got into
 the car. High now enables the pass by default.
 
+## Canopy sprays on High, 16 November 2026
+
+Pixel 5 over ADB, Chrome WebGPU, High at its default 2× pixel ratio. In Divoká
+Šárka on July 15 at 14:00 in clear weather, 34 visible canopy mesh pages held
+8,542 instances. Alternating four-second windows after warm-up, sprays off → on
+averaged 98.6 → 97.6 ms/frame. With the order reversed, the comparison was
+96.0 → 98.0 ms/frame. The difference changed direction across runs. High now
+enables the sprays by default. This measures steady rendering after warm-up.
+

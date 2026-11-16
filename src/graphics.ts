@@ -253,7 +253,7 @@ export class Graphics {
     PROBE_ON.value = this.tier === 'ultra' ? 1 : 0;
     POST.value = this.tier === 'ultra' || this.tier === 'high' ? 1 : 0;
     CAR_SHADE.value = look ? 1 : 0; // (the soft shade under the cars: car.ts)
-    CANOPY_LEAVES.value = this.tier === 'ultra'; // (and the sprays of leaves on the crowns seen from above: trees.ts) // (and on Ultra the real one round the middle of the view)
+    CANOPY_LEAVES.value = this.tier === 'ultra' || this.tier === 'high';
     // (The lamps resize their maps at the next frame; the materials are bound afresh below,
     // which freezes the game for half a second even on an M5, so Auto keeps the size the
     // lamps were given when it began.)

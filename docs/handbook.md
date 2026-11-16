@@ -165,7 +165,7 @@ Graphics (<kbd>G</kbd> cycles it, remembered in the browser):
 | Cones of light in the air, glints on cars and wet ground | On | Off | Off | Off | Off |
 | Bloom round lights and glints, darker corners (WebGPU) | On | On | Off | Off | Off |
 | Waves and glitter on the river, until you choose | On | On | On | On | Off |
-| Sprays of leaves and needles on trees and shrubs seen from above | On | Off | Off | Off | Off |
+| Sprays of leaves and needles on trees and shrubs seen from above | On | On | Off | Off | Off |
 | Shadows that soften with distance from what casts them | On | Off | Off | Off | Off |
 | A soft shade under every car | On | On | On | On | Off |
 | Maximum crowd | 1200 | 1200 | 1200 | 1200 | 600 |
@@ -567,7 +567,7 @@ that without a new renderer.
   leave bare twigs. The tree pool makes each page's second mesh over the same instances
   when first wanted (`TreePool.street`). Shrubs there are a body of the same sprays, and
   conifers get whorls of spruce boughs laid over their plain tiers (`canopyGeometry`,
-  `coniferGeometry`; `TreePool.canopy`). On Ultra the view from above has them too: sprays
+  `coniferGeometry`; `TreePool.canopy`). On High and Ultra the view from above has them too: sprays
   laid like shingles over every broadleaf crown's tufts, which keep its shape, shade and
   shadow underneath, and over shrubs and conifers; a spray whose leaves have fallen is not
   drawn. The free camera uses the street models once tilted more than 35°. The hole that opens the floors above you in a
