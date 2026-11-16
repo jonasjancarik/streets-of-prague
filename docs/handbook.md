@@ -1648,6 +1648,10 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
 
   Nothing else needs rebuilding. The first run reads every terrain sheet again at the
   new step, so it takes a few minutes longer than usual.
+- **The dense terrain model.** `ipr_terrain.py --dense` reads IPR's terrain sheets as
+  Shapefiles (`TER_<sheet>_shp` on ArcGIS Online, kept zipped in `pipeline/.cache/ipr/`)
+  instead of the CityGML ones: the same model unthinned, about six times the points.
+  Not the default yet; `docs/terrain-tin-plan.md` has how it compares.
 - **Steps in the ground.** IPR's terrain model has a point about every 10 m, so on its
   own a quay wall or a retaining wall is a broad ramp. `pipeline/dtm_heights.py` corrects
   the grid from the technical map's survey (DTM ZPS: its lines carry heights): streets

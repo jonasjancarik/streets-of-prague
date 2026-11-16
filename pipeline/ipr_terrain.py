@@ -120,20 +120,27 @@ def pull_to_bridges(tiles, labels, found, N):
 
 
 CATALOGUE = "catalogue_ter.json"
+# The same sheets come in two densities. The CityGML one is thinned (on TER_Krav_6-9,
+# 26,000 points and triangles of about 74 m²); the Shapefile one has every point of it
+# and 126,000 more (triangles of about 2 m², the faces of banks and walls steeper), and
+# isn't thinned. `--dense` reads the Shapefile one, kept as its zip.
+DENSE_TIN = False
+CATALOGUE_DENSE = "catalogue_ter_shp.json"
 
 
 def catalogue():
-    path = CACHE / CATALOGUE
+    path = CACHE / (CATALOGUE_DENSE if DENSE_TIN else CATALOGUE)
     if path.exists():
         return json.loads(path.read_text())
-    items = {t[: -len("_gml")]: i for t, (i, _) in search("TER_").items() if t.endswith("_gml")}
+    end = "_shp" if DENSE_TIN else "_gml"
+    items = {t[: -len(end)]: i for t, (i, _) in search("TER_").items() if t.endswith(end)}
     CACHE.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(items, indent=1))
     return items
 
 
 def sheet_path(name):
-    return CACHE / f"{name}_gml.gml"
+    return CACHE / (f"{name}_shp.zip" if DENSE_TIN else f"{name}_gml.gml")
 
 
 def download(name, items):
@@ -144,6 +151,9 @@ def download(name, items):
         return None
     print(f"  downloading {name}…")
     data = urllib.request.urlopen(f"https://www.arcgis.com/sharing/rest/content/items/{items[name]}/data").read()
+    if DENSE_TIN:
+        build_cache.atomic(path, data)
+        return path
     with zipfile.ZipFile(io.BytesIO(data)) as z:
         member = next(m for m in z.namelist() if m.lower().endswith(".gml"))
         build_cache.atomic(path, z.read(member))
@@ -161,25 +171,47 @@ def triangles(path):
     return np.array(tris)
 
 
+def shp_triangles(path):
+    """The same from a dense sheet's zipped Shapefile: one triangle a row."""
+    import pyogrio
+    import shapely
+    with zipfile.ZipFile(path) as z:
+        member = next(m for m in z.namelist() if m.lower().endswith(".shp"))
+    geoms = pyogrio.read_dataframe(f"/vsizip/{path}/{member}", columns=[]).geometry.values
+    xyz = shapely.get_coordinates(shapely.get_parts(geoms), include_z=True)
+    return xyz.reshape(-1, 4, 3)[:, :3]
+
+
 def rasterise(tris, x0, y0, nx, ny, step, grid):
-    """Barycentric fill of the grid (heights at x0 + i*step, y0 + j*step)."""
-    for a, b, c in tris:
-        xs, ys = (a[0], b[0], c[0]), (a[1], b[1], c[1])
-        i0, i1 = max(0, math.ceil((min(xs) - x0) / step)), min(nx - 1, math.floor((max(xs) - x0) / step))
-        j0, j1 = max(0, math.ceil((min(ys) - y0) / step)), min(ny - 1, math.floor((max(ys) - y0) / step))
-        if i0 > i1 or j0 > j1:
-            continue
-        gx, gy = np.meshgrid(x0 + np.arange(i0, i1 + 1) * step, y0 + np.arange(j0, j1 + 1) * step)
-        d = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1])
-        if abs(d) < 1e-9:
-            continue
-        l1 = ((b[1] - c[1]) * (gx - c[0]) + (c[0] - b[0]) * (gy - c[1])) / d
-        l2 = ((c[1] - a[1]) * (gx - c[0]) + (a[0] - c[0]) * (gy - c[1])) / d
-        l3 = 1 - l1 - l2
-        inside = (l1 >= -1e-6) & (l2 >= -1e-6) & (l3 >= -1e-6)
-        z = l1 * a[2] + l2 * b[2] + l3 * c[2]
-        sub = grid[j0:j1 + 1, i0:i1 + 1]
-        sub[inside] = z[inside]
+    """Barycentric fill of the grid (heights at x0 + i*step, y0 + j*step); where
+    triangles share a point, the later one's height."""
+    xs, ys = tris[:, :, 0], tris[:, :, 1]
+    i0 = np.maximum(0, np.ceil((xs.min(1) - x0) / step)).astype(np.int64)
+    i1 = np.minimum(nx - 1, np.floor((xs.max(1) - x0) / step)).astype(np.int64)
+    j0 = np.maximum(0, np.ceil((ys.min(1) - y0) / step)).astype(np.int64)
+    j1 = np.minimum(ny - 1, np.floor((ys.max(1) - y0) / step)).astype(np.int64)
+    a, b, c = tris[:, 0], tris[:, 1], tris[:, 2]
+    d = (b[:, 1] - c[:, 1]) * (a[:, 0] - c[:, 0]) + (c[:, 0] - b[:, 0]) * (a[:, 1] - c[:, 1])
+    w, h = i1 - i0 + 1, j1 - j0 + 1
+    keep = (w > 0) & (h > 0) & (np.abs(d) >= 1e-9)
+    t = np.nonzero(keep)[0]
+    n = (w * h)[t]
+    # Every lattice point in each triangle's box, triangle by triangle in order.
+    tri = np.repeat(t, n)
+    k = np.arange(len(tri)) - np.repeat(np.cumsum(n) - n, n)
+    gi, gj = i0[tri] + k % w[tri], j0[tri] + k // w[tri]
+    gx, gy = x0 + gi * step, y0 + gj * step
+    a, b, c, d = a[tri], b[tri], c[tri], d[tri]
+    l1 = ((b[:, 1] - c[:, 1]) * (gx - c[:, 0]) + (c[:, 0] - b[:, 0]) * (gy - c[:, 1])) / d
+    l2 = ((c[:, 1] - a[:, 1]) * (gx - c[:, 0]) + (a[:, 0] - c[:, 0]) * (gy - c[:, 1])) / d
+    l3 = 1 - l1 - l2
+    inside = (l1 >= -1e-6) & (l2 >= -1e-6) & (l3 >= -1e-6)
+    z = l1 * a[:, 2] + l2 * b[:, 2] + l3 * c[:, 2]
+    gi, gj, z = gi[inside], gj[inside], z[inside]
+    # The last of each lattice point's triangles, as the loop it replaces had it.
+    flat = gj * nx + gi
+    last = len(flat) - 1 - np.unique(flat[::-1], return_index=True)[1]
+    grid[gj[last], gi[last]] = z[last]
 
 
 def fill_gaps(tiles, N, T, step, coarse=8):
@@ -253,8 +285,10 @@ def read_sheet(job):
         return name, got["grid"]
     to_local = krovak_to_local(local)
     stats = {}
-    tris = build_cache.source_data(path, CACHE / "source" / f"{name}.triangles.pkl",
-                                   [1, build_cache.function_key(triangles), GML, key[3]], triangles, stats)
+    dense = str(path).endswith(".zip")
+    reader = shp_triangles if dense else triangles
+    tris = build_cache.source_data(path, CACHE / "source" / f"{name}{'.dense' if dense else ''}.triangles.pkl",
+                                   [1, build_cache.function_key(reader), GML, key[3]], reader, stats)
     flat = tris.reshape(-1, 3)
     lx, ly = to_local.transform(flat[:, 0], flat[:, 1])
     tris = np.column_stack([lx, ly, flat[:, 2]]).reshape(-1, 3, 3)
@@ -369,6 +403,7 @@ def main() -> None:
                            "sunk kerbs lifted, two levels decided, car streets from the scan's road. Off unless asked")
     scan.add_argument("--no-survey-scan", action="store_true",
                       help="with --ipr-lidar, don't also check the survey against it (to compare)")
+    ap.add_argument("--dense", action="store_true", help="IPR's terrain model from its dense sheets (Shapefile), not the thinned CityGML ones")
     ap.add_argument("--no-feather", action="store_true", help="the ground beside surveyed streets as the terrain model has it (to compare)")
     raster = ap.add_mutually_exclusive_group()
     raster.add_argument("--dmr5g", action="store_true", help="prototype: ČÚZK's DMR 5G as the terrain in dmr5g.BOXES")
@@ -413,7 +448,9 @@ def main() -> None:
     ox, oy = meta["origin"]
     local = f"+proj=tmerc +lat_0={(s + n) / 2} +lon_0={(w + e) / 2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m"
     options = {name: getattr(args, name) for name in (
-        "no_survey", "no_feather", "dmr5g", "shoulder", "walls_on_streets", "valley_nearest", "cut_streets", "no_level", "no_sunk_kerbs", "no_scan_levels", "no_cuttings", "no_scan_streets")}
+        "dense", "no_survey", "no_feather", "dmr5g", "shoulder", "walls_on_streets", "valley_nearest", "cut_streets", "no_level", "no_sunk_kerbs", "no_scan_levels", "no_cuttings", "no_scan_streets")}
+    global DENSE_TIN
+    DENSE_TIN = args.dense
     if args.ipr_lidar:
         options["ipr_lidar"] = str(args.ipr_lidar.resolve())
     if args.survey_companion_decks:

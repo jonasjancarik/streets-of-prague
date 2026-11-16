@@ -65,7 +65,7 @@ CODE = {
     "parking": {"build_tiles.py": (), "osm_area.py": ("OUT", "AREAS", "_polys", "_rings"),
                 "layers.py": OSM["layers.py"]},
     "ipr_sheet": {"ipr_buildings.py": ("read_sheet", *PROJECTION)},
-    "terrain_sheet": {"ipr_terrain.py": ("read_sheet",), "ipr_buildings.py": PROJECTION},
+    "terrain_sheet": {"ipr_terrain.py": ("read_sheet", "rasterise", "shp_triangles"), "ipr_buildings.py": PROJECTION},
     "ipr": {**IPR_OUTPUT, "ipr_buildings.py": (), "osm_area.py": ("AREAS", "OUT"),
             "building_age.py": (), "roofs.py": (), "roof_details.py": (), "mesh_colours.py": ("lab",)},
     "terrain": {**IPR_OUTPUT, "ipr_terrain.py": (),
@@ -83,7 +83,7 @@ PACKAGES = {
     "streets": (*GEOMETRY, *OSM_RUNTIME),
     "parking": GEOMETRY,
     "ipr_sheet": (*GEOMETRY, "lxml"),
-    "terrain_sheet": (*GEOMETRY, "lxml"),
+    "terrain_sheet": (*GEOMETRY, "lxml", "pyogrio"),
     "ipr": (*GEOMETRY, "lxml", "requests"),
     "terrain": (*GEOMETRY, "lxml", "geopandas", "pyogrio", "fiona", "pandas", "scipy", "requests", "tifffile"),
 }

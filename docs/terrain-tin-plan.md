@@ -522,3 +522,25 @@ back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change w
   stops. Pictures: `docs/evidence/tin/top/city/cmp-*.jpg` (local; left the lines
   build, right with top strips) and `cmp-ends-city-*.jpg` (left with top strips,
   right with level ends).
+
+- **The dense terrain model (16 November 2026).** IPR serves each TER sheet twice: the
+  CityGML the pipeline read, which is thinned, and a Shapefile with every point of it
+  and five times more (on TER_Krav_6-9 152,000 points against 26,000, triangles of
+  about 2 m² against 74 m²; the extra points sit 18 cm off the thinned surface in the
+  median, 16 % of them over 0.5 m). Both are public ArcGIS Online items of IPR's
+  (`TER_<sheet>_gml`, `_shp`). `ipr_terrain.py --dense` (`DENSE_TIN`, `--set
+  DENSE_TIN=1` in `window.py`) reads the Shapefile ones, kept zipped in
+  `pipeline/.cache/ipr/`; the triangles go onto the lattice vectorised now (same
+  heights, ten times faster).
+
+  Eleven test windows (the ten places and Podolí), coarse against dense, with
+  `--survey-scan`. Plain ground within 0.3 m of the 2023 LiDAR, the terrain model
+  alone: 65.5 → 79.4 % on average (every place better, Vyšehrad 56 → 74 %, K Celinám
+  78 → 91 %); after the survey's rules, as the map has it: 68.2 → 76.3 %. With the
+  dense model the rules take the ground further from the LiDAR, not nearer (79.4 →
+  76.3 %): worth finding which (feathering, banks, the made-up land) and tuning them
+  to the dense ground. Wall tops sagging over 1 m 578 → 461 m (Vyšehrad 162 → 112,
+  Podolí 101 → 77, Malá Strana 51 → 32), parapet jumps over 15 cm 622 → 584 m. The
+  streets about the same (they take the LiDAR's road): waves over 0.6 m 56 → 61,
+  leaning over 15 % 44 → 46, steps over 1 m 7 → 7. From above the pictures hardly
+  differ (`docs/evidence/tin/dense/cmp-*.jpg`, local). Not yet built for the city.
