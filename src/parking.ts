@@ -3,8 +3,7 @@ import { posts } from './posts.ts';
 import { Polyline, segDist } from './network.ts';
 import type { DriveEdge, ParkingOrientation } from './network.ts';
 import type { Point2, Polygons, Bounds } from './map/geo.ts';
-import { clearanceSteps, finish, parkingTrunkClearance } from './parkingClearance.ts';
-import type { TreeTrunk } from './contracts.ts';
+import { clearanceSteps, finish, parkingObstacleClearance, type ParkingObstacle } from './parkingClearance.ts';
 import { Demand, occupancy } from './parkingDemand.ts';
 import type { DemandBuilding, Floors } from './parkingDemand.ts';
 
@@ -342,10 +341,10 @@ type ParkCarsOptions = Parameters<typeof parkCarsSteps>[0];
 // The same a little at a time: it pauses (yields) after each spot it tries, with the
 // same spots, the same random numbers and the same cars in the end. A phone took up to
 // 180 ms a tile in one go; TileWorld spreads it over frames.
-export function* parkCarsSteps({ data, edges, clearanceEdges = edges, zones, solid, trunks, height, r, night = false, shares = null, inside = () => true, buildings = null }: {
+export function* parkCarsSteps({ data, edges, clearanceEdges = edges, zones, solid, obstacles, height, r, night = false, shares = null, inside = () => true, buildings = null }: {
   data: ParkingData; edges: DriveEdge[]; zones: Zones; solid: (x: number, y: number) => boolean | number;
   height?: (x: number, y: number) => number;
-  trunks?: Iterable<TreeTrunk>;
+  obstacles?: Iterable<ParkingObstacle>;
   clearanceEdges?: DriveEdge[];
   // The buildings in and round the tile (as far as the neighbouring tiles reach): without
   // them, outside the zones a fifth of the kerb spots and under half of a car park's get a car.
@@ -357,7 +356,7 @@ export function* parkCarsSteps({ data, edges, clearanceEdges = edges, zones, sol
   for (const rl of data.rails) for (let i = 0; i < rl.pts.length - 1; i++) railSegs.push([rl.pts[i], rl.pts[i + 1]]);
   const nearRail = (x: number, y: number, d: number) => railSegs.some(([a, b]) => segDist(x, y, a, b) < d);
   const laneClear = yield* clearanceSteps(clearanceEdges, data.box);
-  const trunkClear = parkingTrunkClearance(trunks);
+  const obstacleClear = parkingObstacleClearance(obstacles);
   const cars: Car[] = [];
   // Parked cars by 5 m cell (keyed by number, as in SpatialHash: this is asked for
   // every spot tried).
@@ -394,7 +393,7 @@ export function* parkCarsSteps({ data, edges, clearanceEdges = edges, zones, sol
     // Most people drive into angled bays forwards; elsewhere it's either way round.
     const car = new Car(type, r, s.x, s.y, s.h + (!s.fwd && !s.withTraffic && r() < (s.angled ? 0.08 : s.perp ? 0.05 : 0.5) ? Math.PI : 0));
     if (s.bay && (car.type === 'van' || car.type === 'pickup')) return false;
-    if (!within(car) || !trunkClear(car) || touching(car)) return false;
+    if (!within(car) || !obstacleClear(car) || touching(car)) return false;
     // Nothing sticking out into a lane, where the traffic would have to squeeze past:
     // where the kerb or a mapped parking lane leaves no room, the street has none.
     if (car.circles().some(([x, y]) => !laneClear(x, y, car.r))) return false;

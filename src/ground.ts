@@ -15,6 +15,7 @@ import { PITCH_LOOKS } from './map/pitches.ts';
 import { coverGeometry } from './map/utility.ts';
 import type { UtilityMark } from './map/utility.ts';
 import type { StationTracks } from './stationTracks.ts';
+import { stairGeometry, type MappedStair } from './map/stairs.ts';
 
 export interface GroundTileData {
   areas: Record<string, Polygons | undefined>;
@@ -29,6 +30,7 @@ export interface GroundTileData {
   crossings?: Point2[][];
   marks?: Point2[][];
   utility?: UtilityMark[]; // surveyed covers and drains (pipeline/ipr_utility.py)
+  stairs?: MappedStair[];
 }
 export interface LevelMask { level: number; w: number; h: number; cells: Uint8Array; box: Bounds }
 // `ms` and `triangles`: what the tile's ground cost to build (dev panel and the TIN plan's baseline).
@@ -1070,6 +1072,12 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     add(strips(zebras(d.crossings || [], edges, [...(R.road || []), ...(R.sett || [])], box), 0.5, null, true), COLORS.paint);
     // Manhole covers and storm drains: all of the tile's in one mesh.
     add(coverGeometry(d.utility || [], edges.map((e) => e.pts), groundHeight ?? (() => 0)), COLORS.iron);
+    if (groundHeight && d.stairs?.length) {
+      const blocked = onPolygons([...(R.road ?? []), ...(R.sett ?? []), ...(A.water ?? []), ...buildings.map((b) => b.rings)]);
+      const stairs = stairGeometry(d.stairs, box, groundHeight, blocked);
+      add(stairs.body, COLORS.slab, 'concrete');
+      add(stairs.edges, COLORS.kerb, 'concrete');
+    } else order += 2;
 
     // Soft contact shadow where each wall meets the ground. The wider, fainter one that
     // used to darken courtyards and lanes is the sky view now (map/skyView.ts), which

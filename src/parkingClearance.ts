@@ -3,24 +3,25 @@ import type { DriveEdge } from './network.ts';
 import type { Point2, Bounds } from './map/geo.ts';
 import { TYPES } from './car.ts';
 import type { Car } from './car.ts';
-import type { TreeTrunk } from './contracts.ts';
 import { distanceToCarBody } from './treeEscape.ts';
 
-// A trunk inside the body can miss every sampled point on its outline.
-export function parkingTrunkClearance(trunks?: Iterable<TreeTrunk>) {
-  const index = new SpatialHash<TreeTrunk>();
+export interface ParkingObstacle { x: number; y: number; radius: number }
+
+// A trunk or landing inside the body can miss every sampled point on its outline.
+export function parkingObstacleClearance(obstacles?: Iterable<ParkingObstacle>) {
+  const index = new SpatialHash<ParkingObstacle>();
   let radius = 0;
-  for (const trunk of new Set(trunks)) {
-    index.add(trunk);
-    radius = Math.max(radius, trunk.radius);
+  for (const obstacle of new Set(obstacles)) {
+    index.add(obstacle);
+    radius = Math.max(radius, obstacle.radius);
   }
-  const candidates: TreeTrunk[] = [];
+  const candidates: ParkingObstacle[] = [];
   return (car: Car) => {
     if (!radius) return true;
     const [halfLength, halfWidth] = car.samples[0];
     candidates.length = 0;
     index.near(car.x, car.y, Math.hypot(halfLength, halfWidth) + radius, candidates);
-    return candidates.every((trunk) => distanceToCarBody(car, trunk.x, trunk.y) > trunk.radius);
+    return candidates.every((obstacle) => distanceToCarBody(car, obstacle.x, obstacle.y) > obstacle.radius);
   };
 }
 

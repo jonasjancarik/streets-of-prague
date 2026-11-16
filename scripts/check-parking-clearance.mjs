@@ -23,6 +23,7 @@ const { parkingClearance } = await import('../src/parkingClearance.ts');
 const { parkCars, Zones } = await import('../src/parking.ts');
 const { TileWorld } = await import('../src/tiles.ts');
 const { rng } = await import('../src/map/geo.ts');
+const { stairGeometry, stairLandings } = await import('../src/map/stairs.ts');
 // Load the shipped geometry in memory, without a renderer or HTTP server.
 globalThis.ProgressEvent = class extends Event { constructor(type, init) { super(type); Object.assign(this,init); } };
 const {loadCars,useKit}=await import('../src/car.ts');
@@ -60,11 +61,23 @@ reports.push('parking allows a normal kerb and rejects a corner over a drop');
 
 const { x: treeX, y: treeY } = ordinaryLot[0];
 const tree = { x: treeX, y: treeY, radius: 0.4 };
-const besideTree = park([], [], hillLot, 10, { trunks: [tree] }).cars;
+const besideTree = park([], [], hillLot, 10, { obstacles: [tree] }).cars;
 assert.ok(besideTree.length > 0, 'a planting pocket leaves the rest of the lot usable');
 assert.ok(besideTree.every((car) => car.x !== treeX || car.y !== treeY),
   'a trunk under the centre of a candidate car blocks that spot even when its outline is clear');
 reports.push('tree trunks inside parked car footprints are rejected');
+
+const flight = { pts: [[treeX, treeY + 1], [treeX, treeY + 7]], width: 2 };
+const besideStairs = park([], [], hillLot, 10, { obstacles: stairLandings([flight]) }).cars;
+assert.ok(besideStairs.length > 0 && besideStairs.every((car) => car.x !== treeX || car.y !== treeY),
+  'the mapped approach to a stair flight remains walkable between parked cars');
+const stairBox = [treeX - 10, treeY - 10, treeX + 10, treeY + 10];
+const ramp = (_x, y) => 0.4 * (y - treeY);
+const treads = stairGeometry([flight], stairBox, ramp, () => false);
+assert.ok(treads.body.index.length > 0 && treads.edges.index.length > 0, 'a mapped flight on a steady grade gets treads and nosings');
+assert.equal(stairGeometry([flight], stairBox, ramp, (_x, y) => y > treeY + 4).body.index.length, 0,
+  'stairs that would run into a road or building keep the base ground');
+reports.push('mapped stairs get treads and keep parking back from their landings');
 
 // The curve cuts across clear ground between the straight lanes; a safe corner
 // farther from it must remain available. Both trim distances match actual Route.

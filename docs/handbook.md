@@ -1359,6 +1359,7 @@ record the measurements, merge decisions and pending landmark asset activation.
   in. Sides tagged as having no parking (or parking mapped separately) get
   no kerbside cars, and no car is left sticking out into a traffic lane. Underground, multi-storey and rooftop car parks stay empty.
   A parked car's whole footprint must clear any tree trunks within its bay.
+  Parking also stays clear of the approaches to mapped outdoor stairways.
   The ground must also support the corners of the car. A normal kerb is fine,
   but a corner hanging over a retaining step rules out the spot.
   As in Prague, some cars stand half or fully on the pavement, often vans and often
@@ -1747,6 +1748,9 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   `--sides plane` reads the ground by a step from its own side's slope (`sampling` in
   `src/terrain.ts`, a trial, off in the game), and `--lines off` leaves a map's step
   lines out. `?nostepedges` turns the edges off.
+  Straight outdoor stairways with a usable ground profile get concrete treads
+  and visible nosings from their mapped walk edges (`src/map/stairs.ts`).
+  Walking still follows the smooth ground profile beneath the treads.
   Where the rules make a place worse than the
   terrain model alone (seen in the game), list it in `pipeline/terrain_keep.json` (a box
   in degrees and why) and it stays as the terrain model has it. A wall the survey doesn't
