@@ -475,9 +475,11 @@ that without a new renderer.
   Cars take less damage from collisions, with extra protection for the car you drive
   when touch controls are active. An explosion leaves
   a charred wreck that smoulders for a while and can't be driven. If your own car
-  catches fire, get out: still inside when it goes, you're wasted. The blast knocks
-  people over, hurts you if you're near, shoves the cars around and can set them going
-  too; blowing up a car you've crashed into is a crime, a police car more so
+  catches fire, get out: still inside when it goes, you're wasted. Every two seconds,
+  flames can set another vehicle within about 1.5 metres on fire. The blast knocks
+  people over, hurts you if you're near and shoves cars around. Vehicles within about
+  two metres of the exploding vehicle's body catch fire and can spread the fire further.
+  Blowing up a car you've crashed into is a crime, a police car more so
   (`src/fire.ts`).
 - **Fire brigade.** When a car catches fire, a fire engine is called from a few hundred
   metres away, drives to it by the streets, and its crew of three gets out and sprays

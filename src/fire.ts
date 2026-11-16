@@ -11,6 +11,7 @@ import { send, sendInstances } from './gpu.ts';
 export const SMOKING = 50; // damage at which a car starts to smoke
 export const BURNING = 90; // and catches fire (the police give up a car at the same point)
 const FUSE = [4, 6]; // seconds from catching fire to the explosion
+const SPREAD_INTERVAL = 2; // seconds between checks for cars beside the flames
 // A car nobody is driving burns this long, enough for a fire engine to get there.
 const LONG_FUSE = [45, 75];
 const LONG_RATE = 0.55; // those fires smoke and flame less thickly, so a few in view stay within the puffs' caps
@@ -21,7 +22,7 @@ const SMOULDER = 25; // seconds a wreck gives off smoke, flames for the first ha
 const WAIT = 60;
 const LAST = 8; // seconds of fuse that are kept back for the crew
 
-interface Blaze { fuse: number; t: number; emit: number; flame: number; wet: number; steam: number; rate: number; held: number }
+interface Blaze { fuse: number; t: number; emit: number; flame: number; wet: number; steam: number; rate: number; held: number; spread: number }
 interface Puff { x: number; y: number; z: number; vx: number; vy: number; vz: number; r0: number; r1: number; age: number; life: number; rgb: [number, number, number]; a: number }
 
 const VERT = /* glsl */ `
@@ -110,6 +111,7 @@ export interface FiresOptions {
   rng: () => number;
   // A car has caught fire.
   onIgnite?: (c: Car) => void;
+  onSpread: (c: Car, blamed: boolean) => void;
   // Whether a fire engine is on its way to this car, or its crew is at work on it.
   awaited?: (c: Car) => boolean;
   // A car has blown up; `blamed` if the player set it going.
@@ -122,14 +124,16 @@ export class Fires {
   smoke: Puffs; flames: Puffs;
   height: FiresOptions['height']; r: () => number;
   onIgnite: NonNullable<FiresOptions['onIgnite']>; onBlast: FiresOptions['onBlast'];
+  onSpread: FiresOptions['onSpread'];
   awaited: NonNullable<FiresOptions['awaited']>;
 
-  constructor({ scene, height, rng, onIgnite = () => {}, awaited = () => false, onBlast }: FiresOptions) {
+  constructor({ scene, height, rng, onIgnite = () => {}, awaited = () => false, onSpread, onBlast }: FiresOptions) {
     this.smoke = new Puffs(scene, 600, false);
     this.flames = new Puffs(scene, 300, true);
     this.height = height;
     this.r = rng;
     this.onIgnite = onIgnite;
+    this.onSpread = onSpread;
     this.awaited = awaited;
     this.onBlast = onBlast;
   }
@@ -141,7 +145,7 @@ export class Fires {
   // don't burn.)
   check(c: Car) {
     if (c.burnt || c.two === 'bike' || c.damage < SMOKING || this.blazes.has(c)) return;
-    this.blazes.set(c, { fuse: -1, t: 0, emit: 0, flame: 0, wet: 0, steam: 0, rate: 1, held: 0 });
+    this.blazes.set(c, { fuse: -1, t: 0, emit: 0, flame: 0, wet: 0, steam: 0, rate: 1, held: 0, spread: SPREAD_INTERVAL });
   }
 
   // `cars`: those that may have taken damage this step. `view`: where the camera looks,
@@ -168,11 +172,17 @@ export class Fires {
           const [lo, hi] = c.driven ? FUSE : LONG_FUSE;
           b.fuse = lo + this.r() * (hi - lo);
           b.rate = c.driven ? 1 : LONG_RATE;
+          b.spread = SPREAD_INTERVAL;
           this.onIgnite(c);
         }
         // (Not the quick fuse of your own car: that one goes off whoever is coming.)
         if (!(b.rate < 1 && b.fuse < LAST && this.hold(c, b, dt))) b.fuse -= dt;
         if (b.fuse <= 0) { this.explode(c, seen); b.t = 0; continue; }
+        b.spread -= dt;
+        if (b.spread <= 0) {
+          b.spread += SPREAD_INTERVAL;
+          this.onSpread(c, this.blamed.has(c));
+        }
         if (seen) this.emit(c, b, dt, 1 - b.wet / DOUSE, 1);
       } else if (seen) this.emit(c, b, dt, 0, (c.damage - SMOKING) / (BURNING - SMOKING));
       if (seen && b.steam > 0 && !c.burnt) this.steam(c, b, dt);
