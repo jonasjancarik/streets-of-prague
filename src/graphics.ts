@@ -189,7 +189,7 @@ export class Graphics {
   tier: Tier;
   // The player's choice of water, or null to follow the graphics tier.
   private waterChoice: boolean | null = null;
-  get water() { return this.waterChoice ?? (this.tier !== 'low' && this.tier !== 'lowest'); }
+  get water() { return this.waterChoice ?? this.tier !== 'lowest'; }
   reflections: Reflections = 'lights';
   private clutter: boolean | null = null; // ?clutter=on|off
   private auto: AutoTier;

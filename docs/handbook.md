@@ -164,7 +164,7 @@ Graphics (<kbd>G</kbd> cycles it, remembered in the browser):
 | Lamps' light map | 2048² | 1024² | 1024² | 1024² | 1024² |
 | Cones of light in the air, glints on cars and wet ground | On | Off | Off | Off | Off |
 | Bloom round lights and glints, darker corners (WebGPU) | On | Off | Off | Off | Off |
-| Waves and glitter on the river, until you choose | On | On | On | Off | Off |
+| Waves and glitter on the river, until you choose | On | On | On | On | Off |
 | Sprays of leaves and needles on trees and shrubs seen from above | On | Off | Off | Off | Off |
 | Shadows that soften with distance from what casts them | On | Off | Off | Off | Off |
 | A soft shade under every car | On | On | On | On | Off |
@@ -182,7 +182,7 @@ game at 30 frames a second (Chrome's Energy Saver does), a frame whose work fits
 half the time stays at its tier.
 `?graphics=auto|ultra|high|medium|low|lowest` overrides it for one visit; `?dpr=1` fixes
 only the pixel ratio. The Water setting turns on waves, sun glitter and lamp reflections on
-the river (`src/webgpu/water.ts`; WebGPU only, not on Lowest; on by default from Medium
+the river (`src/webgpu/water.ts`; WebGPU only, not on Lowest; on by default from Low
 through Ultra; `?water=on|off` for one visit).
 
 Every pixel ends with the same tone curve at every tier but Lowest (`src/grade.ts`): a

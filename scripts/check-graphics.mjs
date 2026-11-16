@@ -21,7 +21,7 @@ const check = `(async () => {
     assert(d.sky.sun.shadow.map.width === size, tier + ': actual shadow size');
     assert(d.sky.sun.shadow.radius === blur, tier + ': shadow edge softening');
     assert(DIRT.value === look && LEAVES.value === look && ROOF_DETAIL.value === look, tier + ': detail');
-    const waves = ['ultra', 'high', 'medium'].includes(tier);
+    const waves = tier !== 'lowest';
     assert(g.water === waves && WATER.value === Number(waves), tier + ': default water');
     assert(LAMP_SHADOWS.value === cars && g.crowd === crowd, tier + ': lamps/crowd');
     assert(r.getPixelRatio() === 1, tier + ': fixed DPR');
@@ -74,11 +74,10 @@ const check = `(async () => {
   assert(g.tier === 'high', 'Auto goes no higher than High');
   g.set('high');
   g.setWater(false);
-  g.set('medium');
-  assert(!g.water && WATER.value === 0, 'Water Off overrides Medium');
-  g.setWater(true);
   g.set('low');
-  assert(g.water && WATER.value === 1, 'Water On overrides Low');
+  assert(!g.water && WATER.value === 0, 'Water Off overrides Low');
+  g.setWater(true);
+  assert(g.water && WATER.value === 1, 'Water On restores waves on Low');
   g.set('lowest');
   assert(WATER.value === 0, 'Lowest skips water effects');
   return 'Graphics checks passed: ' + (r.backend ? 'WebGPU' : 'WebGL');
