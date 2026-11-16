@@ -823,8 +823,10 @@ record the measurements, merge decisions and pending landmark asset activation.
 - **Buildings** come from IPR Praha's open 3D model (CityGML LOD3: real roofs, towers
   and domes), which covers the whole city. OSM buildings that the model doesn't have
   (newer ones, sheds, anything past the city limits) are extruded from their footprints.
-- **Trees** are IPR's surveyed ones (about 171,000 on city land, `pipeline/ipr_trees.py`)
-  plus OSM's; where both have a tree within 2.5 m, IPR's stands. IPR says which are
+- **Trees** are IPR's surveyed ones (`pipeline/ipr_trees.py`)
+  plus OSM's; where both have a tree within 2.5 m, IPR's stands. On Národní, the build
+  skips five misplaced OSM nodes in the travel lane and uses IPR's surveyed trunks
+  between the parking bays. IPR says which are
   conifers and which fruit trees, and so does OSM sometimes (`leaf_type`, `genus`).
   Conifers are their own shape (`pineGeometry` in `src/map/vegetation.ts`, evergreen in
   winter), fruit trees are small. The woods, parks and gardens are filled up with made-up
@@ -832,6 +834,7 @@ record the measurements, merge decisions and pending landmark asset activation.
   "Young woods" under Unmapped ground) get small, dense ones. The dark woodland floor fades out
   over the grass beside it (`woodEdges` in `src/ground.ts`). Rebuild them with
   `uv run build_tiles.py <area> --layers ground`, then `ipr_terrain.py <area>`.
+  Run `uv run ipr_trees.py --refresh` first to fetch the latest IPR inventory.
   A crown's top is where the surface models have it; its lower part is drawn out downwards
   in the shaders to where a city tree's crown begins, a sixth of the tree's height above the
   ground and never under 2.2 m (`CROWN_BASE` in `src/map/vegetation.ts`). Left as made for
@@ -1355,6 +1358,7 @@ record the measurements, merge decisions and pending landmark asset activation.
   perpendicular. Angled bays slant forwards along the lane beside them, so cars nose
   in. Sides tagged as having no parking (or parking mapped separately) get
   no kerbside cars, and no car is left sticking out into a traffic lane. Underground, multi-storey and rooftop car parks stay empty.
+  A parked car's whole footprint must clear any tree trunks within its bay.
   As in Prague, some cars stand half or fully on the pavement, often vans and often
   at corners or where the kerb is otherwise empty. Every half minute or so, one in
   view sets off along the pavement at walking pace before it bumps down into the

@@ -1465,6 +1465,7 @@ export class TileWorld {
     const parking = parkCarsSteps({
       data, edges, clearanceEdges, zones, buildings: location.search.includes('oldparking') ? null : nearBuildings, r: rng(Math.floor(hash(`${this.area}/${k}`) * 1e9)), night: this.night,
       shares: new Map((t.sections ?? []).map((s) => [s.code, s.share])), inside, height: shade?.sample,
+      trunks: land.trunkCells.values(),
       // No parking inside passages, or at a bus stop.
       solid: (x, y) => (inside(x, y) ? grid.at(x, y) !== 0 || inPassage(t.passages || [], x, y, 1) || !!this.noParking?.(x, y) : false),
     });

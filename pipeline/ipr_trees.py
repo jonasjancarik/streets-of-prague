@@ -1,7 +1,7 @@
 """Trees from IPR Praha's open data (Hosted/OPK_CUR_OPK_SMZ_VP_B, kod_vp 71): about
 171,000 trees on city-managed land, surveyed as points. OSM has a tenth as many.
 
-    uv run ipr_trees.py             # downloads the whole city to .cache/trees/trees.json
+    uv run ipr_trees.py --refresh   # replaces the cached citywide inventory on success
 
 build_tiles.py merges them with OSM's trees (merge below): where both have a tree
 within DUPLICATE metres, IPR's stands (its position is surveyed), and OSM's is left
@@ -11,6 +11,7 @@ A tree is [x, y] in local metres, or [x, y, kind] when the kind is known:
 1 = conifer, 2 = fruit tree. Everything else is a broadleaf tree with no third number.
 """
 
+import argparse
 import json
 import time
 from pathlib import Path
@@ -29,9 +30,9 @@ DUPLICATE = 2.5
 KINDS = {1: 1, 3: 2}
 
 
-def download():
+def download(*, refresh=False):
     """[[lon, lat, kind]] for every tree, cached."""
-    if CACHE.exists():
+    if CACHE.exists() and not refresh:
         return json.loads(CACHE.read_text())
     CACHE.parent.mkdir(parents=True, exist_ok=True)
     out, offset = [], 0
@@ -97,4 +98,6 @@ def merge(osm, bbox, tf):
 
 
 if __name__ == "__main__":
-    print(len(download()), "trees")
+    parser = argparse.ArgumentParser(description="Cache the IPR tree inventory.")
+    parser.add_argument("--refresh", action="store_true", help="fetch a fresh inventory even if cached")
+    print(len(download(refresh=parser.parse_args().refresh)), "trees")

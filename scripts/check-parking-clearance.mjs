@@ -6,6 +6,9 @@ import { registerHooks } from 'node:module';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 registerHooks({ load(url, context, next) {
+  if (url.endsWith('.json') && url.startsWith(new URL('../src/', import.meta.url).href)) {
+    return { format: 'json', shortCircuit: true, source: readFileSync(new URL(url), 'utf8') };
+  }
   if (!url.endsWith('.ts')) return next(url, context);
   const source = readFileSync(new URL(url), 'utf8').replaceAll('import.meta.env', '({})');
   return { format: 'module', shortCircuit: true, source: ts.transpileModule(source, {
@@ -45,6 +48,14 @@ assert.deepEqual(positions(park([], [], hillLot, 10, { height: (x, y) => .08 * (
 assert.equal(park([], [], hillLot, 10, { height: (x, y) => x + y }).cars.length, 0,
   'the lot outline does not make a steep hillside suitable for parking');
 reports.push('parking remains available on ordinary slopes and rejects steep ground');
+
+const { x: treeX, y: treeY } = ordinaryLot[0];
+const tree = { x: treeX, y: treeY, radius: 0.4 };
+const besideTree = park([], [], hillLot, 10, { trunks: [tree] }).cars;
+assert.ok(besideTree.length > 0, 'a planting pocket leaves the rest of the lot usable');
+assert.ok(besideTree.every((car) => car.x !== treeX || car.y !== treeY),
+  'a trunk under the centre of a candidate car blocks that spot even when its outline is clear');
+reports.push('tree trunks inside parked car footprints are rejected');
 
 // The curve cuts across clear ground between the straight lanes; a safe corner
 // farther from it must remain available. Both trim distances match actual Route.

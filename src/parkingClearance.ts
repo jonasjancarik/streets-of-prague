@@ -1,7 +1,28 @@
-import { junctionCurve, junctionTrim, segDist } from './network.ts';
+import { junctionCurve, junctionTrim, segDist, SpatialHash } from './network.ts';
 import type { DriveEdge } from './network.ts';
 import type { Point2, Bounds } from './map/geo.ts';
 import { TYPES } from './car.ts';
+import type { Car } from './car.ts';
+import type { TreeTrunk } from './contracts.ts';
+import { distanceToCarBody } from './treeEscape.ts';
+
+// A trunk inside the body can miss every sampled point on its outline.
+export function parkingTrunkClearance(trunks?: Iterable<TreeTrunk>) {
+  const index = new SpatialHash<TreeTrunk>();
+  let radius = 0;
+  for (const trunk of new Set(trunks)) {
+    index.add(trunk);
+    radius = Math.max(radius, trunk.radius);
+  }
+  const candidates: TreeTrunk[] = [];
+  return (car: Car) => {
+    if (!radius) return true;
+    const [halfLength, halfWidth] = car.samples[0];
+    candidates.length = 0;
+    index.near(car.x, car.y, Math.hypot(halfLength, halfWidth) + radius, candidates);
+    return candidates.every((trunk) => distanceToCarBody(car, trunk.x, trunk.y) > trunk.radius);
+  };
+}
 
 // Built once per parking pass, including the neighbouring tiles' roads. No live
 // graph lookups or rebuilding while cars move. Bridges/tunnels occupy another level.

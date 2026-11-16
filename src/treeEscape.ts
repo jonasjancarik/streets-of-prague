@@ -6,6 +6,16 @@ const CONTACT_GAP = 0.45; // s between contacts while the car bounces off the tr
 const STUCK_DISTANCE = 0.45; // m from the start of the attempt
 const CLEARANCE = 0.15; // m beyond the trunk's cells, including the small collision pushback
 
+// Distance from a point to the car's rectangular collision outline, zero inside it.
+export function distanceToCarBody(car: Car, x: number, y: number) {
+  const dx = x - car.x, dy = y - car.y;
+  const c = Math.cos(car.h), s = Math.sin(car.h);
+  const [halfLength, halfWidth] = car.samples[0];
+  const along = Math.max(0, Math.abs(dx * c + dy * s) - halfLength);
+  const across = Math.max(0, Math.abs(dy * c - dx * s) - halfWidth);
+  return Math.hypot(along, across);
+}
+
 export class TreeEscape {
   ignored?: TreeTrunk;
   private direction = 0;
@@ -19,7 +29,8 @@ export class TreeEscape {
   get seeking() { return this.direction !== 0 && !this.ignored; }
 
   begin(car: Car, direction: number) {
-    if (this.ignored && (car.level || this.clearOf(car, this.ignored))) this.ignored = undefined;
+    const trunk = this.ignored;
+    if (trunk && (car.level || distanceToCarBody(car, trunk.x, trunk.y) > trunk.radius + CLEARANCE)) this.ignored = undefined;
     if (!direction || direction !== this.direction) this.tree = undefined;
     this.direction = direction;
     this.touched = undefined;
@@ -50,14 +61,5 @@ export class TreeEscape {
       this.ignored = this.touched;
       this.tree = undefined;
     }
-  }
-
-  private clearOf(car: Car, trunk: TreeTrunk) {
-    const dx = trunk.x - car.x, dy = trunk.y - car.y;
-    const c = Math.cos(car.h), s = Math.sin(car.h);
-    const [halfLength, halfWidth] = car.samples[0];
-    const along = Math.max(0, Math.abs(dx * c + dy * s) - halfLength);
-    const across = Math.max(0, Math.abs(dy * c - dx * s) - halfWidth);
-    return Math.hypot(along, across) > trunk.radius + CLEARANCE;
   }
 }

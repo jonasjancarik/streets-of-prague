@@ -75,6 +75,10 @@ ARCADE = 3.0
 TRAM_PASSAGE = 3.6
 TRAM_REACH = 3.0
 COBBLES = ("sett", "cobblestone", "unhewn_cobblestone", "paving_stones")
+# These OSM nodes put trees in the Národní traffic lane. IPR's surveyed trunks
+# span the real row at the kerb, beyond the normal 2.5 m duplicate check.
+MISPLACED_TREES = {"node/12052510184", "node/12052661477", "node/12052681021",
+                   "node/12053152658", "node/12053175674"}
 SQUARE_EDGE = 0.5  # m: avoid a remnant of a route ribbon along a square's edge
 # `meadow` (meadows, grassland, scrub) and `lawn` (mown grass, and the lawns of housing
 # estates) are kept apart from `park` and `garden` because they dry out differently in
@@ -381,6 +385,8 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             continue
 
         if col(row, "natural") == "tree" and isinstance(g, Point):
+            if osm_id in MISPLACED_TREES:
+                continue
             tree = [round(g.x, 1), round(g.y, 1)]
             if _conifer(col(row, "leaf_type"), col(row, "genus"), col(row, "species")):
                 tree.append(1)
