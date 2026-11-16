@@ -516,7 +516,8 @@ that without a new renderer.
   (old-town bins are kept in the passage or the courtyard) and wheel a bin out to the
   lift at the back, which tips it. They take the bin back in, sometimes come out with a
   second one, then climb back on. Cars behind wait, or get past where the street is
-  wide enough. If the cart is crashed into or set on fire, the crew walk off and
+  wide enough. That wait also applies to traffic joining the cart's lane at a
+  junction. If the cart is crashed into or set on fire, the crew walk off and
   leave any bin where it stands; so do the ones on foot when you take it. Take it while
   they ride on the steps and they stay on, holding tight, with the amber lamps still
   going. Past about 40 km/h, or with a hard stop, a sharp swerve or a crash, they fall
