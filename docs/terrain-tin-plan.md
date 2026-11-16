@@ -631,3 +631,23 @@ back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change w
   0.5 m). The measures for walls were made for, and the rules tuned on, these nine places,
   which favours today's ground. A TIN still looks like the way to get the shape between
   points right, but with today's heights on the streets and at walls, as stage 1 plans.
+
+  **Road samples and terrain window trials (17 November 2026).** The current
+  57,188-street check found six steps over 1 m. Of the 9.9 million bare-earth
+  LiDAR comparisons on ground roads, 99.1% were within 0.3 m. The flagged spots
+  still matter: street panoramas show continuous roads at K Celinám,
+  K Přehradám and Kbelská, while the game shows a high wall, an uneven deck
+  approach and a distorted cutting respectively.
+
+  | Worst step within the trial window | 4 m grid | 2 m grid |
+  |---|---:|---:|
+  | K Celinám | 1.32 m | 3.01 m |
+  | K Přehradám | 1.15 m | 1.64 m |
+  | Kbelská | 0.35 m | 1.02 m |
+
+  Seven windows with top strips 4, 6 and 8 m wide did not find a better default.
+  Keeping two plain grid corners around a road cut K Celinám's worst step to
+  0.74 m but left a 2.9 m wave. Cutting the strips back from the lane was worse:
+  the map made a 1.64 m wall step across K Celinám. The ground on either side of
+  the wall needs separate support, especially where the road is narrower than a
+  grid cell. These trials did not improve both the road and the adjacent wall.
