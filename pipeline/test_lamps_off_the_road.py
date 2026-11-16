@@ -1,7 +1,7 @@
 import sys
 import unittest
 
-from shapely.geometry import box
+from shapely.geometry import LineString, box
 
 from street_lighting import HUNG, off_the_road, posts_in_road
 
@@ -53,6 +53,24 @@ class OffTheRoadTest(unittest.TestCase):
 
 
 class CarriagewaysTest(unittest.TestCase):
+    def test_cable_street_lamps_hang_even_outside_the_mapped_roadway(self):
+        from build_lamps import suspend_street_lamps
+
+        lamps = [(10, 2.4), (20, 4), (30, 2.4)]
+        kinds = [0, 0, 1]
+        suspend_street_lamps(lamps, kinds, [LineString([(0, 0), (100, 0)])])
+        self.assertEqual(lamps, [(10, 0), (20, 4), (30, 2.4)])
+        self.assertEqual(kinds, [HUNG, 0, 1])
+
+    def test_a_paired_cable_keeps_two_heads_across_the_street(self):
+        from build_lamps import PAIRED_CABLE, PAIR_OFFSET, suspend_street_lamps
+
+        lamps = [(10, 3.5), (-2, 0)]
+        kinds = [0, 0]
+        suspend_street_lamps(lamps, kinds, [], [LineString([(0, 0), (100, 0)])])
+        self.assertEqual(lamps, [(10, PAIR_OFFSET), (10, -PAIR_OFFSET), (-2, 0)])
+        self.assertEqual(kinds, [PAIRED_CABLE, PAIRED_CABLE, 0])
+
     def test_a_street_split_at_a_bend_has_no_gap_beside_the_joint(self):
         # Sokolská: one street as two ways meeting at a slight bend, a post 3.3 m off the
         # centre line by the joint, on an asphalt band wider than the street.

@@ -768,6 +768,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   street's asphalt or setts counts as roadway 3.5 m wide, so the lamps over the tracks
   where only trams and buses run (Lidická by Anděl) hang too; the game strings their
   cables across the track to the first wall each way, as it does across a street.
+  On Plaská and Mělnická, the surveyed lamps along the centre line are treated as
+  cable-mounted even where they fall outside the mapped carriageway.
+  On the Zborovská block by the police station, each cable carries two lamps across
+  the width of the street.
   Where there are still none, the game adds its own on lit
   streets and paths: hung on cables between houses that stand close, on poles
   elsewhere, small globes along footpaths. Lit means tagged lit in OSM, or untagged
