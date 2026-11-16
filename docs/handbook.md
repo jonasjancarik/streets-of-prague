@@ -162,7 +162,7 @@ Graphics (<kbd>G</kbd> cycles it, remembered in the browser):
 | Drifting mist, mist over the river, raindrops' rings in puddles | On | On | On | On | Off |
 | Shadows in lamplight | Cars, people, trams, posts | Cars | Soft, cars | Soft, cars | Off |
 | Lamps' light map | 2048² | 1024² | 1024² | 1024² | 1024² |
-| Cones of light in the air, glints on cars and wet ground | On | Off | Off | Off | Off |
+| Cones of light in the air, glints on cars and wet ground (WebGPU) | On | On | Off | Off | Off |
 | Bloom round lights and glints, darker corners (WebGPU) | On | On | Off | Off | Off |
 | Waves and glitter on the river, until you choose | On | On | On | On | Off |
 | Sprays of leaves and needles on trees and shrubs seen from above | On | On | Off | Off | Off |
@@ -791,10 +791,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   with only the shadows that climb (those of lights lower than the car's roof, the
   headlights), and what stands more than about 3 m above the lit ground (a tree's crown
   over a parked car, the wall behind a van in someone's headlights) takes its light
-  from that copy instead. On Ultra the headlights' cones in the air stop at the first
-  car in their way. The
-  lamps come on at dusk (earlier under heavy cloud), and a share of the windows is lit
-  by the hour, most in the evening.
+  from that copy instead. On High and Ultra the headlights' cones in the air stop at
+  the first car in their way. The lamps come on at dusk (earlier under heavy cloud),
+  and a share of the windows is lit by the hour, most in the evening.
 - **Tiles.** The map streams in 250 m tiles (`src/tiles.ts`) around the camera. Each
   tile has its own ground, buildings, tree-page leases, collision grid, parked cars and piece of
   the street graphs (joined across tiles by OSM node ids), so start-up doesn't depend

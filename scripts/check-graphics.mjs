@@ -8,7 +8,7 @@ const url = (arg >= 0 ? process.argv[arg + 1] : null) || 'http://localhost:5201/
 const check = `(async () => {
   const d = window.__drive, r = d.renderer, g = d.graphics;
   const { DIRT, LEAVES, ROOF_DETAIL, WATER } = await import('/src/shading.ts');
-  const { LAMP_SHADOWS } = await import('/src/lamps.ts');
+  const { LAMP_SHADOWS, LIGHT_FX } = await import(performance.getEntriesByType('resource').find(e => new URL(e.name).pathname === '/src/lamps.ts').name);
   const { POST } = await import(performance.getEntriesByType('resource').find(e => new URL(e.name).pathname === '/src/post.ts').name);
   const { CANOPY_LEAVES } = await import(performance.getEntriesByType('resource').find(e => new URL(e.name).pathname === '/src/trees.ts').name);
   const { AutoTier } = await import('/src/graphics.ts');
@@ -28,6 +28,7 @@ const check = `(async () => {
     assert(POST.on === (tier === 'high' || tier === 'ultra'), tier + ': default bloom');
     assert(CANOPY_LEAVES.value === (tier === 'high' || tier === 'ultra'), tier + ': default canopy sprays');
     assert(LAMP_SHADOWS.value === cars && g.crowd === crowd, tier + ': lamps/crowd');
+    assert(LIGHT_FX.value === Number(tier === 'high' || tier === 'ultra'), tier + ': beams and glints');
     assert(r.getPixelRatio() === 1, tier + ': fixed DPR');
     if (r.backend?.isWebGPUBackend) {
       const target = r._frameBufferTargets.get(r._canvasTarget);

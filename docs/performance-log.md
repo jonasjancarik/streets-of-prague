@@ -1295,3 +1295,12 @@ averaged 98.6 → 97.6 ms/frame. With the order reversed, the comparison was
 96.0 → 98.0 ms/frame. The difference changed direction across runs. High now
 enables the sprays by default. This measures steady rendering after warm-up.
 
+## Headlight beams and wet glints on High, 16 November 2026
+
+Pixel 5 over ADB, Chrome WebGPU, High at its default 2× pixel ratio, driving from
+Újezd in rain at 22:00. The setup verified a moving car, four beam instances,
+27 glints and fully wet ground. Alternating four-second windows after warm-up,
+effects off → on averaged 261.0 → 264.5 ms/frame. With the order reversed the
+comparison was 259.4 → 264.0 ms/frame. The 1–2% cost was small compared with the
+roughly four FPS baseline. High now enables the beams and glints by default.
+

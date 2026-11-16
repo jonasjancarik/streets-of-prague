@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { send, sendInstances } from './gpu.ts';
 
-// What the lights do besides lighting the ground, on the Ultra graphics tier: a faint
+// What the lights do besides lighting the ground on High and Ultra: a faint
 // cone in the air in front of every headlight and round the emergency lights, stronger
 // in rain and mist, and the glint of each street lamp where the camera would see it
 // mirrored: on the roof of a car that is at that spot, and on wet ground.
