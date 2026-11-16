@@ -251,7 +251,7 @@ export class Graphics {
     MIRROR_ON.value = look && this.reflections === 'mirror' ? 1 : 0;
     wantStrips(look); // (the cars' mirrored streets)
     PROBE_ON.value = this.tier === 'ultra' ? 1 : 0;
-    POST.value = this.tier === 'ultra' ? 1 : 0; // (and the bloom: post.ts)
+    POST.value = this.tier === 'ultra' || this.tier === 'high' ? 1 : 0;
     CAR_SHADE.value = look ? 1 : 0; // (the soft shade under the cars: car.ts)
     CANOPY_LEAVES.value = this.tier === 'ultra'; // (and the sprays of leaves on the crowns seen from above: trees.ts) // (and on Ultra the real one round the middle of the view)
     // (The lamps resize their maps at the next frame; the materials are bound afresh below,

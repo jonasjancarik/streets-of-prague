@@ -1276,3 +1276,13 @@ Checks: `check-graphics` (WebGPU and WebGL, on a freshly started server),
 `check-display-text` fail on `main` too (Node 26 and a JSON import). Not measured: Windows,
 Low and Lowest, Ultra on the phone, the leaf sprays in summer.
 
+## Bloom on High, 16 November 2026
+
+Pixel 5 over ADB, Chrome WebGPU, High at its default 2× pixel ratio, driving from
+Újezd. Bloom and the darker corners switched together in alternating four-second
+windows after warming both states. In clear daylight, bloom off → on averaged
+112.4 → 112.3 ms/frame. In rain at 22:00, it averaged 273.3 → 260.9 ms/frame.
+Both states were under 4 FPS in the rain, which makes that run a poor measure of
+small costs. An earlier rainy run was discarded because the driver never got into
+the car. High now enables the pass by default.
+

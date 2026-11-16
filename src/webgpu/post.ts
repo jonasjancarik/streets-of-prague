@@ -1,4 +1,4 @@
-// The finished picture on Ultra (../post.ts): the scene is drawn to a target of its own,
+// The finished picture on High and Ultra (../post.ts): the scene is drawn to a target of its own,
 // what is brighter than a threshold spills light round itself (three.js's bloom: five
 // blurred copies at falling resolutions), then the tone curve runs, and the corners are
 // darkened a little.

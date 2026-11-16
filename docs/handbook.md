@@ -163,7 +163,7 @@ Graphics (<kbd>G</kbd> cycles it, remembered in the browser):
 | Shadows in lamplight | Cars, people, trams, posts | Cars | Soft, cars | Soft, cars | Off |
 | Lamps' light map | 2048² | 1024² | 1024² | 1024² | 1024² |
 | Cones of light in the air, glints on cars and wet ground | On | Off | Off | Off | Off |
-| Bloom round lights and glints, darker corners (WebGPU) | On | Off | Off | Off | Off |
+| Bloom round lights and glints, darker corners (WebGPU) | On | On | Off | Off | Off |
 | Waves and glitter on the river, until you choose | On | On | On | On | Off |
 | Sprays of leaves and needles on trees and shrubs seen from above | On | Off | Off | Off | Off |
 | Shadows that soften with distance from what casts them | On | Off | Off | Off | Off |
@@ -194,7 +194,7 @@ is properly dark. The numbers are in one place for the WebGPU tone-mapping node
 the screen (fog, rain, smoke). `?grade=old` brings back the curve before it (an extended
 Reinhard, under which everything sunlit sat on the shoulder and read as flat).
 
-On Ultra the frame goes through one more pass (`src/webgpu/post.ts`, three.js's
+On High and Ultra the frame goes through one more pass (`src/webgpu/post.ts`, three.js's
 `RenderPipeline`): the scene is drawn to a target of its own, what is brighter than a
 threshold spills light round itself (bloom: by day only glints and the brightest plaster,
 at night the lamps' pools, lit windows and headlights), then the tone curve runs and the

@@ -9,6 +9,7 @@ const check = `(async () => {
   const d = window.__drive, r = d.renderer, g = d.graphics;
   const { DIRT, LEAVES, ROOF_DETAIL, WATER } = await import('/src/shading.ts');
   const { LAMP_SHADOWS } = await import('/src/lamps.ts');
+  const { POST } = await import(performance.getEntriesByType('resource').find(e => new URL(e.name).pathname === '/src/post.ts').name);
   const { AutoTier } = await import('/src/graphics.ts');
   const assert = (ok, message) => { if (!ok) throw new Error(message); };
   for (const [tier, size, samples, look, cars, crowd, blur] of [
@@ -23,6 +24,7 @@ const check = `(async () => {
     assert(DIRT.value === look && LEAVES.value === look && ROOF_DETAIL.value === look, tier + ': detail');
     const waves = tier !== 'lowest';
     assert(g.water === waves && WATER.value === Number(waves), tier + ': default water');
+    assert(POST.on === (tier === 'high' || tier === 'ultra'), tier + ': default bloom');
     assert(LAMP_SHADOWS.value === cars && g.crowd === crowd, tier + ': lamps/crowd');
     assert(r.getPixelRatio() === 1, tier + ': fixed DPR');
     if (r.backend?.isWebGPUBackend) {
