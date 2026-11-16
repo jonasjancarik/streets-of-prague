@@ -110,8 +110,14 @@ SURFACES = {
     "010000000503": "road", "010000032003": "roadside", "010000000703": "pavement",
     "010000000903": "cycleway", "010000001103": "parking", "010000001303": "island",
     "010000001503": "median", "010000001703": "ramp", "010000002403": "tram",
-    "010000005303": "platform", "010000005503": "handling",
+    "010000005303": "platform",
 }
+# Not handling areas (010000005503, "manipulační plocha": yards, depots, loading areas):
+# they are surveyed along their rims only, and a yard 100 m across took its rim's average,
+# 1.5 m under the ground in Modřany (49.99402, 14.42114) where the terrain model and the
+# LiDAR agree to a centimetre. Without them, plain ground within 0.3 m of the LiDAR in
+# eleven test windows 68.2 → 68.8 % (76.3 → 77.2 % with `--dense`), walls and streets as
+# before.
 # Lines measured on the surface they bound. Walls, buildings and railings are left out:
 # theirs may be the height of the wall's crown or of something standing on the ground.
 ON_GROUND = {"010000030402": "kerb", "010000032302": "inner"}

@@ -544,3 +544,28 @@ back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change w
   streets about the same (they take the LiDAR's road): waves over 0.6 m 56 → 61,
   leaning over 15 % 44 → 46, steps over 1 m 7 → 7. From above the pictures hardly
   differ (`docs/evidence/tin/dense/cmp-*.jpg`, local). Not yet built for the city.
+
+  Tuning the rules for the dense model (same eleven windows, averages). The rules took
+  the ground further from the LiDAR because two of them were made for the coarse one:
+  - **Handling areas** (yards, depots, loading areas) took the average of their rims,
+    surveyed only there; the biggest patches the rules made worse were all of them (a
+    yard in Modřany 1.5 m under the ground). Left to the terrain model now, with either
+    model: plain ground within 0.3 m 68.2 → 68.8 % coarse, 76.3 → 77.2 % dense, walls
+    and streets as before.
+  - **The walls' reach** (`REACH`, 10 m): the dense model's ramps at walls are narrow,
+    and 4 m or 2 m took the terraces within 0.3 m of the LiDAR 47 → 53–55 % (over 1 m
+    off 29 → 16–18 %). But the walls' tops sag more against the survey (over 1 m 410 →
+    580 m at 4 m, 895 m at 2 m): next to a wall the LiDAR is a ramp too, and the
+    survey's top should win. Left at 10 m.
+  - **Feathering** beside surveyed streets costs 1.4 points of plain ground, but
+    without it the streets wave more (over 0.6 m 61 → 66). Kept. `FEATHER` 6 m and
+    `FEATHER_BLUR` 2 m: no better.
+  - Keeping the terrain model's shape across a surface, moved by how far the survey's
+    points round it are off it, instead of averaging them: plain ground +0.2, terraces
+    −2 points. Dropped. Banks (`BANK` 4 m), `INLAND` 8 m, `--no-level`,
+    `--no-scan-streets`: no difference.
+
+  With the dense model the walls' step comes out under half its usual height along 398
+  m of the measured walls (358 coarse): worse round Vyšehrad (+24), Holešovice (+17)
+  and Beneše (+9), better at Na Veselí, Modřany and Linhartova. The dense model finds
+  more retaining walls (round Vyšehrad 7.9 → 9.0 km).
