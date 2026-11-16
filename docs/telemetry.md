@@ -20,7 +20,7 @@ every field of each and is the only place the format is defined.
 
 | Report | When | What it holds |
 |---|---|---|
-| `start` | the game begins after the start screen | renderer (WebGPU, WebGL 2, or the legacy WebGL renderer), graphics card name, graphics setting and level, language, keyboard or touch, new or continued game, browser and its major version, operating system, the site the visitor came from, loading time, screen size, pixel ratio, memory and processor cores as the browser reports them |
+| `start` | the game begins after the start screen | renderer (WebGPU, WebGL 2, or the legacy WebGL renderer), graphics card name, graphics setting and level, language, keyboard or touch, new or continued game, browser and its major version, operating system, the site the visitor came from, loading time, screen size, pixel ratio, memory and processor cores as the browser reports them, starting weather, in-game month and hour, and the source of each of those three values |
 | `frames` | the tab is hidden or closed | time played, frames drawn, middle and 95th-percentile frame time, frames over 100 ms and over 250 ms, how often Auto changed the graphics level, map tiles that failed to load, how many times Auto kept the level because slow frames were waiting rather than working (the browser or the screen holding the game at 30 frames a second; WebGPU only); the frames over 100 ms by what made them long (below) |
 | `play` | with `frames` | seconds on foot, driving, on a tram, in a taxi and on anything else; metres travelled; cars wrecked, people knocked over, arrests, deaths; money; the most stars reached; tickets bought; games saved by hand |
 | `activity` | with `frames`, one for each thing done or paid for | `did`: the name of something the player did, how many times, and how many seconds into the session the first time. `spent`: what money went on, how many payments, the first one's time and the amount in Kč |
@@ -31,6 +31,17 @@ every field of each and is the only place the format is defined.
 sent several times (each time the tab is hidden); `seq` counts them and the last one is
 the session. Activities that changed since the last time go out together in one request
 (`rows`, 40 at most).
+
+### Starting conditions
+
+The start report records the weather, calendar month (1–12) and in-game hour
+(0–23) when the game begins. Each has its own source. A player choice includes
+selecting live weather and choosing “Now” when the link does not specify a time.
+Untouched choices and automatic fallbacks use the default source. A shared link
+can supply weather, date or time independently. A continued game uses the saved
+conditions where available. Older saves without a date keep the date from the
+link or the default. The dashboard breaks down counts for each value by its source
+and leaves older reports without these fields out of the starting conditions tables.
 
 ### What made a frame long
 

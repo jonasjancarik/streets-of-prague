@@ -18,11 +18,14 @@ function pragueNow() {
 
 export class Clock {
   t: number;
+  readonly linkedTime: boolean;
 
   constructor(params: URLSearchParams) {
     let { day, sec } = pragueNow();
-    if (params.has('night') && !params.has('time')) sec = 1.5 * 3600;
+    const linkedNight = params.has('night') && !params.has('time');
+    if (linkedNight) sec = 1.5 * 3600;
     const t = (params.get('time') || '').match(/^(\d{1,2})[:.](\d{2})$/);
+    this.linkedTime = linkedNight || !!t;
     if (t) sec = (+t[1] % 24) * 3600 + +t[2] * 60;
     const d = DAYS.findIndex((x) => x.toLowerCase() === (params.get('day') || '').slice(0, 3).toLowerCase());
     if (d >= 0) day = d;

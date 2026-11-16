@@ -97,9 +97,17 @@ function sampleRows() {
     const touch = /adreno/.test(gpu) || rnd() < 0.08, legacy = /Mesa/.test(gpu);
     const renderer = legacy ? 'WebGL (legacy)' : rnd() < 0.08 ? 'WebGL 2' : 'WebGPU';
     const median = Math.round(base * (0.8 + rnd() * 0.5)), tier = median > 35 ? pick([['lowest', 3], ['low', 2]]) : median > 22 ? pick([['medium', 3], ['low', 1]]) : pick([['high', 5], ['medium', 1], ['ultra', 0.4]]);
+    const game = rnd() < 0.3 ? 'continued' : 'new';
+    const source = () => game === 'continued' ? 'save' : pick([['default', 6], ['player', 3], ['link', 1]]);
+    const conditions = version === 'v0.3.0' ? {} : {
+      weather: pick([['clear', 6], ['cloudy', 2], ['rain', 1], ['snow', 1]]),
+      month: 1 + Math.floor(rnd() * 12), hour: Math.floor(rnd() * 24),
+      weatherSource: source(), monthSource: source(), hourSource: source(),
+    };
     put(at, 'start', version, s, country, {
+      ...conditions,
       renderer, gpu, graphics: rnd() < 0.85 ? 'auto' : tier, tier: touch ? 'medium' : 'high', lang: country === 'CZ' || country === 'SK' ? pick([['cs', 8], ['en', 2]]) : 'en',
-      input: touch ? 'touch' : 'keyboard', game: rnd() < 0.3 ? 'continued' : 'new', browser: touch ? pick([['Chrome 152', 3], ['Safari 26', 2]]) : pick([['Chrome 152', 6], ['Edge 152', 2], ['Firefox 151', 2], ['Safari 26', 1]]),
+      input: touch ? 'touch' : 'keyboard', game, browser: touch ? pick([['Chrome 152', 3], ['Safari 26', 2]]) : pick([['Chrome 152', 6], ['Edge 152', 2], ['Firefox 151', 2], ['Safari 26', 1]]),
       os: touch ? pick([['Android', 3], ['iOS', 2]]) : pick([['Windows', 6], ['macOS', 3], ['Linux', 1]]), referrer: pick([['', 6], ['www.reddit.com', 2], ['news.ycombinator.com', 1], ['t.co', 1]]),
       loadMs: 4000 + rnd() * 9000 + base * 150, width: touch ? 412 : 1920, height: touch ? 915 : 1080, dpr: touch ? 2.6 : 1, memory: 8, cores: 8,
     });
@@ -145,6 +153,21 @@ function app(INITIAL, DAYS, LIVE) {
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const pct = (x) => (Number.isFinite(x) ? `${(x * 100).toFixed(x > 0 && x < 0.1 ? 1 : 0)} %` : '–');
   const num = (x, digits = 0) => (Number.isFinite(x) ? x.toFixed(digits) : '–');
+
+  const SOURCES = ['player', 'default', 'link', 'save'];
+  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const WEATHER = { clear: 'Clear', cloudy: 'Cloudy', rain: 'Rain', storm: 'Thunderstorm', mist: 'Mist', snow: 'Snow' };
+  const HOURS = Array.from({ length: 24 }, (_, hour) => [hour, `${String(hour).padStart(2, '0')}:00`]);
+  // Older reports have empty source columns and may read back as hour zero.
+  function conditionsBySource(starts, field, values) {
+    const counts = new Map(values.map(([value, label]) => [value, [label, 0, 0, 0, 0]]));
+    for (const start of starts) {
+      const i = SOURCES.indexOf(start[`${field}Source`]);
+      const row = counts.get(start[field]);
+      if (i >= 0 && row) row[i + 1]++;
+    }
+    return [...counts.values()].filter(([, ...counts]) => counts.some(Boolean));
+  }
 
   function addUp(reports, buckets, bucketOf) {
     const of = (e) => reports.filter((r) => r.event === e);
@@ -198,6 +221,9 @@ function app(INITIAL, DAYS, LIVE) {
       inputs: tally(starts.map((s) => s.input)),
       languages: tally(starts.map((s) => ({ cs: 'Czech', en: 'English' }[s.lang] ?? s.lang))),
       began: tally(starts.map((s) => (s.game === 'continued' ? 'Continued a saved game' : 'New game'))),
+      startWeather: conditionsBySource(starts, 'weather', Object.entries(WEATHER)),
+      startMonths: conditionsBySource(starts, 'month', MONTHS.map((label, i) => [i + 1, label])),
+      startHours: conditionsBySource(starts, 'hour', HOURS),
       referrers: tally(starts.map((s) => s.referrer || 'Opened directly')).slice(0, 8),
       modes: [['Driving', 'car'], ['On foot', 'foot'], ['On a tram', 'tram'], ['In a taxi', 'taxi'], ['Boat, funicular, metro, helicopter', 'other']].map(([label, k]) => [label, play.reduce((a, p) => a + p[k], 0) / total]),
       cards: [...cards].map(([gpu, fs]) => ({ gpu, n: fs.length, median: median(fs.map((f) => f.medianMs)), p95: median(fs.map((f) => f.p95Ms)), stutters: mean(fs.map((f) => ((f.hitches + f.stalls) / Math.max(1, f.seconds)) * 60)), tier: tally(fs.map((f) => f.tier))[0][0] })).sort((a, b) => b.median - a.median).slice(0, 12),
@@ -238,6 +264,7 @@ function app(INITIAL, DAYS, LIVE) {
   }
 
   function view(d) {
+    const sourceColumns = ['Picked by player', 'Default', 'Shared link', 'Saved game'];
     return `${d.games ? '' : '<p class="sub">No game matching these filters has reported anything in this period.</p>'}
 <div class="tiles">
   ${tile('Games started', String(d.games), `${d.sessions} reported how they went`)}
@@ -274,6 +301,13 @@ function app(INITIAL, DAYS, LIVE) {
 <div class="grid">
   ${table('Errors, by how many games they hit', ['What', 'Message', 'Games', 'Times', 'Game versions', 'Last seen', 'Where'],
     d.errors.map((e) => [esc(e.kind), esc(e.message), e.sessions.size, e.n, esc([...e.versions].join(', ')), esc(e.last.toISOString().slice(0, 10)), `<code>${esc(e.where)}</code>`]))}
+</div>
+<h3>Starting conditions</h3>
+<p class="sub">Counts include games that reported their starting conditions.</p>
+<div class="grid">
+  ${table('Starting weather', ['Weather', ...sourceColumns], d.startWeather)}
+  ${table('Starting month', ['Month', ...sourceColumns], d.startMonths)}
+  ${table('Starting hour', ['In-game hour', ...sourceColumns], d.startHours)}
 </div>
 <h3>What gets played</h3>
 <div class="grid">

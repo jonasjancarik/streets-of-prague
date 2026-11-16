@@ -1,5 +1,6 @@
 import { KINDS, automaticWeather } from './weather.ts';
 import type { Kind } from './weather.ts';
+import type { StartSources } from './telemetry.ts';
 import { LANGS, getLang, onLang, setLang, t } from './i18n.ts';
 import type { Lang } from './i18n.ts';
 import { newsletterLink } from './newsletter.ts';
@@ -32,6 +33,7 @@ export interface StartChoice {
   // Seconds since midnight, or null to keep the clock as it is (the time now).
   time: number | null;
   weather: Kind;
+  sources: StartSources;
   // The weather is the real one in Prague now ("Live: …"), for the game to keep following.
   live: boolean;
   sound: boolean;
@@ -56,6 +58,7 @@ interface StartOptions {
   linkedStart: [number, number] | null;
   season: number;
   dateLinked: boolean;
+  timeLinked: boolean;
   weather: Kind;
   weatherFixed: boolean;
   sound: boolean;
@@ -69,8 +72,13 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
   // Clear unless the URL asked for another: the real weather is offered beside it, and the
   // game's own weather changes by itself only once the game is under way.
   let time: string = 'now', weather: Kind = opts.weatherFixed ? opts.weather : 'clear', sound = opts.sound;
-  let weatherPicked = opts.weatherFixed, usingLive = false;
-  let day = opts.season, liveKind: Kind | null = null, liveButton: HTMLButtonElement | null = null;
+  let usingLive = false;
+  const sources: StartSources = {
+    weatherSource: opts.weatherFixed ? 'link' : 'default',
+    monthSource: opts.dateLinked ? 'link' : 'default',
+    hourSource: opts.timeLinked ? 'link' : 'default',
+  };
+  let day = opts.season, liveButton: HTMLButtonElement | null = null;
   let useToday = !opts.dateLinked;
   let liveDay: number | null = null;
   const liveAvailable = () => { const today = pragueToday(); return day === today && liveDay === today; };
@@ -147,17 +155,26 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
   };
   const seasonRow = row('Season', SEASONS.map(id => ({ id, label: () => t(SEASON_NAMES[id]) })), seasonOfDay(day), (id) => {
     const today = pragueToday();
+    sources.monthSource = 'player';
     day = seasonStartDay(id, today);
     useToday = id === seasonOfDay(today);
     // The real weather is today's only: another season goes back to Clear.
     if (usingLive && !liveAvailable()) {
-      usingLive = weatherPicked = false;
+      usingLive = false;
+      sources.weatherSource = 'default';
       weather = 'clear';
       syncWeather();
     }
   });
-  const timeRow = row('Time', [{ id: 'now', label: () => t('Now {time}', { time: opts.now }) }, ...TIMES.map((x) => ({ id: x.id, label: () => t(x.label) }))], 'now', (id) => { time = id; });
-  const weatherRow = row('Weather', KINDS.map((k) => ({ id: k, label: () => k === 'mist' ? `${t(WEATHER[k])} (beta)` : t(WEATHER[k]) })), weather, (id) => { weather = id; weatherPicked = true; usingLive = false; });
+  const timeRow = row('Time', [{ id: 'now', label: () => t('Now {time}', { time: opts.now }) }, ...TIMES.map((x) => ({ id: x.id, label: () => t(x.label) }))], 'now', (id) => {
+    time = id;
+    sources.hourSource = id === 'now' && opts.timeLinked ? 'link' : 'player';
+  });
+  const weatherRow = row('Weather', KINDS.map((k) => ({ id: k, label: () => k === 'mist' ? `${t(WEATHER[k])} (beta)` : t(WEATHER[k]) })), weather, (id) => {
+    weather = id;
+    sources.weatherSource = 'player';
+    usingLive = false;
+  });
   const syncWeather = () => {
     weatherRow.buttons.forEach((b, i) => b.setAttribute('aria-pressed', String(!usingLive && KINDS[i] === weather)));
     liveButton?.setAttribute('aria-pressed', String(usingLive));
@@ -217,23 +234,21 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
     live(kind: Kind) {
       if (liveButton) return;
       kind = automaticWeather(kind);
-      liveKind = kind;
       liveDay = pragueToday();
       const b = liveButton = el('button', 'ls-chip', weatherRow.chips) as HTMLButtonElement;
       weatherRow.chips.insertBefore(b, weatherRow.buttons[1]);
       relabel.push(() => { b.textContent = t('Live: {weather}', { weather: t(WEATHER[kind]) }); });
       b.type = 'button';
       b.setAttribute('aria-pressed', 'false');
-      const choose = () => {
-        if (!liveAvailable()) { show(); return false; }
+      weatherRow.buttons.push(b);
+      b.addEventListener('click', () => {
+        if (!liveAvailable()) { show(); return; }
+        sources.weatherSource = 'player';
         weather = kind;
         usingLive = true;
         syncWeather();
         show();
-        return true;
-      };
-      weatherRow.buttons.push(b);
-      b.addEventListener('click', () => { if (choose()) weatherPicked = true; });
+      });
       relabel[relabel.length - 1]();
       show();
     },
@@ -250,9 +265,11 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
         void betaNote(noteAgain).then(() => {
           const startDay = resuming ? opts.savedLook?.season ?? day : useToday ? pragueToday() : day;
           // A page or beta note kept open across midnight still starts in today's Prague.
-          const startWeather = !resuming && startDay !== day && usingLive ? 'clear' : weather;
+          const liveExpired = !resuming && startDay !== day && usingLive;
+          const startWeather = liveExpired ? 'clear' : weather;
+          const startSources: StartSources = { ...sources, weatherSource: liveExpired ? 'default' : sources.weatherSource };
           const at: StartChoice['at'] = resuming ? null : place === 'link' ? opts.linkedStart : spot ? [spot.lon, spot.lat] : null;
-          resolve({ time: t ? t.sec : null, weather: startWeather, live: !resuming && usingLive && startWeather === weather && liveAvailable(), sound, season: startDay, resume: resuming, at });
+          resolve({ time: t ? t.sec : null, weather: startWeather, sources: startSources, live: !resuming && usingLive && startWeather === weather && liveAvailable(), sound, season: startDay, resume: resuming, at });
         });
       }, { once: true }));
     },

@@ -32,6 +32,10 @@ globalThis.fetch = async () => new Response('', { status: 404 });
 const server = await createServer({ configFile: false, server: { middlewareMode: true, hmr: false, ws: false } });
 try {
   const { Season, parseDay, pragueToday, seasonOfDay, seasonStartDay } = await server.ssrLoadModule('/src/season.ts');
+  const { Clock } = await server.ssrLoadModule('/src/clock.ts');
+  assert.equal(new Clock(new URLSearchParams('time=00:00')).linkedTime, true);
+  assert.equal(new Clock(new URLSearchParams('night')).linkedTime, true);
+  assert.equal(new Clock(new URLSearchParams('time=invalid')).linkedTime, false);
   const { startScreen } = await server.ssrLoadModule('/src/startscreen.ts');
   const { setLang } = await server.ssrLoadModule('/src/i18n.ts');
   const { Weather, KINDS, automaticWeather } = await server.ssrLoadModule('/src/weather.ts');
@@ -64,7 +68,7 @@ try {
 
   const make = (extra = {}) => {
     const root = new Element();
-    const screen = startScreen(root, { now: '00:30', season: pragueToday(), dateLinked: false, weather: 'cloudy', weatherFixed: false,
+    const screen = startScreen(root, { now: '00:30', season: pragueToday(), dateLinked: false, timeLinked: false, weather: 'cloudy', weatherFixed: false,
       sound: true, saved: null, lost: false, ...extra });
     const panel = root.children[0];
     const row = label => panel.children.find(r => r.children[0]?.textContent === label);
@@ -90,6 +94,7 @@ try {
   assert.equal(beta.root.dataset.weather, 'mist', 'manual mist survives a season choice');
   const betaChoice = beta.screen.ready(); beta.go.click();
   assert.equal((await betaChoice).weather, 'mist', 'manual beta mist reaches game launch');
+  assert.deepEqual((await betaChoice).sources, { weatherSource: 'player', monthSource: 'player', hourSource: 'default' });
   assert.equal(current.root.dataset.season, 'autumn');
   const live = current.button('Weather', 'Live: Rain');
   assert.equal(live.hidden, false); assert.equal(live.getAttribute('aria-pressed'), 'false');
@@ -100,6 +105,14 @@ try {
   assert.equal(current.button('Weather', 'Clear').getAttribute('aria-pressed'), 'true');
   const chosen = current.screen.ready(); current.go.click();
   assert.equal((await chosen).season, parseDay('07-15'));
+  assert.equal((await chosen).sources.weatherSource, 'default', 'changing season clears the live-weather choice');
+  const liveStart = make(); liveStart.screen.live('rain'); liveStart.button('Weather', 'Live: Rain').click();
+  const liveChoice = liveStart.screen.ready(); liveStart.go.click();
+  assert.equal((await liveChoice).sources.weatherSource, 'player');
+  const timeOverride = make({ timeLinked: true });
+  timeOverride.row('Time').children[1].children[1].click();
+  const timeChoice = timeOverride.screen.ready(); timeOverride.go.click();
+  assert.equal((await timeChoice).sources.hourSource, 'player');
 
   const manual = make({ weatherFixed: true, weather: 'snow' }); manual.screen.live('rain'); manual.button('Season', 'Summer').click();
   assert.equal(manual.root.dataset.weather, 'snow', 'explicit weather survives a season choice');
@@ -125,13 +138,14 @@ try {
   fresh.button('Roční období', 'Jaro').click(); assert.equal(fresh.root.dataset.season, 'spring');
   setLang('en'); assert.equal(fresh.button('Season', 'Spring').getAttribute('aria-pressed'), 'true');
   const overnight = make(); overnight.screen.live('snow'); overnight.button('Weather', 'Live: Snow').click();
-  const unchangedLink = make({ season: 276, dateLinked: true });
+  const unchangedLink = make({ season: 276, dateLinked: true, timeLinked: true, weather: 'snow', weatherFixed: true });
   const defaultToday = make();
   instant += 86400 * 1000;
   const actualStart = defaultToday.screen.ready(); defaultToday.go.click();
   assert.equal((await actualStart).season, 277, 'default date is today at game start, not page opening');
   const exactLink = unchangedLink.screen.ready(); unchangedLink.go.click();
   assert.equal((await exactLink).season, 276, 'explicit date link stays fixed across midnight');
+  assert.deepEqual((await exactLink).sources, { weatherSource: 'link', monthSource: 'link', hourSource: 'link' });
   overnight.button('Season', 'Autumn').click();
   const nextDay = overnight.screen.ready(); overnight.go.click();
   const overnightChoice = await nextDay;

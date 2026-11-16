@@ -216,7 +216,13 @@ async function main() {
   const [startLon, startLat] = startParts.map(Number);
   const linkedStart: [number, number] | null = startParts.length === 2 && startParts.every(Boolean)
     && Math.abs(startLon) <= 180 && Math.abs(startLat) <= 90 ? [startLon, startLat] : null;
-  const start = params.has('go') ? null : startScreen($('loading'), { now: Clock.nowLabel(), linkedStart, season: season.day, dateLinked: parseDay(params.get('date')) !== null || parseDay(params.get('season')) !== null, weather: weather.kind, weatherFixed: weather.fixed,
+  const dateLinked = parseDay(params.get('date')) !== null || parseDay(params.get('season')) !== null;
+  let startSources: telemetry.StartSources = {
+    weatherSource: weather.fixed ? 'link' : 'default',
+    monthSource: dateLinked ? 'link' : 'default',
+    hourSource: clock.linkedTime ? 'link' : 'default',
+  };
+  const start = params.has('go') ? null : startScreen($('loading'), { now: Clock.nowLabel(), linkedStart, season: season.day, dateLinked, timeLinked: clock.linkedTime, weather: weather.kind, weatherFixed: weather.fixed,
     sound: savedSound !== 'off', saved: saved && (() => describe(saved)), savedLook: saved ? { clock: saved.clock, weather: saved.weather.fixed ? saved.weather.kind : automaticWeather(saved.weather.kind), season: saved.season } : undefined, lost: !saved && !params.has('go') && unreadable('auto', AREA) });
   // The weather in Prague now, for the start screen (the URL's ?weather wins).
   if (start && !params.has('weather')) void liveWeather().then((k) => { if (k) start.live(k); });
@@ -2497,11 +2503,14 @@ async function main() {
     status('');
     const choice = await start.ready();
     if (choice.resume && saved) {
+      startSources = { ...startSources, weatherSource: 'save', hourSource: 'save' };
+      if (saved.season) startSources.monthSource = 'save';
       resumed = true;
       status('Building the streets…');
       await resume(saved);
       status('');
     } else {
+      startSources = choice.sources;
       // "Now" is the time now, not the time the page was opened at.
       if (choice.time === null && !params.has('time') && !params.has('night')) clock.t = new Clock(params).t;
       else if (choice.time !== null) clock.setTime(choice.time);
@@ -2543,6 +2552,7 @@ async function main() {
   telemetry.begin({
     renderer: gpuBackend ? (gpuBackend.isWebGPUBackend ? 'WebGPU' : 'WebGL 2') : 'WebGL (legacy)',
     graphics: graphics.choice, tier: graphics.tier, lang: getLang(), touch: touch.active, resumed, loadMs,
+    conditions: { ...startSources, weather: weather.kind, month: Number(season.date.slice(0, 2)), hour: clock.hour },
   });
   telemetry.summary(() => ({ ...stats, money: wallet.balance }));
   wallet.onSpend = telemetry.spent;

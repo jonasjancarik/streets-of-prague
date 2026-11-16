@@ -251,6 +251,15 @@ res = await tell({ e: 'frames', v: 'v1.2.3', d: '2026-10-01-b2', s: 'abc', f: { 
 assert.equal(res.status, 204);
 // Fields land in the order worker/stats.js lists them; what it doesn't list is dropped.
 assert.deepEqual(rows, [{ indexes: ['frames'], blobs: ['frames', 'v1.2.3', 'abc', 'CZ', 'play.streetsofprague.com', '2026-10-01-b2', 'WebGPU', '', 'high'], doubles: [2, 0, 0, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] }]);
+res = await tell({ e: 'start', f: {
+  referrer: 'example.com', cores: 8, weather: 'snow', weatherSource: 'player',
+  month: 1, monthSource: 'link', hour: 0, hourSource: 'default',
+} });
+assert.equal(res.status, 204);
+assert.deepEqual(rows[0].blobs.slice(15), ['example.com', 'snow', 'player', 'link', 'default']);
+assert.deepEqual(rows[0].doubles.slice(5), [8, 1, 0]);
+await tell({ e: 'start', f: { cores: 8 } });
+assert.deepEqual(rows[0].blobs.slice(16), ['', '', '', ''], 'old starts have no sources');
 await tell({ e: 'error', f: { message: 'x'.repeat(5000).slice(0, 3000) } });
 assert.equal(rows[0].blobs[7].length, 600);
 

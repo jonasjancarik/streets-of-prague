@@ -14,6 +14,9 @@ declare const __APP_VERSION__: string; // set by vite.config.js
 declare const __DATA_VERSION__: string;
 
 export type Mode = 'foot' | 'car' | 'tram' | 'taxi' | 'other';
+export type StartSource = 'player' | 'default' | 'link' | 'save';
+export type StartSources = { weatherSource: StartSource; monthSource: StartSource; hourSource: StartSource };
+
 type Fields = Record<string, string | number>;
 
 const HITCH = 100;  // ms: a frame this long is felt as a stutter
@@ -92,13 +95,14 @@ function os() {
 
 // `rendererName`: which renderer the game ended up with; `loadMs`: from opening the page
 // to the map being ready behind the start screen.
-export function begin(info: { renderer: string; graphics: string; tier: string; lang: string; touch: boolean; resumed: boolean; loadMs: number }) {
+export function begin(info: { renderer: string; graphics: string; tier: string; lang: string; touch: boolean; resumed: boolean; loadMs: number; conditions: StartSources & { weather: string; month: number; hour: number } }) {
   renderer = info.renderer;
   let referrer = '';
   try { if (document.referrer) referrer = new URL(document.referrer).hostname; } catch {}
   if (referrer === location.hostname) referrer = '';
   lastTier = info.tier;
   send('start', {
+    ...info.conditions,
     renderer, gpu: gpu.slice(0, 120), graphics: info.graphics, tier: info.tier, lang: info.lang,
     input: info.touch ? 'touch' : 'keyboard', game: info.resumed ? 'continued' : 'new', browser: browser(), os: os(), referrer,
     loadMs: Math.round(info.loadMs), width: screen.width, height: screen.height, dpr: devicePixelRatio,
