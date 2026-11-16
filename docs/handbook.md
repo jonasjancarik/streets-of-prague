@@ -1359,6 +1359,8 @@ record the measurements, merge decisions and pending landmark asset activation.
   in. Sides tagged as having no parking (or parking mapped separately) get
   no kerbside cars, and no car is left sticking out into a traffic lane. Underground, multi-storey and rooftop car parks stay empty.
   A parked car's whole footprint must clear any tree trunks within its bay.
+  The ground must also support the corners of the car. A normal kerb is fine,
+  but a corner hanging over a retaining step rules out the spot.
   As in Prague, some cars stand half or fully on the pavement, often vans and often
   at corners or where the kerb is otherwise empty. Every half minute or so, one in
   view sets off along the pavement at walking pace before it bumps down into the

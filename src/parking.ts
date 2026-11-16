@@ -409,9 +409,18 @@ export function* parkCarsSteps({ data, edges, clearanceEdges = edges, zones, sol
       // strip can be draped up a bank or over the edge of a retaining wall.
       const { x, y, h, spec: { L, W } } = car;
       const dx = Math.cos(h) / 2, dy = Math.sin(h) / 2;
-      const across = Math.abs(height(x - dy * W, y + dx * W) - height(x + dy * W, y - dx * W));
-      const along = Math.abs(height(x + dx * L, y + dy * L) - height(x - dx * L, y - dy * L));
-      if (!(across <= .30 * W && along <= .40 * L)) return false;
+      const across = height(x - dy * W, y + dx * W) - height(x + dy * W, y - dx * W);
+      const along = height(x + dx * L, y + dy * L) - height(x - dx * L, y - dy * L);
+      if (!(Math.abs(across) <= .30 * W && Math.abs(along) <= .40 * L)) return false;
+      // A step can cut under just one corner without steepening either centre line.
+      // Allow an ordinary kerb but reject a car with a corner hanging over a drop.
+      const middle = height(x, y);
+      const maxCornerGap = .24;
+      for (const a of [-1, 1]) for (const b of [-1, 1]) {
+        const actual = height(x + a * dx * L - b * dy * W, y + a * dy * L + b * dx * W);
+        const expected = middle + (a * along + b * across) / 2;
+        if (!(Math.abs(actual - expected) <= maxCornerGap)) return false;
+      }
     }
     car.mode = 'loose';
     cars.push(car);

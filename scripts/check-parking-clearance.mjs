@@ -49,6 +49,15 @@ assert.equal(park([], [], hillLot, 10, { height: (x, y) => x + y }).cars.length,
   'the lot outline does not make a steep hillside suitable for parking');
 reports.push('parking remains available on ordinary slopes and rejects steep ground');
 
+const stepCar = ordinaryLot[0];
+const [stepX, stepY] = stepCar.local(stepCar.spec.L / 2, stepCar.spec.W / 2);
+const step = (drop) => (x, y) => Math.hypot(x - stepX, y - stepY) < 0.4 ? -drop : 0;
+const occupiesStep = (drop) => park([], [], hillLot, 10, { height: step(drop) }).cars
+  .some((car) => car.x === stepCar.x && car.y === stepCar.y);
+assert.ok(occupiesStep(0.15), 'a normal kerb under one corner leaves the parking spot usable');
+assert.ok(!occupiesStep(0.35), 'a drop under one corner blocks the spot even with level centre lines');
+reports.push('parking allows a normal kerb and rejects a corner over a drop');
+
 const { x: treeX, y: treeY } = ordinaryLot[0];
 const tree = { x: treeX, y: treeY, radius: 0.4 };
 const besideTree = park([], [], hillLot, 10, { trunks: [tree] }).cars;
