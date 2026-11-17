@@ -971,6 +971,13 @@ record the measurements, merge decisions and pending landmark asset activation.
   under the main station's forecourt, civil-defence shelters, underground garages) are
   left out (`extract` in `pipeline/osm_area.py`). Where IPR had nothing over them, the
   game used to extrude them as boxes, and they were solid to cars.
+- **Streets on a building's roof.** A street mapped a layer up but not as a bridge or
+  a tunnel runs on the roof of what's under it: Wilsonova (layer 1) over the main
+  station's hall, which stood solid across the six lanes. A building on the ground
+  there loses what the street's carriageway covers (`on_roof` in
+  `pipeline/osm_area.py`, by the tags' width). Not service roads: those mapped a layer
+  up are rooftop car parks, on the roof itself. In Prague the hall is the only
+  building it cuts (November 2026).
 - **Crossing widths.** At junctions where road surfaces merge, zebra bars are limited
   to the crossed street's width plus 2 m on each side, adjusted for the crossing angle.
 - **Terrain.** IPR's bare-earth model on a 4 m grid per tile: the ground, buildings,
@@ -983,10 +990,14 @@ record the measurements, merge decisions and pending landmark asset activation.
   (`pipeline/structures.py`). Where one meets a street on the ground it's at the
   ground's height, and in between its height runs evenly from end to end, along the
   ways and through junctions (Blanka's underground ramps).
-  Components containing only bridges and finite anchors use a distance-weighted
+  Components whose anchors are all known, tunnels included, use a distance-weighted
   harmonic graph solve, linear on chains and continuous at junctions. Components
-  containing a tunnel or an unknown anchor retain the previous two-nearest model,
-  so an out-of-map portal cannot erase a supported tunnel interior. Selection uses
+  with an unknown anchor retain the previous two-nearest model, so an out-of-map
+  portal cannot erase a supported tunnel interior. (Tunnels kept the two-nearest
+  model until 18 November 2026: past the cover rule's pins both nearest pins lay by
+  one portal, so each half of the Strahov tunnel ran level from its own portal and
+  the halves met under Strahov in a ramp of 103 %, where players got stuck;
+  `TUNNELS_HARMONIC = 0` brings it back to compare.) Selection uses
   every way in a component, preserving bridge/tunnel joins. See
   `docs/bridge-height-continuity.md` and `docs/tunnel-propagation-compatibility.md`.
   Bridge continuations are resolved across chunks before a loose end is tied to

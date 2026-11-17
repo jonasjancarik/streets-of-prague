@@ -326,6 +326,21 @@ steeper than VALLEY anywhere, which took steps over 1 m from 71 to 38.
   most and Komořanská by most Závodu míru were the two-level survey under a bridge (see
   above): fixed since, most Závodu míru's join down from 3.7 m to 0.9 m.
 
+- A tunnel runs from portal to portal: its heights come from the bridges' solve
+  whenever every end is known (`TUNNELS_HARMONIC`). With the old spreading each point
+  took its two nearest pins, which past the cover rule's pins lay by one portal, so
+  each half of the Strahov tunnel ran level from its own portal and the halves met in
+  a ramp of 103 % under Strahov; players got stuck there (November 2026). A portal
+  outside the map still selects the old spreading (Mrázovka in centrum). The deck
+  check lists every car tunnel's steepest climb over 10 m: more than a street's
+  15 % is two rules meeting, not the tunnel. A window round one end of a long tunnel
+  has the other portal outside it and so shows no change: build the window round the
+  tunnel's middle, or check the city.
+- What stops a car on a street needn't be a step: a building under a street mapped a
+  layer up (not a bridge) was solid across the lanes, the main station's hall under
+  Wilsonova (`on_roof` in `osm_area.py`). `cellAt` in the game shows it as 255 under
+  the carriageway on level 0.
+
 Tried and dropped: a terrace for every surveyed street well above or below the ground
 beside it (cliffs 12 m high under Letná); leaving the terrain model wherever the
 survey is far off it with no step near (breaks in the street where the two meet).
