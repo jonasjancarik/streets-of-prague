@@ -570,8 +570,10 @@ def straight_tops(lines_by_tile, ids, boxes, lattice=None, driven=None, crown_at
             # (A piece steeper than TOP_GRADE is a bank's slope, not a wall's top: as it was.)
             for a, b in zip(breaks[:-1], breaks[1:]):
                 if abs(env[b] - env[a]) > TOP_GRADE * max(sp[b] - sp[a], 1e-9):
-                    fit[a:b + 1] = z[a:b + 1]
-            new = np.clip(fit, z - TOP_LOWER, z + TOP_RAISE)
+                    # (The heights as read: the crown, a profile at each point, scatters
+                    # by half a metre where it isn't straightened.)
+                    fit[a:b + 1] = z0[a:b + 1]
+            new = np.clip(fit, np.minimum(z, z0) - TOP_LOWER, np.maximum(z, z0) + TOP_RAISE)
             new = np.maximum(new, low + STEP_MIN)
             walls += 1
             moved = np.abs(new - z0) > 0.05
