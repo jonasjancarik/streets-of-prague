@@ -50,6 +50,8 @@ export interface MapIndex extends GeoData {
   iprRef?: number;
   terrain?: TerrainMetadata;
   gzip?: boolean;
+  // The tiles whose ground is a mesh (tiles/<k>.tin.bin.gz, pipeline/tin_tiles.py).
+  tin?: { format: number; tol: number; loose: number; lidar: boolean; tiles: string[] };
 }
 
 export type TileBuilding = BuildingTile['buildings'][number] & {

@@ -8,7 +8,7 @@ import { Geo, Grid, rng, hash, clipLine } from './map/geo.ts';
 import { wallMesh } from './map/buildings.ts';
 import { TreePool } from './trees.ts';
 import { Surfaces } from './surface.ts';
-import { buildTin, tinSampler, type TinFile, type TinMesh } from './tin.ts';
+import { buildTin, decodeTin, tinSampler, TIN_FORMAT, type TinFile, type TinMesh } from './tin.ts';
 import { shadeBuildings, shadeLandmark, cutAway, broad, ROOF_CLUTTER, roadRasterEnabled } from './shading.ts';
 import { loadFacadeAtlas } from './facades.ts';
 import type { Footprint } from './facades.ts';
@@ -547,6 +547,7 @@ export class TileWorld {
   private stationTracks: Promise<ReturnType<typeof readStationTracks>> | null;
   private stepLines: boolean;
   private tins: Promise<Set<string>> | null;
+  private tinJson: boolean;
   private bridgeSurfacePreview: Promise<ReturnType<typeof readBridgeSurfacePreview>> | null;
   grid: {
     res: number; height: (x: number, y: number) => number; at: (x: number, y: number) => number;
@@ -566,7 +567,11 @@ export class TileWorld {
     const station = area === 'praha' && query.has('stationtracks');
     // ?lines=off: a map's step lines (pipeline/step_lines.py, a trial) left out, to compare.
     this.stepLines = query.get('lines') !== 'off';
-    this.tins = area.startsWith('walls-tin') ? fetch(dataUrl(area, 'tin/index.json')).then((r) => (r.ok ? r.json() as Promise<string[]> : [])).then((k) => new Set(k)).catch(() => new Set<string>()) : null;
+    // The tiles whose ground is a mesh (tin.ts): those index.json lists, or the trial copy's
+    // (?area=walls-tin). ?tin=off: the lattice everywhere, to compare.
+    this.tinJson = !index.tin && area.startsWith('walls-tin');
+    this.tins = query.get('tin') === 'off' ? null : index.tin?.format === TIN_FORMAT ? Promise.resolve(new Set(index.tin.tiles))
+      : this.tinJson ? fetch(dataUrl(area, 'tin/index.json')).then((r) => (r.ok ? r.json() as Promise<string[]> : [])).then((k) => new Set(k)).catch(() => new Set<string>()) : null;
     this.bridgeSurfacePreview = (query.has('bridgesurfaces') || station) ? fetch(dataUrl(area, 'bridge-surfaces.json'))
       .then(async (r) => r.ok ? readBridgeSurfacePreview(await r.json(), area, index.built) : null)
       .catch(() => null) : null;
@@ -1364,7 +1369,8 @@ export class TileWorld {
     const shade = height && terrain ? relief(height, bare, t.box, terrain.n, terrain.step, this.ref, around, t.terraces, terrain.unit, this.stepLines ? t.stepLines : undefined) : null;
     let tin: TinMesh | null = null;
     if (shade && this.tins && (await this.tins).has(k)) {
-      const file = await fetch(dataUrl(this.area, `tin/${k}.json`)).then((r) => (r.ok ? r.json() as Promise<TinFile> : null));
+      const file = this.tinJson ? await fetch(dataUrl(this.area, `tin/${k}.json`)).then((r) => (r.ok ? r.json() as Promise<TinFile> : null))
+        : await fetchBinary(dataUrl(this.area, `tiles/${k}.tin.bin.gz`), true).then((b) => (b ? decodeTin(b, t.box) : null));
       if (file) {
         const t1 = performance.now();
         tin = buildTin(file);

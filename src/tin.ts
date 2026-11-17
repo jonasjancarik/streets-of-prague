@@ -1,17 +1,52 @@
-// Trial (?area=walls-tin): a tile's ground as a TIN instead of the 4 m lattice. The map
-// copy has, for some tiles, the TIN's points with a height for each side of a step and
-// the step lines (docs/terrain-tin-plan.md); the triangles are built here with the step
-// lines kept as edges. Not part of the shipped map format.
+// A tile's ground as a triangulated mesh instead of the 4 m lattice (docs/terrain-tin-plan.md,
+// "The move off the lattice"). The map has, for the tiles index.json lists under `tin`,
+// tiles/<k>.tin.bin.gz (pipeline/tin_tiles.py): the mesh's points with a height for each
+// side of a wall, and its breaklines (the walls' outlines, the water's edges and the
+// kerbs). The triangles are built here with the breaklines kept as edges. The trial copy
+// ?area=walls-tin has the same as JSON in tin/<k>.json.
 import Delaunator from 'delaunator';
 import Constrainautor from '@kninnug/constrainautor';
 import { WATER } from './terrain.ts';
+
+export const TIN_FORMAT = 1;
 
 export interface TinFile {
   box: [number, number, number, number];
   xy: [number, number][]; // metres from the box's corner
   h: [number, number][][]; // per point: [side, height a.s.l.], one per side it has
-  segs: [number, number, number, number][]; // step pieces: from, to, left side, right side
-  grid: { g: number; nx: number; ny: number; sides: string }; // side lattice (base64), for triangles off the steps
+  segs: [number, number, number, number][]; // breakline pieces: from, to, left side, right side (the same for a kerb)
+}
+
+// tiles/<k>.tin.bin.gz, unpacked (the layout is in pipeline/tin.py, `write`). `box` is
+// the tile's own (the file's is float32).
+export function decodeTin(buf: ArrayBuffer, box: [number, number, number, number]): TinFile {
+  const dv = new DataView(buf);
+  const magic = String.fromCharCode(...new Uint8Array(buf, 0, 4));
+  if (magic !== 'TIN1') throw new Error('not a mesh file');
+  const format = dv.getUint16(4, true), wide = dv.getUint16(6, true) & 1;
+  if (format !== TIN_FORMAT) throw new Error(`mesh format ${format}; the game reads ${TIN_FORMAT}`);
+  const base = dv.getFloat32(24, true);
+  const n = dv.getUint32(28, true), m = dv.getUint32(32, true), r = dv.getUint32(36, true), nid = dv.getUint32(40, true);
+  let o = 44;
+  const u16 = (c: number) => { const a = new Uint16Array(buf.slice(o, o + 2 * c)); o += 2 * c; return a; };
+  const u32 = (c: number) => { const a = new Uint32Array(buf.slice(o, o + 4 * c)); o += 4 * c; return a; };
+  const u8 = (c: number) => { const a = new Uint8Array(buf, o, c); o += c; return a; };
+  const qx = u16(n), qy = u16(n), h0 = u16(n), s0 = u8(n), more = u8(n), hx = u16(m), sx = u8(m);
+  const len = u16(r), lr = u8(2 * r), ids = wide ? u32(nid) : u16(nid);
+  const W = box[2] - box[0], H = box[3] - box[1];
+  const xy: [number, number][] = new Array(n), h: [number, number][][] = new Array(n);
+  let y = 0, e = 0;
+  for (let i = 0; i < n; i++) {
+    y += qy[i];
+    xy[i] = [(qx[i] / 65535) * W, (y / 65535) * H];
+    const own: [number, number][] = [[s0[i], base + h0[i] / 100]];
+    for (let k = 0; k < more[i]; k++, e++) own.push([sx[e], base + hx[e] / 100]);
+    h[i] = own;
+  }
+  const segs: [number, number, number, number][] = [];
+  for (let q = 0, at = 0; q < r; at += len[q], q++)
+    for (let k = at; k < at + len[q] - 1; k++) segs.push([ids[k], ids[k + 1], lr[2 * q], lr[2 * q + 1]]);
+  return { box, xy, h, segs };
 }
 
 // What a worker gets (structured clone): the built triangles and the points' heights.
@@ -67,29 +102,44 @@ export function buildTin(f: TinFile): TinMesh {
     try { con.constrainOne(a, b); kept++; } catch { lost++; }
     step.set(a * n + b, [l, r]); step.set(b * n + a, [r, l]);
   }
-  const T = del.triangles, nt = T.length / 3;
-  const sides = Uint8Array.from(atob(f.grid.sides), (c) => c.charCodeAt(0));
-  const G = f.grid;
-  // A triangle on a step takes that step's side (Delaunator's triangles run clockwise:
-  // the right of the line); any other, the side at its middle.
-  const labels = new Int32Array(nt);
+  const T = del.triangles, HE = del.halfedges, nt = T.length / 3;
+  // Each triangle's side (pipeline/tin.py, `game_labels`, checks this against the fit): a
+  // triangle with a breakline for an edge is on the side of it it lies on (of two such
+  // edges, the side all its corners have wins); else the side of a corner with one side;
+  // the rest (all its corners on breaklines, as across a narrow arm of water) from its
+  // neighbours, across edges that aren't breaklines; failing that, a side its corners share.
+  const labels = new Int32Array(nt).fill(-1);
+  const has = (v: number, q: number) => hs[v].some(([w]) => w === q);
+  const queue: number[] = [];
   for (let t = 0; t < nt; t++) {
-    // (A triangle between two step lines can be told two sides: the one all three of
-    // its corners have wins.)
     let s = -1;
-    const has = (v: number, q: number) => hs[v].some(([w]) => w === q);
     for (let k = 0; k < 3; k++) {
-      const lr = step.get(T[3 * t + k] * n + T[3 * t + (k + 1) % 3]);
+      const a = T[3 * t + k], b = T[3 * t + (k + 1) % 3], c = T[3 * t + (k + 2) % 3];
+      const lr = step.get(a * n + b);
       if (!lr) continue;
-      if (s < 0) s = lr[1];
-      if (has(T[3 * t], lr[1]) && has(T[3 * t + 1], lr[1]) && has(T[3 * t + 2], lr[1])) { s = lr[1]; break; }
+      const cross = (coords[2 * b] - coords[2 * a]) * (coords[2 * c + 1] - coords[2 * a + 1]) - (coords[2 * b + 1] - coords[2 * a + 1]) * (coords[2 * c] - coords[2 * a]);
+      const side = cross > 0 ? lr[0] : lr[1];
+      if (s < 0) s = side;
+      if (has(T[3 * t], side) && has(T[3 * t + 1], side) && has(T[3 * t + 2], side)) { s = side; break; }
     }
-    if (s < 0) {
-      const a = T[3 * t], b = T[3 * t + 1], c = T[3 * t + 2];
-      const mx = (coords[2 * a] + coords[2 * b] + coords[2 * c]) / 3, my = (coords[2 * a + 1] + coords[2 * b + 1] + coords[2 * c + 1]) / 3;
-      const gi = Math.min(G.nx - 1, Math.max(0, Math.round(mx / G.g))), gj = Math.min(G.ny - 1, Math.max(0, Math.round(my / G.g)));
-      s = sides[gj * G.nx + gi];
+    if (s < 0) for (let k = 0; k < 3; k++) if (hs[T[3 * t + k]].length === 1) { s = hs[T[3 * t + k]][0][0]; break; }
+    if (s >= 0) { labels[t] = s; queue.push(t); }
+  }
+  for (let q = 0; q < queue.length; q++) {
+    const t = queue[q];
+    for (let k = 0; k < 3; k++) {
+      const e = 3 * t + k, o = HE[e];
+      if (o < 0) continue;
+      const u = Math.floor(o / 3);
+      if (labels[u] >= 0 || step.has(T[e] * n + T[3 * t + (k + 1) % 3])) continue;
+      labels[u] = labels[t];
+      queue.push(u);
     }
+  }
+  for (let t = 0; t < nt; t++) {
+    if (labels[t] >= 0) continue;
+    let s = 0;
+    for (const [q] of hs[T[3 * t]]) if (has(T[3 * t + 1], q) && has(T[3 * t + 2], q)) { s = q; break; }
     labels[t] = s;
   }
   const first = new Uint32Array(n + 1);
@@ -102,9 +152,10 @@ export function buildTin(f: TinFile): TinMesh {
 // The TIN's height above `ref` at (x, y) in the game's map metres, `fallback` off it.
 // `side` as heightSampler takes it: a label, true for the water, false for whatever is there.
 export function tinSampler(m: TinMesh, ref: number, fallback: (x: number, y: number, side?: number | boolean) => number) {
-  const [x0, y0, x1, y1] = m.box, W = x1 - x0, cell = 4, nc = Math.ceil(W / cell) + 1;
+  // (Cells over the tile; a map's last row and column of tiles are narrower.)
+  const [x0, y0, x1, y1] = m.box, W = x1 - x0, cell = 4, nc = Math.ceil(W / cell) + 1, nr = Math.ceil((y1 - y0) / cell) + 1;
   const { coords: C, tri: T } = m, nt = T.length / 3;
-  const start = new Int32Array(nc * nc + 1), lists: number[][] = Array.from({ length: nc * nc }, () => []);
+  const start = new Int32Array(nc * nr + 1), lists: number[][] = Array.from({ length: nc * nr }, () => []);
   for (let t = 0; t < nt; t++) {
     let ax = Infinity, ay = Infinity, bx = -Infinity, by = -Infinity;
     for (let k = 0; k < 3; k++) { const v = T[3 * t + k]; ax = Math.min(ax, C[2 * v]); bx = Math.max(bx, C[2 * v]); ay = Math.min(ay, C[2 * v + 1]); by = Math.max(by, C[2 * v + 1]); }
@@ -134,7 +185,7 @@ export function tinSampler(m: TinMesh, ref: number, fallback: (x: number, y: num
     // Its own cell first; for a side asked for, the cells round it too (NEAR reaches them).
     const cells = [cj * nc + ci];
     if (want >= 0) for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++)
-      if ((di || dj) && ci + di >= 0 && ci + di < nc && cj + dj >= 0 && cj + dj < nc) cells.push((cj + dj) * nc + ci + di);
+      if ((di || dj) && ci + di >= 0 && ci + di < nc && cj + dj >= 0 && cj + dj < nr) cells.push((cj + dj) * nc + ci + di);
     for (const c of cells) for (let q = start[c]; q < start[c + 1]; q++) {
       const t = flat[q], a = T[3 * t], b = T[3 * t + 1], d = T[3 * t + 2];
       const ax = C[2 * a], ay = C[2 * a + 1], bx = C[2 * b], by = C[2 * b + 1], cx = C[2 * d], cy = C[2 * d + 1];
@@ -157,11 +208,11 @@ export function tinSampler(m: TinMesh, ref: number, fallback: (x: number, y: num
   // piece with that side (within ON), not the triangles, whose sides near a step line
   // the game's outline doesn't quite follow.
   const ON = 0.3, sg = m.segs, ns = sg.length / 4;
-  const sStart = new Int32Array(nc * nc + 1), sLists: number[][] = Array.from({ length: nc * nc }, () => []);
+  const sStart = new Int32Array(nc * nr + 1), sLists: number[][] = Array.from({ length: nc * nr }, () => []);
   for (let q = 0; q < ns; q++) {
     const a = sg[4 * q], b = sg[4 * q + 1];
     const ax = Math.min(C[2 * a], C[2 * b]) - ON, bx = Math.max(C[2 * a], C[2 * b]) + ON, ay = Math.min(C[2 * a + 1], C[2 * b + 1]) - ON, by = Math.max(C[2 * a + 1], C[2 * b + 1]) + ON;
-    for (let j = Math.max(0, Math.floor(ay / cell)); j <= Math.min(nc - 1, Math.floor(by / cell)); j++)
+    for (let j = Math.max(0, Math.floor(ay / cell)); j <= Math.min(nr - 1, Math.floor(by / cell)); j++)
       for (let i = Math.max(0, Math.floor(ax / cell)); i <= Math.min(nc - 1, Math.floor(bx / cell)); i++) sLists[j * nc + i].push(q);
   }
   let sTotal = 0;
