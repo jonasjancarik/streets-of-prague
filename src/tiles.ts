@@ -8,6 +8,7 @@ import { Geo, Grid, rng, hash, clipLine } from './map/geo.ts';
 import { wallMesh } from './map/buildings.ts';
 import { TreePool } from './trees.ts';
 import { Surfaces } from './surface.ts';
+import { buildTin, tinSampler, type TinFile, type TinMesh } from './tin.ts';
 import { shadeBuildings, shadeLandmark, cutAway, broad, ROOF_CLUTTER, roadRasterEnabled } from './shading.ts';
 import { loadFacadeAtlas } from './facades.ts';
 import type { Footprint } from './facades.ts';
@@ -215,6 +216,28 @@ function relief(buffer: ArrayBuffer, bareBuffer: ArrayBuffer | null, box: Bounds
     tex.needsUpdate = true;
   };
   return { texture: tex, box: [x0 - half, y0 - half, x0 + (n - 1) * step + half, y0 + (n - 1) * step + half], sample: heightSampler(hm, box, n, step, labels, terraceAt(terraces), flatTerraces(terraces, ref), stepLineIndex(stepLines, ref, lineReach(step), unit)), hm, labels, edges };
+}
+
+// Trial (tin.ts): the hill shading from the TIN, a texel a metre, each texel's slope on
+// its own side of a step.
+function tinRelief(sample: (x: number, y: number, side?: number | boolean) => number, labelAt: (x: number, y: number) => number, box: Bounds, res = 1) {
+  const [x0, y0, x1] = box, m = Math.round((x1 - x0) / res) + 1;
+  const L = [-110, 80, 190], ll = Math.hypot(...L), lx = L[0] / ll, ly = L[1] / ll, lz = L[2] / ll;
+  const px = new Uint16Array(m * m);
+  for (let j = 0; j < m; j++) for (let i = 0; i < m; i++) {
+    const x = x0 + i * res, y = y0 + j * res, s = labelAt(x, y), side = s >= 0 ? s : false;
+    const d = res / 2;
+    const dx = (sample(x + d, y, side) - sample(x - d, y, side)) / (2 * d), dy = (sample(x, y + d, side) - sample(x, y - d, side)) / (2 * d);
+    const ok = Number.isFinite(dx) && Number.isFinite(dy);
+    const nl = Math.hypot(ok ? dx : 0, ok ? dy : 0, 1);
+    const lit = ok ? (-dx * lx - dy * ly + lz) / nl / lz : 1;
+    const shade = Math.round(128 * Math.max(0.55, Math.min(1.35, 1 + 1.1 * (lit - 1)))) / 127.5;
+    px[j * m + i] = THREE.DataUtils.toHalfFloat(shade * broad(x, y));
+  }
+  const tex = new THREE.DataTexture(px, m, m, THREE.RedFormat, THREE.HalfFloatType);
+  tex.magFilter = tex.minFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  return { texture: tex, box: [x0 - res / 2, y0 - res / 2, x0 + (m - 1) * res + res / 2, y0 + (m - 1) * res + res / 2] };
 }
 
 const shadowerBox = new WeakMap<Shadower, Bounds>();
@@ -523,6 +546,7 @@ export class TileWorld {
   private roadProfiles: Promise<ReturnType<typeof readRoadProfile>> | null;
   private stationTracks: Promise<ReturnType<typeof readStationTracks>> | null;
   private stepLines: boolean;
+  private tins: Promise<Set<string>> | null;
   private bridgeSurfacePreview: Promise<ReturnType<typeof readBridgeSurfacePreview>> | null;
   grid: {
     res: number; height: (x: number, y: number) => number; at: (x: number, y: number) => number;
@@ -542,6 +566,7 @@ export class TileWorld {
     const station = area === 'praha' && query.has('stationtracks');
     // ?lines=off: a map's step lines (pipeline/step_lines.py, a trial) left out, to compare.
     this.stepLines = query.get('lines') !== 'off';
+    this.tins = area.startsWith('walls-tin') ? fetch(dataUrl(area, 'tin/index.json')).then((r) => (r.ok ? r.json() as Promise<string[]> : [])).then((k) => new Set(k)).catch(() => new Set<string>()) : null;
     this.bridgeSurfacePreview = (query.has('bridgesurfaces') || station) ? fetch(dataUrl(area, 'bridge-surfaces.json'))
       .then(async (r) => r.ok ? readBridgeSurfacePreview(await r.json(), area, index.built) : null)
       .catch(() => null) : null;
@@ -1337,6 +1362,20 @@ export class TileWorld {
     const shared = !!terrain && Math.abs((terrain.n - 1) * terrain.step - (x1 - x0)) < 0.01;
     const around = shared ? (di: number, dj: number) => this.byIndex.get((t.i + di) * 65536 + t.j + dj)?.relief?.hm ?? null : null;
     const shade = height && terrain ? relief(height, bare, t.box, terrain.n, terrain.step, this.ref, around, t.terraces, terrain.unit, this.stepLines ? t.stepLines : undefined) : null;
+    let tin: TinMesh | null = null;
+    if (shade && this.tins && (await this.tins).has(k)) {
+      const file = await fetch(dataUrl(this.area, `tin/${k}.json`)).then((r) => (r.ok ? r.json() as Promise<TinFile> : null));
+      if (file) {
+        const t1 = performance.now();
+        tin = buildTin(file);
+        const { sample, labelAt } = tinSampler(tin, this.ref, shade.sample);
+        shade.sample = sample;
+        shade.texture.dispose();
+        Object.assign(shade, tinRelief(sample, labelAt, t.box), { edges: () => {} });
+        ((globalThis as unknown as { __tin?: unknown[] }).__tin ??= []).push({ k, triangles: tin.tri.length / 3, kept: tin.kept, lost: tin.lost, ms: Math.round(performance.now() - t1), texture: (shade.texture.image as { width: number }).width });
+        console.info(`tin ${k}: ${tin.tri.length / 3} triangles, steps kept ${tin.kept}, lost ${tin.lost}, ${Math.round(performance.now() - t1)} ms`);
+      }
+    }
     const pilot = this.roadProfiles && this.available.has(k) && shade ? await this.roadProfiles : null;
     const roadProfile = pilot?.tiles.includes(k) ? pilot.profile : undefined;
     if (shade && roadProfile) shade.sample = withRoadProfile(shade.sample, roadProfile, this.ref);
@@ -1347,7 +1386,7 @@ export class TileWorld {
     if (shade && surfaces) shade.sample = withRoadSurfaces(shade.sample, surfaces, this.ref, terraceAt(t.terraces));
     const hAt = shade ? shade.sample : () => 0;
     const ground = shade && terrain ? { hm: shade.hm, box: t.box, n: terrain.n, step: terrain.step, labels: shade.labels,
-      terraces: t.terraces, stepLines: this.stepLines ? t.stepLines : undefined, unit: terrain.unit, ref: this.ref, ...(roadProfile ? { roadProfile } : {}), ...(surfaces ? { roadSurfaces: surfaces } : {}) } : null;
+      terraces: t.terraces, stepLines: this.stepLines ? t.stepLines : undefined, unit: terrain.unit, ref: this.ref, ...(roadProfile ? { roadProfile } : {}), ...(surfaces ? { roadSurfaces: surfaces } : {}), ...(tin ? { tin } : {}) } : null;
     // Bridges above the ground and tunnels below it, each level with its own heights.
     // (Charles Bridge's cutwaters come off its deck.)
     const structures = clipDecks(t.structures || [], this.charles.piers, t.box);
