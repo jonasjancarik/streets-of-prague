@@ -703,3 +703,44 @@ back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change w
   finer ground (stage 1). Not the default yet: it hasn't been tried on the whole city,
   and the measures were tuned on these nine places. Pictures and scripts are in
   `docs/evidence/straight-tops` (local).
+
+  **The wall's top where its face ends (17 November 2026).** At nábřeží Kapitána Jaroše
+  the game still drew one wall 8 m high, where there is a stone wall to about 185.5 m
+  and a grass bank behind it rising to 189 m over 6 m (the LiDAR, and the user's
+  picture from Google Earth). The top was read 1.5–4 m back, on the bank; straight
+  tops then levelled it at the bank's height. `STRAIGHT_CROWN` (tin branch, 5631f7d2;
+  needs the scan) reads a LiDAR profile across each stretch of wall: the steepest rise
+  starting within 5 m of the line, followed while it is steeper than 1 m per metre and
+  at least 1 m high. Where it ends is the crown. Where most of a stretch has one, the
+  top goes no higher than the crown (filled in between), and then the straight pieces
+  are fitted. The fill behind such a wall also lowers the lattice within 4 m to the
+  scan's height, never under the top: without that the lowered top was a ledge a
+  metre wide with the old ground jumping back up behind it.
+
+  The ground 1 m and 3 m behind the walls, share within 0.3 m of the LiDAR:
+
+  | | straight tops, ground filled | with the crown |
+  |---|---:|---:|
+  | Československého exilu | 18 / 46 % | 25 / 55 % |
+  | nábřeží Kapitána Jaroše | 22 / 40 % | 28 / 44 % |
+  | Linhartova | 21 / 37 % | 30 / 56 % |
+  | M7 | 33 / 58 % | 40 / 64 % |
+  | Benešovská | 65 / 89 % | 65 / 90 % |
+  | Vyšehrad | 12 / 26 % | 18 / 41 % |
+  | Malá Strana | 18 / 50 % | 27 / 62 % |
+  | Na Veselí | 43 / 45 % | 42 / 46 % |
+  | Italská | 18 / 37 % | 44 / 61 % |
+
+  The streets measure exactly as before. At Jaroše the top is now 185.3–186.3 m
+  (LiDAR crown 185.2–185.6, straight tops 188.4), and the places that changed most are
+  walls of the same kind: a low wall with a terrace or a bank behind and a second rise
+  further back (Československého exilu: a wall to 259 m, a terrace 6 m wide, then
+  263 m; straight tops had put the top at 262.4). The "dips behind the top" measure
+  goes up (Jaroše 70 → 87 m over 0.3 m), because 1 m behind a low wall is now the
+  bank's real slope, which it counts as a dip; it fits walls with a flat top only.
+  Parapet jags over 15 cm grow at Vyšehrad (206 → 281 m) and a little at Malá Strana
+  and Linhartova, the worst of them the same as before: Vyšehrad's ramparts, battered
+  walls where the crown may stop part way up, are left to look at. Screenshots
+  `crown-jaros.jpg` and `crown-m7.jpg` in `docs/evidence/straight-tops` (local); in the
+  tin worktree's game the three maps are `?area=walls-today`, `walls-straight` and
+  `walls-crown`.
