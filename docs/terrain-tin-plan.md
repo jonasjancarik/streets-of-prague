@@ -245,6 +245,44 @@ the hill shade are moved to the TIN. It stays inside the build for as long as th
 in `dtm_heights.py` work on a grid, and for one release both ship, so the map can go
 back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change with it.
 
+## The move off the lattice (17 November 2026)
+
+What replaces stages 2–4 after the decision to go straight to the end. The survey's rules
+(`dtm_heights.apply`) work on one array over the whole area: at 0.5 m that would be
+about 3 billion points for `praha`, so they can't simply run finer. The build becomes
+two passes in `ipr_terrain.py`:
+
+1. **The city pass** (as now, on the 4 m lattice): what is city-wide by nature. IPR's
+   model with its gaps filled, the water's pools and their levels, the walls' strips as
+   polygons and which side is up, bridges and tunnels and their levels, the pads at
+   bridge ends, the made-up land past IPR's model. Its lattice stays inside the build.
+2. **The tile pass** (new, each tile with a margin, every 0.5 m): the surface the mesh
+   is fitted to.
+   - Water: flat at its pool's level.
+   - Paved ground: the LiDAR as it is, and smoothed over 1.5 m on unpaved ground within
+     2 m of it. Without the LiDAR: the city pass's streets.
+   - Open ground: IPR's dense model.
+   - Within 2 m of a wall: the city pass's heights. This is where the lattice still
+     reaches the map, until the wall rules move to points (step 4).
+   - Pads: flat at their height.
+   - Breaklines: the walls' outlines with each side's height read from this surface a
+     little way out (the LiDAR's crown where it has one, the straight tops), the
+     survey's kerb lines with the same height on both sides, the water's edges.
+
+   Then `pipeline/tin.py` fits the mesh (10 cm on paved ground, 25 cm elsewhere) and
+   writes `<tile>.tin.bin.gz`: the points, each point's heights by side, the
+   breaklines. The game builds the triangles itself (Delaunator and Constrainautor).
+3. **The game** reads the mesh wherever a tile has one (`src/tin.ts`, as on the trial),
+   the hill shade comes from it, and the checks read it too. For one release the map
+   carries both, so it can go back; then `height.bin` goes.
+4. **The walls move to points**: their foot and top from the survey's lines and the
+   LiDAR, not from the lattice. After that the city pass only decides water levels,
+   structures and which side of each outline is which.
+
+Order: ujezd built both ways (with and without the LiDAR), then the ten trial places,
+then the size in the binary format on ujezd and the 40 random tiles, and the Pixel 5's
+time to triangulate a tile, before `praha`.
+
 ## How to work
 
 - Small areas first; never build `praha` before the area's numbers are in.
