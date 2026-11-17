@@ -2758,7 +2758,7 @@ async function main() {
       for (const car of engines) flashing.push({ car, reach: 24, rate: 1.2 });
       for (const car of rescue) flashing.push({ car, reach: 18, rate: 1.6 });
       for (const car of carts) flashing.push({ car, reach: 14, rate: 1, amber: true });
-      beacons.draw([...chasing, ...engines, ...rescue, ...carts], ground, time.value, sky.dark);
+      beacons.draw([...chasing, ...engines, ...rescue, ...carts], ground, time.value);
     }
     brigade.render();
     ambulances.render();
