@@ -905,8 +905,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   `landmarks.json`, so the game stamps its footprint into the collision grid as it does
   a building's.
 - **Roof colours.** Pitched roofs are terracotta tiles (a palette matched to reference photos of Prague's roofs, brick-red rather than orange, with each tile a little redder or duller than the next; the landmarks' photographs get the same warming in the final GLB, or on load for older models, and where a landmark's photograph shows a red roof, the roof shader draws the same tiles at the photograph's brightness: `shadeLandmark` in `src/shading.ts` and its port in `src/webgpu/buildings.ts`), as nearly all of them are in Prague;
-  flat ones are grey. OSM's `roof:material` and `roof:colour` can make a roof grey slate
-  or green copper instead, down to single building parts (the cathedral's grey roofs
+  flat roofs generated from footprints use bitumen, gravel or membrane, with the sheet
+  seams aligned to the building walls. OSM's `roof:material` and `roof:colour` can make
+  a roof grey slate or green copper instead, down to single building parts (the cathedral's grey roofs
   and copper domes), and `pipeline/roofs.py` corrects landmarks OSM gets wrong or leaves
   out, including wings of the Castle that both OSM and IPR draw as one building.
   Churches OSM says nothing about get slate. IPR's roofs take their colour triangle by

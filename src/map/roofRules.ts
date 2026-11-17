@@ -141,11 +141,12 @@ const GRAVEL: Palette = ['#8a8782', '#807d78', '#95918b'];
 const BITUMEN: Palette = ['#4b4a48', '#55534f', '#403f3e'];
 const MEMBRANE: Palette = ['#b9b9b4', '#c4c3bd', '#a9aaa8'];
 
-// What a flat roof is covered with: gravel, bitumen sheet or a pale membrane.
-export function flatColour(b: RoofSpec, hv: number) {
+// A fallback flat roof's colour and matching shader material (tileWorker.ts).
+export function flatFinish(b: RoofSpec, hv: number) {
   const u = hash(b.id + 'surface');
-  const set = u < 0.5 ? GRAVEL : u < 0.78 ? BITUMEN : MEMBRANE;
-  return set[Math.floor(hv * 997) % set.length];
+  const [material, palette] = u < 0.5 ? [5, BITUMEN] as const
+    : u < 0.78 ? [7, GRAVEL] as const : [6, MEMBRANE] as const;
+  return { material, colour: palette[Math.floor(hv * 997) % palette.length] };
 }
 
 // A parapet goes on flat roofs over this footprint, and is this wide and high.
