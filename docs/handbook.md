@@ -1367,6 +1367,8 @@ record the measurements, merge decisions and pending landmark asset activation.
   no kerbside cars, and no car is left sticking out into a traffic lane. Underground, multi-storey and rooftop car parks stay empty.
   A parked car's whole footprint must clear any tree trunks within its bay.
   Parking also stays clear of the approaches to mapped outdoor stairways.
+  Mapped service aisles inside a lot stay clear even when the traffic graph
+  does not route through the lot.
   The ground must also support the corners of the car. A normal kerb is fine,
   but a corner hanging over a retaining step rules out the spot.
   As in Prague, some cars stand half or fully on the pavement, often vans and often

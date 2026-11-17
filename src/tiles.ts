@@ -13,7 +13,7 @@ import { shadeBuildings, shadeLandmark, cutAway, broad, ROOF_CLUTTER, roadRaster
 import { loadFacadeAtlas } from './facades.ts';
 import type { Footprint } from './facades.ts';
 import { Zones, parkCarsSteps, inRing, inPoly } from './parking.ts';
-import { finish } from './parkingClearance.ts';
+import { finish, parkingAisles } from './parkingClearance.ts';
 import { openWater } from './river.ts';
 import { readRoadProfile, withRoadProfile } from './roadProfiles.ts';
 import { readRoadSurfaces, withRoadSurfaces } from './roadSurfaces.ts';
@@ -1466,7 +1466,11 @@ export class TileWorld {
     const parking = parkCarsSteps({
       data, edges, clearanceEdges, zones, buildings: location.search.includes('oldparking') ? null : nearBuildings, r: rng(Math.floor(hash(`${this.area}/${k}`) * 1e9)), night: this.night,
       shares: new Map((t.sections ?? []).map((s) => [s.code, s.share])), inside, height: shade?.sample,
-      obstacles: (function* () { yield* land.trunkCells.values(); yield* stairLandings(groundStairs(t.walk)); })(),
+      obstacles: (function* () {
+        yield* land.trunkCells.values();
+        yield* stairLandings(groundStairs(t.walk));
+        yield* parkingAisles(t.walk ?? [], t.drive ?? [], t.lots?.map((lot) => lot.rings) ?? t.areas.parking ?? []);
+      })(),
       // No parking inside passages, or at a bus stop.
       solid: (x, y) => (inside(x, y) ? grid.at(x, y) !== 0 || inPassage(t.passages || [], x, y, 1) || !!this.noParking?.(x, y) : false),
     });

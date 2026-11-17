@@ -1,11 +1,37 @@
 import { junctionCurve, junctionTrim, segDist, SpatialHash } from './network.ts';
-import type { DriveEdge } from './network.ts';
-import type { Point2, Bounds } from './map/geo.ts';
+import type { DriveEdge, RawStreetEdge } from './network.ts';
+import { onPolygons, type Point2, type Bounds, type Polygons } from './map/geo.ts';
 import { TYPES } from './car.ts';
 import type { Car } from './car.ts';
 import { distanceToCarBody } from './treeEscape.ts';
 
 export interface ParkingObstacle { x: number; y: number; radius: number }
+
+// Parking aisles can be present only in the walk graph so through traffic does
+// not route through a lot. Keep them clear wherever a lot covers the way.
+export function* parkingAisles(walk: RawStreetEdge[], drive: RawStreetEdge[], lots: Polygons): Generator<ParkingObstacle> {
+  if (!lots.length || !walk.length) return;
+  const isLot = onPolygons(lots);
+  const endpoints = ({ u, v }: RawStreetEdge) => u < v ? `${u}>${v}` : `${v}>${u}`;
+  const used = new Set(drive.map(endpoints));
+  for (const edge of walk) {
+    if (edge.hw !== 'service' || edge.bridge || edge.tunnel || edge.level || edge.levels || !(edge.width > 0)) continue;
+    const key = endpoints(edge);
+    if (used.has(key)) continue;
+    used.add(key);
+    const radius = Math.min(edge.width / 2, 3);
+    for (let i = 1; i < edge.pts.length; i++) {
+      const [x, y] = edge.pts[i - 1], [u, v] = edge.pts[i];
+      const dx = u - x, dy = v - y;
+      const steps = Math.ceil(Math.hypot(dx, dy) / 0.8);
+      if (!steps) continue;
+      for (let j = i === 1 ? 0 : 1; j <= steps; j++) {
+        const a = x + dx * j / steps, b = y + dy * j / steps;
+        if (isLot(a, b)) yield { x: a, y: b, radius };
+      }
+    }
+  }
+}
 
 // A trunk or landing inside the body can miss every sampled point on its outline.
 export function parkingObstacleClearance(obstacles?: Iterable<ParkingObstacle>) {

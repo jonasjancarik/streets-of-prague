@@ -19,7 +19,7 @@ globalThis.location = { search: '' };
 globalThis.self = globalThis;
 Object.defineProperty(globalThis,'localStorage',{value:{getItem:()=>null,setItem:()=>{}},configurable:true});
 const { DriveGraph, junctionCurve, junctionTrim, Route, segDist } = await import('../src/network.ts');
-const { parkingClearance } = await import('../src/parkingClearance.ts');
+const { parkingAisles, parkingClearance } = await import('../src/parkingClearance.ts');
 const { parkCars, Zones } = await import('../src/parking.ts');
 const { TileWorld } = await import('../src/tiles.ts');
 const { rng } = await import('../src/map/geo.ts');
@@ -78,6 +78,14 @@ assert.ok(treads.body.index.length > 0 && treads.edges.index.length > 0, 'a mapp
 assert.equal(stairGeometry([flight], stairBox, ramp, (_x, y) => y > treeY + 4).body.index.length, 0,
   'stairs that would run into a road or building keep the base ground');
 reports.push('mapped stairs get treads and keep parking back from their landings');
+
+const aisle = raw('aisle','west','east',[[treeX - 5, treeY], [treeX + 5, treeY]], { hw: 'service', width: 4 });
+const besideAisle = park([], [], hillLot, 10, { obstacles: parkingAisles([aisle], [], hillLot) }).cars;
+assert.ok(besideAisle.length > 0 && besideAisle.every((car) => car.x !== treeX || car.y !== treeY),
+  'a walk-only service aisle stays open while the rest of the lot still parks cars');
+assert.equal([...parkingAisles([aisle], [], [rectangle(0, 20, 70, 30)])].length, 0,
+  'a service way away from the lot does not affect its parking');
+reports.push('mapped service aisles stay clear inside parking lots');
 
 // The curve cuts across clear ground between the straight lanes; a safe corner
 // farther from it must remain available. Both trim distances match actual Route.
