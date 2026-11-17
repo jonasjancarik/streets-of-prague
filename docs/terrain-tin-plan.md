@@ -651,3 +651,7 @@ back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change w
   the map made a 1.64 m wall step across K Celinám. The ground on either side of
   the wall needs separate support, especially where the road is narrower than a
   grid cell. These trials did not improve both the road and the adjacent wall.
+  Add `--lane-steps` to `scripts/check-road-flatness.mjs` to rank sudden steps
+  on the traffic graph's path in each direction as well as the full carriageway.
+  On Patočkova the lane test confirmed a 1.21 m step. The flagged K Přehradám
+  deck edge, by contrast, was much smoother at the middle of the sampled lane.
