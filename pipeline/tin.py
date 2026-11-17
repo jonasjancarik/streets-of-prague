@@ -33,6 +33,7 @@ from scipy.spatial import Delaunay, cKDTree
 HERE = Path(__file__).resolve().parent
 NEAR_LINE = 0.35  # m: grid samples this close to a step are on it, not on either side
 SNAP = 0.01  # m: points closer than this are one
+MAX_SPLITS = 40  # rounds of splitting a step segment the triangulation misses at its midpoint
 
 
 def load(target: Path, k: str):
@@ -141,6 +142,12 @@ def build(target: Path, k: str, tol: float, loose: float | None = None):
     gy = np.where(np.arange(ny) == ny - 1, y1, y0 + np.arange(ny) * g)
     P = Points()
 
+    def side_at(x, y):
+        """The target's side label at points (its nearest sample)."""
+        i = np.clip(np.round((np.asarray(x) - x0) / g).astype(int), 0, nx - 1)
+        j = np.clip(np.round((np.asarray(y) - y0) / g).astype(int), 0, ny - 1)
+        return sides[j, i].astype(int)
+
     # The steps.
     steps = []  # [run, kept sample indices, vertex ids]
     for piece in pieces:
@@ -182,7 +189,7 @@ def build(target: Path, k: str, tol: float, loose: float | None = None):
     fx, fy, fh, fs, ft = sx[free], sy[free], sh[free], ss[free], st[free]
     near = ~free
 
-    rounds = 0
+    rounds = splits = 0
     while True:
         rounds += 1
         xy = np.asarray(P.xy)
@@ -198,17 +205,30 @@ def build(target: Path, k: str, tol: float, loose: float | None = None):
             run, kept, ids = st
             nk, nids = [kept[0]], [ids[0]]
             for (ka, ia), (kb, ib) in zip(zip(kept, ids), zip(kept[1:], ids[1:])):
-                if ia != ib and (min(ia, ib), max(ia, ib)) not in edges and kb - ka > 1:
-                    m = (ka + kb) // 2
-                    nk.append(m)
-                    nids.append(P.add(run[m, 0], run[m, 1], {int(run[m, 4]): run[m, 2], int(run[m, 5]): run[m, 3]}, 1))
-                    missing += 1
+                if ia != ib and (min(ia, ib), max(ia, ib)) not in edges:
+                    if kb - ka > 1:
+                        m = (ka + kb) // 2
+                        nk.append(m)
+                        nids.append(P.add(run[m, 0], run[m, 1], {int(run[m, 4]): run[m, 2], int(run[m, 5]): run[m, 3]}, 1))
+                        missing += 1
+                    elif splits < MAX_SPLITS:
+                        # (No sample left between: the midpoint, its heights halfway.)
+                        (xa, ya), (xb, yb) = P.xy[ia], P.xy[ib]
+                        ha, hb = P.h[ia], P.h[ib]
+                        hm = {s_: (ha[s_] + hb[s_]) / 2 if s_ in hb else ha[s_] for s_ in ha}
+                        hm.update({s_: v for s_, v in hb.items() if s_ not in hm})
+                        mid = P.add((xa + xb) / 2, (ya + yb) / 2, hm, 1)
+                        if mid not in (ia, ib):
+                            nk.append(ka)
+                            nids.append(mid)
+                            missing += 1
                 nk.append(kb)
                 nids.append(ib)
             st[1], st[2] = nk, nids
         if missing:
+            splits += 1
             continue
-        labels = label_triangles(tri, P, steps)
+        labels = label_triangles(tri, P, steps, side_at)
         err, where, wrong = errors(tri, P, labels, fx, fy, fh, fs)
         over = err - ft
         bad = np.flatnonzero(over > 0)
@@ -227,7 +247,7 @@ def build(target: Path, k: str, tol: float, loose: float | None = None):
                 near=int(near.sum()), near_err=near_err, near_wrong=int(near_wrong))
 
 
-def label_triangles(tri: Delaunay, P: Points, steps) -> np.ndarray:
+def label_triangles(tri: Delaunay, P: Points, steps, side_at=None) -> np.ndarray:
     """Each triangle's side: from the steps' segments it touches, then flooded across the
     edges that aren't steps; failing those, from a vertex with only one side."""
     simp, nb = tri.simplices, tri.neighbors
@@ -252,6 +272,13 @@ def label_triangles(tri: Delaunay, P: Points, steps) -> np.ndarray:
                 if labels[t] < 0:
                     labels[t] = s[0] if left else s[1]
                     q.append(t)
+    if side_at is not None:
+        # (No triangle crosses a step, so the side at its middle is its side; the flood
+        # below leaked through gaps in the outlines and put water on the land's side.)
+        free = labels < 0
+        mid = xy[simp[free]].mean(axis=1)
+        labels[free] = side_at(mid[:, 0], mid[:, 1])
+        return labels
     for t, vs in enumerate(simp):
         if labels[t] >= 0:
             continue
@@ -336,8 +363,25 @@ def encode(res) -> dict[str, int]:
                      np.diff(np.r_[0, qy.astype(np.int32)]).astype(np.int16).tobytes(),
                      qh.tobytes(), idx.tobytes(), labels.astype(np.uint8).tobytes(),
                      np.asarray(pairs, np.uint16).tobytes()])
-    return dict(vertices=len(V), triangles=len(simp), steps=len(pairs), raw=len(body),
-                gz=len(gzip.compress(body, 9)), body=body)
+    # Points only: the game triangulates them itself (the steps' segments are Delaunay
+    # edges already, the conforming split put in the points that make them so), and
+    # floods the labels from the steps. A vertex once, with a second height where it is
+    # on a step; the steps as runs of vertex indices.
+    order = np.lexsort((np.asarray(P.xy)[:, 0], np.asarray(P.xy)[:, 1]))
+    rank = np.empty(len(order), np.int64)
+    rank[order] = np.arange(len(order))
+    XY = np.asarray(P.xy)[order]
+    px = np.round((XY[:, 0] - x0) * 100).astype(np.int64)
+    py = np.round((XY[:, 1] - y0) * 100).astype(np.int64)
+    lo2 = min(min(h.values()) for h in P.h)
+    first = np.array([round((next(iter(P.h[v].values())) - lo2) * 100) for v in order], np.int64)
+    second = [round((list(P.h[v].values())[1] - lo2) * 100) if len(P.h[v]) > 1 else -1 for v in order]
+    second = np.array([v for v in second if v >= 0], np.uint16)
+    runs_ix = np.concatenate([np.r_[len(vids), rank[np.asarray(vids)]] for run, kept, vids in res["steps"]]) if res["steps"] else np.zeros(0, np.int64)
+    pts = b"".join([np.diff(np.r_[0, py]).astype(np.int32).tobytes(), np.diff(np.r_[0, px]).astype(np.int32).tobytes(),
+                    first.astype(np.uint16).tobytes(), second.tobytes(), runs_ix.astype(np.uint16).tobytes()])
+    return dict(vertices=len(V), points=len(P.xy), triangles=len(simp), steps=len(pairs), raw=len(body),
+                gz=len(gzip.compress(body, 9)), gz_points=len(gzip.compress(pts, 9)), body=body)
 
 
 def main():
@@ -347,12 +391,13 @@ def main():
     ap.add_argument("--loose", type=float, help="the tolerance off paved ground (default: --tol)")
     ap.add_argument("--tiles")
     ap.add_argument("--out")
+    ap.add_argument("--target", help="the folder tin-target.mjs wrote (default .cache/tin/target)")
     a = ap.parse_args()
-    target = HERE / ".cache/tin/target" / a.area
+    target = (Path(a.target) if a.target else HERE / ".cache/tin/target") / a.area
     out = Path(a.out) if a.out else HERE / ".cache/tin" / a.area
     out.mkdir(parents=True, exist_ok=True)
     keys = a.tiles.split(",") if a.tiles else sorted(p.stem for p in target.glob("*.json"))
-    total, rows = dict(vertices=0, triangles=0, gz=0, seconds=0.0), []
+    total, rows = dict(vertices=0, points=0, triangles=0, gz=0, gz_points=0, seconds=0.0), []
     for k in keys:
         t0 = time.time()
         res = build(target, k, a.tol, a.loose)
