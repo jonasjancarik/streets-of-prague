@@ -21,6 +21,19 @@ walls' outlines with straight tops, which the mesh keeps as breaklines). Per til
      the city pass hasn't (Smetanovo nábřeží's quay wall, a ramp on the lattice), IPR's
      dense model on paved ground too: it has the wall's top along a straight breakline,
      where the LiDAR's 1 m cells make a sawtooth of it;
+   - where the LiDAR is more than AGREE m off the city pass (wholly from twice that) and
+     IPR's dense model doesn't bear it out, the city pass: a hole in the scan (4 m deep on
+     Československého exilu). And the city pass, whatever the dense model says, on each
+     patch where the two are more than AGREE m apart that reaches a face in the LiDAR
+     across the middle of a car street, or of any street or path within BRIDGE_NEAR m of
+     a bridge, out to HELD_REACH m from the face: a wall both models have, which OSM
+     draws a street across (Sekaninova), and the ground under a deck where OSM ends a
+     bridge short of its abutment (the ends of Hlávkův most, Čechův most and 5. května
+     over Hvězdova came out 3–4.5 m below their decks). A patch with no such face is the
+     city pass's own mistake and keeps the LiDAR (a pit 2 m deep in Národní). Divadelní,
+     down its cutting to the car park, has its walls beside the street, not across it,
+     but the dense model hasn't the cutting either, so the first rule gives it the city
+     pass's ground, as on the lattice;
    - within NEAR m of a wall the city pass, blending over BLEND m: the walls' foot and
      top still come from the lattice (step 4 of the plan moves them to points).
 3. The breaklines: the walls' outlines with each side's height; an outline whose sides
@@ -49,7 +62,7 @@ import shapely
 from pyproj import Transformer
 from pyproj.aoi import AreaOfInterest
 from pyproj.enums import TransformDirection
-from scipy.ndimage import distance_transform_edt, gaussian_filter, map_coordinates, maximum_filter, minimum_filter
+from scipy.ndimage import distance_transform_edt, gaussian_filter, label, map_coordinates, maximum_filter, minimum_filter
 from scipy.spatial import cKDTree
 
 import build_cache
@@ -67,9 +80,14 @@ NEAR = 2.0  # m: from paved ground (the LiDAR) and from a wall (the city pass)
 BLEND = 2.0  # m over which each gives way to what is further out
 SMOOTH = 1.5  # m: the Gaussian over the LiDAR on unpaved ground
 STEP_REAL = 0.3  # m between an outline's two sides: less, and it is no wall
-PAD = 10  # samples read past the tile for the smoothing, so neighbours smooth alike
+PAD = 40  # samples read past the tile for the smoothing and the held patches (HELD_REACH and some), so neighbours come out alike
 STEEP = 1.0  # m: the LiDAR rising this much within a metre is a wall's face (one the city pass has no outline for)
 STEEP_NEAR = 1.5  # m round such a face where IPR's dense model takes over from the LiDAR
+AGREE = 0.5  # m: the LiDAR further than this from the city pass (and IPR's dense model) gives way, wholly from twice it
+HELD_GROW = 1.0  # m round where it gives way that it does so too, so the change lies where the two agree
+BRIDGE_NEAR = 8.0  # m round the map's bridges where a face in the LiDAR holds the city pass (both models are bare earth)
+HELD_REACH = 15.0  # m from such a face (or one across a car street) that the patch it holds reaches
+MIDDLE = 1.0  # m either side of a street's line: a face there crosses it (one further out runs beside it)
 KERB = "010000030402"  # the survey's kerb (DTM ZPS, set 3)
 KERB_EVERY = 0.5  # m between the points taken along a kerb
 KERB_CLEAR = 0.5  # m: a kerb this near a step's outline is the outline's
@@ -186,25 +204,62 @@ def read_target(tdir: Path, k: str):
 
 
 def padded(targets, meta, field, pad):
-    """A field of the tile's target (`paved`) with `pad` samples round it from its
+    """A field of the tile's target (`paved`, `h`) with `pad` samples round it from its
     neighbours, placed by their boxes (an area's last row and column of tiles are
-    narrower); False where there is no neighbour."""
+    narrower); False or NaN where there is no neighbour."""
     nx, ny, g = meta["nx"], meta["ny"], meta["grid"]
     x0, y0 = meta["box"][:2]
-    out = np.zeros((ny + 2 * pad, nx + 2 * pad), bool)
-    for dj in (-1, 0, 1):
-        for di in (-1, 0, 1):
-            n = targets(meta["i"] + di, meta["j"] + dj)
-            if n is None:
-                continue
-            c0 = int(round((n["meta"]["box"][0] - x0) / g)) + pad
-            r0 = int(round((n["meta"]["box"][1] - y0) / g)) + pad
-            a = n[field]
-            rs, cs = max(0, -r0), max(0, -c0)
-            re, ce = min(a.shape[0], out.shape[0] - r0), min(a.shape[1], out.shape[1] - c0)
-            if re > rs and ce > cs:
+    flag = targets(meta["i"], meta["j"])[field].dtype == bool
+    out = np.zeros((ny + 2 * pad, nx + 2 * pad), bool) if flag else np.full((ny + 2 * pad, nx + 2 * pad), np.nan)
+    # (The tile itself last: its own values on the rows it shares with a neighbour.)
+    for di, dj in sorted(((a, b) for a in (-1, 0, 1) for b in (-1, 0, 1)), key=lambda d: d == (0, 0)):
+        n = targets(meta["i"] + di, meta["j"] + dj)
+        if n is None:
+            continue
+        c0 = int(round((n["meta"]["box"][0] - x0) / g)) + pad
+        r0 = int(round((n["meta"]["box"][1] - y0) / g)) + pad
+        a = n[field]
+        rs, cs = max(0, -r0), max(0, -c0)
+        re, ce = min(a.shape[0], out.shape[0] - r0), min(a.shape[1], out.shape[1] - c0)
+        if re > rs and ce > cs:
+            if flag:
                 out[r0 + rs:r0 + re, c0 + cs:c0 + ce] |= a[rs:re, cs:ce]
+            else:
+                out[r0 + rs:r0 + re, c0 + cs:c0 + ce] = a[rs:re, cs:ce]
     return out
+
+
+def held_ground(tile_of, i, j):
+    """Where a face in the LiDAR holds the city pass (`surface`), round tile (i, j): the
+    middles of the car streets on the ground, and those of every street and path within
+    BRIDGE_NEAR m of one of the map's bridges, each MIDDLE m either side of its line; as a
+    prepared shapely geometry or None. `tile_of(key)` gives a tile's JSON or None."""
+    bridges, cars, ways = [], [], []
+    for a in (-1, 0, 1):
+        for b in (-1, 0, 1):
+            tj = tile_of(f"{i + a}_{j + b}")
+            if not tj:
+                continue
+            for s in tj.get("structures") or []:
+                if s.get("kind") == "bridge":
+                    bridges += [shapely.Polygon(p[0], p[1:]) for p in s["polys"] if len(p[0]) >= 3]
+            for kind in ("drive", "walk"):
+                for e in tj.get(kind) or []:
+                    if len(e["pts"]) < 2 or (e.get("level") or 0) < 0:
+                        continue
+                    line = shapely.LineString(e["pts"])
+                    ways.append(line)
+                    if kind == "drive" and not e.get("bridge") and not e.get("level"):
+                        cars.append(line)
+    union = lambda parts: shapely.union_all(shapely.make_valid(np.array(parts, dtype=object))) if parts else None
+    middles = [shapely.buffer(union(cars), MIDDLE, cap_style="flat")] if cars else []
+    if bridges and ways:
+        zone = shapely.buffer(union(bridges), BRIDGE_NEAR)
+        middles.append(shapely.intersection(shapely.buffer(union(ways), MIDDLE, cap_style="flat"), zone))
+    geom = union(middles)
+    if geom is not None:
+        shapely.prepare(geom)
+    return geom
 
 
 def kerbs_in(kerbs, box, lines, side, g):
@@ -242,8 +297,9 @@ def kerbs_in(kerbs, box, lines, side, g):
     return out
 
 
-def surface(t, targets, dense, scan_at, pads, kerbs):
-    """The tile's surface and breaklines (the module's docstring, step 2 and 3)."""
+def surface(t, targets, dense, scan_at, pads, kerbs, held_at=None):
+    """The tile's surface and breaklines (the module's docstring, step 2 and 3).
+    `held_at`: `held_ground`'s streets' middles."""
     meta, h, side, paved, lines = t["meta"], t["h"], t["side"], t["paved"], t["lines"]
     nx, ny, g = meta["nx"], meta["ny"], meta["grid"]
     x0, y0, x1, y1 = meta["box"]
@@ -258,10 +314,13 @@ def surface(t, targets, dense, scan_at, pads, kerbs):
              for w in [n["lines"][np.abs(n["lines"][:, 2] - n["lines"][:, 3]) >= STEP_REAL]] if len(w)]
     walls = np.concatenate(walls) if walls else np.zeros((0, 6))
     d_wall = cKDTree(walls[:, :2]).query(np.c_[X.ravel(), Y.ravel()], distance_upper_bound=NEAR + BLEND + 1)[0].reshape(ny, nx) if len(walls) else np.full((ny, nx), np.inf)
-    far = dense.heights(meta["box"], nx, ny, g)
+    far_p = dense.heights((x0 - PAD * g, y0 - PAD * g, x1 + PAD * g, y1 + PAD * g), nx + 2 * PAD, ny + 2 * PAD, g)
+    far = far_p[PAD:-PAD, PAD:-PAD]
     have = np.isfinite(far)
     far = np.where(have, far, h)
+    held = np.zeros((ny, nx))
     if scan_at is not None:
+        # (All of it with PAD samples round the tile, so neighbours come out alike at their seam.)
         px = x0 + (np.arange(nx + 2 * PAD) - PAD) * g
         py = y0 + (np.arange(ny + 2 * PAD) - PAD) * g
         PX, PY = np.meshgrid(px, py)
@@ -270,15 +329,45 @@ def surface(t, targets, dense, scan_at, pads, kerbs):
         num = gaussian_filter(np.where(ok, sp, 0.0), SMOOTH / g, mode="nearest")
         den = gaussian_filter(ok.astype(float), SMOOTH / g, mode="nearest")
         with np.errstate(invalid="ignore", divide="ignore"):
-            soft = np.where(den > 0.2, num / den, np.nan)[PAD:-PAD, PAD:-PAD]
-        raw = sp[PAD:-PAD, PAD:-PAD]
-        street = np.where(paved, raw, soft)
-        street = np.where(np.isfinite(street), street, h)
+            soft = np.where(den > 0.2, num / den, np.nan)
+        h_p = padded(targets, meta, "h", PAD)
+        h_p = np.where(np.isfinite(h_p), h_p, sp)
+        street = np.where(padded(targets, meta, "paved", PAD), sp, soft)
+        street = np.where(np.isfinite(street), street, h_p)
         # (A face in the LiDAR: its rise within a metre, 3 × 3 samples.)
         rise = maximum_filter(np.where(ok, sp, -np.inf), size=3) - minimum_filter(np.where(ok, sp, np.inf), size=3)
-        d_face = distance_transform_edt(~(np.isfinite(rise) & (rise > STEEP)))[PAD:-PAD, PAD:-PAD] * g
-        wf = np.clip(STEEP_NEAR + 1 - d_face, 0, 1) * have
-        street = street * (1 - wf) + far * wf
+        d_face = distance_transform_edt(~(np.isfinite(rise) & (rise > STEEP))) * g
+        have_p = np.isfinite(far_p)
+        wf = np.clip(STEEP_NEAR + 1 - d_face, 0, 1) * have_p
+        street = street * (1 - wf) + np.where(have_p, far_p, 0.0) * wf
+        # Where the LiDAR parts from the city pass, the city pass, unless IPR's dense model
+        # bears the LiDAR out: a hole in the scan. And every patch where the two part that
+        # reaches a face in the LiDAR (a rise of STEEP within a metre) across the middle of
+        # a car street, or of any street or path near a bridge (`held_ground`), out to
+        # HELD_REACH from it, even where the dense model bears the LiDAR out: a street
+        # drawn across a wall both models have, the ground under a deck where OSM ends a
+        # bridge short of its abutment (both models are bare earth). A patch with no such
+        # face is the city pass's own mistake and takes the LiDAR: at Národní, inside Most
+        # Legií's outline, a pit 2 m deep on a flat street. (Beside it Divadelní, down the
+        # cutting to the car park under the theatre, has no face across it, but the dense
+        # model lacks the cutting too, so the first part takes the city pass there.)
+        near = shapely.contains_xy(held_at, PX, PY) if held_at is not None else np.zeros(PX.shape, bool)
+        with np.errstate(invalid="ignore"):
+            off = np.nan_to_num(np.abs(street - h_p))
+            alt = np.where(have_p, np.abs(street - far_p), np.inf)
+            part = np.nan_to_num(np.clip((np.minimum(off, alt) - AGREE) / AGREE, 0, 1))
+        apart = off > AGREE
+        seed = apart & near & (d_face <= g)
+        if seed.any():
+            patches, _ = label(apart, structure=np.ones((3, 3)))
+            hit = np.unique(patches[seed])
+            mine = np.isin(patches, hit[hit > 0]) & (distance_transform_edt(~seed) * g <= HELD_REACH)
+            part = np.maximum(part, np.clip((off - AGREE) / AGREE, 0, 1) * mine)
+        grow = int(round(HELD_GROW / g))
+        part = gaussian_filter(maximum_filter(part, size=2 * grow + 1), grow / 2)
+        street = np.where(np.isfinite(h_p), street * (1 - part) + np.nan_to_num(h_p) * part, street)
+        street, held = street[PAD:-PAD, PAD:-PAD], (part * off)[PAD:-PAD, PAD:-PAD]  # (held: how far it moved)
+        street = np.where(np.isfinite(street), street, h)
     else:
         street = h
     wp = np.clip((d_paved - NEAR) / BLEND, 0, 1)
@@ -299,6 +388,7 @@ def surface(t, targets, dense, scan_at, pads, kerbs):
         hk = map_coordinates(new, [(p[:, 1] - y0) / g, (p[:, 0] - x0) / g], order=1, mode="nearest")
         kerb_rows.append(np.c_[p, hk, hk, np.full(len(p), s), np.full(len(p), s)])
     stats = dict(ipr=float((ws * wp * have).mean()), lidar=float((ws * (1 - wp) * (scan_at is not None)).mean()),
+                 held=float((held[paved] > AGREE).mean()) if paved.any() else 0.0,  # (paved ground moved back to the city pass)
                  kerbs=len(runs), kerb_m=round(sum((len(p) - 1) * KERB_EVERY for p, _ in runs)),
                  moved=float(np.median(np.abs(new - h)[ws > 0])) if (ws > 0).any() else 0.0)
     return new.astype(np.float32), lines, kerb_rows, stats
@@ -358,7 +448,8 @@ def main():
             cache[(i, j)] = read_target(target, f"{i}_{j}")
         return cache[(i, j)]
 
-    keys = a.tiles.split(",") if a.tiles else sorted(p.stem for p in target.glob("*.json"))
+    keys = a.tiles.split(",") if a.tiles else [p.stem for p in target.glob("*.json")]
+    keys = sorted(keys, key=lambda kk: tuple(map(int, kk.split("_"))))  # (column by column: see the caches below)
     dense = DenseSheets(local)
     scan_at = None if a.no_lidar else ipr_lidar.sampler(ipr_lidar.CACHE, local)[0]
     kerbs = kerb_lines(area, local)
@@ -367,16 +458,30 @@ def main():
         shutil.rmtree(surf)
     surf.mkdir(parents=True)
     tiles_dir = folder / "tiles"
+    tile_json: dict[str, dict | None] = {}
+
+    def tile_of(key):
+        if key not in tile_json:
+            p = tiles_dir / f"{key}.json"
+            tile_json[key] = json.loads(p.read_text()) if p.exists() else None
+        return tile_json[key]
+
     rows, total = [], dict(points=0, extra=0, breaklines=0, bytes=0, seconds=0.0)
     for k in keys:
         t1 = time.time()
         i, j = map(int, k.split("_"))
+        # (Only the columns either side of this one are read again: a city's targets and tiles don't fit in memory.)
+        for c in [c for c in cache if c[0] < i - 1]:
+            del cache[c]
+        for c in [c for c in tile_json if int(c.split("_")[0]) < i - 1]:
+            del tile_json[c]
         t = targets(i, j)
         if t is None:
             continue
-        tj = json.loads((tiles_dir / f"{k}.json").read_text())
+        tj = tile_of(k)
         pads = {int(x["label"]) for x in tj.get("terraces") or [] if "h" in x}
-        new, lines, kerb_rows, stats = surface(t, targets, dense, scan_at, pads, kerbs)
+        held_at = held_ground(tile_of, i, j) if scan_at is not None else None
+        new, lines, kerb_rows, stats = surface(t, targets, dense, scan_at, pads, kerbs, held_at)
         write_surface(surf, t, new, lines, kerb_rows)
         t2 = time.time()
         res = tin.build(surf, k, a.tol, a.loose)
