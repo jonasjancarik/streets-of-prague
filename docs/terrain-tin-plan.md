@@ -262,6 +262,11 @@ two passes in `ipr_terrain.py`:
    - Paved ground: the LiDAR as it is, and smoothed over 1.5 m on unpaved ground within
      2 m of it. Without the LiDAR: the city pass's streets.
    - Open ground: IPR's dense model.
+   - Where the LiDAR is more than 0.5 m off the city pass: the city pass, if IPR's dense
+     model doesn't bear the LiDAR out (a hole in the scan), and on any such patch that
+     reaches a face in the LiDAR across a car street's middle or a way near a bridge
+     (bridge ends, which OSM draws short of their abutments, and walls a street is drawn
+     across). The ten trial places, below, say why.
    - Within 2 m of a wall: the city pass's heights. This is where the lattice still
      reaches the map, until the wall rules move to points (step 4).
    - Pads: flat at their height.
@@ -1042,3 +1047,77 @@ time to triangulate a tile, before `praha`.
   In the game, before and after from above and at street level (Vítězná, the head of
   Most Legií, Kampa; `docs/evidence/tin/shading`, local), nothing on the ground
   changes: the pixels that differ are the moving traffic, people and water.
+- 17 November 2026: the ten trial places on the mesh (`tin` 654b8b34). Each place is a
+  window build of `praha` (the city pass on 5 × 5 tiles, the tile pass on the middle
+  3 × 3), with and without the LiDAR, checked against the lattice of the same build.
+
+  Without the LiDAR the mesh is the lattice again on the streets, at all ten: within
+  0.3 m of the LiDAR 92.1 → 92.2 %, steps over 0.25 m 41 → 38, twisting over 12 %
+  87 → 83, bridge joins over 1 m 18 → 18, everything else within a street or two.
+
+  With it, the first mesh broke the bridges' ends: joins over 0.5 m / 1 m went from
+  24 / 13 to 41 / 27. The LiDAR and IPR's dense model are both bare earth, OSM ends
+  bridges a few metres short of their abutments, and the city pass keeps a street's last
+  metres at the deck's height there (`END_CLEAR`); the mesh took them down to the
+  ground under the deck, 3–4.5 m at the ends of Hlávkův most, Čechův most and 5. května
+  over Hvězdova. Elsewhere the LiDAR had a hole 4 m deep in Československého exilu, and
+  Sekaninova is drawn across a wall that both the LiDAR and the dense model have.
+
+  Where the LiDAR is more than 0.5 m off the city pass, the surface now takes the city
+  pass in two cases (`AGREE`, `held_ground` in `tin_tiles.py`):
+  - where IPR's dense model doesn't bear the LiDAR out either (the hole);
+  - on each such patch that reaches a face in the LiDAR (a rise of 1 m within a metre)
+    across the middle of a car street, or of any street or path within 8 m of a bridge's
+    outline, out to 15 m from the face (the bridge ends, Sekaninova).
+  A patch with no such face keeps the LiDAR: those are the city pass's own mistakes, like
+  a pit 2 m deep in Národní inside Most Legií's outline. Taking the city pass wherever
+  the two disagreed, tried first, lost most of the LiDAR's gain and kept that pit. The
+  tile is worked out with a 20 m margin, so neighbouring tiles decide alike.
+
+  | The ten places, with the LiDAR | Lattice | First mesh | Mesh |
+  |---|---|---|---|
+  | Carriageway within 0.3 m of the LiDAR | 99.35 % | 99.51 % | 99.49 % |
+  | Bridge joins over 0.5 / 1 m | 24 / 13 | 41 / 27 | 24 / 13 |
+  | Bridge breaks over 1 m | 6 | 6 | 6 |
+  | Steps over 0.25 / 1 m | 27 / 7 | 33 / 11 | 29 / 7 |
+  | Bumps over 0.15 / 0.5 m | 51 / 18 | 46 / 14 | 49 / 14 |
+  | Streets leaning over 8 / 15 % | 83 / 48 | 87 / 41 | 90 / 41 |
+  | Twisting over 5 / 12 % | 106 / 53 | 102 / 44 | 104 / 44 |
+  | Line metres with a wave over 0.2 m (5 m either side) | 0.84 % | 0.71 % | 0.73 % |
+  | Points a tile / mesh file a tile (gzip) | | 6,100 / 28.6 KB | 5,800 / 27.8 KB |
+
+  2,330 car streets. The last column has three more mesh tiles at Vyšehrad. Its first
+  build had a step of 1.29 m on Na Výtoni, which was the edge of the built area: the
+  tile north of it had no mesh. Built too, nothing there steps over 0.25 m. The tiles
+  are dense town, so they come out larger than the 40 random tiles' 8.5 KB.
+
+  More streets lean over 8 % because the city pass levels car streets kerb to kerb and
+  the mesh takes the LiDAR's own cross-fall: on the new ones (hillside streets at
+  Vyšehrad, Malá Strana and round Československého exilu) the mesh is nowhere more than
+  about half a metre off the LiDAR, on most within 0.2 m. Na Výtoni's right edge as drawn
+  lies on a strip 1.5 m above the carriageway, which the lattice had levelled away. Two
+  streets lean more where the rule holds the city pass only partly: U tržnice in the
+  Italská place (11 %, the lattice 7.5 %, up to 2.8 m off the LiDAR) and Plachého in the
+  Linhartova place (23 % against 1 %, beside a 5 m wall).
+
+  `ujezd` again with the rule: within 0.3 m of the LiDAR 99.9 → 99.7 %, the lattice's
+  figure (the bridge ends held at the deck, where the LiDAR has the ground under it),
+  no step over 0.25 m (was 1), and Divadelní back to the lattice's 30 % lean across. Its
+  cutting down to the car park under the theatre has its walls beside the street, not
+  across it, but the dense model lacks the cutting too, so the first case takes the
+  city pass there.
+
+  In the game, lattice against mesh at the ten places, the hole at Československého
+  exilu and Sekaninova, slanted and from above (`docs/evidence/tin/trial10`, local). From
+  above the two are nearly the same, bridge ends and the hole included. The hill shade
+  on the mesh shows small dips in the LiDAR's pavements as faint dark smudges
+  (Československého exilu's east pavement). The first mesh shots at Vyšehrad had no
+  ground and no buildings: its tiles, the heaviest of the ten (9,700 points a tile),
+  weren't built yet when the picture was taken, with two game pages loading at once.
+  They were there a few seconds later. Worth timing on the Pixel 5 before `praha`.
+
+  Left: Divadelní, U tržnice and Plachého; 934 breakline pieces the game's triangulation
+  can't keep and 677 samples over the tolerance over the 93 tiles, as on `ujezd`; the
+  smudges; and from before, the white specks, Petřín's wall foot and the triangulation
+  on the main thread. For `praha`, the tile pass takes 1–2 s a tile on one core, some
+  4–8 hours for the city's 14,595 tiles, so it should run tiles in parallel first.
