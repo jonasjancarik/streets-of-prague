@@ -8,7 +8,7 @@ import { Geo, Grid, rng, hash, clipLine } from './map/geo.ts';
 import { wallMesh } from './map/buildings.ts';
 import { TreePool } from './trees.ts';
 import { Surfaces } from './surface.ts';
-import { buildTin, decodeTin, tinSampler, TIN_FORMAT, type TinFile, type TinMesh } from './tin.ts';
+import { buildTin, decodeTin, tinGrid, tinNearSteps, tinSampler, TIN_FORMAT, type TinFile, type TinMesh } from './tin.ts';
 import { shadeBuildings, shadeLandmark, cutAway, broad, ROOF_CLUTTER, roadRasterEnabled } from './shading.ts';
 import { loadFacadeAtlas } from './facades.ts';
 import type { Footprint } from './facades.ts';
@@ -220,14 +220,38 @@ function relief(buffer: ArrayBuffer, bareBuffer: ArrayBuffer | null, box: Bounds
 
 // Trial (tin.ts): the hill shading from the TIN, a texel a metre, each texel's slope on
 // its own side of a step.
-export function tinRelief(sample: (x: number, y: number, side?: number | boolean) => number, labelAt: (x: number, y: number) => number, box: Bounds, res = 1) {
-  const [x0, y0, x1] = box, m = Math.round((x1 - x0) / res) + 1;
+// The hill shade of a tile drawn from its mesh: each texel lit by the slope across it,
+// the heights half a texel either side of its middle, across and along, read on the side
+// its middle lies on. Those points make three grids, which tinGrid fills in one pass
+// over the triangles each. Where a texel's points don't all lie in triangles of its
+// side, or near a wall or the water's edge, where the sampler reads the step's line
+// rather than the triangles (and past the tile's edge), it reads them from the sampler,
+// as every texel did before (`fast` false: all of them, for checking).
+export function tinRelief(mesh: TinMesh, sample: (x: number, y: number, side?: number | boolean) => number, labelAt: (x: number, y: number) => number, box: Bounds, res = 1, fast = true) {
+  const [x0, y0, x1] = box, m = Math.round((x1 - x0) / res) + 1, d = res / 2;
   const L = [-110, 80, 190], ll = Math.hypot(...L), lx = L[0] / ll, ly = L[1] / ll, lz = L[2] / ll;
   const px = new Uint16Array(m * m);
+  const mid = fast ? tinGrid(mesh, 0, 0, m, m, res) : null;
+  const across = fast ? tinGrid(mesh, -d, 0, m + 1, m, res) : null; // (i - ½, j): texel i has i and i + 1
+  const along = fast ? tinGrid(mesh, 0, -d, m, m + 1, res) : null; // (i, j - ½): texel j has j and j + 1
+  const lab = mesh.labels, walls = fast ? tinNearSteps(mesh, m, res, 0.3 + d) : null;
   for (let j = 0; j < m; j++) for (let i = 0; i < m; i++) {
-    const x = x0 + i * res, y = y0 + j * res, s = labelAt(x, y), side = s >= 0 ? s : false;
-    const d = res / 2;
-    const dx = (sample(x + d, y, side) - sample(x - d, y, side)) / (2 * d), dy = (sample(x, y + d, side) - sample(x, y - d, side)) / (2 * d);
+    const x = x0 + i * res, y = y0 + j * res;
+    let dx = NaN, dy = NaN;
+    const c = mid ? mid.tri[j * m + i] : -1, s = c >= 0 ? lab[c] : -1;
+    if (c >= 0 && across && along && !walls![j * m + i]) {
+      const w = j * (m + 1) + i, e = w + 1, n0 = j * m + i, n1 = n0 + m;
+      const tw = across.tri[w], te = across.tri[e], ts = along.tri[n0], tn = along.tri[n1];
+      if (tw >= 0 && te >= 0 && ts >= 0 && tn >= 0 && lab[tw] === s && lab[te] === s && lab[ts] === s && lab[tn] === s) {
+        dx = (across.h[e] - across.h[w]) / (2 * d);
+        dy = (along.h[n1] - along.h[n0]) / (2 * d);
+      }
+    }
+    if (!(Number.isFinite(dx) && Number.isFinite(dy))) {
+      const s = labelAt(x, y), side = s >= 0 ? s : false;
+      dx = (sample(x + d, y, side) - sample(x - d, y, side)) / (2 * d);
+      dy = (sample(x, y + d, side) - sample(x, y - d, side)) / (2 * d);
+    }
     const ok = Number.isFinite(dx) && Number.isFinite(dy);
     const nl = Math.hypot(ok ? dx : 0, ok ? dy : 0, 1);
     const lit = ok ? (-dx * lx - dy * ly + lz) / nl / lz : 1;
@@ -1377,7 +1401,7 @@ export class TileWorld {
         const { sample, labelAt } = tinSampler(tin, this.ref, shade.sample);
         shade.sample = sample;
         shade.texture.dispose();
-        Object.assign(shade, tinRelief(sample, labelAt, t.box), { edges: () => {} });
+        Object.assign(shade, tinRelief(tin, sample, labelAt, t.box), { edges: () => {} });
         ((globalThis as unknown as { __tin?: unknown[] }).__tin ??= []).push({ k, triangles: tin.tri.length / 3, kept: tin.kept, lost: tin.lost, ms: Math.round(performance.now() - t1), texture: (shade.texture.image as { width: number }).width });
         console.info(`tin ${k}: ${tin.tri.length / 3} triangles, steps kept ${tin.kept}, lost ${tin.lost}, ${Math.round(performance.now() - t1)} ms`);
       }

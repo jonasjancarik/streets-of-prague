@@ -149,6 +149,62 @@ export function buildTin(f: TinFile): TinMesh {
   return { box: f.box, coords, tri: Uint32Array.from(T), labels, first, side, height, segs: Int32Array.from(segs), kept, lost };
 }
 
+// Which triangle each point of a regular grid lies in, and the height there (a.s.l.) on
+// that triangle's own side, as the sampler reads it: the points ox + i·res, oy + j·res
+// in metres from the box's corner, i < nx, j < ny; -1 and NaN where no triangle covers
+// one. One pass over the triangles, each filling the points inside it, instead of
+// looking up each point's triangle as the sampler does.
+export function tinGrid(m: TinMesh, ox: number, oy: number, nx: number, ny: number, res: number) {
+  const { coords: C, tri: T, labels, first, side: S, height: H } = m, nt = T.length / 3;
+  const tri = new Int32Array(nx * ny).fill(-1), h = new Float32Array(nx * ny).fill(NaN);
+  const hOf = (v: number, s: number) => { for (let k = first[v]; k < first[v + 1]; k++) if (S[k] === s) return H[k]; return H[first[v]]; };
+  for (let t = 0; t < nt; t++) {
+    const a = T[3 * t], b = T[3 * t + 1], c = T[3 * t + 2], s = labels[t];
+    const ax = C[2 * a], ay = C[2 * a + 1], bx = C[2 * b], by = C[2 * b + 1], cx = C[2 * c], cy = C[2 * c + 1];
+    const det = (bx - ax) * (cy - ay) - (cx - ax) * (by - ay);
+    if (Math.abs(det) < 1e-12) continue;
+    const i0 = Math.max(0, Math.ceil((Math.min(ax, bx, cx) - ox) / res - 1e-6)), i1 = Math.min(nx - 1, Math.floor((Math.max(ax, bx, cx) - ox) / res + 1e-6));
+    const j0 = Math.max(0, Math.ceil((Math.min(ay, by, cy) - oy) / res - 1e-6)), j1 = Math.min(ny - 1, Math.floor((Math.max(ay, by, cy) - oy) / res + 1e-6));
+    if (i0 > i1 || j0 > j1) continue;
+    const ha = hOf(a, s), hb = hOf(b, s), hc = hOf(c, s);
+    const gx = ((hb - ha) * (cy - ay) - (hc - ha) * (by - ay)) / det, gy = ((hc - ha) * (bx - ax) - (hb - ha) * (cx - ax)) / det;
+    // Inside: on the inner side of all three edges, with the sampler's tolerance.
+    const sg = det > 0 ? 1 : -1, e = -1e-7 * Math.abs(det);
+    for (let j = j0; j <= j1; j++) {
+      const py = oy + j * res;
+      for (let i = i0; i <= i1; i++) {
+        const q = j * nx + i;
+        if (tri[q] >= 0) continue;
+        const px = ox + i * res;
+        if (sg * ((bx - ax) * (py - ay) - (by - ay) * (px - ax)) < e || sg * ((cx - bx) * (py - by) - (cy - by) * (px - bx)) < e
+          || sg * ((ax - cx) * (py - cy) - (ay - cy) * (px - cx)) < e) continue;
+        tri[q] = t;
+        h[q] = ha + gx * (px - ax) + gy * (py - ay);
+      }
+    }
+  }
+  return { tri, h };
+}
+
+// The points of the grid i·res, j·res (n × n, metres from the box's corner) within
+// `reach` of a breakline piece with two sides (a wall, the water's edge), where the
+// sampler reads heights off the piece and not the triangles (tinSampler, `ON`).
+export function tinNearSteps(m: TinMesh, n: number, res: number, reach: number) {
+  const near = new Uint8Array(n * n), C = m.coords, sg = m.segs, r2 = reach * reach;
+  for (let q = 0; q < sg.length / 4; q++) {
+    if (sg[4 * q + 2] === sg[4 * q + 3]) continue;
+    const a = sg[4 * q], b = sg[4 * q + 1], ax = C[2 * a], ay = C[2 * a + 1], dx = C[2 * b] - ax, dy = C[2 * b + 1] - ay, L2 = dx * dx + dy * dy || 1;
+    const i0 = Math.max(0, Math.ceil((Math.min(ax, ax + dx) - reach) / res)), i1 = Math.min(n - 1, Math.floor((Math.max(ax, ax + dx) + reach) / res));
+    const j0 = Math.max(0, Math.ceil((Math.min(ay, ay + dy) - reach) / res)), j1 = Math.min(n - 1, Math.floor((Math.max(ay, ay + dy) + reach) / res));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const px = i * res, py = j * res, u = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / L2));
+      const ex = ax + dx * u - px, ey = ay + dy * u - py;
+      if (ex * ex + ey * ey <= r2) near[j * n + i] = 1;
+    }
+  }
+  return near;
+}
+
 // The TIN's height above `ref` at (x, y) in the game's map metres, `fallback` off it.
 // `side` as heightSampler takes it: a label, true for the water, false for whatever is there.
 export function tinSampler(m: TinMesh, ref: number, fallback: (x: number, y: number, side?: number | boolean) => number) {
@@ -206,10 +262,13 @@ export function tinSampler(m: TinMesh, ref: number, fallback: (x: number, y: num
   };
   // The step pieces by cell, for a side's height right at a step: read off the nearest
   // piece with that side (within ON), not the triangles, whose sides near a step line
-  // the game's outline doesn't quite follow.
+  // the game's outline doesn't quite follow. Only pieces with two sides: a kerb has one,
+  // and the ground beside it is the triangles' (it read a band 0.6 m wide along every
+  // kerb at the kerb line's height).
   const ON = 0.3, sg = m.segs, ns = sg.length / 4;
   const sStart = new Int32Array(nc * nr + 1), sLists: number[][] = Array.from({ length: nc * nr }, () => []);
   for (let q = 0; q < ns; q++) {
+    if (sg[4 * q + 2] === sg[4 * q + 3]) continue;
     const a = sg[4 * q], b = sg[4 * q + 1];
     const ax = Math.min(C[2 * a], C[2 * b]) - ON, bx = Math.max(C[2 * a], C[2 * b]) + ON, ay = Math.min(C[2 * a + 1], C[2 * b + 1]) - ON, by = Math.max(C[2 * a + 1], C[2 * b + 1]) + ON;
     for (let j = Math.max(0, Math.floor(ay / cell)); j <= Math.min(nr - 1, Math.floor(by / cell)); j++)

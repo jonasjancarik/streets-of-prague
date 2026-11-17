@@ -3,7 +3,7 @@
 // headless Chrome here, or with --android [serial] in Chrome on a phone over adb (as
 // bench.mjs does: the dev server's port passed through, DevTools on a local port).
 //
-//   node scripts/tin-bench.mjs [--url http://localhost:5204/] [--map ujezd-lidar] [--runs 3] [--android 09081FDD4001DA]
+//   node scripts/tin-bench.mjs [--url http://localhost:5204/] [--map ujezd-lidar] [--runs 3] [--check] [--android 09081FDD4001DA]
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
 
@@ -12,7 +12,7 @@ const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) =>
   return acc;
 }, []));
 const base = new URL(args.url || 'http://localhost:5191/');
-const page = new URL(`scripts/tin-bench.html?map=${args.map || 'ujezd-lidar'}&runs=${args.runs || 3}`, base).href;
+const page = new URL(`scripts/tin-bench.html?map=${args.map || 'ujezd-lidar'}&runs=${args.runs || 3}${args.check ? '&check' : ''}`, base).href;
 const require = createRequire(import.meta.url);
 const tryReq = (p) => { try { return require(p); } catch { return null; } };
 const pw = tryReq(process.env.PLAYWRIGHT_PATH || 'playwright') || tryReq(`${process.env.HOME}/projects/micromachines-clone/node_modules/playwright`);
