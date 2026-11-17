@@ -25,6 +25,7 @@ import { gunzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import { decodeHeights, decodeLevels, pointLabels, heightSampler, terraceAt, flatTerraces, withRamps, stepLineIndex, lineReach, sampling } from '../src/terrain.ts';
 import { onPolygons } from '../src/map/geo.ts';
+import { meshGround } from './tin-ground.mjs';
 import { readRoadSurfaces, withRoadSurfaces } from '../src/roadSurfaces.ts';
 import { bridgeSurfaceBuffers, bridgeSurfaceTile, readBridgeSurfacePreview } from '../src/bridgeSurfacePreview.ts';
 import { bridgeRegressions } from './bridge-regressions.mjs';
@@ -40,6 +41,7 @@ if (args.lines === 'off') sampling.lines = false; // the steps' lattice ramps, w
 const root = new URL('..', import.meta.url).pathname;
 const area = pos[0] || 'praha', dir = join(args.data || join(root, 'public/data'), `${area}_now`);
 const index = JSON.parse(readFileSync(join(dir, 'index.json'), 'utf8'));
+const withMesh = meshGround(dir, index, args); // (the tile's mesh where the map has one; --tin off: the lattice)
 const trial = args.roadsurfaces ? readFileSync(args.roadsurfaces, 'utf8') : null;
 const surfaces = trial && readRoadSurfaces(JSON.parse(trial), index.area, index.built);
 if (args.roadsurfaces && !surfaces) throw new Error('Road surfaces do not match the map build');
@@ -70,8 +72,9 @@ function tileOf(i, j) {
       structures.length ? binary(`${k}.levels.bin`) : null, preview);
     const heights = levels ? decodeLevels(levels, terrain.n, structures.length, REF) : [];
     const side = terraceAt(t.terraces);
-    const base = height ? heightSampler(decodeHeights(height, terrain.n, REF, terrain.unit), t.box, terrain.n, terrain.step,
+    const lattice = height ? heightSampler(decodeHeights(height, terrain.n, REF, terrain.unit), t.box, terrain.n, terrain.step,
       pointLabels(height, terrain.n), side, flatTerraces(t.terraces, REF), stepLineIndex(t.stepLines, REF, lineReach(terrain.step), terrain.unit)) : () => NaN;
+    const base = height ? withMesh(k, t.box, lattice, REF) : lattice;
     const road = surfaces ? surfaces.get(k) : undefined, lower = preview?.ground.get(k);
     const fits = lower ? [...lower, ...(road ?? [])] : road;
     const patches = height && !structures.some(s => s.kind === 'tunnel') ? fits : undefined;

@@ -46,6 +46,7 @@ import { readRoadProfile, withRoadProfile } from '../src/roadProfiles.ts';
 import { readRoadSurfaces, withRoadSurfaces } from '../src/roadSurfaces.ts';
 import { bridgeSurfaceBuffers, bridgeSurfaceTile, readBridgeSurfacePreview } from '../src/bridgeSurfacePreview.ts';
 import { onPolygons } from '../src/map/geo.ts';
+import { meshGround } from './tin-ground.mjs';
 
 const args = {}, pos = [];
 const rest = process.argv.slice(2);
@@ -57,6 +58,7 @@ if (args.lines === 'off') sampling.lines = false; // the steps' lattice ramps, w
 const root = new URL('..', import.meta.url).pathname;
 const area = pos[0] || 'praha', dir = join(args.data || join(root, 'public/data'), `${area}_now`);
 const index = JSON.parse(readFileSync(join(dir, 'index.json'), 'utf8'));
+const withMesh = meshGround(dir, index, args); // (the tile's mesh where the map has one; --tin off: the lattice)
 const { tile: T, origin: [ox, oy], terrain } = index;
 const pilot = args.roadprofiles
   ? readRoadProfile(JSON.parse(readFileSync(join(dir, 'road-profile.json'), 'utf8')), index.area, index.built) : null;
@@ -147,8 +149,9 @@ function tileOf(i, j) {
       structures.length ? binary(`${k}.levels.bin`) : null, preview);
     const heights = levels ? decodeLevels(levels, terrain.n, structures.length, REF) : [];
     const roads = t.roads || {}, side = terraceAt(t.terraces);
-    const base = height ? heightSampler(decodeHeights(height, terrain.n, REF, terrain.unit), t.box, terrain.n, terrain.step,
+    const lattice = height ? heightSampler(decodeHeights(height, terrain.n, REF, terrain.unit), t.box, terrain.n, terrain.step,
       pointLabels(height, terrain.n), side, flatTerraces(t.terraces, REF), stepLineIndex(t.stepLines, REF, lineReach(terrain.step), terrain.unit)) : () => NaN;
+    const base = height ? withMesh(k, t.box, lattice, REF) : lattice;
     out = {
       side: side || (() => 0),
       base,
