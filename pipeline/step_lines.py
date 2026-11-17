@@ -568,11 +568,29 @@ def straight_tops(lines_by_tile, ids, boxes, lattice=None, driven=None, crown_at
             breaks.sort()
             fit = np.interp(sp, sp[breaks], env[breaks])
             # (A piece steeper than TOP_GRADE is a bank's slope, not a wall's top: as it was.)
-            for a, b in zip(breaks[:-1], breaks[1:]):
-                if abs(env[b] - env[a]) > TOP_GRADE * max(sp[b] - sp[a], 1e-9):
+            spans = list(zip(breaks[:-1], breaks[1:]))
+            steep = [abs(env[b] - env[a]) > TOP_GRADE * max(sp[b] - sp[a], 1e-9) for a, b in spans]
+            for m, (a, b) in enumerate(spans):
+                if steep[m]:
                     # (The heights as read: the crown, a profile at each point, scatters
-                    # by half a metre where it isn't straightened.)
-                    fit[a:b + 1] = z0[a:b + 1]
+                    # by half a metre where it isn't straightened. But not under both of
+                    # its ends: going down from a bridge head to the quay at nábřeží
+                    # Kapitána Jaroše, the reading slipped to the wall's foot and the top
+                    # dipped 4 m toward the water. An end's height is the straight top
+                    # it joins, the middle of its first TOP_SEG metres as read; where it
+                    # joins none, as read there. Not the envelope: where a wall runs out
+                    # down a slope or meets a bridge's abutment, the envelope's end is
+                    # metres over it, and the last metres of a wall at Malá Strana stood
+                    # flat over a 6 m cliff.)
+                    ends = []
+                    for end, n in ((a, m - 1), (b, m + 1)):
+                        if 0 <= n < len(spans) and not steep[n]:
+                            near = np.arange(*spans[n]) if n > m else np.arange(spans[n][0] + 1, spans[n][1] + 1)
+                            near = near[(np.abs(sp[near] - sp[end]) <= TOP_SEG) & (near != end)]
+                            ends.append(float(np.median(z[near])) if len(near) else z0[end])
+                        else:
+                            ends.append(z0[end])
+                    fit[a:b + 1] = np.maximum(z0[a:b + 1], min(ends) - TOP_TOL)
             new = np.clip(fit, np.minimum(z, z0) - TOP_LOWER, np.maximum(z, z0) + TOP_RAISE)
             new = np.maximum(new, low + STEP_MIN)
             walls += 1
