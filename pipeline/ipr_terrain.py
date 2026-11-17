@@ -431,6 +431,9 @@ def main() -> None:
                     help="trial: each step's outline with the ground's height on either side of it (step_lines.py)")
     ap.add_argument("--step-lines-scan", action="store_true",
                     help="trial: the step lines read the ground beside each step from the LiDAR (--survey-scan's), not the lattice")
+    ap.add_argument("--tin", action="store_true",
+                    help="the city pass for the mesh (tin_tiles.py): the step lines, the walls' tops straight and the ground behind "
+                         "raised to them, with --survey-scan their crowns from the LiDAR")
     ap.add_argument("--resume", action="store_true", help="reuse completed terrain output if its inputs and binary files match")
     ap.add_argument("--no-assemble", action="store_true", help="leave output staged; assemble the complete generation separately")
     args = ap.parse_args()
@@ -468,6 +471,12 @@ def main() -> None:
         options["lidar_ground"] = True
     if args.lidar_window > 1:
         options["lidar_window"] = args.lidar_window
+    if args.tin:
+        # (What the walls-tin trial ran with: step_lines.straight_tops and its two parts.)
+        args.step_lines = True
+        step_lines.STRAIGHT_TOPS = step_lines.STRAIGHT_FILL = True
+        step_lines.STRAIGHT_CROWN = bool(options.get("survey_scan"))
+        options["tin"] = True
     if args.step_lines:
         options["step_lines"] = True
     if args.step_lines_scan:
