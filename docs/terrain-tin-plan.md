@@ -871,3 +871,45 @@ back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change w
     TIN, and 270 of 1.29 million over the tolerance, against the pipeline's 132.
     Wrong-side samples 1,928 against the pipeline's 590, mostly at Benešovská, Malá
     Strana and M7: not looked into yet.
+
+  **In the game (17 November 2026).** On the `tin` branch, `?area=walls-tin` loads a
+  map copy (`public/data/walls-tin_now` there: `praha_now` with the trial places' tiles
+  from window builds with straight tops, crowns and fill) whose tiles also have the
+  TIN's points and wall lines under `tin/`. The game triangulates them in
+  `src/tin.ts`, reads the ground's heights from the triangles (walls and ground meshes
+  alike), cuts the ground into 2 m pieces instead of 8 m on those tiles, and shades it
+  from a 1 m relief of the TIN. Wall tops followed the wall lines badly at first
+  (kinks where a line was cut, and where a point's other side was dropped): with each
+  point's every side kept and the wall's own height read on the line, samples more than
+  10 cm off the line went from 7.85 % to 0.09 %. 83 are still over 2 m, at tiny pieces
+  where three walls meet.
+
+  Two places the user found:
+
+  - **The quay wall dipped 4 m at nábřeží Kapitána Jaroše** (a V seen from above),
+    going down from the bridge head to the quay. A piece of a top steeper than
+    `TOP_GRADE` keeps its heights as read, and there the reading had slipped to the
+    wall's foot. Such a piece is now held at its lower end, less 0.3 m, where an end's
+    height is the straight top it joins (`straight_tops`, `tin` branch). Taking the
+    ends from the envelope instead flattened the last metres of a wall at Malá Strana
+    over a 6 m cliff and lifted a quay wall under Vyšehrad by 5.5 m. Against the
+    earlier build, on the ten places, it moves the dip and 9 heights at Libeňský most
+    and under Vyšehrad (small dips filled to the top beside them, at most 0.75 m),
+    nothing else.
+  - **The road edge on Edvarda Beneše was torn** (the lattice's teeth where the road is
+    cut into Letná's slope). The target had today's ground on the streets. It now has
+    the 2023 LiDAR on paved ground and within 2 m of it, smoothed over 1.5 m off the
+    paved ground (raw, the strips of grass and hedge beside a street came out in dark
+    scribbles), and keeps today's ground only within 2 m of walls of 0.3 m or more. A
+    terrace's outline with the same height on both sides is no wall: it kept a 2 m band
+    of teeth along the kerb, and now takes the new ground's height
+    (`docs/evidence/tin/walls-tin/dense_target3.py`, local). The tiles round the second
+    view are in the trial now (the place `jarosw`, 58_68).
+
+  Points a tile, the nine places: 4,700 → 6,300; gzip with the 0.5 m side grid
+  38.7 → 50.2 KB. Before and after: `game-jaros-dip-fixed.jpg`,
+  `game-jarosw-road-edge.jpg`. Left on that road: a short zigzag where the road's
+  edge is a real low wall (0.7 m median) drawn on the lattice's outline, which the TIN
+  can't straighten (the outline would have to follow the kerb), and scribbles on the
+  tram median that the mesh didn't change. Also left: the bridge head at Hlávkův most,
+  as broken on today's map, and a crack along the promenade above Jaroše's quay.
