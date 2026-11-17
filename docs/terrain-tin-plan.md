@@ -1039,4 +1039,6 @@ time to triangulate a tile, before `praha`.
   28 ms a tile (at most 83) instead of 174, and a tile's ground from its file 48 ms in
   all (at most 145). The sampler no longer reads kerbs as steps (it had laid a band
   0.6 m wide along every kerb at the kerb line's height); the road check didn't change.
-  Not yet looked at in the game, before and after.
+  In the game, before and after from above and at street level (Vítězná, the head of
+  Most Legií, Kampa; `docs/evidence/tin/shading`, local), nothing on the ground
+  changes: the pixels that differ are the moving traffic, people and water.
