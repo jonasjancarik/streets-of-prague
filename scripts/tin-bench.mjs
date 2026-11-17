@@ -38,7 +38,8 @@ try {
   const context = browser.contexts()[0] ?? await browser.newContext();
   const tab = await context.newPage();
   await tab.goto(page);
-  await tab.waitForFunction(() => window.__result, null, { timeout: 180000 });
+  await tab.bringToFront(); // (a phone's Chrome slows a tab it doesn't show)
+  await tab.waitForFunction(() => window.__result, null, { timeout: 600000 });
   const result = await tab.evaluate(() => window.__result);
   await tab.close();
   const { rows, ...summary } = result;

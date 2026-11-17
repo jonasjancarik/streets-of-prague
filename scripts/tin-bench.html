@@ -4,10 +4,11 @@
 <pre id="out">running…</pre>
 <script type="module">
 // How long the game takes to make a tile's ground from its mesh file (src/tin.ts):
-// unpacking, decoding, triangulating with the breaklines kept, and the sampler's index.
+// unpacking, decoding, triangulating with the breaklines kept, the sampler's index, and
+// the shading texture drawn from it (all on the main thread when a tile loads).
 // ?map=ujezd-lidar&runs=3. scripts/tin-bench.mjs opens it on a phone over adb.
 import { buildTin, decodeTin, tinSampler } from '/src/tin.ts';
-import { fetchBinary } from '/src/terrain.ts';
+import { tinRelief } from '/src/tiles.ts';
 const q = new URLSearchParams(location.search), map = q.get('map') ?? 'ujezd-lidar', runs = Number(q.get('runs') ?? 3);
 const index = await fetch(`/data/${map}_now/index.json`).then((r) => r.json());
 const files = [];
@@ -22,7 +23,7 @@ for (const k of index.tin.tiles) {
 function isGzip(buf) { const b = new Uint8Array(buf, 0, Math.min(3, buf.byteLength)); return b[0] === 0x1f && b[1] === 0x8b && b[2] === 8; }
 function pipe(buf, stream) { return new Response(new Blob([buf]).stream().pipeThrough(stream)).arrayBuffer(); }
 const unzip = (buf) => pipe(buf, new DecompressionStream('gzip'));
-const rows = files.map(({ k }) => ({ k, unzip: [], decode: [], build: [], sampler: [] }));
+const rows = files.map(({ k }) => ({ k, unzip: [], decode: [], build: [], sampler: [], shading: [] }));
 for (let r = 0; r < runs; r++) for (const [n, f] of files.entries()) {
   let t0 = performance.now();
   const buf = await unzip(f.raw);
@@ -31,16 +32,18 @@ for (let r = 0; r < runs; r++) for (const [n, f] of files.entries()) {
   t1 = performance.now(); rows[n].decode.push(t1 - t0); t0 = t1;
   const mesh = buildTin(file);
   t1 = performance.now(); rows[n].build.push(t1 - t0); t0 = t1;
-  tinSampler(mesh, 0, () => 0);
-  t1 = performance.now(); rows[n].sampler.push(t1 - t0);
+  const { sample, labelAt } = tinSampler(mesh, 0, () => 0);
+  t1 = performance.now(); rows[n].sampler.push(t1 - t0); t0 = t1;
+  tinRelief(sample, labelAt, f.box).texture.dispose();
+  t1 = performance.now(); rows[n].shading.push(t1 - t0);
   rows[n].points = file.xy.length; rows[n].triangles = mesh.tri.length / 3;
 }
 const med = (a) => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)];
-const out = rows.map((r) => ({ k: r.k, points: r.points, triangles: r.triangles, unzip: +med(r.unzip).toFixed(1), decode: +med(r.decode).toFixed(1), build: +med(r.build).toFixed(1), sampler: +med(r.sampler).toFixed(1) }));
+const out = rows.map((r) => ({ k: r.k, points: r.points, triangles: r.triangles, unzip: +med(r.unzip).toFixed(1), decode: +med(r.decode).toFixed(1), build: +med(r.build).toFixed(1), sampler: +med(r.sampler).toFixed(1), shading: +med(r.shading).toFixed(1) }));
 const total = (f) => +out.reduce((a, r) => a + r[f], 0).toFixed(0);
-const all = out.map((r) => r.unzip + r.decode + r.build + r.sampler).sort((a, b) => a - b);
+const all = out.map((r) => r.unzip + r.decode + r.build + r.sampler + r.shading).sort((a, b) => a - b);
 window.__result = { map, tiles: out.length, runs, ua: navigator.userAgent, cores: navigator.hardwareConcurrency,
-  total: { unzip: total('unzip'), decode: total('decode'), build: total('build'), sampler: total('sampler') },
+  total: { unzip: total('unzip'), decode: total('decode'), build: total('build'), sampler: total('sampler'), shading: total('shading') },
   perTile: { median: +all[Math.floor(all.length / 2)].toFixed(1), max: +all[all.length - 1].toFixed(1) }, rows: out };
 document.getElementById('out').textContent = JSON.stringify(window.__result, null, 1);
 </script>

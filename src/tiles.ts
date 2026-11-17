@@ -220,7 +220,7 @@ function relief(buffer: ArrayBuffer, bareBuffer: ArrayBuffer | null, box: Bounds
 
 // Trial (tin.ts): the hill shading from the TIN, a texel a metre, each texel's slope on
 // its own side of a step.
-function tinRelief(sample: (x: number, y: number, side?: number | boolean) => number, labelAt: (x: number, y: number) => number, box: Bounds, res = 1) {
+export function tinRelief(sample: (x: number, y: number, side?: number | boolean) => number, labelAt: (x: number, y: number) => number, box: Bounds, res = 1) {
   const [x0, y0, x1] = box, m = Math.round((x1 - x0) / res) + 1;
   const L = [-110, 80, 190], ll = Math.hypot(...L), lx = L[0] / ll, ly = L[1] / ll, lz = L[2] / ll;
   const px = new Uint16Array(m * m);
