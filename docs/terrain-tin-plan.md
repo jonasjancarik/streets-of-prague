@@ -655,3 +655,51 @@ back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change w
   on the traffic graph's path in each direction as well as the full carriageway.
   On Patočkova the lane test confirmed a 1.21 m step. The flagged K Přehradám
   deck edge, by contrast, was much smoother at the middle of the sampled lane.
+
+  **Straight wall tops, with the ground filled up to them (17 November 2026).** A
+  retaining wall's top runs straight between its corners, while the top the game reads
+  beside it sags wherever the scan or the 4 m lattice blurs it. So each wall gets an
+  even grade per stretch, and the ground behind it is raised to that top.
+  `step_lines.straight_tops` (on branch `tin`, off by default: `window.py --set
+  STRAIGHT_TOPS=1 --set STRAIGHT_FILL=1`) joins each step line across the tiles'
+  edges and splits it at corners, where its high side changes and where a street
+  crosses it. Through the upper envelope of each stretch's top it fits straight pieces
+  of 8 m or more (within 0.3 m), and it moves a top up by 3 m at most and down by
+  0.5 m. A piece steeper than 20 % is a bank's slope, not a wall's top, and stays as it
+  was. The fill raises the lattice points of the top's terrace within 4 m behind the
+  wall to the new top, but none within a cell of a car street's carriageway.
+
+  On the nine places (3 × 3 tiles each), the game's ground 1 m behind the top of every
+  step 1 m or higher (13.0 km, corners left out), against the straight line 6 m either
+  way:
+
+  | | today | straight tops | straight tops, ground filled |
+  |---|---:|---:|---:|
+  | dips behind the top over 0.3 m | 506 m | 443 m | 250 m |
+  | over 0.5 m | 292 m | 267 m | 169 m |
+  | over 1 m | 145 m | 130 m | 96 m |
+  | parapet jags over 15 cm | 486 m | 478 m | 469 m |
+
+  Straight tops alone do little. The game gives a step line no say where it is far off
+  the lattice and the lattice has no step there (`AGREE` in `src/terrain.ts`), so a
+  raised top falls back to the lattice. Where the line does hold, it leaves a rim: at
+  Malá Strana the ground 1 m behind was more than 0.3 m under the top at 7 % of the
+  places, against 3 % today. With the fill the rim is gone (2 %), and the dips halve,
+  most of all on the quay of nábřeží Kapitána Jaroše (from above, the wall's shadow on
+  the river is straight where it was notched every 4 m), at M7, Vyšehrad and Malá
+  Strana. The streets within 300 m measure as before except one 10 m slip road at
+  nábřeží Kapitána Jaroše, now leaning 8.7 % (the flag is 8 %). The streets' fit to the
+  LiDAR is unchanged, and so is the ground 4–6 m behind the walls (51, 58 and 64 %
+  within 0.3 m of the LiDAR). The first version also filled under streets, which put
+  four more leaning streets at nábřeží Kapitána Jaroše. It also lifted the land side of
+  the water's outline where that outline climbs a bank (by 3 m). The street and slope
+  rules above come from those two.
+
+  What it leaves: along the survey's own retaining walls (8.5 km), the dips over 1 m
+  stay at about 320 m. They are where several small terraces meet, at walls' ends, and
+  where a terrace's outline runs a metre or more off the surveyed wall. The sawtooth
+  on the grass slope behind the quays is the 4 m lattice on a diagonal bank, not the
+  wall. Both need the walls' outlines taken from the survey's lines themselves, or a
+  finer ground (stage 1). Not the default yet: it hasn't been tried on the whole city,
+  and the measures were tuned on these nine places. Pictures and scripts are in
+  `docs/evidence/straight-tops` (local).
