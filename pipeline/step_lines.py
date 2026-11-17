@@ -62,6 +62,12 @@ TOP_JOIN = 0.3  # m between two lines' ends at a tile's edge that are one wall
 TOP_GRADE = 0.2  # rise per metre along a piece over which it is a bank's slope and stays as it was
 FILL_REACH = 4.0  # m behind the wall where STRAIGHT_FILL raises the lattice
 FILL_MAX = 6.0  # m: the most STRAIGHT_FILL raises a lattice point
+STRAIGHT_CROWN = False  # and the top read from the LiDAR where the wall's face ends (crown_at)
+CROWN_FACE = 1.0  # rise per metre: steeper is the wall's face, gentler the bank behind it
+CROWN_RISE = 1.0  # m: the least height of a face
+CROWN_NEAR = 5.0  # m from the line toward the top: the face starts within this
+CROWN_FAR = 10.0  # m: the furthest a profile is read
+CROWN_SHARE = 0.5  # of a stretch's points with a crown, for it to take one
 
 
 def sides(water, terraces):
@@ -340,7 +346,38 @@ def for_tile(box, water, terraces, read, driven=None, soft=None):
     return lines
 
 
-def straight_tops(lines_by_tile, ids, boxes, lattice=None, driven=None):
+def crown(xy, nrm, scan_at, step=0.5):
+    """Per point, the scan's height where the wall's face ends: along the normal
+    (toward the top), the steepest rise starting within CROWN_NEAR, run on while steeper
+    than CROWN_FACE; NaN where that face is under CROWN_RISE or the scan has nothing."""
+    offs = np.arange(-2.0, CROWN_FAR + 1e-9, step)
+    px = xy[:, 0:1] + offs[None, :] * nrm[:, 0:1]
+    py = xy[:, 1:2] + offs[None, :] * nrm[:, 1:2]
+    h = np.asarray(scan_at(px.ravel(), py.ravel()), dtype=float).reshape(px.shape)
+    rise = np.diff(h, axis=1) / step
+    out = np.full(len(xy), np.nan)
+    near = offs[:-1] <= CROWN_NEAR
+    for k in range(len(xy)):
+        r = rise[k]
+        if not np.isfinite(r[near]).any():
+            continue
+        top = int(np.nanargmax(np.where(near, r, -np.inf)))
+        if not r[top] >= CROWN_FACE:
+            continue
+        a = top
+        while a > 0 and r[a - 1] >= CROWN_FACE:
+            a -= 1
+        b = top
+        while b + 1 < len(r) and r[b + 1] >= CROWN_FACE:
+            b += 1
+        if b + 1 >= len(r):  # (still rising at the profile's end: no crown seen)
+            continue
+        if h[k, b + 1] - h[k, a] >= CROWN_RISE:
+            out[k] = h[k, b + 1]
+    return out
+
+
+def straight_tops(lines_by_tile, ids, boxes, lattice=None, driven=None, crown_at=None):
     """Trial: each wall's top as straight pieces at an even grade. The top read beside a
     wall sags where the scan or the lattice blurs it (a gate, a gap, a cell read on the
     wrong side). A survey retaining wall's top runs straight between its corners, so per
@@ -352,8 +389,11 @@ def straight_tops(lines_by_tile, ids, boxes, lattice=None, driven=None):
     `boxes`: per tile its (x0, y0, x1, y1). `lattice`: (tiles, labels, N, T, step, gx0,
     gy0) to raise the top's own label's lattice points within FILL_REACH behind the wall
     to the new top (STRAIGHT_FILL), but none within a cell of a car street's carriageway
-    (`driven`, see for_tile): those have the scan's road. Returns (walls, metres changed,
-    lattice points raised)."""
+    (`driven`, see for_tile): those have the scan's road. `crown_at(xs, ys)`, the LiDAR
+    (STRAIGHT_CROWN): a top read on a bank behind a low wall is the bank's height, so
+    where the scan has a face (steeper than CROWN_FACE, CROWN_RISE or more) starting
+    within CROWN_NEAR of the line, the top is no higher than where the face ends (crown()).
+    Returns (walls, metres changed, lattice points raised)."""
     common = lambda key, v: ids.get(key, {}).get(int(v), int(v))  # noqa: E731
     items = [(key, n) for key, lines in lines_by_tile.items() for n in range(len(lines))]
     labs = {it: (common(it[0], lines_by_tile[it[0]][it[1]]["l"]), common(it[0], lines_by_tile[it[0]][it[1]]["r"])) for it in items}
@@ -453,6 +493,22 @@ def straight_tops(lines_by_tile, ids, boxes, lattice=None, driven=None):
             side = high[idx[0]]
             z = (hl if side == 0 else hr)[idx]
             low = (hr if side == 0 else hl)[idx]
+            z0 = z
+            sp = s[idx]
+            crowned = False
+            if crown_at is not None:
+                d = xy[np.minimum(idx + 1, len(xy) - 1)] - xy[np.maximum(idx - 1, 0)]
+                d = d / np.maximum(np.linalg.norm(d, axis=1), 1e-9)[:, None]
+                nrm = np.stack([-d[:, 1], d[:, 0]], axis=1) * (1 if side == 0 else -1)
+                cz = crown(xy[idx], nrm, crown_at)
+                with np.errstate(invalid="ignore"):
+                    ok = np.isfinite(cz) & (cz > low + STEP_MIN)
+                # (A wall has a crown along most of it or it isn't one: between the points
+                # where one was seen, the crown runs on straight.)
+                crowned = ok.mean() >= CROWN_SHARE
+                if crowned:
+                    cz = np.interp(sp, sp[ok], cz[ok])
+                    z = np.minimum(z, cz)
             # (Over and above the straight line through the heights round each point: a
             # bank's top rising along the line would lift a plain percentile.)
             env = np.empty(len(sp))
@@ -494,7 +550,7 @@ def straight_tops(lines_by_tile, ids, boxes, lattice=None, driven=None):
             new = np.clip(fit, z - TOP_LOWER, z + TOP_RAISE)
             new = np.maximum(new, low + STEP_MIN)
             walls += 1
-            moved = np.abs(new - z) > 0.05
+            moved = np.abs(new - z0) > 0.05
             changed += float(np.sum(np.diff(sp)[moved[1:]])) if len(sp) > 1 else 0.0
             for k, v in zip(idx, new):
                 key, n, q, fwd = refs[k]
@@ -508,7 +564,7 @@ def straight_tops(lines_by_tile, ids, boxes, lattice=None, driven=None):
                     nrm = np.array([-d[1], d[0]]) * (1 if side == 0 else -1)
                     line = lines_by_tile[key][n]
                     label = line["l"] if (slot == 2) else line["r"]
-                    behind.setdefault(key, []).append((xy[k][0], xy[k][1], float(v), nrm[0], nrm[1], int(label)))
+                    behind.setdefault(key, []).append((xy[k][0], xy[k][1], float(v), nrm[0], nrm[1], int(label), float(crowned)))
     if lattice is not None and behind:
         tiles, labels, N, T, step, gx0, gy0 = lattice
         for key, got in behind.items():
@@ -531,7 +587,13 @@ def straight_tops(lines_by_tile, ids, boxes, lattice=None, driven=None):
                 ahead = dx[r, near] * mine[near, 3] + dy[r, near] * mine[near, 4]
                 top = mine[near, 2]
                 h = arr.ravel()[cand]
-                lift = (dist[r, near] <= FILL_REACH) & (ahead > 0) & (h < top) & (top - h <= FILL_MAX)
+                # (Behind a wall with a crown, the bank as the scan has it, not under the top.)
+                crowned = mine[near, 6] > 0
+                if crowned.any():
+                    seen = np.asarray(crown_at(X, Y), dtype=float)
+                    bank = np.where(crowned & np.isfinite(seen), np.maximum(top, seen), top)
+                    top = np.where(crowned, np.minimum(bank, np.maximum(h, top)), top)
+                lift = (dist[r, near] <= FILL_REACH) & (ahead > 0) & (np.abs(top - h) > 0.05) & (top - h <= FILL_MAX) & ((h < top) | crowned)
                 if driven is not None and lift.any():
                     k = np.flatnonzero(lift)
                     for ox in (-step, 0.0, step):

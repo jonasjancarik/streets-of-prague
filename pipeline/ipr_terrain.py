@@ -678,7 +678,8 @@ def main() -> None:
         if step_lines.STRAIGHT_TOPS:  # (a trial, off by default: step_lines.straight_tops)
             by_key = {tuple(map(int, k.split("_"))): v for k, v in lines_by_tile.items()}
             lattice = (tiles, labels, N, T, step, gx0, gy0) if step_lines.STRAIGHT_FILL else None
-            walls, metres, raised = step_lines.straight_tops(by_key, ids, {k: boxes[k].bounds for k in by_key}, lattice, driven)
+            walls, metres, raised = step_lines.straight_tops(by_key, ids, {k: boxes[k].bounds for k in by_key}, lattice, driven,
+                                                          ipr_lidar.sampler(options["survey_scan"], local)[0] if step_lines.STRAIGHT_CROWN and options.get("survey_scan") else None)
             print(f"  straight tops: {walls} stretches of wall, {metres:.0f} m moved, {raised} lattice points raised")
         print(f"  {sum(len(v) for v in lines_by_tile.values())} step lines, {sum(len(l['pts']) for v in lines_by_tile.values() for l in v)} points")
         timings.lap("step_lines")
