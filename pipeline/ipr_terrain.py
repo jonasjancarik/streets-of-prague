@@ -674,6 +674,12 @@ def main() -> None:
             got = step_lines.for_tile(boxes[key].bounds, tile_water.get(key, []), listed, read, driven, soft.get(key))
             if got:
                 lines_by_tile[f"{key[0]}_{key[1]}"] = got
+        own.home = None
+        if step_lines.STRAIGHT_TOPS:  # (a trial, off by default: step_lines.straight_tops)
+            by_key = {tuple(map(int, k.split("_"))): v for k, v in lines_by_tile.items()}
+            lattice = (tiles, labels, N, T, step, gx0, gy0) if step_lines.STRAIGHT_FILL else None
+            walls, metres, raised = step_lines.straight_tops(by_key, ids, {k: boxes[k].bounds for k in by_key}, lattice, driven)
+            print(f"  straight tops: {walls} stretches of wall, {metres:.0f} m moved, {raised} lattice points raised")
         print(f"  {sum(len(v) for v in lines_by_tile.values())} step lines, {sum(len(l['pts']) for v in lines_by_tile.values() for l in v)} points")
         timings.lap("step_lines")
     # The heights, then each point's label as a byte (dtm_heights.py): 0 the plain ground,

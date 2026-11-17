@@ -45,6 +45,23 @@ SPAN = 6.0  # m either side of the line: the scan's rise across it caps a half-w
 STEP_SLACK = 0.5  # m over the scan's rise a half-walked step may be
 WALKED = 0.6  # share of a side's points the walk must find a height for, or the side isn't walked
 WATER = 1
+# Trial (November 2026): each wall's top as straight pieces at an even grade
+# (straight_tops), off by default.
+STRAIGHT_TOPS = False
+STRAIGHT_FILL = False  # and the lattice just behind the top raised to it
+TOP_STEP = 0.5  # m: a point is on a wall where its step is this or more
+TOP_GAP = 4.0  # m along a wall without a step (or with no heights, a street across it) ends a stretch
+TOP_REACH = 6.0  # m either way along the wall: the top's upper envelope, TOP_PCT of the heights there
+TOP_PCT = 80.0
+TOP_TOL = 0.3  # m off the envelope before a straight piece is split in two
+TOP_SEG = 8.0  # m: the shortest straight piece
+TOP_RAISE = 3.0  # m: the most a top is raised
+TOP_LOWER = 0.5  # m: the most a top is lowered
+TOP_CORNER = 35.0  # degrees: where a wall turns this much over 4 m, a piece ends
+TOP_JOIN = 0.3  # m between two lines' ends at a tile's edge that are one wall
+TOP_GRADE = 0.2  # rise per metre along a piece over which it is a bank's slope and stays as it was
+FILL_REACH = 4.0  # m behind the wall where STRAIGHT_FILL raises the lattice
+FILL_MAX = 6.0  # m: the most STRAIGHT_FILL raises a lattice point
 
 
 def sides(water, terraces):
@@ -321,6 +338,209 @@ def for_tile(box, water, terraces, read, driven=None, soft=None):
                       "pts": [[round(float(x), 2), round(float(y), 2), round(float(a), 2) if np.isfinite(a) else None,
                                round(float(b), 2) if np.isfinite(b) else None] for (x, y), a, b in zip(pts, hl, hr)]})
     return lines
+
+
+def straight_tops(lines_by_tile, ids, boxes, lattice=None, driven=None):
+    """Trial: each wall's top as straight pieces at an even grade. The top read beside a
+    wall sags where the scan or the lattice blurs it (a gate, a gap, a cell read on the
+    wrong side). A survey retaining wall's top runs straight between its corners, so per
+    wall, joined across the tiles' edges, the higher side's heights are replaced by a
+    line through their upper envelope (TOP_PCT over TOP_REACH), split where it is more
+    than TOP_TOL off it, into pieces of at least TOP_SEG, and always at a corner. A top
+    moves up by TOP_RAISE at most and down by TOP_LOWER. `lines_by_tile`: per tile (i, j)
+    its lines (for_tile), changed in place. `ids`: per tile its labels' common numbers.
+    `boxes`: per tile its (x0, y0, x1, y1). `lattice`: (tiles, labels, N, T, step, gx0,
+    gy0) to raise the top's own label's lattice points within FILL_REACH behind the wall
+    to the new top (STRAIGHT_FILL), but none within a cell of a car street's carriageway
+    (`driven`, see for_tile): those have the scan's road. Returns (walls, metres changed,
+    lattice points raised)."""
+    common = lambda key, v: ids.get(key, {}).get(int(v), int(v))  # noqa: E731
+    items = [(key, n) for key, lines in lines_by_tile.items() for n in range(len(lines))]
+    labs = {it: (common(it[0], lines_by_tile[it[0]][it[1]]["l"]), common(it[0], lines_by_tile[it[0]][it[1]]["r"])) for it in items}
+
+    def end_at(it, e):
+        p = lines_by_tile[it[0]][it[1]]["pts"][0 if e == 0 else -1]
+        return p[0], p[1]
+
+    def on_edge(key, x, y):
+        b = boxes[key]
+        return min(abs(x - b[0]), abs(x - b[2]), abs(y - b[1]), abs(y - b[3])) < 0.05
+
+    # Ends at a tile's edge, by where they are, to find the neighbour's.
+    grid = {}
+    for it in items:
+        for e in (0, 1):
+            x, y = end_at(it, e)
+            if on_edge(it[0], x, y):
+                grid.setdefault((round(x), round(y)), []).append((it, e))
+    link = {}
+    for it in items:
+        for e in (0, 1):
+            x, y = end_at(it, e)
+            if (it, e) in link or not on_edge(it[0], x, y):
+                continue
+            best = None
+            for gx in (round(x) - 1, round(x), round(x) + 1):
+                for gy in (round(y) - 1, round(y), round(y) + 1):
+                    for other, f in grid.get((gx, gy), []):
+                        if other[0] == it[0] or (other, f) in link:
+                            continue
+                        ox, oy = end_at(other, f)
+                        d = math.hypot(ox - x, oy - y)
+                        same = labs[other] == labs[it] if e != f else labs[other] == labs[it][::-1]
+                        if same and d < TOP_JOIN and (best is None or d < best[0]):
+                            best = (d, other, f)
+            if best:
+                link[(it, e)] = (best[1], best[2])
+                link[(best[1], best[2])] = (it, e)
+    # Walk the chains: from an end with no neighbour, else (a ring) from anywhere.
+    seen, chains = set(), []
+    for it in sorted(items, key=lambda it: ((it, 0) in link) + ((it, 1) in link)):
+        if it in seen:
+            continue
+        forward = (it, 0) not in link or (it, 1) in link
+        chain, cur, fwd = [], it, forward
+        while cur not in seen:
+            seen.add(cur)
+            chain.append((cur, fwd))
+            nxt = link.get((cur, 1 if fwd else 0))
+            if nxt is None:
+                break
+            cur, fwd = nxt[0], nxt[1] == 0
+        chains.append(chain)
+    walls = changed = raised = 0
+    behind = {}  # per tile: (x, y, new top, normal to the top's side, its label) to fill
+    for chain in chains:
+        xy, hl, hr, refs = [], [], [], []
+        for (key, n), fwd in chain:
+            pts = lines_by_tile[key][n]["pts"]
+            order = range(len(pts)) if fwd else range(len(pts) - 1, -1, -1)
+            for q in order:
+                p = pts[q]
+                a = np.nan if p[2] is None else p[2]
+                b = np.nan if p[3] is None else p[3]
+                xy.append((p[0], p[1]))
+                hl.append(a if fwd else b)
+                hr.append(b if fwd else a)
+                refs.append((key, n, q, fwd))
+        xy, hl, hr = np.array(xy, dtype=float), np.array(hl), np.array(hr)
+        if len(xy) < 4:
+            continue
+        s = np.concatenate([[0], np.cumsum(np.hypot(*np.diff(xy, axis=0).T))])
+        with np.errstate(invalid="ignore"):
+            on = np.isfinite(hl) & np.isfinite(hr) & (np.abs(hl - hr) >= TOP_STEP)
+        high = np.where(hl > hr, 0, 1)
+        # Corners: the turn between the 2 m before a point and the 2 m after it.
+        px, py = np.interp(s - 2, s, xy[:, 0]), np.interp(s - 2, s, xy[:, 1])
+        qx, qy = np.interp(s + 2, s, xy[:, 0]), np.interp(s + 2, s, xy[:, 1])
+        a1 = np.arctan2(xy[:, 1] - py, xy[:, 0] - px)
+        a2 = np.arctan2(qy - xy[:, 1], qx - xy[:, 0])
+        turn = np.degrees(np.abs((a2 - a1 + np.pi) % (2 * np.pi) - np.pi))
+        # Stretches: points on the wall with the same high side, gaps under TOP_GAP.
+        pieces, cur = [], []
+        for k in np.flatnonzero(on):
+            if cur and (high[k] != high[cur[-1]] or s[k] - s[cur[-1]] > TOP_GAP):
+                pieces.append(cur)
+                cur = []
+            cur.append(k)
+        if cur:
+            pieces.append(cur)
+        for piece in pieces:
+            idx = np.array(piece)
+            sp = s[idx]
+            if len(idx) < 4 or sp[-1] - sp[0] < TOP_SEG:
+                continue
+            side = high[idx[0]]
+            z = (hl if side == 0 else hr)[idx]
+            low = (hr if side == 0 else hl)[idx]
+            # (Over and above the straight line through the heights round each point: a
+            # bank's top rising along the line would lift a plain percentile.)
+            env = np.empty(len(sp))
+            for k, v in enumerate(sp):
+                w = np.abs(sp - v) <= TOP_REACH
+                u, zz = sp[w] - v, z[w]
+                b = np.polyfit(u, zz, 1) if len(u) >= 3 and np.ptp(u) > 1 else (0.0, float(np.mean(zz)))
+                env[k] = b[1] + np.percentile(zz - (b[0] * u + b[1]), TOP_PCT)
+            # Corners inside the piece, at least half a piece from its ends and each other.
+            breaks = [0, len(idx) - 1]
+            for k in sorted(range(1, len(idx) - 1), key=lambda k: -turn[idx[k]]):
+                if turn[idx[k]] < TOP_CORNER:
+                    break
+                if all(abs(sp[k] - sp[b]) >= TOP_SEG / 2 for b in breaks):
+                    breaks.append(k)
+            breaks.sort()
+            # Douglas–Peucker on (along, height), no piece under TOP_SEG.
+            todo = list(zip(breaks[:-1], breaks[1:]))
+            while todo:
+                a, b = todo.pop()
+                if b - a < 2:
+                    continue
+                f = (sp[a + 1:b] - sp[a]) / max(sp[b] - sp[a], 1e-9)
+                dev = np.abs(env[a + 1:b] - (env[a] + f * (env[b] - env[a])))
+                ok = (sp[a + 1:b] - sp[a] >= TOP_SEG) & (sp[b] - sp[a + 1:b] >= TOP_SEG)
+                if not ok.any():
+                    continue
+                dev = np.where(ok, dev, -1)
+                k = int(np.argmax(dev))
+                if dev[k] > TOP_TOL:
+                    breaks.append(a + 1 + k)
+                    todo += [(a, a + 1 + k), (a + 1 + k, b)]
+            breaks.sort()
+            fit = np.interp(sp, sp[breaks], env[breaks])
+            # (A piece steeper than TOP_GRADE is a bank's slope, not a wall's top: as it was.)
+            for a, b in zip(breaks[:-1], breaks[1:]):
+                if abs(env[b] - env[a]) > TOP_GRADE * max(sp[b] - sp[a], 1e-9):
+                    fit[a:b + 1] = z[a:b + 1]
+            new = np.clip(fit, z - TOP_LOWER, z + TOP_RAISE)
+            new = np.maximum(new, low + STEP_MIN)
+            walls += 1
+            moved = np.abs(new - z) > 0.05
+            changed += float(np.sum(np.diff(sp)[moved[1:]])) if len(sp) > 1 else 0.0
+            for k, v in zip(idx, new):
+                key, n, q, fwd = refs[k]
+                p = lines_by_tile[key][n]["pts"][q]
+                # (The top's side in the line as stored: left is index 2.)
+                slot = 2 + (side if fwd else 1 - side)
+                p[slot] = round(float(v), 2)
+                if lattice is not None:
+                    d = xy[min(k + 1, len(xy) - 1)] - xy[max(k - 1, 0)]
+                    d = d / (np.linalg.norm(d) or 1)
+                    nrm = np.array([-d[1], d[0]]) * (1 if side == 0 else -1)
+                    line = lines_by_tile[key][n]
+                    label = line["l"] if (slot == 2) else line["r"]
+                    behind.setdefault(key, []).append((xy[k][0], xy[k][1], float(v), nrm[0], nrm[1], int(label)))
+    if lattice is not None and behind:
+        tiles, labels, N, T, step, gx0, gy0 = lattice
+        for key, got in behind.items():
+            arr, lab = tiles.get(key), labels.get(key)
+            if arr is None or lab is None:
+                continue
+            g = np.array(got)
+            qq, pp = np.mgrid[0:N + 1, 0:N + 1]
+            cx, cy = gx0 + key[0] * T + pp * step, gy0 + key[1] * T + qq * step
+            for label in np.unique(g[:, 5]).astype(int):
+                mine = g[g[:, 5] == label]
+                cand = np.flatnonzero(lab.ravel() == label)
+                if not len(cand):
+                    continue
+                X, Y = cx.ravel()[cand], cy.ravel()[cand]
+                dx, dy = X[:, None] - mine[None, :, 0], Y[:, None] - mine[None, :, 1]
+                dist = np.hypot(dx, dy)
+                near = np.argmin(dist, axis=1)
+                r = np.arange(len(cand))
+                ahead = dx[r, near] * mine[near, 3] + dy[r, near] * mine[near, 4]
+                top = mine[near, 2]
+                h = arr.ravel()[cand]
+                lift = (dist[r, near] <= FILL_REACH) & (ahead > 0) & (h < top) & (top - h <= FILL_MAX)
+                if driven is not None and lift.any():
+                    k = np.flatnonzero(lift)
+                    for ox in (-step, 0.0, step):
+                        for oy in (-step, 0.0, step):
+                            lift[k[driven(X[k] + ox, Y[k] + oy)]] = False
+                if lift.any():
+                    arr[qq.ravel()[cand[lift]], pp.ravel()[cand[lift]]] = top[lift]
+                    raised += int(lift.sum())
+    return walls, changed, raised
 
 
 def crossing(streets, decks=()):
