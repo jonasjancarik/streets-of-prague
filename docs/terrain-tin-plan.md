@@ -744,3 +744,17 @@ back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change w
   `crown-jaros.jpg` and `crown-m7.jpg` in `docs/evidence/straight-tops` (local); in the
   tin worktree's game the three maps are `?area=walls-today`, `walls-straight` and
   `walls-crown`.
+
+  **The notches every 15 m (17 November 2026).** Even with the crown, the Jaroše quay
+  still had a notch down to the water every 15 to 17 m, in all three versions; the real
+  wall is straight. The LiDAR is the same at a notch as between them. The step line runs
+  a little askew to the lattice and crosses a row of it every 15 m, and there the top's
+  side was read on the wall's foot, half a metre over the water: no step, so the point
+  ended a straight piece. With the crown, a gap of up to 16 m between two stretches of
+  one wall is wall where the scan has a crown at every point of it, and a stretch with a
+  crown takes it both ways (a top read lower was read on the face). The quay's top now
+  runs evenly from 186 to 184 m (tin branch, fb1c39b1). Within 0.3 m of the LiDAR 3 m
+  behind the walls: Jaroše 44 → 48 %, M7 64 → 70 %, Československého exilu 55 → 61 %,
+  Na Veselí 46 → 49 %, the rest within 2 points. Streets as before. Parapet jags over
+  15 cm went up at Vyšehrad (281 → 321 m) and Malá Strana (47 → 59 m), not yet looked
+  at. Pictures `crown2-jaros.jpg` and `crown2-jaros-east.jpg`.
