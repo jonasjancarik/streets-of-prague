@@ -265,6 +265,21 @@ back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change w
   10 cm, marked as guessed (proposed in stage 2).
 - **Without the LiDAR.** Stages 1 and 2 don't need it; the scan makes the kerbs more
   exact.
+- **Straight to the end.** Decided 17 November: no more trial stages on top of the
+  lattice. The build and the game move off the 4 m lattice in one go, ujezd first,
+  then the trial places, then `praha`.
+- **The LiDAR in the map.** Decided 17 November: streets take the 2023 LiDAR, walls
+  come from the survey. The build must still run without it, and ujezd is built both
+  ways first to show what it changes. (Nothing on record said why the public map was
+  built without it: it had only been used in experiments.)
+- **Size.** Decided 17 November: up to the fifth above (about 200 MB), aiming at 10 cm
+  on paved ground and 25 cm elsewhere. The real binary format is measured on ujezd and
+  on the 40 random tiles before `praha` is built, and the time to triangulate a tile
+  on the Pixel 5 with it.
+- **Kerbs, for now.** Decided 17 November: the survey's kerb lines go into the mesh as
+  edges with the same height on both sides, so the road's edge follows the kerb.
+  Raising them (the 10 cm rule above) is a later rule and a pass over the gameplay it
+  touches: cars, traffic, chases, bikes, cars parked half on the pavement.
 
 ## Progress
 
