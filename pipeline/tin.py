@@ -33,6 +33,7 @@ from scipy.spatial import Delaunay, cKDTree
 HERE = Path(__file__).resolve().parent
 NEAR_LINE = 0.35  # m: grid samples this close to a step are on it, not on either side
 SNAP = 0.01  # m: points closer than this are one
+DUP = 0.1  # m: a step this close all along to one already taken is the same wall
 MAX_SPLITS = 40  # rounds of splitting a step segment the triangulation misses at its midpoint
 
 
@@ -150,8 +151,16 @@ def build(target: Path, k: str, tol: float, loose: float | None = None):
 
     # The steps.
     steps = []  # [run, kept sample indices, vertex ids]
+    # The same wall can come twice, once from each side's outline (labels swapped) with
+    # its own samples; the two copies cross each other in a zigzag and can't both be edges.
+    seen: dict[tuple[int, int], list[cKDTree]] = {}
     for piece in pieces:
         for run in runs(piece):
+            lr = (int(run[0, 4]), int(run[0, 5]))
+            twin = seen.get((lr[1], lr[0]), []) + seen.get(lr, [])
+            if any(np.all(t.query(run[:, :2])[0] < DUP) for t in twin):
+                continue
+            seen.setdefault(lr, []).append(cKDTree(run[:, :2]))
             kept = thin(run, tol)
             ids = [P.add(run[i, 0], run[i, 1], {int(run[i, 4]): run[i, 2], int(run[i, 5]): run[i, 3]}, 1) for i in kept]
             steps.append([run, kept, ids])

@@ -10,7 +10,9 @@
     "test": "cd pipeline && uv run --group cover python -B -m unittest discover -s . -p 'test_*.py'"
   },
   "dependencies": {
+    "@kninnug/constrainautor": "^4.1.0",
     "@mapbox/vector-tile": "^3.0.0",
+    "delaunator": "^5.1.0",
     "maplibre-gl": "^6.16.0",
     "pbf": "^5.1.2",
     "pmtiles": "^4.5.0",
