@@ -850,3 +850,24 @@ back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change w
   stair-steps on diagonal banks go, as with the LiDAR stand-in, and the picture is
   much the same (`drelief-*.jpg`). The second ridge beside some walls shows here too,
   so it comes from the blend near walls, not from the LiDAR.
+
+  **The game's triangles (17 November 2026).** The game would get the points and the
+  wall lines, and build the triangles itself with the wall lines kept as edges:
+  Delaunator with Constrainautor on top (both ISC; added on the `tin` branch, nothing
+  imports them yet). Tried in Node on the nine places' 81 tiles at 10 / 25 cm
+  (`docs/evidence/tin/walls-tin/cdt_check.mjs`, local):
+
+  - Wall pieces not kept as edges: 53 of 108,772. First 6,752: the same wall came
+    twice, once from each side's outline with the labels swapped and its own samples,
+    and the copies cross in a zigzag. `tin.py` now keeps one copy (`DUP`, 10 cm). A wall
+    along the tile's edge passes through the edge's points; it is cut at them.
+  - Time: 3–30 ms a tile on the M5 (Vyšehrad 11, Benešovská 21–30), 7 ms on average,
+    half of it Delaunator. Fine in a worker as a tile loads.
+  - Sides: a triangle on a wall line takes that side (Delaunator's triangles run
+    clockwise, so the right of the line); any other its middle's side from the tile's
+    water and terrace outlines, as the pipeline does. From the points alone, the river
+    between banks without a wall came out as land.
+  - Heights: 99.8 % of the check samples (every 2 m) within 1 cm of the pipeline's
+    TIN, and 270 of 1.29 million over the tolerance, against the pipeline's 132.
+    Wrong-side samples 1,928 against the pipeline's 590, mostly at Benešovská, Malá
+    Strana and M7: not looked into yet.
