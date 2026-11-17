@@ -68,6 +68,7 @@ CROWN_RISE = 1.0  # m: the least height of a face
 CROWN_NEAR = 5.0  # m from the line toward the top: the face starts within this
 CROWN_FAR = 10.0  # m: the furthest a profile is read
 CROWN_SHARE = 0.5  # of a stretch's points with a crown, for it to take one
+CROWN_GAP = 16.0  # m: a gap in a wall up to this long whose crown the scan has all along is wall
 
 
 def sides(water, terraces):
@@ -346,6 +347,13 @@ def for_tile(box, water, terraces, read, driven=None, soft=None):
     return lines
 
 
+def _normals(xy, idx, side):
+    """Unit normals at points idx of a polyline, toward side 0 (left) or 1 (right)."""
+    d = xy[np.minimum(idx + 1, len(xy) - 1)] - xy[np.maximum(idx - 1, 0)]
+    d = d / np.maximum(np.linalg.norm(d, axis=1), 1e-9)[:, None]
+    return np.stack([-d[:, 1], d[:, 0]], axis=1) * (1 if side == 0 else -1)
+
+
 def crown(xy, nrm, scan_at, step=0.5):
     """Per point, the scan's height where the wall's face ends: along the normal
     (toward the top), the steepest rise starting within CROWN_NEAR, run on while steeper
@@ -470,6 +478,25 @@ def straight_tops(lines_by_tile, ids, boxes, lattice=None, driven=None, crown_at
         with np.errstate(invalid="ignore"):
             on = np.isfinite(hl) & np.isfinite(hr) & (np.abs(hl - hr) >= TOP_STEP)
         high = np.where(hl > hr, 0, 1)
+        if crown_at is not None:
+            # (Where the line runs at a slant to the lattice, the side's height is read on
+            # the wall's foot every few cells: no step there, and the top had a notch. The
+            # scan's profile says whether the wall goes on.)
+            onk = np.flatnonzero(on)
+            for a, b in zip(onk[:-1], onk[1:]):
+                if b - a < 2 or high[a] != high[b] or s[b] - s[a] > CROWN_GAP:
+                    continue
+                mid = np.arange(a + 1, b)
+                side = high[a]
+                low = (hr if side == 0 else hl)[mid]
+                low = np.where(np.isfinite(low), low, ((hr if side == 0 else hl)[a] + (hr if side == 0 else hl)[b]) / 2)
+                cz = crown(xy[mid], _normals(xy, mid, side), crown_at)
+                with np.errstate(invalid="ignore"):
+                    if not np.all(cz - low >= TOP_STEP):
+                        continue
+                on[mid], high[mid] = True, side
+                (hl if side == 0 else hr)[mid] = cz
+                (hr if side == 0 else hl)[mid] = low
         # Corners: the turn between the 2 m before a point and the 2 m after it.
         px, py = np.interp(s - 2, s, xy[:, 0]), np.interp(s - 2, s, xy[:, 1])
         qx, qy = np.interp(s + 2, s, xy[:, 0]), np.interp(s + 2, s, xy[:, 1])
@@ -497,18 +524,15 @@ def straight_tops(lines_by_tile, ids, boxes, lattice=None, driven=None, crown_at
             sp = s[idx]
             crowned = False
             if crown_at is not None:
-                d = xy[np.minimum(idx + 1, len(xy) - 1)] - xy[np.maximum(idx - 1, 0)]
-                d = d / np.maximum(np.linalg.norm(d, axis=1), 1e-9)[:, None]
-                nrm = np.stack([-d[:, 1], d[:, 0]], axis=1) * (1 if side == 0 else -1)
-                cz = crown(xy[idx], nrm, crown_at)
+                cz = crown(xy[idx], _normals(xy, idx, side), crown_at)
                 with np.errstate(invalid="ignore"):
                     ok = np.isfinite(cz) & (cz > low + STEP_MIN)
                 # (A wall has a crown along most of it or it isn't one: between the points
                 # where one was seen, the crown runs on straight.)
                 crowned = ok.mean() >= CROWN_SHARE
                 if crowned:
-                    cz = np.interp(sp, sp[ok], cz[ok])
-                    z = np.minimum(z, cz)
+                    # (Both ways: a top read short of it was read on the wall's face.)
+                    z = np.interp(sp, sp[ok], cz[ok])
             # (Over and above the straight line through the heights round each point: a
             # bank's top rising along the line would lift a plain percentile.)
             env = np.empty(len(sp))
