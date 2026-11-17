@@ -21,7 +21,8 @@ export const SCALE = 1.35; // people (and what they ride) are drawn bigger than 
 export const FIGURE_SIZE = { value: SCALE };
 // First person: someone near the camera can be drawn as a life-size Rocketbox person
 // instead (src/rocketbox.ts sets `claim`). A claimed person's instance is drawn at zero size.
-export const LIFE_SIZE: { claim: ((group: Figures, id: number, matrix: THREE.Matrix4, anim: Anim) => boolean) | null } = { claim: null };
+// (`umbrella`: the serial number of the umbrella they have up, or -1.)
+export const LIFE_SIZE: { claim: ((group: Figures, id: number, matrix: THREE.Matrix4, anim: Anim, umbrella: number) => boolean) | null } = { claim: null };
 const NOWHERE = new THREE.Matrix4().makeScale(0, 0, 0);
 const FPS = 24;
 const PARTS = ['Skin', 'Shirt', 'Sleeve', 'Trousers', 'Shoes', 'Hair'];
@@ -293,10 +294,12 @@ export class Figures {
     this.lookHi = Math.max(this.lookHi, slot);
   }
 
-  set(i: number, matrix: THREE.Matrix4, anim: Anim) {
-    const claimed = this.lifeSize && !!LIFE_SIZE.claim?.(this, this.wearing[i] >= 0 ? this.wearing[i] : i, matrix, anim);
+  // Returns whether they're drawn life size instead (and so hold their own umbrella).
+  set(i: number, matrix: THREE.Matrix4, anim: Anim, umbrella = -1) {
+    const claimed = this.lifeSize && !!LIFE_SIZE.claim?.(this, this.wearing[i] >= 0 ? this.wearing[i] : i, matrix, anim, umbrella);
     this.mesh.setMatrixAt(i, claimed ? NOWHERE : matrix);
     anim.write(this.attr.aAnimA, this.attr.aAnimB, i, this.sleeves[i]);
+    return claimed;
   }
 
   commit(count = this.mesh.count) {

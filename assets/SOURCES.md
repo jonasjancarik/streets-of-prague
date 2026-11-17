@@ -18,8 +18,8 @@ and the map data its credits in the README.
 - **People close up in first person** (`public/rocketbox/`): 14 avatars from the
   [Microsoft Rocketbox](https://github.com/microsoft/Microsoft-Rocketbox) library (MIT,
   © 2020 Microsoft) in CodePawl's [GLB repack](https://huggingface.co/datasets/codepawl/rocketbox-avatars-glb)
-  (half the triangles, KTX2 textures), and the library's own walk, slow run, run and idle
-  clips. `rocketbox/build.sh` downloads them and converts the clips with `rocketbox/clips.mjs`
+  (half the triangles, KTX2 textures), and the library's own walk, slow run and run clips,
+  and a few of its standing ones (waiting, looking round, on the phone, under an umbrella). `rocketbox/build.sh` downloads them and converts the clips with `rocketbox/clips.mjs`
   onto the avatars' bone axes (a straight Blender conversion bent the knees backwards); the
   licence goes with them (`rocketbox/LICENSE.md`).
 

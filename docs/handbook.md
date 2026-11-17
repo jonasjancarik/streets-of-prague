@@ -1147,6 +1147,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   passers-by nearest you (within 30 m, less in a crowd) are drawn as avatars from the
   Microsoft Rocketbox library instead, walking, jogging, running and standing with that
   library's motion-captured clips; their feet keep pace with how fast they actually move.
+  Standing, each takes turns with a few ways of waiting (`STANDING`: shifting their weight,
+  looking round, texting or calling on a phone, with a phone in the hand). In the rain
+  anyone with their umbrella up holds it in the left hand, with Rocketbox's umbrella clip
+  standing and that clip's left arm over the walk when moving.
   Only the crowd's people, and only while they walk, jog, run or stand: falling, fleeing,
   getting up, police, couriers and riders stay the usual figures. The files (about 18 MB,
   in `public/rocketbox/`) load the first time first person is on. `?rocketbox=0` keeps the
@@ -1154,7 +1158,8 @@ record the measurements, merge decisions and pending landmark asset activation.
   Rebuild with `assets/rocketbox/build.sh`; the avatars' list is in both it and `AVATARS`.
   The clips are read from Rocketbox's original FBX files and moved onto the avatars' own
   bone axes (`assets/rocketbox/clips.mjs`): converting them in Blender gives each file
-  different axes, and the knees bent backwards.
+  different axes, and the knees bent backwards. They're stored as 16-bit numbers, the
+  standing ones at 15 frames a second, and joints that hardly move (most fingers) as one pose.
 - **Birds** (`src/birds.ts`): by day in dry weather, flocks of pigeons arrive from beyond
   the view, wheel round a spot above the roofs for a minute or so and leave; over the
   river they're a few gulls gliding. Every bird is a flat shape in one instanced mesh

@@ -465,10 +465,11 @@ export class Crowd {
       if (!seen(p.x, p.y)) continue;
       m.compose(_p.set(p.x, height(p.x, p.y, p) + p.z, -p.y), _q.setFromAxisAngle(UP, p.h), _s);
       this.fig.wear(n, p.i);
-      this.fig.set(n, m, p.anim);
-      n++;
       // (Dropped by anyone running from a car or knocked over.)
-      if (rain && (p.state === 'walk' || p.state === 'rejoin') && this.umbrellas.up(p.serial)) this.umbrellas.put(p.serial, _p, p.h, p.anim.phase, Math.min(1, p.pace / 1.2));
+      const up = rain && (p.state === 'walk' || p.state === 'rejoin') && this.umbrellas.up(p.serial);
+      // (Someone drawn life size holds theirs in the hand: src/rocketbox.ts.)
+      if (!this.fig.set(n, m, p.anim, up ? p.serial : -1) && up) this.umbrellas.put(p.serial, _p, p.h, p.anim.phase, Math.min(1, p.pace / 1.2));
+      n++;
     }
     this.fig.commit(n);
     this.umbrellas.commit();
