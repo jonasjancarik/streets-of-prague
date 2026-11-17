@@ -758,3 +758,16 @@ back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change w
   Na Veselí 46 → 49 %, the rest within 2 points. Streets as before. Parapet jags over
   15 cm went up at Vyšehrad (281 → 321 m) and Malá Strana (47 → 59 m), not yet looked
   at. Pictures `crown2-jaros.jpg` and `crown2-jaros-east.jpg`.
+
+  **Vyšehrad's parapets (17 November 2026).** Most of the new jags were on the
+  ramparts, whose top falls 5 m in 20 m along the wall: too steep to straighten, so it
+  keeps its heights point by point, and with the crown those came from one LiDAR
+  profile each, scattering by 0.2–0.7 m. Such stretches now keep the step line's own
+  reading, and the crown only sets the height where the top is straightened (tin
+  branch). Parapet jags over 15 cm: Vyšehrad 321 → 258 m (straight tops alone: 206),
+  Malá Strana 59 → 44 m, Jaroše 136 → 119 m; Benešovská 27 → 34 m and Linhartova
+  38 → 41 m. Streets as before; the LiDAR fit behind the walls about the same, except
+  Malá Strana 3 m back (63 → 57 %). Of what is left above straight tops at Vyšehrad,
+  the largest piece is a lane in a cutting where the crown brings the ground down
+  from 215.4 to 211.8 m and the LiDAR has 209–213 m: closer to the real ground, but it
+  counts as a jag. Picture `crown3-vysehrad.jpg`.
