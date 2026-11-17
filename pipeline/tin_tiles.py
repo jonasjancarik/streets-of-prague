@@ -324,12 +324,16 @@ def main():
     ap.add_argument("--tol", type=float, default=TOL)
     ap.add_argument("--loose", type=float, default=LOOSE)
     ap.add_argument("--keep-target", action="store_true", help="reuse the last tin-target.mjs output")
+    ap.add_argument("--work", type=Path, help="where the target, the surface and the report go (default "
+                    ".cache/tin/<map>, or <data>/tin-<map> for a map outside public/data, so window builds "
+                    "running side by side keep apart)")
     a = ap.parse_args()
     folder = a.data.resolve() / f"{a.map}_now"
     index = json.loads((folder / "index.json").read_text())
     area = index["area"]
     local = local_crs(area)
-    work = HERE / ".cache" / "tin" / a.map
+    work = a.work or (HERE / ".cache" / "tin" / a.map if a.data.resolve() == OUT.resolve() else a.data.resolve() / f"tin-{a.map}")
+    work.mkdir(parents=True, exist_ok=True)
     target = work / "target"
     t0 = time.time()
     if not (a.keep_target and target.exists()):
@@ -391,7 +395,10 @@ def main():
         print(json.dumps(row), flush=True)
     done = sorted(p.name[: -len(".tin.bin.gz")] for p in tiles_dir.glob("*.tin.bin.gz"))
     index["tin"] = dict(format=tin.FORMAT, tol=a.tol, loose=a.loose, lidar=not a.no_lidar, tiles=done)
-    (folder / "index.json").write_text(json.dumps(index, separators=(",", ":")))
+    out_index = folder / "index.json"
+    if out_index.is_symlink():
+        out_index.unlink()  # (a window's map links the built map's: its own copy, not that one)
+    out_index.write_text(json.dumps(index, separators=(",", ":")))
     (work / ("report-nolidar.json" if a.no_lidar else "report.json")).write_text(json.dumps(dict(rows=rows, total=total), indent=1))
     print(json.dumps(dict(map=a.map, tiles=len(rows), **{f: round(v, 1) for f, v in total.items()})))
 

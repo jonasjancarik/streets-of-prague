@@ -21,7 +21,9 @@ const root = new URL('..', import.meta.url).pathname;
 const dir = `${options['--data'] ?? `${root}public/data`}/${map}_now/`;
 const index = JSON.parse(readFileSync(`${dir}index.json`, 'utf8'));
 if (!index.tin) throw new Error(`${map}: index.json lists no meshes`);
-const surface = options['--surface'] ?? `${root}pipeline/.cache/tin/${map}/${index.tin.lidar ? 'surface' : 'surface-nolidar'}`;
+// (The tile pass keeps its work for a map outside public/data beside that map, pipeline/tin_tiles.py --work.)
+const work = options['--data'] ? `${options['--data']}/tin-${map}` : `${root}pipeline/.cache/tin/${map}`;
+const surface = options['--surface'] ?? `${work}/${index.tin.lidar ? 'surface' : 'surface-nolidar'}`;
 const every = Number(options['--every'] ?? 2);
 const keys = options['--tiles']?.split(',') ?? index.tin.tiles;
 const tol = index.tin.tol, loose = index.tin.loose;
