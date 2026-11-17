@@ -3,7 +3,10 @@ each tile's ground as a triangulated mesh fitted to a surface every 0.5 m, writt
 tiles/<k>.tin.bin.gz beside the lattice. The game draws the ground from it wherever a
 tile has one.
 
-    uv run tin_tiles.py ujezd [--data ../public/data] [--no-lidar] [--tiles i_j,…]
+    uv run tin_tiles.py ujezd [--data ../public/data] [--no-lidar] [--tiles i_j,…] [--jobs N]
+
+The target and the tiles are made in --jobs processes side by side (all cores but one
+by default), each taking blocks of BLOCK tiles.
 
 Run it on a built map whose terrain came from `ipr_terrain.py --tin` (the city pass: the
 walls' outlines with straight tops, which the mesh keeps as breaklines). Per tile:
@@ -52,9 +55,11 @@ from __future__ import annotations
 import argparse
 import gzip
 import json
+import os
 import shutil
 import subprocess
 import time
+from collections import OrderedDict
 from pathlib import Path
 
 import numpy as np
@@ -115,12 +120,15 @@ class LocalToKrovak:
 
 class DenseSheets:
     """IPR's dense terrain model (its Shapefile sheets), each sheet's triangles in local
-    metres once it's asked for."""
+    metres once it's asked for; the last KEEP sheets asked for are kept (a city's don't
+    fit in memory in every process)."""
+
+    KEEP = 12
 
     def __init__(self, local):
         self.to_local = krovak_to_local(local)
         self.to_krovak = LocalToKrovak(local)
-        self.sheets: dict[str, tuple[np.ndarray, np.ndarray] | None] = {}
+        self.sheets: OrderedDict[str, tuple[np.ndarray, np.ndarray] | None] = OrderedDict()
 
     def names(self, box, margin=5.0):
         x0, y0, x1, y1 = box
@@ -131,7 +139,11 @@ class DenseSheets:
         return sorted({n for n in (sheet_name(*sheet(a, b)) for a, b in zip(kx, ky)) if n})
 
     def sheet(self, name):
-        if name not in self.sheets:
+        if name in self.sheets:
+            self.sheets.move_to_end(name)
+        else:
+            while len(self.sheets) >= self.KEEP:
+                self.sheets.popitem(last=False)
             path = ipr_terrain.CACHE / f"TER_{name}_shp.zip"
             if not path.exists():
                 print(f"  (no dense sheet {path.name})")
@@ -187,6 +199,20 @@ def kerb_lines(area: str, local: str):
     cache.parent.mkdir(parents=True, exist_ok=True)
     build_cache.atomic(cache, pickle.dumps({"key": key, "lines": lines}, protocol=5))
     return lines
+
+
+class Kerbs:
+    """The area's kerbs with each line's box, to pick a tile's without looking at them all."""
+
+    def __init__(self, lines):
+        self.lines = lines
+        self.box = np.array([[c[:, 0].min(), c[:, 1].min(), c[:, 0].max(), c[:, 1].max()] for c in lines]).reshape(-1, 4)
+
+    def near(self, box):
+        """The lines whose box reaches the tile's, in their order."""
+        x0, y0, x1, y1 = box
+        b = self.box
+        return [self.lines[n] for n in np.nonzero((b[:, 2] >= x0) & (b[:, 0] <= x1) & (b[:, 3] >= y0) & (b[:, 1] <= y1))[0]]
 
 
 def read_target(tdir: Path, k: str):
@@ -405,6 +431,104 @@ def write_surface(out: Path, t, new, lines, kerb_rows):
     (out / f"{k}.json").write_text(json.dumps(meta))
 
 
+BLOCK = (4, 16)  # tiles a process takes at a time, columns by rows: its neighbours and IPR's sheets read once for it
+
+
+def blocks(keys, jobs):
+    """The tiles in BLOCK-sized blocks, each row by row; smaller blocks where that would
+    leave fewer than twice `jobs` (a small area)."""
+    ij = sorted(tuple(map(int, k.split("_"))) for k in keys)
+    size = BLOCK
+    while True:
+        out: dict[tuple[int, int], list[tuple[int, int]]] = {}
+        for i, j in ij:
+            out.setdefault((i // size[0], j // size[1]), []).append((i, j))
+        if len(out) >= 2 * jobs or size == (1, 1):
+            break
+        size = (max(1, size[0] // 2), max(1, size[1] // 2))
+    return [[f"{i}_{j}" for i, j in sorted(b, key=lambda t: (t[1], t[0]))] for _, b in sorted(out.items())]
+
+
+class Pass:
+    """One process's share of the tile pass: what it reads, and the targets and tiles it
+    keeps while it needs them (a city's don't fit in memory)."""
+
+    def __init__(self, folder, target, surf, area, local, no_lidar, tol, loose):
+        self.target, self.surf, self.tiles_dir = Path(target), Path(surf), Path(folder) / "tiles"
+        self.tol, self.loose = tol, loose
+        self.dense = DenseSheets(local)
+        self.scan_at = None if no_lidar else ipr_lidar.sampler(ipr_lidar.CACHE, local)[0]
+        self.kerbs = Kerbs(kerb_lines(area, local))
+        self.cache: dict[tuple[int, int], dict | None] = {}
+        self.tile_json: dict[str, dict | None] = {}
+
+    def targets(self, i, j):
+        if (i, j) not in self.cache:
+            self.cache[(i, j)] = read_target(self.target, f"{i}_{j}")
+        return self.cache[(i, j)]
+
+    def tile_of(self, key):
+        if key not in self.tile_json:
+            p = self.tiles_dir / f"{key}.json"
+            self.tile_json[key] = json.loads(p.read_text()) if p.exists() else None
+        return self.tile_json[key]
+
+    def keep(self, i0, j0, i1, j1):
+        """Forget the targets and tiles outside columns i0–i1 and rows j0–j1."""
+        def out(i, j):
+            return not (i0 <= i <= i1 and j0 <= j <= j1)
+        for c in [c for c in self.cache if out(*c)]:
+            del self.cache[c]
+        for c in [c for c in self.tile_json if out(*map(int, c.split("_")))]:
+            del self.tile_json[c]
+
+    def tile(self, k):
+        """Make tile k's surface and mesh; its report row, or None if it has no target."""
+        t1 = time.time()
+        i, j = map(int, k.split("_"))
+        t = self.targets(i, j)
+        if t is None:
+            return None
+        tj = self.tile_of(k)
+        pads = {int(x["label"]) for x in tj.get("terraces") or [] if "h" in x}
+        held_at = held_ground(self.tile_of, i, j) if self.scan_at is not None else None
+        new, lines, kerb_rows, stats = surface(t, self.targets, self.dense, self.scan_at, pads,
+                                               self.kerbs.near(t["meta"]["box"]), held_at)
+        write_surface(self.surf, t, new, lines, kerb_rows)
+        t2 = time.time()
+        res = tin.build(self.surf, k, self.tol, self.loose)
+        body = gzip.compress(tin.write(res), 9)
+        (self.tiles_dir / f"{k}.tin.bin.gz").write_bytes(body)
+        check = tin.label_check(res)
+        return dict(k=k, points=len(res["P"].xy), extra=sum(len(x) - 1 for x in res["P"].h), breaklines=len(res["steps"]),
+                    bytes=len(body), err=round(res["err"], 3), err_paved=round(res["err_paved"], 3),
+                    near_worst=round(float(res["near_err"].max()), 3) if len(res["near_err"]) else 0.0,
+                    labels_off=check[0], labels_off_m2=round(check[1], 2), **{s: round(v, 3) if isinstance(v, float) else v for s, v in stats.items()},
+                    surface_s=round(t2 - t1, 1), fit_s=round(time.time() - t2, 1))
+
+
+_PASS: dict[tuple, Pass] = {}
+
+
+def run_block(job):
+    """A block of tiles in one process (`build_cache.parallel_map`): their report rows."""
+    setup, keys = job
+    if setup not in _PASS:
+        _PASS.clear()
+        _PASS[setup] = Pass(*setup)
+    p = _PASS[setup]
+    ij = [tuple(map(int, k.split("_"))) for k in keys]
+    i0, i1 = min(i for i, _ in ij), max(i for i, _ in ij)
+    j1 = max(j for _, j in ij)
+    rows = []
+    for k, (i, j) in zip(keys, ij):
+        p.keep(i0 - 1, j - 1, i1 + 1, j1 + 1)
+        row = p.tile(k)
+        if row:
+            rows.append(row)
+    return rows
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("map", help="the map's folder name without _now (ujezd, praha, or a copy such as ujezd-lidar)")
@@ -414,6 +538,7 @@ def main():
     ap.add_argument("--tol", type=float, default=TOL)
     ap.add_argument("--loose", type=float, default=LOOSE)
     ap.add_argument("--keep-target", action="store_true", help="reuse the last tin-target.mjs output")
+    ap.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) - 1), help="processes side by side")
     ap.add_argument("--work", type=Path, help="where the target, the surface and the report go (default "
                     ".cache/tin/<map>, or <data>/tin-<map> for a map outside public/data, so window builds "
                     "running side by side keep apart)")
@@ -425,79 +550,49 @@ def main():
     work = a.work or (HERE / ".cache" / "tin" / a.map if a.data.resolve() == OUT.resolve() else a.data.resolve() / f"tin-{a.map}")
     work.mkdir(parents=True, exist_ok=True)
     target = work / "target"
+    jobs = max(1, a.jobs)
     t0 = time.time()
     if not (a.keep_target and target.exists()):
-        if target.exists():
-            shutil.rmtree(target)
-        cmd = ["node", str(ROOT / "scripts" / "tin-target.mjs"), a.map, "--data", str(a.data.resolve()), "--out", str(work)]
+        for old in (target, work / a.map):
+            if old.exists():
+                shutil.rmtree(old)
+        have = {p.name[:-5] for p in (folder / "tiles").glob("*_*.json")}
         if a.tiles:
             # (The neighbours too: the distances to paved ground and walls reach across.)
             want = set()
             for kk in a.tiles.split(","):
                 i, j = map(int, kk.split("_"))
                 want |= {f"{i + di}_{j + dj}" for di in (-1, 0, 1) for dj in (-1, 0, 1)}
-            have = {p.name[:-5] for p in (folder / "tiles").glob("*_*.json")}
-            cmd += ["--tiles", ",".join(sorted(want & have))]
-        subprocess.run(cmd, check=True)
+            have &= want
+        order = sorted(have, key=lambda kk: tuple(map(int, kk.split("_"))))
+        cmd = ["node", str(ROOT / "scripts" / "tin-target.mjs"), a.map, "--data", str(a.data.resolve()), "--out", str(work)]
+        size = max(1, -(-len(order) // jobs))
+        procs = [subprocess.Popen(cmd + ["--tiles", ",".join(order[n:n + size])]) for n in range(0, len(order), size)]
+        codes = [p.wait() for p in procs]  # (every one waited for, failed or not)
+        if any(codes):
+            raise SystemExit("tin-target.mjs failed")
         (work / a.map).rename(target)
     print(f"target: {time.time() - t0:.1f} s", flush=True)
-    cache: dict[tuple[int, int], dict | None] = {}
-
-    def targets(i, j):
-        if (i, j) not in cache:
-            cache[(i, j)] = read_target(target, f"{i}_{j}")
-        return cache[(i, j)]
 
     keys = a.tiles.split(",") if a.tiles else [p.stem for p in target.glob("*.json")]
-    keys = sorted(keys, key=lambda kk: tuple(map(int, kk.split("_"))))  # (column by column: see the caches below)
-    dense = DenseSheets(local)
-    scan_at = None if a.no_lidar else ipr_lidar.sampler(ipr_lidar.CACHE, local)[0]
-    kerbs = kerb_lines(area, local)
+    kerb_lines(area, local)  # (made once here if it isn't cached, not in every process)
     surf = work / ("surface-nolidar" if a.no_lidar else "surface")
     if surf.exists():
         shutil.rmtree(surf)
     surf.mkdir(parents=True)
     tiles_dir = folder / "tiles"
-    tile_json: dict[str, dict | None] = {}
-
-    def tile_of(key):
-        if key not in tile_json:
-            p = tiles_dir / f"{key}.json"
-            tile_json[key] = json.loads(p.read_text()) if p.exists() else None
-        return tile_json[key]
-
+    setup = (str(folder), str(target), str(surf), area, local, a.no_lidar, a.tol, a.loose)
     rows, total = [], dict(points=0, extra=0, breaklines=0, bytes=0, seconds=0.0)
-    for k in keys:
-        t1 = time.time()
-        i, j = map(int, k.split("_"))
-        # (Only the columns either side of this one are read again: a city's targets and tiles don't fit in memory.)
-        for c in [c for c in cache if c[0] < i - 1]:
-            del cache[c]
-        for c in [c for c in tile_json if int(c.split("_")[0]) < i - 1]:
-            del tile_json[c]
-        t = targets(i, j)
-        if t is None:
-            continue
-        tj = tile_of(k)
-        pads = {int(x["label"]) for x in tj.get("terraces") or [] if "h" in x}
-        held_at = held_ground(tile_of, i, j) if scan_at is not None else None
-        new, lines, kerb_rows, stats = surface(t, targets, dense, scan_at, pads, kerbs, held_at)
-        write_surface(surf, t, new, lines, kerb_rows)
-        t2 = time.time()
-        res = tin.build(surf, k, a.tol, a.loose)
-        body = tin.write(res)
-        (tiles_dir / f"{k}.tin.bin.gz").write_bytes(gzip.compress(body, 9))
-        check = tin.label_check(res)
-        row = dict(k=k, points=len(res["P"].xy), extra=sum(len(x) - 1 for x in res["P"].h), breaklines=len(res["steps"]),
-                   bytes=len(gzip.compress(body, 9)), err=round(res["err"], 3), err_paved=round(res["err_paved"], 3),
-                   near_worst=round(float(res["near_err"].max()), 3) if len(res["near_err"]) else 0.0,
-                   labels_off=check[0], labels_off_m2=round(check[1], 2), **{s: round(v, 3) if isinstance(v, float) else v for s, v in stats.items()},
-                   surface_s=round(t2 - t1, 1), fit_s=round(time.time() - t2, 1))
-        rows.append(row)
-        for f in ("points", "extra", "breaklines", "bytes"):
-            total[f] += row[f]
-        total["seconds"] += time.time() - t1
-        print(json.dumps(row), flush=True)
+    t1 = time.time()
+    for got in build_cache.parallel_map(run_block, [(setup, b) for b in blocks(keys, jobs)], jobs):
+        for row in got:
+            rows.append(row)
+            for f in ("points", "extra", "breaklines", "bytes"):
+                total[f] += row[f]
+            total["seconds"] += row["surface_s"] + row["fit_s"]
+            print(json.dumps(row), flush=True)
+    rows.sort(key=lambda r: tuple(map(int, r["k"].split("_"))))
+    total["wall"] = time.time() - t1
     done = sorted(p.name[: -len(".tin.bin.gz")] for p in tiles_dir.glob("*.tin.bin.gz"))
     index["tin"] = dict(format=tin.FORMAT, tol=a.tol, loose=a.loose, lidar=not a.no_lidar, tiles=done)
     out_index = folder / "index.json"
