@@ -966,3 +966,69 @@ time to triangulate a tile, before `praha`.
   can't straighten (the outline would have to follow the kerb), and scribbles on the
   tram median that the mesh didn't change. Also left: the bridge head at Hlávkův most,
   as broken on today's map, and a crack along the promenade above Jaroše's quay.
+- 17 November 2026: the move off the lattice, first round (branch `tin`). The city pass
+  is `ipr_terrain.py --tin`. The tile pass is `pipeline/tin_tiles.py`: the surface every
+  0.5 m as listed under "The move off the lattice", then the fit, written as
+  `tiles/<k>.tin.bin.gz` beside the lattice and listed under `tin` in `index.json`. The
+  file (`tin.FORMAT` 1, read by `decodeTin` in `src/tin.ts`) has the points sorted by
+  row, two bytes for each coordinate and height, the extra heights of points on a wall,
+  and the breaklines as runs of point numbers with the side on their left and right. The
+  game draws the ground from the mesh wherever a tile has one (`?tin=off` for the
+  lattice), and `check-road-flatness.mjs` and `check-bridge-decks.mjs` read it too
+  (`--tin off` for the lattice). `check-tin.mjs` compares each mesh, as the game builds
+  it, with the surface it was fitted to.
+
+  `ujezd` built both ways, against the city pass's lattice built the same way:
+
+  | | Lattice, LiDAR | Mesh, LiDAR | Lattice, no LiDAR | Mesh, no LiDAR |
+  |---|---|---|---|---|
+  | Carriageway within 0.3 m of the LiDAR | 99.7 % | 99.9 % | 94.7 % | 94.8 % |
+  | Streets leaning over 8 % / 15 % | 3 / 2 | 2 / 0 | 10 / 4 | 10 / 4 |
+  | Bumps over 0.15 / 0.5 m | 4 / 1 | 2 / 1 | 7 / 2 | 7 / 2 |
+  | Line metres with a wave over 0.2 m (5 m either side) | 0.17 % | 0.12 % | 0.65 % | 0.62 % |
+  | Points a tile | | 4,900 | | 3,800 |
+  | Mesh file a tile (gzip) | | 23.9 KB | | 19.5 KB |
+
+  The bridges' decks and joins come out the same in all of them. Without the LiDAR the
+  streets are the city pass's, so the mesh changes little on them: what it changes is
+  the open ground (IPR's dense model in place of the lattice) and the edges, which
+  follow the outlines instead of the lattice's cells. The streets' gain is the LiDAR's,
+  as on the lattice in November.
+
+  At Smetanovo nábřeží the quay wall has no outline in the city pass (the lattice draws
+  it as a ramp), and the mesh followed the LiDAR's 1 m cells down it in a sawtooth. On
+  the ground within 1.5 m of a LiDAR face rising more than 1 m within a metre, the
+  surface now takes IPR's dense model (`STEEP`, `STEEP_NEAR` in `tin_tiles.py`). The
+  pictures, lattice against both meshes, are in `docs/evidence/tin/move` (local).
+
+  Left: 104 breakline pieces on `ujezd` that the game's triangulation can't keep
+  (clusters of points a few centimetres apart where two outlines nearly cross, which
+  want their crossings put in and close points merged), white specks along some wall
+  lines, and a wavy wall foot on Petřín with the LiDAR.
+
+  The size, before the ten trial places so as to know early whether the format holds:
+  40 random tiles of `praha`, each a window build with the city pass as `--tin
+  --survey-scan`. The mesh file is 8.5 KB a tile on average (median 3.4 KB, at most
+  38.7 KB), about 124 MB for the city's 14,595 tiles, inside the 200 MB. Everywhere
+  within 10 cm on paved ground and 25 cm elsewhere; 39 triangles in all (1.5 m²) on the
+  wrong side of a step.
+
+  The time to make a tile's ground from its file (`scripts/tin-bench.mjs`, `ujezd`'s 25
+  tiles, each tile's median of three to five runs, then the median and the worst tile):
+
+  | | Mac (M5, headless Chrome) | Pixel 5 |
+  |---|---|---|
+  | Unpacking and decoding | 0.5 ms | 4 ms |
+  | Triangulating with the breaklines | 2.4 ms (at most 10) | 10 ms (at most 64) |
+  | The sampler's index | 0.5 ms (at most 1) | 2 ms (at most 4) |
+  | The shading texture | 35 ms (at most 72) | 178 ms (at most 334) |
+
+  All of it runs on the main thread while a tile loads (`src/tiles.ts`). The shading is
+  the cost: it reads the mesh five times for every square metre of the tile, where the
+  lattice's read one height per lattice point. Proposed before `praha` (not decided):
+  draw the shading triangle by triangle, one slope each (inside a triangle it already
+  reads a single slope, so it should look the same), and perhaps move the triangulation
+  into the tile worker for the worst tiles. The phone's first runs came out four times
+  slower: its screen had gone off or the lock screen was over Chrome, which then slows
+  the page. Kept awake (a wake every 10 s, the lock screen lifted) it gives the numbers
+  above, with no touches on the screen during the run.
