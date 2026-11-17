@@ -178,13 +178,26 @@ class StructureHeightTests(unittest.TestCase):
             x=net.xy[i,0];self.assertAlmostEqual(net.h[i],(190*(400-x)+200*(x+5))/405)
 
     def test_tunnel_and_connected_bridge_use_one_legacy_component(self):
-        ways=branch();ways[2]['kind']='tunnel';net=structures.Net(ways)
-        net.spread(self.pins(net,{1:197.088,2:198.638,30:242.912}))
+        # The old spreading, still there behind TUNNELS_HARMONIC = 0 to compare with.
+        with patch.object(structures,'TUNNELS_HARMONIC',False):
+            ways=branch();ways[2]['kind']='tunnel';net=structures.Net(ways)
+            net.spread(self.pins(net,{1:197.088,2:198.638,30:242.912}))
         # At the joint the two nearest anchors are the two short arms, as before.
         a,b=306.0065358779,306.7065209623
         expected=(197.088*b+198.638*a)/(a+b)
         self.assertAlmostEqual(net.h[net.key['n',10]],expected,7)
         self.assertLess(net.h[net.key['n',10]],200)
+
+    def test_tunnel_with_every_end_known_is_solved_like_a_bridge(self):
+        # With the two nearest pins both by one portal, each half of the Strahov tunnel
+        # ran level from its own portal and the halves met in a ramp of 100 %.
+        pins={1:197.088,2:198.638,30:242.912}
+        tunnel=branch();tunnel[2]['kind']='tunnel';t=structures.Net(tunnel);t.spread(self.pins(t,pins))
+        bridge=structures.Net(branch());bridge.spread(self.pins(bridge,pins))
+        np.testing.assert_allclose(t.h,bridge.h)
+        self.assertGreater(t.h[t.key['n',10]],200)
+        long=np.diff(t.h[t.paths[2]])
+        self.assertTrue((long>0).all())  # climbs the whole way to the far portal, no step
 
     def test_short_tunnel_between_preexisting_bridge_nodes_still_selects_legacy(self):
         ways=branch();ways.append(way(5,[10,11],[[0,0],[1,0]]))

@@ -58,6 +58,11 @@ STAIRS_SLOPE = 0.5  # and how quickly stairs do
 STAIRS_MAX = 0.8  # steeper than this isn't even stairs
 ON_FOOT = {"footway", "path", "pedestrian", "steps"}
 SOFT = 0.05  # how much less a link along stairs holds two heights together than one along a deck
+# Tunnels with every end known take the same solve as bridges (Net.spread). With the old
+# spreading each point took its two nearest pins, which past the cover rule's pins by one
+# portal both lay on that side: each half of the Strahov tunnel ran level from its own
+# portal and the halves met in a ramp of 100 % (0 for the old way, to compare).
+TUNNELS_HARMONIC = True
 BESIDE = 10.0  # m: two structures this close share lattice points (PAD, and a cell's diagonal)
 SAME = 3.0  # m: two structures further apart in height than this can't share a level
 STAIRS_SAME = 1.0  # m: the same for stairs (which have their own profile) and what's beside them
@@ -346,15 +351,16 @@ class Net:
         return best
 
     def spread(self, fixed):
-        """Harmonic heights for complete bridge components; legacy elsewhere.
+        """Harmonic heights for components whose anchors are all known; legacy elsewhere.
 
         Linear on a chain and continuous at junctions, rather than switching
         between two nearest anchors that may both lie on one side. Return shortest
         graph distances to the nearest provided anchor, independently of heights.
         Components with no anchor stay unknown; one anchor gives a constant height.
-        Components containing tunnels, or any non-finite anchor, retain the prior
-        two-nearest propagation. In particular an unknown portal outside the map
-        must not erase a tunnel's supported interior and shared bridge transitions.
+        Components with any non-finite anchor retain the prior two-nearest
+        propagation: an unknown portal outside the map must not erase a tunnel's
+        supported interior and shared bridge transitions. Components containing
+        tunnels with every anchor known are solved like bridges (TUNNELS_HARMONIC).
         """
         n = len(self.adj)
         self.h.fill(np.nan)
@@ -402,7 +408,7 @@ class Net:
         legacy = {}
         for component, points in anchors.items():
             heights = np.array([h for _, h in points])
-            if component in self._legacy_components or not np.isfinite(heights).all():
+            if not np.isfinite(heights).all() or (component in self._legacy_components and not TUNNELS_HARMONIC):
                 legacy.update(points)
                 continue
             on = self._component_nodes[component]
