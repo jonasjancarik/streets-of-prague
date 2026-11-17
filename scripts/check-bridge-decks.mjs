@@ -16,6 +16,8 @@
 // stops short of the end. The bridges in
 // .agents/skills/terrain-steps/bridges.json are listed by name, and the script fails when
 // one of those has a break over --max-break or a join over --max-join.
+// Car streets in tunnels are walked the same way and listed by their steepest climb over
+// 10 m, with the metres where no level is found under them (listed only; nothing fails).
 // --near: only the tiles round a place (600 m either way unless given), which takes seconds.
 // Maps built before the pipeline wrote each street's level have no `level` on their
 // edges: there the deck walked is the bridge level nearest in height to the last sample.
@@ -261,6 +263,27 @@ for (const b of area === 'praha' ? NAMED : []) {
   if (args.profile && b.name.includes(args.profile)) s.wayProfile = prof.map((p) => (p[2] + REF).toFixed(1) + (p[3] ? '' : 'g')).join(' ');
 }
 
+// Car streets in tunnels, on their own level: the steepest climb over GRADE_RUN metres,
+// and how many metres find no level under them (there a car is put on the ground above).
+// A tunnel's heights run from portal to portal; one far steeper than a street is two
+// rules meeting, not the tunnel (Strahovský tunel: a ramp of 60 % under Strahov,
+// November 2026).
+const GRADE_RUN = 10;
+const tprofs = new Map();
+for (const e of edges.values()) if (e.tunnel && e.net === 'drive' && e.level !== undefined) tprofs.set(e, walk(e));
+const tunnels = [];
+for (const [e, prof] of tprofs) {
+  let worst = 0, where = 0, off = 0;
+  for (let i = 2; i < prof.length - 2; i++) if (!prof[i][3]) off++;
+  for (let i = GRADE_RUN; i < prof.length; i++) {
+    if (!prof[i][3] || !prof[i - GRADE_RUN][3]) continue;
+    const g = Math.abs(prof[i][2] - prof[i - GRADE_RUN][2]) / GRADE_RUN;
+    if (g > worst) { worst = g; where = i - GRADE_RUN / 2; }
+  }
+  tunnels.push({ id: `${e.net}:${e.id}`, name: e.name || '', hw: e.hw, level: e.level, length: prof.length - 1, grade: +(100 * worst).toFixed(1),
+    gradeAt: where, gradePlace: toWgs(prof[where][0], prof[where][1]), off });
+}
+
 const before = args.against ? JSON.parse(readFileSync(args.against, 'utf8')) : null;
 const was = (list, key, name, field) => { const o = list?.find((r) => r[key] === name); return o ? `${o[field]} → ` : ''; };
 console.log(`${area}: built ${index.built}, ${rows.length} streets and paths on bridges${leveled ? '' : ' (no levels on the edges: decks guessed by height)'}`);
@@ -290,9 +313,17 @@ if (!args['named-only']) {
     const end = Math.abs(r.joins[0]) >= Math.abs(r.joins[1]) ? 0 : 1;
     console.log(`  ${String(r.joins[end]).padStart(6)} m  ${r.ends[end].join(', ')}  ${r.hw} ${r.name} (${r.id}, ${r.length} m)`);
   }
+  if (tunnels.length) {
+    const steep = (list) => list.filter((r) => r.grade > 15).length, lost = (list) => list.filter((r) => r.off > 4).length;
+    console.log(`\nCar streets in tunnels: ${tunnels.length}; ${steep(tunnels)} steeper than 15 % over ${GRADE_RUN} m, ${lost(tunnels)} with more than 4 m off their level`
+      + (before?.tunnels ? ` (before: ${steep(before.tunnels)}, ${lost(before.tunnels)})` : ''));
+    for (const r of tunnels.slice().sort((a, b) => b.grade - a.grade).slice(0, N)) {
+      console.log(`  ${(was(before?.tunnels, 'id', r.id, 'grade') + r.grade).padStart(6)} %  ${r.gradePlace.join(', ')}  ${r.hw} ${r.name} (${r.id}, ${r.length} m, at ${r.gradeAt} m, level ${r.level}${r.off > 4 ? `, ${r.off} m off its level` : ''})`);
+    }
+  }
 }
 if (args.profile) {
-  for (const [e, prof] of profs) {
+  for (const [e, prof] of [...profs, ...tprofs]) {
     if (!`${e.net}:${e.id} ${e.name || ''}`.includes(args.profile)) continue;
     console.log(`\n${e.net}:${e.id} ${e.hw} ${e.name || ''} (every ${STEP} m; g = on the ground)`);
     console.log('  ' + prof.map((p) => (p[2] + REF).toFixed(1) + (p[3] ? '' : 'g')).join(' '));
@@ -301,7 +332,7 @@ if (args.profile) {
     }
   }
 }
-const result = { built: index.built, summary, rows,
+const result = { built: index.built, summary, rows, tunnels,
   ...(bridgeTrial ? { bridgeDigest: createHash('sha256').update(bridgeTrial).digest('hex') } : {}),
   ...(trial ? { patchDigest: createHash('sha256').update(trial).digest('hex') } : {}) };
 if (args.save) writeFileSync(args.save, JSON.stringify(result));
