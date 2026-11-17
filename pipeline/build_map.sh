@@ -62,6 +62,9 @@ for step in build_signals build_river build_lines build_metro build_buses build_
             build_lamps build_bikes build_terraces build_districts; do
   run uv run "$step.py" "$area"
 done
+if [[ -f ".cache/osm/${area}.osm.pbf" ]]; then
+  run uv run build_power.py "$area"
+fi
 if (( !quick )); then
   run uv run landmarks.py "$area"
 fi

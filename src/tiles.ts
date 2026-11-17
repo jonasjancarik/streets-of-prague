@@ -8,6 +8,7 @@ import { Geo, Grid, rng, hash, clipLine } from './map/geo.ts';
 import { wallMesh } from './map/buildings.ts';
 import { TreePool } from './trees.ts';
 import { groundStairs, stairLandings } from './map/stairs.ts';
+import { powerMesh, readPowerGrid, type PowerGrid } from './map/powerGrid.ts';
 import { Surfaces } from './surface.ts';
 import { shadeBuildings, shadeLandmark, cutAway, broad, ROOF_CLUTTER, roadRasterEnabled } from './shading.ts';
 import { loadFacadeAtlas } from './facades.ts';
@@ -450,6 +451,7 @@ export class TileWorld {
   noParking: ((x: number, y: number) => boolean) | null = null;
   T: number; ox: number; oy: number;
   available: Set<string>; iprTiles: Map<string, boolean>;
+  private readonly powerGrid: Promise<PowerGrid | null> | null;
   // Goes up whenever `available` changes, so update() looks again at which tiles are
   // round the camera. (Nothing changes it once the world is made, but whatever does
   // must bump this.)
@@ -540,6 +542,9 @@ export class TileWorld {
     this.area = area;
     this.index = index;
     const query = new URLSearchParams(location.search);
+    this.powerGrid = index.power && !query.has('nopower') ? fetch(dataUrl(area, 'power.json'))
+      .then(async (r) => r.ok ? readPowerGrid(await r.json(), area, index.built) : null)
+      .catch(() => null) : null;
     const station = area === 'praha' && query.has('stationtracks');
     // ?lines=off: a map's step lines (pipeline/step_lines.py, a trial) left out, to compare.
     this.stepLines = query.get('lines') !== 'off';
@@ -1577,6 +1582,7 @@ export class TileWorld {
     }));
     const [{ layers, ms: groundMs, triangles }, iprArrays, roofArrays] = await jobs;
     const landmarks = (await models).filter((m): m is THREE.Group => m !== null);
+    const power = await this.powerGrid;
     if (gone()) return;
     lap('workers');
     if (groundMs !== undefined) ms.ground = Math.round(groundMs);
@@ -1624,8 +1630,11 @@ export class TileWorld {
       s.ground?.roadSurfaces?.length ? { sample: shade.sample, boxes: s.ground.roadSurfaces.map((p) => p.box) } : undefined) : null;
     if (hidden) group.add(hidden);
     const buildings = arraysOf.map((arrays, n) => buildingMesh(arrays, (skyResult && !location.search.includes('nosky') ? skyResult.walls[n] : null)));
+    const transmission = power ? powerMesh(power, k, this.ref, tile.sample) : null;
+    const own = [...buildings, ...(hidden ? [hidden] : []), ...(transmission ? [transmission] : [])];
     const smoke = iprArrays?.chimneys ? chimneySmoke(iprArrays.chimneys, this.scene) : null;
     group.add(surfaces.group, ...buildings, ...tile.fixtures, ...landmarks, ...tile.furniture);
+    if (transmission) group.add(transmission);
     if (smoke) group.add(smoke);
     // Nothing in a tile ever moves: its matrices are worked out once, not every frame,
     // and the renderer's walk through the scene each frame skips the tile's objects.
@@ -1636,14 +1645,14 @@ export class TileWorld {
     if (!this.urgent) {
       await new Promise<void>((go) => this.turns.push(go));
       // Left behind meanwhile: thrown away the way it would have been once drawn.
-      if (gone()) { tile.drawn = { group, surfaces, own: [...buildings, ...(hidden ? [hidden] : [])], smoke }; this.undress(tile); return; }
+      if (gone()) { tile.drawn = { group, surfaces, own, smoke }; this.undress(tile); return; }
     }
     // The tree pages are leased last: if they can't be, nothing is left half done.
     this.trees.add(k, s.trees);
     if (this.street && !this.urgent) group.traverse((o) => { if (o !== group && o.visible && (o as THREE.Mesh).geometry) { o.visible = false; this.reveal.push(o); } });
     this.scene.add(group);
     this.joined++;
-    tile.drawn = { group, surfaces, own: [...buildings, ...(hidden ? [hidden] : [])], smoke };
+    tile.drawn = { group, surfaces, own, smoke };
     lap('meshes');
   }
 

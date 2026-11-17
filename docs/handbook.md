@@ -1247,6 +1247,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   contact wire 5.6 m above every track, where the pantographs reach, and every 30 m or so
   a span wire across the tracks, anchored to a building front when one is within 11 m
   (as in the old town's narrow streets) or else hung from a pole beside the track.
+- **Transmission lines** (`pipeline/build_power.py`, `src/map/powerGrid.ts`) use
+  OSM's mapped towers and their connecting spans, with approximate lattice
+  shapes and wire sag. Heights come from OSM where tagged, or from the line
+  voltage otherwise. They are scenery. Older maps have no transmission layer;
+  `?nopower` hides it on maps that do.
 - **Posts** (`src/posts.ts`): the wires' poles and the lamp posts are solid, and nobody
   parks round one. Drive into one slowly and you bounce off; hit a lamp post at more
   than 18 km/h or a wire pole at more than 32 km/h and it goes over the way you were

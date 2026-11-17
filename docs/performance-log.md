@@ -1312,3 +1312,11 @@ with the original water first, and 20.6 → 21.0 ms with the quieter water first
 The second run was slower in either order. Across both orders, the original
 averaged 20.7 ms and the quieter water 21.0 ms. Draw counts ranged from 56 to
 58. There was no GPU timing, so this comparison does not isolate shader cost.
+
+## Transmission towers, 17 November 2026
+
+On desktop Chrome WebGPU at Ultra, the Přemyšlenská view had three loaded
+transmission meshes and about 2,600 vertices. Alternating visibility in the
+same view for six four-second windows gave 28.3 ms/frame off and 28.7 ms/frame
+on, with an offline map build running. There was no GPU timing, so this is a
+check against a large added cost and does not isolate the cost of the meshes.
