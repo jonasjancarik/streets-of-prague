@@ -771,3 +771,45 @@ back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change w
   the largest piece is a lane in a cutting where the crown brings the ground down
   from 215.4 to 211.8 m and the LiDAR has 209–213 m: closer to the real ground, but it
   counts as a jag. Picture `crown3-vysehrad.jpg`.
+- 17 November 2026: the TIN tried again, on the new ground. The user hadn't agreed to
+  the 15 November "no TIN": the TIN is wanted, with the straight tops and the ground
+  filled up to the walls. Stage 1's builder (`pipeline/tin.py`, tin branch 2d2d57d8)
+  on the nine places' middle 3 × 3 tiles, with the crown version of the ground as the
+  target. Two fixes first: a triangle not touching a step takes the side at its middle
+  (the flood leaked through gaps in the outlines and put water on the land's side,
+  5,415 samples a tile → 224, all within 7 cm of a step), and a step segment the
+  triangulation misses is split at its midpoint even with no sample between its ends
+  (missing wall segments 626 of 2,246 → 6 of 4,779).
+
+  Size: the file can hold the points alone, a height per side at a step's points, and
+  the steps as runs of point numbers; the game triangulates them. Stored with their
+  triangles they are 3.5 times bigger.
+
+  | Target, paved / elsewhere | nine dense places, a tile | 40 random tiles, a tile | `praha` from the random tiles |
+  |---|---:|---:|---:|
+  | today's ground, 10 / 25 cm | 14.8 KB | 4.5 KB | 65 MB |
+  | today's ground, 20 / 50 cm | 10.1 KB | 2.7 KB | 39 MB |
+  | LiDAR off the streets, 10 / 25 cm | 18.2 KB | 5.7 KB | 83 MB |
+  | LiDAR off the streets, 20 / 50 cm | 11.7 KB | 3.2 KB | 46 MB |
+
+  Today's height file is 61 MB for `praha` (the nine places: grid 3.2 KB, step lines
+  2–4 KB and terraces 0.5–1.3 KB a tile). So points-only passes the size gate, which
+  the 14 November encoding (2.8 GB at 2 cm) didn't.
+
+  Shape: a TIN of today's ground copies it (median 2 cm off, 95 % within 10 cm), the
+  4 m lattice's stair-steps on diagonal banks included (the grass behind the Jaroše
+  quay). It's a better container, not better ground. "LiDAR off the streets" takes
+  IPR's bare earth (smoothed over a metre) wherever it is 4 m or more from a step line
+  and from paved ground, blended over 2–4 m, and today's ground elsewhere (streets,
+  walls, water): the Jaroše bank becomes one even slope, and Linhartova's hillside
+  shows its paths, ridges and terraces instead of 4 m blocks
+  (`docs/evidence/tin/walls-tin/relief-*.jpg`, local). Left to fix: beside some walls
+  a second ridge runs parallel to the wall, the LiDAR's own slope across the wall
+  taken up just past the 2 m; near the slip roads at Jaroše the LiDAR's slopes and
+  the game's terraces don't line up.
+
+  For the game: a triangulation with the steps as constraints, so that no triangle
+  crosses a wall whatever the ties. With another tie-break (Qhull's `QJ`) 224 of
+  4,779 wall segments went missing, so plain Delaunay of the points isn't enough. The
+  game has no such library yet (a new dependency, or our own). Nothing in the game reads
+  the TIN yet.
