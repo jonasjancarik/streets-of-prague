@@ -813,3 +813,40 @@ back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change w
   4,779 wall segments went missing, so plain Delaunay of the points isn't enough. The
   game has no such library yet (a new dependency, or our own). Nothing in the game reads
   the TIN yet.
+
+  **IPR's dense model instead of the grid (17 November 2026).** The ground above went
+  TIN → grid → TIN: the pipeline samples IPR's dense terrain sheets (`TER_*_shp`, a
+  TIN with triangles of about 2 m²) onto the 4 m grid, and the builder triangulated the
+  grid again. So the target now takes IPR's dense triangles themselves wherever the
+  ground is 4 m or more from a step line and from paved ground (blended over 2–4 m),
+  and today's new ground elsewhere: the streets (the LiDAR's road), the walls with
+  their straight tops and filled ground, and the water.
+  (`docs/evidence/tin/walls-tin/dense_target.py`, local; it reads the sheets with the
+  16 November trial's `dense_points`.)
+
+  | Paved / elsewhere | nine dense places, a tile | 40 random tiles, a tile | `praha` from the random tiles |
+  |---|---:|---:|---:|
+  | 10 / 25 cm | 18.5 KB | 6.1 KB | 89 MB |
+  | 20 / 50 cm | 12.4 KB | 3.5 KB | 50 MB |
+
+  (Ten random tiles' sheets aren't in the cache, on the city's edge; those kept
+  today's ground.) Open ground, 4 m or more from steps and paved ground, within 0.3 m
+  of the 2023 LiDAR:
+
+  | | today's grid | TIN of today's | TIN from IPR's dense model |
+  |---|---:|---:|---:|
+  | Československého exilu | 70.1 % | 69.5 % | 73.0 % |
+  | nábřeží Kapitána Jaroše | 77.1 % | 76.7 % | 74.6 % |
+  | Linhartova | 73.7 % | 72.8 % | 74.2 % |
+  | M7 | 81.9 % | 81.2 % | 80.4 % |
+  | Benešovská | 84.8 % | 84.4 % | 86.9 % |
+  | Vyšehrad | 62.7 % | 61.9 % | 62.4 % |
+  | Malá Strana | 70.5 % | 70.1 % | 71.9 % |
+  | Na Veselí | 67.7 % | 67.2 % | 69.0 % |
+  | Italská | 62.6 % | 62.1 % | 62.5 % |
+
+  About even in height: today's grid has the survey's rules on top of the same model.
+  The gain is the shape between the points: the 4 m blocks on hillsides and the
+  stair-steps on diagonal banks go, as with the LiDAR stand-in, and the picture is
+  much the same (`drelief-*.jpg`). The second ridge beside some walls shows here too,
+  so it comes from the blend near walls, not from the LiDAR.
