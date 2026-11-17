@@ -18,7 +18,8 @@ export interface TinFile {
 export interface TinMesh {
   box: [number, number, number, number];
   coords: Float64Array; tri: Uint32Array; labels: Int32Array;
-  side: Int32Array; height: Float32Array; // two slots a point: side (-1 unused) and height
+  first: Uint32Array; side: Int32Array; height: Float32Array; // point i's sides and heights: first[i] to first[i + 1]
+  segs: Int32Array; // step pieces: from, to, left side, right side
   kept: number; lost: number;
 }
 
@@ -47,8 +48,22 @@ export function buildTin(f: TinFile): TinMesh {
     return ids.slice(1).map((v, k) => [ids[k], v]);
   };
   const step = new Map<number, [number, number]>();
+  const segs: number[] = [];
   let kept = 0, lost = 0;
+  const hs = f.h.map((x) => x.slice());
+  const hOf = (v: number, q: number) => hs[v].find(([w]) => w === q)?.[1];
   for (const [a0, b0, l, r] of f.segs) for (const [a, b] of pieces(a0, b0)) {
+    segs.push(a, b, l, r);
+    // A point the step was cut at (on the tile's edge) has only its own side's height:
+    // the step's two sides there, from the step's ends.
+    for (const v of [a, b]) if (v !== a0 && v !== b0) for (const q of [l, r]) {
+      if (hOf(v, q) !== undefined) continue;
+      const ha = hOf(a0, q), hb = hOf(b0, q);
+      if (ha === undefined || hb === undefined) continue;
+      const dx = coords[2 * b0] - coords[2 * a0], dy = coords[2 * b0 + 1] - coords[2 * a0 + 1];
+      const u = ((coords[2 * v] - coords[2 * a0]) * dx + (coords[2 * v + 1] - coords[2 * a0 + 1]) * dy) / (dx * dx + dy * dy || 1);
+      hs[v].push([q, ha + (hb - ha) * u]);
+    }
     try { con.constrainOne(a, b); kept++; } catch { lost++; }
     step.set(a * n + b, [l, r]); step.set(b * n + a, [r, l]);
   }
@@ -59,10 +74,15 @@ export function buildTin(f: TinFile): TinMesh {
   // the right of the line); any other, the side at its middle.
   const labels = new Int32Array(nt);
   for (let t = 0; t < nt; t++) {
+    // (A triangle between two step lines can be told two sides: the one all three of
+    // its corners have wins.)
     let s = -1;
-    for (let k = 0; k < 3 && s < 0; k++) {
+    const has = (v: number, q: number) => hs[v].some(([w]) => w === q);
+    for (let k = 0; k < 3; k++) {
       const lr = step.get(T[3 * t + k] * n + T[3 * t + (k + 1) % 3]);
-      if (lr) s = lr[1];
+      if (!lr) continue;
+      if (s < 0) s = lr[1];
+      if (has(T[3 * t], lr[1]) && has(T[3 * t + 1], lr[1]) && has(T[3 * t + 2], lr[1])) { s = lr[1]; break; }
     }
     if (s < 0) {
       const a = T[3 * t], b = T[3 * t + 1], c = T[3 * t + 2];
@@ -72,9 +92,11 @@ export function buildTin(f: TinFile): TinMesh {
     }
     labels[t] = s;
   }
-  const side = new Int32Array(2 * n).fill(-1), height = new Float32Array(2 * n);
-  f.h.forEach((hs, i) => hs.slice(0, 2).forEach(([s, h], m) => { side[2 * i + m] = s; height[2 * i + m] = h; }));
-  return { box: f.box, coords, tri: Uint32Array.from(T), labels, side, height, kept, lost };
+  const first = new Uint32Array(n + 1);
+  hs.forEach((x, i) => { first[i + 1] = first[i] + x.length; });
+  const side = new Int32Array(first[n]), height = new Float32Array(first[n]);
+  hs.forEach((x, i) => x.forEach(([s, h], k) => { side[first[i] + k] = s; height[first[i] + k] = h; }));
+  return { box: f.box, coords, tri: Uint32Array.from(T), labels, first, side, height, segs: Int32Array.from(segs), kept, lost };
 }
 
 // The TIN's height above `ref` at (x, y) in the game's map metres, `fallback` off it.
@@ -95,32 +117,83 @@ export function tinSampler(m: TinMesh, ref: number, fallback: (x: number, y: num
   const flat = new Int32Array(total);
   lists.forEach((l, c) => flat.set(l, start[c]));
   const hOf = (v: number, s: number, own: number) => {
-    const S = m.side, H = m.height;
-    if (S[2 * v] === s) return H[2 * v];
-    if (S[2 * v + 1] === s) return H[2 * v + 1];
-    if (S[2 * v + 1] === own) return H[2 * v + 1];
-    return H[2 * v];
+    const S = m.side, H = m.height, a = m.first[v], b = m.first[v + 1];
+    for (let k = a; k < b; k++) if (S[k] === s) return H[k];
+    for (let k = a; k < b; k++) if (S[k] === own) return H[k];
+    return H[a];
   };
-  const find = (lx: number, ly: number) => {
-    const c = Math.floor(ly / cell) * nc + Math.floor(lx / cell);
-    for (let q = start[c]; q < start[c + 1]; q++) {
+  // The triangle at a point; with `want`, the nearest triangle of that side within
+  // NEAR, the point clamped onto it. (The game's step outlines and the TIN's thinned
+  // step lines are a few centimetres apart: a point on the outline asked for one side
+  // can lie in a triangle of the other, whose corners off the line have only its own
+  // heights, and the wall's top took a mix of both.)
+  const NEAR = 0.5;
+  const find = (lx: number, ly: number, want = -1): readonly [number, number, number, number] | null => {
+    const ci = Math.floor(lx / cell), cj = Math.floor(ly / cell);
+    let best: readonly [number, number, number, number] | null = null, bestD = NEAR;
+    // Its own cell first; for a side asked for, the cells round it too (NEAR reaches them).
+    const cells = [cj * nc + ci];
+    if (want >= 0) for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++)
+      if ((di || dj) && ci + di >= 0 && ci + di < nc && cj + dj >= 0 && cj + dj < nc) cells.push((cj + dj) * nc + ci + di);
+    for (const c of cells) for (let q = start[c]; q < start[c + 1]; q++) {
       const t = flat[q], a = T[3 * t], b = T[3 * t + 1], d = T[3 * t + 2];
       const ax = C[2 * a], ay = C[2 * a + 1], bx = C[2 * b], by = C[2 * b + 1], cx = C[2 * d], cy = C[2 * d + 1];
       const det = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
       if (Math.abs(det) < 1e-12) continue;
       const l1 = ((by - cy) * (lx - cx) + (cx - bx) * (ly - cy)) / det, l2 = ((cy - ay) * (lx - cx) + (ax - cx) * (ly - cy)) / det, l3 = 1 - l1 - l2;
-      if (l1 < -1e-7 || l2 < -1e-7 || l3 < -1e-7) continue;
-      return [t, l1, l2, l3] as const;
+      const inside = l1 >= -1e-7 && l2 >= -1e-7 && l3 >= -1e-7;
+      if (want < 0 || m.labels[t] === want) {
+        if (inside) return [t, l1, l2, l3] as const;
+        if (want < 0) continue;
+        // How far outside: to the nearest point of the triangle, by its clamped weights.
+        const k1 = Math.max(0, l1), k2 = Math.max(0, l2), k3 = Math.max(0, l3), ks = k1 + k2 + k3;
+        const px = (k1 * ax + k2 * bx + k3 * cx) / ks, py = (k1 * ay + k2 * by + k3 * cy) / ks, dd = Math.hypot(px - lx, py - ly);
+        if (dd < bestD) { bestD = dd; best = [t, k1 / ks, k2 / ks, k3 / ks] as const; }
+      }
     }
-    return null;
+    return best ?? (want >= 0 ? find(lx, ly) : null);
+  };
+  // The step pieces by cell, for a side's height right at a step: read off the nearest
+  // piece with that side (within ON), not the triangles, whose sides near a step line
+  // the game's outline doesn't quite follow.
+  const ON = 0.3, sg = m.segs, ns = sg.length / 4;
+  const sStart = new Int32Array(nc * nc + 1), sLists: number[][] = Array.from({ length: nc * nc }, () => []);
+  for (let q = 0; q < ns; q++) {
+    const a = sg[4 * q], b = sg[4 * q + 1];
+    const ax = Math.min(C[2 * a], C[2 * b]) - ON, bx = Math.max(C[2 * a], C[2 * b]) + ON, ay = Math.min(C[2 * a + 1], C[2 * b + 1]) - ON, by = Math.max(C[2 * a + 1], C[2 * b + 1]) + ON;
+    for (let j = Math.max(0, Math.floor(ay / cell)); j <= Math.min(nc - 1, Math.floor(by / cell)); j++)
+      for (let i = Math.max(0, Math.floor(ax / cell)); i <= Math.min(nc - 1, Math.floor(bx / cell)); i++) sLists[j * nc + i].push(q);
+  }
+  let sTotal = 0;
+  for (let c = 0; c < sLists.length; c++) { sStart[c] = sTotal; sTotal += sLists[c].length; }
+  sStart[sLists.length] = sTotal;
+  const sFlat = new Int32Array(sTotal);
+  sLists.forEach((l, c) => sFlat.set(l, sStart[c]));
+  const onStep = (lx: number, ly: number, want: number) => {
+    const c = Math.floor(ly / cell) * nc + Math.floor(lx / cell);
+    let best = NaN, bestD = ON;
+    for (let q = sStart[c]; q < sStart[c + 1]; q++) {
+      const k = sFlat[q], a = sg[4 * k], b = sg[4 * k + 1];
+      if (sg[4 * k + 2] !== want && sg[4 * k + 3] !== want) continue;
+      const ax = C[2 * a], ay = C[2 * a + 1], dx = C[2 * b] - ax, dy = C[2 * b + 1] - ay, L2 = dx * dx + dy * dy || 1;
+      const u = Math.max(0, Math.min(1, ((lx - ax) * dx + (ly - ay) * dy) / L2));
+      const d = Math.hypot(ax + dx * u - lx, ay + dy * u - ly);
+      if (d < bestD) { bestD = d; best = hOf(a, want, want) * (1 - u) + hOf(b, want, want) * u; }
+    }
+    return best;
   };
   const sample = (x: number, y: number, side: number | boolean = false) => {
     const lx = x - x0, ly = y - y0;
     if (!(lx >= 0 && lx <= W && ly >= 0 && ly <= y1 - y0)) return fallback(x, y, side);
-    const f = find(lx, ly);
+    const want = side === true ? WATER : side === false ? -1 : side;
+    if (want >= 0) {
+      const h = onStep(lx, ly, want);
+      if (Number.isFinite(h)) return h - ref;
+    }
+    const f = find(lx, ly, want);
     if (!f) return fallback(x, y, side);
     const [t, l1, l2, l3] = f, own = m.labels[t];
-    const s = side === true ? WATER : side === false ? own : side;
+    const s = want >= 0 ? want : own;
     return l1 * hOf(T[3 * t], s, own) + l2 * hOf(T[3 * t + 1], s, own) + l3 * hOf(T[3 * t + 2], s, own) - ref;
   };
   const labelAt = (x: number, y: number) => { const f = find(x - x0, y - y0); return f ? m.labels[f[0]] : -1; };
