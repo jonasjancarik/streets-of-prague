@@ -557,8 +557,9 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     walking_surfaces = [(pavements.ribbon(g, half, meet), *rest)
                         for (g, *rest), (half, _) in zip(walking_surfaces, walking_widths)]
     # The pavements, islands and tram beds the technical map has surveyed (pavements.py).
+    walks = {} if pavements.DERIVED_ONLY else dtm.walks((w, s, e, n), tf.transform)
     paved, walked = pavements.surveyed(
-        {} if pavements.DERIVED_ONLY else dtm.walks((w, s, e, n), tf.transform), surface, paved_ways,
+        walks, surface, paved_ways,
         unary_union([g for k, g in land.items() if k != "dtm_yard"]), clip, stats)
     timer.lap("surveyed_pavements")
     # Where family houses stand on land nobody mapped (no residential area, no survey,
@@ -583,6 +584,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     # keep their paving even when green also covers them.
     square_lines = [line for line, _ in square_ways]
     square_tree = STRtree(square_lines) if square_lines else None
+    named_squares, explicit_squares = [], []
     for poly, surface_tag, outline in squares:
         if outline and not natural.is_empty:
             poly = _areas(poly.difference(natural))
@@ -590,10 +592,11 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             continue
         kind = _square_surface(surface_tag) if surface_tag is not None else _square_from_ways(poly, square_ways, square_tree)
         areas.setdefault(kind or "square", []).append(poly)
+        (named_squares if outline else explicit_squares).append(poly)
     # The surveyed pavements take the place of the footways' ribbons along them; mapped
-    # squares and car parks keep their own paving.
+    # pedestrian areas and car parks keep their own paving.
     walking_surfaces = pavements.without_survey(walking_surfaces, [beside for _, beside in walking_widths], walked)
-    kept = unary_union([g for k in ("square", "square_setts", "square_asphalt", "square_loose", "parking") for g in areas.get(k, [])])
+    kept = pavements.square_paving_mask(named_squares, explicit_squares, areas.get("parking", []), walks, surface)
     for key, geom in pavements.outside(paved, kept).items():
         road_lines.setdefault(key, []).append(geom)
     timer.lap("surveyed_pavements")

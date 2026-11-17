@@ -109,6 +109,19 @@ class Surveyed(unittest.TestCase):
     def test_nothing_surveyed(self):
         self.assertEqual(pavements.surveyed({}, Polygon(), [], Polygon(), self.clip), ({}, Polygon()))
 
+    def test_named_square_leaves_room_for_its_street_sidewalk(self):
+        named = box(0, 2, 100, 33)
+        plaza = box(0, 8, 100, 33)
+        pedestrian_surface = box(60, 3, 80, 7)
+        parking = box(2, 3, 8, 4)
+        walks = {"pavement": arr(self.north, plaza), "platform": arr(box(40, 2, 48, 3))}
+        kept = pavements.square_paving_mask([named], [pedestrian_surface], [parking], walks, self.street)
+        self.assertFalse(kept.covers(box(30, 4, 50, 6)))
+        self.assertTrue(kept.covers(plaza))
+        self.assertTrue(kept.covers(pedestrian_surface))
+        self.assertTrue(kept.covers(parking))
+        self.assertTrue(kept.covers(box(41, 2.1, 47, 2.9)))
+
 
 class Ribbon_replacement(unittest.TestCase):
     def test_ribbons_on_the_survey_go_and_the_rest_stay(self):

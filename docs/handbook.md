@@ -617,9 +617,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   walking street; one that says nothing is paved like its nearest neighbour). The
   footways' own 3 m ribbons are left out where they run on a surveyed pavement, so
   only paths the survey doesn't have keep one, with square ends: through parks,
-  across estates and past the city limits. Mapped squares and car parks keep their
-  own paving, and a block's gardens start behind the pavement. Where the trams have a
-  bed of their own beside the street it is ballast. `DERIVED_PAVEMENTS=1` builds the
+  across estates and past the city limits. A named square's paving gives way to
+  surveyed sidewalks that follow the kerb. The open plaza, mapped pedestrian areas
+  and car parks keep their paving, and a block's gardens start behind the pavement.
+  Where the trams have a bed of their own beside the street it is ballast. `DERIVED_PAVEMENTS=1` builds the
   ground without any of this, to compare. Rebuild the `ground` layer for these changes; use
   `pipeline/beige_report.py` to measure the remaining unmapped ground in an area's tiles.
   Land that OSM gives a use but no surface still gets one: fields with crop rows

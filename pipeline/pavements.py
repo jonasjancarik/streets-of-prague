@@ -21,7 +21,7 @@ import os
 import numpy as np
 import shapely
 from shapely import STRtree
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, box
 
 # DERIVED_PAVEMENTS=1 builds the ground as before plan 018's phases 3 and 4 (round
 # ribbons along every footway, nothing from the survey), to compare the two.
@@ -51,6 +51,12 @@ MIN_TAGGED = 3.0  # m of tagged footway on a pavement before the tag counts
 EDGE = 0.5
 MOSTLY = 0.5
 THIN = 0.6
+# A surveyed sidewalk runs alongside the carriageway. A large square may also be
+# labelled pavement in the survey, so require kerb contact and most of its area
+# within a generous sidewalk width before it takes precedence over a named square.
+STREET_SIDE_WIDTH = 7.0
+STREET_SIDE_SHARE = 0.8
+KERB_CONTACT_AREA = 3.0
 
 # What a footway's surface tag makes of the pavement under it.
 ASPHALT = {"asphalt", "concrete", "chipseal"}
@@ -172,10 +178,31 @@ def surveyed(walks, streets, ways, green, clip, stats=None):
     return {k: g for k, g in out.items() if not g.is_empty}, walked
 
 
+def square_paving_mask(named, explicit, parking, walks, streets):
+    """Where a square or parking surface takes priority over surveyed pavement.
+
+    A named square can include the streets around it. Keep surveyed street sidewalks
+    there; a mapped pedestrian surface is more specific and keeps its own paving.
+    """
+    named = _areas(shapely.union_all(named))
+    sidewalks = walks.get("pavement")
+    if sidewalks is not None and not named.is_empty and not streets.is_empty:
+        candidates = sidewalks[shapely.intersects(sidewalks, named)]
+        if len(candidates):
+            reach = box(*shapely.total_bounds(candidates)).buffer(STREET_SIDE_WIDTH + EDGE)
+            road = _areas(shapely.intersection(shapely.simplify(streets, COARSE), reach))
+            kerb = road.buffer(2 * GAP)
+            contact = shapely.area(shapely.intersection(candidates, kerb))
+            candidates = candidates[contact >= KERB_CONTACT_AREA]
+            if len(candidates):
+                near = shapely.area(shapely.intersection(candidates, road.buffer(STREET_SIDE_WIDTH)))
+                beside = candidates[near >= STREET_SIDE_SHARE * shapely.area(candidates)]
+                named = _areas(shapely.difference(named, shapely.union_all(beside), grid_size=GRID))
+    return _areas(shapely.union_all([named, *explicit, *parking]))
+
+
 def outside(paved, kept):
-    """surveyed()'s shapes without the mapped squares, which keep the paving plan 013
-    gave them, and the mapped car parks, which keep their asphalt and bays (`kept`).
-    A tram bed stays whole."""
+    """Leave room for square paving and car parks. A tram bed stays whole."""
     if kept is None or kept.is_empty:
         return paved
     out = {k: g if k == "trambed" else _areas(shapely.difference(g, kept, grid_size=GRID)) for k, g in paved.items()}
