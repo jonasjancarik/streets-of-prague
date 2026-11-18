@@ -258,6 +258,38 @@ before that day's frame-count fix may be doubled.
   Pankrác were not looked at. `check-bridge-decks.mjs praha` lists them
   (`docs/bridge-deck-check.md`). A game older than 7 October draws bridge stairs at
   ground height on the new tiles: release the game with or before the map.
+- **Bridges and tunnels players reported in November 2026.** Fixed in the pipeline on
+  18 November (the Strahov tunnel's ramp, Wilsonova over the station hall and its
+  viaduct at Bulhar; `scenarios/drive-through.ts`), but the map isn't rebuilt yet: the
+  terrain pass (`ipr_terrain.py praha`) for the tunnel and the viaduct, and chunk 7,7's
+  OSM layers (`build_tiles.py praha --chunks 7,7`, then `ipr_buildings.py praha`) for
+  the hall. Still open:
+  - **Dvorecký most's west half** (the busway bridge at Strakonická, 50.0503, 14.4107;
+    report of 12 November): IPR's bridge model hasn't got it (it's newer), so its deck
+    runs evenly 190.0→193.7 m and at Strakonická lies 1.5 m under the road. The
+    technical map's survey has its deck edges at level 1 (194.4 m at the west ramp,
+    about 203.3 m east of Strakonická), but recorded by method 5, which the survey
+    reading takes nowhere (`DeckSurvey` takes 1–3). Proposal: a bridge with none of
+    IPR's deck under it takes its heights from the survey's level-1 road edges along
+    it, method 5 included. It changes every such bridge, so it needs a city build to
+    judge.
+  - **Mrázovka junction** (50.0714, 14.3977, the way into the Strahov tunnel from
+    Plzeňská): two short bridges (ways 51209632, a trunk_link, and 1331094278, trunk,
+    layer 1) are pulled up to IPR's deck at 212.8 m, while where they start they meet
+    the street on the ground at about 199 m: joins of 13.9 and 10.7 m. Needs IPR's model
+    and the survey read there; the tunnel fix doesn't touch them.
+  - **Other steep car tunnels** (`check-bridge-decks.mjs`, "Car streets in tunnels"):
+    on the map of 16 November 17 of 109 climb more than 15 % over 10 m (Dejvický 46 %,
+    Bubenečský 41/40 %, the Osnice ecoduct 37/35 %, Brusnický 20 %…). The Strahov fix
+    solves tunnels with every portal known like bridges; the ones it leaves are listed
+    in the deck check after a city build.
+  - **Barrandovský most:** ways 141925893 and 26226909 lie about 10 m under the
+    bridge's outlines (416 and 648 m²). Probably real streets under the bridge; not
+    looked at.
+  - **"A tunnel with people and no cars"** (Strahov report): the walk-only service
+    corridors at level −1 near Anděl (walk edge `3170148182>3170148232` and its
+    neighbours), where
+    pedestrians appear. Probably mapped right; worth a look from the player's side.
 - **Steps in car streets** (`node scripts/check-road-flatness.mjs praha`, 40 over 1 m on
   28 October 2026): two bridges' pads that the street past them doesn't meet (Ohrobecké
   údolí, Železničářů); new since the terraces stop at the kerbs, nábřeží Edvarda Beneše
