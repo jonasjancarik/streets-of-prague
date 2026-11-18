@@ -176,6 +176,16 @@ steeper than VALLEY anywhere, which took steps over 1 m from 71 to 38.
   Barrandovský most's outline (19,000 m²) took a cycleway that runs its whole length
   and down a ramp off it, and was drawn at the cycleway's height as a second slab 1–4 m
   under the main deck and wider than it (`pieces`, `test_bridge_outline.py`).
+  "Within 3 m" is taken at the middle of each way's stretch on the outline, so on a
+  long outline that climbs, the far end's carriageways were left out: Wilsonova's
+  viaduct falls 10 m over its 710 m from Hlavní nádraží to Bulhar, its height came from
+  the station end, both carriageways at Bulhar were 5–6 m off it and got their own
+  level, and the outline became a slab 6 m over them with the trams laid on its top
+  (players' reports, November 2026). A way off by more than 3 m now joins when every
+  point of it within 15 m of a deck way already on the outline is within 3 m of that
+  way's height there (`OUTLINE_ALONG`, `DECK_BESIDE`); the build prints each one as
+  `outline along:`. A flyover crossing the outline is far off the deck where it passes
+  over it and stays out.
 - Where pieces of one level lie over each other, the higher one counts (`rasterise`).
 - Two structures side by side, anywhere more than 3 m apart in height, can't share a
   level: a level's heights are on the lattice and reach 6 m past each piece, so the

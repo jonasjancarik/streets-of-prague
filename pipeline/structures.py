@@ -65,6 +65,11 @@ SOFT = 0.05  # how much less a link along stairs holds two heights together than
 TUNNELS_HARMONIC = True
 BESIDE = 10.0  # m: two structures this close share lattice points (PAD, and a cell's diagonal)
 SAME = 3.0  # m: two structures further apart in height than this can't share a level
+# A way on a man_made=bridge outline away from the way that covers most of it is on it
+# when at the height of a deck way within DECK_BESIDE m (beside it, or running on into
+# it): Wilsonova's viaduct falls 10 m along its outline (0 for the old rule, to compare).
+OUTLINE_ALONG = True
+DECK_BESIDE = 15.0  # m
 STAIRS_SAME = 1.0  # m: the same for stairs (which have their own profile) and what's beside them
 NO_HIGHWAY = {"proposed", "construction", "elevator", "platform", "bus_stop", "abandoned", "razed", "planned"}
 STATION_FOOT = {"footway", "steps", "corridor", "pedestrian", "path"}  # a station's ways inside
@@ -1034,6 +1039,7 @@ def pieces(ways, profiles, outlines, ground, decks, road_tree):
                 ref = max(share, key=lambda k: share[k] * ways[k]["w"])
                 c = lines[ref].intersection(poly).interpolate(0.5, normalized=True)
                 href = out[ref].height(np.array([c.x]), np.array([c.y]))[0]
+                later = []  # ways off href only because the deck climbs (see below)
                 for k in hits:
                     inside = lines[k].intersection(poly)
                     if inside.length < 1:
@@ -1042,7 +1048,11 @@ def pieces(ways, profiles, outlines, ground, decks, road_tree):
                     distinct = (ways[k].get("mapped_layer") is not None and ways[ref].get("mapped_layer") is not None
                                 and ways[k]["mapped_layer"] != ways[ref]["mapped_layer"]
                                 and not set(ways[k]["nodes"]) & set(ways[ref]["nodes"]))
-                    if distinct or abs(out[k].height(np.array([m.x]), np.array([m.y]))[0] - href) >= SAME:
+                    if distinct:
+                        continue
+                    if abs(out[k].height(np.array([m.x]), np.array([m.y]))[0] - href) >= SAME:
+                        if not out[k].ramp and OUTLINE_ALONG:
+                            later.append((k, inside))
                         continue
                     # (Stairs are on the bridge only if they stay at its height from end to end.)
                     if out[k].ramp:
@@ -1050,6 +1060,42 @@ def pieces(ways, profiles, outlines, ground, decks, road_tree):
                         if np.abs(out[k].height(np.array([p.x for p in q]), np.array([p.y for p in q])) - href).max() >= STAIRS_SAME:
                             continue
                     on.append(k)
+                # A long outline's deck climbs: a way far along it from the reference way is
+                # on it if, wherever it runs beside the deck's ways (or on into one), it is at
+                # their height there, not at the reference way's middle. Wilsonova's viaduct
+                # falls 10 m from Hlavní nádraží to Bulhar: its carriageways at Bulhar were
+                # left out, and the outline was a blank slab a level of its own over them, with
+                # the trams passing under it laid on it (players' report of 16 November 2026).
+                # A flyover crossing the deck, a street under it, or a ramp down beside it
+                # (Barrandovský most's cycleway) is off by more than SAME somewhere beside it.
+                # A slip road leaving the deck at its height joins, and the outline follows it
+                # down where it is the nearest way (Barrandovský most's links: the outline over
+                # a street 688 m² → 416 m² in a window, 18 November 2026).
+                def beside_deck(k, inside):
+                    near = False
+                    for f in np.linspace(0, 1, max(2, int(inside.length / 5) + 1)):
+                        p = inside.interpolate(f, normalized=True)
+                        best = min(((lines[j].distance(p), j) for j in on if not out[j].ramp), default=None)
+                        if best is None or best[0] > DECK_BESIDE:
+                            continue
+                        q = lines[best[1]].interpolate(lines[best[1]].project(p))
+                        if abs(out[k].height(np.array([p.x]), np.array([p.y]))[0]
+                               - out[best[1]].height(np.array([q.x]), np.array([q.y]))[0]) >= SAME:
+                            return False
+                        near = True
+                    return near
+
+                grown = True
+                while grown and later:
+                    grown = False
+                    for item in list(later):
+                        if beside_deck(*item):
+                            on.append(item[0])
+                            later.remove(item)
+                            grown = True
+                            print(f"    outline along: {ways[item[0]]['hw']} way {ways[item[0]]['id']} on the deck of "
+                                  f"{ways[ref].get('name') or ways[ref]['hw']} ({ways[ref]['id']}), "
+                                  f"{abs(out[item[0]].height(np.array([item[1].centroid.x]), np.array([item[1].centroid.y]))[0] - href):.1f} m off its height")
         if on:
             # (Its height from the ways that are its deck, not from stairs down off it.)
             deck = [k for k in on if not out[k].ramp] or on

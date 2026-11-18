@@ -1012,7 +1012,13 @@ record the measurements, merge decisions and pending landmark asset activation.
   real one does. Tunnels keep a few metres of ground over them, more away from their
   portals, and wherever two cross on different OSM layers, the upper one clears the
   lower. They're put on levels (bridges 1, 2, …, tunnels -1, -2, …) so that ones
-  crossing at different heights never share one. The metro stations' corridors and
+  crossing at different heights never share one. A bridge's outline as OSM draws it
+  (man_made=bridge) shares a level with the streets on it, all the way along a deck
+  that climbs. (Until 18 November 2026 only the ones near the height of the street
+  that covers most of it did: Wilsonova's viaduct falls 10 m to Bulhar, where its two
+  carriageways got a level of their own and the outline stood as a slab 6 m over
+  them, the trams laid on its top; `OUTLINE_ALONG = 0` brings it back to compare.)
+  The metro stations' corridors and
   stairs (OSM tags them as tunnels too) are left out, both as tunnels and from the
   walking network: footways and stairs underground that are indoors, reach a metro
   entrance or come within 30 m of a station or platform. Underpasses away from the
