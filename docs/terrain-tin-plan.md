@@ -1121,3 +1121,76 @@ time to triangulate a tile, before `praha`.
   smudges; and from before, the white specks, Petřín's wall foot and the triangulation
   on the main thread. For `praha`, the tile pass takes 1–2 s a tile on one core, some
   4–8 hours for the city's 14,595 tiles, so it should run tiles in parallel first.
+
+- 18 November 2026: `praha` on the mesh (`tin` 85e462ac, then 08bd746b, 6e0ebe29 and
+  8ad13a20). The city pass (`ipr_terrain.py praha --tin --survey-scan`) took 36 minutes
+  at 8.4 GB. The tile pass ran in nine processes: 1 h 45 min for the target, where the
+  four slices with the dense centre ran 40 minutes past the other five (the target is
+  now dealt out in runs of 32 tiles, 8ad13a20), and 46 minutes for the 14,595 tiles,
+  6.7 hours of work in all. With `--keep-target` the tiles alone take 44 minutes.
+
+  The meshes come to 132.5 MB, inside the 200 MB (the estimate was 124 MB): 29 million
+  points, the median tile 1,200 points and 5 KB, the heaviest 25,000 points and 108 KB.
+  The work folder holds 41 GB (the target 20 GB, the surface 21 GB). In the game's
+  triangulation (`check-tin.mjs`) 12,859 breakline pieces are lost and 10,064 samples
+  are over the tolerance, and a tile takes 1 ms at the median and 52 ms at most, in
+  Node on the Mac.
+
+  | `praha`, 57,188 car streets | Lattice | First mesh | Mesh |
+  |---|---|---|---|
+  | Carriageway within 0.3 m of the LiDAR | 99.1 % | 99.8 % | 99.6 % |
+  | Off it by more than 1 m | 0.48 % | 0.09 % | 0.22 % |
+  | Streets more than 2 m off it somewhere | 355 | 255 | 301 |
+  | Bridge joins over 0.5 / 1 m | 243 / 120 | 455 / 150 | 291 / 121 |
+  | Steps over 0.25 / 1 m | 185 / 5 | 597 / 35 | 432 / 21 |
+  | Bumps over 0.15 / 0.5 m | 1,246 / 216 | 1,419 / 201 | 1,441 / 213 |
+  | Streets leaning over 8 / 15 % | 1,956 / 891 | 3,398 / 1,282 | 3,134 / 1,004 |
+  | Twisting over 5 / 12 % | 1,951 / 664 | 3,407 / 919 | 3,238 / 755 |
+  | Ridge or trough over 0.3 / 1 m | 490 / 79 | 946 / 78 | 645 / 73 |
+  | Streets with a wave over 0.3 m (2 m either side) | 681 | 1,200 | 975 |
+  | Line metres with a wave over 0.2 m (5 m either side) | 0.53 % | 0.52 % | 0.53 % |
+
+  The first mesh, with the rule from the ten places, fitted the LiDAR better than the
+  lattice, but across the city it made more streets step, lean and twist, and missed
+  nearly twice as many bridge ends. The ten places, all in the centre, hadn't shown it.
+  Three causes, each now a rule in `tin_tiles.py`:
+  - Roads on something neither model has. The map calls the road ground, and the
+    survey has it 5–8 m over the bare earth that the LiDAR and IPR's dense model share:
+    a motorway at the city's north-east edge (50.1336, 14.6361), Pražský okruh at
+    50.0476, 14.2727. The mesh took them down to the ground. Where a car street's middle
+    has the city pass more than 3 m over the LiDAR, its patch keeps the city pass out to
+    60 m, off paved ground too (the motorway's verges had fallen 8 m beside its held
+    carriageways). Not near tunnels: the ramp down to Bubenečský tunel at 50.1136,
+    14.4327 is in a cutting 6 m deep that both models have, and there the city pass,
+    level at the top, is the one that's wrong.
+  - Bridge ends with no wall. Most of the new bad joins were small bridges over streams
+    and paths, with no face in the LiDAR to hold the city pass. Within 6 m of where a
+    bridge's way comes down onto a way on the ground the city pass now holds, since the
+    decks are the city pass's. At one of Jižní spojka's decks (50.0614, 14.4948) the
+    lattice brings the street down a metre to the deck while the LiDAR has the road a
+    metre higher: the deck may be low, which is for the city pass to fix.
+  - Banks inside OSM's width. On narrow lanes the LiDAR has the bank or garden wall
+    beside the lane inside the street as drawn, and lanes leaned 50–70 % (Na dražkách,
+    K Housličkám, Na Kavčích horách); beside Revoluční by Kotva a ramp goes down under
+    the street's edge. On a car street's carriageway the city pass now holds wherever
+    the LiDAR parts from it by more than 0.5 m but the street's middle agrees: the city
+    pass's streets are the LiDAR's own, level kerb to kerb.
+
+  In the game, lattice against mesh at eight of these places, slanted and from above
+  (`docs/evidence/tin/praha`, local). From above Na dražkách, Na Kavčích horách,
+  K Housličkám, Revoluční and Jižní spojka look the same on both. Pražský okruh's slip
+  road still sags and cracks beside the median on the mesh (the lattice cracks there
+  too, less), and at the north-east motorway, where the LiDAR ends, the guardrails wave
+  more.
+
+  Left: steps over 0.25 m on 432 streets against the lattice's 185, most of them
+  0.3–0.5 m on residential streets, where a bank reaches the lane's middle (Na dražkách
+  still has 0.76 m) or a held patch meets the LiDAR; more streets leaning, twisting and
+  with short waves than on the lattice, although the share of line metres with a wave
+  is the same; Pražský okruh's slip road and the north-east motorway; the ramp to
+  Bubenečský tunel (a 3 m step at the top of the cutting, where the lattice has the
+  road level over it); and from before, the smudges, the white specks, Petřín's wall
+  foot, the triangulation on the main thread and the heavy tiles on the Pixel 5. The
+  bridges and tunnels branch (`claude/elated-noyce-c84e2c`, 18 November) changes what
+  the city pass writes for tunnels and bridge outlines, so `praha`'s city pass and tile
+  pass would be built again after it is merged.
