@@ -1276,3 +1276,47 @@ Checks: `check-graphics` (WebGPU and WebGL, on a freshly started server),
 `check-display-text` fail on `main` too (Node 26 and a JSON import). Not measured: Windows,
 Low and Lowest, Ultra on the phone, the leaf sprays in summer.
 
+## Bloom on High, 16 November 2026
+
+Pixel 5 over ADB, Chrome WebGPU, High at its default 2× pixel ratio, driving from
+Újezd. Bloom and the darker corners switched together in alternating four-second
+windows after warming both states. In clear daylight, bloom off → on averaged
+112.4 → 112.3 ms/frame. In rain at 22:00, it averaged 273.3 → 260.9 ms/frame.
+Both states were under 4 FPS in the rain, which makes that run a poor measure of
+small costs. An earlier rainy run was discarded because the driver never got into
+the car. High now enables the pass by default.
+
+## Canopy sprays on High, 16 November 2026
+
+Pixel 5 over ADB, Chrome WebGPU, High at its default 2× pixel ratio. In Divoká
+Šárka on July 15 at 14:00 in clear weather, 34 visible canopy mesh pages held
+8,542 instances. Alternating four-second windows after warm-up, sprays off → on
+averaged 98.6 → 97.6 ms/frame. With the order reversed, the comparison was
+96.0 → 98.0 ms/frame. The difference changed direction across runs. High now
+enables the sprays by default. This measures steady rendering after warm-up.
+
+## Headlight beams and wet glints on High, 16 November 2026
+
+Pixel 5 over ADB, Chrome WebGPU, High at its default 2× pixel ratio, driving from
+Újezd in rain at 22:00. The setup verified a moving car, four beam instances,
+27 glints and fully wet ground. Alternating four-second windows after warm-up,
+effects off → on averaged 261.0 → 264.5 ms/frame. With the order reversed the
+comparison was 259.4 → 264.0 ms/frame. The 1–2% cost was small compared with the
+roughly four FPS baseline. High now enables the beams and glints by default.
+
+## Small pond ripples, 17 November 2026
+
+Desktop Chrome WebGPU, Ultra, clear at 13:00. At the same street-height view
+in Park Přátelství, three five-second samples each way gave 20.5 → 21.3 ms
+with the original water first, and 20.6 → 21.0 ms with the quieter water first.
+The second run was slower in either order. Across both orders, the original
+averaged 20.7 ms and the quieter water 21.0 ms. Draw counts ranged from 56 to
+58. There was no GPU timing, so this comparison does not isolate shader cost.
+
+## Transmission towers, 17 November 2026
+
+On desktop Chrome WebGPU at Ultra, the Přemyšlenská view had three loaded
+transmission meshes and about 2,600 vertices. Alternating visibility in the
+same view for six four-second windows gave 28.3 ms/frame off and 28.7 ms/frame
+on, with an offline map build running. There was no GPU timing, so this is a
+check against a large added cost and does not isolate the cost of the meshes.

@@ -75,6 +75,10 @@ ARCADE = 3.0
 TRAM_PASSAGE = 3.6
 TRAM_REACH = 3.0
 COBBLES = ("sett", "cobblestone", "unhewn_cobblestone", "paving_stones")
+# These OSM nodes put trees in the Národní traffic lane. IPR's surveyed trunks
+# span the real row at the kerb, beyond the normal 2.5 m duplicate check.
+MISPLACED_TREES = {"node/12052510184", "node/12052661477", "node/12052681021",
+                   "node/12053152658", "node/12053175674"}
 SQUARE_EDGE = 0.5  # m: avoid a remnant of a route ribbon along a square's edge
 # `meadow` (meadows, grassland, scrub) and `lawn` (mown grass, and the lawns of housing
 # estates) are kept apart from `park` and `garden` because they dry out differently in
@@ -265,10 +269,21 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
 
     # Every geometry into local metres in one go.
     if buildings_only:
-        chosen = [k for k, row in enumerate(rows) if col(row, "building") or col(row, "building:part")]
+        # (With the streets on buildings' roofs, which cut those buildings: on_roof.)
+        chosen = [k for k, row in enumerate(rows) if col(row, "building") or col(row, "building:part")
+                  or on_roof(col(row, "highway"), lambda t, row=row: col(row, t))]
         geoms, rows = np.asarray(geoms, dtype=object)[chosen], [rows[k] for k in chosen]
     geoms = shapely.transform(geoms, lambda c: np.column_stack(tf.transform(c[:, 0], c[:, 1])))
     timer.lap("project")
+    # The carriageways of the streets on a building's roof (on_roof), which a building on
+    # the ground under them loses: by the tags' width, the same whichever layers are built.
+    roof_ways = [g.buffer(road_width(col(row, "highway"), _float(col(row, "width")), _float(col(row, "lanes"))) / 2,
+                          cap_style="flat", join_style="round")
+                 for g, row in zip(geoms, rows)
+                 if isinstance(g, (LineString, MultiLineString)) and on_roof(col(row, "highway"), lambda t, row=row: col(row, t))]
+    # (Closed over the gaps between its carriageways: a median is on the roof too.)
+    roofed = unary_union(roof_ways).buffer(ROOF_GAP / 2).buffer(-ROOF_GAP / 2) if roof_ways else None
+    cut_by_streets = 0
     for g, row in zip(geoms, rows):
         if g is None or g.is_empty:
             continue
@@ -287,8 +302,15 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             if b == "construction" or col(row, "location") == "underground":
                 continue
             g = g.buffer(0).intersection(clip)
+            # Standing on the ground under a street on its roof: not where the street runs.
+            cut = (roofed is not None and (_float(col(row, "min_height")) or 0) < ROOF_RAISED
+                   and (_float(col(row, "layer")) or 0) <= 0 and g.intersects(roofed))
+            if cut:
+                g = g.difference(roofed)
+                cut_by_streets += 1
             for poly in _polys(g):
-                if poly.area < 4:
+                # (Nor the slivers and scraps a cut leaves at a kerb or between streets.)
+                if poly.area < 4 or (cut and (poly.area < ROOF_SCRAP or poly.buffer(-1.0).is_empty)):
                     continue
                 buildings.append({
                     "id": osm_id,
@@ -381,6 +403,8 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             continue
 
         if col(row, "natural") == "tree" and isinstance(g, Point):
+            if osm_id in MISPLACED_TREES:
+                continue
             tree = [round(g.x, 1), round(g.y, 1)]
             if _conifer(col(row, "leaf_type"), col(row, "genus"), col(row, "species")):
                 tree.append(1)
@@ -418,7 +442,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         _add_moravkova_1685(buildings, tf, clip)
     timer.lap("feature_loop")
     if stats is not None:
-        stats.update(buildings=len(buildings), car_ways=len(car_ways), sidewalks=len(sidewalks))
+        stats.update(buildings=len(buildings), car_ways=len(car_ways), sidewalks=len(sidewalks), cut_by_streets=cut_by_streets)
     if buildings_only:
         return {"buildings": buildings, "parts": parts}
 
@@ -551,8 +575,9 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     walking_surfaces = [(pavements.ribbon(g, half, meet), *rest)
                         for (g, *rest), (half, _) in zip(walking_surfaces, walking_widths)]
     # The pavements, islands and tram beds the technical map has surveyed (pavements.py).
+    walks = {} if pavements.DERIVED_ONLY else dtm.walks((w, s, e, n), tf.transform)
     paved, walked = pavements.surveyed(
-        {} if pavements.DERIVED_ONLY else dtm.walks((w, s, e, n), tf.transform), surface, paved_ways,
+        walks, surface, paved_ways,
         unary_union([g for k, g in land.items() if k != "dtm_yard"]), clip, stats)
     timer.lap("surveyed_pavements")
     # Where family houses stand on land nobody mapped (no residential area, no survey,
@@ -577,6 +602,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     # keep their paving even when green also covers them.
     square_lines = [line for line, _ in square_ways]
     square_tree = STRtree(square_lines) if square_lines else None
+    named_squares, explicit_squares = [], []
     for poly, surface_tag, outline in squares:
         if outline and not natural.is_empty:
             poly = _areas(poly.difference(natural))
@@ -584,10 +610,11 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             continue
         kind = _square_surface(surface_tag) if surface_tag is not None else _square_from_ways(poly, square_ways, square_tree)
         areas.setdefault(kind or "square", []).append(poly)
+        (named_squares if outline else explicit_squares).append(poly)
     # The surveyed pavements take the place of the footways' ribbons along them; mapped
-    # squares and car parks keep their own paving.
+    # pedestrian areas and car parks keep their own paving.
     walking_surfaces = pavements.without_survey(walking_surfaces, [beside for _, beside in walking_widths], walked)
-    kept = unary_union([g for k in ("square", "square_setts", "square_asphalt", "square_loose", "parking") for g in areas.get(k, [])])
+    kept = pavements.square_paving_mask(named_squares, explicit_squares, areas.get("parking", []), walks, surface)
     for key, geom in pavements.outside(paved, kept).items():
         road_lines.setdefault(key, []).append(geom)
     timer.lap("surveyed_pavements")
@@ -670,6 +697,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     return {
         "area": area, "bbox": (w, s, e, n), "box": (x0, y0, x1, y1), "clip": clip,
         "buildings": buildings, "parts": parts, "areas": area_polys, "roads": road_polys, "rails": rails,
+        "tree_road": carriageway, "surveyed_surface": surface,
         "walls": walls, "fences": fences, "trees": trees, "weirs": weirs, "crossings": crossings, "passages": passages,
             "ground_ways": ground_ways, "marks": marks,
         # Every street and path on the ground with half its width: what a surveyed wall
@@ -799,6 +827,27 @@ def passage_tags(hw, get):
     if layer not in (0, -1) or (layer == -1 and not covered) or str(get("level") or "0").strip() != "0":
         return False
     return "maybe"
+
+
+# A building whose underside is this high (m) or more stands over the street, not under it
+# (RAISED in src/tiles.ts).
+ROOF_RAISED = 3.0
+# Gaps narrower than this between the carriageways of streets on a roof are cut with them:
+# the median between Wilsonova's carriageways over the station hall was left standing as
+# a strip of the hall 7 m high and 145 m long.
+ROOF_GAP = 8.0  # m
+ROOF_SCRAP = 25.0  # m²: a piece of a building cut by such streets smaller than this goes
+
+
+def on_roof(hw, get):
+    """Whether a way is a street on the roof of what's under it: mapped a layer up but
+    not as a bridge or a tunnel (`get`: a tag's value or None). Wilsonova (layer 1) runs
+    over Hlavní nádraží's hall like that, and the hall stood solid across its six lanes.
+    Not service roads: those mapped a layer up are rooftop car parks (Šestka, Westfield
+    Černý Most, Globus, garages), on the roof itself, not at the street's height."""
+    if hw not in CAR_ROADS or hw == "service" or (_float(get("layer")) or 0) < 1:
+        return False
+    return get("bridge") in (None, "no") and get("tunnel") in (None, "no") and get("covered") in (None, "no")
 
 
 def use_overpass_mirror():

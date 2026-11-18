@@ -146,6 +146,7 @@ const KINDS = [
   { head: PARAPET + 3.1, pole: false, r: 10, i: 0.8, raise: 0, glow: 0.45 }, // a gas lantern on a bridge's parapet (place)
 ];
 const HUNG = 7, ON_BRIDGE = 3, ON_PARAPET = 8;
+const PAIRED_CABLE = 9; // two adjacent survey records, both rendered as ordinary hung heads
 // The models (lampmodels.ts) and where their lights are (x along the arm, y, z across it).
 // A kind's lamps take one by hash: the Old Town has big two-lantern gas posts and small
 // single lanterns both.
@@ -319,6 +320,7 @@ export class Lamps {
   private generatedOwners = new Map<number, Set<LampTile>>();
   private seeds: number[] = [];
   private hung = new Map<number, number[]>(); // a hung lamp → the two wall points its cables run to (x, y, x, y)
+  private cablePairs = new Map<number, number>(); // first head → second head; second head → -1
   // A survey lamp can have valid walls in several overlapping tiles. Keep their
   // anchors separately so forgetting one tile preserves the others' cables.
   private surveyCables = new Map<number, Map<LampTile, number[]>>();
@@ -566,7 +568,11 @@ export class Lamps {
       const n = new DataView(buf).getUint32(0, true);
       const xy = new Float32Array(buf.slice(4, 4 + n * 8)), kind = new Uint8Array(buf, 4 + n * 8, n);
       for (let i = 0; i < n; i++) {
-        const k = kind[i], x = xy[i * 2], y = xy[i * 2 + 1];
+        const k = kind[i] === PAIRED_CABLE ? HUNG : kind[i], x = xy[i * 2], y = xy[i * 2 + 1];
+        if (kind[i] === PAIRED_CABLE && !this.cablePairs.has(i) && kind[i + 1] === PAIRED_CABLE) {
+          this.cablePairs.set(i, i + 1);
+          this.cablePairs.set(i + 1, -1);
+        }
         const at = this.place && (k === 4 || KINDS[k].head) ? this.place(x, y, k === 4) : undefined;
         // A lamp left out keeps its index (an empty slot), so the survey's indices still line up.
         if (at === null) { const j = this.kind.length; this.kind[j] = -1; this.xy[j * 2] = this.xy[j * 2 + 1] = NaN; }
@@ -618,6 +624,21 @@ export class Lamps {
     return i;
   }
 
+  private refreshPairedCable(i: number, anchors: Iterable<number[]>) {
+    // The street can run along a tile seam, with only one wall in each tile.
+    const combined = [NaN, NaN, NaN, NaN];
+    for (const points of anchors) {
+      for (let side = 0; side < 4; side += 2) {
+        if (!Number.isFinite(combined[side]) && Number.isFinite(points[side])) {
+          combined[side] = points[side];
+          combined[side + 1] = points[side + 1];
+        }
+      }
+    }
+    if (Number.isFinite(combined[0]) && Number.isFinite(combined[2])) this.hung.set(i, combined);
+    else this.hung.delete(i);
+  }
+
   // Retire the same tiles as the street graphs, including work waiting on lamp data.
   forget(keys: string[]) {
     const gone = new Set<LampTile>();
@@ -635,8 +656,9 @@ export class Lamps {
       for (const i of tile.hung) {
         const owners = this.surveyCables.get(i)!;
         owners.delete(tile);
-        if (owners.size) this.hung.set(i, owners.values().next().value!);
-        else { this.surveyCables.delete(i); this.hung.delete(i); }
+        if (!owners.size) { this.surveyCables.delete(i); this.hung.delete(i); }
+        else if (this.cablePairs.has(i)) this.refreshPairedCable(i, owners.values());
+        else this.hung.set(i, owners.values().next().value!);
       }
       for (const i of tile.lamps) {
         const owners = this.generatedOwners.get(i)!;
@@ -737,16 +759,28 @@ export class Lamps {
           for (let cy = Math.floor((Math.min(ay, by) - HANG_REACH) / CELL); cy <= Math.floor((Math.max(ay, by) + HANG_REACH) / CELL); cy++) {
             for (const j of this.grid.get((cx + 2048) * 4096 + cy + 2048) ?? []) {
               if (j >= this.surveyed || this.kind[j] !== HUNG || tile.hung.has(j)) continue;
-              const x = this.xy[j * 2], y = this.xy[j * 2 + 1], t = ((x - ax) * ex + (y - ay) * ey) / (len * len);
+              const partner = this.cablePairs.get(j);
+              if (partner === -1) continue;
+              const lx = this.xy[j * 2], ly = this.xy[j * 2 + 1];
+              const x = partner === undefined ? lx : (lx + this.xy[partner * 2]) / 2;
+              const y = partner === undefined ? ly : (ly + this.xy[partner * 2 + 1]) / 2;
+              const t = ((x - ax) * ex + (y - ay) * ey) / (len * len);
               if (t < 0 || t > 1 || Math.abs((x - ax) * ey - (y - ay) * ex) / len > HANG_REACH) continue;
-              const nx = -ey / len, ny = ex / len, walls = near(x, y);
+              const across = partner === undefined ? len : Math.hypot(lx - x, ly - y);
+              const nx = partner === undefined ? -ey / len : (lx - x) / across;
+              const ny = partner === undefined ? ex / len : (ly - y) / across;
+              const walls = near(x, y);
               const l = cast(walls, x, y, nx, ny, WALL), r = cast(walls, x, y, -nx, -ny, WALL);
-              if (!Number.isFinite(l) || !Number.isFinite(r)) continue;
-              const anchors = [x + nx * l, y + ny * l, x - nx * r, y - ny * r];
+              if (partner === undefined ? !Number.isFinite(l) || !Number.isFinite(r) : !Number.isFinite(l) && !Number.isFinite(r)) continue;
+              const anchors = [
+                Number.isFinite(l) ? x + nx * l : NaN, Number.isFinite(l) ? y + ny * l : NaN,
+                Number.isFinite(r) ? x - nx * r : NaN, Number.isFinite(r) ? y - ny * r : NaN,
+              ];
               let owners = this.surveyCables.get(j);
               if (!owners) this.surveyCables.set(j, owners = new Map());
               owners.set(tile, anchors);
-              if (!this.hung.has(j)) this.hung.set(j, anchors);
+              if (partner !== undefined) this.refreshPairedCable(j, owners.values());
+              else if (!this.hung.has(j)) this.hung.set(j, anchors);
               tile.hung.add(j);
             }
           }
@@ -883,18 +917,25 @@ export class Lamps {
       this.high[i] = z - below > DECK;
       if (!k.head) continue;
       const walls = this.hung.get(i);
-      if (walls && c < MAX_HUNG * 2 * HALVES) {
-        // From each wall down to the lamp, sagging a little between.
-        for (let w = 0; w < 2; w++) {
-          const wx = walls[w * 2], wy = walls[w * 2 + 1];
-          const at = (u: number): [number, number, number] => [wx + (lx - wx) * u, z + ANCHOR + (k.head + 0.1 - ANCHOR) * u - SLACK * 4 * u * (1 - u), -(wy + (ly - wy) * u)];
+      const partner = this.cablePairs.get(i);
+      const spans = partner === undefined ? 2 : 3;
+      if (walls && c + spans * HALVES <= MAX_HUNG * 2 * HALVES) {
+        const px = partner === undefined ? lx : this.xy[partner * 2];
+        const py = partner === undefined ? ly : this.xy[partner * 2 + 1];
+        const head = z + k.head + 0.1;
+        const otherHead = partner === undefined ? head : this.height(px, py) + k.head + 0.1;
+        const addSpan = (ax: number, ay: number, az: number, bx: number, by: number, bz: number) => {
+          const at = (u: number): [number, number, number] => [ax + (bx - ax) * u, az + (bz - az) * u - SLACK * 4 * u * (1 - u), -(ay + (by - ay) * u)];
           for (let h = 0; h < HALVES; h++) {
             const a = at(h / HALVES), b = at((h + 1) / HALVES);
             cable.setXYZ(c * 2, a[0], a[1], a[2]);
             cable.setXYZ(c * 2 + 1, b[0], b[1], b[2]);
             c++;
           }
-        }
+        };
+        addSpan(walls[0], walls[1], z + ANCHOR, lx, ly, head);
+        if (partner !== undefined) addSpan(lx, ly, head, px, py, otherHead);
+        addSpan(walls[2], walls[3], z + ANCHOR, px, py, otherHead);
       }
       const m = modelOf(this.kind[i], this.seeds[i]);
       if (m >= 0 && used[m] < MAX_POLES) {

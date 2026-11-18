@@ -43,12 +43,15 @@ export function ripples(p0: N, time: N) {
 const turned = (p: N, a: number) => vec2(p.x.mul(Math.cos(a)).sub(p.y.mul(Math.sin(a))), p.x.mul(Math.sin(a)).add(p.y.mul(Math.cos(a))));
 
 // The slope of the surface at a point of the map (x east, y north); none with the water off.
-export const waves = (p: N, time: N): N => Fn(() => {
+export const waves = (p: N, time: N, quiet: boolean): N => Fn(() => {
   const s = vec2(0).toVar();
   If(uWater.greaterThan(0.5), () => {
-    const a = turned(p, 0.5).mul(vec2(0.13, 0.21)).add(vec2(time.mul(0.06), time.mul(0.1)));
     const b = turned(p, -0.9).mul(vec2(1.1, 0.62)).add(vec2(time.mul(-0.4), time.mul(0.27)));
-    s.assign(vec2(vnoise(a), vnoise(a.add(37.2))).sub(0.5).mul(SWELL).add(vec2(vnoise(b), vnoise(b.add(19.4))).sub(0.5).mul(RIPPLE)));
+    s.assign(vec2(vnoise(b), vnoise(b.add(19.4))).sub(0.5).mul(quiet ? 0.04 : RIPPLE));
+    if (!quiet) {
+      const a = turned(p, 0.5).mul(vec2(0.13, 0.21)).add(vec2(time.mul(0.06), time.mul(0.1)));
+      s.addAssign(vec2(vnoise(a), vnoise(a.add(37.2))).sub(0.5).mul(SWELL));
+    }
     s.mulAssign(uRain.mul(0.6).add(1));
   });
   return s;
@@ -58,7 +61,7 @@ export const waveNormal = (s: N) => normalize(vec3(s.x.negate(), 1, s.y));
 
 // The light the surface mirrors: the sky, the sun's glitter and the lamps (`lamps`: their
 // light there, read a little aside by the slope so that it wavers).
-export function waterShine(w: N, p: N, s: N, time: N, skyRef: N, lamps: N) {
+export function waterShine(w: N, p: N, s: N, time: N, skyRef: N, lamps: N, quiet: boolean) {
   const out = vec3(0).toVar();
   const near = detail(p, 0.5); // (derivatives outside the branch)
   If(uWater.greaterThan(0.5), () => {
@@ -81,7 +84,7 @@ export function waterShine(w: N, p: N, s: N, time: N, skyRef: N, lamps: N) {
     If(near.greaterThan(0), () => {
       // Small steep facets flash the sun, the more the closer they lean towards it.
       const q = turned(p, 1.9).mul(vec2(3.7, 2.3)).add(vec2(time.mul(-0.9), time.mul(0.7)));
-      const f = s.mul(2).add(vec2(vnoise(q), vnoise(q.add(7.7))).sub(0.5).mul(0.7));
+      const f = s.mul(2).add(vec2(vnoise(q), vnoise(q.add(7.7))).sub(0.5).mul(quiet ? 0.14 : 0.7));
       const glint = pow(max(dot(reflect(v.negate(), waveNormal(f)), uSunDir), 0), 160);
       out.addAssign(uSunLight.mul(glint).mul(0.22).mul(near));
       If(uRain.greaterThan(0.01), () => { out.addAssign(skyRef.mul(SKY).mul(ripples(p, time)).mul(uRain).mul(0.22).mul(near)); });

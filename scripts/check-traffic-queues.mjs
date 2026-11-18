@@ -16,6 +16,7 @@ registerHooks({ load(url, context, next) {
 globalThis.location = { search: '?lang=en' }; globalThis.self = globalThis;
 globalThis.localStorage = { getItem: () => null, setItem() {} };
 globalThis.document = { getElementById: () => null, querySelectorAll: () => [], documentElement: { lang: 'en' } };
+const { TYPES } = await import('../src/car.ts');
 const { Traffic } = await import('../src/traffic.ts');
 const { DriveGraph, Route } = await import('../src/network.ts');
 
@@ -31,15 +32,15 @@ const ZDIBSKO = [
 function fixture(roads) {
   const graph = new DriveGraph(), edges = graph.add(roads);
   const traffic = new Traffic(graph, new THREE.Scene(), () => .5, 0), all = [];
-  function add(edge, s, speed = 0, { type = 'sedan', L = 4.6, W = 1.82 } = {}) {
-    const p = edge.path.at(s), r = W / 2 + .02;
+  function add(edge, s, speed = 0, { type = 'sedan', L = 4.6, W = 1.82, heavy, wheelbase, vmax = 40 } = {}) {
+    const p = edge.path.at(s + (heavy ? (wheelbase ?? 6) * .42 : 0)), r = W / 2 + .02;
     // Same complete circle chain as Car's constructor; mesh sync has no bearing on decisions.
     const n = Math.max(3, Math.ceil((L - 2 * r) / (2 * r)) + 1), end = L / 2 - r;
     const offsets = Array.from({ length: n }, (_, i) => -end + 2 * end * i / (n - 1));
     const car = { x: p.x, y: p.y, h: p.ang, vx: Math.cos(p.ang) * speed, vy: Math.sin(p.ang) * speed,
-      w: 0, r, mode: 'traffic', gz: 0, type, spec: { L, W, vmax: 40 }, sync() {},
+      w: 0, r, mode: 'traffic', gz: 0, type, spec: { L, W, heavy, wheelbase, vmax }, sync() {},
       circles() { return offsets.map(o => [this.x + Math.cos(this.h) * o, this.y + Math.sin(this.h) * o]); } };
-    const a = { car, route: new Route(graph, edge, s, () => .5), speed, stuck: 0, jam: 0, off: 0, ignore: 0, cruise: 1 };
+    const a = { car, route: new Route(graph, edge, s, () => .5, type === 'bus'), speed, stuck: 0, jam: 0, off: 0, ignore: 0, cruise: 1 };
     traffic.agents.push(a); all.push(a); return a;
   }
   let minClearance = Infinity;
@@ -108,6 +109,28 @@ for (const roads of [ZDIBSKO, [raw('in', 'a', 'b', [[0, 0], [30, 0]]), raw('out'
   f.step(20); assert.ok(f.escapes.has(taxi) && f.escapes.has(back));
   assert.equal(lead.jam, 0); lead.stop = undefined; f.step(20);
   assert.ok(taxi.car.x > 100 && back.car.x > 90, 'the three-car queue advances');
+}
+
+// A bus must keep waiting behind a working dustcart across a junction, even
+// after the normal wait timer lets it try to escape a jam.
+{
+  const f = fixture([
+    raw('approach', 'a', 'b', [[0, 0], [40, 0]], { width: 3.2 }),
+    raw('exit', 'b', 'c', [[40, 0], [100, 0]], { width: 3.2 }),
+  ]);
+  const [approach, exit] = f.edges;
+  const cart = f.add(exit, 10.5, 0, { ...TYPES.garbage, type: 'garbage' });
+  cart.stop = { edge: exit, s: cart.route.s };
+  cart.car.working = cart.car.binRound = true;
+  const bus = f.add(approach, 20, 8, { ...TYPES.bus, type: 'bus' });
+  bus.route.follow([exit]);
+  f.step(25);
+  assert.ok(f.escapes.has(bus), 'the bus waits long enough for jam escape');
+  assert.ok(bus.speed < .05, 'the bus stays behind the working dustcart');
+  cart.car.working = false;
+  cart.stop = undefined;
+  f.step(8);
+  assert.ok(bus.car.x > 50, `the bus follows when the dustcart moves off: x=${bus.car.x}`);
 }
 
 // A car crossing an unrelated directed edge, and a car facing the other way,

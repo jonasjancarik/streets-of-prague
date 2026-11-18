@@ -245,6 +245,49 @@ the hill shade are moved to the TIN. It stays inside the build for as long as th
 in `dtm_heights.py` work on a grid, and for one release both ship, so the map can go
 back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change with it.
 
+## The move off the lattice (17 November 2026)
+
+What replaces stages 2–4 after the decision to go straight to the end. The survey's rules
+(`dtm_heights.apply`) work on one array over the whole area: at 0.5 m that would be
+about 3 billion points for `praha`, so they can't simply run finer. The build becomes
+two passes in `ipr_terrain.py`:
+
+1. **The city pass** (as now, on the 4 m lattice): what is city-wide by nature. IPR's
+   model with its gaps filled, the water's pools and their levels, the walls' strips as
+   polygons and which side is up, bridges and tunnels and their levels, the pads at
+   bridge ends, the made-up land past IPR's model. Its lattice stays inside the build.
+2. **The tile pass** (new, each tile with a margin, every 0.5 m): the surface the mesh
+   is fitted to.
+   - Water: flat at its pool's level.
+   - Paved ground: the LiDAR as it is, and smoothed over 1.5 m on unpaved ground within
+     2 m of it. Without the LiDAR: the city pass's streets.
+   - Open ground: IPR's dense model.
+   - Where the LiDAR is more than 0.5 m off the city pass: the city pass, if IPR's dense
+     model doesn't bear the LiDAR out (a hole in the scan), and on any such patch that
+     reaches a face in the LiDAR across a car street's middle or a way near a bridge
+     (bridge ends, which OSM draws short of their abutments, and walls a street is drawn
+     across). The ten trial places, below, say why.
+   - Within 2 m of a wall: the city pass's heights. This is where the lattice still
+     reaches the map, until the wall rules move to points (step 4).
+   - Pads: flat at their height.
+   - Breaklines: the walls' outlines with each side's height read from this surface a
+     little way out (the LiDAR's crown where it has one, the straight tops), the
+     survey's kerb lines with the same height on both sides, the water's edges.
+
+   Then `pipeline/tin.py` fits the mesh (10 cm on paved ground, 25 cm elsewhere) and
+   writes `<tile>.tin.bin.gz`: the points, each point's heights by side, the
+   breaklines. The game builds the triangles itself (Delaunator and Constrainautor).
+3. **The game** reads the mesh wherever a tile has one (`src/tin.ts`, as on the trial),
+   the hill shade comes from it, and the checks read it too. For one release the map
+   carries both, so it can go back; then `height.bin` goes.
+4. **The walls move to points**: their foot and top from the survey's lines and the
+   LiDAR, not from the lattice. After that the city pass only decides water levels,
+   structures and which side of each outline is which.
+
+Order: ujezd built both ways (with and without the LiDAR), then the ten trial places,
+then the size in the binary format on ujezd and the 40 random tiles, and the Pixel 5's
+time to triangulate a tile, before `praha`.
+
 ## How to work
 
 - Small areas first; never build `praha` before the area's numbers are in.
@@ -265,6 +308,21 @@ back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change w
   10 cm, marked as guessed (proposed in stage 2).
 - **Without the LiDAR.** Stages 1 and 2 don't need it; the scan makes the kerbs more
   exact.
+- **Straight to the end.** Decided 17 November: no more trial stages on top of the
+  lattice. The build and the game move off the 4 m lattice in one go, ujezd first,
+  then the trial places, then `praha`.
+- **The LiDAR in the map.** Decided 17 November: streets take the 2023 LiDAR, walls
+  come from the survey. The build must still run without it, and ujezd is built both
+  ways first to show what it changes. (Nothing on record said why the public map was
+  built without it: it had only been used in experiments.)
+- **Size.** Decided 17 November: up to the fifth above (about 200 MB), aiming at 10 cm
+  on paved ground and 25 cm elsewhere. The real binary format is measured on ujezd and
+  on the 40 random tiles before `praha` is built, and the time to triangulate a tile
+  on the Pixel 5 with it.
+- **Kerbs, for now.** Decided 17 November: the survey's kerb lines go into the mesh as
+  edges with the same height on both sides, so the road's edge follows the kerb.
+  Raising them (the 10 cm rule above) is a later rule and a pass over the gameplay it
+  touches: cars, traffic, chases, bikes, cars parked half on the pavement.
 
 ## Progress
 
@@ -603,3 +661,463 @@ back. The handbook, `rebuilding-the-map.md` and the terrain-steps skill change w
   **The default since 16 November 2026**, with the city map above on the beta.
   `ipr_terrain.py --coarse` (`--set DENSE_TIN=0` in `window.py`) reads the CityGML
   sheets as before.
+
+  **IPR's dense TIN cut at the walls, tried as the ground itself (16 November 2026).**
+  Not the stage 1 TIN above (today's heights triangulated): IPR's own dense points,
+  without the points within 0.3 m of a step line (the wall's face), and the game's step
+  lines doubled 3 cm either side, each copy at that side's height. On the nine places
+  (5 × 5 tiles each), against today's ground as the game samples it
+  (`scripts/tin-target.mjs`):
+
+  | | today | dense TIN | with steps, sides from IPR's points | with steps, sides from the step lines |
+  |---|---|---|---|---|
+  | streets within 0.3 m of the LiDAR | 88.1 % | 84.4 % | 84.9 % | 84.9 % |
+  | other ground within 0.3 m | 74.1 % | 73.9 % | 75.1 % | 75.1 % |
+  | wall tops sagging over 1 m (18.4 km of wall) | 955 m | 2,436 m | 2,260 m | 1,817 m |
+  | over 2 m | 527 m | 876 m | 1,389 m | 1,013 m |
+  | step under half its height | 971 m | 932 m | 1,440 m | 1,188 m |
+
+  Not taken. The dense model has few points at the walls the game knows: within a metre
+  of the step lines, an IPR point at 6–23 % of the line's points, and within 4 m about
+  one, so a side's height rarely comes from IPR (1–23 % of the line) and the ground
+  between the line and the next points is a long ramp of a triangle. The streets lose
+  the LiDAR's road (`_scan_streets`) and come out faceted. Other ground gains a point.
+  From above (pictures in `docs/evidence/steptin`, local) the walls are clean but the
+  ground beside them is toothed and the streets crumpled; today's ground is smoother,
+  with 4 m blocks on slopes. Over the middle tile the TIN with its lines takes 20–230 KB
+  gzipped against 2–5 KB of heights (a plain encoding; the lines are doubled every
+  0.5 m). The measures for walls were made for, and the rules tuned on, these nine places,
+  which favours today's ground. A TIN still looks like the way to get the shape between
+  points right, but with today's heights on the streets and at walls, as stage 1 plans.
+
+  **Road samples and terrain window trials (17 November 2026).** The current
+  57,188-street check found six steps over 1 m. Of the 9.9 million bare-earth
+  LiDAR comparisons on ground roads, 99.1% were within 0.3 m. The flagged spots
+  still matter: street panoramas show continuous roads at K Celinám,
+  K Přehradám and Kbelská, while the game shows a high wall, an uneven deck
+  approach and a distorted cutting respectively.
+
+  | Worst step within the trial window | 4 m grid | 2 m grid |
+  |---|---:|---:|
+  | K Celinám | 1.32 m | 3.01 m |
+  | K Přehradám | 1.15 m | 1.64 m |
+  | Kbelská | 0.35 m | 1.02 m |
+
+  Seven windows with top strips 4, 6 and 8 m wide did not find a better default.
+  Keeping two plain grid corners around a road cut K Celinám's worst step to
+  0.74 m but left a 2.9 m wave. Cutting the strips back from the lane was worse:
+  the map made a 1.64 m wall step across K Celinám. The ground on either side of
+  the wall needs separate support, especially where the road is narrower than a
+  grid cell. These trials did not improve both the road and the adjacent wall.
+  Add `--lane-steps` to `scripts/check-road-flatness.mjs` to rank sudden steps
+  on the traffic graph's path in each direction as well as the full carriageway.
+  On Patočkova the lane test confirmed a 1.21 m step. The flagged K Přehradám
+  deck edge, by contrast, was much smoother at the middle of the sampled lane.
+
+  **Straight wall tops, with the ground filled up to them (17 November 2026).** A
+  retaining wall's top runs straight between its corners, while the top the game reads
+  beside it sags wherever the scan or the 4 m lattice blurs it. So each wall gets an
+  even grade per stretch, and the ground behind it is raised to that top.
+  `step_lines.straight_tops` (on branch `tin`, off by default: `window.py --set
+  STRAIGHT_TOPS=1 --set STRAIGHT_FILL=1`) joins each step line across the tiles'
+  edges and splits it at corners, where its high side changes and where a street
+  crosses it. Through the upper envelope of each stretch's top it fits straight pieces
+  of 8 m or more (within 0.3 m), and it moves a top up by 3 m at most and down by
+  0.5 m. A piece steeper than 20 % is a bank's slope, not a wall's top, and stays as it
+  was. The fill raises the lattice points of the top's terrace within 4 m behind the
+  wall to the new top, but none within a cell of a car street's carriageway.
+
+  On the nine places (3 × 3 tiles each), the game's ground 1 m behind the top of every
+  step 1 m or higher (13.0 km, corners left out), against the straight line 6 m either
+  way:
+
+  | | today | straight tops | straight tops, ground filled |
+  |---|---:|---:|---:|
+  | dips behind the top over 0.3 m | 506 m | 443 m | 250 m |
+  | over 0.5 m | 292 m | 267 m | 169 m |
+  | over 1 m | 145 m | 130 m | 96 m |
+  | parapet jags over 15 cm | 486 m | 478 m | 469 m |
+
+  Straight tops alone do little. The game gives a step line no say where it is far off
+  the lattice and the lattice has no step there (`AGREE` in `src/terrain.ts`), so a
+  raised top falls back to the lattice. Where the line does hold, it leaves a rim: at
+  Malá Strana the ground 1 m behind was more than 0.3 m under the top at 7 % of the
+  places, against 3 % today. With the fill the rim is gone (2 %), and the dips halve,
+  most of all on the quay of nábřeží Kapitána Jaroše (from above, the wall's shadow on
+  the river is straight where it was notched every 4 m), at M7, Vyšehrad and Malá
+  Strana. The streets within 300 m measure as before except one 10 m slip road at
+  nábřeží Kapitána Jaroše, now leaning 8.7 % (the flag is 8 %). The streets' fit to the
+  LiDAR is unchanged, and so is the ground 4–6 m behind the walls (51, 58 and 64 %
+  within 0.3 m of the LiDAR). The first version also filled under streets, which put
+  four more leaning streets at nábřeží Kapitána Jaroše. It also lifted the land side of
+  the water's outline where that outline climbs a bank (by 3 m). The street and slope
+  rules above come from those two.
+
+  What it leaves: along the survey's own retaining walls (8.5 km), the dips over 1 m
+  stay at about 320 m. They are where several small terraces meet, at walls' ends, and
+  where a terrace's outline runs a metre or more off the surveyed wall. The sawtooth
+  on the grass slope behind the quays is the 4 m lattice on a diagonal bank, not the
+  wall. Both need the walls' outlines taken from the survey's lines themselves, or a
+  finer ground (stage 1). Not the default yet: it hasn't been tried on the whole city,
+  and the measures were tuned on these nine places. Pictures and scripts are in
+  `docs/evidence/straight-tops` (local).
+
+  **The wall's top where its face ends (17 November 2026).** At nábřeží Kapitána Jaroše
+  the game still drew one wall 8 m high, where there is a stone wall to about 185.5 m
+  and a grass bank behind it rising to 189 m over 6 m (the LiDAR, and the user's
+  picture from Google Earth). The top was read 1.5–4 m back, on the bank; straight
+  tops then levelled it at the bank's height. `STRAIGHT_CROWN` (tin branch, 5631f7d2;
+  needs the scan) reads a LiDAR profile across each stretch of wall: the steepest rise
+  starting within 5 m of the line, followed while it is steeper than 1 m per metre and
+  at least 1 m high. Where it ends is the crown. Where most of a stretch has one, the
+  top goes no higher than the crown (filled in between), and then the straight pieces
+  are fitted. The fill behind such a wall also lowers the lattice within 4 m to the
+  scan's height, never under the top: without that the lowered top was a ledge a
+  metre wide with the old ground jumping back up behind it.
+
+  The ground 1 m and 3 m behind the walls, share within 0.3 m of the LiDAR:
+
+  | | straight tops, ground filled | with the crown |
+  |---|---:|---:|
+  | Československého exilu | 18 / 46 % | 25 / 55 % |
+  | nábřeží Kapitána Jaroše | 22 / 40 % | 28 / 44 % |
+  | Linhartova | 21 / 37 % | 30 / 56 % |
+  | M7 | 33 / 58 % | 40 / 64 % |
+  | Benešovská | 65 / 89 % | 65 / 90 % |
+  | Vyšehrad | 12 / 26 % | 18 / 41 % |
+  | Malá Strana | 18 / 50 % | 27 / 62 % |
+  | Na Veselí | 43 / 45 % | 42 / 46 % |
+  | Italská | 18 / 37 % | 44 / 61 % |
+
+  The streets measure exactly as before. At Jaroše the top is now 185.3–186.3 m
+  (LiDAR crown 185.2–185.6, straight tops 188.4), and the places that changed most are
+  walls of the same kind: a low wall with a terrace or a bank behind and a second rise
+  further back (Československého exilu: a wall to 259 m, a terrace 6 m wide, then
+  263 m; straight tops had put the top at 262.4). The "dips behind the top" measure
+  goes up (Jaroše 70 → 87 m over 0.3 m), because 1 m behind a low wall is now the
+  bank's real slope, which it counts as a dip; it fits walls with a flat top only.
+  Parapet jags over 15 cm grow at Vyšehrad (206 → 281 m) and a little at Malá Strana
+  and Linhartova, the worst of them the same as before: Vyšehrad's ramparts, battered
+  walls where the crown may stop part way up, are left to look at. Screenshots
+  `crown-jaros.jpg` and `crown-m7.jpg` in `docs/evidence/straight-tops` (local); in the
+  tin worktree's game the three maps are `?area=walls-today`, `walls-straight` and
+  `walls-crown`.
+
+  **The notches every 15 m (17 November 2026).** Even with the crown, the Jaroše quay
+  still had a notch down to the water every 15 to 17 m, in all three versions; the real
+  wall is straight. The LiDAR is the same at a notch as between them. The step line runs
+  a little askew to the lattice and crosses a row of it every 15 m, and there the top's
+  side was read on the wall's foot, half a metre over the water: no step, so the point
+  ended a straight piece. With the crown, a gap of up to 16 m between two stretches of
+  one wall is wall where the scan has a crown at every point of it, and a stretch with a
+  crown takes it both ways (a top read lower was read on the face). The quay's top now
+  runs evenly from 186 to 184 m (tin branch, fb1c39b1). Within 0.3 m of the LiDAR 3 m
+  behind the walls: Jaroše 44 → 48 %, M7 64 → 70 %, Československého exilu 55 → 61 %,
+  Na Veselí 46 → 49 %, the rest within 2 points. Streets as before. Parapet jags over
+  15 cm went up at Vyšehrad (281 → 321 m) and Malá Strana (47 → 59 m), not yet looked
+  at. Pictures `crown2-jaros.jpg` and `crown2-jaros-east.jpg`.
+
+  **Vyšehrad's parapets (17 November 2026).** Most of the new jags were on the
+  ramparts, whose top falls 5 m in 20 m along the wall: too steep to straighten, so it
+  keeps its heights point by point, and with the crown those came from one LiDAR
+  profile each, scattering by 0.2–0.7 m. Such stretches now keep the step line's own
+  reading, and the crown only sets the height where the top is straightened (tin
+  branch). Parapet jags over 15 cm: Vyšehrad 321 → 258 m (straight tops alone: 206),
+  Malá Strana 59 → 44 m, Jaroše 136 → 119 m; Benešovská 27 → 34 m and Linhartova
+  38 → 41 m. Streets as before; the LiDAR fit behind the walls about the same, except
+  Malá Strana 3 m back (63 → 57 %). Of what is left above straight tops at Vyšehrad,
+  the largest piece is a lane in a cutting where the crown brings the ground down
+  from 215.4 to 211.8 m and the LiDAR has 209–213 m: closer to the real ground, but it
+  counts as a jag. Picture `crown3-vysehrad.jpg`.
+- 17 November 2026: the TIN tried again, on the new ground. The user hadn't agreed to
+  the 15 November "no TIN": the TIN is wanted, with the straight tops and the ground
+  filled up to the walls. Stage 1's builder (`pipeline/tin.py`, tin branch 2d2d57d8)
+  on the nine places' middle 3 × 3 tiles, with the crown version of the ground as the
+  target. Two fixes first: a triangle not touching a step takes the side at its middle
+  (the flood leaked through gaps in the outlines and put water on the land's side,
+  5,415 samples a tile → 224, all within 7 cm of a step), and a step segment the
+  triangulation misses is split at its midpoint even with no sample between its ends
+  (missing wall segments 626 of 2,246 → 6 of 4,779).
+
+  Size: the file can hold the points alone, a height per side at a step's points, and
+  the steps as runs of point numbers; the game triangulates them. Stored with their
+  triangles they are 3.5 times bigger.
+
+  | Target, paved / elsewhere | nine dense places, a tile | 40 random tiles, a tile | `praha` from the random tiles |
+  |---|---:|---:|---:|
+  | today's ground, 10 / 25 cm | 14.8 KB | 4.5 KB | 65 MB |
+  | today's ground, 20 / 50 cm | 10.1 KB | 2.7 KB | 39 MB |
+  | LiDAR off the streets, 10 / 25 cm | 18.2 KB | 5.7 KB | 83 MB |
+  | LiDAR off the streets, 20 / 50 cm | 11.7 KB | 3.2 KB | 46 MB |
+
+  Today's height file is 61 MB for `praha` (the nine places: grid 3.2 KB, step lines
+  2–4 KB and terraces 0.5–1.3 KB a tile). So points-only passes the size gate, which
+  the 14 November encoding (2.8 GB at 2 cm) didn't.
+
+  Shape: a TIN of today's ground copies it (median 2 cm off, 95 % within 10 cm), the
+  4 m lattice's stair-steps on diagonal banks included (the grass behind the Jaroše
+  quay). It's a better container, not better ground. "LiDAR off the streets" takes
+  IPR's bare earth (smoothed over a metre) wherever it is 4 m or more from a step line
+  and from paved ground, blended over 2–4 m, and today's ground elsewhere (streets,
+  walls, water): the Jaroše bank becomes one even slope, and Linhartova's hillside
+  shows its paths, ridges and terraces instead of 4 m blocks
+  (`docs/evidence/tin/walls-tin/relief-*.jpg`, local). Left to fix: beside some walls
+  a second ridge runs parallel to the wall, the LiDAR's own slope across the wall
+  taken up just past the 2 m; near the slip roads at Jaroše the LiDAR's slopes and
+  the game's terraces don't line up.
+
+  For the game: a triangulation with the steps as constraints, so that no triangle
+  crosses a wall whatever the ties. With another tie-break (Qhull's `QJ`) 224 of
+  4,779 wall segments went missing, so plain Delaunay of the points isn't enough. The
+  game has no such library yet (a new dependency, or our own). Nothing in the game reads
+  the TIN yet.
+
+  **IPR's dense model instead of the grid (17 November 2026).** The ground above went
+  TIN → grid → TIN: the pipeline samples IPR's dense terrain sheets (`TER_*_shp`, a
+  TIN with triangles of about 2 m²) onto the 4 m grid, and the builder triangulated the
+  grid again. So the target now takes IPR's dense triangles themselves wherever the
+  ground is 4 m or more from a step line and from paved ground (blended over 2–4 m),
+  and today's new ground elsewhere: the streets (the LiDAR's road), the walls with
+  their straight tops and filled ground, and the water.
+  (`docs/evidence/tin/walls-tin/dense_target.py`, local; it reads the sheets with the
+  16 November trial's `dense_points`.)
+
+  | Paved / elsewhere | nine dense places, a tile | 40 random tiles, a tile | `praha` from the random tiles |
+  |---|---:|---:|---:|
+  | 10 / 25 cm | 18.5 KB | 6.1 KB | 89 MB |
+  | 20 / 50 cm | 12.4 KB | 3.5 KB | 50 MB |
+
+  (Ten random tiles' sheets aren't in the cache, on the city's edge; those kept
+  today's ground.) Open ground, 4 m or more from steps and paved ground, within 0.3 m
+  of the 2023 LiDAR:
+
+  | | today's grid | TIN of today's | TIN from IPR's dense model |
+  |---|---:|---:|---:|
+  | Československého exilu | 70.1 % | 69.5 % | 73.0 % |
+  | nábřeží Kapitána Jaroše | 77.1 % | 76.7 % | 74.6 % |
+  | Linhartova | 73.7 % | 72.8 % | 74.2 % |
+  | M7 | 81.9 % | 81.2 % | 80.4 % |
+  | Benešovská | 84.8 % | 84.4 % | 86.9 % |
+  | Vyšehrad | 62.7 % | 61.9 % | 62.4 % |
+  | Malá Strana | 70.5 % | 70.1 % | 71.9 % |
+  | Na Veselí | 67.7 % | 67.2 % | 69.0 % |
+  | Italská | 62.6 % | 62.1 % | 62.5 % |
+
+  About even in height: today's grid has the survey's rules on top of the same model.
+  The gain is the shape between the points: the 4 m blocks on hillsides and the
+  stair-steps on diagonal banks go, as with the LiDAR stand-in, and the picture is
+  much the same (`drelief-*.jpg`). The second ridge beside some walls shows here too,
+  so it comes from the blend near walls, not from the LiDAR.
+
+  **The game's triangles (17 November 2026).** The game would get the points and the
+  wall lines, and build the triangles itself with the wall lines kept as edges:
+  Delaunator with Constrainautor on top (both ISC; added on the `tin` branch, nothing
+  imports them yet). Tried in Node on the nine places' 81 tiles at 10 / 25 cm
+  (`docs/evidence/tin/walls-tin/cdt_check.mjs`, local):
+
+  - Wall pieces not kept as edges: 53 of 108,772. First 6,752: the same wall came
+    twice, once from each side's outline with the labels swapped and its own samples,
+    and the copies cross in a zigzag. `tin.py` now keeps one copy (`DUP`, 10 cm). A wall
+    along the tile's edge passes through the edge's points; it is cut at them.
+  - Time: 3–30 ms a tile on the M5 (Vyšehrad 11, Benešovská 21–30), 7 ms on average,
+    half of it Delaunator. Fine in a worker as a tile loads.
+  - Sides: a triangle on a wall line takes that side (Delaunator's triangles run
+    clockwise, so the right of the line); any other its middle's side from the tile's
+    water and terrace outlines, as the pipeline does. From the points alone, the river
+    between banks without a wall came out as land.
+  - Heights: 99.8 % of the check samples (every 2 m) within 1 cm of the pipeline's
+    TIN, and 270 of 1.29 million over the tolerance, against the pipeline's 132.
+    Wrong-side samples 1,928 against the pipeline's 590, mostly at Benešovská, Malá
+    Strana and M7: not looked into yet.
+
+  **In the game (17 November 2026).** On the `tin` branch, `?area=walls-tin` loads a
+  map copy (`public/data/walls-tin_now` there: `praha_now` with the trial places' tiles
+  from window builds with straight tops, crowns and fill) whose tiles also have the
+  TIN's points and wall lines under `tin/`. The game triangulates them in
+  `src/tin.ts`, reads the ground's heights from the triangles (walls and ground meshes
+  alike), cuts the ground into 2 m pieces instead of 8 m on those tiles, and shades it
+  from a 1 m relief of the TIN. Wall tops followed the wall lines badly at first
+  (kinks where a line was cut, and where a point's other side was dropped): with each
+  point's every side kept and the wall's own height read on the line, samples more than
+  10 cm off the line went from 7.85 % to 0.09 %. 83 are still over 2 m, at tiny pieces
+  where three walls meet.
+
+  Two places the user found:
+
+  - **The quay wall dipped 4 m at nábřeží Kapitána Jaroše** (a V seen from above),
+    going down from the bridge head to the quay. A piece of a top steeper than
+    `TOP_GRADE` keeps its heights as read, and there the reading had slipped to the
+    wall's foot. Such a piece is now held at its lower end, less 0.3 m, where an end's
+    height is the straight top it joins (`straight_tops`, `tin` branch). Taking the
+    ends from the envelope instead flattened the last metres of a wall at Malá Strana
+    over a 6 m cliff and lifted a quay wall under Vyšehrad by 5.5 m. Against the
+    earlier build, on the ten places, it moves the dip and 9 heights at Libeňský most
+    and under Vyšehrad (small dips filled to the top beside them, at most 0.75 m),
+    nothing else.
+  - **The road edge on Edvarda Beneše was torn** (the lattice's teeth where the road is
+    cut into Letná's slope). The target had today's ground on the streets. It now has
+    the 2023 LiDAR on paved ground and within 2 m of it, smoothed over 1.5 m off the
+    paved ground (raw, the strips of grass and hedge beside a street came out in dark
+    scribbles), and keeps today's ground only within 2 m of walls of 0.3 m or more. A
+    terrace's outline with the same height on both sides is no wall: it kept a 2 m band
+    of teeth along the kerb, and now takes the new ground's height
+    (`docs/evidence/tin/walls-tin/dense_target3.py`, local). The tiles round the second
+    view are in the trial now (the place `jarosw`, 58_68).
+
+  Points a tile, the nine places: 4,700 → 6,300; gzip with the 0.5 m side grid
+  38.7 → 50.2 KB. Before and after: `game-jaros-dip-fixed.jpg`,
+  `game-jarosw-road-edge.jpg`. Left on that road: a short zigzag where the road's
+  edge is a real low wall (0.7 m median) drawn on the lattice's outline, which the TIN
+  can't straighten (the outline would have to follow the kerb), and scribbles on the
+  tram median that the mesh didn't change. Also left: the bridge head at Hlávkův most,
+  as broken on today's map, and a crack along the promenade above Jaroše's quay.
+- 17 November 2026: the move off the lattice, first round (branch `tin`). The city pass
+  is `ipr_terrain.py --tin`. The tile pass is `pipeline/tin_tiles.py`: the surface every
+  0.5 m as listed under "The move off the lattice", then the fit, written as
+  `tiles/<k>.tin.bin.gz` beside the lattice and listed under `tin` in `index.json`. The
+  file (`tin.FORMAT` 1, read by `decodeTin` in `src/tin.ts`) has the points sorted by
+  row, two bytes for each coordinate and height, the extra heights of points on a wall,
+  and the breaklines as runs of point numbers with the side on their left and right. The
+  game draws the ground from the mesh wherever a tile has one (`?tin=off` for the
+  lattice), and `check-road-flatness.mjs` and `check-bridge-decks.mjs` read it too
+  (`--tin off` for the lattice). `check-tin.mjs` compares each mesh, as the game builds
+  it, with the surface it was fitted to.
+
+  `ujezd` built both ways, against the city pass's lattice built the same way:
+
+  | | Lattice, LiDAR | Mesh, LiDAR | Lattice, no LiDAR | Mesh, no LiDAR |
+  |---|---|---|---|---|
+  | Carriageway within 0.3 m of the LiDAR | 99.7 % | 99.9 % | 94.7 % | 94.8 % |
+  | Streets leaning over 8 % / 15 % | 3 / 2 | 2 / 0 | 10 / 4 | 10 / 4 |
+  | Bumps over 0.15 / 0.5 m | 4 / 1 | 2 / 1 | 7 / 2 | 7 / 2 |
+  | Line metres with a wave over 0.2 m (5 m either side) | 0.17 % | 0.12 % | 0.65 % | 0.62 % |
+  | Points a tile | | 4,900 | | 3,800 |
+  | Mesh file a tile (gzip) | | 23.9 KB | | 19.5 KB |
+
+  The bridges' decks and joins come out the same in all of them. Without the LiDAR the
+  streets are the city pass's, so the mesh changes little on them: what it changes is
+  the open ground (IPR's dense model in place of the lattice) and the edges, which
+  follow the outlines instead of the lattice's cells. The streets' gain is the LiDAR's,
+  as on the lattice in November.
+
+  At Smetanovo nábřeží the quay wall has no outline in the city pass (the lattice draws
+  it as a ramp), and the mesh followed the LiDAR's 1 m cells down it in a sawtooth. On
+  the ground within 1.5 m of a LiDAR face rising more than 1 m within a metre, the
+  surface now takes IPR's dense model (`STEEP`, `STEEP_NEAR` in `tin_tiles.py`). The
+  pictures, lattice against both meshes, are in `docs/evidence/tin/move` (local).
+
+  Left: 104 breakline pieces on `ujezd` that the game's triangulation can't keep
+  (clusters of points a few centimetres apart where two outlines nearly cross, which
+  want their crossings put in and close points merged), white specks along some wall
+  lines, and a wavy wall foot on Petřín with the LiDAR.
+
+  The size, before the ten trial places so as to know early whether the format holds:
+  40 random tiles of `praha`, each a window build with the city pass as `--tin
+  --survey-scan`. The mesh file is 8.5 KB a tile on average (median 3.4 KB, at most
+  38.7 KB), about 124 MB for the city's 14,595 tiles, inside the 200 MB. Everywhere
+  within 10 cm on paved ground and 25 cm elsewhere; 39 triangles in all (1.5 m²) on the
+  wrong side of a step.
+
+  The time to make a tile's ground from its file (`scripts/tin-bench.mjs`, `ujezd`'s 25
+  tiles, each tile's median of three to five runs, then the median and the worst tile):
+
+  | | Mac (M5, headless Chrome) | Pixel 5 |
+  |---|---|---|
+  | Unpacking and decoding | 0.5 ms | 4 ms |
+  | Triangulating with the breaklines | 2.4 ms (at most 10) | 10 ms (at most 64) |
+  | The sampler's index | 0.5 ms (at most 1) | 2 ms (at most 4) |
+  | The shading texture | 35 ms (at most 72) | 178 ms (at most 334) |
+
+  All of it runs on the main thread while a tile loads (`src/tiles.ts`). The shading is
+  the cost: it reads the mesh five times for every square metre of the tile, where the
+  lattice's read one height per lattice point. Proposed before `praha` (not decided):
+  draw the shading triangle by triangle, one slope each (inside a triangle it already
+  reads a single slope, so it should look the same), and perhaps move the triangulation
+  into the tile worker for the worst tiles. The phone's first runs came out four times
+  slower: its screen had gone off or the lock screen was over Chrome, which then slows
+  the page. Kept awake (a wake every 10 s, the lock screen lifted) it gives the numbers
+  above, with no touches on the screen during the run.
+
+  The shading fixed the same day (`tin` d6d6e4c9): its heights come from three grids
+  filled triangle by triangle (`tinGrid`), and only texels near walls and the water's
+  edge read through the sampler. The texture is the same to 0.01; on the Pixel 5 it takes
+  28 ms a tile (at most 83) instead of 174, and a tile's ground from its file 48 ms in
+  all (at most 145). The sampler no longer reads kerbs as steps (it had laid a band
+  0.6 m wide along every kerb at the kerb line's height); the road check didn't change.
+  In the game, before and after from above and at street level (Vítězná, the head of
+  Most Legií, Kampa; `docs/evidence/tin/shading`, local), nothing on the ground
+  changes: the pixels that differ are the moving traffic, people and water.
+- 17 November 2026: the ten trial places on the mesh (`tin` 654b8b34). Each place is a
+  window build of `praha` (the city pass on 5 × 5 tiles, the tile pass on the middle
+  3 × 3), with and without the LiDAR, checked against the lattice of the same build.
+
+  Without the LiDAR the mesh is the lattice again on the streets, at all ten: within
+  0.3 m of the LiDAR 92.1 → 92.2 %, steps over 0.25 m 41 → 38, twisting over 12 %
+  87 → 83, bridge joins over 1 m 18 → 18, everything else within a street or two.
+
+  With it, the first mesh broke the bridges' ends: joins over 0.5 m / 1 m went from
+  24 / 13 to 41 / 27. The LiDAR and IPR's dense model are both bare earth, OSM ends
+  bridges a few metres short of their abutments, and the city pass keeps a street's last
+  metres at the deck's height there (`END_CLEAR`); the mesh took them down to the
+  ground under the deck, 3–4.5 m at the ends of Hlávkův most, Čechův most and 5. května
+  over Hvězdova. Elsewhere the LiDAR had a hole 4 m deep in Československého exilu, and
+  Sekaninova is drawn across a wall that both the LiDAR and the dense model have.
+
+  Where the LiDAR is more than 0.5 m off the city pass, the surface now takes the city
+  pass in two cases (`AGREE`, `held_ground` in `tin_tiles.py`):
+  - where IPR's dense model doesn't bear the LiDAR out either (the hole);
+  - on each such patch that reaches a face in the LiDAR (a rise of 1 m within a metre)
+    across the middle of a car street, or of any street or path within 8 m of a bridge's
+    outline, out to 15 m from the face (the bridge ends, Sekaninova).
+  A patch with no such face keeps the LiDAR: those are the city pass's own mistakes, like
+  a pit 2 m deep in Národní inside Most Legií's outline. Taking the city pass wherever
+  the two disagreed, tried first, lost most of the LiDAR's gain and kept that pit. The
+  tile is worked out with a 20 m margin, so neighbouring tiles decide alike.
+
+  | The ten places, with the LiDAR | Lattice | First mesh | Mesh |
+  |---|---|---|---|
+  | Carriageway within 0.3 m of the LiDAR | 99.35 % | 99.51 % | 99.49 % |
+  | Bridge joins over 0.5 / 1 m | 24 / 13 | 41 / 27 | 24 / 13 |
+  | Bridge breaks over 1 m | 6 | 6 | 6 |
+  | Steps over 0.25 / 1 m | 27 / 7 | 33 / 11 | 29 / 7 |
+  | Bumps over 0.15 / 0.5 m | 51 / 18 | 46 / 14 | 49 / 14 |
+  | Streets leaning over 8 / 15 % | 83 / 48 | 87 / 41 | 90 / 41 |
+  | Twisting over 5 / 12 % | 106 / 53 | 102 / 44 | 104 / 44 |
+  | Line metres with a wave over 0.2 m (5 m either side) | 0.84 % | 0.71 % | 0.73 % |
+  | Points a tile / mesh file a tile (gzip) | | 6,100 / 28.6 KB | 5,800 / 27.8 KB |
+
+  2,330 car streets. The last column has three more mesh tiles at Vyšehrad. Its first
+  build had a step of 1.29 m on Na Výtoni, which was the edge of the built area: the
+  tile north of it had no mesh. Built too, nothing there steps over 0.25 m. The tiles
+  are dense town, so they come out larger than the 40 random tiles' 8.5 KB.
+
+  More streets lean over 8 % because the city pass levels car streets kerb to kerb and
+  the mesh takes the LiDAR's own cross-fall: on the new ones (hillside streets at
+  Vyšehrad, Malá Strana and round Československého exilu) the mesh is nowhere more than
+  about half a metre off the LiDAR, on most within 0.2 m. Na Výtoni's right edge as drawn
+  lies on a strip 1.5 m above the carriageway, which the lattice had levelled away. Two
+  streets lean more where the rule holds the city pass only partly: U tržnice in the
+  Italská place (11 %, the lattice 7.5 %, up to 2.8 m off the LiDAR) and Plachého in the
+  Linhartova place (23 % against 1 %, beside a 5 m wall).
+
+  `ujezd` again with the rule: within 0.3 m of the LiDAR 99.9 → 99.7 %, the lattice's
+  figure (the bridge ends held at the deck, where the LiDAR has the ground under it),
+  no step over 0.25 m (was 1), and Divadelní back to the lattice's 30 % lean across. Its
+  cutting down to the car park under the theatre has its walls beside the street, not
+  across it, but the dense model lacks the cutting too, so the first case takes the
+  city pass there.
+
+  In the game, lattice against mesh at the ten places, the hole at Československého
+  exilu and Sekaninova, slanted and from above (`docs/evidence/tin/trial10`, local). From
+  above the two are nearly the same, bridge ends and the hole included. The hill shade
+  on the mesh shows small dips in the LiDAR's pavements as faint dark smudges
+  (Československého exilu's east pavement). The first mesh shots at Vyšehrad had no
+  ground and no buildings: its tiles, the heaviest of the ten (9,700 points a tile),
+  weren't built yet when the picture was taken, with two game pages loading at once.
+  They were there a few seconds later. Worth timing on the Pixel 5 before `praha`.
+
+  Left: Divadelní, U tržnice and Plachého; 934 breakline pieces the game's triangulation
+  can't keep and 677 samples over the tolerance over the 93 tiles, as on `ujezd`; the
+  smudges; and from before, the white specks, Petřín's wall foot and the triangulation
+  on the main thread. For `praha`, the tile pass takes 1–2 s a tile on one core, some
+  4–8 hours for the city's 14,595 tiles, so it should run tiles in parallel first.

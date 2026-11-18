@@ -43,6 +43,7 @@ interface BrigadeOptions {
   offscreen: (x: number, y: number) => boolean;
   viewRadius: () => number; // how far from the camera is out of view
   bodyAt: (x: number, y: number, r: number, skip: Car | null) => boolean;
+  reserved: (c: Car) => boolean; // a fire assigned to the player
 }
 
 export class Brigade {
@@ -68,6 +69,7 @@ export class Brigade {
 
   // Whether an engine is on its way to this car (or just about to be sent), or its crew is still putting it out.
   awaited(target: Car) {
+    if (this.o.reserved(target)) return false;
     // (Or to another fire next to it: the crew turns to this one after that.)
     const near = (c: Car) => c === target || Math.hypot(c.x - target.x, c.y - target.y) < NEXT;
     return this.calls.some((k) => k.target === target && k.t < 5) || this.engines.some((e) => near(e.target) && !e.wrecked && (e.phase === 'go' || (e.phase === 'work' && e.t < 60)));
@@ -80,7 +82,7 @@ export class Brigade {
     let best: Car | null = null, bd = NEXT;
     for (const c of o.fires.blazes.keys()) {
       const d = Math.hypot(c.x - at.x, c.y - at.y);
-      if (c !== at && d < bd && o.fires.onFire(c)) { best = c; bd = d; }
+      if (c !== at && d < bd && o.fires.onFire(c) && !o.reserved(c)) { best = c; bd = d; }
     }
     if (!best) return false;
     e.target = best;

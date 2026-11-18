@@ -20,7 +20,7 @@ import { type N, follow, followVec, addPort, uCut, uWet, uSnow, hash12, detail }
 
 const uBare = follow(BARE), uLeaves = follow(LEAVES), uSeason = followVec(SEASON);
 const uCanopy = follow(CANOPY_SHOWN);
-// Under the sprays of leaves laid over a crown (Ultra, from above) its tufts are the shade
+// Under the sprays of leaves laid over a crown (High and Ultra, from above) its tufts are the shade
 // inside it: this much darker, so the sprays stand out against them as leaves in the light do.
 const UNDER_SPRAYS = 0.58;
 // Gaps in a crown's shadow: this share of every tuft lets the sun through, in patches about

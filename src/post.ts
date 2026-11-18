@@ -1,10 +1,9 @@
 import type * as THREE from 'three';
 
-// What is done to the finished picture on Ultra (webgpu/post.ts): light that spills round
+// What is done to the finished picture on High and Ultra (webgpu/post.ts): light that spills round
 // what is brighter than the screen can show (lamps, headlights, lit windows, the sun's
 // glints), and the corners of the picture a little darker. It needs the scene drawn to a
-// target of its own first, which is why it is Ultra's: ?post=on|off overrides the tier for
-// one visit.
+// target of its own first. ?post=on|off overrides the tier for one visit.
 const asked = new URLSearchParams(globalThis.location?.search ?? '').get('post');
 export const POST = {
   // Whether the tier wants it (graphics.ts).

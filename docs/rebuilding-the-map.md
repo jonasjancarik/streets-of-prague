@@ -75,6 +75,7 @@ frame-time checks before release. Rebuild outputs keyed by street IDs, including
     uv run --group cover tree_sizes.py build praha --no-assemble     # praha only
     uv run layers.py praha --strict
     uv run build_signals.py praha
+    uv run build_power.py praha      # optional, from the cached OSM extract and built terrain
 
 `--resume` reuses completed OSM chunk layers and whole IPR stages when their
 grid, inputs, processing code, runtime versions and output hashes match. The IPR

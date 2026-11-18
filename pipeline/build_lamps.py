@@ -11,7 +11,7 @@ The download is cached in .cache/lamps/lamps.json (the whole city, WGS84); every
 area takes the lamps in its box from there. The file is gzipped binary, little
 endian: n (uint32), then n × (x, y) as float32 in the area's local metres (+x east,
 +y north), then n kinds as uint8 (KINDS below, in that order; and 7 for a lamp that
-hangs over a street on cables: one the layers give as standing on a post in the roadway).
+hangs over a street on cables). Two consecutive entries of kind 9 share a cable.
 Build the area's tiles first: the roadways are read from them.
 
 lit.bin.gz says which streets are lit and which dark, for the game to decide where the
@@ -37,9 +37,11 @@ import time
 from pathlib import Path
 
 import requests
+from shapely import points
 from pyproj import Transformer
-from shapely.geometry import LineString, Polygon
+from shapely.geometry import LineString, Point, Polygon
 from shapely.ops import unary_union
+from shapely.strtree import STRtree
 
 import build_cache
 import ipr_open
@@ -75,6 +77,12 @@ KINDS = {
 OSM = Path(__file__).parent / ".cache" / "osm"
 MOUNTS = {"wall": 1, "ceiling": 5, "ground": 6}
 HUNG_MOUNTS = ("suspended", "cable", "wire", "catenary")
+# Limit inference to local streets, where a tight row is less likely to be on a median.
+CABLE_ROADS = {"residential", "living_street", "unclassified"}
+PAIRED_CABLE = 9
+PAIR_REACH = 4.0  # metres from the centre line for Zborovská's surveyed fixtures
+PAIR_OFFSET = 3.2  # metres each side of the centre line on Zborovská
+PAIR_JUNCTION_CLEARANCE = 7.0  # the façades end before the junction
 LIT = {"yes": 1, "24/7": 1, "automatic": 1, "limited": 1, "sunset-sunrise": 1, "interval": 1, "no": 0, "disused": 0}
 LIT_WAYS = {"motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link", "secondary", "secondary_link",
             "tertiary", "tertiary_link", "residential", "unclassified", "living_street", "service", "pedestrian", "busway",
@@ -121,11 +129,12 @@ def download(url=URL, cache=CACHE):
 def osm_lighting(area):
     """What the area's OSM cut says about lighting: its street lamps as (lon, lat, kind),
     its streets as (1 lit / 0 dark / None untagged, highway class, [(lon, lat), …]; none
-    of those in tunnels) and its buildings' outlines as [(lon, lat), …]. None without the cut."""
+    of those in tunnels), its buildings' outlines and candidate cable-lit street
+    lines as (name, highway class, [(lon, lat), …]). None without the cut."""
     pbf = OSM / f"{area}.osm.pbf"
     if not pbf.exists():
         return None
-    lamps, ways, buildings = [], [], []
+    lamps, ways, buildings, cable_streets = [], [], [], []
     with tempfile.TemporaryDirectory() as tmp:
         picked, out = Path(tmp) / "lit.osm.pbf", Path(tmp) / "lit.geojsonseq"
         subprocess.run(["osmium", "tags-filter", str(pbf), "n/highway=street_lamp", f"w/highway={','.join(sorted(LIT_WAYS))}", "nwr/building",
@@ -147,18 +156,51 @@ def osm_lighting(area):
                     lit = LIT.get(tags.get("lit"))
                     if lit is not None or tags.get("tunnel", "no") == "no":
                         ways.append((lit, tags["highway"], geom["coordinates"]))
+                    name = tags.get("name")
+                    if tags.get("tunnel", "no") == "no" and tags.get("bridge", "no") == "no":
+                        cable_streets.append((name, tags["highway"], geom["coordinates"]))
                 elif tags.get("building") and geom["type"] in ("Polygon", "MultiPolygon"):
                     buildings += [geom["coordinates"][0]] if geom["type"] == "Polygon" else [p[0] for p in geom["coordinates"]]
-    return lamps, ways, buildings
+    return lamps, ways, buildings, cable_streets
 
 
-def carriageways(area):
+def suspend_paired_lamps(xy, kinds, streets):
+    """Replace each surveyed station on a documented cable with two lamp heads."""
+    if not streets:
+        return
+    tree = STRtree(streets)
+    pairs = {}
+    for i, kind in enumerate(kinds):
+        if kind != 0:
+            continue
+        point = Point(xy[i])
+        nearby = tree.query(point, predicate="dwithin", distance=PAIR_REACH)
+        if not len(nearby):
+            continue
+        street = streets[min(nearby, key=lambda j: point.distance(streets[j]))]
+        along = street.project(point)
+        centre = street.interpolate(along)
+        if not PAIR_JUNCTION_CLEARANCE < along < street.length - PAIR_JUNCTION_CLEARANCE:
+            continue
+        a, b = street.interpolate(max(0, along - 1)), street.interpolate(along + 1)
+        dx, dy = b.x - a.x, b.y - a.y
+        scale = PAIR_OFFSET / math.hypot(dx, dy)
+        xy[i] = (centre.x - dy * scale, centre.y + dx * scale)
+        pairs[i] = (centre.x + dy * scale, centre.y - dx * scale)
+        kinds[i] = PAIRED_CABLE
+    for i, position in reversed(list(pairs.items())):
+        xy.insert(i + 1, position)
+        kinds.insert(i + 1, PAIRED_CABLE)
+
+
+def road_geometry(area):
     """The roadways cars drive on, from the area's tiles, as polygons in local metres:
     the asphalt and setts within each driven street's width of its centre line, or
     along a tram track (Lidická by Anděl is trams and buses only, its lamps hung over
     the tracks; a cobbled square is no roadway beyond the street across it, and a
-    bridge's deck has its lamps on it). Empty before the tiles are built."""
-    out = []
+    bridge's deck has its lamps on it). Also returns the full paved road surfaces,
+    which can extend past the mapped lane widths."""
+    out, surfaces = [], []
     for path in sorted((OUT / f"{area}_now" / "tiles").glob("*_*.json")):
         if path.name.count(".") > 1:
             continue
@@ -174,9 +216,11 @@ def carriageways(area):
                    for shape in [Polygon(rings[0], [h for h in rings[1:] if len(h) >= 3])] if shape.is_valid]
         if not driven or not surface:
             continue
-        both = unary_union(driven).intersection(unary_union(surface))
+        paving = unary_union(surface)
+        surfaces.extend(p for p in getattr(paving, "geoms", [paving]) if p.geom_type == "Polygon")
+        both = unary_union(driven).intersection(paving)
         out += [g for g in getattr(both, "geoms", [both]) if g.geom_type == "Polygon" and g.area > 1]
-    return out
+    return out, surfaces
 
 
 def build(area):
@@ -214,13 +258,24 @@ def build(area):
         added = add(osm[0])
     # No lamp on a post in a roadway (street_lighting.off_the_road): it hangs over the
     # street or stands on the kerb. Before the streets are judged, which go by the lamps.
-    roads = carriageways(area)
+    roads, surfaces = road_geometry(area)
     local = lambda pts: tf.transform([p[0] for p in pts], [p[1] for p in pts])
+    positions = list(zip(xs, ys))
     houses = [b for b in (Polygon(list(zip(*local(pts)))) for pts in (osm[2] if osm else []) if len(pts) >= 4) if b.is_valid]
+    if osm:
+        streets = [(name, hw, LineString(list(zip(*local(pts))))) for name, hw, pts in osm[3]]
+        # The photographed Zborovská block between the two junctions.
+        paired = [line for (name, _, pts), (_, _, line) in zip(osm[3], streets)
+                  if name == "Zborovská" and 50.07541 < sum(p[1] for p in pts) / len(pts) < 50.07612]
+        paired_stations = set(STRtree(paired).query(
+            points(positions), predicate="dwithin", distance=PAIR_REACH)[0]) if paired else set()
+        inferred = street_lighting.infer_suspended_lamps(
+            positions, kinds, surveyed + built, streets, CABLE_ROADS, houses, surfaces, paired_stations)
+        suspend_paired_lamps(positions, kinds, paired)
+        print(f"{area}: {inferred} surveyed lamps suspended from street and façade geometry")
     if roads:
-        placed, kinds, (kerbed, hung, far) = street_lighting.off_the_road(list(zip(xs, ys)), kinds, roads, houses)
-        xs, ys = [p[0] for p in placed], [p[1] for p in placed]
-        left = len(street_lighting.posts_in_road(placed, kinds, roads))
+        positions, kinds, (kerbed, hung, far) = street_lighting.off_the_road(positions, kinds, roads, houses)
+        left = len(street_lighting.posts_in_road(positions, kinds, roads))
         print(f"{area}: of the lamps on posts in a roadway, {hung} hang over the street, {kerbed} are put on the kerb beside them "
               f"and {far} on the nearest kerb from further in; {left} left")
     else:
@@ -234,7 +289,7 @@ def build(area):
         inside = lambda px, py: not (max(px) < x0 - EDGE or min(px) > x1 + EDGE or max(py) < y0 - EDGE or min(py) > y1 + EDGE)
         streets = [(lit, hw, list(zip(px, py))) for lit, hw, (px, py) in ((lit, hw, local(pts)) for lit, hw, pts in osm[1]) if inside(px, py)]
         outlines = [b for b in houses if inside(*b.exterior.xy)]
-        runs, metres = street_lighting.lighting(streets, outlines, list(zip(xs, ys)))
+        runs, metres = street_lighting.lighting(streets, outlines, positions)
         ways = []
         for lit, pts in runs:
             line = [(round(x / STEP), round(y / STEP)) for x, y in LineString(pts).simplify(STRAIGHTEN).coords]
@@ -254,7 +309,7 @@ def build(area):
     else:
         print(f"{area}: no OSM cut ({OSM / f'{area}.osm.pbf'}): the survey's lamps only, and no lit.bin.gz")
     body = struct.pack("<I", len(kinds))
-    body += b"".join(struct.pack("<ff", x, y) for x, y in zip(xs, ys))
+    body += b"".join(struct.pack("<ff", x, y) for x, y in positions)
     body += bytes(kinds)
     dest.write_bytes(gzip.compress(body, 9))
     print(f"{area}: {len(kinds)} lamps ({surveyed} surveyed, {built} more from finished works, {added} only in OSM) → {dest} ({dest.stat().st_size // 1024} kB)")

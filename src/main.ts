@@ -91,7 +91,7 @@ import { Tracers, Health, MAX_HEALTH } from './guns.ts';
 import { trace, strike, assist as aimAssist, PACE, gunOn, setGun } from './pistol.ts';
 import { keyHelp, type HelpMode } from './keyhelp.ts';
 import type { Hit } from './pistol.ts';
-import { Fires } from './fire.ts';
+import { BURNING, Fires } from './fire.ts';
 import { Chopper, loadHelicopters } from './helicopter.ts';
 import { Boats } from './boats.ts';
 import { isMapIndex } from './contracts.ts';
@@ -1747,6 +1747,16 @@ async function main() {
   // and damages them (close by, enough to set them going too), and kills you if you're
   // still inside. Setting it going yourself is a crime.
   const BLAST = 9;
+  const BLAST_IGNITION_GAP = 2; // metres between vehicle bodies
+  const FLAME_GAP = 1.5;
+  // Include the ends of long vehicles, with room for the other car's collision radius.
+  const fireSearch = (c: Car, gap: number) => c.spec.L / 2 + gap + 2;
+  const withinFireReach = (c: Car, source: ReturnType<Car['circles']>, b: Car, gap: number) => {
+    if (b.burnt || b.two === 'bike') return false;
+    const reach = c.r + b.r + gap;
+    return b.circles().some(([bx, by]) =>
+      source.some(([sx, sy]) => (sx - bx) ** 2 + (sy - by) ** 2 <= reach ** 2));
+  };
   const HURTS = 9; // m/s: a car going faster than this leaves the person it hits lying hurt, and one faster than half as much again has them taken away
   const fires: Fires = new Fires({
     scene, height: ground, rng: seeded,
@@ -1763,6 +1773,15 @@ async function main() {
         const lx = -Math.sin(c.h), ly = Math.cos(c.h), off = 1.6;
         const p = crowd.spawnAt(c.x + lx * off, c.y + ly * off, c.rider || undefined);
         Object.assign(p, { state: 'flee', t: 3, vx: lx * 5, vy: ly * 5 });
+      }
+    },
+    onSpread: (c, blamed) => {
+      const source = c.circles();
+      for (const b of carsNear(c.x, c.y, fireSearch(c, FLAME_GAP))) {
+        if (b === c || b.damage >= BURNING || apart(c, b) || !withinFireReach(c, source, b, FLAME_GAP)) continue;
+        b.damage = BURNING;
+        if (blamed) fires.blame(b);
+        fires.check(b);
       }
     },
     awaited: (c) => brigade.awaited(c),
@@ -1791,16 +1810,23 @@ async function main() {
       for (const f of brigade.crew) if (near(f) > 0 && f.down <= 0) brigade.knock(f, ...away(f, 3 + 7 * near(f)));
       brigade.call(c);
       if (inspector.person && near(inspector.person) > 0 && inspector.person.down <= 0) inspector.knock(...away(inspector.person, 3 + 7 * near(inspector.person)));
-      for (const b of [...carsNear(x, y, BLAST)]) {
+      const source = c.circles();
+      const search = Math.max(BLAST, fireSearch(c, BLAST_IGNITION_GAP));
+      for (const b of carsNear(x, y, search)) {
+        if (b === c || apart(c, b)) continue;
         const k = near(b);
-        if (b === c || k <= 0) continue;
-        const ag = traffic.agents.find((a) => a.car === b);
-        if (ag) { traffic.release(ag); b.mode = 'loose'; loose.push(b); }
-        const [vx, vy] = away(b, (8 * k * 1500) / b.mass);
-        b.vx += vx;
-        b.vy += vy;
-        b.w += (seeded() - 0.5) * 3 * k;
-        b.damage += 120 * k;
+        const ignites = withinFireReach(c, source, b, BLAST_IGNITION_GAP);
+        if (k <= 0 && !ignites) continue;
+        if (k > 0) {
+          const ag = traffic.agents.find((a) => a.car === b);
+          if (ag) { traffic.release(ag); b.mode = 'loose'; loose.push(b); }
+          const [vx, vy] = away(b, (8 * k * 1500) / b.mass);
+          b.vx += vx;
+          b.vy += vy;
+          b.w += (seeded() - 0.5) * 3 * k;
+          b.damage += 120 * k;
+        }
+        if (ignites) b.damage = Math.max(b.damage, BURNING);
         if (blamed) fires.blame(b);
         fires.check(b);
       }
@@ -1810,6 +1836,7 @@ async function main() {
   const brigade: Brigade = new Brigade({
     scene, police, grid, fires, kit, height: ground, rng: seeded, edgesNear, offscreen, viewRadius,
     bodyAt: (x, y, r, skip) => police.bodyAt(x, y, r, skip),
+    reserved: (c) => missions.owns(c),
   });
   const ambulances: Ambulances = new Ambulances({
     scene, police, grid, kit, height: ground, rng: seeded, edgesNear, offscreen, viewRadius,
@@ -2731,7 +2758,7 @@ async function main() {
       for (const car of engines) flashing.push({ car, reach: 24, rate: 1.2 });
       for (const car of rescue) flashing.push({ car, reach: 18, rate: 1.6 });
       for (const car of carts) flashing.push({ car, reach: 14, rate: 1, amber: true });
-      beacons.draw([...chasing, ...engines, ...rescue, ...carts], ground, time.value, sky.dark);
+      beacons.draw([...chasing, ...engines, ...rescue, ...carts], ground, time.value);
     }
     brigade.render();
     ambulances.render();
@@ -3193,7 +3220,7 @@ async function main() {
     view: (z) => { zoom = z; height = (inCar ? 120 : 100) * z; },
     look: () => ({ zoom, tier: graphics.tier, reflections: graphics.reflections, gpu: !!(renderer as unknown as { backend?: { isWebGPUBackend?: boolean } }).backend?.isWebGPUBackend }),
     loaded: (x, y) => world.loadNow(x, y, 300, testkit?.cam ? Infinity : viewRadius() + world.drawBeyond),
-    steps: (x, y, r) => world.stepEdgesNear(x, y, r), ground: (x, y) => world.terrainAt(x, y),
+    steps: (x, y, r) => world.stepEdgesNear(x, y, r), ground: (x, y) => world.terrainAt(x, y), levelAt: (x, y, l) => world.levelAt(x, y, l),
     streets: drive, countryside: () => !!world.country?.box, place: () => $('district').textContent || null, taxi,
     builtMap: (x, y) => !pastMap(x, y) && world.available.has(world.keyAt(x, y)),
     grid, boats, ferries, pid, inspector, wallet, police, health, clock, fires, brigade, ambulances, refuse, hurtNearest, traffic, crowd, rng: seeded, bags,

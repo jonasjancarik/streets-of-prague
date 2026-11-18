@@ -191,7 +191,7 @@ function pattern(id: number, c: N, p: N, time: N, seasonal: boolean): N {
     case 7: return pPitch(c, p, seasonal);
     case 8: return pDirt(c, p);
     case 9: return grit(pConcrete(c, p), p);
-    case 10: return pWater(c, p, time);
+    case 10: case 17: return pWater(c, p, time);
     case 11: return pGravel(c, p);
     case 12: return pField(seasonal ? c.mul(uFieldSeason) : c, p);
     case 13: return pGrass(c, p, seasonal, uMeadowSeason);
@@ -203,7 +203,7 @@ function pattern(id: number, c: N, p: N, time: N, seasonal: boolean): N {
 
 // WEATHER_GLSL: the colour, and in .a how much of a mirror the ground is there (shine).
 function weathered(id: number, c0: N, p: N, time: N) {
-  if (id === 10) return vec4(c0, select(uWater.greaterThan(0.5), 0, 0.35));
+  if (id === 10 || id === 17) return vec4(c0, select(uWater.greaterThan(0.5), 0, 0.35));
   const paved = id <= 4 || id === 9 || id === 16, road = id === 1 || id === 2;
   const c = vec3(c0).toVar(), shine = float(0).toVar();
   // (Derivatives outside the branches.)
@@ -329,7 +329,8 @@ function groundGraph(id: number, time: { value: number }, { relief, deck, photo,
   const g = groundColor(id, timeOf(time), !!relief, deck ? !!deck.mask : null, dig, !!photo, sheltered, seasonal).toVar();
   // Open water: its waves' slope, shared by the lighting and by what it mirrors.
   const wp = vec2(positionWorld.x, positionWorld.z.negate());
-  const slope = id === 10 && !photo && !sheltered ? waves(wp, timeOf(time)).toVar() : null;
+  const isWater = id === 10 || id === 17, quietWater = id === 17;
+  const slope = isWater && !photo && !sheltered ? waves(wp, timeOf(time), quietWater).toVar() : null;
   graph = {
     color: vec4(g.rgb, 1),
     mask: raster ? tileTexture('raster', wp).r.greaterThan(0.5) : null,
@@ -338,16 +339,16 @@ function groundGraph(id: number, time: { value: number }, { relief, deck, photo,
     // Lamp light on the ground, and the wet ground's mirror of the sky and the lamps.
     emissive: Fn(() => {
       const l = lampLight(slope ? positionWorld.add(vec3(slope.x, 0, slope.y).mul(6)) : positionWorld, normalView).toVar();
-      const sky = id !== 10 && !sheltered ? mirrorOf(g.a, timeOf(time)) : uSkyRef;
+      const sky = !isWater && !sheltered ? mirrorOf(g.a, timeOf(time)) : uSkyRef;
       const e: N = g.rgb.mul(l).add(sky.add(l.mul(smoothstep(LAMP_MIRROR[0], LAMP_MIRROR[1], dot(l, vec3(0.3, 0.59, 0.11))).mul(0.85))).mul(g.a)).toVar();
       // Seen at a slant (from the street), wet ground mirrors far more than from above: the
       // sky low over the far end of the street, on what is wet enough to shine.
-      if (id !== 10 && !sheltered) {
+      if (!isWater && !sheltered) {
         const slant: N = float(1).sub(max(normalize(cameraPosition.sub(positionWorld)).y, 0));
         const s2: N = slant.mul(slant);
         e.addAssign(uHorizon.mul(s2.mul(s2).mul(s2)).mul(min(g.a.mul(WET_SHEEN), 0.6)));
       }
-      return slope ? e.add(waterShine(positionWorld, wp, slope, timeOf(time), uSkyRef, l)) : e;
+      return slope ? e.add(waterShine(positionWorld, wp, slope, timeOf(time), uSkyRef, l, quietWater)) : e;
     })(),
     normal: slope ? transformNormalToView(waveNormal(slope)) : null,
   };

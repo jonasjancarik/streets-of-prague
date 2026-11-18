@@ -176,6 +176,16 @@ steeper than VALLEY anywhere, which took steps over 1 m from 71 to 38.
   Barrandovský most's outline (19,000 m²) took a cycleway that runs its whole length
   and down a ramp off it, and was drawn at the cycleway's height as a second slab 1–4 m
   under the main deck and wider than it (`pieces`, `test_bridge_outline.py`).
+  "Within 3 m" is taken at the middle of each way's stretch on the outline, so on a
+  long outline that climbs, the far end's carriageways were left out: Wilsonova's
+  viaduct falls 10 m over its 710 m from Hlavní nádraží to Bulhar, its height came from
+  the station end, both carriageways at Bulhar were 5–6 m off it and got their own
+  level, and the outline became a slab 6 m over them with the trams laid on its top
+  (players' reports, November 2026). A way off by more than 3 m now joins when every
+  point of it within 15 m of a deck way already on the outline is within 3 m of that
+  way's height there (`OUTLINE_ALONG`, `DECK_BESIDE`); the build prints each one as
+  `outline along:`. A flyover crossing the outline is far off the deck where it passes
+  over it and stays out.
 - Where pieces of one level lie over each other, the higher one counts (`rasterise`).
 - Two structures side by side, anywhere more than 3 m apart in height, can't share a
   level: a level's heights are on the lattice and reach 6 m past each piece, so the
@@ -325,6 +335,21 @@ steeper than VALLEY anywhere, which took steps over 1 m from 71 to 38.
   tunnel at Zlíchov took the footway's floor (`_crossing` in `dtm_heights.py`). Rašínovo nábřeží by Palackého
   most and Komořanská by most Závodu míru were the two-level survey under a bridge (see
   above): fixed since, most Závodu míru's join down from 3.7 m to 0.9 m.
+
+- A tunnel runs from portal to portal: its heights come from the bridges' solve
+  whenever every end is known (`TUNNELS_HARMONIC`). With the old spreading each point
+  took its two nearest pins, which past the cover rule's pins lay by one portal, so
+  each half of the Strahov tunnel ran level from its own portal and the halves met in
+  a ramp of 103 % under Strahov; players got stuck there (November 2026). A portal
+  outside the map still selects the old spreading (Mrázovka in centrum). The deck
+  check lists every car tunnel's steepest climb over 10 m: more than a street's
+  15 % is two rules meeting, not the tunnel. A window round one end of a long tunnel
+  has the other portal outside it and so shows no change: build the window round the
+  tunnel's middle, or check the city.
+- What stops a car on a street needn't be a step: a building under a street mapped a
+  layer up (not a bridge) was solid across the lanes, the main station's hall under
+  Wilsonova (`on_roof` in `osm_area.py`). `cellAt` in the game shows it as 255 under
+  the carriageway on level 0.
 
 Tried and dropped: a terrace for every surveyed street well above or below the ground
 beside it (cliffs 12 m high under Letná); leaving the terrain model wherever the

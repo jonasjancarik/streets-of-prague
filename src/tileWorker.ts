@@ -95,6 +95,7 @@ function roofs({ buildings, size, origin, ground, bbox, water, stops }: WorkerJo
   const keys = ['position', 'normal', 'color', 'drapeUv'] as const;
   const parts: Record<(typeof keys)[number], Float32Array[]> = { position: [], normal: [], color: [], drapeUv: [] };
   const sites: RoofSite[] = [];
+  const flatSurfaces: ReturnType<typeof buildBuildings>['flatSurfaces'] = [];
   const modeledFacades: [number, number][] = [];
   let vertices = 0;
   // Stop shelters OSM has as buildings (map/stopShelters.ts) are drawn as shelters.
@@ -105,6 +106,9 @@ function roofs({ buildings, size, origin, ground, bbox, water, stops }: WorkerJo
     if (sh) { shelters = joinDetails(shelters, partArrays(shelterParts(sh), b.base || 0, hAt)); continue; }
     const built = buildBuildings({ size, origin, buildings: [b] , areas: { water } });
     for (const s of built.sites) sites.push({ ...s, z: s.z + (b.base || 0) });
+    for (const { start, end, finish } of built.flatSurfaces) {
+      flatSurfaces.push({ start: vertices + start, end: vertices + end, finish });
+    }
     const g = built.mesh.geometry;
     const pos = g.attributes.position.array as Float32Array;
     for (let i = 1; i < pos.length; i += 3) pos[i] += b.base || 0;
@@ -124,6 +128,9 @@ function roofs({ buildings, size, origin, ground, bbox, water, stops }: WorkerJo
   const lines: WallLine[] = [], facade = facadeCoords(arrays.position, hAt, styleAt(bbox), lines);
   const c = arrays.color;
   finishWalls(arrays.position, facade, lines, (t) => [Math.round(c[t * 9] * 255), Math.round(c[t * 9 + 1] * 255), Math.round(c[t * 9 + 2] * 255)]);
+  for (const { start, end, finish } of flatSurfaces) {
+    for (let v = start; v < end; v++) facade[v * 4 + 3] = finish;
+  }
   // The authored openings already have geometry and colour.
   for (const [start, end] of modeledFacades) facade.fill(0, start * 4, end * 4);
   return appendTo({ ...arrays, facade }, joinDetails(detailArrays(sites, hAt), shelters), (x, y) => [(x + ox) / W, (y + oy) / H]);

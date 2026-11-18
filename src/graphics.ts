@@ -18,9 +18,8 @@ import { startRetry } from './renderer.ts';
 // Graphics tiers keep the street surfaces and facade pictures at every level. High,
 // Medium and Low keep the dirt, grime, leaves, tone curve and detailed roofs too.
 // The pixel ratio does most of the GPU scaling; Low also halves the sun shadow map.
-// Ultra is High with a sun shadow map twice as sharp and softer shadow edges, and more
-// from the lights at night: a light map twice as sharp, shadows from people, trams and
-// posts as well as cars, cones of light in the air and glints on cars and wet ground.
+// Ultra is High with a sun shadow map twice as sharp and softer shadow edges, and
+// shadows in lamplight from people, trams and posts as well as cars.
 // Only choosing it turns it on, Auto goes no higher than High.
 // Lowest drops MSAA on WebGPU, roof detail and those looks, and halves the crowd cap;
 // it also leaves out the drifting mist, the mist over the river and the raindrops' rings
@@ -71,11 +70,11 @@ const ORDER: Tier[] = ['lowest', 'low', 'medium', 'high']; // (Auto's)
 export const CHOICES: Choice[] = ['auto', 'ultra', 'high', 'medium', 'low', 'lowest'];
 // `cars`: what gets in the way of the lamps' light at night: 3 cars, people, trams and
 // posts cast shadows from every lamp and headlight, 2 only the cars do, 1 a soft darkening
-// round each car, 0 nothing. `lights`: the cones and glints, and the sharper light map.
+// round each car, 0 nothing. `lights`: the cones and glints.
 // `shadowBlur`: how far the sun shadow's edge is softened, in shadow-map texels.
 const TIERS: Record<Tier, { look: boolean; maxRatio: number; samples: 0 | 4; shadowSize: number; shadowBlur: number; roofs: boolean; clutter: boolean; crowd: number; cars: 0 | 1 | 2 | 3; lights: boolean; lampMap: 1024 | 2048 }> = {
   ultra: { look: true, maxRatio: 2, samples: 4, shadowSize: 4096, shadowBlur: 2, roofs: true, clutter: true, crowd: 1, cars: 3, lights: true, lampMap: 2048 },
-  high: { look: true, maxRatio: 2, samples: 4, shadowSize: 2048, shadowBlur: 1, roofs: true, clutter: true, crowd: 1, cars: 2, lights: false, lampMap: 2048 },
+  high: { look: true, maxRatio: 2, samples: 4, shadowSize: 2048, shadowBlur: 1, roofs: true, clutter: true, crowd: 1, cars: 2, lights: true, lampMap: 2048 },
   medium: { look: true, maxRatio: 1.5, samples: 4, shadowSize: 2048, shadowBlur: 1, roofs: true, clutter: false, crowd: 1, cars: 1, lights: false, lampMap: 1024 },
   low: { look: true, maxRatio: 1, samples: 4, shadowSize: 1024, shadowBlur: 1, roofs: true, clutter: false, crowd: 1, cars: 1, lights: false, lampMap: 1024 },
   lowest: { look: false, maxRatio: 1, samples: 0, shadowSize: 1024, shadowBlur: 1, roofs: false, clutter: false, crowd: 0.5, cars: 0, lights: false, lampMap: 1024 },
@@ -187,9 +186,9 @@ export class AutoTier {
 export class Graphics {
   choice: Choice;
   tier: Tier;
-  // The player's choice of water, or null while they haven't made one (then Ultra has the waves).
+  // The player's choice of water, or null to follow the graphics tier.
   private waterChoice: boolean | null = null;
-  get water() { return this.waterChoice ?? this.tier === 'ultra'; }
+  get water() { return this.waterChoice ?? this.tier !== 'lowest'; }
   reflections: Reflections = 'lights';
   private clutter: boolean | null = null; // ?clutter=on|off
   private auto: AutoTier;
@@ -251,9 +250,9 @@ export class Graphics {
     MIRROR_ON.value = look && this.reflections === 'mirror' ? 1 : 0;
     wantStrips(look); // (the cars' mirrored streets)
     PROBE_ON.value = this.tier === 'ultra' ? 1 : 0;
-    POST.value = this.tier === 'ultra' ? 1 : 0; // (and the bloom: post.ts)
+    POST.value = this.tier === 'ultra' || this.tier === 'high' ? 1 : 0;
     CAR_SHADE.value = look ? 1 : 0; // (the soft shade under the cars: car.ts)
-    CANOPY_LEAVES.value = this.tier === 'ultra'; // (and the sprays of leaves on the crowns seen from above: trees.ts) // (and on Ultra the real one round the middle of the view)
+    CANOPY_LEAVES.value = this.tier === 'ultra' || this.tier === 'high';
     // (The lamps resize their maps at the next frame; the materials are bound afresh below,
     // which freezes the game for half a second even on an M5, so Auto keeps the size the
     // lamps were given when it began.)

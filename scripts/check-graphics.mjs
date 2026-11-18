@@ -7,8 +7,10 @@ const arg = process.argv.indexOf('--url');
 const url = (arg >= 0 ? process.argv[arg + 1] : null) || 'http://localhost:5201/';
 const check = `(async () => {
   const d = window.__drive, r = d.renderer, g = d.graphics;
-  const { DIRT, LEAVES, ROOF_DETAIL } = await import('/src/shading.ts');
-  const { LAMP_SHADOWS } = await import('/src/lamps.ts');
+  const { DIRT, LEAVES, ROOF_DETAIL, WATER } = await import('/src/shading.ts');
+  const { LAMP_SHADOWS, LIGHT_FX } = await import(performance.getEntriesByType('resource').find(e => new URL(e.name).pathname === '/src/lamps.ts').name);
+  const { POST } = await import(performance.getEntriesByType('resource').find(e => new URL(e.name).pathname === '/src/post.ts').name);
+  const { CANOPY_LEAVES } = await import(performance.getEntriesByType('resource').find(e => new URL(e.name).pathname === '/src/trees.ts').name);
   const { AutoTier } = await import('/src/graphics.ts');
   const assert = (ok, message) => { if (!ok) throw new Error(message); };
   for (const [tier, size, samples, look, cars, crowd, blur] of [
@@ -21,7 +23,12 @@ const check = `(async () => {
     assert(d.sky.sun.shadow.map.width === size, tier + ': actual shadow size');
     assert(d.sky.sun.shadow.radius === blur, tier + ': shadow edge softening');
     assert(DIRT.value === look && LEAVES.value === look && ROOF_DETAIL.value === look, tier + ': detail');
+    const waves = tier !== 'lowest';
+    assert(g.water === waves && WATER.value === Number(waves), tier + ': default water');
+    assert(POST.on === (tier === 'high' || tier === 'ultra'), tier + ': default bloom');
+    assert(CANOPY_LEAVES.value === (tier === 'high' || tier === 'ultra'), tier + ': default canopy sprays');
     assert(LAMP_SHADOWS.value === cars && g.crowd === crowd, tier + ': lamps/crowd');
+    assert(LIGHT_FX.value === Number(tier === 'high' || tier === 'ultra'), tier + ': beams and glints');
     assert(r.getPixelRatio() === 1, tier + ': fixed DPR');
     if (r.backend?.isWebGPUBackend) {
       const target = r._frameBufferTargets.get(r._canvasTarget);
@@ -71,6 +78,13 @@ const check = `(async () => {
   g.set('auto');
   assert(g.tier === 'high', 'Auto goes no higher than High');
   g.set('high');
+  g.setWater(false);
+  g.set('low');
+  assert(!g.water && WATER.value === 0, 'Water Off overrides Low');
+  g.setWater(true);
+  assert(g.water && WATER.value === 1, 'Water On restores waves on Low');
+  g.set('lowest');
+  assert(WATER.value === 0, 'Lowest skips water effects');
   return 'Graphics checks passed: ' + (r.backend ? 'WebGPU' : 'WebGL');
 })()`;
 for (const extra of ['', '&renderer=webgl&dev']) {

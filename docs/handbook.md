@@ -33,6 +33,11 @@ Screenshots go to `$TMPDIR/scene`. The same scenarios run in the developer panel
 ("Run and watch" plays one in real time), and "Copy this situation" there copies where
 you are, the time, weather, money, stars, car and camera as the start of a new scenario.
 
+For a varied street survey, run `node scripts/sample-streets.mjs praha 17`.
+It picks separated examples from six street types on the built map and returns
+Street View links with coordinates and headings for `t.go`. Use the same seed
+to repeat a survey on the same map, or change the seed for another set.
+
 Development pages pause while another session benchmarks. Status requests time out
 after four seconds; older replies cannot restore a pause after a newer reply cleared
 it. If the local status endpoint is unavailable, the page carries on.
@@ -162,10 +167,10 @@ Graphics (<kbd>G</kbd> cycles it, remembered in the browser):
 | Drifting mist, mist over the river, raindrops' rings in puddles | On | On | On | On | Off |
 | Shadows in lamplight | Cars, people, trams, posts | Cars | Soft, cars | Soft, cars | Off |
 | Lamps' light map | 2048² | 1024² | 1024² | 1024² | 1024² |
-| Cones of light in the air, glints on cars and wet ground | On | Off | Off | Off | Off |
-| Bloom round lights and glints, darker corners (WebGPU) | On | Off | Off | Off | Off |
-| Waves and glitter on the river, until you choose | On | Off | Off | Off | Off |
-| Sprays of leaves and needles on trees and shrubs seen from above | On | Off | Off | Off | Off |
+| Cones of light in the air, glints on cars and wet ground (WebGPU) | On | On | Off | Off | Off |
+| Bloom round lights and glints, darker corners (WebGPU) | On | On | Off | Off | Off |
+| Waves and glitter on the river, until you choose | On | On | On | On | Off |
+| Sprays of leaves and needles on trees and shrubs seen from above | On | On | Off | Off | Off |
 | Shadows that soften with distance from what casts them | On | Off | Off | Off | Off |
 | A soft shade under every car | On | On | On | On | Off |
 | Maximum crowd | 1200 | 1200 | 1200 | 1200 | 600 |
@@ -182,8 +187,9 @@ game at 30 frames a second (Chrome's Energy Saver does), a frame whose work fits
 half the time stays at its tier.
 `?graphics=auto|ultra|high|medium|low|lowest` overrides it for one visit; `?dpr=1` fixes
 only the pixel ratio. The Water setting turns on waves, sun glitter and lamp reflections on
-the river (`src/webgpu/water.ts`; WebGPU only, not on Lowest; on with Ultra and off below it
-until you choose; `?water=on|off` for one visit).
+the river (`src/webgpu/water.ts`; WebGPU only, not on Lowest; on by default from Low
+through Ultra; `?water=on|off` for one visit). Small ponds and park basins with a
+complete outline inside a tile get gentler ripples and keep their rain rings.
 
 Every pixel ends with the same tone curve at every tier but Lowest (`src/grade.ts`): a
 filmic curve per channel (Krzysztof Narkowicz's fit to the ACES curve, with a softer toe)
@@ -194,7 +200,7 @@ is properly dark. The numbers are in one place for the WebGPU tone-mapping node
 the screen (fog, rain, smoke). `?grade=old` brings back the curve before it (an extended
 Reinhard, under which everything sunlit sat on the shoulder and read as flat).
 
-On Ultra the frame goes through one more pass (`src/webgpu/post.ts`, three.js's
+On High and Ultra the frame goes through one more pass (`src/webgpu/post.ts`, three.js's
 `RenderPipeline`): the scene is drawn to a target of its own, what is brighter than a
 threshold spills light round itself (bloom: by day only glints and the brightest plaster,
 at night the lamps' pools, lit windows and headlights), then the tone curve runs and the
@@ -475,9 +481,11 @@ that without a new renderer.
   Cars take less damage from collisions, with extra protection for the car you drive
   when touch controls are active. An explosion leaves
   a charred wreck that smoulders for a while and can't be driven. If your own car
-  catches fire, get out: still inside when it goes, you're wasted. The blast knocks
-  people over, hurts you if you're near, shoves the cars around and can set them going
-  too; blowing up a car you've crashed into is a crime, a police car more so
+  catches fire, get out: still inside when it goes, you're wasted. Every two seconds,
+  flames can set another vehicle within about 1.5 metres on fire. The blast knocks
+  people over, hurts you if you're near and shoves cars around. Vehicles within about
+  two metres of the exploding vehicle's body catch fire and can spread the fire further.
+  Blowing up a car you've crashed into is a crime, a police car more so
   (`src/fire.ts`).
 - **Fire brigade.** When a car catches fire, a fire engine is called from a few hundred
   metres away, drives to it by the streets, and its crew of three gets out and sprays
@@ -516,7 +524,8 @@ that without a new renderer.
   (old-town bins are kept in the passage or the courtyard) and wheel a bin out to the
   lift at the back, which tips it. They take the bin back in, sometimes come out with a
   second one, then climb back on. Cars behind wait, or get past where the street is
-  wide enough. If the cart is crashed into or set on fire, the crew walk off and
+  wide enough. That wait also applies to traffic joining the cart's lane at a
+  junction. If the cart is crashed into or set on fire, the crew walk off and
   leave any bin where it stands; so do the ones on foot when you take it. Take it while
   they ride on the steps and they stay on, holding tight, with the amber lamps still
   going. Past about 40 km/h, or with a hard stop, a sharp swerve or a crash, they fall
@@ -564,7 +573,7 @@ that without a new renderer.
   leave bare twigs. The tree pool makes each page's second mesh over the same instances
   when first wanted (`TreePool.street`). Shrubs there are a body of the same sprays, and
   conifers get whorls of spruce boughs laid over their plain tiers (`canopyGeometry`,
-  `coniferGeometry`; `TreePool.canopy`). On Ultra the view from above has them too: sprays
+  `coniferGeometry`; `TreePool.canopy`). On High and Ultra the view from above has them too: sprays
   laid like shingles over every broadleaf crown's tufts, which keep its shape, shade and
   shadow underneath, and over shrubs and conifers; a spray whose leaves have fallen is not
   drawn. The free camera uses the street models once tilted more than 35°. The hole that opens the floors above you in a
@@ -608,9 +617,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   walking street; one that says nothing is paved like its nearest neighbour). The
   footways' own 3 m ribbons are left out where they run on a surveyed pavement, so
   only paths the survey doesn't have keep one, with square ends: through parks,
-  across estates and past the city limits. Mapped squares and car parks keep their
-  own paving, and a block's gardens start behind the pavement. Where the trams have a
-  bed of their own beside the street it is ballast. `DERIVED_PAVEMENTS=1` builds the
+  across estates and past the city limits. A named square's paving gives way to
+  surveyed sidewalks that follow the kerb. The open plaza, mapped pedestrian areas
+  and car parks keep their paving, and a block's gardens start behind the pavement.
+  Where the trams have a bed of their own beside the street it is ballast. `DERIVED_PAVEMENTS=1` builds the
   ground without any of this, to compare. Rebuild the `ground` layer for these changes; use
   `pipeline/beige_report.py` to measure the remaining unmapped ground in an area's tiles.
   Land that OSM gives a use but no surface still gets one: fields with crop rows
@@ -767,6 +777,12 @@ record the measurements, merge decisions and pending landmark asset activation.
   street's asphalt or setts counts as roadway 3.5 m wide, so the lamps over the tracks
   where only trams and buses run (Lidická by Anděl) hang too; the game strings their
   cables across the track to the first wall each way, as it does across a street.
+  On narrow streets such as Plaská and Mělnická, a regularly spaced row of surveyed
+  lamps near the centre can also hang from cables when façades face each other
+  across the street. This check uses the full paved road surface and requires
+  clearance from the kerb, including where the mapped driving lanes are narrower.
+  On the Zborovská block by the police station, each cable carries two lamps across
+  the width of the street.
   Where there are still none, the game adds its own on lit
   streets and paths: hung on cables between houses that stand close, on poles
   elsewhere, small globes along footpaths. Lit means tagged lit in OSM, or untagged
@@ -782,10 +798,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   with only the shadows that climb (those of lights lower than the car's roof, the
   headlights), and what stands more than about 3 m above the lit ground (a tree's crown
   over a parked car, the wall behind a van in someone's headlights) takes its light
-  from that copy instead. On Ultra the headlights' cones in the air stop at the first
-  car in their way. The
-  lamps come on at dusk (earlier under heavy cloud), and a share of the windows is lit
-  by the hour, most in the evening.
+  from that copy instead. On High and Ultra the headlights' cones in the air stop at
+  the first car in their way. The lamps come on at dusk (earlier under heavy cloud),
+  and a share of the windows is lit by the hour, most in the evening.
 - **Tiles.** The map streams in 250 m tiles (`src/tiles.ts`) around the camera. Each
   tile has its own ground, buildings, tree-page leases, collision grid, parked cars and piece of
   the street graphs (joined across tiles by OSM node ids), so start-up doesn't depend
@@ -815,8 +830,11 @@ record the measurements, merge decisions and pending landmark asset activation.
 - **Buildings** come from IPR Praha's open 3D model (CityGML LOD3: real roofs, towers
   and domes), which covers the whole city. OSM buildings that the model doesn't have
   (newer ones, sheds, anything past the city limits) are extruded from their footprints.
-- **Trees** are IPR's surveyed ones (about 171,000 on city land, `pipeline/ipr_trees.py`)
-  plus OSM's; where both have a tree within 2.5 m, IPR's stands. IPR says which are
+- **Trees** are IPR's surveyed ones (`pipeline/ipr_trees.py`)
+  plus OSM's; where both have a tree within 2.5 m, IPR's stands. The build also drops
+  rows of OSM points in a surveyed travel lane when at least three distinct IPR
+  trunks beside it show the same sideways shift. On Národní it skips five known
+  misplaced OSM nodes and uses IPR's surveyed trunks between the parking bays. IPR says which are
   conifers and which fruit trees, and so does OSM sometimes (`leaf_type`, `genus`).
   Conifers are their own shape (`pineGeometry` in `src/map/vegetation.ts`, evergreen in
   winter), fruit trees are small. The woods, parks and gardens are filled up with made-up
@@ -824,6 +842,7 @@ record the measurements, merge decisions and pending landmark asset activation.
   "Young woods" under Unmapped ground) get small, dense ones. The dark woodland floor fades out
   over the grass beside it (`woodEdges` in `src/ground.ts`). Rebuild them with
   `uv run build_tiles.py <area> --layers ground`, then `ipr_terrain.py <area>`.
+  Run `uv run ipr_trees.py --refresh` first to fetch the latest IPR inventory.
   A crown's top is where the surface models have it; its lower part is drawn out downwards
   in the shaders to where a city tree's crown begins, a sixth of the tree's height above the
   ground and never under 2.2 m (`CROWN_BASE` in `src/map/vegetation.ts`). Left as made for
@@ -886,8 +905,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   `landmarks.json`, so the game stamps its footprint into the collision grid as it does
   a building's.
 - **Roof colours.** Pitched roofs are terracotta tiles (a palette matched to reference photos of Prague's roofs, brick-red rather than orange, with each tile a little redder or duller than the next; the landmarks' photographs get the same warming in the final GLB, or on load for older models, and where a landmark's photograph shows a red roof, the roof shader draws the same tiles at the photograph's brightness: `shadeLandmark` in `src/shading.ts` and its port in `src/webgpu/buildings.ts`), as nearly all of them are in Prague;
-  flat ones are grey. OSM's `roof:material` and `roof:colour` can make a roof grey slate
-  or green copper instead, down to single building parts (the cathedral's grey roofs
+  flat roofs generated from footprints use bitumen, gravel or membrane, with the sheet
+  seams aligned to the building walls. OSM's `roof:material` and `roof:colour` can make
+  a roof grey slate or green copper instead, down to single building parts (the cathedral's grey roofs
   and copper domes), and `pipeline/roofs.py` corrects landmarks OSM gets wrong or leaves
   out, including wings of the Castle that both OSM and IPR draw as one building.
   Churches OSM says nothing about get slate. IPR's roofs take their colour triangle by
@@ -951,6 +971,15 @@ record the measurements, merge decisions and pending landmark asset activation.
   under the main station's forecourt, civil-defence shelters, underground garages) are
   left out (`extract` in `pipeline/osm_area.py`). Where IPR had nothing over them, the
   game used to extrude them as boxes, and they were solid to cars.
+- **Streets on a building's roof.** A street mapped a layer up but not as a bridge or
+  a tunnel runs on the roof of what's under it: Wilsonova (layer 1) over the main
+  station's hall, which stood solid across the six lanes. A building on the ground
+  there loses what the street's carriageway covers (`on_roof` in
+  `pipeline/osm_area.py`, by the tags' width), with the median between its
+  carriageways (gaps under 8 m, `ROOF_GAP`) and without the scraps left over (under
+  25 m², `ROOF_SCRAP`). Not service roads: those mapped a layer
+  up are rooftop car parks, on the roof itself. In Prague the hall is the only
+  building it cuts (November 2026).
 - **Crossing widths.** At junctions where road surfaces merge, zebra bars are limited
   to the crossed street's width plus 2 m on each side, adjusted for the crossing angle.
 - **Terrain.** IPR's bare-earth model on a 4 m grid per tile: the ground, buildings,
@@ -963,10 +992,14 @@ record the measurements, merge decisions and pending landmark asset activation.
   (`pipeline/structures.py`). Where one meets a street on the ground it's at the
   ground's height, and in between its height runs evenly from end to end, along the
   ways and through junctions (Blanka's underground ramps).
-  Components containing only bridges and finite anchors use a distance-weighted
+  Components whose anchors are all known, tunnels included, use a distance-weighted
   harmonic graph solve, linear on chains and continuous at junctions. Components
-  containing a tunnel or an unknown anchor retain the previous two-nearest model,
-  so an out-of-map portal cannot erase a supported tunnel interior. Selection uses
+  with an unknown anchor retain the previous two-nearest model, so an out-of-map
+  portal cannot erase a supported tunnel interior. (Tunnels kept the two-nearest
+  model until 18 November 2026: past the cover rule's pins both nearest pins lay by
+  one portal, so each half of the Strahov tunnel ran level from its own portal and
+  the halves met under Strahov in a ramp of 103 %, where players got stuck;
+  `TUNNELS_HARMONIC = 0` brings it back to compare.) Selection uses
   every way in a component, preserving bridge/tunnel joins. See
   `docs/bridge-height-continuity.md` and `docs/tunnel-propagation-compatibility.md`.
   Bridge continuations are resolved across chunks before a loose end is tied to
@@ -981,7 +1014,13 @@ record the measurements, merge decisions and pending landmark asset activation.
   real one does. Tunnels keep a few metres of ground over them, more away from their
   portals, and wherever two cross on different OSM layers, the upper one clears the
   lower. They're put on levels (bridges 1, 2, …, tunnels -1, -2, …) so that ones
-  crossing at different heights never share one. The metro stations' corridors and
+  crossing at different heights never share one. A bridge's outline as OSM draws it
+  (man_made=bridge) shares a level with the streets on it, all the way along a deck
+  that climbs. (Until 18 November 2026 only the ones near the height of the street
+  that covers most of it did: Wilsonova's viaduct falls 10 m to Bulhar, where its two
+  carriageways got a level of their own and the outline stood as a slab 6 m over
+  them, the trams laid on its top; `OUTLINE_ALONG = 0` brings it back to compare.)
+  The metro stations' corridors and
   stairs (OSM tags them as tunnels too) are left out, both as tunnels and from the
   walking network: footways and stairs underground that are indoors, reach a metro
   entrance or come within 30 m of a station or platform. Underpasses away from the
@@ -1127,6 +1166,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   passers-by nearest you (within 30 m, less in a crowd) are drawn as avatars from the
   Microsoft Rocketbox library instead, walking, jogging, running and standing with that
   library's motion-captured clips; their feet keep pace with how fast they actually move.
+  Standing, each takes turns with a few ways of waiting (`STANDING`: shifting their weight,
+  looking round, texting or calling on a phone, with a phone in the hand). In the rain
+  anyone with their umbrella up holds it in the left hand, with Rocketbox's umbrella clip
+  standing and that clip's left arm over the walk when moving.
   Only the crowd's people, and only while they walk, jog, run or stand: falling, fleeing,
   getting up, police, couriers and riders stay the usual figures. The files (about 18 MB,
   in `public/rocketbox/`) load the first time first person is on. `?rocketbox=0` keeps the
@@ -1134,7 +1177,8 @@ record the measurements, merge decisions and pending landmark asset activation.
   Rebuild with `assets/rocketbox/build.sh`; the avatars' list is in both it and `AVATARS`.
   The clips are read from Rocketbox's original FBX files and moved onto the avatars' own
   bone axes (`assets/rocketbox/clips.mjs`): converting them in Blender gives each file
-  different axes, and the knees bent backwards.
+  different axes, and the knees bent backwards. They're stored as 16-bit numbers, the
+  standing ones at 15 frames a second, and joints that hardly move (most fingers) as one pose.
 - **Birds** (`src/birds.ts`): by day in dry weather, flocks of pigeons arrive from beyond
   the view, wheel round a spot above the roofs for a minute or so and leave; over the
   river they're a few gulls gliding. Every bird is a flat shape in one instanced mesh
@@ -1229,6 +1273,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   contact wire 5.6 m above every track, where the pantographs reach, and every 30 m or so
   a span wire across the tracks, anchored to a building front when one is within 11 m
   (as in the old town's narrow streets) or else hung from a pole beside the track.
+- **Transmission lines** (`pipeline/build_power.py`, `src/map/powerGrid.ts`) use
+  OSM's mapped towers and their connecting spans, with approximate lattice
+  shapes and wire sag. Heights come from OSM where tagged, or from the line
+  voltage otherwise. They are scenery. Older maps have no transmission layer;
+  `?nopower` hides it on maps that do.
 - **Posts** (`src/posts.ts`): the wires' poles and the lamp posts are solid, and nobody
   parks round one. Drive into one slowly and you bounce off; hit a lamp post at more
   than 18 km/h or a wire pole at more than 32 km/h and it goes over the way you were
@@ -1347,6 +1396,12 @@ record the measurements, merge decisions and pending landmark asset activation.
   perpendicular. Angled bays slant forwards along the lane beside them, so cars nose
   in. Sides tagged as having no parking (or parking mapped separately) get
   no kerbside cars, and no car is left sticking out into a traffic lane. Underground, multi-storey and rooftop car parks stay empty.
+  A parked car's whole footprint must clear any tree trunks within its bay.
+  Parking also stays clear of the approaches to mapped outdoor stairways.
+  Mapped service aisles inside a lot stay clear even when the traffic graph
+  does not route through the lot.
+  The ground must also support the corners of the car. A normal kerb is fine,
+  but a corner hanging over a retaining step rules out the spot.
   As in Prague, some cars stand half or fully on the pavement, often vans and often
   at corners or where the kerb is otherwise empty. Every half minute or so, one in
   view sets off along the pavement at walking pace before it bumps down into the
@@ -1733,6 +1788,9 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   `--sides plane` reads the ground by a step from its own side's slope (`sampling` in
   `src/terrain.ts`, a trial, off in the game), and `--lines off` leaves a map's step
   lines out. `?nostepedges` turns the edges off.
+  Straight outdoor stairways with a usable ground profile get concrete treads
+  and visible nosings from their mapped walk edges (`src/map/stairs.ts`).
+  Walking still follows the smooth ground profile beneath the treads.
   Where the rules make a place worse than the
   terrain model alone (seen in the game), list it in `pipeline/terrain_keep.json` (a box
   in degrees and why) and it stays as the terrain model has it. A wall the survey doesn't

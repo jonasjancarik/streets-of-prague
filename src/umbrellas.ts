@@ -19,7 +19,7 @@ const COLOURS = ['#1b1c20', '#1b1c20', '#1b1c20', '#222b40', '#222b40', '#34363b
 const fract = (v: number) => v - Math.floor(v);
 export const chance = (serial: number, salt: number) => fract(Math.sin(serial * 12.9898 + salt * 78.233) * 43758.5453);
 
-function shape() {
+export function shape() {
   const pos: number[] = [], col: number[] = [];
   const tri = (a: number[], b: number[], c: number[], shade: number) => {
     pos.push(...a, ...b, ...c);
@@ -46,10 +46,20 @@ function shape() {
   return g;
 }
 
+// (Lit by the street lamps like the lamp posts, with the same shader as theirs.)
+export function material() {
+  const m = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  m.onBeforeCompile = (sh) => lampLit(sh);
+  m.customProgramCacheKey = () => 'lamp-pole';
+  return m;
+}
+
 const _q = new THREE.Quaternion(), _tilt = new THREE.Quaternion(), _s = new THREE.Vector3(), _m = new THREE.Matrix4(), _c = new THREE.Color();
 const UP = new THREE.Vector3(0, 1, 0), ACROSS = new THREE.Vector3(0, 0, 1), AHEAD = new THREE.Vector3(1, 0, 0);
 const _roll = new THREE.Quaternion(), _at = new THREE.Vector3();
 const PALETTE = COLOURS.map((c) => new THREE.Color(c));
+// The colour of the umbrella the person with this serial number has.
+export const colour = (serial: number) => PALETTE[Math.floor(chance(serial, 6) * PALETTE.length)];
 
 export class Umbrellas {
   mesh: THREE.InstancedMesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>;
@@ -58,11 +68,7 @@ export class Umbrellas {
   private n = 0;
 
   constructor(scene: THREE.Scene, capacity: number) {
-    // (Lit by the street lamps like the lamp posts, with the same shader as theirs.)
-    const material = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
-    material.onBeforeCompile = (sh) => lampLit(sh);
-    material.customProgramCacheKey = () => 'lamp-pole';
-    this.mesh = new THREE.InstancedMesh(shape(), material, capacity);
+    this.mesh = new THREE.InstancedMesh(shape(), material(), capacity);
     this.mesh.setColorAt(0, _c.set('#ffffff'));
     this.mesh.frustumCulled = false;
     this.mesh.count = 0;
@@ -89,7 +95,7 @@ export class Umbrellas {
     _q.multiply(_roll.setFromAxisAngle(AHEAD, 0.07 * k * Math.sin(w))).multiply(_tilt.setFromAxisAngle(ACROSS, 0.04 * k * Math.sin(w * 2)));
     _at.copy(at); _at.y += 0.025 * size * k * Math.cos(w * 2);
     this.mesh.setMatrixAt(this.n, _m.compose(_at, _q, _s.setScalar(size)));
-    this.mesh.setColorAt(this.n, PALETTE[Math.floor(chance(serial, 6) * PALETTE.length)]);
+    this.mesh.setColorAt(this.n, colour(serial));
     this.n++;
   }
 

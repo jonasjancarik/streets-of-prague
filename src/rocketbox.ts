@@ -6,9 +6,10 @@ import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { LIFE_SIZE } from './figures.ts';
 import { cutAway } from './shading.ts';
 import type { Anim, Figures } from './figures.ts';
+import { shape as umbrellaShape, material as umbrellaMaterial, colour as umbrellaColour, chance } from './umbrellas.ts';
 
 // First person: the passers-by near you are life-size people from the Microsoft Rocketbox
-// avatar library (MIT), walking, jogging, running and standing with their own
+// avatar library (MIT), walking, jogging, running and standing about with their own
 // motion-captured clips (public/rocketbox/, built by assets/rocketbox/build.sh). From above
 // they'd be a few pixels, so this is only for the street-level view; everyone further off,
 // and anyone doing something the clips don't cover (falling, fleeing a car, getting up), stays
@@ -17,6 +18,11 @@ import type { Anim, Figures } from './figures.ts';
 // Each frame the crowd offers its people as it draws them (LIFE_SIZE.claim in figures.ts);
 // one near enough is taken and their instance drawn at zero size, and frame() then poses the
 // avatars taken this frame and lets go of the rest.
+//
+// Standing, each takes turns with a few ways of waiting (shifting their weight, looking
+// round, a text or a call on the phone). In the rain anyone with their umbrella up holds it
+// in the left hand: standing, with Rocketbox's umbrella clip, walking, with that clip's
+// left arm over the walk.
 
 // Who appears, with which set of clips (women's or men's). The same list is in build.sh.
 const AVATARS: [string, 'f' | 'm'][] = [
@@ -25,24 +31,38 @@ const AVATARS: [string, 'f' | 'm'][] = [
   ['male-adult-01', 'm'], ['male-adult-04', 'm'], ['male-adult-07', 'm'], ['male-adult-10', 'm'],
   ['male-adult-13', 'm'], ['male-adult-17', 'm'], ['business-male-03', 'm'],
 ];
-const CLIPS = { walk: 'walk_neutral_01', jog: 'run_slow_01', run: 'run_neutral_01', idle: 'idle_neutral_01' };
+const CLIPS = { walk: 'walk_neutral_01', jog: 'run_slow_01', run: 'run_neutral_01' };
 type Move = keyof typeof CLIPS;
 const GAITS: Move[] = ['walk', 'jog', 'run'];
+// Ways of standing about, taken in turns; in those with "phone" they have one in hand.
+const STANDING = {
+  f: ['idle_neutral_01', 'idle_neutral_02', 'idle_neutral_09', 'idle_look_around_01', 'cell_phone_textmessage'],
+  m: ['idle_neutral_01', 'idle_neutral_02', 'idle_neutral_09', 'idle_look_around_01', 'cell_phone_textmessage', 'cell_phone_talk_01'],
+};
+const UMBRELLA = { f: 'umbrella_idle_01', m: 'umbrella_idle_02' };
+const LEFT_ARM = /^Bip01_L_(Clavicle|UpperArm|Forearm|Hand|Finger)/;
+const OVER = 50; // how much more the umbrella arm counts than the walk's own
 const REACH = 30; // metres: taken within this of the camera (less in a crowd, see frame())…
 const SLACK = 6; // …and given back this much further off
 const MOST = 24; // avatars at once
 const TURN = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2); // their front is +z, the figures' +x
 
-interface Kind { template: THREE.Object3D; clips: Record<Move, THREE.AnimationClip>; stride: Record<Move, number> }
+// The clips by name: the gaits, the ways of standing, 'umbrella' (standing with one) and
+// 'arm' (just its left arm).
+interface Kind { template: THREE.Object3D; clips: Record<string, THREE.AnimationClip>; stride: Record<Move, number>; standing: string[] }
 interface Person {
   kind: number;
   root: THREE.Object3D;
   mixer: THREE.AnimationMixer;
-  actions: Record<Move, THREE.AnimationAction>;
-  w: Record<Move, number>; // how much of each clip shows
-  want: Record<Move, number>;
+  actions: Record<string, THREE.AnimationAction>;
+  w: Record<string, number>; // how much of each clip shows
+  want: Record<string, number>;
+  t: Record<string, number>; // seconds into each clip that isn't a gait
   phase: number; // through a stride, 0 to 1
-  idle: number; // seconds into the idle clip
+  rest: string; // the way they're standing about now
+  umbrella: number; // the serial number of the umbrella they have up, or -1
+  hand: THREE.Object3D; // the left, for the umbrella
+  phone: THREE.Mesh; // in the right
   pos: THREE.Vector3;
   last: THREE.Vector3;
   turn: THREE.Quaternion;
@@ -63,12 +83,18 @@ export class LifeSize {
   private reach = REACH;
   private offered: number[] = []; // how far off this frame's candidates were
   private renderer: unknown;
+  private umbrellas = new THREE.InstancedMesh(gripped(umbrellaShape()), umbrellaMaterial(), MOST);
 
   constructor(scene: THREE.Scene, renderer: unknown) {
     this.renderer = renderer;
     this.group.name = 'rocketbox';
     scene.add(this.group);
-    LIFE_SIZE.claim = (fig, id, matrix, anim) => this.claim(fig, id, matrix, anim);
+    this.umbrellas.frustumCulled = false;
+    this.umbrellas.count = 0;
+    this.umbrellas.setColorAt(0, new THREE.Color());
+    this.umbrellas.castShadow = true;
+    this.group.add(this.umbrellas);
+    LIFE_SIZE.claim = (fig, id, matrix, anim, umbrella) => this.claim(fig, id, matrix, anim, umbrella);
   }
 
   private async load() {
@@ -92,12 +118,11 @@ export class LifeSize {
           o.frustumCulled = false; // (their bounds are of the bind pose)
         });
         const hips = g.scene.getObjectByName('Bip01')?.position.y ?? 0.9;
-        const kind = { template: g.scene, clips: {} as Kind['clips'], stride: {} as Kind['stride'] };
-        for (const move of Object.keys(CLIPS) as Move[]) {
-          const [clip, stride] = inPlace(byName[`${sex}_${CLIPS[move]}`], hips);
-          kind.clips[move] = clip;
-          kind.stride[move] = stride;
-        }
+        const kind: Kind = { template: g.scene, clips: {}, stride: {} as Kind['stride'], standing: STANDING[sex] };
+        for (const move of GAITS) [kind.clips[move], kind.stride[move]] = inPlace(byName[`${sex}_${CLIPS[move]}`], hips);
+        for (const name of STANDING[sex]) kind.clips[name] = inPlace(byName[`${sex}_${name}`], hips)[0];
+        const umbrella = (kind.clips.umbrella = inPlace(byName[`${sex}_${UMBRELLA[sex]}`], hips)[0]);
+        kind.clips.arm = new THREE.AnimationClip('arm', umbrella.duration, umbrella.tracks.filter((t) => LEFT_ARM.test(t.name)));
         return kind;
       }));
       this.spare = this.kinds.map(() => []);
@@ -109,7 +134,7 @@ export class LifeSize {
   }
 
   // A person in the crowd, as they're drawn: true if they're shown life size instead.
-  private claim(fig: Figures, id: number, matrix: THREE.Matrix4, anim: Anim) {
+  private claim(fig: Figures, id: number, matrix: THREE.Matrix4, anim: Anim, umbrella: number) {
     if (!this.on) return false;
     if (anim.name !== 'idle' && !GAITS.includes(anim.name as Move)) return false;
     const pos = _p.setFromMatrixPosition(matrix);
@@ -127,13 +152,19 @@ export class LifeSize {
       p.last.copy(pos);
       p.speed = 0;
       p.phase = anim.phase;
-      p.idle = (id * 1.37) % p.actions.idle.getClip().duration;
+      const k = this.kinds[p.kind];
+      p.rest = k.standing[(gid * 31 + id * 17) % k.standing.length];
+      for (const c in p.t) p.t[c] = 0;
+      p.t[p.rest] = chance(id, 9) * k.clips[p.rest].duration;
+      p.t.umbrella = p.t.arm = chance(id, 10) * k.clips.umbrella.duration;
+      p.umbrella = umbrella;
       this.live.set(key, p);
       this.pose(p, anim);
-      for (const m of Object.keys(p.w) as Move[]) p.w[m] = p.want[m];
+      for (const c in p.w) p.w[c] = p.want[c];
     } else if (d > this.reach + SLACK) return false;
     p.pos.copy(pos);
     matrix.decompose(_v, p.turn, _s);
+    p.umbrella = umbrella;
     this.pose(p, anim);
     p.seen = true;
     return true;
@@ -142,12 +173,14 @@ export class LifeSize {
 
   // Which clips should show, from the figure's own animation.
   private pose(p: Person, anim: Anim) {
-    for (const m of Object.keys(p.want) as Move[]) p.want[m] = 0;
-    if (anim.name === 'idle') { p.want.idle = 1; return; }
+    for (const c in p.want) p.want[c] = 0;
+    const up = p.umbrella >= 0;
+    if (anim.name === 'idle') { p.want[up ? 'umbrella' : p.rest] = 1; return; }
     const g = anim.blend ? anim.gait : GAITS.indexOf(anim.name as Move);
     const lo = Math.min(Math.floor(g), GAITS.length - 2), mix = Math.min(1, Math.max(0, g - lo));
     p.want[GAITS[lo]] = 1 - mix;
     p.want[GAITS[lo + 1]] = mix;
+    if (up) p.want.arm = 1;
   }
 
   private take(kind: number): Person {
@@ -155,14 +188,29 @@ export class LifeSize {
     if (reuse) { reuse.root.visible = true; return reuse; }
     const k = this.kinds[kind], root = SkeletonUtils.clone(k.template);
     const mixer = new THREE.AnimationMixer(root);
-    const actions = {} as Person['actions'];
-    for (const m of Object.keys(CLIPS) as Move[]) {
-      actions[m] = mixer.clipAction(k.clips[m]);
-      actions[m].play();
+    const actions: Person['actions'] = {}, w: Person['w'] = {}, want: Person['want'] = {}, t: Person['t'] = {};
+    for (const c in k.clips) {
+      actions[c] = mixer.clipAction(k.clips[c]);
+      actions[c].play();
+      w[c] = want[c] = t[c] = 0;
+    }
+    const phone = new THREE.Mesh(PHONE, PHONE_LOOK);
+    phone.visible = false;
+    const right = root.getObjectByName('Bip01_R_Hand');
+    if (right) {
+      // (The skeleton is in centimetres under Bip01: the phone is sized back up to metres.)
+      root.updateMatrixWorld(true);
+      const cm = 1 / right.getWorldScale(_s).x;
+      phone.scale.setScalar(cm);
+      phone.position.set(0.06, 0.022, 0.012).multiplyScalar(cm);
+      right.add(phone);
     }
     this.group.add(root);
-    const zero = () => ({ walk: 0, jog: 0, run: 0, idle: 0 });
-    return { kind, root, mixer, actions, w: zero(), want: zero(), phase: 0, idle: 0, pos: new THREE.Vector3(), last: new THREE.Vector3(), turn: new THREE.Quaternion(), speed: 0, seen: false };
+    return {
+      kind, root, mixer, actions, w, want, t, phase: 0, rest: k.standing[0], umbrella: -1,
+      hand: root.getObjectByName('Bip01_L_Hand') ?? root, phone,
+      pos: new THREE.Vector3(), last: new THREE.Vector3(), turn: new THREE.Quaternion(), speed: 0, seen: false,
+    };
   }
 
   // Once a frame, after the crowd is drawn and before the picture: `eyes` is whether the
@@ -177,6 +225,7 @@ export class LifeSize {
     const o = this.offered.sort((a, b) => a - b);
     this.reach = o.length > MOST ? Math.min(REACH, o[MOST - 1]) : REACH;
     o.length = 0;
+    let held = 0;
     for (const [key, p] of this.live) {
       if (!p.seen || !this.on) {
         p.root.visible = false;
@@ -192,41 +241,82 @@ export class LifeSize {
         p.speed += (Math.min(v, 12) - p.speed) * Math.min(1, dt * 8);
       }
       p.last.copy(p.pos);
+      // Done with one way of standing, they go on to another (the last fades out as it ends).
+      if (p.want[p.rest] > 0 && p.t[p.rest] >= k.clips[p.rest].duration - 0.3) {
+        const others = k.standing.filter((c) => c !== p.rest && p.w[c] === 0);
+        if (others.length) {
+          p.rest = others[Math.floor(Math.random() * others.length)];
+          p.t[p.rest] = 0;
+          p.want[p.rest] = 1;
+        }
+      }
       let stride = 0, sum = 0;
-      for (const m of Object.keys(p.w) as Move[]) {
-        p.w[m] += (p.want[m] - p.w[m]) * Math.min(1, dt * 8);
-        if (p.w[m] < 0.01 && p.want[m] === 0) p.w[m] = 0; // (a clip at no weight isn't worked out at all)
-        if (m !== 'idle') { stride += k.stride[m] * p.w[m]; sum += p.w[m]; }
+      for (const c in p.w) {
+        p.w[c] += (p.want[c] - p.w[c]) * Math.min(1, dt * 8);
+        if (p.w[c] < 0.01 && p.want[c] === 0) p.w[c] = 0; // (a clip at no weight isn't worked out at all)
+        if (c in k.stride) { stride += k.stride[c as Move] * p.w[c]; sum += p.w[c]; }
       }
       if (sum > 0.01) p.phase = (p.phase + (p.speed * dt) / (stride / sum)) % 1;
-      p.idle += dt;
-      for (const m of Object.keys(p.w) as Move[]) {
-        const a = p.actions[m], len = a.getClip().duration;
-        a.setEffectiveWeight(p.w[m]);
-        a.time = m === 'idle' ? p.idle % len : p.phase * len;
+      let phone = 0;
+      for (const c in p.w) {
+        const a = p.actions[c], len = a.getClip().duration;
+        a.setEffectiveWeight(c === 'arm' ? p.w[c] * OVER : p.w[c]);
+        if (p.w[c] === 0) continue;
+        if (c in k.stride) { a.time = p.phase * len; continue; }
+        p.t[c] += dt;
+        // (The umbrella's clips go round; a way of standing is held at its end as it fades.)
+        a.time = c === 'umbrella' || c === 'arm' ? p.t[c] % len : Math.min(p.t[c], len);
+        if (c.includes('phone')) phone += p.w[c];
       }
+      p.phone.visible = phone > 0.5;
       p.mixer.update(0);
       p.root.position.copy(p.pos);
       p.root.quaternion.copy(p.turn).multiply(TURN);
+      if (p.umbrella >= 0 && held < MOST) {
+        // In the left hand, leant in over the head, each a little their own way.
+        p.root.updateMatrixWorld(true);
+        p.hand.getWorldPosition(_v);
+        _q.copy(p.turn).multiply(_tilt.setFromAxisAngle(AHEAD, 0.16 + 0.12 * chance(p.umbrella, 5)));
+        this.umbrellas.setMatrixAt(held, _m.compose(_v, _q, _s.setScalar(0.96 + 0.1 * chance(p.umbrella, 3))));
+        this.umbrellas.setColorAt(held, umbrellaColour(p.umbrella));
+        held++;
+      }
     }
+    this.umbrellas.count = held;
+    this.umbrellas.visible = held > 0;
+    this.umbrellas.instanceMatrix.needsUpdate = true;
+    if (this.umbrellas.instanceColor) this.umbrellas.instanceColor.needsUpdate = true;
   }
 }
 
 const _p = new THREE.Vector3(), _v = new THREE.Vector3(), _s = new THREE.Vector3();
+const _q = new THREE.Quaternion(), _tilt = new THREE.Quaternion(), _m = new THREE.Matrix4();
+const AHEAD = new THREE.Vector3(1, 0, 0);
+// A phone: 7 by 14.5 cm, dark glass. In the hand's own axes the fingers point along +x and
+// the palm faces +y.
+const PHONE = new THREE.BoxGeometry(0.145, 0.008, 0.07);
+const PHONE_LOOK = new THREE.MeshLambertMaterial({ color: '#15161a' });
+
+// The crowd's umbrella moved so that the hand holds it 7 cm up the stick.
+function gripped(g: THREE.BufferGeometry) {
+  return g.translate(-0.1, -1.22, 0);
+}
 
 // The clips as assets/rocketbox/clips.mjs writes them: a header (JSON) with each clip's
-// name, frames, fps and joints, then Bip01's positions and each joint's turns, frame by frame.
+// name, frames, fps, moving and still joints, then int16s: Bip01's positions (millimetres)
+// and each joint's turns (in 32767ths), frame by frame, then the still joints' once.
 function readClips(buffer: ArrayBuffer) {
   const length = new DataView(buffer).getUint32(0, true);
-  const head = JSON.parse(new TextDecoder().decode(new Uint8Array(buffer, 4, length))) as { clips: { name: string; frames: number; fps: number; joints: string[] }[] };
-  const data = new Float32Array(buffer, 4 + length);
+  const head = JSON.parse(new TextDecoder().decode(new Uint8Array(buffer, 4, length))) as { clips: { name: string; frames: number; fps: number; joints: string[]; still: string[] }[] };
+  const data = new Int16Array(buffer, 4 + length);
   const clips: Record<string, THREE.AnimationClip> = {};
   let at = 0;
-  const take = (n: number) => data.slice(at, (at += n));
+  const take = (n: number, unit: number) => Float32Array.from(data.subarray(at, (at += n)), (v) => v / unit);
   for (const c of head.clips) {
     const times = Float32Array.from({ length: c.frames }, (_, i) => i / c.fps);
-    const tracks: THREE.KeyframeTrack[] = [new THREE.VectorKeyframeTrack('Bip01.position', times, take(c.frames * 3))];
-    for (const joint of c.joints) tracks.push(new THREE.QuaternionKeyframeTrack(`${joint}.quaternion`, times, take(c.frames * 4)));
+    const tracks: THREE.KeyframeTrack[] = [new THREE.VectorKeyframeTrack('Bip01.position', times, take(c.frames * 3, 1000))];
+    for (const joint of c.joints) tracks.push(new THREE.QuaternionKeyframeTrack(`${joint}.quaternion`, times, take(c.frames * 4, 32767)));
+    for (const joint of c.still) tracks.push(new THREE.QuaternionKeyframeTrack(`${joint}.quaternion`, [0], take(4, 32767)));
     clips[c.name] = new THREE.AnimationClip(c.name, (c.frames - 1) / c.fps, tracks);
   }
   return clips;

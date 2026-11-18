@@ -34,6 +34,7 @@ export interface Landmark { name: string; file: string; polygons: Point2[][][]; 
 export type TileIndexEntry = [number, number, number] | [number, number, number, number];
 
 export interface MapIndex extends GeoData {
+  power?: boolean;
   format?: number;
   built?: string;
   area: string;

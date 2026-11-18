@@ -4,10 +4,11 @@ import { signedArea, hash } from './geo.ts';
 import type { GeoData, Point2 } from './geo.ts';
 import { TENEMENT_PLASTER } from '../facades.ts';
 import { ROOF_TILES } from './roofPalette.ts';
-import { ringSite } from './roofDetails.ts';
+import { dominantAxis, ringSite } from './roofDetails.ts';
 import type { RoofSite } from './roofDetails.ts';
+import { GRAIN } from './roofEdges.ts';
 import { straightSkeleton } from './skeleton.ts';
-import { neighbourhoodOf, roofShapeFor, pitchedColour, flatColour, hasParapet, insetRings, parapetHeight, PARAPET_WIDTH } from './roofRules.ts';
+import { neighbourhoodOf, roofShapeFor, pitchedColour, flatFinish, hasParapet, insetRings, parapetHeight, PARAPET_WIDTH } from './roofRules.ts';
 
 export interface BuildingTile extends GeoData {
   // cover: what the roof is covered with, where OSM or pipeline/roofs.py says.
@@ -55,6 +56,7 @@ export function buildBuildings(data: BuildingTile) {
   const [W, H] = data.size, [ox, oy] = data.origin;
   const stats = { skeleton: 0, gabled: 0, flat: 0, failed: 0 };
   const sites: RoofSite[] = [];
+  const flatSurfaces: { start: number; end: number; finish: number }[] = [];
   const cWall = new THREE.Color(), cRoof = new THREE.Color(), tmp = new THREE.Color();
 
   // local (x, y, z-up) → three (X, Y-up, Z)
@@ -196,9 +198,23 @@ export function buildBuildings(data: BuildingTile) {
       const pts = rings[0].map(([x, y]) => new THREE.Vector2(x, y));
       const holes = rings.slice(1).map((r) => r.map(([x, y]) => new THREE.Vector2(x, y)));
       const all = [...rings[0], ...rings.slice(1).flat()];
-      const flatCol = isWall ? cWall : boat || b.cover === 'slate' ? cRoof : tmp.set(flatColour(b, hv)).offsetHSL(0, 0, (hash(b.id) - 0.5) * 0.04).clone();
+      const finish = flatFinish(b, hv);
+      const flatCol = isWall ? cWall : boat || b.cover === 'slate' ? cRoof
+        : tmp.set(finish.colour).offsetHSL(0, 0, (hash(b.id) - 0.5) * 0.04);
+      const start = pos.length / 3;
       for (const [i, j, k] of THREE.ShapeUtils.triangulateShape(pts, holes)) {
         tri([...all[i], eaves], [...all[j], eaves], [...all[k], eaves], flatCol, [0, 0, 1]);
+      }
+      const end = pos.length / 3;
+      // Only the roof surface gets the finish; the parapet and rooftop details have their own materials.
+      if (!isWall && !boat && b.cover !== 'slate' && start < end) {
+        const ring = rings[0];
+        const edges = ring.map(([x, y], i): [number, number, number, number] =>
+          [x, y, ...ring[(i + 1) % ring.length]]);
+        const axis = dominantAxis(edges);
+        const quarterTurn = Math.PI / 2;
+        const angle = (axis % quarterTurn + quarterTurn) % quarterTurn;
+        flatSurfaces.push({ start, end, finish: finish.material + GRAIN * angle / quarterTurn });
       }
       if (inner) {
         // The top of the rim, and its inner face. That face leans back a little so it counts
@@ -292,7 +308,7 @@ export function buildBuildings(data: BuildingTile) {
   const mesh = mirrored(new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true })));
   mesh.castShadow = true;
   mesh.receiveShadow = true;
-  return { mesh, stats, sites };
+  return { mesh, stats, sites, flatSurfaces };
 }
 
 // Garden walls, city walls, the Hunger Wall: thin extruded strips, standing on the

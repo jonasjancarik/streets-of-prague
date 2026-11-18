@@ -1,7 +1,7 @@
 """Trees from IPR Praha's open data (Hosted/OPK_CUR_OPK_SMZ_VP_B, kod_vp 71): about
 171,000 trees on city-managed land, surveyed as points. OSM has a tenth as many.
 
-    uv run ipr_trees.py             # downloads the whole city to .cache/trees/trees.json
+    uv run ipr_trees.py --refresh   # replaces the cached citywide inventory on success
 
 build_tiles.py merges them with OSM's trees (merge below): where both have a tree
 within DUPLICATE metres, IPR's stands (its position is surveyed), and OSM's is left
@@ -11,6 +11,8 @@ A tree is [x, y] in local metres, or [x, y, kind] when the kind is known:
 1 = conifer, 2 = fruit tree. Everything else is a broadleaf tree with no third number.
 """
 
+import argparse
+from collections import Counter
 import json
 import time
 from pathlib import Path
@@ -29,9 +31,9 @@ DUPLICATE = 2.5
 KINDS = {1: 1, 3: 2}
 
 
-def download():
+def download(*, refresh=False):
     """[[lon, lat, kind]] for every tree, cached."""
-    if CACHE.exists():
+    if CACHE.exists() and not refresh:
         return json.loads(CACHE.read_text())
     CACHE.parent.mkdir(parents=True, exist_ok=True)
     out, offset = [], 0
@@ -70,7 +72,44 @@ def _all():
     return _table
 
 
-def merge(osm, bbox, tf):
+def displaced_road_row(osm_xy, ipr_xy, ipr, road, survey, parking):
+    """OSM indices duplicated by a nearby surveyed row displaced as a group."""
+    if len(osm_xy) < 3 or road.is_empty or survey.is_empty:
+        return set()
+    osm = shapely.points(osm_xy)
+    # Road edges and parking are ambiguous. Require the OSM point inside both
+    # the rendered carriageway and the survey, with its replacement off the lane.
+    inside = shapely.contains(road, osm) & shapely.contains(survey, osm) & ~shapely.covers(parking, osm)
+    candidates = np.flatnonzero(inside)
+    if len(candidates) < 3:
+        return set()
+    pairs, distance = ipr.query_nearest(osm, max_distance=7, return_distance=True)
+    uses = Counter(pairs[1])
+    options = Counter(pairs[0])
+    replacements = {o: (p, d) for (o, p), d in zip(pairs.T, distance) if options[o] == 1 and uses[p] == 1}
+    road_edge = road.boundary
+    pairs = [(i, p) for i in candidates if i in replacements for p, d in [replacements[i]]
+             if DUPLICATE < d and road_edge.distance(osm[i]) >= 0.7
+             and (not road.covers(shapely.Point(ipr_xy[p])) or parking.covers(shapely.Point(ipr_xy[p])))]
+    if len(pairs) < 3:
+        return set()
+
+    indices, matches = np.asarray(pairs).T
+    positions = osm_xy[indices]
+    shifts = ipr_xy[matches] - positions
+    near = shapely.STRtree(shapely.points(positions))
+    left, right = near.query(shapely.points(positions), predicate="dwithin", distance=24)
+    delta = positions[right] - positions[left]
+    lengths = np.linalg.norm(delta, axis=1)
+    # Three distinct trunks with a similar sideways shift make a row. An
+    # isolated point, or a shift along the row to the next tree, stays as mapped.
+    sideways = np.abs(np.sum(delta * shifts[left], axis=1)) <= 0.65 * lengths * np.linalg.norm(shifts[left], axis=1)
+    agrees = (lengths >= 3) & sideways & (np.linalg.norm(shifts[left] - shifts[right], axis=1) <= 1.25)
+    support = np.bincount(left[agrees], minlength=len(indices))
+    return set(indices[support >= 2].tolist())
+
+
+def merge(osm, bbox, tf, *, road=None, survey=None, parking=None, stats=None):
     """OSM's trees (local metres, [x, y] or [x, y, kind]) and IPR's inside `bbox`
     (WGS84 w, s, e, n; `tf` takes lon, lat to local metres), as one list."""
     w, s, e, n = bbox
@@ -83,18 +122,26 @@ def merge(osm, bbox, tf):
     kinds = t[:, 2].astype(int)
     if not osm:
         return [[round(x, 1), round(y, 1), int(k)] if k else [round(x, 1), round(y, 1)] for x, y, k in zip(xs, ys, kinds)]
-    ipr = shapely.points(np.column_stack([xs, ys]))
-    near_ipr, near_osm = shapely.STRtree(ipr).query(shapely.points([o[0] for o in osm], [o[1] for o in osm]),
-                                                    predicate="dwithin", distance=DUPLICATE)[::-1]
+    ipr_xy = np.column_stack([xs, ys])
+    osm_xy = np.asarray([o[:2] for o in osm])
+    ipr = shapely.STRtree(shapely.points(ipr_xy))
+    near_ipr, near_osm = ipr.query(shapely.points(osm_xy), predicate="dwithin", distance=DUPLICATE)[::-1]
     # (query gives pairs of (osm index, ipr index); an IPR tree of no known kind takes OSM's.)
     kinds = kinds.copy()
     for a, b in zip(near_ipr, near_osm):
         if kinds[a] == 0 and len(osm[b]) > 2:
             kinds[a] = osm[b][2]
     dropped = set(near_osm.tolist())
+    if road is not None and survey is not None and parking is not None:
+        rows = displaced_road_row(osm_xy, ipr_xy, ipr, road, survey, parking)
+        dropped.update(rows)
+        if stats is not None:
+            stats["osm_trees_in_displaced_rows"] = len(rows)
     kept = [o for i, o in enumerate(osm) if i not in dropped]
     return kept + [[round(x, 1), round(y, 1), int(k)] if k else [round(x, 1), round(y, 1)] for x, y, k in zip(xs, ys, kinds)]
 
 
 if __name__ == "__main__":
-    print(len(download()), "trees")
+    parser = argparse.ArgumentParser(description="Cache the IPR tree inventory.")
+    parser.add_argument("--refresh", action="store_true", help="fetch a fresh inventory even if cached")
+    print(len(download(refresh=parser.parse_args().refresh)), "trees")

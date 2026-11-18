@@ -7,13 +7,15 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { Geo, Grid, rng, hash, clipLine } from './map/geo.ts';
 import { wallMesh } from './map/buildings.ts';
 import { TreePool } from './trees.ts';
+import { groundStairs, stairLandings } from './map/stairs.ts';
+import { powerMesh, readPowerGrid, type PowerGrid } from './map/powerGrid.ts';
 import { Surfaces } from './surface.ts';
 import { buildTin, decodeTin, tinGrid, tinNearSteps, tinSampler, TIN_FORMAT, type TinFile, type TinMesh } from './tin.ts';
 import { shadeBuildings, shadeLandmark, cutAway, broad, ROOF_CLUTTER, roadRasterEnabled } from './shading.ts';
 import { loadFacadeAtlas } from './facades.ts';
 import type { Footprint } from './facades.ts';
 import { Zones, parkCarsSteps, inRing, inPoly } from './parking.ts';
-import { finish } from './parkingClearance.ts';
+import { finish, parkingAisles } from './parkingClearance.ts';
 import { openWater } from './river.ts';
 import { readRoadProfile, withRoadProfile } from './roadProfiles.ts';
 import { readRoadSurfaces, withRoadSurfaces } from './roadSurfaces.ts';
@@ -496,6 +498,7 @@ export class TileWorld {
   noParking: ((x: number, y: number) => boolean) | null = null;
   T: number; ox: number; oy: number;
   available: Set<string>; iprTiles: Map<string, boolean>;
+  private readonly powerGrid: Promise<PowerGrid | null> | null;
   // Goes up whenever `available` changes, so update() looks again at which tiles are
   // round the camera. (Nothing changes it once the world is made, but whatever does
   // must bump this.)
@@ -588,6 +591,9 @@ export class TileWorld {
     this.area = area;
     this.index = index;
     const query = new URLSearchParams(location.search);
+    this.powerGrid = index.power && !query.has('nopower') ? fetch(dataUrl(area, 'power.json'))
+      .then(async (r) => r.ok ? readPowerGrid(await r.json(), area, index.built) : null)
+      .catch(() => null) : null;
     const station = area === 'praha' && query.has('stationtracks');
     // ?lines=off: a map's step lines (pipeline/step_lines.py, a trial) left out, to compare.
     this.stepLines = query.get('lines') !== 'off';
@@ -1534,6 +1540,11 @@ export class TileWorld {
     const parking = parkCarsSteps({
       data, edges, clearanceEdges, zones, buildings: location.search.includes('oldparking') ? null : nearBuildings, r: rng(Math.floor(hash(`${this.area}/${k}`) * 1e9)), night: this.night,
       shares: new Map((t.sections ?? []).map((s) => [s.code, s.share])), inside, height: shade?.sample,
+      obstacles: (function* () {
+        yield* land.trunkCells.values();
+        yield* stairLandings(groundStairs(t.walk));
+        yield* parkingAisles(t.walk ?? [], t.drive ?? [], t.lots?.map((lot) => lot.rings) ?? t.areas.parking ?? []);
+      })(),
       // No parking inside passages, or at a bus stop.
       solid: (x, y) => (inside(x, y) ? grid.at(x, y) !== 0 || inPassage(t.passages || [], x, y, 1) || !!this.noParking?.(x, y) : false),
     });
@@ -1592,7 +1603,8 @@ export class TileWorld {
     const station = this.stationTracks ? (await this.stationTracks)?.[k] : undefined;
     return Promise.all([
       w.run('ground', {
-        d: { areas: withPatches(t), roads: t.roads, rails: t.rails, deckRails: t.deckRails, bridgeTracks: t.bridgeTracks, station, weirs: t.weirs, crossings: TILE_LOOK.roadPaint ? t.crossings : [], marks: t.marks, utility: t.utility },
+        d: { areas: withPatches(t), roads: t.roads, rails: t.rails, deckRails: t.deckRails, bridgeTracks: t.bridgeTracks, station, weirs: t.weirs, crossings: TILE_LOOK.roadPaint ? t.crossings : [], marks: t.marks, utility: t.utility,
+          stairs: groundStairs(t.walk).map(({ pts, width }) => ({ pts, width })) },
         paint: TILE_LOOK.roadPaint, rasterRoads: !this.ortho && !!s.ground && roadRasterEnabled(), box: s.bounds, edges: s.clipped, buildings: s.standing, parkingZones: s.parkingZones, ground: s.ground, levels: s.levels,
       }),
       buffer ? w.run('ipr', { buffer, box: t.box, absolute: this.index.iprRef != null, ground: s.ground, bbox: this.index.bbox_wgs84, hide: s.hide, clutter: ROOF_CLUTTER.value > 0.5, footprints: s.footprints }, [buffer]) : null,
@@ -1639,6 +1651,7 @@ export class TileWorld {
     }));
     const [{ layers, ms: groundMs, triangles }, iprArrays, roofArrays] = await jobs;
     const landmarks = (await models).filter((m): m is THREE.Group => m !== null);
+    const power = await this.powerGrid;
     if (gone()) return;
     lap('workers');
     if (groundMs !== undefined) ms.ground = Math.round(groundMs);
@@ -1686,8 +1699,11 @@ export class TileWorld {
       s.ground?.roadSurfaces?.length ? { sample: shade.sample, boxes: s.ground.roadSurfaces.map((p) => p.box) } : undefined) : null;
     if (hidden) group.add(hidden);
     const buildings = arraysOf.map((arrays, n) => buildingMesh(arrays, (skyResult && !location.search.includes('nosky') ? skyResult.walls[n] : null)));
+    const transmission = power ? powerMesh(power, k, this.ref, tile.sample) : null;
+    const own = [...buildings, ...(hidden ? [hidden] : []), ...(transmission ? [transmission] : [])];
     const smoke = iprArrays?.chimneys ? chimneySmoke(iprArrays.chimneys, this.scene) : null;
     group.add(surfaces.group, ...buildings, ...tile.fixtures, ...landmarks, ...tile.furniture);
+    if (transmission) group.add(transmission);
     if (smoke) group.add(smoke);
     // Nothing in a tile ever moves: its matrices are worked out once, not every frame,
     // and the renderer's walk through the scene each frame skips the tile's objects.
@@ -1698,14 +1714,14 @@ export class TileWorld {
     if (!this.urgent) {
       await new Promise<void>((go) => this.turns.push(go));
       // Left behind meanwhile: thrown away the way it would have been once drawn.
-      if (gone()) { tile.drawn = { group, surfaces, own: [...buildings, ...(hidden ? [hidden] : [])], smoke }; this.undress(tile); return; }
+      if (gone()) { tile.drawn = { group, surfaces, own, smoke }; this.undress(tile); return; }
     }
     // The tree pages are leased last: if they can't be, nothing is left half done.
     this.trees.add(k, s.trees);
     if (this.street && !this.urgent) group.traverse((o) => { if (o !== group && o.visible && (o as THREE.Mesh).geometry) { o.visible = false; this.reveal.push(o); } });
     this.scene.add(group);
     this.joined++;
-    tile.drawn = { group, surfaces, own: [...buildings, ...(hidden ? [hidden] : [])], smoke };
+    tile.drawn = { group, surfaces, own, smoke };
     lap('meshes');
   }
 

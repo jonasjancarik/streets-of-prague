@@ -29,7 +29,7 @@ export const setStreetTreeMaterial = (make: () => THREE.Material, ready: { value
 const STREET_REACH = 150;
 // (For measuring: false keeps the top-down crowns in first person too.)
 export const STREET_TREES = { value: true };
-// Whether the crowns seen from above get their sprays of leaves (graphics.ts: Ultra).
+// Whether crowns seen from above get their sprays of leaves (High and Ultra).
 export const CANOPY_LEAVES = { value: false };
 // 1 while they are drawn (from above, on Ultra, their pictures loaded): the tufts under them
 // are then the crown's shaded inside, and are drawn darker (webgpu/trees.ts).
@@ -219,7 +219,7 @@ export class TreePool {
     return mesh;
   }
 
-  // From above (Ultra): sprays of leaves laid over every broadleaf crown and shrub in view
+  // From above (High and Ultra): sprays of leaves laid over every broadleaf crown and shrub in view
   // (canopyGeometry), another mesh over the page's instances; the tufts stay under them.
   // `street`: the view is from the street, where the trees have their own models and only
   // the shrubs get sprays.

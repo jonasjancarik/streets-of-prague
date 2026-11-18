@@ -6,6 +6,9 @@ import { registerHooks } from 'node:module';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 registerHooks({ load(url, context, next) {
+  if (url.endsWith('.json') && url.startsWith(new URL('../src/', import.meta.url).href)) {
+    return { format: 'json', shortCircuit: true, source: readFileSync(new URL(url), 'utf8') };
+  }
   if (!url.endsWith('.ts')) return next(url, context);
   const source = readFileSync(new URL(url), 'utf8').replaceAll('import.meta.env', '({})');
   return { format: 'module', shortCircuit: true, source: ts.transpileModule(source, {
@@ -16,10 +19,11 @@ globalThis.location = { search: '' };
 globalThis.self = globalThis;
 Object.defineProperty(globalThis,'localStorage',{value:{getItem:()=>null,setItem:()=>{}},configurable:true});
 const { DriveGraph, junctionCurve, junctionTrim, Route, segDist } = await import('../src/network.ts');
-const { parkingClearance } = await import('../src/parkingClearance.ts');
+const { parkingAisles, parkingClearance } = await import('../src/parkingClearance.ts');
 const { parkCars, Zones } = await import('../src/parking.ts');
 const { TileWorld } = await import('../src/tiles.ts');
 const { rng } = await import('../src/map/geo.ts');
+const { stairGeometry, stairLandings } = await import('../src/map/stairs.ts');
 // Load the shipped geometry in memory, without a renderer or HTTP server.
 globalThis.ProgressEvent = class extends Event { constructor(type, init) { super(type); Object.assign(this,init); } };
 const {loadCars,useKit}=await import('../src/car.ts');
@@ -45,6 +49,43 @@ assert.deepEqual(positions(park([], [], hillLot, 10, { height: (x, y) => .08 * (
 assert.equal(park([], [], hillLot, 10, { height: (x, y) => x + y }).cars.length, 0,
   'the lot outline does not make a steep hillside suitable for parking');
 reports.push('parking remains available on ordinary slopes and rejects steep ground');
+
+const stepCar = ordinaryLot[0];
+const [stepX, stepY] = stepCar.local(stepCar.spec.L / 2, stepCar.spec.W / 2);
+const step = (drop) => (x, y) => Math.hypot(x - stepX, y - stepY) < 0.4 ? -drop : 0;
+const occupiesStep = (drop) => park([], [], hillLot, 10, { height: step(drop) }).cars
+  .some((car) => car.x === stepCar.x && car.y === stepCar.y);
+assert.ok(occupiesStep(0.15), 'a normal kerb under one corner leaves the parking spot usable');
+assert.ok(!occupiesStep(0.35), 'a drop under one corner blocks the spot even with level centre lines');
+reports.push('parking allows a normal kerb and rejects a corner over a drop');
+
+const { x: treeX, y: treeY } = ordinaryLot[0];
+const tree = { x: treeX, y: treeY, radius: 0.4 };
+const besideTree = park([], [], hillLot, 10, { obstacles: [tree] }).cars;
+assert.ok(besideTree.length > 0, 'a planting pocket leaves the rest of the lot usable');
+assert.ok(besideTree.every((car) => car.x !== treeX || car.y !== treeY),
+  'a trunk under the centre of a candidate car blocks that spot even when its outline is clear');
+reports.push('tree trunks inside parked car footprints are rejected');
+
+const flight = { pts: [[treeX, treeY + 1], [treeX, treeY + 7]], width: 2 };
+const besideStairs = park([], [], hillLot, 10, { obstacles: stairLandings([flight]) }).cars;
+assert.ok(besideStairs.length > 0 && besideStairs.every((car) => car.x !== treeX || car.y !== treeY),
+  'the mapped approach to a stair flight remains walkable between parked cars');
+const stairBox = [treeX - 10, treeY - 10, treeX + 10, treeY + 10];
+const ramp = (_x, y) => 0.4 * (y - treeY);
+const treads = stairGeometry([flight], stairBox, ramp, () => false);
+assert.ok(treads.body.index.length > 0 && treads.edges.index.length > 0, 'a mapped flight on a steady grade gets treads and nosings');
+assert.equal(stairGeometry([flight], stairBox, ramp, (_x, y) => y > treeY + 4).body.index.length, 0,
+  'stairs that would run into a road or building keep the base ground');
+reports.push('mapped stairs get treads and keep parking back from their landings');
+
+const aisle = raw('aisle','west','east',[[treeX - 5, treeY], [treeX + 5, treeY]], { hw: 'service', width: 4 });
+const besideAisle = park([], [], hillLot, 10, { obstacles: parkingAisles([aisle], [], hillLot) }).cars;
+assert.ok(besideAisle.length > 0 && besideAisle.every((car) => car.x !== treeX || car.y !== treeY),
+  'a walk-only service aisle stays open while the rest of the lot still parks cars');
+assert.equal([...parkingAisles([aisle], [], [rectangle(0, 20, 70, 30)])].length, 0,
+  'a service way away from the lot does not affect its parking');
+reports.push('mapped service aisles stay clear inside parking lots');
 
 // The curve cuts across clear ground between the straight lanes; a safe corner
 // farther from it must remain available. Both trim distances match actual Route.

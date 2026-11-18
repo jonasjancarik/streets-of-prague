@@ -11,9 +11,11 @@
 // turn in the world then goes onto the GLB's axes through a fixed offset per bone, measured
 // with both copies of that avatar standing in its rest pose.
 //
-// The file: a uint32 header length, the header (JSON: per clip its name, frame count, fps and
-// the joints), then float32s, per clip: Bip01's position (metres, 3 a frame), then each
-// joint's local rotation (4 a frame).
+// The file: a uint32 header length, the header (JSON: per clip its name, frame count, fps,
+// the joints that move and those that keep still), then int16s, per clip: Bip01's position
+// (millimetres, 3 a frame), each moving joint's local rotation (4 a frame, in 32767ths),
+// then each still joint's (4, once). Walks and runs are sampled 30 times a second, the
+// slower standing clips 15.
 import fs from 'node:fs';
 import path from 'node:path';
 import * as THREE from 'three';
@@ -24,7 +26,6 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 globalThis.document ??= { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, setAttribute() {}, style: {} }) };
 
 const [clipDir, avatarFbx, avatarGlb, out] = process.argv.slice(2);
-const FPS = 30;
 const buffer = (p) => { const b = fs.readFileSync(p); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength); };
 const fbx = (p) => new FBXLoader().parse(buffer(p), '');
 
@@ -50,6 +51,7 @@ function glbSkeleton(p) {
 const glb = glbSkeleton(avatarGlb);
 const max = fbx(avatarFbx);
 max.updateMatrixWorld(true);
+const _prev = new THREE.Quaternion();
 const q = (o) => o.getWorldQuaternion(new THREE.Quaternion());
 const p = (o) => o.getWorldPosition(new THREE.Vector3());
 
@@ -72,6 +74,7 @@ for (const file of fs.readdirSync(clipDir).filter((f) => f.endsWith('.fbx')).sor
   const action = mixer.clipAction(clip).setLoop(THREE.LoopOnce, 1);
   action.clampWhenFinished = true;
   action.play();
+  const FPS = /walk|run/.test(file) ? 30 : 15;
   const frames = Math.round(clip.duration * FPS) + 1;
   const pos = new Float32Array(frames * 3), rot = Object.fromEntries(glb.joints.map((n) => [n, new Float32Array(frames * 4)]));
   const world = {}, parent = new THREE.Quaternion(), local = new THREE.Quaternion();
@@ -84,21 +87,28 @@ for (const file of fs.readdirSync(clipDir).filter((f) => f.endsWith('.fbx')).sor
       // The GLB's parent's turn: a joint's (from this frame), or the fixed one above Bip01.
       if (world[up.name]) parent.copy(world[up.name]); else parent.copy(q(up));
       local.copy(parent).invert().multiply(world[name]);
+      // (The same way round each frame, so the frames between blend the short way.)
+      if (f > 0 && local.dot(_prev.fromArray(rot[name], (f - 1) * 4)) < 0) local.set(-local.x, -local.y, -local.z, -local.w);
       rot[name].set(local.toArray(), f * 4);
     }
     const b = p(src.getObjectByName('Bip01')).multiplyScalar(scale);
     pos.set([b.x, b.y, b.z], f * 3);
   }
-  clips.push({ name: path.basename(file, '.fbx'), frames, fps: FPS, joints: glb.joints });
-  data.push(pos, ...glb.joints.map((n) => rot[n]));
-  console.log(`${file}: ${frames} frames`);
+  // Joints that hardly turn (most fingers, mostly) are kept as one pose.
+  const still = glb.joints.filter((n) => { const r = rot[n]; for (let i = 4; i < r.length; i++) if (Math.abs(r[i] - r[i % 4]) > 0.002) return false; return true; });
+  const moving = glb.joints.filter((n) => !still.includes(n));
+  clips.push({ name: path.basename(file, '.fbx'), frames, fps: FPS, joints: moving, still });
+  data.push(Int16Array.from(pos, (v) => Math.round(v * 1000)));
+  for (const n of moving) data.push(Int16Array.from(rot[n], (v) => Math.round(v * 32767)));
+  for (const n of still) data.push(Int16Array.from(rot[n].subarray(0, 4), (v) => Math.round(v * 32767)));
+  console.log(`${file}: ${frames} frames, ${moving.length} joints moving`);
 }
 
 const header = Buffer.from(JSON.stringify({ clips }));
 const head = Buffer.alloc(4);
 head.writeUInt32LE(header.length);
-// (Padded so the floats start on a multiple of 4.)
-const pad = Buffer.alloc((4 - ((4 + header.length) % 4)) % 4, 0x20);
+// (Padded so the numbers start on an even byte.)
+const pad = Buffer.alloc(header.length % 2, 0x20);
 const floats = Buffer.concat(data.map((a) => Buffer.from(a.buffer, a.byteOffset, a.byteLength)));
 head.writeUInt32LE(header.length + pad.length);
 fs.writeFileSync(out, Buffer.concat([head, header, pad, floats]));

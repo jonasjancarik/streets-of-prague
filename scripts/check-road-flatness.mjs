@@ -9,7 +9,7 @@
 //   node scripts/check-road-flatness.mjs [area, praha] [--data public/data] [--worst 25]
 //        [--near lat,lon[,metres]] [--save now.json] [--against before.json]
 //        [--roadprofiles | --roadsurfaces file] [--bridgesurfaces file] [--profile <edge id or part of a name>] [--strict]
-//        [--across 1 | 0] [--scan <LiDAR directory> | off] [--places scripts/road-places.json | off]
+//        [--across 1 | 0] [--lane-steps] [--scan <LiDAR directory> | off] [--places scripts/road-places.json | off]
 //
 // Per street, the worst of:
 // - step: a jump between two samples a metre apart that the slope either side doesn't
@@ -47,6 +47,7 @@ import { readRoadSurfaces, withRoadSurfaces } from '../src/roadSurfaces.ts';
 import { bridgeSurfaceBuffers, bridgeSurfaceTile, readBridgeSurfacePreview } from '../src/bridgeSurfacePreview.ts';
 import { onPolygons } from '../src/map/geo.ts';
 import { meshGround } from './tin-ground.mjs';
+import { DriveGraph } from '../src/network.ts';
 
 const args = {}, pos = [];
 const rest = process.argv.slice(2);
@@ -212,6 +213,7 @@ const centre = near ? [(near[1] - lon0) * mLon(near[0]), (near[0] - lat0) * mLat
 // Every car street once. (An edge is listed by every tile it crosses, whole or clipped: the
 // longest; and a two-way street is an edge each way, one is enough.)
 const edges = new Map();
+const directions = args['lane-steps'] ? new Map() : null;
 const both = (id) => { const [u, v, k] = id.split('>'); return u < v ? id : `${v}>${u}>${k}`; };
 for (const [i, j] of index.tiles) {
   if (centre && (Math.abs((i + 0.5) * T - ox - centre[0]) > centre[2] + T || Math.abs((j + 0.5) * T - oy - centre[1]) > centre[2] + T)) continue;
@@ -221,6 +223,7 @@ for (const [i, j] of index.tiles) {
   for (const e of tile.drive || []) {
     const key = both(e.id), had = edges.get(key);
     if (!had || had.pts.length < e.pts.length) edges.set(key, e);
+    if (directions && (directions.get(e.id)?.pts.length ?? 0) < e.pts.length) directions.set(e.id, e);
   }
 }
 
@@ -540,6 +543,43 @@ if (scanSummary) {
     + (was ? ` (before: ${was[k] || 0})` : '')).join(', ')}`);
 } else if (SCAN) console.log(`\n(No LiDAR in ${SCAN}: --scan <directory> to compare with it; pipeline/ipr_lidar.py imports it.)`);
 const N = Number(args.worst || 25);
+// Sample the traffic graph's path in each direction. The ordinary report
+// measures the whole carriageway, including the edges outside the usual lane.
+const laneSteps = directions ? [] : undefined;
+if (directions) {
+  let checked = 0;
+  for (const edge of new DriveGraph().add([...directions.values()])) {
+    const { path, laneLevels } = edge, interior = Math.max(END, edge.width / 2);
+    if (path.length < interior * 2 + 3 * STEP) continue;
+    const samples = [];
+    let level = edge.level, transition = 0;
+    for (let s = interior - STEP; s <= path.length - interior + STEP; s += STEP) {
+      while (laneLevels && transition < laneLevels.length && laneLevels[transition][0] <= s) {
+        level = laneLevels[transition++][1];
+      }
+      const { x, y } = path.at(s);
+      const nearby = !centre || Math.hypot(x - centre[0], y - centre[1]) <= centre[2];
+      const open = !!level || onRoad(x, y, edge.hw === 'living_street');
+      samples.push({ x, y, level, h: nearby && open ? heightOn(x, y, level) : NaN });
+    }
+    let worst = null;
+    for (let i = 2; i < samples.length - 1; i++) {
+      const a = samples[i - 2], b = samples[i - 1], c = samples[i], d = samples[i + 1];
+      const rise = c.h - b.h, grade = Math.max(Math.abs(b.h - a.h), Math.abs(d.h - c.h));
+      const step = Math.sign(rise) * Math.max(0, Math.abs(rise) - grade);
+      if (Number.isFinite(step) && (!worst || Math.abs(step) > Math.abs(worst.step))) {
+        worst = { id: edge.id, name: edge.name || '', hw: edge.hw, step, rise, at: toWgs(c.x, c.y),
+          levels: [b.level ?? 0, c.level ?? 0] };
+      }
+    }
+    if (worst) checked++;
+    if (worst && Math.abs(worst.step) > FLAG.step) laneSteps.push(worst);
+  }
+  laneSteps.sort((a, b) => Math.abs(b.step) - Math.abs(a.step));
+  const hard = laneSteps.filter((r) => Math.abs(r.step) > LIMIT.step).length;
+  console.log(`\nActual traffic lanes: ${checked} directions checked, ${laneSteps.length} steps over ${FLAG.step} m, ${hard} over ${LIMIT.step} m`);
+  for (const r of laneSteps.slice(0, N)) console.log(`  ${r.step.toFixed(2).padStart(6)} m  ${r.at.join(', ')}  ${r.hw} ${r.name} (${r.id}; level ${r.levels.join(' → ')})`);
+}
 for (const [k, title, unit] of KINDS) {
   const list = rows.filter((r) => Math.abs(r[k]) > FLAG[k] || (k === 'off' && r[k] >= FLAG[k])).sort((a, b) => Math.abs(b[k]) - Math.abs(a[k])).slice(0, N);
   if (!list.length) continue;
@@ -572,6 +612,7 @@ for (const r of rows) {
 }
 if (args.save) writeFileSync(args.save, JSON.stringify({ built: index.built, pipeline: index.pipeline, terrainOptions: index.terrainOptions,
   terrainMode: surfaces ? 'surfaces' : pilot ? 'profile' : 'base', near: args.near || undefined, lines, scan: scanSummary, places: placeRows,
+  laneSteps,
   patchDigest: trial && createHash('sha256').update(trial).digest('hex'),
   ...(bridgeTrial ? { bridgeDigest: createHash('sha256').update(bridgeTrial).digest('hex') } : {}),
   rows: rows.map(({ profile, ...r }) => r) }));

@@ -477,9 +477,11 @@ export class Traffic {
           const d = along - L / 2 - o.r - (o.car?.binRound && Math.cos(o.car.h - c.h) > 0.5 ? BIN_ROOM : 0);
           if (along < 0 || along > reach + o.r || Math.abs(lat - a.off) >= W / 2 + o.r + TOUCH) continue;
           if (along < along1) { if (d < stillGap) { stillGap = d; still = o; } }
-          // (Standing in a junction or beyond it: waited for a while, then squeezed past;
-          // never you.)
-          else if ((a.ignore <= 0 || you) && d < gap) { gap = d; blocker = o; }
+          // Jam escape can squeeze past an unrelated obstacle, but a working dustcart
+          // on the shared exit lane is still the head of this queue.
+          else if (d < gap && (a.ignore <= 0 || you || (o.car?.working && this.mergeDistance(a, o.car) > 0))) {
+            gap = d; blocker = o;
+          }
           continue;
         }
         // (Not for a standing car: it is never followed into a shared lane, as that
