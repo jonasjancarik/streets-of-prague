@@ -518,7 +518,7 @@ class BelowAWallTests(unittest.TestCase):
     under Patočkova): its kerbs at 206 m along y = 42 and up its sides, on the terrace
     the scan has from y = 38; south of that the scan has the road below the wall, 200 m."""
 
-    def build(self, scan):
+    def build(self, scan, ends=()):
         tiles = {(0, 0): np.full((17, 17), 200.0, dtype=np.float32)}
         boxes = {(0, 0): box(0, 0, 64, 64)}
         lines = [[(2, 30, 206), (2, 42, 206), (62, 42, 206), (62, 30, 206)]]
@@ -530,7 +530,8 @@ class BelowAWallTests(unittest.TestCase):
             return lo, hi
         with patch.object(dh, 'survey', return_value=([box(2, 30, 62, 42)], [np.array(c, float) for c in lines], [])):
             out = dh.apply('test', None, Identity(), tiles, 16, 4.0, 0, 0, None, boxes,
-                           scan=terrace if scan else None, level_across=False, no_feather=True)
+                           scan=terrace if scan else None, level_across=False, no_feather=True,
+                           bridge_ends=ends)
         return tiles[0, 0], out
 
     def test_the_ground_below_the_wall_is_the_scan_s(self):
@@ -540,6 +541,12 @@ class BelowAWallTests(unittest.TestCase):
         self.assertGreater(out['below_wall'], 0)
         self.assertAlmostEqual(float(after[8, 8]), 200.0, delta=0.01)
         self.assertGreater(float(after[10, 8]), 205.0)  # (32, 40): on the terrace, the survey's
+
+    def test_not_by_a_bridge_s_end(self):
+        # A bridge coming down at (32, 30): the scan's road there is under its deck.
+        after, _ = self.build(scan=True, ends=[(32.0, 30.0)])
+        self.assertGreater(float(after[8, 8]), 205.0)
+        self.assertAlmostEqual(float(after[8, 4]), 200.0, delta=0.01)  # (16, 32): 16 m from it
 
 
 if __name__ == '__main__':

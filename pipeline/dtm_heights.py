@@ -242,13 +242,16 @@ SCAN_AGREE = 1.5  # m
 # point flat (lowest and highest within SCAN_REACH less than SCAN_AGREE apart) and
 # more than LEVELS under all its nearest kerbs, and none of those kerbs is aloft (so
 # they're on the ground the scan has, not on a viaduct over this point), the point is
-# below a wall from them: it takes the scan's height and is no street point. Where its
+# below a wall from them: it takes the scan's height and is no street point, unless
+# it's within END_CLEAR of where a bridge comes down: OSM ends bridges short of their
+# abutments, so the street's last metres are on the deck, and the bare-earth scan has
+# the road under it (5. května at 50.0387, 14.4880 went 6 m down into a trench). Where its
 # nearest kerbs are on two levels and those of the upper aren't aloft, the scan picks
 # the lower within UNDER_BRIDGE of a bridge too. And after the street rules have moved
 # the ground (levelling across a street whose width reaches over the wall, feathering
 # the slope beside it), any lattice point where the scan is flat and more than LEVELS
-# off it, outside tunnels, the map's bridges' outlines and the points that took a kerb
-# aloft, takes the scan's height (`scan_held`, before the water, banks and walls).
+# off it, outside tunnels, the map's bridges' outlines, END_CLEAR round their ends and
+# the points that took a kerb aloft, takes the scan's height (`scan_held`, before the water, banks and walls).
 # On 36 test places it moved 20–900 points each, nearly all from 3–4 m off the LiDAR to
 # within 0.5 m: torn ground at the main station's metro entrance, beside Wilsonova, the
 # Strahov exit.
@@ -1388,6 +1391,8 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
                 lo, hi = scan_here(xy[q], SCAN_REACH)
                 with np.errstate(invalid="ignore"):
                     hit = (hi < bottom[q] - LEVELS) & (hi - lo < SCAN_AGREE) & ~aloft[own][near[q]].any(axis=1)
+                if end_tree is not None:
+                    hit &= end_tree.query(xy[q])[0] >= END_CLEAR
                 below[q[hit]] = True
                 got[q[hit]] = (lo[hit] + hi[hit]) / 2
                 counts["below_wall"] = counts.get("below_wall", 0) + int(hit.sum())
@@ -1521,10 +1526,13 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
     scan_held = 0
     if scan_here is not None:
         cj, ci = np.nonzero(~np.isnan(grid) & ~tunnelled & ~beneath & ~lifted)
-        lo, hi = scan_here(np.column_stack([x_of(ci), y_of(cj)]), SCAN_REACH)
+        cxy = np.column_stack([x_of(ci), y_of(cj)])
+        lo, hi = scan_here(cxy, SCAN_REACH)
         with np.errstate(invalid="ignore"):
             mid = (lo + hi) / 2
             off = (hi - lo < SCAN_AGREE) & (np.abs(grid[cj, ci] - mid) > LEVELS)
+        if end_tree is not None:
+            off &= end_tree.query(cxy)[0] >= END_CLEAR
         grid[cj[off], ci[off]] = mid[off]
         street[cj[off], ci[off]] = False
         scan_held = int(off.sum())
