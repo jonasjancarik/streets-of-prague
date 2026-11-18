@@ -1220,3 +1220,38 @@ time to triangulate a tile, before `praha`.
   lattice the streets there ride on the terraces; the mesh takes the LiDAR on them and
   meets the pit. The four river bridges over the join limit (Palackého, Mánesův, Čechův,
   Štefánikův) are as before. Pictures in `docs/evidence/tin/praha-merged` (local).
+
+- 18 November 2026, evening: the steps the mesh had and the lattice hadn't (`tin`
+  a54d602d and the commit after it). Most came from a carriageway taking each sample's
+  height from whichever source won there: the LiDAR, the city pass, or IPR's dense model
+  near any face in the LiDAR (a kerb's or a parked car's edge too; on Nad Lávkou the dense
+  model lies 1.4 m over the road the other two agree on), with short blends between
+  sources 0.5–1 m apart. A car street's carriageway on the ground is now the city pass
+  (the LiDAR's own street, level kerb to kerb) plus the LiDAR's offsets from it where they
+  are small, smoothed along the road over 2 m. Where the LiDAR is further off and the
+  dense model bears it out, the city pass is wrong (Pod Stárkou) and the road takes the
+  LiDAR; where it doesn't, it's a bank or a ramp inside OSM's width and the road round it
+  says. Stretches more than 2.5 m off along the road (decks, cuttings) keep the old rules,
+  and the offset fades out over 12 m before a bridge's landing: the decks are the city
+  pass's, and the first city-wide run left 21 more joins over 0.5 m (Jižní spojka,
+  5. května, 0.2 → 0.6 m). Only the tile pass changed (47 minutes with `--keep-target`).
+
+  | `praha` | Lattice | Mesh before | Mesh after |
+  |---|---|---|---|
+  | Steps over 0.25 / 1 m | 178 / 6 | 437 / 27 | 202 / 20 |
+  | Bumps over 0.5 m | 214 | 210 | 164 |
+  | Leaning over 15 % | 886 | 996 | 840 |
+  | Twisting over 12 % | 662 | 744 | 575 |
+  | Waves over 0.3 m (2 m) | 675 | 971 | 575 |
+  | Bridge joins over 0.5 / 1 m | 238 / 113 | 285 / 113 | 269 / 113 |
+  | Carriageway within 0.3 m of the LiDAR | 99.1 % | 99.6 % | 99.6 % |
+
+  The drive-through scenario passes. Streets more than 0.3 m off the LiDAR somewhere rose
+  (1,859 → 2,342; over 2 m fell, 294 → 267): the road now keeps the city pass where the
+  LiDAR has a small bank inside OSM's width. Of the steps over 1 m left, most are the
+  aloft and tunnel cases (Bubenečský tunel's ramp, the north-east motorway, Pražský
+  okruh's slip road at Opuková) and the Řepy pit. Among the smaller ones 5. května at
+  Kongresová and short 0.3–0.5 m ones on residential streets (Nad Kovárnou, Schwankova,
+  Na Vidouli). From above: the 2.35 m pit across the trunk road by Zbraslav (49.9423,
+  14.3674) is gone, and so are the folds in 5. května's median. Pictures in
+  `docs/evidence/tin/steps` (local).
