@@ -506,6 +506,7 @@ def write_surface(out: Path, t, new, lines, kerb_rows):
 
 
 BLOCK = (4, 16)  # tiles a process takes at a time, columns by rows: its neighbours and IPR's sheets read once for it
+TARGET_RUN = 32  # tiles in a row of the target that one process makes before the next takes over
 
 
 def blocks(keys, jobs):
@@ -640,8 +641,11 @@ def main():
             have &= want
         order = sorted(have, key=lambda kk: tuple(map(int, kk.split("_"))))
         cmd = ["node", str(ROOT / "scripts" / "tin-target.mjs"), a.map, "--data", str(a.data.resolve()), "--out", str(work)]
-        size = max(1, -(-len(order) // jobs))
-        procs = [subprocess.Popen(cmd + ["--tiles", ",".join(order[n:n + size])]) for n in range(0, len(order), size)]
+        # (Runs of TARGET_RUN tiles dealt out in turn, so each process has some of the dense
+        # centre: with one slice each, the four that had it ran 40 minutes past the rest.)
+        runs = [order[n:n + TARGET_RUN] for n in range(0, len(order), TARGET_RUN)]
+        shares = [[k for r in runs[m::jobs] for k in r] for m in range(min(jobs, len(runs)))]
+        procs = [subprocess.Popen(cmd + ["--tiles", ",".join(s)]) for s in shares]
         codes = [p.wait() for p in procs]  # (every one waited for, failed or not)
         if any(codes):
             raise SystemExit("tin-target.mjs failed")
