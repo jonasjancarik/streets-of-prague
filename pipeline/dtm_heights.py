@@ -171,6 +171,17 @@ OVERHANG = 12.0  # m from a surveyed street: a mapped carriageway this near one 
 UNDER = 2.0  # m below the terrain model, in a tunnel of the map's: surveyed under the ground
 UNDER_SIDE = 4.0  # m either side of the tunnel that counts as in it
 FEW = 3  # a surface with fewer surveyed points than this keeps the terrain model's heights
+# A surface is surveyed along its edges, and its height between them is theirs: across a
+# street, from kerb to kerb, at most 10–15 m from one. Some surfaces are far wider than a
+# street and surveyed only round their rims: the land inside the Řepy interchange on the
+# D0 (50.0753, 14.2895) is one roadside surface of 44,000 m² with nine holes, its lattice
+# points a median 38 m from a surveyed point, up to 200 m. A point took its six nearest
+# rim points, those by the motorway below, and the bank 7 m above it, where the terrain
+# model and the LiDAR agree, came out as a flat pit at the motorway's height. Further
+# than SURVEY_REACH from every surveyed point of its surface, a point comes back to the
+# terrain model, wholly by SURVEY_GONE (not in a tunnel, where the model is the hill).
+SURVEY_REACH = 12.0  # m
+SURVEY_GONE = 24.0  # m
 LEVELS = 3.0  # m between the surveyed points nearest a lattice point under a bridge: a surface on two levels
 UNDER_BRIDGE = 6.0  # m round a bridge that count as under it (how far its deck's heights reach)
 # A short underpass under a wide street (Na Veselí and Táborská under 5. května at
@@ -1345,7 +1356,16 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
             wgt = np.where((split & ~low)[:, None] & (z < top[:, None] - 1.0), 0.0, wgt)
             wgt = np.where(low[:, None] & (z > bottom[:, None] + 1.0), 0.0, wgt)
             two_levels += int(split.sum())
-        grid[gj, gi] = (wgt * z).sum(axis=1) / wgt.sum(axis=1)
+        got = (wgt * z).sum(axis=1) / wgt.sum(axis=1)
+        # (Far from its surveyed points, the terrain model's: see SURVEY_REACH.)
+        gone = np.clip((d.min(axis=1) - SURVEY_REACH) / (SURVEY_GONE - SURVEY_REACH), 0.0, 1.0)
+        gone[inside | np.isnan(bare[gj, gi])] = 0.0
+        if gone.any():
+            got = got * (1 - gone) + np.nan_to_num(bare[gj, gi]) * gone
+            counts["far_from_survey"] = counts.get("far_from_survey", 0) + int((gone > 0).sum())
+        grid[gj, gi] = got
+        kept = gone < 1.0
+        gi, gj = gi[kept], gj[kept]
         street[gj, gi] = True
         which[gj, gi] = owner[a] + 1
         surfaces += 1
@@ -1900,7 +1920,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         if listed:
             outlines[(i, j)] = listed
     changed = ~np.isnan(bare) & (np.abs(grid - bare) > 0.05)
-    return {"survey_rejected_vertices": rejected, "off_scan": counts.get("off_scan", 0), "sunk_kerbs": int(sunk.sum()), "aloft": int(aloft.sum()), "deck_kerbs": int(decked.sum()), "over_kerbs": int(over_kerbs.sum()), "end_kerbs": int(at_end.sum()), "kerbs_skipped": counts.get("kerbs_skipped", 0), "scan_lower": counts.get("scan_lower", 0), "scan_upper": counts.get("scan_upper", 0), **({"kept_aloft": counts["kept_aloft"]} if "kept_aloft" in counts else {}), "surfaces": surfaces, "street_points": street_points, "levelled_across": levelled_points, "streets_from_scan": scanned, "two_levels": two_levels, "under_points": under, "feathered": feathered, "overhang_points": overhang, "water_points": int(wet.sum()), "water_levelled": levelled, "valley_points": valley, "bank_points": bank_points,
+    return {"survey_rejected_vertices": rejected, "off_scan": counts.get("off_scan", 0), "sunk_kerbs": int(sunk.sum()), "aloft": int(aloft.sum()), "deck_kerbs": int(decked.sum()), "over_kerbs": int(over_kerbs.sum()), "end_kerbs": int(at_end.sum()), "kerbs_skipped": counts.get("kerbs_skipped", 0), "scan_lower": counts.get("scan_lower", 0), "scan_upper": counts.get("scan_upper", 0), **({"kept_aloft": counts["kept_aloft"]} if "kept_aloft" in counts else {}), "surfaces": surfaces, "street_points": street_points, "far_from_survey": counts.get("far_from_survey", 0), "levelled_across": levelled_points, "streets_from_scan": scanned, "two_levels": two_levels, "under_points": under, "feathered": feathered, "overhang_points": overhang, "water_points": int(wet.sum()), "water_levelled": levelled, "valley_points": valley, "bank_points": bank_points,
             "kept_by_hand": kept, "cut_streets": cuts, "retaining_walls": len(strips) - cuts - wall_tops, "wall_tops": wall_tops, "street_cells": freed, "retaining_metres": round(wall_length), "cuttings": len(cuttings), "terrace_off_streets_m2": round(off_streets), "wall_points": wall_points, "lone_points": lone_points,
             "changed": int(changed.sum()), "mean_change": float(np.abs(grid - bare)[changed].mean()) if changed.any() else 0.0,
             "labels": labels, "terraces": outlines, "terrace_ids": ids, "soft_edges": soft_edges}
