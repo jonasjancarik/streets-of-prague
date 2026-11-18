@@ -22,6 +22,14 @@
     { "name": "Dobříšská, north end", "at": [50.0615, 14.4061], "found": "2026-11, road surface trials",
       "what": "the LiDAR and the surface model disagree" },
     { "name": "náměstí Míru", "at": [50.0753, 14.437], "radius": 80, "found": "2026-10, feedback",
-      "what": "a pit players drove into: kerbs surveyed 21 m under the square (SUNK, fixed in October)" }
+      "what": "a pit players drove into: kerbs surveyed 21 m under the square (SUNK, fixed in October)" },
+    { "name": "Strahovský tunel under Strahov", "at": [50.0798, 14.3876], "radius": 60, "found": "2026-11-16, feedback",
+      "what": "the tunnel can't be driven through from Smíchov: each tube's halves met in a ramp of 103 % (tunnels solved like bridges, fixed 2026-11-18)" },
+    { "name": "Wilsonova by Hlavní nádraží", "at": [50.0836, 14.4352], "radius": 60, "found": "2026-11-13 and 16, feedback",
+      "what": "a wall round the road: the station hall under it was solid across the lanes (streets on a building's roof, fixed 2026-11-18)" },
+    { "name": "Wilsonova at Bulhar", "at": [50.0912, 14.4377], "radius": 60, "found": "2026-11-16, feedback",
+      "what": "the magistrála completely broken: the viaduct's outline a blank slab on a level of its own over both carriageways" },
+    { "name": "Dvorecký most at Strakonická", "at": [50.0503, 14.4107], "radius": 60, "found": "2026-11-12, feedback",
+      "what": "the junction and the way onto the bridge from the west: the bridge's west half, missing from IPR's model, runs evenly 1.5 m under Strakonická" }
   ]
 }
