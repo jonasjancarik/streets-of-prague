@@ -1194,3 +1194,29 @@ time to triangulate a tile, before `praha`.
   bridges and tunnels branch (`claude/elated-noyce-c84e2c`, 18 November) changes what
   the city pass writes for tunnels and bridge outlines, so `praha`'s city pass and tile
   pass would be built again after it is merged.
+
+- 18 November 2026, later: the bridges and tunnels work merged into `tin` (e6f2d4fc, from
+  `claude/elated-noyce-c84e2c`, with main up to 6886d48d) and `praha` built again: the
+  station hall's chunk, IPR's buildings, the city pass (18 minutes) and the tile pass (the
+  target 61 minutes now that it is dealt out in runs, the tiles 61), 132.5 MB as before.
+  The drive-through scenario passes on the mesh: the Strahov tunnel both ways, Wilsonova
+  past the station both ways, and at Bulhar no slab over the carriageways (decks within
+  0.6 m). From above, the slab at Bulhar and the hall over Wilsonova are gone.
+
+  | `praha` | Lattice before | Lattice after | Mesh before | Mesh after |
+  |---|---|---|---|---|
+  | Bridge joins over 0.5 / 1 m | 243 / 120 | 238 / 113 | 291 / 121 | 285 / 113 |
+  | Steps over 0.25 / 1 m | 185 / 5 | 178 / 6 | 432 / 21 | 437 / 27 |
+  | Ridge or trough over 1 m | 79 | 77 | 73 | 66 |
+  | Leaning over 15 % | 891 | 886 | 1,004 | 996 |
+  | Off the LiDAR by more than 1 m | 0.48 % | 0.48 % | 0.22 % | 0.19 % |
+
+  The six new steps over 1 m on the mesh are at the Řepy D0 interchange (50.0753,
+  14.2895), where the ground beside the bridge lies flat at 331.2 m, 6 m under the bank
+  the LiDAR and IPR's model have, with bridge-end terraces at 338 m in it. It isn't the
+  merge: main's map of 16 November and the bridges worktree's have the same pit and
+  terraces, and the pre-merge code builds them from today's inputs too. The `tin` build
+  of 17 November didn't have it, for a reason in its inputs not yet found. On the
+  lattice the streets there ride on the terraces; the mesh takes the LiDAR on them and
+  meets the pit. The four river bridges over the join limit (Palackého, Mánesův, Čechův,
+  Štefánikův) are as before. Pictures in `docs/evidence/tin/praha-merged` (local).
