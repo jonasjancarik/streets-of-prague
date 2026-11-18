@@ -975,7 +975,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   a tunnel runs on the roof of what's under it: Wilsonova (layer 1) over the main
   station's hall, which stood solid across the six lanes. A building on the ground
   there loses what the street's carriageway covers (`on_roof` in
-  `pipeline/osm_area.py`, by the tags' width). Not service roads: those mapped a layer
+  `pipeline/osm_area.py`, by the tags' width), with the median between its
+  carriageways (gaps under 8 m, `ROOF_GAP`) and without the scraps left over (under
+  25 m², `ROOF_SCRAP`). Not service roads: those mapped a layer
   up are rooftop car parks, on the roof itself. In Prague the hall is the only
   building it cuts (November 2026).
 - **Crossing widths.** At junctions where road surfaces merge, zebra bars are limited

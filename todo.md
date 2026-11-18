@@ -279,10 +279,19 @@ before that day's frame-count fix may be doubled.
     the street on the ground at about 199 m: joins of 13.9 and 10.7 m. Needs IPR's model
     and the survey read there; the tunnel fix doesn't touch them.
   - **Other steep car tunnels** (`check-bridge-decks.mjs`, "Car streets in tunnels"):
-    on the map of 16 November 17 of 109 climb more than 15 % over 10 m (Dejvický 46 %,
-    Bubenečský 41/40 %, the Osnice ecoduct 37/35 %, Brusnický 20 %…). The Strahov fix
-    solves tunnels with every portal known like bridges; the ones it leaves are listed
-    in the deck check after a city build.
+    on the map of 16 November 17 of 109 climb more than 15 % over 10 m; in a city
+    build with the fix 11 (Strahov and Dejvický gone). Left: Bubenečský 41/40 % and
+    the trunk_link beside it 32 %, the Osnice ecoduct 37/35 %, K Žižkovu 24 %,
+    Rohanské nábřeží 20 %, Pražský okruh by Osnice 16 %.
+  - **The bridge outline rule's two losses** (`OUTLINE_ALONG`; window builds, rule off
+    → on): the D0 at Lahovice (49.9865, 14.3935), where the outline now follows the
+    deck's climb east of the river and lies 4–7 m over a layer-2 motorway way and two
+    cycleways (outline over a street 2,772 → 3,144 m², steps over 1.5 m inside it
+    39 → 49), and most Barikádníků (68 → 76 m²). Against that: Řepy's D0 interchange
+    11,416 → 0 m², Bulhar 4,612 → 904, Jižní spojka 2,108 → 0, Barrandovský 688 → 416.
+  - **Na Poříčí under Wilsonova's viaduct at Bulhar** (road place "Wilsonova at
+    Bulhar"): 3.5 m off the LiDAR and waves of 1.2 m, the same before and after the
+    viaduct's fix; not looked at (the LiDAR may see the viaduct there).
   - **Barrandovský most:** ways 141925893 and 26226909 lie about 10 m under the
     bridge's outlines (416 and 648 m²). Probably real streets under the bridge; not
     looked at.
