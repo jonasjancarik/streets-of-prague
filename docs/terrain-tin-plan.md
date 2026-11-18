@@ -1248,10 +1248,11 @@ time to triangulate a tile, before `praha`.
 
   The drive-through scenario passes. Streets more than 0.3 m off the LiDAR somewhere rose
   (1,859 → 2,342; over 2 m fell, 294 → 267): the road now keeps the city pass where the
-  LiDAR has a small bank inside OSM's width. Of the steps over 1 m left, most are the
-  aloft and tunnel cases (Bubenečský tunel's ramp, the north-east motorway, Pražský
-  okruh's slip road at Opuková) and the Řepy pit. Among the smaller ones 5. května at
-  Kongresová and short 0.3–0.5 m ones on residential streets (Nad Kovárnou, Schwankova,
-  Na Vidouli). From above: the 2.35 m pit across the trunk road by Zbraslav (49.9423,
+  LiDAR has a small bank inside OSM's width. Of the 20 steps over 1 m left, seven are at
+  the Řepy interchange (the pit), and most of the rest are motorways the map calls ground
+  and tunnel ramps: Bubenečský tunel's (3.1 m), the north-east motorway, D8 at
+  50.1724, 14.4571. Also V Lázních, Ostřicová and K Celinám (a wall's terrace), K Přehradám
+  by its bridge and Patočkova by the Strahov tunnel. Most of the 0.25–1 m ones are short
+  steps of 0.3–0.5 m on residential streets (Nad Kovárnou, Schwankova, Na Vidouli). From above: the 2.35 m pit across the trunk road by Zbraslav (49.9423,
   14.3674) is gone, and so are the folds in 5. května's median. Pictures in
   `docs/evidence/tin/steps` (local).
