@@ -36,7 +36,13 @@ walls' outlines with straight tops, which the mesh keeps as breaklines). Per til
      city pass's own mistake and keeps the LiDAR (a pit 2 m deep in Národní). Divadelní,
      down its cutting to the car park, has its walls beside the street, not across it,
      but the dense model hasn't the cutting either, so the first rule gives it the city
-     pass's ground, as on the lattice;
+     pass's ground, as on the lattice. A patch is held the same way, face or not, where a
+     car street's middle has the city pass more than ALOFT m over the LiDAR away from
+     tunnels (a deck the map calls ground), and within LANDING m of where a bridge's way
+     comes down onto a way on the ground (the decks are the city pass's); a held patch is
+     the city pass off paved ground too. And on a car street's carriageway the city pass
+     wherever the LiDAR parts from it but the street's middle agrees: a bank or a ramp
+     beside the road inside OSM's width;
    - within NEAR m of a wall the city pass, blending over BLEND m: the walls' foot and
      top still come from the lattice (step 4 of the plan moves them to points).
 3. The breaklines: the walls' outlines with each side's height; an outline whose sides
@@ -92,6 +98,9 @@ AGREE = 0.5  # m: the LiDAR further than this from the city pass (and IPR's dens
 HELD_GROW = 1.0  # m round where it gives way that it does so too, so the change lies where the two agree
 BRIDGE_NEAR = 8.0  # m round the map's bridges where a face in the LiDAR holds the city pass (both models are bare earth)
 HELD_REACH = 15.0  # m from such a face (or one across a car street) that the patch it holds reaches
+ALOFT = 3.0  # m: the city pass this far over the LiDAR on a car street's middle is a deck the map calls ground
+TUNNEL_NEAR = 15.0  # m round a tunnel where it is not: the ramp down to the portal, in its cutting
+LANDING = 6.0  # m round where a bridge's way comes down onto a way on the ground: the city pass, to meet the deck
 MIDDLE = 1.0  # m either side of a street's line: a face there crosses it (one further out runs beside it)
 KERB = "010000030402"  # the survey's kerb (DTM ZPS, set 3)
 KERB_EVERY = 0.5  # m between the points taken along a kerb
@@ -256,36 +265,61 @@ def padded(targets, meta, field, pad):
 
 
 def held_ground(tile_of, i, j):
-    """Where a face in the LiDAR holds the city pass (`surface`), round tile (i, j): the
-    middles of the car streets on the ground, and those of every street and path within
-    BRIDGE_NEAR m of one of the map's bridges, each MIDDLE m either side of its line; as a
-    prepared shapely geometry or None. `tile_of(key)` gives a tile's JSON or None."""
-    bridges, cars, ways = [], [], []
+    """Where the city pass is held (`surface`), round tile (i, j), as prepared shapely
+    geometries (each None where there is none). `tile_of(key)` gives a tile's JSON or None.
+    - "middles": where a face in the LiDAR holds it: the middles of the car streets on
+      the ground, and those of every street and path within BRIDGE_NEAR m of one of the
+      map's bridges, each MIDDLE m either side of its line;
+    - "cars": the car streets' middles alone (the carriageways' rule);
+    - "aloft": those further than TUNNEL_NEAR m from a tunnel (ALOFT);
+    - "landings": the ways' middles within LANDING m of where a bridge's way comes down
+      onto a way on the ground;
+    - "carriage": the car streets' carriageways on the ground, kerb to kerb (the survey's
+      kerbs where the map measured them, else half the width either side)."""
+    bridges, tunnels, cars, ways, sides = [], [], [], [], []
+    on_deck, on_ground, at = set(), set(), {}
     for a in (-1, 0, 1):
         for b in (-1, 0, 1):
             tj = tile_of(f"{i + a}_{j + b}")
             if not tj:
                 continue
             for s in tj.get("structures") or []:
-                if s.get("kind") == "bridge":
-                    bridges += [shapely.Polygon(p[0], p[1:]) for p in s["polys"] if len(p[0]) >= 3]
+                if s.get("kind") in ("bridge", "tunnel"):
+                    polys = [shapely.Polygon(p[0], p[1:]) for p in s["polys"] if len(p[0]) >= 3]
+                    (bridges if s["kind"] == "bridge" else tunnels).extend(polys)
             for kind in ("drive", "walk"):
                 for e in tj.get(kind) or []:
                     if len(e["pts"]) < 2 or (e.get("level") or 0) < 0:
                         continue
                     line = shapely.LineString(e["pts"])
                     ways.append(line)
-                    if kind == "drive" and not e.get("bridge") and not e.get("level"):
+                    deck = bool(e.get("bridge") or e.get("level"))
+                    for node, p in ((e.get("u"), e["pts"][0]), (e.get("v"), e["pts"][-1])):
+                        if node is not None:
+                            (on_deck if deck else on_ground).add(node)
+                            at[node] = p
+                    if kind == "drive" and not deck:
                         cars.append(line)
+                        w = e.get("width") or 6.0
+                        kl, kr = [float(x) if x else w / 2 for x in (e.get("kerb") or [w / 2, w / 2])]
+                        sides += [shapely.buffer(line, kl, single_sided=True), shapely.buffer(line, -kr, single_sided=True)]
     union = lambda parts: shapely.union_all(shapely.make_valid(np.array(parts, dtype=object))) if parts else None
-    middles = [shapely.buffer(union(cars), MIDDLE, cap_style="flat")] if cars else []
-    if bridges and ways:
-        zone = shapely.buffer(union(bridges), BRIDGE_NEAR)
-        middles.append(shapely.intersection(shapely.buffer(union(ways), MIDDLE, cap_style="flat"), zone))
-    geom = union(middles)
-    if geom is not None:
-        shapely.prepare(geom)
-    return geom
+    car_mid = shapely.buffer(union(cars), MIDDLE, cap_style="flat") if cars else None
+    way_mid = shapely.buffer(union(ways), MIDDLE, cap_style="flat") if ways else None
+    middles = [car_mid] if car_mid is not None else []
+    if bridges and way_mid is not None:
+        middles.append(shapely.intersection(way_mid, shapely.buffer(union(bridges), BRIDGE_NEAR)))
+    landings = None
+    if way_mid is not None and (down := [at[n] for n in on_deck & on_ground]):
+        landings = shapely.intersection(way_mid, shapely.buffer(shapely.multipoints(down), LANDING))
+    aloft = car_mid
+    if car_mid is not None and tunnels:
+        aloft = shapely.difference(car_mid, shapely.buffer(union(tunnels), TUNNEL_NEAR))
+    out = dict(middles=union(middles), cars=car_mid, aloft=aloft, landings=landings, carriage=union(sides))
+    for g in out.values():
+        if g is not None:
+            shapely.prepare(g)
+    return out
 
 
 def kerbs_in(kerbs, box, lines, side, g):
@@ -377,23 +411,56 @@ def surface(t, targets, dense, scan_at, pads, kerbs, held_at=None):
         # Legií's outline, a pit 2 m deep on a flat street. (Beside it Divadelní, down the
         # cutting to the car park under the theatre, has no face across it, but the dense
         # model lacks the cutting too, so the first part takes the city pass there.)
-        near = shapely.contains_xy(held_at, PX, PY) if held_at is not None else np.zeros(PX.shape, bool)
+        #
+        # Three more seeds hold a patch the same way, faces or not:
+        # - on a car street's middle, the city pass more than ALOFT over the LiDAR: a deck
+        #   the map calls ground (a motorway at the city's north-east edge, 50.1336,
+        #   14.6361, and Pražský okruh at 50.0476, 14.2727: both models have flat ground
+        #   5–8 m under them). Not within TUNNEL_NEAR of a tunnel: the link road down to
+        #   Bubenečský tunel at 50.1136, 14.4327 is in a cutting 6 m deep that both
+        #   models have, and the city pass has it level at the top;
+        # - within LANDING of where a bridge's way comes down onto a way on the ground: the
+        #   decks are the city pass's, and the ground has to meet them (on the lattice the
+        #   street's last metres came down a metre to one of Jižní spojka's decks, which
+        #   the mesh left a metre over it).
+        # And on a car street's carriageway, kerb to kerb, the city pass wherever the
+        # LiDAR parts from it but the street's middle beside it agrees: the city pass's
+        # streets are the LiDAR's own, level kerb to kerb (`dtm_heights._scan_streets`),
+        # and the LiDAR off the middle there is something beside the road inside OSM's
+        # width (a bank along the lane Na dražkách, a ramp down beside Revoluční by
+        # Kotva), which made streets lean 50–70 %.
+        geo = held_at or {}
+        inside = lambda key: shapely.contains_xy(geo[key], PX, PY) if geo.get(key) is not None else np.zeros(PX.shape, bool)
+        near, cars, high, land = inside("middles"), inside("cars"), inside("aloft"), inside("landings")
         with np.errstate(invalid="ignore"):
             off = np.nan_to_num(np.abs(street - h_p))
             alt = np.where(have_p, np.abs(street - far_p), np.inf)
             part = np.nan_to_num(np.clip((np.minimum(off, alt) - AGREE) / AGREE, 0, 1))
+            above = np.nan_to_num(h_p - street) > ALOFT
         apart = off > AGREE
-        seed = apart & near & (d_face <= g)
+        if cars.any():
+            road = inside("carriage")
+            _, (ri, rj) = distance_transform_edt(~cars, return_indices=True)
+            level = road & (off[ri, rj] <= AGREE)
+            part = np.maximum(part, np.clip((off - AGREE) / AGREE, 0, 1) * level)
+        seed = apart & ((near & (d_face <= g)) | (high & above) | land)
+        grow = int(round(HELD_GROW / g))
+        soften = lambda w: gaussian_filter(maximum_filter(w, size=2 * grow + 1), grow / 2)
+        hold = np.zeros(PX.shape)
         if seed.any():
             patches, _ = label(apart, structure=np.ones((3, 3)))
             hit = np.unique(patches[seed])
             mine = np.isin(patches, hit[hit > 0]) & (distance_transform_edt(~seed) * g <= HELD_REACH)
-            part = np.maximum(part, np.clip((off - AGREE) / AGREE, 0, 1) * mine)
-        grow = int(round(HELD_GROW / g))
-        part = gaussian_filter(maximum_filter(part, size=2 * grow + 1), grow / 2)
+            hold = np.clip((off - AGREE) / AGREE, 0, 1) * mine
+            part = np.maximum(part, hold)
+        part = soften(part)
         street = np.where(np.isfinite(h_p), street * (1 - part) + np.nan_to_num(h_p) * part, street)
         street, held = street[PAD:-PAD, PAD:-PAD], (part * off)[PAD:-PAD, PAD:-PAD]  # (held: how far it moved)
         street = np.where(np.isfinite(street), street, h)
+        # (A held patch is the city pass off paved ground too, where the dense model would
+        # come in: that motorway's verges fell 8 m beside its held carriageways.)
+        hold = soften(hold)[PAD:-PAD, PAD:-PAD]
+        far = far * (1 - hold) + h * hold
     else:
         street = h
     wp = np.clip((d_paved - NEAR) / BLEND, 0, 1)
