@@ -102,6 +102,7 @@ STEEP_NEAR = 1.5  # m round such a face where IPR's dense model takes over from 
 AGREE = 0.5  # m: the LiDAR further than this from the city pass (and IPR's dense model) gives way, wholly from twice it
 ROAD_SMOOTH = 2.0  # m: the Gaussian along a carriageway over how far the LiDAR is off the city pass
 ROAD_FAR = 2.5  # m: the LiDAR further than this off the city pass along a carriageway is left to the other rules
+ROAD_RAMP = 12.0  # m past a bridge's landing over which a carriageway comes back to the city pass
 HELD_GROW = 1.0  # m round where it gives way that it does so too, so the change lies where the two agree
 BRIDGE_NEAR = 8.0  # m round the map's bridges where a face in the LiDAR holds the city pass (both models are bare earth)
 HELD_REACH = 15.0  # m from such a face (or one across a car street) that the patch it holds reaches
@@ -473,6 +474,13 @@ def surface(t, targets, dense, scan_at, pads, kerbs, held_at=None):
             # Not where the two are more than ROAD_FAR apart along the road: a deck or a
             # cutting, the rules below.
             trust = road * np.clip((ROAD_FAR - along(a) / cover) / AGREE, 0, 1)
+            # Toward a bridge's end the road comes back to the city pass, over ROAD_RAMP m
+            # past the landing: the decks are the city pass's, and the LiDAR's offsets kept
+            # up to a street's last metres left the joins at Jižní spojka and 5. května
+            # 0.6 m apart (0.2 m before).
+            if land.any():
+                ramp = np.clip(distance_transform_edt(~land) * g / ROAD_RAMP, 0, 1)
+                res, wrong = res * ramp, wrong * ramp
             fill = np.nan_to_num(h_p) + res
             mine = fill * (1 - wrong) + lidar * wrong
             street = np.where(np.isfinite(h_p), street * (1 - trust) + mine * trust, street)
