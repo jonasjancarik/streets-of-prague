@@ -90,6 +90,8 @@ interface Game {
   grid: { at: (x: number, y: number) => number; view?: (who: Car) => { at: (x: number, y: number) => number } };
   steps: (x: number, y: number, r: number) => { edges: StepEdge[]; crossings: { x: number; y: number; dx: number; dy: number; drop: number; hw: string }[] };
   ground: (x: number, y: number) => number;
+  // A bridge or tunnel level's height at a point (the ground's at level 0; NaN where it isn't).
+  levelAt: (x: number, y: number, level: number) => number;
   streets: DriveGraph;
   // Whether the countryside past the map's edge is being made (?countryside).
   countryside: () => boolean;
@@ -1088,6 +1090,18 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     },
 
     // What's going on, as numbers.
+    // The heights at a place, of the ground and of each bridge or tunnel level there (from
+    // -4 to 6), in the game's metres (above 180 m): what lies over a street, or under it.
+    heights(w: Where) {
+      const [x, y] = kit.toLocal(w);
+      const out: Record<number, number> = {};
+      for (let l = -4; l <= 6; l++) {
+        const h = g.levelAt(x, y, l);
+        if (!Number.isNaN(h)) out[l] = h;
+      }
+      return out;
+    },
+
     probe() {
       const c = g.car();
       return {
