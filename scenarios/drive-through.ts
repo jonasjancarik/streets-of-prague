@@ -5,8 +5,10 @@ import type { Scenario } from '../src/testkit.ts';
 //   tube's halves met (tunnels with every portal known are now solved like bridges,
 //   TUNNELS_HARMONIC in pipeline/structures.py);
 // - Wilsonova by the main station ran over the hall, a building on the ground and so
-//   solid across its six lanes (on_roof in pipeline/osm_area.py).
-// The map of 16 November 2026 has both; a map built since passes.
+//   solid across its six lanes (on_roof in pipeline/osm_area.py);
+// - Wilsonova's viaduct, falling 10 m to Bulhar, stood as a slab over its carriageways
+//   there, on a level of its own (OUTLINE_ALONG in pipeline/structures.py).
+// The map of 16 November 2026 has all three; a map built since passes.
 type Line = [number, number][];
 const STRAHOV_NORTH: Line = [[50.072639, 14.39838], [50.072955, 14.398168], [50.073192, 14.397933], [50.073405, 14.39767],
   [50.073672, 14.397171], [50.073938, 14.39652], [50.074255, 14.395703], [50.074579, 14.394972], [50.07491, 14.394379],
@@ -22,21 +24,38 @@ const WILSONOVA_SOUTH: Line = [[50.085016, 14.436091], [50.084785, 14.435896], [
   [50.08393, 14.435203], [50.083479, 14.434874], [50.083342, 14.434778], [50.083268, 14.434726], [50.082872, 14.434447]];
 const WILSONOVA_NORTH: Line = [[50.082701, 14.434502], [50.083137, 14.434811], [50.083299, 14.434927], [50.083474, 14.43505],
   [50.083827, 14.435302], [50.083887, 14.435345], [50.084175, 14.435556], [50.084605, 14.435898], [50.084973, 14.43621]];
+const BULHAR_NORTH: Line = [[50.088773, 14.437819], [50.088953, 14.437823], [50.089527, 14.437823],
+  [50.089939, 14.437808], [50.090315, 14.437787], [50.090631, 14.437761], [50.090942, 14.437731],
+  [50.09123, 14.437696], [50.091345, 14.437681], [50.092002, 14.437576], [50.092135, 14.437559],
+  [50.092208, 14.437551], [50.092352, 14.437542], [50.092448, 14.437536], [50.092527, 14.43753],
+  [50.092704, 14.4375]];
+const BULHAR_SOUTH: Line = [[50.093077, 14.437176], [50.092947, 14.437202], [50.092808, 14.437235],
+  [50.09266, 14.437265], [50.092542, 14.437291], [50.092431, 14.437326], [50.092254, 14.437379],
+  [50.092182, 14.437402], [50.092059, 14.437435], [50.091946, 14.437457], [50.091801, 14.437482],
+  [50.091667, 14.437504], [50.091339, 14.437552], [50.090941, 14.437604], [50.090706, 14.437629],
+  [50.090549, 14.437643], [50.090322, 14.437661], [50.089834, 14.437687], [50.089608, 14.437694],
+  [50.089374, 14.437699], [50.088739, 14.437692]];
 
 // The compass heading from one point to the next.
 const heading = (a: [number, number], b: [number, number]) =>
   (450 - Math.atan2((b[0] - a[0]) * 111320, (b[1] - a[1]) * 71500) * 180 / Math.PI) % 360;
 
 export default {
-  title: 'Cars get through the Strahov tunnel and along Wilsonova past the main station',
+  title: 'Cars get through the Strahov tunnel and along Wilsonova past the main station and Bulhar',
   async run(t) {
     t.time('11:00');
     t.weather('clear');
     for (const [name, line] of [['Strahov tunnel northbound', STRAHOV_NORTH], ['Strahov tunnel southbound', STRAHOV_SOUTH],
-      ['Wilsonova southbound by the station', WILSONOVA_SOUTH], ['Wilsonova northbound by the station', WILSONOVA_NORTH]] as const) {
+      ['Wilsonova southbound by the station', WILSONOVA_SOUTH], ['Wilsonova northbound by the station', WILSONOVA_NORTH],
+      ['Wilsonova northbound off the viaduct at Bulhar', BULHAR_NORTH], ['Wilsonova southbound onto the viaduct at Bulhar', BULHAR_SOUTH]] as const) {
       await t.go(line[0], { heading: heading(line[0], line[1]) });
       t.empty(); // nothing to run into on the way
-      await t.drive('sedan');
+      try {
+        await t.drive('sedan');
+      } catch (e) { // (at Bulhar, under the slab: no car could be placed)
+        t.check(`${name}: the car gets to the end`, false, String(e instanceof Error ? e.message : e));
+        continue;
+      }
       const got = await t.follow([...line], 50);
       const { lat, lon } = t.where();
       t.check(`${name}: the car gets to the end`, got.arrived, `stopped at ${lat}, ${lon} after ${got.seconds} s, strayed ${got.strayed} m`);
