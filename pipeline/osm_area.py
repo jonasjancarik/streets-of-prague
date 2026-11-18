@@ -281,7 +281,8 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
                           cap_style="flat", join_style="round")
                  for g, row in zip(geoms, rows)
                  if isinstance(g, (LineString, MultiLineString)) and on_roof(col(row, "highway"), lambda t, row=row: col(row, t))]
-    roofed = unary_union(roof_ways) if roof_ways else None
+    # (Closed over the gaps between its carriageways: a median is on the roof too.)
+    roofed = unary_union(roof_ways).buffer(ROOF_GAP / 2).buffer(-ROOF_GAP / 2) if roof_ways else None
     cut_by_streets = 0
     for g, row in zip(geoms, rows):
         if g is None or g.is_empty:
@@ -308,7 +309,8 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
                 g = g.difference(roofed)
                 cut_by_streets += 1
             for poly in _polys(g):
-                if poly.area < 4 or (cut and poly.buffer(-1.0).is_empty):  # (nor the slivers left at a kerb)
+                # (Nor the slivers and scraps a cut leaves at a kerb or between streets.)
+                if poly.area < 4 or (cut and (poly.area < ROOF_SCRAP or poly.buffer(-1.0).is_empty)):
                     continue
                 buildings.append({
                     "id": osm_id,
@@ -830,6 +832,11 @@ def passage_tags(hw, get):
 # A building whose underside is this high (m) or more stands over the street, not under it
 # (RAISED in src/tiles.ts).
 ROOF_RAISED = 3.0
+# Gaps narrower than this between the carriageways of streets on a roof are cut with them:
+# the median between Wilsonova's carriageways over the station hall was left standing as
+# a strip of the hall 7 m high and 145 m long.
+ROOF_GAP = 8.0  # m
+ROOF_SCRAP = 25.0  # m²: a piece of a building cut by such streets smaller than this goes
 
 
 def on_roof(hw, get):
