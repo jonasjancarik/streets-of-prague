@@ -234,6 +234,24 @@ DECK_SIDE = 2.0  # m
 END_CLEAR = 6.0  # m
 CARRIED_GRADE, CARRIED_LEAST = 0.15, 1.0  # (m per m, m)
 SCAN_AGREE = 1.5  # m
+# Below a wall from the survey. A surveyed surface can reach over a retaining wall: OSM
+# and the technical map draw the street above it a few metres past the wall's line, or a
+# road at the foot of a wall into its own polygon (the Strahov tunnel's exit under
+# Patočkova, where the trunk link at 269 m took Patočkova's kerbs at 276–279 m and had a
+# hump 10 m high, and the terrace above it a pit 8 m deep). Where the scan has a lattice
+# point flat (lowest and highest within SCAN_REACH less than SCAN_AGREE apart) and
+# more than LEVELS under all its nearest kerbs, and none of those kerbs is aloft (so
+# they're on the ground the scan has, not on a viaduct over this point), the point is
+# below a wall from them: it takes the scan's height and is no street point. Where its
+# nearest kerbs are on two levels and those of the upper aren't aloft, the scan picks
+# the lower within UNDER_BRIDGE of a bridge too. And after the street rules have moved
+# the ground (levelling across a street whose width reaches over the wall, feathering
+# the slope beside it), any lattice point where the scan is flat and more than LEVELS
+# off it, outside tunnels, the map's bridges' outlines and the points that took a kerb
+# aloft, takes the scan's height (`scan_held`, before the water, banks and walls).
+# On 36 test places it moved 20–900 points each, nearly all from 3–4 m off the LiDAR to
+# within 0.5 m: torn ground at the main station's metro entrance, beside Wilsonova, the
+# Strahov exit.
 WATER_REACH = 16.0  # m: further than the terrain model's ramp at a bank reaches
 POOL_WIDE = 10.0  # m from the bank: water this wide is a river's or a pond's, level between weirs
 POOL_FALL = 0.001  # the most its surface falls a metre along (a metre a kilometre: the Berounka's is 0.6)
@@ -1288,6 +1306,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         cut[bj, bi] |= shapely.contains_xy(shape.buffer(UNDER_BRIDGE), x_of(bi), y_of(bj))
         cut_under[bj, bi] |= shapely.contains_xy(shape.buffer(1.0), x_of(bi), y_of(bj))
     street = np.zeros(grid.shape, dtype=bool)
+    lifted = np.zeros(grid.shape, dtype=bool)  # took a kerb aloft (see SCAN_AGREE)
     which = np.zeros(grid.shape, dtype=np.int32)  # the surface each street point is on, from 1
     for a, b in zip(starts, np.r_[starts[1:], len(owner)]):
         if b - a < FEW:
@@ -1344,7 +1363,10 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
             q = np.flatnonzero(two & ~low)
             lo, hi = scan_here(xy[q], SCAN_REACH)
             with np.errstate(invalid="ignore"):
-                lower = (hi < top[q] - LEVELS) & (np.abs(lo - bottom[q]) < SCAN_AGREE) & (~split[q] | _under_decks(deck_tree, xy[q]))
+                # (The upper level on the ground the scan has, not aloft: a wall above
+                # this point, not a deck. See SCAN_AGREE.)
+                walled = ~((z[q] > top[q][:, None] - 1.0) & aloft[own][near[q]]).any(axis=1)
+                lower = (hi < top[q] - LEVELS) & (np.abs(lo - bottom[q]) < SCAN_AGREE) & (~split[q] | _under_decks(deck_tree, xy[q]) | walled)
                 if end_tree is not None:
                     lower &= end_tree.query(xy[q])[0] >= END_CLEAR
                 upper = ~lower & (lo > bottom[q] + LEVELS) & (np.abs(hi - top[q]) < SCAN_AGREE)
@@ -1357,14 +1379,26 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
             wgt = np.where(low[:, None] & (z > bottom[:, None] + 1.0), 0.0, wgt)
             two_levels += int(split.sum())
         got = (wgt * z).sum(axis=1) / wgt.sum(axis=1)
+        lifted[gj, gi] |= ((wgt > 0) & aloft[own][near]).any(axis=1)
+        # (Below a wall from all its nearest kerbs: the scan's. See SCAN_AGREE.)
+        below = np.zeros(len(gi), dtype=bool)
+        if scan_here is not None:
+            q = np.flatnonzero(~inside)
+            if len(q):
+                lo, hi = scan_here(xy[q], SCAN_REACH)
+                with np.errstate(invalid="ignore"):
+                    hit = (hi < bottom[q] - LEVELS) & (hi - lo < SCAN_AGREE) & ~aloft[own][near[q]].any(axis=1)
+                below[q[hit]] = True
+                got[q[hit]] = (lo[hit] + hi[hit]) / 2
+                counts["below_wall"] = counts.get("below_wall", 0) + int(hit.sum())
         # (Far from its surveyed points, the terrain model's: see SURVEY_REACH.)
         gone = np.clip((d.min(axis=1) - SURVEY_REACH) / (SURVEY_GONE - SURVEY_REACH), 0.0, 1.0)
-        gone[inside | np.isnan(bare[gj, gi])] = 0.0
+        gone[inside | below | np.isnan(bare[gj, gi])] = 0.0
         if gone.any():
             got = got * (1 - gone) + np.nan_to_num(bare[gj, gi]) * gone
             counts["far_from_survey"] = counts.get("far_from_survey", 0) + int((gone > 0).sum())
         grid[gj, gi] = got
-        kept = gone < 1.0
+        kept = (gone < 1.0) & ~below
         gi, gj = gi[kept], gj[kept]
         street[gj, gi] = True
         which[gj, gi] = owner[a] + 1
@@ -1481,6 +1515,19 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
             level = grid[sj, si]
             grid[beside] = (level * (1 - t) + slope * t)[beside]
         feathered = int(beside.sum())
+
+    # Where the scan is flat and the street rules took the ground more than LEVELS off
+    # it, the scan's (see SCAN_AGREE).
+    scan_held = 0
+    if scan_here is not None:
+        cj, ci = np.nonzero(~np.isnan(grid) & ~tunnelled & ~beneath & ~lifted)
+        lo, hi = scan_here(np.column_stack([x_of(ci), y_of(cj)]), SCAN_REACH)
+        with np.errstate(invalid="ignore"):
+            mid = (lo + hi) / 2
+            off = (hi - lo < SCAN_AGREE) & (np.abs(grid[cj, ci] - mid) > LEVELS)
+        grid[cj[off], ci[off]] = mid[off]
+        street[cj[off], ci[off]] = False
+        scan_held = int(off.sum())
 
     # The map draws a street on to where its bridge begins, which is often a little past
     # the edge of the quay wall the bridge comes off: its last metres lie over the water,
@@ -1920,7 +1967,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         if listed:
             outlines[(i, j)] = listed
     changed = ~np.isnan(bare) & (np.abs(grid - bare) > 0.05)
-    return {"survey_rejected_vertices": rejected, "off_scan": counts.get("off_scan", 0), "sunk_kerbs": int(sunk.sum()), "aloft": int(aloft.sum()), "deck_kerbs": int(decked.sum()), "over_kerbs": int(over_kerbs.sum()), "end_kerbs": int(at_end.sum()), "kerbs_skipped": counts.get("kerbs_skipped", 0), "scan_lower": counts.get("scan_lower", 0), "scan_upper": counts.get("scan_upper", 0), **({"kept_aloft": counts["kept_aloft"]} if "kept_aloft" in counts else {}), "surfaces": surfaces, "street_points": street_points, "far_from_survey": counts.get("far_from_survey", 0), "levelled_across": levelled_points, "streets_from_scan": scanned, "two_levels": two_levels, "under_points": under, "feathered": feathered, "overhang_points": overhang, "water_points": int(wet.sum()), "water_levelled": levelled, "valley_points": valley, "bank_points": bank_points,
+    return {"survey_rejected_vertices": rejected, "off_scan": counts.get("off_scan", 0), "sunk_kerbs": int(sunk.sum()), "aloft": int(aloft.sum()), "deck_kerbs": int(decked.sum()), "over_kerbs": int(over_kerbs.sum()), "end_kerbs": int(at_end.sum()), "kerbs_skipped": counts.get("kerbs_skipped", 0), "scan_lower": counts.get("scan_lower", 0), "scan_upper": counts.get("scan_upper", 0), **({"kept_aloft": counts["kept_aloft"]} if "kept_aloft" in counts else {}), "surfaces": surfaces, "street_points": street_points, "far_from_survey": counts.get("far_from_survey", 0), "below_wall": counts.get("below_wall", 0), "scan_held": scan_held, "levelled_across": levelled_points, "streets_from_scan": scanned, "two_levels": two_levels, "under_points": under, "feathered": feathered, "overhang_points": overhang, "water_points": int(wet.sum()), "water_levelled": levelled, "valley_points": valley, "bank_points": bank_points,
             "kept_by_hand": kept, "cut_streets": cuts, "retaining_walls": len(strips) - cuts - wall_tops, "wall_tops": wall_tops, "street_cells": freed, "retaining_metres": round(wall_length), "cuttings": len(cuttings), "terrace_off_streets_m2": round(off_streets), "wall_points": wall_points, "lone_points": lone_points,
             "changed": int(changed.sum()), "mean_change": float(np.abs(grid - bare)[changed].mean()) if changed.any() else 0.0,
             "labels": labels, "terraces": outlines, "terrace_ids": ids, "soft_edges": soft_edges}
