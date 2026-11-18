@@ -41,9 +41,13 @@ walls' outlines with straight tops, which the mesh keeps as breaklines). Per til
      tunnels (a deck the map calls ground; its patch out to ALOFT_REACH m, the slip roads
      coming down off it), and within LANDING m of where a bridge's way
      comes down onto a way on the ground (the decks are the city pass's); a held patch is
-     the city pass off paved ground too. And on a car street's carriageway the city pass
-     wherever the LiDAR parts from it but the street's middle agrees: a bank or a ramp
-     beside the road inside OSM's width;
+     the city pass off paved ground too. And a car street's carriageway (from kerb to
+     kerb, not under decks or in tunnels) is the city pass plus the LiDAR's small offsets
+     from it, smoothed over ROAD_SMOOTH m along the road; where the LiDAR is more than
+     AGREE m off and IPR's dense model bears it out, the LiDAR (the city pass wrong, Pod
+     Stárkou), and where the dense model doesn't, the road round it (a bank or a ramp
+     beside the road inside OSM's width); a stretch more than ROAD_FAR m off along the
+     road is left to the rules above;
    - within NEAR m of a wall the city pass, blending over BLEND m: the walls' foot and
      top still come from the lattice (step 4 of the plan moves them to points).
 3. The breaklines: the walls' outlines with each side's height; an outline whose sides
@@ -96,6 +100,8 @@ PAD = 40  # samples read past the tile for the smoothing and the held patches (H
 STEEP = 1.0  # m: the LiDAR rising this much within a metre is a wall's face (one the city pass has no outline for)
 STEEP_NEAR = 1.5  # m round such a face where IPR's dense model takes over from the LiDAR
 AGREE = 0.5  # m: the LiDAR further than this from the city pass (and IPR's dense model) gives way, wholly from twice it
+ROAD_SMOOTH = 2.0  # m: the Gaussian along a carriageway over how far the LiDAR is off the city pass
+ROAD_FAR = 2.5  # m: the LiDAR further than this off the city pass along a carriageway is left to the other rules
 HELD_GROW = 1.0  # m round where it gives way that it does so too, so the change lies where the two agree
 BRIDGE_NEAR = 8.0  # m round the map's bridges where a face in the LiDAR holds the city pass (both models are bare earth)
 HELD_REACH = 15.0  # m from such a face (or one across a car street) that the patch it holds reaches
@@ -396,6 +402,7 @@ def surface(t, targets, dense, scan_at, pads, kerbs, held_at=None):
         h_p = np.where(np.isfinite(h_p), h_p, sp)
         street = np.where(padded(targets, meta, "paved", PAD), sp, soft)
         street = np.where(np.isfinite(street), street, h_p)
+        lidar = street
         # (A face in the LiDAR: its rise within a metre, 3 × 3 samples.)
         rise = maximum_filter(np.where(ok, sp, -np.inf), size=3) - minimum_filter(np.where(ok, sp, np.inf), size=3)
         d_face = distance_transform_edt(~(np.isfinite(rise) & (rise > STEEP))) * g
@@ -425,12 +432,12 @@ def surface(t, targets, dense, scan_at, pads, kerbs, held_at=None):
         #   decks are the city pass's, and the ground has to meet them (on the lattice the
         #   street's last metres came down a metre to one of Jižní spojka's decks, which
         #   the mesh left a metre over it).
-        # And on a car street's carriageway, kerb to kerb, the city pass wherever the
-        # LiDAR parts from it but the street's middle beside it agrees: the city pass's
-        # streets are the LiDAR's own, level kerb to kerb (`dtm_heights._scan_streets`),
-        # and the LiDAR off the middle there is something beside the road inside OSM's
-        # width (a bank along the lane Na dražkách, a ramp down beside Revoluční by
-        # Kotva), which made streets lean 50–70 %.
+        # And a car street's carriageway, kerb to kerb, has its own rule (below): the
+        # city pass's streets are the LiDAR's own, level kerb to kerb
+        # (`dtm_heights._scan_streets`), so the road keeps them and takes of the LiDAR
+        # only its small offsets, smoothed along the road. Before, each sample took the
+        # LiDAR, the city pass or IPR's dense model by itself, and the short blends
+        # between them were most of the steps the mesh had and the lattice hadn't.
         geo = held_at or {}
         inside = lambda key: shapely.contains_xy(geo[key], PX, PY) if geo.get(key) is not None else np.zeros(PX.shape, bool)
         near, cars, high, land = inside("middles"), inside("cars"), inside("aloft"), inside("landings")
@@ -441,10 +448,36 @@ def surface(t, targets, dense, scan_at, pads, kerbs, held_at=None):
             above = np.nan_to_num(h_p - street) > ALOFT
         apart = off > AGREE
         if cars.any():
+            # The carriageway: the city pass, and of the LiDAR only how far it is off the
+            # city pass, where that is small, smoothed along the road. (The LiDAR itself,
+            # not IPR's dense model by a face: a kerb's or a parked car's edge is a face,
+            # and on Nad Lávkou the dense model lies 1.4 m over the road both others have.)
+            # Where the LiDAR is further off and IPR's dense model bears it out, the city
+            # pass is what's wrong (Pod Stárkou, a metre under both), and the road is the
+            # LiDAR's; where the dense model doesn't, it is something beside the road inside
+            # OSM's width (a bank along Na dražkách, a ramp beside Revoluční by Kotva) and
+            # the road round it says. Every weight is smoothed along the road, or the
+            # surface flickers between the two from one sample to the next.
             road = inside("carriage")
-            _, (ri, rj) = distance_transform_edt(~cars, return_indices=True)
-            level = road & (off[ri, rj] <= AGREE)
-            part = np.maximum(part, np.clip((off - AGREE) / AGREE, 0, 1) * level)
+            sigma = ROAD_SMOOTH / g
+            along = lambda v: gaussian_filter(v * road, sigma, mode="nearest")
+            cover = np.maximum(along(np.ones(PX.shape)), 1e-6)
+            r = np.nan_to_num(lidar - h_p)
+            a = np.abs(r)
+            w = road * np.clip((AGREE - a) / (AGREE / 2), 0, 1) * np.isfinite(h_p)
+            num, den = gaussian_filter(w * r, sigma, mode="nearest"), gaussian_filter(w, sigma, mode="nearest")
+            with np.errstate(invalid="ignore", divide="ignore"):
+                res = np.where(den > 1e-3, num / den, 0.0)
+            backed = np.clip((2 * AGREE - np.where(have_p, np.abs(lidar - far_p), np.inf)) / AGREE, 0, 1)
+            wrong = along(np.clip((a - AGREE) / AGREE, 0, 1) * backed) / cover
+            # Not where the two are more than ROAD_FAR apart along the road: a deck or a
+            # cutting, the rules below.
+            trust = road * np.clip((ROAD_FAR - along(a) / cover) / AGREE, 0, 1)
+            fill = np.nan_to_num(h_p) + res
+            mine = fill * (1 - wrong) + lidar * wrong
+            street = np.where(np.isfinite(h_p), street * (1 - trust) + mine * trust, street)
+            off = np.where(road, np.nan_to_num(np.abs(street - h_p)), off)
+            part = part * (1 - trust)
         seed_aloft = apart & high & above
         seed = apart & ((near & (d_face <= g)) | land)
         grow = int(round(HELD_GROW / g))
