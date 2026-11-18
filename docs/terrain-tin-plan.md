@@ -1256,3 +1256,39 @@ time to triangulate a tile, before `praha`.
   steps of 0.3–0.5 m on residential streets (Nad Kovárnou, Schwankova, Na Vidouli). From above: the 2.35 m pit across the trunk road by Zbraslav (49.9423,
   14.3674) is gone, and so are the folds in 5. května's median. Pictures in
   `docs/evidence/tin/steps` (local).
+
+- 18 November 2026, night: the Řepy pit, with a rule for every place like it (`tin`
+  1070b2bf, `dtm_heights.py`). The technical map draws the interchange's surfaces
+  (carriageways, verges, pavements) as large polygons, but its surveyed lines there
+  run only along some of their edges. A lattice point inside such a surface took the
+  average of the nearest surveyed points of that surface, however far they were: across
+  the D0 slip roads that was the kerb of the road 6 m below, 20–40 m away, and the
+  ground beside the bridge came out as a flat pit. Now a surface point more than 12 m
+  from its nearest surveyed point moves towards IPR's terrain model (`SURVEY_REACH`),
+  and from 24 m takes it outright (`SURVEY_GONE`); those points no longer count as a
+  surveyed street. City-wide it touched 153,000 lattice points. On 36 test windows
+  (`window.py`), the mean distance from the LiDAR at the points that changed fell at all
+  but two: Řepy 2.99 → 0.38 m, a motorway the map calls ground 3.57 → 0.12 m, Průmyslová
+  1.97 → 0.27 m, 5. května 2.36 → 0.55 m. Modřany rose 1.11 → 1.28 m (44 points) and
+  a Podolí window 0.24 → 0.28 m (6 points). City pass (25 minutes) and tile pass
+  (53 minutes) rebuilt.
+
+  | `praha`, mesh | Before | After |
+  |---|---|---|
+  | Steps over 0.25 / 1 m | 202 / 20 | 172 / 6 |
+  | Bumps over 0.5 m | 164 | 130 |
+  | Ridge or trough over 1 m | 55 | 42 |
+  | Leaning over 15 % | 840 | 814 |
+  | Waves over 0.3 m (2 m) | 575 | 526 |
+  | Off the LiDAR over 2 m (streets) | 267 | 231 |
+  | Bridge joins over 0.5 / 1 m | 269 / 113 | 268 / 112 |
+  | Samples off the LiDAR by more than 1 m | 0.18 % | 0.08 % |
+
+  All seven steps at Řepy are gone, and so are Bubenečský tunel's ramp, the north-east
+  motorway, D8 at 50.1724, 14.4571, V Lázních and Ostřicová: the motorways the map
+  calls ground were the same thing, surfaces surveyed only at their far edges. Six steps
+  over 1 m remain: K Celinám (a wall's terrace, 2.0 m), K Přehradám at its bridge
+  (1.7 m and 1.2 m), Patočkova and the trunk link beside it at the Strahov tunnel (1.4 m,
+  1.3 m), and the trunk link at 50.0969, 14.4018 (1.4 m). The drive-through scenario
+  passes. From above, the pit at Řepy and its torn edges are gone, and the slip road
+  runs down the bank. Pictures in `docs/evidence/tin/repy` (local).
