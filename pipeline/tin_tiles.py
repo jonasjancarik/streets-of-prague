@@ -38,7 +38,8 @@ walls' outlines with straight tops, which the mesh keeps as breaklines). Per til
      but the dense model hasn't the cutting either, so the first rule gives it the city
      pass's ground, as on the lattice. A patch is held the same way, face or not, where a
      car street's middle has the city pass more than ALOFT m over the LiDAR away from
-     tunnels (a deck the map calls ground), and within LANDING m of where a bridge's way
+     tunnels (a deck the map calls ground; its patch out to ALOFT_REACH m, the slip roads
+     coming down off it), and within LANDING m of where a bridge's way
      comes down onto a way on the ground (the decks are the city pass's); a held patch is
      the city pass off paved ground too. And on a car street's carriageway the city pass
      wherever the LiDAR parts from it but the street's middle agrees: a bank or a ramp
@@ -100,6 +101,7 @@ BRIDGE_NEAR = 8.0  # m round the map's bridges where a face in the LiDAR holds t
 HELD_REACH = 15.0  # m from such a face (or one across a car street) that the patch it holds reaches
 ALOFT = 3.0  # m: the city pass this far over the LiDAR on a car street's middle is a deck the map calls ground
 TUNNEL_NEAR = 15.0  # m round a tunnel where it is not: the ramp down to the portal, in its cutting
+ALOFT_REACH = 60.0  # m from such a middle that its patch reaches: the slip roads coming down off it
 LANDING = 6.0  # m round where a bridge's way comes down onto a way on the ground: the city pass, to meet the deck
 MIDDLE = 1.0  # m either side of a street's line: a face there crosses it (one further out runs beside it)
 KERB = "010000030402"  # the survey's kerb (DTM ZPS, set 3)
@@ -443,14 +445,19 @@ def surface(t, targets, dense, scan_at, pads, kerbs, held_at=None):
             _, (ri, rj) = distance_transform_edt(~cars, return_indices=True)
             level = road & (off[ri, rj] <= AGREE)
             part = np.maximum(part, np.clip((off - AGREE) / AGREE, 0, 1) * level)
-        seed = apart & ((near & (d_face <= g)) | (high & above) | land)
+        seed_aloft = apart & high & above
+        seed = apart & ((near & (d_face <= g)) | land)
         grow = int(round(HELD_GROW / g))
         soften = lambda w: gaussian_filter(maximum_filter(w, size=2 * grow + 1), grow / 2)
         hold = np.zeros(PX.shape)
-        if seed.any():
+        if seed.any() or seed_aloft.any():
             patches, _ = label(apart, structure=np.ones((3, 3)))
-            hit = np.unique(patches[seed])
-            mine = np.isin(patches, hit[hit > 0]) & (distance_transform_edt(~seed) * g <= HELD_REACH)
+            hit = np.unique(patches[seed | seed_aloft])
+            reach = np.zeros(PX.shape, bool)
+            for s, r in ((seed, HELD_REACH), (seed_aloft, ALOFT_REACH)):
+                if s.any():
+                    reach |= distance_transform_edt(~s) * g <= r
+            mine = np.isin(patches, hit[hit > 0]) & reach
             hold = np.clip((off - AGREE) / AGREE, 0, 1) * mine
             part = np.maximum(part, hold)
         part = soften(part)
