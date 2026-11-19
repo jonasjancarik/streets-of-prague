@@ -71,7 +71,7 @@ export const TYPES: Record<string, CarSpec> = {
   // A fire engine: src/brigade.ts sends these to burning cars. Never parked or in traffic.
   fire: { L: 8.5, W: 2.5, H: 3.2, mass: 14000, accel: 2.4, vmax: 25, grip: 7, turn: 1.3, weight: 0, traffic: 0, color: '#c4161c', heavy: true, wheelbase: 5, drive: 'rwd', radius: 8.5, response: 4, brake: 8, fade: 0.3, drag: 0.4, reverse: 0.2, tough: 6, weather: 1.15 },
   // An ambulance: src/ambulance.ts sends these to people lying hurt. Never parked or in traffic.
-  ambulance: { L: 6, W: 2.1, H: 2.7, mass: 3200, accel: 5.5, vmax: 30, grip: 8, turn: 1.8, weight: 0, traffic: 0, color: '#f2f3ef', wheelbase: 3.6, drive: 'rwd', radius: 6, response: 6, brake: 11, tough: 4.5, drag: 0.5, weather: 1.1 },
+  ambulance: { L: 6, W: 2.1, H: 2.7, mass: 3200, accel: 5.5, vmax: 30, grip: 8, turn: 1.8, weight: 0, traffic: 0, color: '#e6dc24', wheelbase: 3.6, drive: 'rwd', radius: 6, response: 6, brake: 11, tough: 4.5, drag: 0.5, weather: 1.1 },
   // A dustcart: src/refuse.ts keeps one or two on their rounds in the centre. Never parked or in the ordinary mix.
   garbage: { L: 9.6, W: 2.5, H: 3.3, mass: 18000, accel: 2, vmax: 22, grip: 7, turn: 1.3, weight: 0, traffic: 0, color: '#e8701e', heavy: true, wheelbase: 4.6, drive: 'rwd', radius: 9, response: 4, brake: 8, fade: 0.3, drag: 0.4, reverse: 0.2, tough: 6, weather: 1.15 },
 };
@@ -413,6 +413,10 @@ function boxBuilder(paintColour?: string) {
     g.rotateX(-Math.PI / 2); // the shape's plane flat, its height up
     add(g, colour, 0, y0 + bevel, z);
   };
+  const panel = (colour: string, outline: [number, number][], width: number, z = 0) => {
+    const shape = new THREE.Shape(outline.map(([x, y]) => new THREE.Vector2(x, y)));
+    add(new THREE.ExtrudeGeometry(shape, { depth: width, bevelEnabled: false }), colour, 0, 0, z - width / 2);
+  };
   const wheel = (x: number, W: number, twin = false) => {
     for (const z of [-1, 1]) {
       const w = new THREE.CylinderGeometry(0.5, 0.5, twin ? 0.6 : 0.34, 14);
@@ -423,7 +427,24 @@ function boxBuilder(paintColour?: string) {
       add(hub, '#70757b', x, 0.5, z * (W / 2 - 0.04));
     }
   };
-  return { add, box, rounded, wheel, done: () => mergeGeometries(parts) };
+  // Exposed steel wheel faces. Twin tyres are inset so the outer shoulder
+  // and its hub occupy the same track as a single front tyre.
+  const roadWheel = (x: number, width: number, twin = false) => {
+    wheel(x, twin ? width - 0.24 : width, twin);
+    for (const side of [-1, 1]) {
+      const face = side * (width / 2 - 0.035);
+      const disc = (r: number, depth: number, offset: number, colour: string) =>
+        add(new THREE.CylinderGeometry(r, r, depth, 16).rotateX(Math.PI / 2), colour, x, 0.5, face + side * offset);
+      disc(0.29, 0.045, 0, '#a4a7a4');
+      disc(0.13, 0.052, 0.024, '#63686a');
+      for (let i = 0; i < 6; i++) {
+        const angle = i * Math.PI / 3;
+        add(new THREE.CircleGeometry(0.039, 6).rotateY(side < 0 ? Math.PI : 0), '#42474a',
+          x + Math.cos(angle) * 0.206, 0.5 + Math.sin(angle) * 0.206, face + side * 0.025);
+      }
+    }
+  };
+  return { add, box, rounded, panel, wheel, roadWheel, done: () => mergeGeometries(parts) };
 }
 
 function busGeometry(S: CarSpec): THREE.BufferGeometry {
@@ -481,6 +502,10 @@ function busGeometry(S: CarSpec): THREE.BufferGeometry {
 
 // Painted lettering on service vehicles. Accented letters have an extra row.
 const GLYPHS: Record<string, string[]> = {
+  O: ['01110', '10001', '10001', '10001', '10001', '10001', '01110'],
+  Á: ['00010', '01110', '10001', '10001', '11111', '10001', '10001', '10001'],
+  '1': ['00100', '01100', '00100', '00100', '00100', '00100', '01110'],
+  '5': ['11111', '10000', '10000', '11110', '00001', '00001', '11110'],
   H: ['10001', '10001', '10001', '11111', '10001', '10001', '10001'],
   A: ['01110', '10001', '10001', '11111', '10001', '10001', '10001'],
   S: ['01111', '10000', '10000', '01110', '00001', '00001', '11110'],
@@ -497,6 +522,26 @@ const GLYPHS: Record<string, string[]> = {
   Y: ['10001', '10001', '01010', '00100', '00100', '00100', '00100'],
   Č: ['01010', '01110', '10001', '10000', '10000', '10000', '10001', '01110'],
 };
+
+// Flat painted lettering. Each uninterrupted row of ink is a pair of triangles.
+function letteringGeometry(lines: string[], px: number) {
+  const ink: number[] = [];
+  lines.forEach((word, line) => [...word].forEach((ch, i) => {
+    const rows = GLYPHS[ch];
+    rows.forEach((row, j) => {
+      const y = (rows.length - j - 1 - line * 10) * px;
+      for (const run of row.matchAll(/1+/g)) {
+        const x = (i * 6 + run.index - (word.length * 6 - 1) / 2) * px;
+        const right = x + run[0].length * px, top = y + px;
+        ink.push(x, y, 0, right, y, 0, right, top, 0, x, y, 0, right, top, 0, x, top, 0);
+      }
+    });
+  }));
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(ink, 3));
+  g.computeVertexNormals();
+  return g;
+}
 
 // A fire engine from boxes, after the Prague brigade's water tenders: a red crew cab with
 // a white band round it and a white bumper, aluminium roller shutters along the body, and
@@ -578,40 +623,103 @@ function fireGeometry(S: CarSpec): THREE.BufferGeometry {
   return done();
 }
 
-// An ambulance from boxes: a white van with a lime stripe, a green cross panel on each
-// side, a light bar on the cab, double doors at the back and a ramp of tail lamps.
+// Prague's yellow box ambulance. The short bonnet and inclined screen distinguish
+// the van cab from its full-height patient compartment in both camera views.
 function ambulanceGeometry(S: CarSpec): THREE.BufferGeometry {
-  const { box, rounded, wheel, done } = boxBuilder();
-  const L = S.L / 2, W = S.W, white = '#f2f3ef', glass = '#1b242c', lime = '#b6d90f', green = '#12935a';
-  const cx = L - 1.9, floor = 0.45, top = 2.55, roof = 2.7, nose = 0.24, tail = 0.08;
-  box('#2a2c2f', -L + 0.05, L - 0.05, 0.3, floor, W - 0.3); // chassis and bumpers
-  rounded(white, -L, cx, floor, roof, W, [0.005, tail], 0.07); // the box where the patient lies
-  rounded(white, cx, L, floor, top, W, [nose, 0.005]); // cab
-  rounded(white, cx, L - 0.6, top - 0.1, roof, W, 0.005, 0.07); // the roof carries on over the cab
-  rounded(white, L - 0.6, L, top - 0.15, top, W - 0.1, [nose, 0.005], 0.05); // the sloping front of the roof
-  box(glass, L - 0.05, L + 0.02, 1.35, top - 0.12, W - 2 * nose - 0.02); // windscreen
-  box(glass, cx + 0.35, L - 0.55, 1.4, top - 0.18, W + 0.02); // cab side windows
-  box('#2a2c2f', L - 0.05, L + 0.06, 0.65, 1.0, W - 0.5); // grille
-  rounded('#2a2c2f', L - 0.1, L + 0.18, 0.3, 0.65, W - 0.05, nose); // front bumper
-  box('#2a2c2f', cx + 0.1, cx + 1.1, roof, roof + 0.1, W - 0.9); // base of the light bar
-  box('#9a9fa3', -L + 0.8, -L + 1.6, roof, roof + 0.12, W - 0.8); // roof vent
-  for (const side of [-1, 1]) {
-    box(lime, -L + tail, L - nose, 0.95, 1.2, 0.03, side * W / 2); // the stripe
-    box(lime, -L + tail, L - nose, 1.55, 1.7, 0.03, side * W / 2);
-    // A green panel with a white cross on the side of the box.
-    box(green, -L + 1.0, cx - 0.9, 1.75, 2.35, 0.03, side * W / 2);
-    box('#ffffff', -L + 1.6, -L + 2.4, 1.98, 2.12, 0.05, side * W / 2);
-    box('#ffffff', -L + 1.93, -L + 2.07, 1.8, 2.3, 0.05, side * W / 2);
-    box('#fff6d8', L - 0.05, L + 0.05, 0.65, 0.9, 0.32, side * (W / 2 - nose - 0.18)); // headlamps
-    box('#b3161b', -L - 0.03, -L + 0.05, 0.8, 1.3, 0.2, side * (W / 2 - tail - 0.12)); // tail lamps
+  const { add, box, panel, rounded, roadWheel, done } = boxBuilder();
+  const L = S.L / 2, W = S.W, cab = 0.77, roof = S.H;
+  const yellow = '#e6dc24', red = '#df3829', blue = '#15569b', trim = '#303438', glass = '#273841';
+  const frontAxle = 1.82, rearAxle = -1.78;
+  box(trim, -L + 0.04, L - 0.06, 0.36, 0.73, W - 0.50);
+  // The skirt is cut around the wheel; only the belt above it spans the axle.
+  panel(yellow, [[-L, 0.56], [rearAxle - 0.60, 0.56], [rearAxle - 0.49, 0.91],
+    [rearAxle - 0.30, 1.05], [rearAxle + 0.30, 1.05], [rearAxle + 0.49, 0.91],
+    [rearAxle + 0.60, 0.56], [cab, 0.56], [cab, 1.19], [-L, 1.19]], W - 0.03);
+  rounded(yellow, -L, cab, 1.17, roof, W, 0.09, 0.055);
+  panel(yellow, [[cab, 0.55], [frontAxle - 0.57, 0.55], [frontAxle - 0.46, 0.92],
+    [frontAxle - 0.27, 1.05], [frontAxle + 0.28, 1.05], [frontAxle + 0.50, 0.88],
+    [frontAxle + 0.60, 0.56], [L - 0.02, 0.56], [L, 1.02], [L - 0.13, 1.23],
+    [L - 0.75, 1.45], [cab, 1.45]], W - 0.12);
+  panel(glass, [[cab + 0.04, 1.44], [L - 0.74, 1.44], [L - 1.35, 2.39], [cab + 0.04, 2.39]], W - 0.21);
+  rounded(yellow, cab - 0.05, L - 1.30, 2.32, 2.51, W - 0.12, 0.12, 0.08);
+  panel(yellow, [[cab - 0.03, 2.36], [1.66, 2.37], [1.50, 2.56], [cab, roof - 0.02]], W - 0.22);
+  rounded(trim, L - 0.22, L + 0.04, 0.40, 0.75, W - 0.13, 0.10);
+  box(trim, L - 0.04, L + 0.018, 0.77, 1.01, 1.10);
+  box('#bac0bd', L + 0.018, L + 0.026, 0.91, 0.94, 1.02);
+  box('#eeeada', L + 0.035, L + 0.048, 0.53, 0.65, 0.49);
+  const number = letteringGeometry(['155'], 0.048);
+  // Outline the six arms of the Star of Life in a single plane.
+  const star = new THREE.Shape();
+  const corners = [[0.10, 0.32], [-0.10, 0.32], [-0.10, 0.174]];
+  for (let i = 0; i < 6; i++) {
+    const a = i * Math.PI / 3;
+    corners.forEach(([x, y], j) => {
+      const u = x * Math.cos(a) - y * Math.sin(a), v = x * Math.sin(a) + y * Math.cos(a);
+      if (!i && !j) star.moveTo(u, v); else star.lineTo(u, v);
+    });
   }
-  box('#9ea3a7', cx - 0.03, cx + 0.03, floor, top, W + 0.01); // the line between cab and box
-  box('#9ea3a7', -L - 0.03, -L + 0.03, floor + 0.05, roof - 0.1, 0.04); // the join of the rear doors
-  box('#d8dbd6', -L - 0.03, -L + 0.04, 1.35, 1.55, W - 0.3); // the band across the back
-  box(lime, -L - 0.04, -L + 0.04, 0.95, 1.2, W - 0.05);
-  box('#e3e5e0', L - 0.03, L + 0.04, 0.3, 0.42, 0.52); // number plate
-  wheel(L - 1.1, W);
-  wheel(-L + 1.2, W);
+  const emblem = new THREE.ShapeGeometry(star);
+  const staff = new THREE.Shape();
+  staff.moveTo(0.009, 0.18);
+  staff.lineTo(-0.013, 0.18);
+  staff.lineTo(-0.009, -0.18);
+  staff.lineTo(0.008, -0.18);
+  const serpent = new THREE.Shape();
+  serpent.moveTo(0.060, 0.15);
+  serpent.bezierCurveTo(-0.12, 0.19, -0.09, 0.04, 0.016, 0.015);
+  serpent.bezierCurveTo(0.10, -0.014, 0.045, -0.065, -0.031, -0.086);
+  serpent.quadraticCurveTo(-0.078, -0.13, -0.009, -0.151);
+  serpent.bezierCurveTo(-0.059, -0.095, 0.10, -0.092, 0.072, -0.002);
+  serpent.bezierCurveTo(0.051, 0.071, -0.080, 0.043, -0.047, 0.113);
+  serpent.quadraticCurveTo(-0.032, 0.145, 0.054, 0.121);
+  const insignia = new THREE.ShapeGeometry([staff, serpent], 5);
+  add(emblem.clone().scale(2, 2, 1).rotateX(-Math.PI / 2), blue, -0.24, roof + 0.006, 0);
+  add(insignia.clone().scale(2, 2, 1).rotateX(-Math.PI / 2), '#f5f5e8', -0.24, roof + 0.010, 0);
+  rounded('#c7c9bd', -2.38, -1.57, roof - 0.02, roof + 0.13, 0.90, 0.11, 0.04);
+  for (let i = 0; i < 5; i++) box(trim, -2.25 + i * 0.12, -2.21 + i * 0.12, roof + 0.126, roof + 0.136, 0.63);
+  // The blue lenses are visible with the beacons switched off as well.
+  box(trim, 1.12, 1.43, 2.47, 2.63, 1.78);
+  box('#cdd7de', 1.13, 1.42, 2.62, 2.74, 0.52);
+  for (const side of [-1, 1]) {
+    const z = side * W / 2, facing = side < 0 ? Math.PI : 0;
+    panel(yellow, [[cab, 1.43], [cab + 0.19, 1.43], [cab + 0.19, 2.36], [cab, 2.36]], 0.07, z - side * 0.10);
+    panel(yellow, [[2.10, 1.44], [2.26, 1.44], [1.64, 2.40], [1.53, 2.40]], 0.07, z - side * 0.10);
+    box(trim, 1.93, 2.01, 1.66, 1.74, 0.30, z);
+    box(trim, 1.91, 2.04, 1.59, 1.88, 0.10, z + side * 0.15);
+    box(trim, cab + 0.22, cab + 0.39, 1.34, 1.39, 0.04, z - side * 0.06);
+    box(red, -L + 0.08, cab - 0.06, 2.40, 2.49, 0.015, z);
+    for (let i = 0; i < 8; i++) {
+      const x = -L + 0.09 + i * 0.45, y = i % 2 === 0 ? 1.08 : 1.29;
+      box(red, x, x + 0.45, y, y + 0.21, 0.026, z);
+    }
+    add(emblem.clone().rotateY(facing), blue, -2.39, 1.94, z + side * 0.008);
+    add(insignia.clone().rotateY(facing), '#f5f5e8', -2.39, 1.94, z + side * 0.012);
+    box(red, cab + 0.06, 1.84, 1.12, 1.24, 0.025, z - side * 0.056);
+    box('#90914b', cab + 0.10, cab + 0.12, 0.65, 1.42, 0.02, z - side * 0.057);
+    box(trim, cab + 0.10, frontAxle - 0.53, 0.47, 0.54, 0.15, z - side * 0.09);
+    add(number.clone().rotateY(facing), '#253544', -1.23, 1.75, z + side * 0.008);
+    // Access to the treatment compartment is on the kerb side.
+    if (side > 0) {
+      for (const x of [-0.39, 0.62]) box('#8f8d47', x, x + 0.018, 0.64, 2.35, 0.035, z);
+      box(glass, -0.30, 0.52, 1.75, 2.25, 0.03, z);
+      box(trim, -0.32, -0.22, 1.53, 1.67, 0.05, z);
+      box(trim, -0.36, 0.65, 0.41, 0.49, 0.20, z - 0.01);
+    }
+    box(blue, 1.13, 1.42, 2.62, 2.74, 0.57, side * 0.60);
+    box(blue, -2.96, -2.65, 2.64, 2.77, 0.30, side * 0.84);
+    // Wrap the headlamp round the shoulder of the bonnet.
+    panel(HEADLAMP, [[L - 0.34, 1.16], [L - 0.13, 1.20], [L, 1.02],
+      [L - 0.02, 0.94], [L - 0.22, 1.00]], 0.27, side * 0.84);
+    box(HEADLAMP, L - 0.04, L + 0.014, 0.91, 1.04, 0.34, side * 0.75);
+    box(glass, -L - 0.026, -L + 0.015, 1.65, 2.22, 0.67, side * 0.41);
+    box(red, -L - 0.035, -L + 0.01, 1.14, 1.39, 0.85, side * 0.46);
+    box(TAIL_LAMP, -L - 0.045, -L + 0.02, 0.86, 1.52, 0.13, side * 0.95);
+  }
+  box(trim, -L - 0.031, -L, 0.61, 2.51, 0.022);
+  box(trim, -L - 0.057, -L, 1.43, 1.49, 0.17, 0.12);
+  box(trim, -L - 0.13, -L + 0.04, 0.38, 0.49, W - 0.19);
+  roadWheel(frontAxle, W);
+  roadWheel(rearAxle, W);
   return done();
 }
 
@@ -619,45 +727,18 @@ function ambulanceGeometry(S: CarSpec): THREE.BufferGeometry {
 // the tail line up with the two members of the crew in refuse.ts.
 function garbageGeometry(S: CarSpec): THREE.BufferGeometry {
   const orange = S.color || '#e8701e';
-  const { add, box, rounded, wheel, done } = boxBuilder(orange);
+  const { add, box, rounded, panel, wheel, done } = boxBuilder(orange);
   const L = S.L / 2, W = S.W, cab = L - 2.2, back = -L + 0.45;
   const green = '#43803c', steel = '#a6a7a0', rubber = '#292a29', iron = '#555650';
   const glass = '#27343c', lift = '#c36727', pale = '#e7e6db';
 
-  // Extrude a side elevation. This leaves real space under the arches and
-  // inside the hopper even when looking straight into it from the pavement.
-  type Point = [number, number];
-  const panel = (colour: string, outline: Point[], width: number, z = 0) => {
-    const shape = new THREE.Shape(outline.map(([x, y]) => new THREE.Vector2(x, y)));
-    add(new THREE.ExtrudeGeometry(shape, { depth: width, bevelEnabled: false }), colour, 0, 0, z - width / 2);
-  };
   const pipe = (colour: string, radius: number, points: [number, number, number][]) => {
     const path = new THREE.CatmullRomCurve3(points.map(([x, y, z]) => new THREE.Vector3(x, y, z)));
     add(new THREE.TubeGeometry(path, points.length === 2 ? 1 : 16, radius, 6, false), colour, 0, 0, 0);
   };
 
-  // Flat ink for the company name on the rubber flaps. Merge the runs of
-  // each printed row into quads so the lettering casts no blocky relief.
-  const label = (lines: string[], px: number) => {
-    const ink: number[] = [];
-    lines.forEach((word, line) => [...word].forEach((ch, i) => {
-      const rows = GLYPHS[ch];
-      rows.forEach((row, j) => {
-        const y = (rows.length - j - 1 - line * 10) * px;
-        for (const run of row.matchAll(/1+/g)) {
-          const x = (i * 6 + run.index - (word.length * 6 - 1) / 2) * px;
-          const right = x + run[0].length * px, top = y + px;
-          ink.push(x, y, 0, right, y, 0, right, top, 0, x, y, 0, right, top, 0, x, top, 0);
-        }
-      });
-    }));
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(ink, 3));
-    g.computeVertexNormals();
-    return g;
-  };
-  const lettering = label(['PRAŽSKÉ', 'SLUŽBY'], 0.019);
-  const plastics = label(['PLASTY'], 0.022);
+  const lettering = letteringGeometry(['PRAŽSKÉ', 'SLUŽBY'], 0.019);
+  const plastics = letteringGeometry(['PLASTY'], 0.022);
 
   // Four lobes of the municipal clover, repeated in lighter orange on the bin.
   const clover = new THREE.Shape();
@@ -805,35 +886,131 @@ function garbageGeometry(S: CarSpec): THREE.BufferGeometry {
   return done();
 }
 
-// Lorries are boxes too: a cab in the paint colour and a white box or trailer behind
-// it (with a stripe in the cab's colour), a dark chassis, tail lamps and a bar at the back.
-// The artic is a tractor with a trailer, the box truck one rigid body.
+// A refrigerated delivery lorry and a long-haul tractor with a curtain-sided
+// trailer. Both keep their cab paint from the traffic palette.
 function truckGeometry(type: string, S: CarSpec): THREE.BufferGeometry {
-  const paint = '#ffffff';
-  const { box, rounded, wheel, done } = boxBuilder(paint);
-  const L = S.L / 2, W = S.W, glass = '#1b242c', artic = type === 'artic', nose = 0.22;
-  const cab = artic ? 2.5 : 2.2, cabTop = artic ? 3.3 : 2.9, floor = artic ? 1.0 : 0.85, top = artic ? 4.0 : 3.6;
-  const cx = L - cab; // where the cab starts
-  box('#2a2c2f', -L, L, 0.35, floor, W - 0.5); // chassis
-  rounded(paint, cx, L, floor - 0.2, cabTop, W, [nose, 0.005], 0.08); // cab
-  box(glass, L - 0.05, L + 0.02, floor + 0.65, cabTop - 0.2, W - 2 * nose - 0.04); // windscreen
-  box(glass, cx + 0.5, L - 0.4, floor + 0.7, cabTop - 0.25, W + 0.02); // side windows
-  if (artic) rounded(paint, cx + 0.05, cx + 0.6, cabTop - 0.05, cabTop + 0.5, W - 0.3, 0.15, 0.08); // roof deflector
-  rounded('#2a2c2f', L - 0.1, L + 0.15, 0.35, 0.75, W - 0.1, nose); // bumper
-  const bx = artic ? cx - 0.9 : cx - 0.1; // the box's front end
-  rounded('#e6e7e3', -L, bx, floor, top, W, 0.06, 0.05); // box or trailer, its edges just rounded off
-  rounded(paint, -L, bx, floor + 0.7, floor + 1.05, W + 0.01, 0.06); // stripe
-  box('#9a9fa3', -L, -L + 0.06, floor + 0.15, top - 0.15, W - 0.3); // rear doors
-  for (const z of [-1, 1]) {
-    box('#fff6d8', L - 0.05, L + 0.05, floor - 0.1, floor + 0.2, 0.36, z * (W / 2 - nose - 0.2));
-    box('#b3161b', -L - 0.03, -L + 0.05, floor - 0.1, floor + 0.3, 0.25, z * (W / 2 - 0.2));
+  const paint = '#ffffff', glass = '#24333c', dark = '#2d3336', alloy = '#a8afaf';
+  const { box, rounded, panel, add, roadWheel, done } = boxBuilder(paint);
+  const L = S.L / 2, W = S.W, artic = type === 'artic';
+  const cab = L - (artic ? 2.65 : 1.96), top = artic ? 3.15 : 2.76;
+  const frontAxle = L - 1.1, bodyFront = cab - (artic ? 0.92 : 0.40);
+  const cargoFloor = 1.13, roof = S.H, bodyWidth = W - 0.04;
+  const coldChain = artic ? null : letteringGeometry(['POLÁR'], 0.048);
+  box(dark, -L + 0.07, artic ? bodyFront : cab, 0.66, cargoFloor, W - 0.85);
+  box(dark, artic ? cab - 2.5 : cab - 0.5, L - 0.04, 0.43, 0.92, W - 0.64);
+  // Raked cab-over windscreen, recessed wheel arch and a separate roof fairing.
+  panel(paint, [[cab, 0.64], [frontAxle - 0.59, 0.64], [frontAxle - 0.49, 0.93],
+    [frontAxle - 0.29, 1.07], [frontAxle + 0.29, 1.07], [frontAxle + 0.49, 0.93],
+    [frontAxle + 0.59, 0.64], [L, 0.64], [L, 1.63], [cab, 1.63]], W - 0.09);
+  panel(glass, [[cab + 0.04, 1.62], [L, 1.62], [L - 0.32, top - 0.11],
+    [cab + 0.04, top - 0.11]], W - 0.13);
+  rounded(paint, cab, L - 0.25, top - 0.19, top + 0.02, W - 0.07, 0.13, 0.08);
+  const fairing = artic ? 0.69 : 0.37;
+  panel(paint, [[cab + 0.06, top], [L - 0.48, top], [L - 0.80, top + 0.16],
+    [cab + 0.49, top + fairing], [cab + 0.06, top + fairing]], W - 0.29);
+  rounded('#515a5d', cab + 0.12, cab + 0.47, top + fairing - 0.005, top + fairing + 0.035, 0.76, 0.055);
+  rounded(dark, L - 0.20, L + 0.07, 0.37, 0.76, W - 0.07, 0.13);
+  box(dark, L - 0.02, L + 0.018, 0.81, 1.51, W - 0.66);
+  for (const y of [0.93, 1.11, 1.32]) box('#737d80', L + 0.018, L + 0.029, y, y + 0.037, W - 0.80);
+  box('#e8e7db', L + 0.064, L + 0.078, 0.46, 0.60, 0.53);
+
+  // The reefer has smooth insulated panels; the semitrailer has a flexible
+  // curtain with shallow vertical folds between the tension buckles.
+  box('#dedfd9', -L, bodyFront, cargoFloor, roof, bodyWidth - (artic ? 0.13 : 0));
+  if (artic) {
+    const folds = 14, pitch = (bodyFront + L - 0.22) / folds;
+    for (const side of [-1, 1]) {
+      const edge = side * (bodyWidth / 2 - 0.048);
+      // Each strap pulls the hem in; the fabric bellies out between straps.
+      // The folds die away where the curtain hangs from the straight top rail.
+      const fabric: number[] = [], indices: number[] = [];
+      for (let column = 0; column <= folds * 4; column++) {
+        const u = column / 4, x = -L + 0.10 + u * pitch;
+        const swell = Math.sin((u % 1) * Math.PI);
+        for (const [y, bulge] of [[cargoFloor + 0.13 - 0.055 * swell, 0.042],
+          [cargoFloor + 0.55, 0.097], [roof - 0.49, 0.035], [roof - 0.08, 0.012]]) {
+          fabric.push(x, y, edge + side * bulge * swell);
+        }
+        if (column === 0) continue;
+        for (let row = 0; row < 3; row++) {
+          const a = (column - 1) * 4 + row;
+          if (side > 0) indices.push(a, a + 4, a + 5, a, a + 5, a + 1);
+          else indices.push(a, a + 5, a + 4, a, a + 1, a + 5);
+        }
+      }
+      const cloth = new THREE.BufferGeometry();
+      cloth.setAttribute('position', new THREE.Float32BufferAttribute(fabric, 3));
+      cloth.setIndex(indices);
+      cloth.computeVertexNormals();
+      add(cloth, '#416883', 0, 0, 0);
+      for (let i = 0; i < folds; i++) {
+        const x = -L + 0.10 + i * pitch;
+        box(dark, x - 0.033, x + 0.033, 1.22, 1.57, 0.032, side * bodyWidth / 2);
+        box(alloy, x - 0.049, x + 0.049, 1.28, 1.36, 0.041, side * bodyWidth / 2);
+      }
+    }
+    for (let x = -L + 1.20; x < bodyFront - 0.28; x += 1.38) {
+      box('#cbcdc7', x, x + 0.052, roof - 0.004, roof + 0.012, bodyWidth - 0.17);
+    }
+    // Tractor catwalk and turntable, visible through the gap ahead of the curtain.
+    box('#7d8384', bodyFront - 0.15, cab, 0.94, 1.01, W - 0.58);
+    add(new THREE.CylinderGeometry(0.50, 0.50, 0.09, 12), dark, bodyFront - 0.26, 1.06, 0);
+  } else {
+    rounded('#e8e9df', bodyFront - 0.18, bodyFront + 0.39, roof - 0.71, roof - 0.03, W - 0.44, 0.12, 0.07);
+    for (let i = 0; i < 5; i++) box(dark, bodyFront + 0.38, bodyFront + 0.40, roof - 0.54 + i * 0.075,
+      roof - 0.50 + i * 0.075, W - 0.76);
+    // Paired condenser fans inside the shallow roof housing.
+    rounded('#d4d8d4', bodyFront - 0.99, bodyFront - 0.01, roof, roof + 0.12, 1.65, 0.09, 0.04);
+    for (const z of [-0.40, 0.40]) {
+      add(new THREE.CylinderGeometry(0.29, 0.29, 0.024, 16), dark, bodyFront - 0.52, roof + 0.12, z);
+      for (let i = 0; i < 3; i++) {
+        add(new THREE.BoxGeometry(0.54, 0.025, 0.033).rotateY(i * Math.PI / 3), alloy, bodyFront - 0.52, roof + 0.14, z);
+      }
+    }
   }
-  box('#3a3c3f', -L - 0.1, -L + 0.05, 0.55, 0.75, W - 0.2); // under-run bar
-  if (artic) box('#2a2c2f', bx, cx + 0.3, floor, floor + 0.3, W - 0.6); // the fifth wheel between them
-  box('#e3e5e0', L - 0.03, L + 0.04, 0.3, 0.42, 0.52); // number plate
-  wheel(L - 1.1, W);
-  if (artic) { wheel(cx + 0.4, W, true); wheel(-L + 1.6, W, true); wheel(-L + 2.9, W, true); }
-  else { wheel(-L + 1.5, W, true); }
+  for (const side of [-1, 1]) {
+    const z = side * W / 2, boxEdge = side * bodyWidth / 2;
+    const pillar = artic ? 0.81 : 0.25;
+    box(paint, cab, cab + pillar, 1.59, top - 0.12, 0.08, z - side * 0.075);
+    panel(paint, [[L - 0.13, 1.63], [L, 1.63], [L - 0.32, top - 0.11],
+      [L - 0.44, top - 0.11]], 0.075, z - side * 0.075);
+    box(dark, cab + pillar + 0.10, cab + pillar + 0.36, 1.45, 1.51, 0.05, z - side * 0.04);
+    box(dark, L - 0.44, L - 0.36, top - 0.46, top - 0.40, 0.34, z + side * 0.07);
+    box(dark, L - 0.46, L - 0.32, top - 0.69, top - 0.31, 0.13, z + side * 0.22);
+    for (const y of [0.49, 0.71]) box(alloy, L - 0.52, L - 0.11, y, y + 0.04, 0.14, z - side * 0.025);
+    box(dark, cab + pillar + 0.01, cab + pillar + 0.035, 0.82, 1.60, 0.025, z - side * 0.04);
+    box(HEADLAMP, L - 0.02, L + 0.074, 0.62, 0.82, 0.35, side * 0.97);
+    box(alloy, -L, bodyFront, roof - 0.10, roof + 0.025, 0.065, boxEdge);
+    box(alloy, -L, bodyFront, cargoFloor - 0.05, cargoFloor + 0.09, 0.065, boxEdge);
+    if (coldChain) {
+      add(coldChain.clone().rotateY(side < 0 ? Math.PI : 0), '#315060', bodyFront - 1.60, 2.39, boxEdge + side * 0.005);
+      // A snowflake beside the carrier name on the insulated box.
+      const flakeX = bodyFront - 1.60 - side * 0.99;
+      for (let i = 0; i < 3; i++) {
+        add(new THREE.BoxGeometry(0.055, 0.59, 0.015).rotateZ(i * Math.PI / 3), '#568da2', flakeX, 2.56, boxEdge);
+      }
+      box(paint, -L + 0.06, bodyFront - 0.06, 1.54, 1.72, 0.023, boxEdge);
+      box('#9eaaae', -L + 0.06, bodyFront - 0.06, 1.46, 1.49, 0.023, boxEdge);
+    }
+    for (const x of [-L + 0.04, bodyFront - 0.09]) {
+      box(alloy, x, x + 0.055, cargoFloor, roof, 0.05, boxEdge);
+      box('#e39c44', x - 0.04, x + 0.10, 1.16, 1.22, 0.078, boxEdge);
+    }
+    const guardStart = -L + (artic ? 4.80 : 2.02), guardEnd = artic ? cab - 2.5 : cab - 0.09;
+    for (const y of [0.53, 0.79]) box(alloy, guardStart, guardEnd, y, y + 0.075, 0.09, z - side * 0.12);
+    for (const x of [guardStart + 0.13, guardEnd - 0.16]) box(dark, x, x + 0.08, 0.55, 1.12, 0.10, z - side * 0.19);
+    box(artic ? alloy : dark, guardEnd - 1.26, guardEnd - 0.10, 0.48, 1.01, 0.52, side * 0.76);
+    // Rear door leaves, separate locking rods, handles and hinge straps.
+    box('#cfd3cf', -L - 0.018, -L + 0.008, cargoFloor + 0.09, roof - 0.09, W / 2 - 0.10, side * W / 4);
+    box(alloy, -L - 0.055, -L - 0.018, cargoFloor + 0.13, roof - 0.14, 0.055, side * 0.39);
+    box(dark, -L - 0.076, -L - 0.047, 1.60, 1.66, 0.26, side * 0.48);
+    for (const y of [1.48, 2.28, roof - 0.34]) box(alloy, -L - 0.048, -L - 0.018, y, y + 0.065, 0.27, side * 1.05);
+    box(TAIL_LAMP, -L - 0.07, -L + 0.04, 0.80, 1.01, 0.30, side * 0.95);
+  }
+  box(dark, -L - 0.08, -L + 0.07, 0.44, 0.59, W - 0.18);
+  // The twin tyres sit inside the cargo width with their steel rims outboard.
+  const axles = artic ? [frontAxle, cab - 1.63, -L + 1.55, -L + 2.76, -L + 3.97] : [frontAxle, -L + 1.43];
+  for (const axle of axles) roadWheel(axle, W, axle !== frontAxle);
   return done();
 }
 

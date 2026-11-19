@@ -22,7 +22,7 @@ const BARS: Record<string, { lamps: Lamp[]; rate: number; amber?: boolean }> = {
   // A bar across the cab roof, and one at the back of the body.
   fire: { lamps: [[3.7, -0.62, 0.2], [3.7, -0.38, 0.2], [3.7, 0.38, 0.2], [3.7, 0.62, 0.2], [-3.8, -0.8, 0.15], [-3.8, 0.8, 0.15]], rate: 1.2 },
   // A bar across the cab roof, and two at the back.
-  ambulance: { lamps: [[1.7, -0.7, 0.18], [1.7, -0.25, 0.18], [1.7, 0.25, 0.18], [1.7, 0.7, 0.18], [-2.8, -0.8, 0.1], [-2.8, 0.8, 0.1]], rate: 1.6 },
+  ambulance: { lamps: [[1.275, -0.68, 0.01], [1.275, -0.40, 0.01], [1.275, 0.40, 0.01], [1.275, 0.68, 0.01], [-2.8, -0.8, 0.04], [-2.8, 0.8, 0.04]], rate: 1.6 },
   // A dustcart at work: amber, two on the cab (low, in front of the body) and two on the
   // tailgate.
   garbage: { lamps: [[2.99, -0.6, -0.24], [2.99, 0.6, -0.24], [-3.98, -0.64, 0.04], [-3.98, 0.64, 0.04]], rate: 1, amber: true },
