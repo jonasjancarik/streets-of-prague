@@ -141,3 +141,13 @@ export function passingLevels(kind: PassingKind, v: number) {
   const whoosh = PASSING.whoosh * k * clamp(v / 14, 0, 1.5) ** 2;
   return { engine, whoosh };
 }
+
+// Helicopters (src/audio.ts, RotorVoice): the blades' thud at `slap` a second when the
+// rotor is up to speed, the turbine's whine and a low rumble. `level` is the whole
+// sound inside the one you fly; another is `outside` times that, halved by `near` m
+// and gone at `range`. Measured: inside -38.9 LUFS (your car with the pedal down
+// -37.8), a police helicopter 55 m overhead -44.7, 200 m off -58.6.
+export const ROTORS = { voices: 2, range: 450, near: 30, level: 0.24, outside: 2, slap: 19, whine: 4200 };
+export function rotorFalloff(d: number) {
+  return (ROTORS.near / (ROTORS.near + d)) * clamp(1 - d / ROTORS.range, 0, 1);
+}

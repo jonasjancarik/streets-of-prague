@@ -44,7 +44,7 @@ const TUNNEL_LABEL: Record<TunnelView, string> = { normal: 'Usual view', wide: '
 
 const LEVEL: Record<Level, string> = { easy: 'Easy', normal: 'Normal', hard: 'Hard' };
 
-const MIX: Record<Bus, string> = { engine: 'Engine', tyres: 'Tyres', traffic: 'Cars around you', horns: 'Horns and sirens', trams: 'Trams', city: 'City and birds', weather: 'Rain and wind', radio: 'Car radio', bangs: 'Bangs' };
+const MIX: Record<Bus, string> = { engine: 'Engine', tyres: 'Tyres', traffic: 'Traffic around you', horns: 'Horns and sirens', trams: 'Trams', city: 'City and birds', weather: 'Rain and wind', radio: 'Car radio', bangs: 'Bangs' };
 
 const STATISTICS = 'Anonymous statistics';
 

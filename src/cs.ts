@@ -50,7 +50,7 @@ export const CS: Record<string, string> = {
   Mixer: 'Hlasitost zvuků',
   Engine: 'Motor',
   Tyres: 'Pneumatiky',
-  'Cars around you': 'Auta kolem vás',
+  'Traffic around you': 'Doprava kolem vás',
   'Horns and sirens': 'Klaksony a sirény',
   Trams: 'Tramvaje',
   'City and birds': 'Město a ptáci',

@@ -79,7 +79,7 @@ import { Season, parseDay } from './season.ts';
 import { LaneAssist, turnOf, project } from './assist.ts';
 import { Sound, surfaceOf } from './audio.ts';
 import { roadNoise, ROAD_FAR } from './soundmix.ts';
-import type { Surface, HornKind } from './audio.ts';
+import type { Surface, HornKind, Rotor } from './audio.ts';
 import { setupTouch } from './touch.ts';
 import { setupGamepad, padLabels, usingPad } from './gamepad.ts';
 import './credits.ts';
@@ -2912,7 +2912,12 @@ async function main() {
     for (const c of choppers) c.render();
     if (hornHeld && !inCar && !ride.driving) honk(false);
     if (hornHeld && (hornT -= dt) < 0) { hornT = 0.5; scareAhead(); }
-    sound.update(dt, { x: px(), y: py(), car: inCar, throttle: ctl.move, surface, trams: trams.list, quiet: metro.active, rain: weather.now.rain, wet: weather.now.wet, snow: weather.now.snow, strikes: weather.now.strikes, busy, road, hour: (clock.t % 86400) / 3600, season, aloft: inHeli ? clamp((inHeli.air - 5) / 40, 0, 1) : 0, traffic: traffic.agents, sirens: [
+    // Helicopters with their rotors turning: yours, others winding down and the police's.
+    const rotors: Rotor[] = [];
+    for (const c of choppers) if (c.spin > 0.01 && !c.wrecked) rotors.push({ key: c, x: c.x, y: c.y, z: c.z, vx: c.vx, vy: c.vy, spin: c.spin, mine: c === inHeli });
+    for (const h of police.helis.list) if (!h.gone) rotors.push({ key: h, x: h.x, y: h.y, z: h.z, vx: h.vx, vy: h.vy, spin: 1, mine: false });
+    const earZ = rotors.length ? (inHeli ? inHeli.z : walker.flight?.height ?? ground(px(), py(), inCar || walker)) : 0;
+    sound.update(dt, { x: px(), y: py(), z: earZ, rotors, car: inCar, throttle: ctl.move, surface, trams: trams.list, quiet: metro.active, rain: weather.now.rain, wet: weather.now.wet, snow: weather.now.snow, strikes: weather.now.strikes, busy, road, hour: (clock.t % 86400) / 3600, season, aloft: inHeli ? clamp((inHeli.air - 5) / 40, 0, 1) : 0, traffic: traffic.agents, sirens: [
       ...police.chasing.map((p) => ({ key: p, kind: 'police' as const, x: p.car.x, y: p.car.y, vx: p.car.vx, vy: p.car.vy })),
       ...brigade.engines.filter((e) => e.phase === 'go' && !e.wrecked).map((e) => ({ key: e, kind: 'fire' as const, x: e.car.x, y: e.car.y, vx: e.car.vx, vy: e.car.vy })),
       ...ambulances.rigs.filter((r) => r.phase === 'go' && !r.wrecked).map((r) => ({ key: r, kind: 'ambulance' as const, x: r.car.x, y: r.car.y, vx: r.car.vx, vy: r.car.vy })),

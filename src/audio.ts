@@ -1,6 +1,6 @@
 import { clamp } from './network.ts';
 import { BOGIES, frontOf } from './trams.ts';
-import { AMBIENCE, ambienceGains, ambienceMuffle, sirenGain, SIREN_RANGE, PASSING, passingFalloff, passingNote, passingLevels } from './soundmix.ts';
+import { AMBIENCE, ambienceGains, ambienceMuffle, sirenGain, SIREN_RANGE, PASSING, passingFalloff, passingNote, passingLevels, ROTORS, rotorFalloff } from './soundmix.ts';
 import type { PassingKind } from './soundmix.ts';
 import { Radio, radioOn, setRadioSaved } from './radio.ts';
 import type { Station } from './radio.ts';
@@ -149,9 +149,14 @@ export interface SoundState {
   hour?: number; // the time of day, in hours (13.5 is half past one)
   season?: BirdSeason; // the fixed game's date curves, without constructing another object
   sirens?: Siren[]; // emergency vehicles with their sirens on
+  z?: number; // how high you are (m), for helicopters overhead
+  rotors?: Rotor[]; // helicopters with their rotors turning, the one you fly marked `mine`
   traffic?: { car: Car }[]; // the cars driving around you (Traffic.agents): the nearest are heard
   aloft?: number; // 0 on the ground to 1 high up in a helicopter: the city fades, sirens stay faint
 }
+
+// A helicopter: `key` tells it from the others, `spin` how fast its rotor turns (0–1).
+export interface Rotor { key: object; x: number; y: number; z: number; vx: number; vy: number; spin: number; mine: boolean }
 
 // One siren sounding: `key` tells it from the others from one frame to the next, and (vx, vy) is its speed.
 export interface Siren { key: object; kind: 'fire' | 'police' | 'ambulance'; x: number; y: number; vx: number; vy: number }
@@ -185,6 +190,7 @@ export class Sound {
   private horns: Horn | null = null;
   sirens: SirenVoice[] = [];
   passing: PassingVoice[] = [];
+  rotors: RotorVoice[] = [];
 
   constructor() {
     let saved = '';
@@ -284,6 +290,7 @@ export class Sound {
     this.radio.onFail = (station) => this.onRadioFail(station);
     for (let i = 0; i < SIREN_VOICES; i++) this.sirens.push(new SirenVoice(ctx, bus.horns));
     for (let i = 0; i < PASSING.voices; i++) this.passing.push(new PassingVoice(ctx, this.noise, bus.traffic, i));
+    for (let i = 0; i < ROTORS.voices; i++) this.rotors.push(new RotorVoice(ctx, this.noise, bus.engine, bus.traffic, i));
     // The trams are heard once their recordings are in.
     Promise.all([...LOOPS, ...ONCE].map(async (name) => {
       const r = await fetch(`audio/${name}.${LOOPS.includes(name) ? 'wav' : 'm4a'}`);
@@ -395,6 +402,16 @@ export class Sound {
     for (const n of cars) {
       const v = this.passing.find((x) => x.car === n.car) ?? this.passing.find((x) => !x.car);
       v?.update(n.car, n.d, s.x, s.y, car);
+    }
+
+    // The nearest helicopters, the one you fly first.
+    const lz = s.z ?? 0;
+    const rotors = (s.rotors ?? []).filter((r) => r.spin > 0.01).map((r) => ({ r, d: r.mine ? 0 : Math.hypot(r.x - s.x, r.y - s.y, r.z - lz) })).filter((h) => h.d < ROTORS.range).sort((a, b) => a.d - b.d);
+    rotors.length = Math.min(rotors.length, ROTORS.voices);
+    for (const v of this.rotors) if (v.key && !rotors.some((h) => h.r.key === v.key)) v.release();
+    for (const h of rotors) {
+      const v = this.rotors.find((x) => x.key === h.r.key) ?? this.rotors.find((x) => !x.key);
+      v?.update(h.r, h.d, s.x, s.y, s.car);
     }
 
     // The nearest trams, each keeping its voice while it's among them.
@@ -831,6 +848,73 @@ class PassingVoice {
     const t = this.ctx.currentTime;
     this.engine.gain.setTargetAtTime(0, t, 0.3);
     this.whoosh.gain.setTargetAtTime(0, t, 0.3);
+  }
+}
+
+// A helicopter: noise pulsed at the rate the blades pass (the thud you hear from
+// below), the turbine's whine and a low rumble, all slowing and fading as the rotor
+// winds down. The one you fly plays on the engine's slider; others on the traffic's,
+// panned, dulled with distance and pitched as they come or go.
+class RotorVoice {
+  ctx: AudioContext;
+  key: object | null = null;
+  mod: OscillatorNode; chop: GainNode; thud: BiquadFilterNode;
+  whine: OscillatorNode; whineGain: GainNode; rumble: GainNode;
+  out: GainNode; pan: StereoPannerNode; mine: GainNode; other: GainNode;
+
+  constructor(ctx: AudioContext, noise: AudioBuffer, own: AudioNode, others: AudioNode, i: number) {
+    this.ctx = ctx;
+    // The blades: noise through a gain that a pulsing wave opens once per blade.
+    const hiss = loop(ctx, noise, 0.9 + i * 0.13);
+    this.chop = gain(ctx, 0.35);
+    this.mod = ctx.createOscillator();
+    const pulse = new Float32Array([0, 1, 0.8, 0.55, 0.35, 0.2, 0.1]);
+    this.mod.setPeriodicWave(ctx.createPeriodicWave(new Float32Array(pulse.length), pulse));
+    this.mod.connect(gain(ctx, 0.35)).connect(this.chop.gain);
+    this.thud = filter(ctx, 'lowpass', 500, 0.8);
+    this.out = gain(ctx, 0);
+    hiss.connect(this.thud).connect(this.chop).connect(this.out);
+    // The rumble under it: the same noise, much lower.
+    this.rumble = gain(ctx, 0.8);
+    hiss.connect(filter(ctx, 'lowpass', 90, 0.7)).connect(this.rumble).connect(this.out);
+    // The turbine.
+    this.whine = ctx.createOscillator();
+    this.whineGain = gain(ctx, 0);
+    this.whine.connect(this.whineGain).connect(this.out);
+    this.pan = ctx.createStereoPanner();
+    this.mine = gain(ctx, 0);
+    this.other = gain(ctx, 0);
+    this.out.connect(this.pan);
+    this.pan.connect(this.mine).connect(own);
+    this.pan.connect(this.other).connect(others);
+    hiss.start(0, i * 0.41);
+    this.mod.start();
+    this.whine.start();
+  }
+
+  update(r: Rotor, d: number, lx: number, ly: number, me: Car | null) {
+    const t = this.ctx.currentTime, fresh = this.key !== r.key;
+    this.key = r.key;
+    const dx = lx - r.x, dy = ly - r.y, n = Math.max(Math.hypot(dx, dy), 1);
+    const toward = r.mine ? 0 : ((r.vx - (me?.vx ?? 0)) * dx + (r.vy - (me?.vy ?? 0)) * dy) / n;
+    const doppler = SONIC / (SONIC - clamp(toward, -60, 60));
+    const dull = r.mine ? 1 : clamp(1 - d / 500, 0.3, 1);
+    const set = (p: AudioParam, value: number, tc: number) => (fresh ? p.setValueAtTime(value, t) : p.setTargetAtTime(value, t, tc));
+    set(this.mod.frequency, Math.max(0.5, ROTORS.slap * r.spin) * doppler, 0.15);
+    set(this.thud.frequency, (250 + 350 * r.spin) * dull, 0.15);
+    set(this.whine.frequency, ROTORS.whine * (0.4 + 0.6 * r.spin) * doppler, 0.3);
+    // The whine is lost first with distance; inside, it's only a little under the blades.
+    this.whineGain.gain.setTargetAtTime((r.mine ? 0.025 : 0.012 * dull * dull) * r.spin, t, 0.3);
+    const level = ROTORS.level * r.spin ** 2 * (r.mine ? 1 : ROTORS.outside * rotorFalloff(d));
+    this.out.gain.setTargetAtTime(level, t, fresh ? 0.5 : 0.15);
+    this.pan.pan.setTargetAtTime(r.mine ? 0 : clamp(-dx / 60, -0.8, 0.8), t, 0.15);
+    this.mine.gain.setTargetAtTime(r.mine ? 1 : 0, t, 0.3);
+    this.other.gain.setTargetAtTime(r.mine ? 0 : 1, t, 0.3);
+  }
+
+  release() {
+    this.key = null;
+    this.out.gain.setTargetAtTime(0, this.ctx.currentTime, 0.5);
   }
 }
 

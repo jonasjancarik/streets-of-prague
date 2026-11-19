@@ -1369,7 +1369,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   lorries within 60 m (not bikes) have a softer engine of their own, its note rising
   through the gears with their speed, and the whoosh of their tyres, panned to their
   side and pitched up or down as they come or go (levels in `PASSING`,
-  `src/soundmix.ts`; the mixer's "Cars around you"). Under it all is the city's own
+  `src/soundmix.ts`; the mixer's "Traffic around you"). Helicopters thud with their
+  blades, whine and rumble: the one you fly on the engine's slider, spinning up and
+  winding down with its rotor, and the two nearest others (police helicopters, one
+  you've just left) on the traffic's, heard from up to 450 m (`ROTORS`). Under it all is the city's own
   sound, long stereo loops from the same script, each as loud as where you are and the
   time of day call for: two layered Old Town crowds (each six stretches of the
   recordings at once, a murmur with no words to make out), full on the busiest squares
@@ -1544,7 +1547,7 @@ that two versions of the roof builder can be compared.
 - More to do: written missions, factions that hold parts of town and react to you
   (`plans/004-missions-and-factions.md`). The first odd jobs are in.
 - Visible damage on cars.
-- Sound for crashes, people and the helicopter.
+- Sound for crashes and people.
 
 ## Building the map
 
