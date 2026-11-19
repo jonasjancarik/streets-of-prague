@@ -423,7 +423,7 @@ function boxBuilder(paintColour?: string) {
       add(hub, '#70757b', x, 0.5, z * (W / 2 - 0.04));
     }
   };
-  return { box, rounded, wheel, done: () => mergeGeometries(parts) };
+  return { add, box, rounded, wheel, done: () => mergeGeometries(parts) };
 }
 
 function busGeometry(S: CarSpec): THREE.BufferGeometry {
@@ -479,12 +479,22 @@ function busGeometry(S: CarSpec): THREE.BufferGeometry {
   return done();
 }
 
-// The word on the front of the fire engine, as a 5 × 7 pixel font (Č has a caron row above).
+// Painted lettering on service vehicles. Accented letters have an extra row.
 const GLYPHS: Record<string, string[]> = {
   H: ['10001', '10001', '10001', '11111', '10001', '10001', '10001'],
   A: ['01110', '10001', '10001', '11111', '10001', '10001', '10001'],
   S: ['01111', '10000', '10000', '01110', '00001', '00001', '11110'],
   I: ['01110', '00100', '00100', '00100', '00100', '00100', '01110'],
+  T: ['11111', '00100', '00100', '00100', '00100', '00100', '00100'],
+  P: ['11110', '10001', '10001', '11110', '10000', '10000', '10000'],
+  R: ['11110', '10001', '10001', '11110', '10100', '10010', '10001'],
+  Ž: ['01010', '11111', '00001', '00010', '00100', '01000', '10000', '11111'],
+  K: ['10001', '10010', '10100', '11000', '10100', '10010', '10001'],
+  É: ['00010', '11111', '10000', '10000', '11110', '10000', '10000', '11111'],
+  L: ['10000', '10000', '10000', '10000', '10000', '10000', '11111'],
+  U: ['10001', '10001', '10001', '10001', '10001', '10001', '01110'],
+  B: ['11110', '10001', '10001', '11110', '10001', '10001', '11110'],
+  Y: ['10001', '10001', '01010', '00100', '00100', '00100', '00100'],
   Č: ['01010', '01110', '10001', '10000', '10000', '10000', '10001', '01110'],
 };
 
@@ -605,55 +615,193 @@ function ambulanceGeometry(S: CarSpec): THREE.BufferGeometry {
   return done();
 }
 
-// A dustcart from boxes: a rear loader, its low cab and the compactor body behind it in
-// municipal orange, the body's ribs and the tailgate (darker, with the hopper and the
-// bin lift at the bottom) showing from above, a step either side at the back for the
-// crew to ride on with a handle to hold, amber lamps on the cab and on the tailgate
-// (beacons.ts), and red and white chevrons on the back.
+// Prague rear loader. +x is the cab, +z the kerb. The steps and bin slots at
+// the tail line up with the two members of the crew in refuse.ts.
 function garbageGeometry(S: CarSpec): THREE.BufferGeometry {
-  const paint = S.color || '#e8701e';
-  const { box, rounded, wheel, done } = boxBuilder(paint);
-  const L = S.L / 2, W = S.W, glass = '#1b242c', dark = '#2a2c2f', grey = '#8d9296', rib = '#c95e17', gate = '#b9561a';
-  const cab = 2.2, cx = L - cab, floor = 0.55, cabTop = 2.85, top = 3.3, nose = 0.24;
-  const back = -L + 0.45; // the tailgate's back, with the steps behind it
-  const hinge = back + 1.7; // where the tailgate meets the body
-  box(dark, back, L - 0.05, 0.3, floor + 0.2, W - 0.4); // chassis
-  rounded(paint, cx, L, floor, cabTop, W, [nose, 0.005], 0.1); // cab
-  box(glass, L - 0.05, L + 0.02, 1.3, cabTop - 0.2, W - 2 * nose - 0.04); // windscreen, low down to the kerb
-  box(glass, cx + 0.4, L - 0.35, 1.3, cabTop - 0.25, W + 0.02); // door windows
-  box(glass, L - 0.6, L - 0.1, 0.65, 1.2, W + 0.02); // the low windows in the doors
-  rounded(dark, L - 0.1, L + 0.15, 0.3, 0.7, W - 0.1, nose); // bumper
-  box('#e9e9e4', cx + 0.3, L - 0.5, cabTop, cabTop + 0.05, W - 0.6); // the cab roof's white panel
-  box(dark, cx - 0.12, cx, floor + 0.3, top - 0.2, W - 0.2); // the gap behind the cab
-  // The body, its top edges rounded off: a long rounded box from above, with ribs across.
-  rounded(paint, hinge, cx - 0.12, floor + 0.3, top, W, 0.12, 0.28);
-  for (let x = hinge + 0.55; x < cx - 0.4; x += 0.85) box(rib, x - 0.06, x + 0.06, floor + 0.3, top + 0.01, W + 0.03);
-  // The tailgate: lower at the back, the hopper opening at the bottom and the lift's bar across it.
-  rounded(gate, back, hinge, floor + 0.5, top - 0.1, W - 0.04, 0.1, 0.22);
-  rounded(gate, back - 0.05, back + 0.6, floor + 0.2, top - 0.55, W - 0.1, 0.08, 0.12);
-  box('#141516', back - 0.08, back + 0.02, floor + 0.35, floor + 0.95, W - 0.5); // the hopper's mouth
-  box(grey, back - 0.25, back - 0.05, floor + 0.3, floor + 0.45, W - 0.6); // the lift's comb
-  for (const side of [-1, 1]) {
-    const z = side * (W / 2 - 0.32);
-    box('#e6e7e3', hinge, L - nose, floor + 0.32, floor + 0.47, 0.03, side * W / 2); // a reflective band along the side
-    box(HEADLAMP, L + 0.08, L + 0.15, 0.45, 0.7, 0.36, side * (W / 2 - nose - 0.2));
-    box(TAIL_LAMP, back - 0.07, back + 0.01, 1.6, 1.95, 0.2, side * (W / 2 - 0.15));
-    // The steps at the back, and the handles above them.
-    box(grey, -L, back, 0.42, 0.5, 0.62, z);
-    box('#54585c', -L, -L + 0.06, 0.3, 0.5, 0.62, z);
-    box('#d9dcde', back - 0.14, back - 0.08, 1.0, 2.1, 0.05, side * (W / 2 - 0.12));
-    box('#d9dcde', back - 0.14, back - 0.08, 2.05, 2.1, 0.4, side * (W / 2 - 0.3));
-    // Mirrors out past the cab's corners.
-    box(dark, L - 0.3, L - 0.15, 2.2, 2.6, 0.12, side * (W / 2 + 0.18));
-    box(dark, L - 0.28, L - 0.18, 2.4, 2.45, 0.3, side * (W / 2 + 0.06));
-    box('#c47a12', L - 0.75, L - 0.45, cabTop + 0.05, cabTop + 0.2, 0.3, side * 0.55); // the cab's amber lamps
-    box('#c47a12', back + 0.15, back + 0.45, top - 0.1, top + 0.05, 0.3, side * 0.8); // and the tailgate's
+  const orange = S.color || '#e8701e';
+  const { add, box, rounded, wheel, done } = boxBuilder(orange);
+  const L = S.L / 2, W = S.W, cab = L - 2.2, back = -L + 0.45;
+  const green = '#43803c', steel = '#a6a7a0', rubber = '#292a29', iron = '#555650';
+  const glass = '#27343c', lift = '#c36727', pale = '#e7e6db';
+
+  // Extrude a side elevation. This leaves real space under the arches and
+  // inside the hopper even when looking straight into it from the pavement.
+  type Point = [number, number];
+  const panel = (colour: string, outline: Point[], width: number, z = 0) => {
+    const shape = new THREE.Shape(outline.map(([x, y]) => new THREE.Vector2(x, y)));
+    add(new THREE.ExtrudeGeometry(shape, { depth: width, bevelEnabled: false }), colour, 0, 0, z - width / 2);
+  };
+  const pipe = (colour: string, radius: number, points: [number, number, number][]) => {
+    const path = new THREE.CatmullRomCurve3(points.map(([x, y, z]) => new THREE.Vector3(x, y, z)));
+    add(new THREE.TubeGeometry(path, points.length === 2 ? 1 : 16, radius, 6, false), colour, 0, 0, 0);
+  };
+
+  // Flat ink for the company name on the rubber flaps. Merge the runs of
+  // each printed row into quads so the lettering casts no blocky relief.
+  const label = (lines: string[], px: number) => {
+    const ink: number[] = [];
+    lines.forEach((word, line) => [...word].forEach((ch, i) => {
+      const rows = GLYPHS[ch];
+      rows.forEach((row, j) => {
+        const y = (rows.length - j - 1 - line * 10) * px;
+        for (const run of row.matchAll(/1+/g)) {
+          const x = (i * 6 + run.index - (word.length * 6 - 1) / 2) * px;
+          const right = x + run[0].length * px, top = y + px;
+          ink.push(x, y, 0, right, y, 0, right, top, 0, x, y, 0, right, top, 0, x, top, 0);
+        }
+      });
+    }));
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(ink, 3));
+    g.computeVertexNormals();
+    return g;
+  };
+  const lettering = label(['PRAŽSKÉ', 'SLUŽBY'], 0.019);
+  const plastics = label(['PLASTY'], 0.022);
+
+  // Four lobes of the municipal clover, repeated in lighter orange on the bin.
+  const clover = new THREE.Shape();
+  const outline = (path: THREE.Path, scale: number) => {
+    for (let i = 0; i <= 40; i++) {
+      const angle = i * Math.PI / 20;
+      const radius = scale * (0.72 + 0.28 * Math.cos(angle * 4));
+      const x = radius * Math.cos(angle), y = radius * Math.sin(angle);
+      if (i === 0) path.moveTo(x, y); else path.lineTo(x, y);
+    }
+  };
+  outline(clover, 1);
+  const hole = new THREE.Path();
+  outline(hole, 0.82);
+  clover.holes.push(hole);
+  const flower = new THREE.ShapeGeometry(clover);
+  box(iron, back, L - 0.05, 0.36, 0.74, W - 0.68);
+  const frontAxle = L - 1.25, rearAxle = frontAxle - S.wheelbase!;
+  wheel(frontAxle, W);
+  wheel(rearAxle, W - 0.24, true);
+  // A cab-over with a raked windscreen. The roof ends short of the nose,
+  // leaving a strip of glass visible from the normal overhead camera.
+  panel(orange, [[cab, 0.67], [frontAxle - 0.60, 0.67], [frontAxle - 0.46, 1.00],
+    [frontAxle - 0.24, 1.11], [frontAxle + 0.30, 1.11], [frontAxle + 0.54, 0.91],
+    [frontAxle + 0.63, 0.62], [L - 0.05, 0.62], [L, 1.56], [cab, 1.56]], W - 0.09);
+  panel(glass, [[cab + 0.05, 1.55], [L, 1.55], [L - 0.30, 2.72], [cab + 0.05, 2.72]], W - 0.15);
+  rounded(orange, cab, L - 0.24, 2.65, 2.86, W - 0.04, [0.24, 0.10], 0.08);
+  rounded(rubber, cab + 0.62, cab + 1.25, 2.854, 2.89, 0.86, 0.10);
+  rounded(iron, L - 0.15, L + 0.11, 0.37, 0.68, W - 0.08, 0.10);
+  box(rubber, L - 0.02, L + 0.015, 0.85, 1.31, 1.32);
+  for (const y of [0.96, 1.13]) box(iron, L + 0.015, L + 0.025, y, y + 0.035, 1.26);
+  box(pale, L + 0.10, L + 0.12, 0.46, 0.58, 0.49);
+
+  const join = -1.08, front = cab - 0.24, deckEnd = -3.98;
+  // The main bin has a shallow crowned lid between two orange crossmembers.
+  // Its lower rear corner follows the diagonal hinge of the green tailgate.
+  panel(orange, [[join - 0.48, 1.16], [front, 1.16], [front, 3.17], [join, 3.17]], W - 0.09);
+  rounded(orange, join, front, 3.04, 3.27, W - 0.07, 0.12, 0.11);
+  for (const x of [join, front - 0.14]) box(orange, x, x + 0.14, 3.12, 3.35, W);
+  box(iron, join + 0.14, front - 0.14, 3.26, 3.28, 0.31, 0.74);
+  for (const z of [0.65, 0.74, 0.83]) {
+    pipe(steel, 0.027, [[join + 0.09, 3.30, z], [front - 0.08, 3.30, z]]);
   }
-  // Red and white chevrons across the back, under the lamps.
-  for (let i = 0; i < 6; i++) box(i % 2 ? '#e9e9e4' : '#c4161c', back - 0.09, back - 0.02, 1.15, 1.5, (W - 0.4) / 6, -W / 2 + 0.2 + (i + 0.5) * ((W - 0.4) / 6));
-  box('#e3e5e0', L + 0.12, L + 0.16, 0.32, 0.44, 0.52); // number plate
-  wheel(L - 1.25, W);
-  wheel(L - 1.25 - S.wheelbase!, W, true);
+
+  panel(green, [[join - 0.50, 1.12], [join - 0.04, 3.17], [deckEnd, 3.10],
+    [deckEnd + 0.16, 2.65], [-3.34, 1.40], [-2.78, 0.90]], W - 0.04);
+  box('#969993', deckEnd, join - 0.06, 3.095, 3.19, W - 0.14);
+  box(green, join - 0.14, join - 0.06, 3.16, 3.22, W - 0.02);
+  box('#797d78', -2.96, -2.94, 3.185, 3.194, W - 0.15);
+  // The slack hydraulic line loops across the bare steel cover to the loader.
+  pipe(rubber, 0.052, [[join + 0.04, 3.32, 0.74], [-1.60, 3.27, 0.55],
+    [-2.36, 3.25, -0.16], [-2.94, 3.25, -0.34], [-3.60, 3.25, 0.07],
+    [deckEnd, 3.26, 0.47], [deckEnd - 0.12, 3.04, 0.48]]);
+
+  pipe(steel, 0.062, [[-3.48, 3.25, -0.018], [-3.61, 3.25, 0.075]]);
+
+  // A recessed loading trough with a sloping steel floor and two hanging
+  // rubber curtains. The lifting arms and comb sit below the open mouth.
+  panel(iron, [[-3.54, 1.52], [-3.33, 1.54], [-3.81, 0.96], [back - 0.07, 0.92],
+    [back - 0.07, 1.10], [-3.88, 1.15]], 1.87);
+  box(lift, back - 0.12, back + 0.04, 1.04, 1.16, 1.94);
+  box(iron, deckEnd - 0.05, deckEnd + 0.15, 2.85, 3.14, W - 0.10);
+  box(pale, deckEnd - 0.07, deckEnd - 0.05, 2.93, 3.06, 0.52);
+  box(lift, -4.14, -3.88, 2.72, 2.84, 1.93);
+  const beacon = (x: number, roof: number, z: number) => {
+    add(new THREE.CylinderGeometry(0.15, 0.16, 0.055, 10), iron, x, roof + 0.027, z);
+    add(new THREE.CylinderGeometry(0.09, 0.12, 0.14, 10), '#de861c', x, roof + 0.125, z);
+  };
+  for (const side of [-1, 1]) {
+    const z = side * (W / 2 - 0.04);
+    box(green, deckEnd, join - 0.06, 3.09, 3.22, 0.085, z);
+    for (const axle of [frontAxle, rearAxle]) {
+      const disc = (radius: number, depth: number, x: number, y: number, offset: number, colour: string) =>
+        add(new THREE.CylinderGeometry(radius, radius, depth, 12).rotateX(Math.PI / 2), colour, x, y, side * offset);
+      disc(0.29, 0.045, axle, 0.5, 1.22, '#858480');
+      disc(0.15, 0.05, axle, 0.5, 1.25, iron);
+      for (let i = 0; i < 6; i++) {
+        const a = i * Math.PI / 3;
+        disc(0.035, 0.012, axle + Math.cos(a) * 0.21, 0.5 + Math.sin(a) * 0.21, 1.25, rubber);
+      }
+      panel(iron, [[axle - 0.64, 0.62], [axle - 0.54, 0.97], [axle - 0.32, 1.12],
+        [axle + 0.34, 1.12], [axle + 0.58, 0.94], [axle + 0.65, 0.62], [axle + 0.55, 0.62],
+        [axle + 0.46, 0.89], [axle + 0.26, 1.02], [axle - 0.27, 1.02],
+        [axle - 0.46, 0.89], [axle - 0.55, 0.62]], 0.23, side * 1.15);
+    }
+    const mark = (x: number, y: number, size: number, across: number, colour: string) =>
+      add(flower.clone().scale(size, size, 1).rotateY(side < 0 ? Math.PI : 0), colour, x, y, side * across);
+    mark(-2.66, 2.63, 0.21, (W - 0.04) / 2 + 0.003, pale);
+    const facing = side < 0 ? Math.PI : 0;
+    add(lettering.clone().scale(0.56, 0.56, 1).rotateY(facing), pale, -2.66, 2.32, side * ((W - 0.04) / 2 + 0.003));
+    mark(cab + 0.45, 1.22, 0.11, (W - 0.09) / 2 + 0.003, pale);
+    for (let row = 0; row < 3; row++) {
+      for (let i = 0; i < 7; i++) {
+        mark(join + 0.22 + i * 0.46 + 0.15 * (row % 2), 1.58 + row * 0.53 + 0.08 * (i % 2),
+          i % 3 === 0 ? 0.12 : 0.075, (W - 0.09) / 2 + 0.003, '#ef9c52');
+      }
+    }
+    box(pale, -0.16, 1.10, 1.15, 1.52, 0.045, z);
+    box('#ebbd37', -0.01, 0.95, 1.23, 1.44, 0.05, z);
+    add(plastics.clone().rotateY(facing), rubber, 0.47, 1.26, z + side * 0.027);
+    box(steel, -0.10, 0.99, 0.52, 1.12, 0.41, side * 0.76);
+    for (const x of [0.06, 0.79]) box(iron, x, x + 0.08, 0.51, 1.13, 0.43, side * 0.76);
+    // Cab pillars, door handle, steps and mirror on its arm.
+    box(orange, cab + 0.02, cab + 0.30, 1.48, 2.67, 0.09, z - side * 0.05);
+    panel(orange, [[L - 0.18, 1.54], [L - 0.02, 1.54], [L - 0.30, 2.69],
+      [L - 0.41, 2.69]], 0.07, z - side * 0.04);
+    box(rubber, cab + 0.38, cab + 0.62, 1.37, 1.43, 0.035, z);
+    box(steel, frontAxle + 0.60, L - 0.15, 0.54, 0.63, 0.26, side * 1.05);
+    box(rubber, L - 0.43, L - 0.36, 2.30, 2.37, 0.32, side * 1.31);
+    box(rubber, L - 0.46, L - 0.30, 1.97, 2.43, 0.13, side * 1.47);
+    box(HEADLAMP, L - 0.01, L + 0.04, 0.84, 1.07, 0.31, side * 0.92);
+    beacon(2.99, 2.86, side * 0.75);
+
+    for (const y of [0.45, 0.76]) box(steel, rearAxle + 0.68, cab + 0.09, y, y + 0.07, 0.09, z);
+    for (const x of [-0.18, 2.12]) box(iron, x, x + 0.08, 0.48, 1.17, 0.08, z - side * 0.06);
+    pipe(steel, 0.054, [[join - 0.48, 1.16, z], [join, 3.17, z]]);
+    pipe(iron, 0.085, [[-3.49, 1.46, z], [-2.27, 2.47, z]]);
+    pipe(steel, 0.043, [[-2.27, 2.47, z], [-1.52, 3.07, z]]);
+    // The cheek plates project past the curtains, framing the mouth from behind.
+    panel(lift, [[-3.62, 1.24], [-3.88, 2.80], [-4.15, 2.80], [back - 0.05, 2.49],
+      [back - 0.10, 1.02], [back + 0.21, 0.87]], 0.11, side * 0.91);
+    panel(rubber, [[-4.04, 2.76], [-3.94, 2.76], [-3.75, 1.62],
+      [-3.90, 1.57]], 0.85, side * 0.44);
+    add(lettering.clone().rotateX(0.117).rotateY(-Math.PI / 2), '#c6c3af', -3.976, 2.16, side * 0.44);
+    const arm = side * 0.52;
+    pipe(iron, 0.070, [[-3.99, 1.04, arm], [back - 0.22, 0.50, arm]]);
+    box(lift, back - 0.32, back - 0.12, 0.46, 0.62, 0.84, arm);
+    for (const offset of [-0.26, 0, 0.26]) {
+      box(iron, back - 0.31, back - 0.22, 0.62, 0.72, 0.07, arm + offset);
+    }
+    box(TAIL_LAMP, deckEnd - 0.08, deckEnd, 2.90, 3.08, 0.18, side * 1.04);
+    beacon(deckEnd, 3.14, side * 0.8);
+    // Rear corner markers, grab rails and the two low riding steps.
+    box(green, -4.13, -3.91, 0.79, 2.86, 0.28, side * 1.08);
+    box(pale, -4.14, -4.12, 1.70, 2.67, 0.22, side * 1.08);
+    for (const y of [1.75, 2.10, 2.45]) {
+      const stripe = new THREE.Shape([new THREE.Vector2(-0.11, 0), new THREE.Vector2(0.11, 0.11),
+        new THREE.Vector2(0.11, 0.26), new THREE.Vector2(-0.11, 0.15)]);
+      add(new THREE.ShapeGeometry(stripe).rotateY(-Math.PI / 2), '#c63829', -4.145, y, side * 1.08);
+    }
+    const step = side * (W / 2 - 0.32);
+    box(iron, -L, back, 0.37, 0.45, 0.61, step);
+    pipe(steel, 0.034, [[-4.10, 1.38, z], [-4.28, 1.42, z], [-4.28, 2.12, z], [-4.10, 2.18, z]]);
+  }
   return done();
 }
 

@@ -25,7 +25,7 @@ const BARS: Record<string, { lamps: Lamp[]; rate: number; amber?: boolean }> = {
   ambulance: { lamps: [[1.7, -0.7, 0.18], [1.7, -0.25, 0.18], [1.7, 0.25, 0.18], [1.7, 0.7, 0.18], [-2.8, -0.8, 0.1], [-2.8, 0.8, 0.1]], rate: 1.6 },
   // A dustcart at work: amber, two on the cab (low, in front of the body) and two on the
   // tailgate.
-  garbage: { lamps: [[4.2, -0.44, -0.3], [4.2, 0.44, -0.3], [-4.05, -0.64, 0.08], [-4.05, 0.64, 0.08]], rate: 1, amber: true },
+  garbage: { lamps: [[2.99, -0.6, -0.24], [2.99, 0.6, -0.24], [-3.98, -0.64, 0.04], [-3.98, 0.64, 0.04]], rate: 1, amber: true },
 };
 const OTHER = BARS.police;
 
@@ -66,7 +66,7 @@ export class Beacons {
         const f = (c.type === 'police' ? mid : 0) + ahead, off = across * S.W / 2;
         d.position.set(c.x + fx * f - fy * off, base + S.H + up, -(c.y + fy * f + fx * off));
         d.rotation.set(0, c.h, 0);
-        d.scale.setScalar(1);
+        d.scale.setScalar(bar.amber ? 0.55 : 1);
         d.updateMatrix();
         this.lamps.setMatrixAt(n, d.matrix);
         this.lamps.setColorAt(n, (across < 0 ? right : left) > 0.5 ? (bar.amber ? AMBER : BLUE) : bar.amber ? DIM_AMBER : DIM);
