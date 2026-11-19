@@ -77,7 +77,7 @@ export const RECORDED: EngineSpec = { idle: 720, redline: 6200, cylinders: 4, ge
 const ELECTRIC_VOICE: EngineVoice = {
   harmonics: [0, 1, 0.08], sub: 0, drive: 0.2, tone: [200, 1.2, 150],
   roar: [0, 0, 3], level: [0, 0.009, 0.003], shift: [1, 1], clutch: 0, blip: 0,
-  avas: [0.009, 170, 0.45],
+  avas: [0.0055, 170, 0.45], // as loud as a petrol car idling (it was 4 dB louder)
 };
 const ELECTRIC: EngineSpec = { idle: 600, redline: 9000, cylinders: 5, gears: [1.02], rough: 0, voice: ELECTRIC_VOICE };
 // A big V8 pickup: low and burbling, taken easy. A few dB over an everyday car (idle
