@@ -1358,7 +1358,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   `public/audio/SOURCES.md`): the rumble and the motors' whine as loops that follow
   the tram's speed, the wheels' squeal in tight curves, pulling away from a stop and
   pulling in as it happens, and the bell at you or a car on the track ahead. The
-  bogies' clicks over the rail joints are made in code. Under it all is the city's own
+  bogies' clicks over the rail joints are made in code. The four nearest cars, buses and
+  lorries within 60 m (not bikes) have a softer engine of their own, its note rising
+  through the gears with their speed, and the whoosh of their tyres, panned to their
+  side and pitched up or down as they come or go (levels in `PASSING`,
+  `src/soundmix.ts`; the mixer's "Cars around you"). Under it all is the city's own
   sound, long stereo loops from the same script, each as loud as where you are and the
   time of day call for: two layered Old Town crowds (each six stretches of the
   recordings at once, a murmur with no words to make out), full on the busiest squares
@@ -1533,7 +1537,7 @@ that two versions of the roof builder can be compared.
 - More to do: written missions, factions that hold parts of town and react to you
   (`plans/004-missions-and-factions.md`). The first odd jobs are in.
 - Visible damage on cars.
-- Sound for the traffic, crashes, people and the helicopter.
+- Sound for crashes, people and the helicopter.
 
 ## Building the map
 

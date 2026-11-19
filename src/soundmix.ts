@@ -111,3 +111,33 @@ export const SIREN_LEVEL: Record<string, number> = { fire: 0.12, police: 0.1, am
 export function sirenGain(kind: string, d: number) {
   return (SIREN_LEVEL[kind] ?? 0.05) * (25 / (25 + d)) * clamp(1 - d / SIREN_RANGE, 0, 1);
 }
+
+// The cars around you (src/audio.ts, PassingVoice): the nearest few can be heard, a soft
+// engine and the tyres' whoosh, gone at `range` m. `engine` and `whoosh` are
+// the levels right next to one at 50 km/h; a lorry or bus is `heavy` times as loud.
+export const PASSING = { voices: 4, range: 60, near: 8, engine: 0.035, whoosh: 0.07, heavy: 1.6 };
+export type PassingKind = 'car' | 'heavy' | 'moto' | 'electric';
+// How loud a passing car is at `d` m: halved by `near` m, gone at the range.
+export function passingFalloff(d: number) {
+  return (PASSING.near / (PASSING.near + d)) * clamp(1 - d / PASSING.range, 0, 1);
+}
+// Its revs from its speed (m/s): up through the gears as it speeds up, dropping back at each shift.
+const GEARS: Record<PassingKind, { band: number; idle: number; top: number; cylinders: number }> = {
+  car: { band: 7, idle: 850, top: 2600, cylinders: 4 },
+  electric: { band: 7, idle: 850, top: 2600, cylinders: 4 },
+  heavy: { band: 4, idle: 600, top: 1700, cylinders: 6 },
+  moto: { band: 9, idle: 1300, top: 5500, cylinders: 2 },
+};
+export function passingNote(kind: PassingKind, v: number) {
+  const g = GEARS[kind], gear = Math.min(Math.floor(v / g.band), 4);
+  const share = clamp((v - gear * g.band) / g.band, 0, 1), low = gear === 0 ? g.idle : g.top * 0.6;
+  return ((low + (g.top - low) * share) / 60) * (g.cylinders / 2);
+}
+// The engine's and the tyres' levels at speed `v`, before the falloff: the engine
+// ticking over standing and a little fuller moving; the whoosh growing with the speed.
+export function passingLevels(kind: PassingKind, v: number) {
+  const k = kind === 'heavy' ? PASSING.heavy : 1;
+  const engine = kind === 'electric' ? 0 : PASSING.engine * k * (0.6 + 0.4 * clamp(v / 14, 0, 1.3));
+  const whoosh = PASSING.whoosh * k * clamp(v / 14, 0, 1.5) ** 2;
+  return { engine, whoosh };
+}

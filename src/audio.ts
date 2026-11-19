@@ -1,6 +1,7 @@
 import { clamp } from './network.ts';
 import { BOGIES, frontOf } from './trams.ts';
-import { AMBIENCE, ambienceGains, ambienceMuffle, sirenGain, SIREN_RANGE } from './soundmix.ts';
+import { AMBIENCE, ambienceGains, ambienceMuffle, sirenGain, SIREN_RANGE, PASSING, passingFalloff, passingNote, passingLevels } from './soundmix.ts';
+import type { PassingKind } from './soundmix.ts';
 import { Radio, radioOn, setRadioSaved } from './radio.ts';
 import type { Station } from './radio.ts';
 import type { Car } from './car.ts';
@@ -148,6 +149,7 @@ export interface SoundState {
   hour?: number; // the time of day, in hours (13.5 is half past one)
   season?: BirdSeason; // the fixed game's date curves, without constructing another object
   sirens?: Siren[]; // emergency vehicles with their sirens on
+  traffic?: { car: Car }[]; // the cars driving around you (Traffic.agents): the nearest are heard
   aloft?: number; // 0 on the ground to 1 high up in a helicopter: the city fades, sirens stay faint
 }
 
@@ -155,10 +157,10 @@ export interface SoundState {
 export interface Siren { key: object; kind: 'fire' | 'police' | 'ambulance'; x: number; y: number; vx: number; vy: number }
 
 // The sound's groups, each with its own volume in the mixer (settings.ts), 1 being as built.
-export const BUSES = ['engine', 'tyres', 'horns', 'trams', 'city', 'weather', 'radio', 'bangs'] as const;
+export const BUSES = ['engine', 'tyres', 'traffic', 'horns', 'trams', 'city', 'weather', 'radio', 'bangs'] as const;
 export type Bus = (typeof BUSES)[number];
 // Noise cancelling: the steady rumble of engine, tyres, weather and city is cut, mostly its lows; horns, sirens, radio and bangs get through.
-const NOISY: Bus[] = ['engine', 'tyres', 'trams', 'city', 'weather'];
+const NOISY: Bus[] = ['engine', 'tyres', 'traffic', 'trams', 'city', 'weather'];
 const ANC_CUT = 0.5, ANC_SHELF = -22; // volume left, and dB taken off the lows
 
 export class Sound {
@@ -182,6 +184,7 @@ export class Sound {
   voices: TramVoice[] = [];
   private horns: Horn | null = null;
   sirens: SirenVoice[] = [];
+  passing: PassingVoice[] = [];
 
   constructor() {
     let saved = '';
@@ -280,6 +283,7 @@ export class Sound {
     this.radio.setStreaming(this.on && !document.hidden && this.volumes.radio > 0);
     this.radio.onFail = (station) => this.onRadioFail(station);
     for (let i = 0; i < SIREN_VOICES; i++) this.sirens.push(new SirenVoice(ctx, bus.horns));
+    for (let i = 0; i < PASSING.voices; i++) this.passing.push(new PassingVoice(ctx, this.noise, bus.traffic, i));
     // The trams are heard once their recordings are in.
     Promise.all([...LOOPS, ...ONCE].map(async (name) => {
       const r = await fetch(`audio/${name}.${LOOPS.includes(name) ? 'wav' : 'm4a'}`);
@@ -361,6 +365,7 @@ export class Sound {
     const aloft = clamp(s.aloft ?? 0, 0, 1);
     this.ambience?.update(s.busy ?? 0.5, s.hour ?? 12, Math.max(s.rain ?? 0, s.snow ?? 0), aloft, s.season, s.road ?? 0);
     this.buses.trams.gain.setTargetAtTime(this.level('trams') * (1 - 0.9 * aloft), t, 0.5);
+    this.buses.traffic.gain.setTargetAtTime(this.level('traffic') * (1 - 0.9 * aloft), t, 0.5);
     if (s.strikes !== undefined) {
       if (this.strikes >= 0 && s.strikes > this.strikes) this.weather!.thunder(t + 0.6 + Math.random() * 3.5);
       this.strikes = s.strikes;
@@ -373,6 +378,23 @@ export class Sound {
     for (const h of heard) {
       const v = this.sirens.find((x) => x.key === h.q.key) ?? this.sirens.find((x) => !x.key);
       v?.update(h.q, h.d, s.x, s.y, s.car, aloft);
+    }
+
+    // The nearest cars, each keeping its voice while it's among them. Bikes make no sound
+    // of their own, and nor does the car you're in.
+    const cars: { car: Car; d: number }[] = [];
+    for (const a of s.traffic ?? []) {
+      const c = a.car;
+      if (c === car || c.spec.two === 'bike') continue;
+      const d = Math.hypot(c.x - s.x, c.y - s.y);
+      if (d < PASSING.range) cars.push({ car: c, d });
+    }
+    cars.sort((a, b) => a.d - b.d);
+    cars.length = Math.min(cars.length, PASSING.voices);
+    for (const v of this.passing) if (v.car && !cars.some((n) => n.car === v.car)) v.release();
+    for (const n of cars) {
+      const v = this.passing.find((x) => x.car === n.car) ?? this.passing.find((x) => !x.car);
+      v?.update(n.car, n.d, s.x, s.y, car);
     }
 
     // The nearest trams, each keeping its voice while it's among them.
@@ -752,6 +774,63 @@ class SirenVoice {
   release() {
     this.key = null;
     this.out.gain.setTargetAtTime(0, this.ctx.currentTime, 0.1);
+  }
+}
+
+// A car driving near you: a soft engine (its note rising through the gears with its
+// speed) and the whoosh of its tyres, louder the nearer it is, panned to its side and
+// shifted in pitch as it comes or goes. Levels and revs are in soundmix.ts (PASSING).
+class PassingVoice {
+  ctx: AudioContext;
+  car: Car | null = null;
+  osc: OscillatorNode; tone: BiquadFilterNode; engine: GainNode;
+  road: BiquadFilterNode; whoosh: GainNode; pan: StereoPannerNode;
+
+  constructor(ctx: AudioContext, noise: AudioBuffer, dest: AudioNode, i: number) {
+    this.ctx = ctx;
+    this.osc = ctx.createOscillator();
+    const harmonics = new Float32Array([0, 1, 0.3, 0.1]);
+    this.osc.setPeriodicWave(ctx.createPeriodicWave(new Float32Array(harmonics.length), harmonics));
+    this.tone = filter(ctx, 'lowpass', 300, 0.7);
+    this.engine = gain(ctx, 0);
+    // Each voice reads the shared noise at its own rate, so two cars don't hiss as one.
+    const hiss = loop(ctx, noise, 0.8 + i * 0.11);
+    this.road = filter(ctx, 'lowpass', 400, 0.5);
+    this.whoosh = gain(ctx, 0);
+    this.pan = ctx.createStereoPanner();
+    this.osc.connect(this.tone).connect(this.engine).connect(this.pan);
+    hiss.connect(filter(ctx, 'highpass', 60)).connect(this.road).connect(this.whoosh).connect(this.pan);
+    this.pan.connect(dest);
+    this.osc.start();
+    hiss.start(0, i * 0.37);
+  }
+
+  update(car: Car, d: number, lx: number, ly: number, me: Car | null) {
+    const t = this.ctx.currentTime, fresh = this.car !== car;
+    this.car = car;
+    const kind: PassingKind = car.variant?.id === 'electric' ? 'electric' : car.spec.heavy ? 'heavy' : car.spec.two === 'moto' ? 'moto' : 'car';
+    const v = car.speed, near = passingFalloff(d), { engine, whoosh } = passingLevels(kind, v);
+    const dx = lx - car.x, dy = ly - car.y, n = Math.max(d, 1);
+    const toward = ((car.vx - (me?.vx ?? 0)) * dx + (car.vy - (me?.vy ?? 0)) * dy) / n;
+    const doppler = SONIC / (SONIC - clamp(toward, -40, 40));
+    const hz = passingNote(kind, v) * doppler;
+    // Farther off, the highs are lost to the air and the houses.
+    const dull = clamp(1 - d / 80, 0.35, 1);
+    const set = (p: AudioParam, value: number, tc: number) => (fresh ? p.setValueAtTime(value, t) : p.setTargetAtTime(value, t, tc));
+    set(this.osc.frequency, hz, SMOOTH);
+    set(this.tone.frequency, (150 + hz * 2.5) * dull, SMOOTH);
+    set(this.road.frequency, (250 + v * 18) * dull * doppler, SMOOTH);
+    // A new car fades in rather than starting at full level.
+    this.engine.gain.setTargetAtTime(engine * near, t, fresh ? 0.3 : 0.1);
+    this.whoosh.gain.setTargetAtTime(whoosh * near, t, fresh ? 0.3 : 0.1);
+    this.pan.pan.setTargetAtTime(clamp(-dx / 25, -0.85, 0.85), t, 0.1);
+  }
+
+  release() {
+    this.car = null;
+    const t = this.ctx.currentTime;
+    this.engine.gain.setTargetAtTime(0, t, 0.3);
+    this.whoosh.gain.setTargetAtTime(0, t, 0.3);
   }
 }
 

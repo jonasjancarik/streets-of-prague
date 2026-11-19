@@ -2900,7 +2900,7 @@ async function main() {
     for (const c of choppers) c.render();
     if (hornHeld && !inCar && !ride.driving) honk(false);
     if (hornHeld && (hornT -= dt) < 0) { hornT = 0.5; scareAhead(); }
-    sound.update(dt, { x: px(), y: py(), car: inCar, throttle: ctl.move, surface, trams: trams.list, quiet: metro.active, rain: weather.now.rain, wet: weather.now.wet, snow: weather.now.snow, strikes: weather.now.strikes, busy, road, hour: (clock.t % 86400) / 3600, season, aloft: inHeli ? clamp((inHeli.air - 5) / 40, 0, 1) : 0, sirens: [
+    sound.update(dt, { x: px(), y: py(), car: inCar, throttle: ctl.move, surface, trams: trams.list, quiet: metro.active, rain: weather.now.rain, wet: weather.now.wet, snow: weather.now.snow, strikes: weather.now.strikes, busy, road, hour: (clock.t % 86400) / 3600, season, aloft: inHeli ? clamp((inHeli.air - 5) / 40, 0, 1) : 0, traffic: traffic.agents, sirens: [
       ...police.chasing.map((p) => ({ key: p, kind: 'police' as const, x: p.car.x, y: p.car.y, vx: p.car.vx, vy: p.car.vy })),
       ...brigade.engines.filter((e) => e.phase === 'go' && !e.wrecked).map((e) => ({ key: e, kind: 'fire' as const, x: e.car.x, y: e.car.y, vx: e.car.vx, vy: e.car.vy })),
       ...ambulances.rigs.filter((r) => r.phase === 'go' && !r.wrecked).map((r) => ({ key: r, kind: 'ambulance' as const, x: r.car.x, y: r.car.y, vx: r.car.vx, vy: r.car.vy })),
