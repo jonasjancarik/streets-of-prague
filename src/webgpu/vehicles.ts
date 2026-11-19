@@ -4,8 +4,9 @@
 // the 'cars', 'trams', 'funicular' and 'boats' materials (see addPort).
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Fn, float, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, cameraWorldMatrix, diffuseColor, renderGroup, positionLocal, positionWorld, positionViewDirection, normalLocal, positionGeometry, materialColor, materialSpecular, normalize, dot, smoothstep, mix, select, sin, min, cos, max, floor, mod, exp2, reflect, atan, pow, uniform, texture, cubeTexture, length, clamp, step, distance } from 'three/tsl';
+import { Fn, If, float, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, cameraWorldMatrix, diffuseColor, renderGroup, positionLocal, positionWorld, positionViewDirection, normalLocal, positionGeometry, materialColor, materialSpecular, normalize, dot, smoothstep, mix, select, sin, min, cos, max, floor, mod, exp2, reflect, atan, pow, uniform, texture, cubeTexture, length, clamp, step, distance } from 'three/tsl';
 import { LAMP_GLOW, CAR_GLOSS, DUSTCART_COAT, CAR_MIRROR, CAR_REFLECT as R, CAR_STRIPS as CS, AREA_STEP, DENT_STEP, DENT_SHAPE as DS } from '../car.ts';
+import { registrationAtlas } from '../registrationPlates.ts';
 import { STRIPS, STRIPS_ON, onStrips } from '../reflections.ts';
 import { PROBE_AT, PROBE_K, PROBE_MAP, PROBE_MIX, PROBE_NEAR, PROBE_PREV, onProbe } from '../probe.ts';
 import { SKY_REF, STREET_REF, SUN_DIR, SUN_LIGHT } from '../shading.ts';
@@ -29,8 +30,9 @@ const opened = select(hinge.z.lessThan(0.5), float(0),
   select(hinge.z.lessThan(1.5), doors.x.negate(),
     select(hinge.z.lessThan(2.5), doors.y,
       select(hinge.z.lessThan(3.5), doors.z.negate(), doors.w))));
-const swing = (p: N): N => {
-  const c = cos(opened), s = sin(opened);
+const swing = (p: N, close = false): N => {
+  const angle = close ? select(hinge.z.greaterThan(4.5), float(0), opened) : opened;
+  const c = cos(angle), s = sin(angle);
   return vec2(p.x.mul(c).add(p.y.mul(s)), p.y.mul(c).sub(p.x.mul(s)));
 };
 
@@ -156,7 +158,8 @@ addPort(/^cars(?:-service|-dustcart|-close)?$/, (node, legacy) => {
   const rollWheel = (p: N): N => {
     const roll: N = attribute('roll', 'vec4');
     const x = roll.x.mul(p.x).sub(roll.y.mul(p.y)), y = roll.y.mul(p.x).add(roll.x.mul(p.y));
-    return select(hinge.x.greaterThan(0), vec3(roll.z.mul(x).add(roll.w.mul(p.z)), y, roll.z.mul(p.z).sub(roll.w.mul(x))), vec3(x,y,p.z));
+    const c: N = max(float(1).sub(roll.z.mul(roll.z)), 0).sqrt();
+    return select(hinge.x.greaterThan(0), vec3(c.mul(x).add(roll.z.mul(p.z)), y, c.mul(p.z).sub(roll.z.mul(x))), vec3(x,y,p.z));
   };
   const proto = Object.getPrototypeOf(node);
   // (Before the instance's own transform goes on, in setupPosition.)
@@ -169,7 +172,7 @@ addPort(/^cars(?:-service|-dustcart|-close)?$/, (node, legacy) => {
       nrm = select(wheel, rollWheel(nrm), nrm);
     }
     const d = dentAt(), bent = dented(pos, d), normal = dentNormal(nrm, positionGeometry, d);
-    const p = swing(bent.xz.sub(hinge.xy)).add(hinge.xy), n = swing(normal.xz);
+    const p = swing(bent.xz.sub(hinge.xy), closeCar).add(hinge.xy), n = swing(normal.xz, closeCar);
     positionLocal.assign(vec3(p.x, bent.y, p.y));
     normalLocal.assign(vec3(n.x, normal.y, n.y));
     return proto.setupPosition.call(this, builder);
@@ -178,6 +181,12 @@ addPort(/^cars(?:-service|-dustcart|-close)?$/, (node, legacy) => {
   node.colorNode = vec4(vec3(materialColor).mul(tinted), 1);
   node.setupDiffuseColor = function (builder: N) {
     proto.setupDiffuseColor.call(this, builder);
+    if (closeCar) {
+      const slot = hinge.z.sub(5), roll = attribute('roll','vec4');
+      const digit = select(slot.equal(1), float(10), mod(floor(roll.w.div(pow(10,clamp(float(6).sub(slot),0,5)))),10));
+      const atlasUV = select(hinge.z.greaterThan(4.5),vec2(digit.add(hinge.x.mul(.96)).add(.02).div(16),hinge.y.mul(.96).add(.02)),vec2(-1)).toVarying('vPlateUV');
+      If(atlasUV.x.greaterThanEqual(0), () => { diffuseColor.rgb.mulAssign(texture(registrationAtlas(),atlasUV).rgb); });
+    }
     const crazed = mix(mix(diffuseColor.rgb, vec3(0.6), DS.milk), vec3(...DS.crack), cracks(crackAt.xy));
     diffuseColor.rgb.assign(mix(diffuseColor.rgb, crazed, crackAt.z));
     diffuseColor.rgb.assign(select(shine.lessThan(-0.5), vec3(0.05, 0.05, 0.055), diffuseColor.rgb));

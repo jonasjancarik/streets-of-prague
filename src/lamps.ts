@@ -1184,7 +1184,8 @@ export class Lamps {
       for (const [along, colour, size, left] of [[headForward, HEAD, mount?.glow ?? 0.9, 1], [-L - 0.05, TAIL, c.braking ? 0.8 : 0.5, 4]] as [number, THREE.Color, number, number][]) {
         // The inset optics supply their own bloom at street level. A horizontal
         // marker there reads as an extra light floating in front of the van.
-        if (left === 1 && mount && opt.streetView) continue;
+        if (mount && opt.streetView && (mount.streetReach === undefined ? left === 1 :
+          opt.eye && (c.x - opt.eye.x) ** 2 + (c.y + opt.eye.z) ** 2 < mount.streetReach ** 2)) continue;
         for (const s of c.two ? [0] : [-1, 1]) {
           if (g >= this.glows.instanceMatrix.count) break;
           if (broken & (s > 0 ? left : left * 2)) continue;

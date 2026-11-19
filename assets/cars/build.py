@@ -33,6 +33,8 @@ from mathutils import Vector
 
 HERE = Path(__file__).resolve().parent
 OUT = HERE.parent.parent / "public" / "cars.glb"
+sys.path.insert(0, str(HERE))
+from street_trim import build_trim
 
 # Only for the preview renders; the game picks its own colours.
 COLOURS = {
@@ -41,6 +43,9 @@ COLOURS = {
     "Tail": (0.5, 0.02, 0.02), "Plate": (0.85, 0.85, 0.82), "Sign": (0.95, 0.9, 0.55),
     "Blue": (0.02, 0.08, 0.4), "Yellow": (0.7, 0.75, 0.05), "Bar": (0.02, 0.02, 0.03),
     "Seat": (0.07, 0.07, 0.075), "WheelHub": (0.35, 0.37, 0.4),
+    "Bumper": (0.02, 0.02, 0.02), "RubStrip": (0.018, 0.020, 0.021), "LensBed": (0.18, 0.20, 0.21),
+    "Optic": (0.58, 0.65, 0.68), "PanelGap": (0.035, 0.038, 0.04), "DarkChrome": (0.12, 0.14, 0.14),
+    "RedLens": (0.28, 0.012, 0.019), "Indicator": (0.61, 0.26, 0.06), "EUBlue": (0.02, 0.07, 0.18),
 }
 MATS = list(COLOURS)
 # How far in from the side a rounded body's top begins (see Car.body's crown).
@@ -305,11 +310,11 @@ class Car:
         rows = [[self.v(xo, yo, z) for _, _, xo, yo in pts] for z in (z0, z1)]
         back = [self.v(x, y, z1) for x, y, _, _ in pts]
         for i in range(len(pts) - 1):
-            self.face([rows[0][i], rows[0][i + 1], rows[1][i + 1], rows[1][i]], "Trim")
-            self.face([rows[1][i], rows[1][i + 1], back[i + 1], back[i]], "Trim")
+            self.face([rows[0][i], rows[0][i + 1], rows[1][i + 1], rows[1][i]], "Bumper")
+            self.face([rows[1][i], rows[1][i + 1], back[i + 1], back[i]], "Bumper")
         for end in (0, len(pts) - 1):
             # (The ends of the rim, against the body.)
-            self.face([rows[0][end], rows[1][end], back[end]], "Trim")
+            self.face([rows[0][end], rows[1][end], back[end]], "Bumper")
 
     def decal(self, points, mat, z, lift=0.008):
         """A flat shape lying on the body (lettering, a lamp): `points` (x, y) round it,
@@ -614,6 +619,7 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, 
     if rails:
         for s in (1, -1):
             c.block(((xb + xc) / 2, s * (w * 0.74 - 0.05), roof + 0.02), (xb - xc - 0.1, 0.05, 0.05), "Trim")
+    build_trim(name, shape, c, 0.64 + lift, boot - 0.12, material, MATS)
     return c.finish(name)
 
 
@@ -651,6 +657,7 @@ def van(name="van", L=5.2, W=2.0, H=2.3):
     c.lamps(nb - 0.06, -nb + 0.06, half(nb) - 0.17, half(-nb) - 0.15, 0.72, 0.85,
             plates=((n - 0.01, 0.45), (-n + 0.01, 0.48)))
     shape.lamps(c)
+    build_trim(name, shape, c, 0.72, 0.85, material, MATS)
     return c.finish(name)
 
 
@@ -693,6 +700,7 @@ def pickup(name="pickup", L=5.9, W=2.03, H=1.95):
         c.block(((xd + end) / 2, s * (side - 0.07), rail + 0.03), (xd - end, 0.14, 0.06), "Paint")
     c.block((end + 0.04, 0, rail + 0.04), (0.08, 2 * half(end + 0.04) - 0.04, 0.08), "Paint")
     c.block((xd - 0.06, 0, rail + 0.04), (0.1, 2 * half(xd) - 0.04, 0.08), "Paint")
+    build_trim(name, shape, c, 0.86, 0.98, material, MATS)
     return c.finish(name)
 
 
@@ -759,6 +767,10 @@ def preview(out_dir):
     out.mkdir(parents=True, exist_ok=True)
     cars = build()
     scene = bpy.context.scene
+    # This overview shows the base bodies; the separate fittings are chosen in game.
+    for o in scene.objects:
+        if o.name.endswith("_street_trim"):
+            o.hide_render = True
     for i, o in enumerate(cars):
         o.location = (0, (min(i, 7) - 3.5) * 3.2, 0)  # (the ram goes on the police car)
     ground = bpy.data.meshes.new("ground")

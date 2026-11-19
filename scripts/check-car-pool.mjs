@@ -139,11 +139,13 @@ const checks = `(async () => {
     const wheels = page('sedan|street-wheels');
     pool.render([saloon, distant], null, 0, undefined, true, eye);
     assert(wheels.count === 1 && page('sedan').count === 1, 'only nearby street cars use the fitted wheels');
-    const roll = wheels.geometry.getAttribute('roll'), phase = [roll.getX(0),roll.getY(0)];
+    const roll = wheels.geometry.getAttribute('roll'), phase = [roll.getX(0), roll.getY(0)], registration = roll.getW(0);
     saloon.x += .31; saloon.vx = 3; saloon.w = .4;
     pool.render([saloon,distant], null, 0, undefined, true, eye);
-    assert(Math.hypot(phase[0]-roll.getX(0),phase[1]-roll.getY(0)) > .5 && Math.abs(roll.getW(0)) > .1,
+    assert(Math.hypot(phase[0]-roll.getX(0),phase[1]-roll.getY(0)) > .5 && Math.abs(roll.getZ(0)) > .1,
       'wheels roll with travel and the front axle steers through the bend');
+    assert(roll.getW(0) === registration && registration >= 100000 && registration <= 999999,
+      'a moving car keeps its registration');
     const placed = new THREE.Matrix4();
     assert(pool.matrixOf(saloon, placed) && Math.abs(placed.elements[12]-saloon.x) < .001, 'close body matrix available');
     pool.render([saloon,distant]);
