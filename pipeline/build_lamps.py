@@ -90,7 +90,11 @@ LIT_WAYS = {"motorway", "motorway_link", "trunk", "trunk_link", "primary", "prim
 NEAR = 8.0  # m: an OSM lamp this close to one of the survey's is the same lamp
 ROADWAYS = ("road", "sett")  # the tiles' kinds of road surface that cars drive on
 MIN_ROADWAY = 3.0  # m: the narrowest a driven street is taken to be
-TRAM_LANE = 3.5  # m: the width a tram takes along its track (a post between two tracks, about 2.3 m from each, is left)
+# m: the width a tram takes along its track, plus street_lighting.IN_ROAD each side: that
+# leeway is for a roadway drawn a little wide, and a tram's track is no guess (a post 1.6 m
+# from one track and 2.3 m from the other, in Štefánikova by Anděl, stood in the trams'
+# way). A post between two tracks, about 2.3 m from each, is left.
+TRAM_LANE = 3.5 + 2 * street_lighting.IN_ROAD
 NEAR_BUILT = 12.0  # m: the same for the works' lamps (a lamp put up again a few steps away in a rebuilt street)
 STEP, STRAIGHTEN, EDGE = 0.25, 1.0, 300.0  # m: lit.bin.gz's unit, how far a way may be straightened, how far past the area's box ways are kept
 
