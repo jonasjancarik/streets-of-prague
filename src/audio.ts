@@ -80,10 +80,11 @@ const ELECTRIC_VOICE: EngineVoice = {
   avas: [0.009, 170, 0.45],
 };
 const ELECTRIC: EngineSpec = { idle: 600, redline: 9000, cylinders: 5, gears: [1.02], rough: 0, voice: ELECTRIC_VOICE };
-// A big V8 pickup: low and burbling, taken easy.
+// A big V8 pickup: low and burbling, taken easy. A few dB over an everyday car (idle
+// about 5, pedal down about 2); it used to be 12–14 dB over and wore on the ear.
 const V8_VOICE: EngineVoice = {
   harmonics: [0, 1, 0.6, 0.35, 0.15, 0.06], sub: 0.35, drive: 1, tone: [140, 1.6, 300],
-  roar: [0.01, 0.06, 3], level: [0.05, 0.03, 0.015], shift: [0.3, 0.55], clutch: 1200, blip: 0.7,
+  roar: [0.005, 0.03, 3], level: [0.018, 0.01, 0.005], shift: [0.3, 0.55], clutch: 1200, blip: 0.7,
 };
 export const PETROL: EngineSpec = { idle: 850, redline: 6200, cylinders: 4, gears: [0.25, 0.42, 0.6, 0.8, 1.02], rough: 0.006, voice: EVERYDAY };
 export const ENGINES: Record<string, EngineSpec | null> = {
