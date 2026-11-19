@@ -665,10 +665,10 @@
       #t-toggle { position: fixed; left: calc(max(16px, env(safe-area-inset-left)) + 12px); bottom: calc(max(16px, env(safe-area-inset-bottom)) + 160px); width: 136px; height: 44px; padding: 0 10px; white-space: nowrap; }
       #touch button.down, .t-pedal.down { background: rgba(236, 228, 214, 0.3); }
       #t-action { height: 52px; padding: 0 22px; font-size: 16px; border-color: var(--accent); }
-      #t-fast, #t-steal, #t-doors, #t-taxi, #t-jump, #t-shoot, #t-ticket, #t-cannon { height: 52px; padding: 0 18px; }
+      #t-fast, #t-steal, #t-doors, #t-taxi, #t-jump, #t-shoot, #t-ticket, #t-cannon, #t-beacon { height: 52px; padding: 0 18px; }
       /* The pistol's controls, only once the developer panel has handed it out (src/pistol.ts). */
       body:not(.gun-on) .gun-only { display: none !important; }
-      #touch #t-cannon[hidden], #touch #t-steal[hidden] { display: none; }
+      #touch #t-cannon[hidden], #touch #t-steal[hidden], #touch #t-beacon[hidden] { display: none; }
       #touch #t-ticket[hidden] { display: none; }
       #t-action.off { visibility: hidden; }
       #t-pedals { display: flex; align-items: flex-end; gap: 10px; touch-action: none; }
@@ -767,6 +767,7 @@
           <dt><kbd>Y</kbd></dt><dd data-t>Horn (hold it)</dd>
           <dt><kbd>RB</kbd></dt><dd data-t>Water cannon of a fire engine (hold it)</dd>
           <dt><kbd>L3</kbd></dt><dd data-t>Radio: next station, and off (or use the buttons under the speed)</dd>
+          <dt><kbd>R3</kbd></dt><dd data-t>Blue lights of a police car, fire engine or ambulance: on, with the siren, or off</dd>
           <dt><kbd>X</kbd></dt><dd data-t>Get out, or off a bike</dd>
         </dl>
       </section>
@@ -830,6 +831,7 @@
         <button id="t-shoot" class="foot-only gun-only" data-t>Shoot</button>
         <button id="t-action" class="off">Get in</button>
         <button id="t-cannon" class="car-only" data-t hidden>Water cannon</button>
+        <button id="t-beacon" class="car-only" data-t hidden>Blue lights</button>
         <div class="t-row car-only"><button id="t-horn" data-t>Horn</button><button id="t-hand" data-t>Handbrake</button></div>
         <div id="t-pedals" class="car-only"><div id="t-brake" class="t-pedal" data-t>Brake</div><div id="t-gas" class="t-pedal" data-t>Gas</div></div>
       </div>

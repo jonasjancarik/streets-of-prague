@@ -450,7 +450,14 @@ that without a new renderer.
   other officers stand round and nobody shoots. The screen fades to black on the way;
   you are then taken to the station and the picture fades back in. You can outrun them on foot, or take the police car they've
   left behind (E) and drive off in it. Its blue lights keep flashing while you're at
-  the wheel, even when stopped, and switch off when you get out. From three stars a helicopter
+  the wheel, even when stopped, and switch off when you get out. In a police car, fire
+  engine or ambulance, <kbd>X</kbd> (R3 on a controller, a "Blue lights" button on
+  phones) goes from the lights to the lights and siren, then off, then back.
+  The police go easier on you in a fire engine or an ambulance: taking one is still a
+  carjack, but the stars go three times as fast out of sight, and while you're not
+  wanted they let speeding go, a wreck or someone knocked over counts about a third as
+  much, and that little heat drains away by itself (`ON_DUTY` in `src/police.ts`,
+  `scenarios/emergency-duty.ts`). From three stars a helicopter
   joins in and sees you over the rooftops, and the officers carry pistols: once they can
   see you from close enough they stop and shoot instead of running you down, and from
   four stars they shoot out of the cars too. Gunshots send people running. Stay out of

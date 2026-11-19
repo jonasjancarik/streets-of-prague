@@ -29,6 +29,14 @@ const BARS: Record<string, { lamps: Lamp[]; rate: number; amber?: boolean }> = {
 };
 const OTHER = BARS.police;
 
+// What a police car, fire engine or ambulance you're driving has on (Car.beacon): its
+// lights, its lights and siren, or nothing (null, as for any other car).
+export function ownBeacon(car: Car | null | undefined): 'lights' | 'siren' | null {
+  if (!car || car.mode !== 'player' || car.burnt || !(car.type === 'police' || car.type === 'fire' || car.type === 'ambulance')) return null;
+  const b = car.beacon ?? 'lights';
+  return b === 'off' ? null : b;
+}
+
 export class Beacons {
   private lamps: THREE.InstancedMesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>;
   private dummy = new THREE.Object3D();

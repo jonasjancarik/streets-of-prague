@@ -6,6 +6,7 @@ import type { Post } from './posts.ts';
 import type { Point2 } from './map/geo.ts';
 import { segDist } from './network.ts';
 import { stickOnly } from './touch.ts';
+import { ownBeacon } from './beacons.ts';
 import type { DriveEdge, DriveGraph } from './network.ts';
 import type { Wallet } from './money.ts';
 import type { Police } from './police.ts';
@@ -113,7 +114,7 @@ interface Game {
   viewRadius: () => number;
   offscreen: (x: number, y: number) => boolean;
   canvas: HTMLElement; fov: number;
-  wallet: Wallet; police: Police; health: Health; clock: Clock; fires: Fires; brigade: Brigade; ambulances: Ambulances; refuse: Refuse; traffic: Traffic; crowd: { people: { state: string; x: number; y: number }[] }; hurtNearest: (grave?: boolean) => Pedestrian | null;
+  wallet: Wallet; police: Police; health: Health; clock: Clock; fires: Fires; brigade: Brigade; ambulances: Ambulances; refuse: Refuse; traffic: Traffic; crowd: { people: { state: string; x: number; y: number }[] }; hurtNearest: (grave?: boolean) => Pedestrian | null; switchBeacon: (c: Car) => void;
   weather: { set: (k: Kind | 'auto') => void; kind: () => string };
   season: { set: (when: string | number) => void; date: () => string };
   birds: (kind: 'pigeon' | 'gull' | 'ground', x: number, y: number) => boolean;
@@ -273,7 +274,9 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     // What the arrest does to the chase: the stars go and the police cars stand down.
     forgive() { g.police.forgive(); },
 
-    policeLights(c: Car) { return g.police.lit(g.car()).includes(c); },
+    policeLights(c: Car) { return g.police.lit.includes(c) || (c === g.car() && !!ownBeacon(c)); },
+    // The lights of the police car, fire engine or ambulance you're driving: X once.
+    beacon() { const c = g.car(); if (c) g.switchBeacon(c); return c?.beacon ?? 'lights'; },
     policeCar() {
       const m = g.me();
       return [...g.police.cars.map((p) => p.car), ...g.traffic.agents.map((a) => a.car)]

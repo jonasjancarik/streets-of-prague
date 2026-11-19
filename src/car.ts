@@ -931,6 +931,9 @@ export class Car {
   lastH?: number;
   anim?: Anim;
   crew?: boolean;
+  // A police car, fire engine or ambulance you're driving: its blue lights, the lights and
+  // the siren, or neither (X). Lights alone until you change it.
+  beacon?: 'lights' | 'siren' | 'off';
   // A dustcart standing at a house while its crew fetch the bins (refuse.ts).
   working?: boolean;
   // A dustcart out on its round: traffic behind it leaves room at the back for the crew

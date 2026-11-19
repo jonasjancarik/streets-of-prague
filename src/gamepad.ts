@@ -17,7 +17,7 @@
 //   left bumper  Shift (hold): run, lane assist, speed up a ride
 //   right bumper F: water cannon (hold), take over a tram
 //   left stick click   R: next radio station
-//   right stick click  X: open and close a tram's doors
+//   right stick click  X: open and close a tram's doors, blue lights of an emergency vehicle
 //   d-pad        the arrow keys; right is J (jobs: ask for one, take the offer) outside the
 //                metro
 //   View         T: taxi

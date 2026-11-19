@@ -53,7 +53,7 @@ import { Skids } from './skids.ts';
 import { SteerGuide, aimSteer, type Held } from './steerGuide.ts';
 import { Spray } from './spray.ts';
 import { Water } from './water.ts';
-import { Beacons } from './beacons.ts';
+import { Beacons, ownBeacon } from './beacons.ts';
 import { Cannon, TANK, HOSE } from './cannon.ts';
 import { Graphics } from './graphics.ts';
 import { createGameRenderer, retryStart } from './renderer.ts';
@@ -1707,7 +1707,10 @@ async function main() {
     const pick = /^Digit([1-4])$/.exec(e.code);
     if (pick && !e.repeat && inspector.phase !== 'decide') buyTicket(TICKETS[Number(pick[1]) - 1]);
         if (e.code === 'KeyF') { cannonHeld = true; fireHeld = true; if (!e.repeat) { pulled = !inCar; stealTram(); } }
-    if (e.code === 'KeyX' && !e.repeat) { if (ride.driving) telemetry.did('opened the tram doors'); ride.doors(); }
+    if (e.code === 'KeyX' && !e.repeat) {
+      if (inCar && !inCar.burnt && ['police', 'fire', 'ambulance'].includes(inCar.type)) switchBeacon(inCar);
+      else { if (ride.driving) telemetry.did('opened the tram doors'); ride.doors(); }
+    }
     if (e.code === 'KeyQ' && !e.repeat) honk(true);
     // Space jumps, except at a tram stop, where holding it waits for a tram.
     if (e.code === 'Space' && !e.repeat && !board.shown && !inCar && !inHeli && !ride.on && taxi.state !== 'coming') { input.jump = true; telemetry.did('jumped'); }
@@ -1780,7 +1783,7 @@ async function main() {
   window.addEventListener('pointermove', (e) => { if (aimAt && e.pointerType === 'mouse') aimAt = pointAt(e) ?? aimAt; }, { passive: true });
   window.addEventListener('pointerup', (e) => { if (e.button === 0) aimAt = null; });
   $('t-ticket').addEventListener('click', pressB);
-  const touch = setupTouch({ action: interact, backOnRoad, zoomBy, horn: honk, steal: stealTram, cannon: (on) => { cannonHeld = on; }, shoot: (on) => { fireHeld = on; if (on) pulled = true; }, doors: () => ride.doors(), jump: () => {
+  const touch = setupTouch({ beacon: () => { if (inCar && !inCar.burnt && ['police', 'fire', 'ambulance'].includes(inCar.type)) switchBeacon(inCar); }, action: interact, backOnRoad, zoomBy, horn: honk, steal: stealTram, cannon: (on) => { cannonHeld = on; }, shoot: (on) => { fireHeld = on; if (on) pulled = true; }, doors: () => ride.doors(), jump: () => {
     if (!inCar && !inHeli && !ride.on && !metro.active && !dialog.active && !boats.me && !funicular.me && !ferries.me && !passenger()) { input.jump = true; telemetry.did('jumped'); }
   }, force: params.has('touch') });
   Object.assign(padHooks, { settings: () => settingsPanel.show(), menu: () => metro.active, zoomBy }); // (a conversation leaves the stick steering)
@@ -1965,6 +1968,13 @@ async function main() {
   // A short word (Wasted, a station's name) goes up big; a sentence or a setting (a fee,
   // a fare, "Weather: rain") goes in a card, so it doesn't stretch across the screen.
   // "Busted · fine…" gives both: the word big and the rest in the card under it.
+  // X in a police car, fire engine or ambulance: lights, then lights and siren, then off.
+  const switchBeacon = (car: Car) => {
+    const next = { lights: 'siren', siren: 'off', off: 'lights' } as const;
+    car.beacon = next[car.beacon ?? 'lights'];
+    showBanner(t(car.beacon === 'siren' ? 'Lights and siren on' : car.beacon === 'lights' ? 'Lights on, siren off' : 'Lights and siren off'));
+    telemetry.did(`beacon: ${car.beacon}`);
+  };
   const showBanner = (text: string, alert = false, card = false) => {
     const [head, ...rest] = text.split(' · ');
     const big = !card && head.length <= 22 && !head.includes(':') ? head : '';
@@ -2154,7 +2164,7 @@ async function main() {
     }
     for (const c of movers) c.update(dt, null, grid);
     const me = inCar || inHeli || walker;
-    police.update(dt, { x: me.x, y: me.y, z: inHeli ? inHeli.z : ground(me.x, me.y, inCar || walker), level: inHeli ? 0 : world.track(inCar || walker), vx: me.vx, vy: me.vy, speed: Math.hypot(me.vx, me.vy), car: inCar, air: !!walker.flight || (!inHeli && walker.onRoof) || (!!inHeli && !inHeli.landed) || ride.on || passenger(), riding: ride.on || passenger() });
+    police.update(dt, { x: me.x, y: me.y, z: inHeli ? inHeli.z : ground(me.x, me.y, inCar || walker), level: inHeli ? 0 : world.track(inCar || walker), vx: me.vx, vy: me.vy, speed: Math.hypot(me.vx, me.vy), car: inCar, air: !!walker.flight || (!inHeli && walker.onRoof) || (!!inHeli && !inHeli.landed) || ride.on || passenger(), riding: ride.on || passenger(), duty: inCar?.type === 'fire' || inCar?.type === 'ambulance' });
     inspector.update(dt, { x: me.x, y: me.y, h: inCar ? inCar.h : walker.h, onFoot: !inCar && !inHeli && !ride.on && !passenger() && !boats.me && !funicular.me && !ferries.me, inVehicle: !!inCar || !!inHeli || passenger() || !!boats.me });
     brigade.update(dt, me);
     ambulances.update(dt, me);
@@ -2849,7 +2859,9 @@ async function main() {
     terraces.update(dt, Object.assign(terraceView, { x: camPos.x, y: -camPos.z, radius: viewRadius(), day: season.day }));
     police.render(ground, time.value);
     {
-      const chasing = police.lit(inCar), engines = brigade.lit, rescue = ambulances.lit, carts = refuse.lit;
+      const chasing = police.lit, engines = brigade.lit, rescue = ambulances.lit, carts = refuse.lit;
+      // The one you're driving, as you've set its lights.
+      if (ownBeacon(inCar)) (inCar!.type === 'fire' ? engines : inCar!.type === 'ambulance' ? rescue : chasing).push(inCar!);
       flashing.length = 0;
       for (const car of chasing) flashing.push({ car, reach: 19, rate: 1.4 });
       for (const car of engines) flashing.push({ car, reach: 24, rate: 1.2 });
@@ -2904,6 +2916,7 @@ async function main() {
       ...police.chasing.map((p) => ({ key: p, kind: 'police' as const, x: p.car.x, y: p.car.y, vx: p.car.vx, vy: p.car.vy })),
       ...brigade.engines.filter((e) => e.phase === 'go' && !e.wrecked).map((e) => ({ key: e, kind: 'fire' as const, x: e.car.x, y: e.car.y, vx: e.car.vx, vy: e.car.vy })),
       ...ambulances.rigs.filter((r) => r.phase === 'go' && !r.wrecked).map((r) => ({ key: r, kind: 'ambulance' as const, x: r.car.x, y: r.car.y, vx: r.car.vx, vy: r.car.vy })),
+      ...(ownBeacon(inCar) === 'siren' ? [{ key: inCar!, kind: inCar!.type as 'police' | 'fire' | 'ambulance', x: inCar!.x, y: inCar!.y, vx: inCar!.vx, vy: inCar!.vy }] : []),
     ] });
 
     // ---- Camera ----------------------------------------------------------
@@ -3142,7 +3155,7 @@ async function main() {
     } else if (walker.flight?.helicopter && !walker.flight.open) {
       hint = touch.active ? t('Hold Jump to open your parachute') : t('Hold <b>Space</b> to open your parachute');
     } else if (inCar) {
-      if (!assisted) hint = touch.active ? '' : inCar.type === 'fire' ? t('<b>E</b> get out · <b>F</b> water cannon · <b>Shift</b> lane assist') : t(inCar.two ? '<b>E</b> get off · <b>Shift</b> lane assist' : '<b>E</b> get out · <b>Shift</b> lane assist');
+      if (!assisted) hint = touch.active ? '' : inCar.type === 'fire' ? t('<b>E</b> get out · <b>F</b> water cannon · <b>X</b> blue lights · <b>Shift</b> lane assist') : inCar.type === 'ambulance' || inCar.type === 'police' ? t('<b>E</b> get out · <b>X</b> blue lights · <b>Shift</b> lane assist') : t(inCar.two ? '<b>E</b> get off · <b>Shift</b> lane assist' : '<b>E</b> get out · <b>Shift</b> lane assist');
       // While the assist is on, the panel stays empty so it doesn't grow.
     }
     else if (boats.me) hint = touch.active ? '' : t('<b>W</b>/<b>S</b> pedal · <b>A</b>/<b>D</b> turn · <b>E</b> get out by the bank');
@@ -3225,7 +3238,8 @@ async function main() {
     busRide.render();
     show('hint', padLabels(hint), 'html');
     $('help').dataset.mode = inHeli ? 'heli' : inCar ? 'car' : ride.driving ? 'drive' : ride.on ? 'tram' : funicular.me ? 'funicular' : ferries.me ? 'ferry' : 'foot';
-    drawHelp({ mode: $('help').dataset.mode as HelpMode, gun: gunOn(), fire: inCar?.type === 'fire', two: !!inCar?.two });
+    const emergency = !!inCar && !inCar.burnt && ['police', 'fire', 'ambulance'].includes(inCar.type);
+    drawHelp({ mode: $('help').dataset.mode as HelpMode, gun: gunOn(), fire: inCar?.type === 'fire', two: !!inCar?.two, beacon: emergency });
     $('help-pad').dataset.mode = $('help').dataset.mode;
     ride.render();
     const label = ride.driving ? (ride.canLeave() ? 'Get off' : null) : ride.on ? (ride.atStop() ? 'Get off' : ride.stuck ? 'Get off here' : ride.dest === ride.upcoming()[0] ? 'Stop requested' : 'Request stop') : funicular.me ? (funicular.me.stop !== null ? 'Get off' : null) : ferries.me ? (ferries.me.stop !== null ? 'Get off' : null) : canBoard || cabin || ferryHere?.open || enterable?.two ? 'Get on' : inCar?.two ? 'Get off' : null;
@@ -3238,7 +3252,7 @@ async function main() {
     }
     const stealLabel = busRide.on ? 'Take over the bus' : 'Take over the tram', stealBtn = $('t-steal');
     if (stealBtn.dataset.t !== stealLabel) { stealBtn.dataset.t = stealLabel; stealBtn.textContent = t(stealLabel); }
-    touch.update({ car: inCar || inHeli, engine: inCar?.type === 'fire', driving: ride.driving, tram: (ride.on && !ride.driving) || passenger() || (!!funicular.me || !!ferries.me), steal: (ride.on && !ride.driving) || busRide.on, wait: !!board.shown || taxi.state === 'coming', label: inHeli?.canBailOut ? 'Jump out' : cab || label || (station ? 'Metro' : null), canEnter: !!cab || canEnter || !!canBoard || !!station || !!cabin || !!ferryHere?.open || funicular.me?.stop != null || ferries.me?.stop != null, limit: assisted ? assist.limit : null });
+    touch.update({ car: inCar || inHeli, engine: inCar?.type === 'fire', beacon: emergency, driving: ride.driving, tram: (ride.on && !ride.driving) || passenger() || (!!funicular.me || !!ferries.me), steal: (ride.on && !ride.driving) || busRide.on, wait: !!board.shown || taxi.state === 'coming', label: inHeli?.canBailOut ? 'Jump out' : cab || label || (station ? 'Metro' : null), canEnter: !!cab || canEnter || !!canBoard || !!station || !!cabin || !!ferryHere?.open || funicular.me?.stop != null || ferries.me?.stop != null, limit: assisted ? assist.limit : null });
     show('tally', `${tn(stats.wrecked, '{n} car wrecked|{n} cars wrecked')}${stats.busted ? ` · ${t('busted {n}×', { n: stats.busted })}` : ''}${stats.wasted ? ` · ${t('wasted {n}×', { n: stats.wasted })}` : ''}`);
     // Wanted stars: they blink while the police have lost sight of you.
     const stars = police.stars, wanted = $('wanted');
@@ -3328,7 +3342,7 @@ async function main() {
     steps: (x, y, r) => world.stepEdgesNear(x, y, r), ground: (x, y) => world.terrainAt(x, y), levelAt: (x, y, l) => world.levelAt(x, y, l),
     streets: drive, countryside: () => !!world.country?.box, place: () => $('district').textContent || null, taxi,
     builtMap: (x, y) => !pastMap(x, y) && world.available.has(world.keyAt(x, y)),
-    grid, boats, ferries, pid, inspector, wallet, police, health, clock, fires, brigade, ambulances, refuse, hurtNearest, traffic, crowd, rng: seeded, bags,
+    grid, boats, ferries, pid, inspector, wallet, police, health, clock, fires, brigade, ambulances, refuse, hurtNearest, switchBeacon, traffic, crowd, rng: seeded, bags,
     missions, satnav, standing: repute, cannon: (on) => { cannonHeld = on; }, tram: { ride, list: () => trams.list },
     shoot: (h) => (canShoot() ? shoot(h) : null),
     carsNear: (x, y, r) => [...carsNear(x, y, r)],

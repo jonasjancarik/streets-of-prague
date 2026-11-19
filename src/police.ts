@@ -37,7 +37,8 @@ const LEVEL_APART = 3; // m of height between two that are on different levels (
 // Whether a street is on a level of that kind: in a tunnel (below 0), on a bridge (above), or on the ground.
 export const onLevel = (e: { bridge?: boolean; tunnel?: boolean }, level: number) => (level < 0 ? !!e.tunnel : level > 0 ? !!e.bridge : !e.bridge && !e.tunnel);
 // (`level`: on the ground 0, in a tunnel below it, on a bridge above it; see TileWorld.track.)
-interface PlayerTarget { x: number; y: number; z: number; level: number; vx: number; vy: number; speed: number; car: Car | null; air: boolean; riding: boolean }
+// `duty`: driving a fire engine or an ambulance (see ON_DUTY).
+interface PlayerTarget { x: number; y: number; z: number; level: number; vx: number; vy: number; speed: number; car: Car | null; air: boolean; riding: boolean; duty?: boolean }
 interface PoliceOptions {
   scene: THREE.Scene; drive: DriveGraph; traffic: Traffic; grid: CarGrid;
   height: (x: number, y: number, who?: Car | Officer) => number;
@@ -71,6 +72,11 @@ interface PoliceOptions {
 // From three stars a helicopter joins in (src/helicopter.ts), and the officers draw
 // their pistols: they stop where they can see you and shoot rather than run you down.
 // From four stars they shoot from the cars as well.
+//
+// In a fire engine or an ambulance the police go easier on you. Taking one is still a
+// carjack, but the stars go ON_DUTY.lose times as fast once they've lost sight of you.
+// While you're not wanted they let speeding go, a crash or someone knocked over counts
+// ON_DUTY.crash as much, and that little heat drains away by itself.
 
 const STARS = [1, 4, 9, 16, 25]; // heat for each star
 const CHASERS = [0, 1, 2, 3, 4, 6]; // police cars after you, by stars
@@ -90,6 +96,7 @@ const WRECKED = 90; // damage that puts a police car out of the chase
 const ARMED = 3; // stars from which officers on foot shoot
 const FROM_CARS = 4; // and from which they shoot from the cars
 const RANGE = 24; // m; further off they come closer first
+const ON_DUTY = { lose: 3, crash: 0.35, drain: 0.05 }; // (drain: heat a second, below the first star)
 const REPORT = 6; // s at least before a crime the police didn't see is phoned in
 const GRIP = 1.4; // s an officer has to keep hold of you on foot before you're busted
 const GRIP_CAR = 2.4; // s at the door of the car you've stopped in: time to drive off
@@ -225,6 +232,8 @@ export class Police {
   // legs go but you don't).
   moved = 0;
   private was: Point2 | null = null;
+  // Driving a fire engine or an ambulance (PlayerTarget.duty), as of the last update.
+  private duty = false;
 
   constructor({ scene, drive, traffic, grid, height, rng, edgesNear, walk = undefined, walkNear = () => [], offscreen, onBusted, kit, bodyAt = () => false, onShot = () => {} }: PoliceOptions) {
     this.scene = scene; this.drive = drive; this.traffic = traffic; this.grid = grid;
@@ -302,11 +311,12 @@ export class Police {
     if (this.cool[kind] > 0) return;
     telemetry.did(`crime: ${CRIME_NAMES[kind]}`);
     this.cool[kind] = COOLDOWN[kind] || 0;
+    const points = POINTS[kind] * (this.duty && this.stars === 0 && (kind === 'wreck' || kind === 'knock') ? ON_DUTY.crash : 1);
     if (this.sees(x, y)) {
-      this.heat = Math.min(40, this.heat + POINTS[kind] * 1.5);
+      this.heat = Math.min(40, this.heat + points * 1.5);
       this.lose = 0;
       this.known = [x, y];
-    } else this.reports.push({ heat: POINTS[kind] * 0.5, x, y, t: REPORT + this.r() * 5 });
+    } else this.reports.push({ heat: points * 0.5, x, y, t: REPORT + this.r() * 5 });
   }
 
   // You got into a police car, with its crew or one they've left to come after you on
@@ -741,6 +751,7 @@ export class Police {
   update(dt: number, me: PlayerTarget) {
     for (const k in this.cool) this.cool[k] -= dt;
     const stars = this.stars;
+    this.duty = !!me.duty;
     this.moved = this.was && dt > 0 ? Math.hypot(me.x - this.was[0], me.y - this.was[1]) / dt : 0;
     this.was = [me.x, me.y];
 
@@ -766,13 +777,13 @@ export class Police {
       // (twice a second, and police see you for a few seconds) grows steeply: about 6% of
       // passes at 15 over, 40% at 20, most at 25, nearly all at 30.
       const over = me.speed * 3.6 - this.limit;
-      if (me.car && over > 10 && this.r() < 0.5 * ((over - 10) / 20) ** 3 && this.sees(me.x, me.y, 60)) this.heat = Math.max(this.heat, STARS[0]);
+      if (me.car && !(me.duty && stars === 0) && over > 10 && this.r() < 0.5 * ((over - 10) / 20) ** 3 && this.sees(me.x, me.y, 60)) this.heat = Math.max(this.heat, STARS[0]);
     }
 
     // Out of sight long enough, you lose a star.
     this.seen = stars > 0 && this.sees(me.x, me.y);
     if (stars === 0 || this.seen) this.lose = 0;
-    else if ((this.lose += dt * (me.riding ? 2 : 1)) > 8 + 3 * stars) { // faster on a tram
+    else if ((this.lose += dt * (me.riding ? 2 : me.duty ? ON_DUTY.lose : 1)) > 8 + 3 * stars) { // faster on a tram
       this.heat = stars >= 2 ? STARS[stars - 2] : 0;
       this.lose = 0;
     }
@@ -785,6 +796,7 @@ export class Police {
       if (!this.seen) this.known = [p.x, p.y];
     }
     this.reports = this.reports.filter((p) => p.t > 0);
+    if (me.duty && this.stars === 0) this.heat = Math.max(0, this.heat - ON_DUTY.drain * dt);
     if (this.heat <= 0) this.known = null;
     // Where they're after you: where you are while they see you, otherwise where they
     // last knew you to be. (Wanted by other means, say a job's, they know.)
@@ -858,14 +870,9 @@ export class Police {
     for (const p of this.cars) p.calm = true;
   }
 
-  // The cars with their lights going: those chasing you, and a police car you're driving,
-  // including while stopped. Ownership, not speed, keeps its lights on.
-  // (`mine`: the car the player is driving).
-  lit(mine: Car | null = null) {
-    const lit = this.cars.filter((p) => !p.calm && !p.wrecked).map((p) => p.car);
-    if (mine?.type === 'police' && mine.mode === 'player' && !mine.burnt && !lit.includes(mine)) lit.push(mine);
-    return lit;
-  }
+  // The cars chasing you, which have their lights going. (One you're driving has them
+  // as you set them: Car.beacon, in main.ts.)
+  get lit() { return this.cars.filter((p) => !p.calm && !p.wrecked).map((p) => p.car); }
 
   render(height: (x: number, y: number, who: Car | Officer) => number, time: number) {
     this.helis.render(time);

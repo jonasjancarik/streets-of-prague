@@ -20,7 +20,7 @@ const evalCode = async (code) => {
 // as browser-side test instrumentation, keeping every baseline source file intact.
 const adapters = `
 const d=window.__drive;
-if (!t.policeLights) t.policeLights=c=>d.police.lit(d.car).includes(c);
+if (!t.policeLights) t.policeLights=c=>d.police.lit.includes(c);
 if (!t.policeCar) t.policeCar=()=>{
   const m=d.car||d.heli||d.walker;
   return [...d.police.cars.map(p=>p.car),...d.traffic.agents.map(a=>a.car)].filter(c=>c.type==='police'&&!c.burnt)
