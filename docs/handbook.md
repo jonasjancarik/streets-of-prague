@@ -1345,7 +1345,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   `ipr_terrain.py`, which depend on it.
 - **Crash barriers** are a third kind of the same sections (`kind: "guard_rail"` in a
   tile's `fences`): a steel beam 0.75 m high on a post every 2 m. They come from OSM's
-  `barrier=guard_rail` where it is mapped, and elsewhere `pipeline/barriers.py` puts them
+  `barrier=guard_rail` where it is mapped (not those on a bridge or with a `layer` above
+  the ground: a barrier stands on the ground, and the rails on Nuselský most's central
+  reservation stood in the valley), and elsewhere `pipeline/barriers.py` puts them
   along both edges of every motorway and expressway carriageway on the ground (the outer
   edge and the central reservation), open where another road's surface meets it; slip
   roads, bridges and tunnels get none of their own. A car meets a barrier as a line, not
@@ -1462,7 +1464,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   short sides stay nearly square. The survey's carriageways are those on the ground,
   plus any it has on a deck where OSM has an ordinary street running along it for 8 m
   or more (5. května over the roof of Pražského povstání station); the survey's green
-  under such a deck is left out. OSM only says what a street is
+  under such a deck is left out. A street crossing under the deck doesn't count, and
+  where OSM has the deck as a bridge only the metres the street on the ground runs along
+  it are taken (the streets in the valley under Nuselský most had brought its whole deck
+  down onto the ground). OSM only says what a street is
   paved with: each part of the surveyed surface takes the paving of the nearest street,
   and cobbles reach at most 4 m past a cobbled street's kerb (a car park beside it is
   asphalt). Where a cobbled street meets an asphalt one, the more important street

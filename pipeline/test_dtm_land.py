@@ -77,6 +77,26 @@ class DtmLandTests(unittest.TestCase):
         self.assertEqual(deck.bounds, (0, 40, 10, 70))
         self.assertTrue(osm_area._deck(raised, []).is_empty)
 
+    def test_streets_under_a_bridge_dont_bring_its_deck_down(self):
+        # Nuselský most: the survey has each carriageway as one strip 9.5 m wide and some
+        # 600 m long. Five streets in the valley cross under it, each some 10 m inside the
+        # strip, and the whole deck was drawn on the ground under the bridge.
+        import osm_area
+        from shapely.geometry import LineString
+
+        deck = box(0, 0, 9.5, 600)
+        crossings = [LineString([(-20, y), (30, y + 2)]) for y in (150, 190, 270, 340, 420)]
+        self.assertTrue(osm_area._deck([deck], crossings).is_empty)
+        # Where the street on the ground carries on 37 m into the strip before OSM's
+        # bridge begins, those metres are the street's; the rest is the bridge's.
+        street = LineString([(4.75, -50), (4.75, 37)])
+        bridge = LineString([(4.75, 37), (4.75, 600)])
+        got = osm_area._deck([deck], [*crossings, street], [bridge])
+        self.assertAlmostEqual(got.area, 37 * 9.5, delta=1)
+        self.assertLess(got.bounds[3], 38)
+        # Without a bridge in OSM, the whole raised strip is the street's (as at Pražského povstání).
+        self.assertAlmostEqual(osm_area._deck([deck], [*crossings, street]).area, deck.area)
+
     def test_a_box_is_worked_out_once_and_kept_until_the_map_changes(self):
         import tempfile
         from pathlib import Path

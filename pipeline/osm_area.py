@@ -97,6 +97,8 @@ HOLE_BARE = 0.5   # share of a step's width the survey must cover, or the step i
 HOLE_MIN = 4.0    # m: shorter holes are left (a crossing, a gap between two carriageways)
 SPARSE_OTHER = 0.04  # of a block's area: a few shops or sheds in a mostly empty block don't make it commercial
 DECK_ALONG = 8.0  # m of a street on the ground inside a raised carriageway for it to count as the street's (_deck)
+DECK_NEAR = 15.0  # m: how much of a raised carriageway round a street gives its direction (_along)
+DECK_ALIGN = 0.8  # cosine: a street within some 37° of a raised carriageway's direction runs along it
 SETTLED_REACH = 30.0  # m: how far from a family house unmapped land counts as its surroundings
 STREET_NEAR = 12.0  # m: the streets and pavements this near a block are the ones its plots face
 
@@ -375,7 +377,9 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             continue
 
         if col(row, "barrier") == "guard_rail":
-            if isinstance(g, (LineString, MultiLineString)):
+            # Not one on a bridge or a raised road (Nuselský most's central reservation,
+            # layer 2): a fence stands on the ground, so it would stand in the valley.
+            if isinstance(g, (LineString, MultiLineString)) and not col(row, "bridge") and not _above(col(row, "layer")):
                 mapped_rails.extend(_lines(g.intersection(clip)))
             continue
 
@@ -475,7 +479,8 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     # Where OSM has a street on the ground but the survey has it above (on a deck), the
     # survey's carriageway is the street's surface, and its ground under it isn't seen.
     deck = _deck(dtm.raised((w, s, e, n), tf.transform),
-                 [ls for ls, est, cls, _ in car_ways if cls != "bridge" and not est["tunnel"]])
+                 [ls for ls, est, cls, _ in car_ways if cls != "bridge" and not est["tunnel"]],
+                 [ls for ls, _, cls, _ in car_ways if cls == "bridge"])
     if not deck.is_empty:
         deck = _areas(shapely.intersection(deck, clip, grid_size=GRID))
         surface = _areas(shapely.union(_areas(surface), deck, grid_size=GRID))
@@ -737,14 +742,50 @@ def _ground_level(value):
         return False
 
 
-def _deck(raised, lines):
+def _along(g, lines, tree):
+    """The pieces of `lines` inside the carriageway `g` that run along it, each with the
+    carriageway's width there. A street crossing under it is left out: under Nuselský
+    most each of five streets passes some 10 m through each 9.5 m carriageway."""
+    out = []
+    for k in tree.query(g, predicate="intersects"):
+        for piece in _lines(g.intersection(lines[k])):
+            if piece.length < 1:
+                continue
+            # The carriageway's direction near the piece: the long side of the smallest
+            # rectangle round the part of it within DECK_NEAR m.
+            rect = g.intersection(piece.buffer(DECK_NEAR)).minimum_rotated_rectangle
+            if rect.geom_type != "Polygon":
+                continue
+            corners = np.asarray(rect.exterior.coords)[:3]
+            sides = np.diff(corners, axis=0)
+            lengths = np.hypot(*sides.T)
+            if lengths.min() == 0:
+                continue
+            axis = sides[np.argmax(lengths)] / lengths.max()
+            a, b = np.asarray(piece.coords[0]), np.asarray(piece.coords[-1])
+            if np.hypot(*(b - a)) and abs(np.dot(b - a, axis)) / np.hypot(*(b - a)) >= DECK_ALIGN:
+                out.append((piece, lengths.min()))
+    return out
+
+
+def _deck(raised, lines, bridges=()):
     """The surveyed carriageways above the ground (dtm.raised) that a street on the ground
-    runs along for DECK_ALONG m or more, as one shape."""
+    runs along for DECK_ALONG m or more, as one shape. Where OSM has the deck as a bridge
+    (`bridges`, its bridge ways, run along it too), the bridge is drawn from that and only
+    the metres the street on the ground runs along it are kept, not the whole deck."""
     if not len(raised) or not lines:
         return Polygon()
     tree = STRtree(lines)
-    keep = [g for g in raised
-            if sum(g.intersection(lines[k]).length for k in tree.query(g, predicate="intersects")) >= DECK_ALONG]
+    over = STRtree(list(bridges)) if len(bridges) else None
+    keep = []
+    for g in raised:
+        along = _along(g, lines, tree)
+        if sum(p.length for p, _ in along) < DECK_ALONG:
+            continue
+        if over is not None and sum(p.length for p, _ in _along(g, bridges, over)) >= DECK_ALONG:
+            keep.append(g.intersection(unary_union([p.buffer(w, cap_style="flat") for p, w in along])))
+        else:
+            keep.append(g)
     return unary_union(keep) if keep else Polygon()
 
 
@@ -869,6 +910,14 @@ def _below(layer):
     """Whether OSM's `layer` puts a thing under the ground's level."""
     try:
         return float(str(layer).split(";")[0]) < 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _above(layer):
+    """Whether OSM's `layer` puts a thing over the ground's level."""
+    try:
+        return float(str(layer).split(";")[0]) > 0
     except (TypeError, ValueError):
         return False
 
