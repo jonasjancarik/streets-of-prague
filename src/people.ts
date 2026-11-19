@@ -733,7 +733,10 @@ export class Walker {
     this.mesh.position.set(this.x, ground + this.perch + this.z, -this.y);
     this.mesh.rotation.set(0, this.h, 0);
     this.ring.position.y = 0.05 - this.z;
-    // (Life size, the avatar needs where you are in the world, not just in your own group.)
+  }
+
+  // The avatar pool releases anyone missing from a rendered frame, even between simulation steps.
+  drawFigure() {
     if (this.fig.lifeSize) {
       this.mesh.updateMatrixWorld();
       this.fig.set(0, _m.multiplyMatrices(this.mesh.matrixWorld, this.base), this.anim, -1, this.base);

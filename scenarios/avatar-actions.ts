@@ -21,6 +21,14 @@ export default {
       await t.wait(0.45);
       t.check('the same avatar is airborne', walker.z > 0.4 && player() === avatar);
       t.check('the knee bends during the jump', rest.angleTo(knee.quaternion) > 0.25);
+      const paused = t.paused;
+      try {
+        t.paused = true;
+        await t.frames(3);
+        t.check('the avatar stays visible between simulation steps', player() === avatar);
+      } finally {
+        t.paused = paused;
+      }
       await t.wait(1);
       t.check('the same avatar lands', walker.z === 0 && player() === avatar);
       walker.knock(0, 0);
