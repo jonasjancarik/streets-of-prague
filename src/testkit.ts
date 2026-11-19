@@ -178,8 +178,9 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     // Set: the camera looks out of your eyes (or your car's windscreen) instead of down
     // from above; yaw and pitch (degrees) turn the view from the way you face. `still` is
     // how long (seconds) since you last looked round: driving, the view swings back
-    // behind the car once you let go.
-    eyes: null as { yaw: number; pitch: number; still?: number } | null,
+    // behind the car once you let go. `third`: on foot, from a few metres behind you
+    // instead of out of your eyes (driving, it's the same chase camera either way).
+    eyes: null as { yaw: number; pitch: number; still?: number; third?: boolean } | null,
 
     toLocal(w: Where): Point2 {
       if (typeof w === 'string') {
@@ -1139,7 +1140,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
         ...(c ? [`await t.drive('${c.type}');`, `t.push(${Math.round(c.speed * 3.6)}, ${Math.round(deg(c.h))});`] : []),
         ...(p.mode !== 'foot' && !c ? [`// (you were ${p.mode})`] : []),
         ...(cam ? [`await t.camera({ at: [${round(clat, 5)}, ${round(clon, 5)}], height: ${Math.round(cam.height)}, tilt: ${Math.round(cam.tilt)}, heading: ${Math.round(cam.heading)} });`] : []),
-        ...(!cam && kit.eyes ? [`t.eyes = { yaw: ${round(kit.eyes.yaw)}, pitch: ${round(kit.eyes.pitch)} };`] : []),
+        ...(!cam && kit.eyes ? [`t.eyes = { yaw: ${round(kit.eyes.yaw)}, pitch: ${round(kit.eyes.pitch)}${kit.eyes.third ? ', third: true' : ''} };`] : []),
         ...(!cam && !kit.eyes && Math.abs(look.zoom - 1) > 0.01 ? [`t.view(${round(look.zoom, 2)});`] : []),
         // (What the picture depends on that a scenario can't set: replay it with
         // scene.mjs --size and --graphics, and --extra for the reflections.)

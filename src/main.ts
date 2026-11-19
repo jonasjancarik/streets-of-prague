@@ -3004,6 +3004,23 @@ async function main() {
         // Looking over the roof at the road a little ahead.
         const tx = vehicle.x + Math.cos(h) * len, ty = vehicle.y + Math.sin(h) * len;
         camera.lookAt(tx, eyeH + tall * 0.5 + Math.tan(pitch) * (back + len), -ty);
+      } else if (eyes.third) {
+        // Third person: over your shoulder, a few metres back and a little above your head,
+        // looking past you along the way you face. A wall behind you brings the camera in
+        // (not on a roof, where the wall below is no reason to).
+        chased = null;
+        const aim = me.h + yaw;
+        let back = 3.6;
+        if (!walker.onRoof && !walker.flight) {
+          for (let d = 0.5; d <= back; d += 0.25) {
+            if (grid.at(me.x - Math.cos(aim) * d, me.y - Math.sin(aim) * d)) { back = Math.max(0.6, d - 0.4); break; }
+          }
+        }
+        const up = 0.55 + back * 0.12;
+        const cx = me.x - Math.cos(aim) * back, cy = me.y - Math.sin(aim) * back;
+        camera.position.set(cx, eyeH + up, -cy);
+        const ahead = 6;
+        camera.lookAt(me.x + Math.cos(aim) * ahead, eyeH - 0.25 + Math.tan(pitch) * (back + ahead), -(me.y + Math.sin(aim) * ahead));
       } else {
         chased = null;
         const aim = me.h + yaw;
@@ -3067,6 +3084,8 @@ async function main() {
     const fromStreet = !!eyes || (!!free && free.tilt > 35);
     // Keep the player's ring visible through tree crowns in the overhead view.
     walker.ring.material.depthTest = fromStreet;
+    // (Seen from just behind you, the ring is only in the way.)
+    walker.ring.visible = !(eyes && eyes.third);
     carOutline.update(fromStreet ? null : inCar, carPool);
     world.trees.street(fromStreet, free ? free.x : camera.position.x, free ? -free.y : camera.position.z);
     world.trees.canopy(true, fromStreet);
@@ -3379,8 +3398,9 @@ async function main() {
     ready: () => !settingsPanel.open && !mapOpen() && !metro.active && !dialog.active && !arrest.active && !testkit!.cam && !testkit!.eyes,
     capture: () => new Promise((resolve) => { grabFull.push(resolve); setTimeout(() => resolve(null), 3000); }),
   });
-  // ?fps starts in first person, as the developer panel's First person box does.
+  // ?fps starts in first person, as the developer panel's First person box does; ?tps in third person.
   if (params.has('fps')) testkit.eyes = { yaw: 0, pitch: 0 };
+  if (params.has('tps')) testkit.eyes = { yaw: 0, pitch: 0, third: true };
   dev.attach(testkit);
   // A fixed target altitude keeps before/after terrain views on the same camera.
   const shot = params.get('camera')?.split(',').map(Number);

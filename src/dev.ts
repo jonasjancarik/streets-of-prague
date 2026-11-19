@@ -574,6 +574,7 @@ function setupBench(kit: Testkit, $: (id: string) => HTMLElement) {
       <div class="dev-row dev-here">
         <label class="dev-check" title="The camera stops following you. Searching or picking a spot on the map now moves the camera, not you."><input id="dev-free" type="checkbox" /> Free camera</label>
         <label class="dev-check" title="See the street the way you'd see it standing in it; driving, from just behind your car"><input id="dev-eyes" type="checkbox" /> First person</label>
+        <label class="dev-check" title="See the street from just behind and above yourself; driving, from just behind your car"><input id="dev-third" type="checkbox" /> Third person</label>
       </div>
       <label class="dev-check" title="Follow the next bus or tram to your platform while you hold Space."><input id="dev-watch-transit" type="checkbox" /> Watch approaching buses and trams</label>
       <div class="dev-note" id="dev-free-hint" hidden>Drag to pan · scroll to zoom · right-drag or Shift-drag to orbit</div>
@@ -624,6 +625,8 @@ function setupBench(kit: Testkit, $: (id: string) => HTMLElement) {
   free.onchange = () => { if (free.checked) kit.eyes = null; void kit.camera(free.checked ? { level: true } : null); };
   const eyes = $('dev-eyes') as HTMLInputElement;
   eyes.onchange = () => { kit.eyes = eyes.checked ? { yaw: 0, pitch: 0 } : null; if (eyes.checked) void kit.camera(null); };
+  const third = $('dev-third') as HTMLInputElement;
+  third.onchange = () => { kit.eyes = third.checked ? { yaw: 0, pitch: 0, third: true } : null; if (third.checked) void kit.camera(null); };
   $('dev-ahead').onclick = () => { if (kit.eyes) kit.eyes.yaw = kit.eyes.pitch = 0; };
   $('dev-top').onclick = () => kit.orbit(0, 0);
   $('dev-back').onclick = () => { void kit.camera(null); };
@@ -711,8 +714,9 @@ function setupBench(kit: Testkit, $: (id: string) => HTMLElement) {
         headingValue.textContent = heading.value + '°';
         tiltValue.textContent = tilt.value + '°';
       }
-      eyes.checked = !!kit.eyes && !kit.cam;
-      $('dev-eyes-hint').hidden = !eyes.checked;
+      eyes.checked = !!kit.eyes && !kit.cam && !kit.eyes.third;
+      third.checked = !!kit.eyes && !kit.cam && !!kit.eyes.third;
+      $('dev-eyes-hint').hidden = !eyes.checked && !third.checked;
       pause.textContent = kit.paused ? 'Carry on' : 'Pause';
       const p = kit.probe();
       if (document.activeElement !== money) money.value = String(p.money);
