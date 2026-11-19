@@ -134,6 +134,21 @@ const checks = `(async () => {
     }
     assert(mesh.uuid === uuid && mesh.instanceMatrix === buffer && mesh.count === 0 && !mesh.visible, 'render retained page and restored count');
     assert(reserved.uuid === reservedUuid && reserved.instanceMatrix === reservedBuffer && reserved.count === 0 && !reserved.visible, 'reserved page retained and reset');
+    const saloon = new Car('sedan', () => .3, 3, 0), distant = new Car('sedan', () => .3, 60, 0);
+    const eye = { x: 0, z: 0 };
+    const wheels = page('sedan|street-wheels');
+    pool.render([saloon, distant], null, 0, undefined, true, eye);
+    assert(wheels.count === 1 && page('sedan').count === 1, 'only nearby street cars use the fitted wheels');
+    const roll = wheels.geometry.getAttribute('roll'), phase = [roll.getX(0),roll.getY(0)];
+    saloon.x += .31; saloon.vx = 3; saloon.w = .4;
+    pool.render([saloon,distant], null, 0, undefined, true, eye);
+    assert(Math.hypot(phase[0]-roll.getX(0),phase[1]-roll.getY(0)) > .5 && Math.abs(roll.getW(0)) > .1,
+      'wheels roll with travel and the front axle steers through the bend');
+    const placed = new THREE.Matrix4();
+    assert(pool.matrixOf(saloon, placed) && Math.abs(placed.elements[12]-saloon.x) < .001, 'close body matrix available');
+    pool.render([saloon,distant]);
+    assert(!wheels.visible && page('sedan').count === 2, 'overhead uses the original body for both cars');
+
     const rig = new Car('ambulance', () => .3, 19, 27, .5);
     const matrix = new THREE.Matrix4();
     for (const wreck of [false, true]) {

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { buildStreetWheels } from './streetWheels.ts';
 import { ambulanceStreet } from './ambulanceStreet.ts';
 import { mirrored } from './mirror.ts';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -295,6 +296,22 @@ function carGeometry(type: string, box?: string): THREE.BufferGeometry {
   return geometry;
 }
 
+// Keep the original GLB body in the overhead view and at a distance. Only
+// assets that describe their wheel mounts can exchange the low-poly hubs.
+const wheelBodies = new Map<string, { key: string; radius: number; wheelbase: number }>();
+function prepareStreetWheels(type: string, box?: string) {
+  const mounts = bodies?.getObjectByName(type)?.userData.wheelMounts as number[] | undefined;
+  if (mounts?.length !== 16) return;
+  const key = bodyKey(type, box), street = key + '|street-wheels';
+  if (!cache.has(street)) {
+    const g = bodyGeometry(type, box, true);
+    markZones(g);
+    cache.set(street, g);
+    wheelBodies.set(key, { key: street, radius: mounts[1], wheelbase: Math.abs(mounts[0] - mounts[8]) });
+  }
+  return street;
+}
+
 const STREET_AMBULANCE = 'ambulance|street';
 function streetAmbulanceBody() {
   let body = cache.get(STREET_AMBULANCE);
@@ -336,7 +353,7 @@ function markZones(g: THREE.BufferGeometry) {
 }
 
 // A car body from cars.glb.
-function bodyGeometry(type: string, box?: string): THREE.BufferGeometry {
+function bodyGeometry(type: string, box?: string, closeWheels = false): THREE.BufferGeometry {
   if (!bodies) throw new Error('Car bodies are not loaded');
   const c = new THREE.Color();
   const parts: THREE.BufferGeometry[] = [];
@@ -348,6 +365,8 @@ function bodyGeometry(type: string, box?: string): THREE.BufferGeometry {
   });
   for (const node of nodes) node.traverse((o) => {
     if (!(o instanceof THREE.Mesh)) return;
+    const name = (Array.isArray(o.material) ? o.material[0] : o.material).name;
+    if (closeWheels && (name === 'Tyre' || name === 'WheelHub')) return;
     const g = new THREE.BufferGeometry();
     g.setIndex(o.geometry.index);
     g.setAttribute('position', o.geometry.attributes.position.clone());
@@ -368,7 +387,6 @@ function bodyGeometry(type: string, box?: string): THREE.BufferGeometry {
       else doors.push({ n, side: at.z < 0 ? 1 : -1, front: at.x, back: g.boundingBox!.min.x, real: true });
     }
     g.setAttribute('hinge', new THREE.BufferAttribute(hinge, 3));
-    const name = (Array.isArray(o.material) ? o.material[0] : o.material).name;
     c.set(name === 'Paint' ? '#ffffff' : PART[name] || '#777777');
     const col = new Float32Array(g.attributes.position.count * 3);
     for (let i = 0; i < col.length; i += 3) col.set([c.r, c.g, c.b], i);
@@ -377,7 +395,8 @@ function bodyGeometry(type: string, box?: string): THREE.BufferGeometry {
     if (name === 'Lamp' || name === 'Tail') markLamp(g, name === 'Lamp');
     parts.push(g);
   });
-  DOORS.set(type, doors.sort((a, b) => a.n - b.n));
+  if (closeWheels) parts.push(...buildStreetWheels(type, nodes[0].userData.wheelMounts));
+  else DOORS.set(type, doors.sort((a, b) => a.n - b.n));
   return mergeGeometries(parts);
 }
 
@@ -1070,7 +1089,7 @@ function truckGeometry(type: string, S: CarSpec): THREE.BufferGeometry {
 // Car bodies from public/cars.glb (built in Blender by assets/cars/build.py): one per
 // type, each part a material named after it. Paint takes the car's colour; the rest:
 const PART: Record<string, string> = {
-  Glass: '#1e2830', Trim: '#1f2022', Tyre: '#161616', Metal: '#70757b', Lamp: '#fff6d8', Tail: '#b3161b',
+  WheelHub: '#70757b', Glass: '#1e2830', Trim: '#1f2022', Tyre: '#161616', Metal: '#70757b', Lamp: '#fff6d8', Tail: '#b3161b',
   Plate: '#e3e5e0', Sign: '#fff4c2', Blue: '#1d4fa3', Yellow: '#d4e02b', Bar: '#1b1f2a', Seat: '#3a393b',
 };
 let bodies: THREE.Object3D | null = null;
@@ -1297,6 +1316,32 @@ function streetMaterials() {
   }
   return ambulanceMaterials;
 }
+// roll.xy and roll.zw hold cosine/sine of rolling and steering. One
+// instance attribute animates all four mounted wheels in the body draw.
+const streetWheelMaterial = material.clone();
+streetWheelMaterial.customProgramCacheKey = () => 'cars-close';
+streetWheelMaterial.onBeforeCompile = (sh, renderer) => {
+  material.onBeforeCompile(sh, renderer);
+  sh.vertexShader = sh.vertexShader.replace('vec2 swing(vec2 p)', `
+attribute vec4 roll;
+varying float vWheelCoat;
+vec3 rollWheel(vec3 p) {
+  vec2 spun = vec2(roll.x*p.x-roll.y*p.y, roll.y*p.x+roll.x*p.y);
+  return hinge.x > 0. ? vec3(roll.z*spun.x+roll.w*p.z, spun.y, -roll.w*spun.x+roll.z*p.z) : vec3(spun,p.z);
+}
+vec2 swing(vec2 p)`)
+    .replace('vec4 dents = dentAt(zoneAt());', 'vec4 dents = dentAt(zoneAt()); if (hinge.z < 0.) objectNormal = rollWheel(objectNormal);')
+    .replace('transformed = dented(transformed, dents);', `vWheelCoat = 1.;
+if (hinge.z < 0.) {
+  vec3 axle = vec3(hinge.x, -hinge.z, hinge.y);
+  transformed = axle + rollWheel(transformed - axle);
+  vWheelCoat = mix(.045,.45,smoothstep(.045,.24,dot(color.rgb,vec3(.3,.59,.11))));
+}
+transformed = dented(transformed, dents);`);
+  sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vWheelCoat;')
+    .replace('#include <specularmap_fragment>', '#include <specularmap_fragment>\n specularStrength *= vWheelCoat;')
+    .replace('reflectedLight.directDiffuse += carCoat(', 'reflectedLight.directDiffuse += vWheelCoat * carCoat(');
+};
 const depthMaterial = new THREE.MeshDepthMaterial();
 
 // Points round a car's outline for its collisions, the same for every car of a type
@@ -1936,9 +1981,11 @@ export class CarPool {
       geometry.setAttribute('hinge', hinge);
     }
     geometry.setAttribute('doors', new THREE.InstancedBufferAttribute(new Float32Array(CarPool.pageCapacity * 4), 4));
+    const wheels = key.endsWith('|street-wheels');
+    if (wheels) geometry.setAttribute('roll', new THREE.InstancedBufferAttribute(new Float32Array(CarPool.pageCapacity * 4), 4));
     const street = key === STREET_AMBULANCE;
     if (street) for (const g of body.groups) geometry.addGroup(g.start, g.count, g.materialIndex);
-    const finish = key === 'garbage' || key === 'garbage|burnt' ? dustcartMaterial : material;
+    const finish = wheels ? streetWheelMaterial : key === 'garbage' || key === 'garbage|burnt' ? dustcartMaterial : material;
     const mesh = mirrored(new THREE.InstancedMesh(geometry, street ? streetMaterials() : finish, CarPool.pageCapacity));
     mesh.userData.sharedMatrices = true; // (see configureRenderer in webgpu.ts)
     mesh.count = 0;
@@ -1959,6 +2006,8 @@ export class CarPool {
   *allMeshes() { for (const pages of this.meshes.values()) yield* pages; }
 
   private streetView = false;
+  private closeCars = new Set<Car>();
+  private wheelTravel = new WeakMap<Car, { x: number; y: number; angle: number }>();
   private renderKey(key: string) {
     if (this.streetView) {
       if (key === 'ambulance') return STREET_AMBULANCE;
@@ -1969,7 +2018,7 @@ export class CarPool {
 
   // Where the last render put `c` (on the ground, tilted with it), into `out`; false if it wasn't drawn.
   matrixOf(c: Car, out: THREE.Matrix4) {
-    const key = this.renderKey(c.key);
+    const key = this.closeCars.has(c) ? wheelBodies.get(c.key)?.key ?? c.key : this.renderKey(c.key);
     const i = this.groups.get(key)?.indexOf(c) ?? -1;
     const page = i < 0 ? undefined : this.meshes.get(key)?.[Math.floor(i / CarPool.pageCapacity)];
     if (!page) return false;
@@ -1992,6 +2041,8 @@ export class CarPool {
       carGeometry(type, box);
       while ((this.meshes.get(key)?.length || 0) < pages) this.page(key);
       this.prepared.add(key);
+      const close = prepareStreetWheels(type, box);
+      if (close && !this.meshes.has(close)) { this.page(close); this.prepared.add(close); }
       if (key === 'ambulance' && !this.meshes.has(STREET_AMBULANCE)) {
         this.page(STREET_AMBULANCE);
         this.prepared.add(STREET_AMBULANCE);
@@ -2030,15 +2081,20 @@ export class CarPool {
   // wheels; cars sit on it, pitched and rolled to the slope. `terrain` goes up whenever
   // what `height` reads changes (TileWorld.terrainRevision); with it, a parked car that
   // hasn't moved keeps its matrix instead of sampling the ground again every frame.
-  render(cars: Car[], height: ((x: number, y: number, car: Car) => number) | null = null, dt = 0, terrain?: number, streetView = false) {
+  render(cars: Car[], height: ((x: number, y: number, car: Car) => number) | null = null, dt = 0, terrain?: number, streetView = false, eye?: { x: number; z: number }) {
     this.streetView = streetView;
     for (const c of cars) {
       if (c.two) this.lean(c, dt);
       else if (c.door) c.swing(dt);
     }
+    this.closeCars.clear();
     for (const list of this.groups.values()) list.length = 0;
     for (const c of cars) {
-      const key = this.renderKey(c.key);
+      let key = this.renderKey(c.key);
+      if (streetView && eye && (c.x - eye.x) ** 2 + (c.y + eye.z) ** 2 < 24 * 24) {
+        const close = wheelBodies.get(c.key);
+        if (close) { key = close.key; this.closeCars.add(c); }
+      }
       if (!this.groups.has(key)) this.groups.set(key, []);
       this.groups.get(key)!.push(c);
     }
@@ -2079,6 +2135,21 @@ export class CarPool {
         }
         // A bike or motorbike shrinks with its rider in first person (FIGURE_SIZE).
         m.setMatrixAt(slot, c.two && FIGURE_SIZE.value < SCALE ? this.m.copy(d.matrix).multiply(this.life.makeScale(FIGURE_SIZE.value / SCALE, FIGURE_SIZE.value / SCALE, FIGURE_SIZE.value / SCALE)) : d.matrix);
+        const roll = m.geometry.getAttribute('roll') as THREE.InstancedBufferAttribute | undefined;
+        if (roll) {
+          const fit = wheelBodies.get(c.key)!;
+          let travel = this.wheelTravel.get(c);
+          if (!travel) {
+            travel = { x: c.x, y: c.y, angle: (c.x + c.y) % (2 * Math.PI) };
+            this.wheelTravel.set(c, travel);
+          }
+          const distance = (c.x - travel.x) * Math.cos(c.h) + (c.y - travel.y) * Math.sin(c.h);
+          travel.angle = (travel.angle - distance / fit.radius) % (2 * Math.PI);
+          travel.x = c.x; travel.y = c.y;
+          const speed = c.forwardSpeed;
+          const steer = Math.abs(speed) > 0.25 ? clamp(Math.atan(c.w * fit.wheelbase / speed), -0.55, 0.55) : 0;
+          roll.setXYZW(slot, Math.cos(travel.angle), Math.sin(travel.angle), Math.cos(steer), Math.sin(steer));
+        }
         if (under && !c.two && shaded < UNDER.most) {
           under.setMatrixAt(shaded++, this.m.copy(d.matrix).multiply(this.life.makeScale(c.spec.L, 1, c.spec.W)));
           sum += c.x * 1.37 + c.y * 0.73 + c.h * 11 + d.matrix.elements[13] * 3.1;
@@ -2103,6 +2174,8 @@ export class CarPool {
         m.visible = m.count > 0;
         sendInstances(m);
         send(m.geometry.getAttribute('paint') as THREE.InstancedBufferAttribute, m.count);
+        const roll = m.geometry.getAttribute('roll') as THREE.InstancedBufferAttribute | undefined;
+        if (roll) send(roll, m.count);
         // The doors only while one on this page is open, and once more after the last has shut.
         const from = i * CarPool.pageCapacity;
         let open = false;

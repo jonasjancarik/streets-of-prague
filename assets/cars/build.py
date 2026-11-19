@@ -40,7 +40,7 @@ COLOURS = {
     "Tyre": (0.01, 0.01, 0.01), "Metal": (0.35, 0.37, 0.4), "Lamp": (0.95, 0.9, 0.7),
     "Tail": (0.5, 0.02, 0.02), "Plate": (0.85, 0.85, 0.82), "Sign": (0.95, 0.9, 0.55),
     "Blue": (0.02, 0.08, 0.4), "Yellow": (0.7, 0.75, 0.05), "Bar": (0.02, 0.02, 0.03),
-    "Seat": (0.07, 0.07, 0.075),
+    "Seat": (0.07, 0.07, 0.075), "WheelHub": (0.35, 0.37, 0.4),
 }
 MATS = list(COLOURS)
 # How far in from the side a rounded body's top begins (see Car.body's crown).
@@ -75,6 +75,7 @@ class Car:
         self.bm = bmesh.new()
         self.under = []  # faces that close the body for working out normals, then go
         self.door = self.bm.faces.layers.int.new("door")  # which door a face is part of (0: none)
+        self.wheel_mounts = []  # centres and tyre sizes for the close street view
         self.inside = []  # the interior, added once the normals are worked out
         self.decals = []  # flat quads lying on the body (lettering), added then too
 
@@ -104,6 +105,7 @@ class Car:
                     return [p + (q - p) * u for p, q in zip(a, b)]
             return list(stations[0 if x > 0 else -1][1:])
         ra = r + 0.05
+        self.arch_ends = [x + sign * ra for x in wheels for sign in (-1, 1)]
         arch = set()
         for xw in wheels:
             arch |= {xw + ra * math.cos(math.pi * k / 6) for k in range(7)}
@@ -340,6 +342,9 @@ class Car:
     def wheel(self, x, y, r, width, n=10):
         """A tyre with a hub on the outside, at (x, y) with y the outer face."""
         s = 1 if y > 0 else -1
+        # Metres in glTF axes: x forward, y up, z right. z is the centre
+        # of the tyre, half its width in from the outer sidewall.
+        self.wheel_mounts.extend((x, r, -y + s * width / 2, width))
 
         def ring(rad, dy):
             return [self.v(x + rad * math.cos(a), y - s * dy, r + rad * math.sin(a))
@@ -351,7 +356,7 @@ class Car:
             for i in range(n):
                 j = (i + 1) % n
                 self.face([A[i], A[j], B[j], B[i]], "Tyre")
-        self.face(rings[0], "Metal")
+        self.face(rings[0], "WheelHub")
 
     def wheels(self, xs, w, r, width=0.21):
         for x in xs:
@@ -392,6 +397,8 @@ class Car:
                 f.normal_flip()
         doors = [self.hang(k) for k in sorted({f[self.door] for f in bm.faces} - {0})]
         obj = self.object(name, bm)
+        if self.wheel_mounts:
+            obj["wheelMounts"] = self.wheel_mounts
         for k, (door, hinge) in doors:
             d = self.object(f"{name}_door{k}", door)
             d.parent = obj
@@ -487,6 +494,10 @@ class Shape:
         """The bumpers, each (bottom, top), round the ends from a little back from the corners."""
         for end, (z0, z1), corner in ((1, front, self.nose), (-1, back, self.tail)):
             start = end * (self.nb - corner[0] - 0.12)
+            # The wrap stops at the wheel opening, including on the short
+            # overhang of a hatchback. A full-height strip here hides the tyre.
+            if c.arch_ends:
+                start = end * max(end * start, max(end * x for x in c.arch_ends) + 0.012)
             xs = sorted({x for x in self.xs if end * x > end * start} | {start}, key=lambda x: end * x)
             side = [(x, end * self.half(x)) for x in xs]
             c.bumper(side + [(x, -y) for x, y in reversed(side)], z0, z1, self.bump)
@@ -732,7 +743,7 @@ def export():
     OUT.parent.mkdir(parents=True, exist_ok=True)
     bpy.ops.export_scene.gltf(
         filepath=str(OUT), export_format="GLB", export_texcoords=False, export_normals=True,
-        export_materials="EXPORT", export_yup=True, export_animations=False, export_cameras=False,
+        export_materials="EXPORT", export_extras=True, export_yup=True, export_animations=False, export_cameras=False,
         export_lights=False,
     )
     print("wrote", OUT, OUT.stat().st_size, "bytes")

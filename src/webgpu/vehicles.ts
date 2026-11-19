@@ -4,7 +4,7 @@
 // the 'cars', 'trams', 'funicular' and 'boats' materials (see addPort).
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Fn, float, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, cameraWorldMatrix, diffuseColor, renderGroup, positionLocal, positionWorld, positionViewDirection, normalLocal, positionGeometry, materialColor, normalize, dot, smoothstep, mix, select, sin, min, cos, max, floor, mod, exp2, reflect, atan, pow, uniform, texture, cubeTexture, length, clamp, step, distance } from 'three/tsl';
+import { Fn, float, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, cameraWorldMatrix, diffuseColor, renderGroup, positionLocal, positionWorld, positionViewDirection, normalLocal, positionGeometry, materialColor, materialSpecular, normalize, dot, smoothstep, mix, select, sin, min, cos, max, floor, mod, exp2, reflect, atan, pow, uniform, texture, cubeTexture, length, clamp, step, distance } from 'three/tsl';
 import { LAMP_GLOW, CAR_GLOSS, DUSTCART_COAT, CAR_MIRROR, CAR_REFLECT as R, CAR_STRIPS as CS, AREA_STEP, DENT_STEP, DENT_SHAPE as DS } from '../car.ts';
 import { STRIPS, STRIPS_ON, onStrips } from '../reflections.ts';
 import { PROBE_AT, PROBE_K, PROBE_MAP, PROBE_MIX, PROBE_NEAR, PROBE_PREV, onProbe } from '../probe.ts';
@@ -144,16 +144,31 @@ const carCoat = (c: N): N => {
   return mix(tint, mirrored, uMirror).add(lamp.mul(coat.mul(CAR_GLOSS.lamps).add(rim.mul(CAR_GLOSS.rimLamps))));
 };
 
-addPort(/^cars(?:-service|-dustcart)?$/, (node, legacy) => {
+addPort(/^cars(?:-service|-dustcart|-close)?$/, (node, legacy) => {
   // On the detailed ambulance, dark rubber and interior trim have a satin
   // finish. Vinyl is printed onto white vertices and retains the paint gloss.
   const key = legacy.customProgramCacheKey();
   const serviceBody = key === 'cars-service';
+  const closeCar = key === 'cars-close';
+  const wheelFinish = closeCar ? select(hinge.z.lessThan(0),
+    mix(0.045, 0.45, smoothstep(0.045, 0.24, luma(vertexColor().rgb))), float(1)).toVarying('vWheelCoat') : undefined;
+  if (wheelFinish) node.specularNode = materialSpecular.mul(wheelFinish);
+  const rollWheel = (p: N): N => {
+    const roll: N = attribute('roll', 'vec4');
+    const x = roll.x.mul(p.x).sub(roll.y.mul(p.y)), y = roll.y.mul(p.x).add(roll.x.mul(p.y));
+    return select(hinge.x.greaterThan(0), vec3(roll.z.mul(x).add(roll.w.mul(p.z)), y, roll.z.mul(p.z).sub(roll.w.mul(x))), vec3(x,y,p.z));
+  };
   const proto = Object.getPrototypeOf(node);
   // (Before the instance's own transform goes on, in setupPosition.)
   node.setupPosition = function (builder: N) {
     shareInstances(builder);
-    const d = dentAt(), bent = dented(positionLocal, d), normal = dentNormal(normalLocal, positionGeometry, d);
+    let pos: N = positionLocal, nrm: N = normalLocal;
+    if (closeCar) {
+      const axle = vec3(hinge.x, hinge.z.negate(), hinge.y), wheel = hinge.z.lessThan(0);
+      pos = select(wheel, axle.add(rollWheel(pos.sub(axle))), pos);
+      nrm = select(wheel, rollWheel(nrm), nrm);
+    }
+    const d = dentAt(), bent = dented(pos, d), normal = dentNormal(nrm, positionGeometry, d);
     const p = swing(bent.xz.sub(hinge.xy)).add(hinge.xy), n = swing(normal.xz);
     positionLocal.assign(vec3(p.x, bent.y, p.y));
     normalLocal.assign(vec3(n.x, normal.y, n.y));
@@ -173,6 +188,7 @@ addPort(/^cars(?:-service|-dustcart)?$/, (node, legacy) => {
   };
   glow(node, () => Fn(() => {
     const coat = carCoat(diffuseColor.rgb);
+    if (wheelFinish) return coat.mul(wheelFinish);
     if (key === 'cars-dustcart') {
       const cabGlass = luma(tinted).lessThan(0.04).and(tinted.b.greaterThan(tinted.r.mul(1.25)));
       return coat.mul(select(cabGlass, float(1), mix(DUSTCART_COAT.dry, DUSTCART_COAT.wet, uWet)));

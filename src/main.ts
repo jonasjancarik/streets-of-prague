@@ -2900,7 +2900,7 @@ async function main() {
       for (const r of ambulances.rigs) see(r.car);
     }
     const fromStreet = !!eyes || (testkit?.cam?.tilt ?? 0) > 35;
-    carPool.render(drawn, ground, dt, world.terrainRevision, fromStreet);
+    carPool.render(drawn, ground, dt, world.terrainRevision, fromStreet, camera.position);
     refuse.render(carPool);
     blinkers.update(dt, inCar, inCar ? satnav.signal(inCar.speed) : null, carPool);
     skids.update(dt * scale, drawn, ground);

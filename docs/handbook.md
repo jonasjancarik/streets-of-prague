@@ -1279,7 +1279,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   of the sides, wheels and lights towards the edges of the screen; on top, the black
   scuttle and the wipers under the windscreen, an aerial, a glass roof panel on the
   saloon and the SUV, and the ribs pressed into the van's roof. `src/car.ts` puts
-  each car's colour on the paint. The doors are objects of their own in the file
+  each car's colour on the paint. At street level the cars within 24 m have rounded
+  tyres, recessed rims and dark wheel wells. The wheels roll with distance travelled
+  and the front pair turns into a bend. Distant cars and the overhead view use the
+  simpler wheels. The doors are objects of their own in the file
   (`<type>_door1` to `4`, each with its origin on its hinge), and inside there is a
   floor, walls and seats to see through an open one. In the game they are still part
   of the body's one geometry: each vertex carries its hinge and door number, each car
