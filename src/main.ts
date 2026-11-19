@@ -2900,7 +2900,8 @@ async function main() {
       for (const e of brigade.engines) see(e.car);
       for (const r of ambulances.rigs) see(r.car);
     }
-    carPool.render(drawn, ground, dt, world.terrainRevision);
+    const fromStreet = !!eyes || (testkit?.cam?.tilt ?? 0) > 35;
+    carPool.render(drawn, ground, dt, world.terrainRevision, fromStreet);
     blinkers.update(dt, inCar, inCar ? satnav.signal(inCar.speed) : null, carPool);
     skids.update(dt * scale, drawn, ground);
     steerGuide.update(dt, inCar, inCar && guideOn && !usingPad() ? held : null, (x, y) => ground(x, y, inCar), clamp(height / 120, 1, 3));
@@ -3087,7 +3088,6 @@ async function main() {
     GROUND_DEPTH.visible = !!eyes || (POST.ao && POST.on);
     // …and the trees near you are the ones made to be stood under (map/streetTree.ts).
     // (The free camera too, once it is tilted well off straight down.)
-    const fromStreet = !!eyes || (!!free && free.tilt > 35);
     PEOPLE_SHADOWS.street = fromStreet; // (people cast their own shapes there)
     // Keep the player's ring visible through tree crowns in the overhead view.
     walker.ring.material.depthTest = fromStreet;

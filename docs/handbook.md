@@ -532,6 +532,8 @@ that without a new renderer.
   who are out run after you for a while). The developer panel's "Leave the nearest
   person hurt" button is the quickest way to see it (`src/ambulance.ts`,
   `scenarios/ambulance.ts`).
+  From street level the ambulance uses a separate body with a curved cab, windscreen wipers,
+  rounded tyres and rear loading step. The overhead camera uses the simpler roof model.
 - **Dustcarts.** Within about 6 km of the Old Town Square, from 5:00 to 23:00, two
   dustcarts are out on their rounds near you (three between 6:00 and 12:00). Each keeps
   to the side streets at about 20 km/h, with its amber lamps flashing and two dustmen riding on the

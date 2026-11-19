@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { ambulanceStreet } from './ambulanceStreet.ts';
 import { mirrored } from './mirror.ts';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -291,6 +292,33 @@ function carGeometry(type: string, box?: string): THREE.BufferGeometry {
   markZones(geometry);
   cache.set(k, geometry);
   return geometry;
+}
+
+const STREET_AMBULANCE = 'ambulance|street';
+function streetAmbulanceBody() {
+  let body = cache.get(STREET_AMBULANCE);
+  if (!body) {
+    body = ambulanceGeometry(TYPES.ambulance, true);
+    markZones(body);
+    cache.set(STREET_AMBULANCE, body);
+  }
+  return body;
+}
+
+function charBody(k: string, body: THREE.BufferGeometry, colour: string) {
+  if (!cache.has(k)) {
+    const g = body.clone(), col = g.getAttribute('color');
+    const painted = g.getAttribute('painted'), paint = new THREE.Color(colour);
+    if (col) for (let i = 0; i < col.count; i++) {
+      // Reproduce the old baked colour before charring the first wreck of a type.
+      const tint = painted.getX(i) % 16 === 1 ? 1 : 0;
+      const v = 0.02 + 0.05 * (col.getX(i) * (1 + (paint.r - 1) * tint)
+        + col.getY(i) * (1 + (paint.g - 1) * tint) + col.getZ(i) * (1 + (paint.b - 1) * tint)) / 3;
+      col.setXYZ(i, v, v, v * 1.05);
+    }
+    for (let i = 0; i < painted.count; i++) painted.setX(i, Math.floor(painted.getX(i) / 16) * 16);
+    cache.set(k, g);
+  }
 }
 
 // Where on the car each vertex is, for the dents: along it (-1 the tail, 1 the nose) and
@@ -625,29 +653,33 @@ function fireGeometry(S: CarSpec): THREE.BufferGeometry {
 
 // Prague's yellow box ambulance. The short bonnet and inclined screen distinguish
 // the van cab from its full-height patient compartment in both camera views.
-function ambulanceGeometry(S: CarSpec): THREE.BufferGeometry {
+function ambulanceGeometry(S: CarSpec, street = false): THREE.BufferGeometry {
   const { add, box, panel, rounded, roadWheel, done } = boxBuilder();
   const L = S.L / 2, W = S.W, cab = 0.77, roof = S.H;
   const yellow = '#e6dc24', red = '#df3829', blue = '#15569b', trim = '#303438', glass = '#273841';
   const frontAxle = 1.82, rearAxle = -1.78;
-  box(trim, -L + 0.04, L - 0.06, 0.36, 0.73, W - 0.50);
-  // The skirt is cut around the wheel; only the belt above it spans the axle.
-  panel(yellow, [[-L, 0.56], [rearAxle - 0.60, 0.56], [rearAxle - 0.49, 0.91],
-    [rearAxle - 0.30, 1.05], [rearAxle + 0.30, 1.05], [rearAxle + 0.49, 0.91],
-    [rearAxle + 0.60, 0.56], [cab, 0.56], [cab, 1.19], [-L, 1.19]], W - 0.03);
-  rounded(yellow, -L, cab, 1.17, roof, W, 0.09, 0.055);
-  panel(yellow, [[cab, 0.55], [frontAxle - 0.57, 0.55], [frontAxle - 0.46, 0.92],
-    [frontAxle - 0.27, 1.05], [frontAxle + 0.28, 1.05], [frontAxle + 0.50, 0.88],
-    [frontAxle + 0.60, 0.56], [L - 0.02, 0.56], [L, 1.02], [L - 0.13, 1.23],
-    [L - 0.75, 1.45], [cab, 1.45]], W - 0.12);
-  panel(glass, [[cab + 0.04, 1.44], [L - 0.74, 1.44], [L - 1.35, 2.39], [cab + 0.04, 2.39]], W - 0.21);
-  rounded(yellow, cab - 0.05, L - 1.30, 2.32, 2.51, W - 0.12, 0.12, 0.08);
-  panel(yellow, [[cab - 0.03, 2.36], [1.66, 2.37], [1.50, 2.56], [cab, roof - 0.02]], W - 0.22);
-  rounded(trim, L - 0.22, L + 0.04, 0.40, 0.75, W - 0.13, 0.10);
-  box(trim, L - 0.04, L + 0.018, 0.77, 1.01, 1.10);
-  box('#bac0bd', L + 0.018, L + 0.026, 0.91, 0.94, 1.02);
-  box('#eeeada', L + 0.035, L + 0.048, 0.53, 0.65, 0.49);
-  const number = letteringGeometry(['155'], 0.048);
+  box(trim, -L + 0.04, L - (street ? 0.34 : 0.06), 0.36, 0.73, W - 0.50);
+  if (street) ambulanceStreet(add);
+  else {
+    // The skirt is cut around the wheel; only the belt above it spans the axle.
+    panel(yellow, [[-L, 0.56], [rearAxle - 0.60, 0.56], [rearAxle - 0.49, 0.91],
+      [rearAxle - 0.30, 1.05], [rearAxle + 0.30, 1.05], [rearAxle + 0.49, 0.91],
+      [rearAxle + 0.60, 0.56], [cab, 0.56], [cab, 1.19], [-L, 1.19]], W - 0.03);
+    rounded(yellow, -L, cab, 1.17, roof, W, 0.09, 0.055);
+    panel(yellow, [[cab, 0.55], [frontAxle - 0.57, 0.55], [frontAxle - 0.46, 0.92],
+      [frontAxle - 0.27, 1.05], [frontAxle + 0.28, 1.05], [frontAxle + 0.50, 0.88],
+      [frontAxle + 0.60, 0.56], [L - 0.02, 0.56], [L, 1.02], [L - 0.13, 1.23],
+      [L - 0.75, 1.45], [cab, 1.45]], W - 0.12);
+    panel(glass, [[cab + 0.04, 1.44], [L - 0.74, 1.44], [L - 1.35, 2.39], [cab + 0.04, 2.39]], W - 0.21);
+    rounded(yellow, cab - 0.05, L - 1.30, 2.32, 2.51, W - 0.12, 0.12, 0.08);
+    panel(yellow, [[cab - 0.03, 2.36], [1.66, 2.37], [1.50, 2.56], [cab, roof - 0.02]], W - 0.22);
+    rounded(trim, L - 0.22, L + 0.04, 0.40, 0.75, W - 0.13, 0.10);
+    box(trim, L - 0.04, L + 0.018, 0.77, 1.01, 1.10);
+    box('#bac0bd', L + 0.018, L + 0.026, 0.91, 0.94, 1.02);
+    box('#eeeada', L + 0.035, L + 0.048, 0.53, 0.65, 0.49);
+  }
+  const number = street ? null : letteringGeometry(['155'], 0.048);
+  const city = street ? letteringGeometry(['PRAHA'], 0.013) : null;
   // Outline the six arms of the Star of Life in a single plane.
   const star = new THREE.Shape();
   const corners = [[0.10, 0.32], [-0.10, 0.32], [-0.10, 0.174]];
@@ -678,15 +710,19 @@ function ambulanceGeometry(S: CarSpec): THREE.BufferGeometry {
   rounded('#c7c9bd', -2.38, -1.57, roof - 0.02, roof + 0.13, 0.90, 0.11, 0.04);
   for (let i = 0; i < 5; i++) box(trim, -2.25 + i * 0.12, -2.21 + i * 0.12, roof + 0.126, roof + 0.136, 0.63);
   // The blue lenses are visible with the beacons switched off as well.
-  box(trim, 1.12, 1.43, 2.47, 2.63, 1.78);
-  box('#cdd7de', 1.13, 1.42, 2.62, 2.74, 0.52);
+  if (!street) {
+    box(trim, 1.12, 1.43, 2.47, 2.63, 1.78);
+    box('#cdd7de', 1.13, 1.42, 2.62, 2.74, 0.52);
+  }
   for (const side of [-1, 1]) {
     const z = side * W / 2, facing = side < 0 ? Math.PI : 0;
-    panel(yellow, [[cab, 1.43], [cab + 0.19, 1.43], [cab + 0.19, 2.36], [cab, 2.36]], 0.07, z - side * 0.10);
-    panel(yellow, [[2.10, 1.44], [2.26, 1.44], [1.64, 2.40], [1.53, 2.40]], 0.07, z - side * 0.10);
-    box(trim, 1.93, 2.01, 1.66, 1.74, 0.30, z);
-    box(trim, 1.91, 2.04, 1.59, 1.88, 0.10, z + side * 0.15);
-    box(trim, cab + 0.22, cab + 0.39, 1.34, 1.39, 0.04, z - side * 0.06);
+    if (!street) {
+      panel(yellow, [[cab, 1.43], [cab + 0.19, 1.43], [cab + 0.19, 2.36], [cab, 2.36]], 0.07, z - side * 0.10);
+      panel(yellow, [[2.10, 1.44], [2.26, 1.44], [1.64, 2.40], [1.53, 2.40]], 0.07, z - side * 0.10);
+      box(trim, 1.93, 2.01, 1.66, 1.74, 0.30, z);
+      box(trim, 1.91, 2.04, 1.59, 1.88, 0.10, z + side * 0.15);
+      box(trim, cab + 0.22, cab + 0.39, 1.34, 1.39, 0.04, z - side * 0.06);
+    }
     box(red, -L + 0.08, cab - 0.06, 2.40, 2.49, 0.015, z);
     for (let i = 0; i < 8; i++) {
       const x = -L + 0.09 + i * 0.45, y = i % 2 === 0 ? 1.08 : 1.29;
@@ -694,10 +730,13 @@ function ambulanceGeometry(S: CarSpec): THREE.BufferGeometry {
     }
     add(emblem.clone().rotateY(facing), blue, -2.39, 1.94, z + side * 0.008);
     add(insignia.clone().rotateY(facing), '#f5f5e8', -2.39, 1.94, z + side * 0.012);
-    box(red, cab + 0.06, 1.84, 1.12, 1.24, 0.025, z - side * 0.056);
-    box('#90914b', cab + 0.10, cab + 0.12, 0.65, 1.42, 0.02, z - side * 0.057);
-    box(trim, cab + 0.10, frontAxle - 0.53, 0.47, 0.54, 0.15, z - side * 0.09);
-    add(number.clone().rotateY(facing), '#253544', -1.23, 1.75, z + side * 0.008);
+    if (!street) {
+      box(red, cab + 0.06, 1.84, 1.12, 1.24, 0.025, z - side * 0.056);
+      box('#90914b', cab + 0.10, cab + 0.12, 0.65, 1.42, 0.02, z - side * 0.057);
+      box(trim, cab + 0.10, frontAxle - 0.53, 0.47, 0.54, 0.15, z - side * 0.09);
+    }
+    if (number) add(number.clone().rotateY(facing), '#253544', -1.23, 1.75, z + side * 0.008);
+    if (city) add(city.clone().rotateY(facing), '#334653', -1.23, 1.58, z + side * 0.008);
     // Access to the treatment compartment is on the kerb side.
     if (side > 0) {
       for (const x of [-0.39, 0.62]) box('#8f8d47', x, x + 0.018, 0.64, 2.35, 0.035, z);
@@ -705,21 +744,25 @@ function ambulanceGeometry(S: CarSpec): THREE.BufferGeometry {
       box(trim, -0.32, -0.22, 1.53, 1.67, 0.05, z);
       box(trim, -0.36, 0.65, 0.41, 0.49, 0.20, z - 0.01);
     }
-    box(blue, 1.13, 1.42, 2.62, 2.74, 0.57, side * 0.60);
-    box(blue, -2.96, -2.65, 2.64, 2.77, 0.30, side * 0.84);
-    // Wrap the headlamp round the shoulder of the bonnet.
-    panel(HEADLAMP, [[L - 0.34, 1.16], [L - 0.13, 1.20], [L, 1.02],
-      [L - 0.02, 0.94], [L - 0.22, 1.00]], 0.27, side * 0.84);
-    box(HEADLAMP, L - 0.04, L + 0.014, 0.91, 1.04, 0.34, side * 0.75);
-    box(glass, -L - 0.026, -L + 0.015, 1.65, 2.22, 0.67, side * 0.41);
+    if (!street) {
+      box(blue, 1.13, 1.42, 2.62, 2.74, 0.57, side * 0.60);
+      box(blue, -2.96, -2.65, 2.64, 2.77, 0.30, side * 0.84);
+      // Wrap the headlamp round the shoulder of the bonnet.
+      panel(HEADLAMP, [[L - 0.34, 1.16], [L - 0.13, 1.20], [L, 1.02],
+        [L - 0.02, 0.94], [L - 0.22, 1.00]], 0.27, side * 0.84);
+      box(HEADLAMP, L - 0.04, L + 0.014, 0.91, 1.04, 0.34, side * 0.75);
+      box(glass, -L - 0.026, -L + 0.015, 1.65, 2.22, 0.67, side * 0.41);
+    }
     box(red, -L - 0.035, -L + 0.01, 1.14, 1.39, 0.85, side * 0.46);
-    box(TAIL_LAMP, -L - 0.045, -L + 0.02, 0.86, 1.52, 0.13, side * 0.95);
+    if (!street) box(TAIL_LAMP, -L - 0.045, -L + 0.02, 0.86, 1.52, 0.13, side * 0.95);
   }
   box(trim, -L - 0.031, -L, 0.61, 2.51, 0.022);
   box(trim, -L - 0.057, -L, 1.43, 1.49, 0.17, 0.12);
-  box(trim, -L - 0.13, -L + 0.04, 0.38, 0.49, W - 0.19);
-  roadWheel(frontAxle, W);
-  roadWheel(rearAxle, W);
+  if (!street) {
+    box(trim, -L - 0.13, -L + 0.04, 0.38, 0.49, W - 0.19);
+    roadWheel(frontAxle, W);
+    roadWheel(rearAxle, W);
+  }
   return done();
 }
 
@@ -1635,23 +1678,11 @@ export class Car {
     carGeometry(this.type, box);
   }
 
-  // Charred: the same body, drawn nearly black (one wreck colour for each type).
+  // Both views draw the same wreck, including when the camera changes afterwards.
   burn() {
     const fit = this.courier ?? (this.ram ? RAM : undefined);
     const k = `${this.type}${this.ram ? '|ram' : ''}|burnt`;
-    if (!cache.has(k)) {
-      const g = carGeometry(this.type, fit).clone(), col = g.getAttribute('color');
-      const painted = g.getAttribute('painted'), paint = new THREE.Color(this.paint);
-      if (col) for (let i = 0; i < col.count; i++) {
-        // Reproduce the old baked colour before charring the first wreck of a type.
-        const tint = painted.getX(i) % 16 === 1 ? 1 : 0;
-        const v = 0.02 + 0.05 * (col.getX(i) * (1 + (paint.r - 1) * tint)
-          + col.getY(i) * (1 + (paint.g - 1) * tint) + col.getZ(i) * (1 + (paint.b - 1) * tint)) / 3;
-        col.setXYZ(i, v, v, v * 1.05);
-      }
-      for (let i = 0; i < painted.count; i++) painted.setX(i, Math.floor(painted.getX(i) / 16) * 16);
-      cache.set(k, g);
-    }
+    charBody(k, carGeometry(this.type, fit), this.paint);
     this.key = k;
     this.burnt = true;
     this.braking = false;
@@ -1829,6 +1860,8 @@ export class CarPool {
   }
 
   private page(key: string) {
+    if (key === STREET_AMBULANCE) streetAmbulanceBody();
+    if (key === STREET_AMBULANCE + '|burnt') charBody(key, streetAmbulanceBody(), TYPES.ambulance.color!);
     const body = cache.get(key);
     if (!body) throw new Error(`Missing car geometry: ${key}`);
     // Each page owns its paint buffer; fixed vertex/index buffers are shared.
@@ -1871,10 +1904,20 @@ export class CarPool {
   // Every page of every body (for the probe to leave out: probe.ts).
   *allMeshes() { for (const pages of this.meshes.values()) yield* pages; }
 
+  private streetView = false;
+  private renderKey(key: string) {
+    if (this.streetView) {
+      if (key === 'ambulance') return STREET_AMBULANCE;
+      if (key === 'ambulance|burnt') return STREET_AMBULANCE + '|burnt';
+    }
+    return key;
+  }
+
   // Where the last render put `c` (on the ground, tilted with it), into `out`; false if it wasn't drawn.
   matrixOf(c: Car, out: THREE.Matrix4) {
-    const i = this.groups.get(c.key)?.indexOf(c) ?? -1;
-    const page = i < 0 ? undefined : this.meshes.get(c.key)?.[Math.floor(i / CarPool.pageCapacity)];
+    const key = this.renderKey(c.key);
+    const i = this.groups.get(key)?.indexOf(c) ?? -1;
+    const page = i < 0 ? undefined : this.meshes.get(key)?.[Math.floor(i / CarPool.pageCapacity)];
     if (!page) return false;
     page.getMatrixAt(i % CarPool.pageCapacity, out);
     return true;
@@ -1895,6 +1938,10 @@ export class CarPool {
       carGeometry(type, box);
       while ((this.meshes.get(key)?.length || 0) < pages) this.page(key);
       this.prepared.add(key);
+      if (key === 'ambulance' && !this.meshes.has(STREET_AMBULANCE)) {
+        this.page(STREET_AMBULANCE);
+        this.prepared.add(STREET_AMBULANCE);
+      }
     }
   }
 
@@ -1929,15 +1976,17 @@ export class CarPool {
   // wheels; cars sit on it, pitched and rolled to the slope. `terrain` goes up whenever
   // what `height` reads changes (TileWorld.terrainRevision); with it, a parked car that
   // hasn't moved keeps its matrix instead of sampling the ground again every frame.
-  render(cars: Car[], height: ((x: number, y: number, car: Car) => number) | null = null, dt = 0, terrain?: number) {
+  render(cars: Car[], height: ((x: number, y: number, car: Car) => number) | null = null, dt = 0, terrain?: number, streetView = false) {
+    this.streetView = streetView;
     for (const c of cars) {
       if (c.two) this.lean(c, dt);
       else if (c.door) c.swing(dt);
     }
     for (const list of this.groups.values()) list.length = 0;
     for (const c of cars) {
-      if (!this.groups.has(c.key)) this.groups.set(c.key, []);
-      this.groups.get(c.key)!.push(c);
+      const key = this.renderKey(c.key);
+      if (!this.groups.has(key)) this.groups.set(key, []);
+      this.groups.get(key)!.push(c);
     }
     const d = this.dummy;
     let riders = 0, nb = 0, shaded = 0, sum = 0;

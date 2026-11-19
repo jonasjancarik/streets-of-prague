@@ -134,6 +134,22 @@ const checks = `(async () => {
     }
     assert(mesh.uuid === uuid && mesh.instanceMatrix === buffer && mesh.count === 0 && !mesh.visible, 'render retained page and restored count');
     assert(reserved.uuid === reservedUuid && reserved.instanceMatrix === reservedBuffer && reserved.count === 0 && !reserved.visible, 'reserved page retained and reset');
+    const rig = new Car('ambulance', () => .3, 19, 27, .5);
+    const matrix = new THREE.Matrix4();
+    for (const wreck of [false, true]) {
+      if (wreck) rig.burn();
+      const simple = rig.key, detail = 'ambulance|street' + (wreck ? '|burnt' : '');
+      for (const street of [false, true, false]) {
+        pool.render([rig], null, 0, undefined, street);
+        const active = page(street ? detail : simple), inactive = page(street ? simple : detail);
+        assert(active.visible && active.count === 1 && !inactive?.visible, 'one ambulance body in the selected view');
+        assert(pool.matrixOf(rig, matrix) && matrix.elements[12] === 19 && matrix.elements[14] === -27,
+          'same ambulance placement through camera changes');
+        if (street) assert(active.geometry.getAttribute('position').count > page(simple).geometry.getAttribute('position').count,
+          'street ambulance uses the detailed geometry');
+      }
+    }
+    pool.render([]);
     report.push('render: prepared page retained; new builder states ' + fresh + '; ' + (r.backend?.isWebGPUBackend ? 'WebGPU' : 'WebGL'));
   }
   if (${!!baseline} && r.backend?.isWebGPUBackend) {
