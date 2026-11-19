@@ -87,6 +87,9 @@ class DtmLandTests(unittest.TestCase):
         deck = box(0, 0, 9.5, 600)
         crossings = [LineString([(-20, y), (30, y + 2)]) for y in (150, 190, 270, 340, 420)]
         self.assertTrue(osm_area._deck([deck], crossings).is_empty)
+        # The deck still sizes the streets that meet it (the bridge's own width comes from
+        # it): the ramps at Radotín came out a lane narrow when it didn't.
+        self.assertAlmostEqual(osm_area._met([deck], crossings).area, deck.area)
         # Where the street on the ground carries on 37 m into the strip before OSM's
         # bridge begins, those metres are the street's; the rest is the bridge's.
         street = LineString([(4.75, -50), (4.75, 37)])

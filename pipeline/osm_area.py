@@ -478,14 +478,20 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     surface = shapely.intersection(dtm.streets((w, s, e, n), tf.transform), clip, grid_size=GRID)
     # Where OSM has a street on the ground but the survey has it above (on a deck), the
     # survey's carriageway is the street's surface, and its ground under it isn't seen.
-    deck = _deck(dtm.raised((w, s, e, n), tf.transform),
-                 [ls for ls, est, cls, _ in car_ways if cls != "bridge" and not est["tunnel"]],
-                 [ls for ls, _, cls, _ in car_ways if cls == "bridge"])
+    raised = dtm.raised((w, s, e, n), tf.transform)
+    on_ground = [ls for ls, est, cls, _ in car_ways if cls != "bridge" and not est["tunnel"]]
+    deck = _deck(raised, on_ground, [ls for ls, _, cls, _ in car_ways if cls == "bridge"])
     if not deck.is_empty:
         deck = _areas(shapely.intersection(deck, clip, grid_size=GRID))
         surface = _areas(shapely.union(_areas(surface), deck, grid_size=GRID))
+    # The streets are measured kerb to kerb on the survey's carriageways, the raised ones a
+    # street on the ground meets included: a bridge's own width comes from its deck there
+    # (the ramps at Radotín came out a lane narrow without it). Only drawn where _deck says.
+    met = _met(raised, on_ground)
+    measure = _areas(shapely.union(surface, _areas(shapely.intersection(met, clip, grid_size=GRID)), grid_size=GRID)) \
+        if not met.is_empty else surface
     timer.lap("dtm_streets")
-    kerbs = Kerbs(sidewalks, [LineString(r["pts"]) for r in rails if r["kind"] == "tram"], [w[0] for w in car_ways], surface)
+    kerbs = Kerbs(sidewalks, [LineString(r["pts"]) for r in rails if r["kind"] == "tram"], [w[0] for w in car_ways], measure)
     timer.lap("kerb_index")
     # Streets with no width, lanes or survey: by their setting and the room there is (lanes.py).
     # (Only the mapped fences and walls: the plots' fences are made later, from the streets.)
@@ -766,6 +772,17 @@ def _along(g, lines, tree):
             if np.hypot(*(b - a)) and abs(np.dot(b - a, axis)) / np.hypot(*(b - a)) >= DECK_ALIGN:
                 out.append((piece, lengths.min()))
     return out
+
+
+def _met(raised, lines):
+    """The surveyed carriageways above the ground that streets on the ground pass through
+    or under for DECK_ALONG m or more in all, as one shape."""
+    if not len(raised) or not lines:
+        return Polygon()
+    tree = STRtree(lines)
+    keep = [g for g in raised
+            if sum(g.intersection(lines[k]).length for k in tree.query(g, predicate="intersects")) >= DECK_ALONG]
+    return unary_union(keep) if keep else Polygon()
 
 
 def _deck(raised, lines, bridges=()):
