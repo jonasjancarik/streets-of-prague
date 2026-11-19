@@ -2877,7 +2877,6 @@ async function main() {
     }
     brigade.render();
     ambulances.render();
-    refuse.render();
     inspector.render(ground);
     tracers.update(dt);
     // Only the cars in view (and a little round it, for their shadows) are drawn.
@@ -2902,6 +2901,7 @@ async function main() {
     }
     const fromStreet = !!eyes || (testkit?.cam?.tilt ?? 0) > 35;
     carPool.render(drawn, ground, dt, world.terrainRevision, fromStreet);
+    refuse.render(carPool);
     blinkers.update(dt, inCar, inCar ? satnav.signal(inCar.speed) : null, carPool);
     skids.update(dt * scale, drawn, ground);
     steerGuide.update(dt, inCar, inCar && guideOn && !usingPad() ? held : null, (x, y) => ground(x, y, inCar), clamp(height / 120, 1, 3));

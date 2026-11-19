@@ -30,6 +30,8 @@ const AVATARS: [string, 'f' | 'm'][] = [
   ['male-adult-01', 'm'], ['male-adult-04', 'm'], ['male-adult-07', 'm'], ['male-adult-10', 'm'],
   ['male-adult-13', 'm'], ['male-adult-17', 'm'], ['business-male-03', 'm'],
 ];
+// Reuse these rigs, heads, body meshes and normal maps for the dustcart crew.
+const DUSTMEN = ['male-adult-10', 'male-adult-17'];
 const CLIPS = { walk: 'walk_neutral_01', jog: 'run_slow_01', run: 'run_neutral_01' };
 type Move = keyof typeof CLIPS;
 const GAITS: Move[] = ['walk', 'jog', 'run'];
@@ -48,7 +50,7 @@ const TURN = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0),
 
 // The clips by name: the gaits, the ways of standing, 'umbrella' (standing with one) and
 // 'arm' (just its left arm).
-interface Kind { template: THREE.Object3D; clips: Record<string, THREE.AnimationClip>; stride: Record<Move, number>; standing: string[] }
+interface Kind { template: THREE.Object3D; clips: Record<string, THREE.AnimationClip>; stride: Record<Move, number>; standing: string[]; uniform?: THREE.MeshStandardMaterial }
 interface Person {
   kind: number;
   root: THREE.Object3D;
@@ -73,6 +75,7 @@ export class LifeSize {
   group = new THREE.Group();
   enabled = true;
   private kinds: Kind[] = [];
+  private crewKinds: (number | undefined)[] = [];
   private figureActions: Record<string, THREE.AnimationClip> = {};
   private state: 'idle' | 'loading' | 'ready' | 'failed' = 'idle';
   private live = new Map<string, Person>();
@@ -134,6 +137,23 @@ export class LifeSize {
         }
         return kind;
       }));
+      const uniforms = await Promise.all(DUSTMEN.map(async (name) => {
+        const base = this.kinds[AVATARS.findIndex(([avatar]) => avatar === name)];
+        let body: THREE.MeshStandardMaterial | undefined;
+        base.template.traverse((o) => {
+          if (o instanceof THREE.SkinnedMesh && o.material instanceof THREE.MeshStandardMaterial && o.material.name.endsWith('_body')) body = o.material;
+        });
+        if (!body) return;
+        try {
+          const map = await ktx2!.loadAsync(`rocketbox/dustman-${name}.ktx2`);
+          map.colorSpace = THREE.SRGBColorSpace;
+          const uniform = body.clone();
+          uniform.map = map;
+          cutAway(uniform, 'rocketbox');
+          return { ...base, uniform, standing: ['idle_neutral_01', 'idle_neutral_02'] };
+        } catch (e) { console.warn('Dustman uniform could not load', name, e); }
+      }));
+      this.crewKinds = uniforms.map((kind) => kind ? this.kinds.push(kind) - 1 : undefined);
       this.spare = this.kinds.map(() => []);
       this.state = 'ready';
     } catch (e) {
@@ -163,7 +183,11 @@ export class LifeSize {
         mat.dispose();
       }
     });
-    for (const k of this.kinds) free(k.template);
+    for (const k of this.kinds) {
+      if (!k.uniform) { free(k.template); continue; }
+      if (k.uniform.map) textures.add(k.uniform.map);
+      k.uniform.dispose();
+    }
     for (const t of textures) t.dispose();
     for (const p of [...this.live.values(), ...this.spare.flat()]) {
       p.mixer.uncacheRoot(p.root);
@@ -191,7 +215,9 @@ export class LifeSize {
     if (!p) {
       // (Not someone the camera is inside; you, though, always: see Figures.self.)
       if (!fig.self && (d > this.reach || d < 1 || this.live.size >= MOST)) return false;
-      p = this.take((gid * 7919 + id * 104729) % this.kinds.length);
+      const kind = fig.lifeSize === 'dustman' ? this.crewKinds[id % DUSTMEN.length] : (gid * 7919 + id * 104729) % AVATARS.length;
+      if (kind === undefined) return false;
+      p = this.take(kind);
       p.pos.copy(pos);
       p.last.copy(pos);
       p.speed = 0;
@@ -250,6 +276,10 @@ export class LifeSize {
     const reuse = this.spare[kind].pop();
     if (reuse) { reuse.root.visible = true; return reuse; }
     const k = this.kinds[kind], root = SkeletonUtils.clone(k.template);
+    const uniform = k.uniform;
+    if (uniform) root.traverse((o) => {
+      if (o instanceof THREE.SkinnedMesh && o.material.name === uniform.name) o.material = uniform;
+    });
     const mixer = new THREE.AnimationMixer(root);
     const actions: Person['actions'] = {}, w: Person['w'] = {}, want: Person['want'] = {}, t: Person['t'] = {};
     for (const c in k.clips) {

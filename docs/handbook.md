@@ -1231,7 +1231,12 @@ record the measurements, merge decisions and pending landmark asset activation.
   The player and nearby pedestrians keep their avatar when they jump, fall, get up or
   interact with a car. These actions follow the figure animation's clock. Rebuild
   them from `public/figures.glb` with `node assets/rocketbox/actions.mjs` after editing
-  the poses. Police and separate courier and rider groups use their usual figures.
+  the poses. The two dustmen use the male-adult-10 and male-adult-17 avatars with their
+  own high-visibility jackets, reflective bands and work trousers. Their riding pose follows
+  the truck's steps on slopes, and the bin handle stays within reach as the bin tilts. From above
+  they use the simpler figures in crew colours. Rebuild their clothing textures with
+  `python3 assets/rocketbox/workwear.py` (Pillow, NumPy and basisu).
+  Police and separate courier and rider groups use their usual figures.
   The avatars' code (with the
   texture and mesh decoders only they use) and the files (about 18 MB, in `public/rocketbox/`)
   load the first time first person is on (`src/lifesize.ts` imports `src/rocketbox.ts`

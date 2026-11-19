@@ -5,7 +5,7 @@ import { locomote, knocked } from './people.ts';
 import { steer } from './police.ts';
 import { cutAway } from './shading.ts';
 import { sendInstances } from './gpu.ts';
-import type { Car, CarGrid } from './car.ts';
+import type { Car, CarGrid, CarPool } from './car.ts';
 import type { DriveEdge } from './network.ts';
 import type { Traffic, TrafficAgent } from './traffic.ts';
 import type { FigureKit } from './figures.ts';
@@ -31,7 +31,9 @@ const WALK = 1.7, PUSH = 1.25; // m/s on foot, and wheeling a bin
 const STEP = 0.45; // m: the height of the steps they ride on
 const TIP = 5; // seconds a bin takes on the lift
 const TRAM_CLEAR = 3; // m from a tram track's middle that a cart stands clear of it
-const HANDLE = 0.8; // m from a dustman to the middle of the bin he's wheeling
+const HANDLE = 0.8; // clearance to leave behind the lift when approaching with a bin
+const AXLE_X = -0.3, AXLE_Y = 0.1, GRIP_X = -0.38, GRIP_Y = 1.025;
+const HAND_REACH = 0.36; // m forward of the worker, at the palms in the push clip
 const GIVE_UP = 14; // seconds getting no nearer before they leave it
 const BINS = 32;
 // On a cart you've taken: how fast (m/s) and how hard a pull (m/s², braking, cornering, a
@@ -47,6 +49,7 @@ interface Door { x: number; y: number; nx: number; ny: number } // in front of a
 interface Bin { x: number; y: number; h: number; tilt: number; lift: number; colour: THREE.Color; left?: boolean }
 type Job = 'ride' | 'fetch' | 'in' | 'wheel' | 'tip' | 'return' | 'out' | 'back' | 'leave';
 interface Dustman {
+  id: number;
   x: number; y: number; h: number; vx: number; vy: number; anim: Anim; round: Round; side: number;
   job: Job; t: number; door?: Door; bin?: Bin; down: number; detour?: number; best: number; stuck: number; gone?: boolean; gz?: number;
 }
@@ -72,14 +75,18 @@ export class Refuse {
   fig: Figures;
   binMesh: THREE.InstancedMesh;
   spawnT = 0;
+  private nextCrewId = 0;
   private m = new THREE.Matrix4();
+  private step = new THREE.Matrix4();
   private q = new THREE.Quaternion();
   private p = new THREE.Vector3();
 
   constructor(o: RefuseOptions) {
     this.o = o;
     this.fig = new Figures(o.kit, CREW * 8);
-    for (let i = 0; i < CREW * 8; i++) this.fig.look(i, { shirt: '#ee7a1c', trousers: '#2e3540', skin: '#e3b99a', hair: '#3a2a1e', sleeves: true });
+    this.fig.lifeSize = 'dustman';
+    this.fig.look(0, { shirt: '#f67420', trousers: '#3e614d', skin: '#d2a486', hair: '#483b35', sleeves: true });
+    this.fig.look(1, { shirt: '#ed641d', trousers: '#dc681f', skin: '#daa988', hair: '#665751', sleeves: true });
     this.fig.commit(0);
     o.scene.add(this.fig.mesh);
     this.binMesh = new THREE.InstancedMesh(binGeometry(), cutAway(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }), 'furniture'), BINS);
@@ -112,7 +119,7 @@ export class Refuse {
     agent.car.binRound = true;
     const round: Round = { agent, car: agent.car, crew: [], since: 0, gap: GAP * (1 + rnd()), phase: 'drive', doors: [], t: 0 };
     for (let i = 0; i < CREW; i++) {
-      const m: Dustman = { x: agent.car.x, y: agent.car.y, h: agent.car.h, vx: 0, vy: 0, anim: new Anim(o.kit, 'hold', rnd()), round, side: i ? -1 : 1, job: 'ride', t: 0, down: 0, best: Infinity, stuck: 0 };
+      const m: Dustman = { id: this.nextCrewId++, x: agent.car.x, y: agent.car.y, h: agent.car.h, vx: 0, vy: 0, anim: new Anim(o.kit, 'hold', rnd()), round, side: i ? -1 : 1, job: 'ride', t: 0, down: 0, best: Infinity, stuck: 0 };
       this.ride(m);
       round.crew.push(m);
       this.crew.push(m);
@@ -422,9 +429,13 @@ export class Refuse {
     if (m.bin && m.job !== 'tip') {
       const b = m.bin, sp = Math.hypot(m.vx, m.vy);
       b.h = m.h;
-      b.x = m.x + Math.cos(m.h) * HANDLE;
-      b.y = m.y + Math.sin(m.h) * HANDLE;
       b.tilt += ((sp > 0.2 ? 0.4 : 0.15) - b.tilt) * Math.min(1, dt * 5);
+      // Tipping about the wheels brings the handle towards the worker. Roll
+      // the wheels forward by that distance so the handle stays in his hands.
+      const gripX = AXLE_X + (GRIP_X - AXLE_X) * Math.cos(b.tilt) - (GRIP_Y - AXLE_Y) * Math.sin(b.tilt);
+      const ahead = HAND_REACH - gripX;
+      b.x = m.x + Math.cos(m.h) * ahead;
+      b.y = m.y + Math.sin(m.h) * ahead;
     }
     if (m.down > 0) knocked(m.anim, dt, m.down);
     else if (m.bin && m.job !== 'tip') {
@@ -436,16 +447,26 @@ export class Refuse {
 
   // ---- Drawing ------------------------------------------------------------
 
-  render() {
+  render(cars: CarPool) {
     const { o, m, q, p } = this;
     const sc = new THREE.Vector3(SCALE, SCALE, SCALE), up = THREE.Object3D.DEFAULT_UP;
     let n = 0;
     for (const d of this.crew) {
       if (d.job === 'in' || d.job === 'out' || n >= this.fig.capacity) continue;
       const riding = d.job === 'ride' && d.down <= 0;
-      const z = riding ? o.height(d.round.car.x, d.round.car.y, d.round.car) + STEP : o.height(d.x, d.y);
-      m.compose(p.set(d.x, z, -d.y), q.setFromAxisAngle(up, d.h), sc);
-      this.fig.set(n++, m, d.anim);
+      const car = d.round.car;
+      if (riding && cars.matrixOf(car, m)) {
+        // On a hill the rear steps pitch and roll with the chassis. The boots
+        // belong on the actual step, which can be well above the cab's ground.
+        this.step.makeTranslation(-car.spec.L / 2 + 0.22, STEP + 0.016, -d.side * (car.spec.W / 2 - 0.32));
+        m.multiply(this.step).scale(sc);
+      } else {
+        const z = riding ? o.height(car.x, car.y, car) + STEP : o.height(d.x, d.y);
+        m.compose(p.set(d.x, z, -d.y), q.setFromAxisAngle(up, d.h), sc);
+      }
+      // Someone going indoors frees a draw slot, but keeps his face and uniform.
+      this.fig.wear(n, d.id % CREW);
+      this.fig.set(n++, m, d.anim, -1, m, d.id);
     }
     this.fig.commit(n);
     let k = 0;
@@ -462,7 +483,7 @@ export class Refuse {
         m.multiply(pivot);
       } else if (b.tilt > 0) {
         tip.makeRotationFromEuler(e.set(0, 0, b.tilt));
-        pivot.makeTranslation(-0.3, 0.1, 0).multiply(tip).multiply(new THREE.Matrix4().makeTranslation(0.3, -0.1, 0));
+        pivot.makeTranslation(AXLE_X, AXLE_Y, 0).multiply(tip).multiply(new THREE.Matrix4().makeTranslation(-AXLE_X, -AXLE_Y, 0));
         m.multiply(pivot);
       }
       this.binMesh.setMatrixAt(k, m);
@@ -489,7 +510,7 @@ function binGeometry() {
     box(0.68, 0.92, 0.56, 0.02, 0.56, 0, 1), // the body, narrower at the foot
     box(0.6, 0.12, 0.5, 0.02, 0.1, 0, 1),
     box(0.76, 0.05, 0.6, 0.01, 1.04, 0, 0.72), // the lid
-    box(0.06, 0.05, 0.5, -0.38, 1.0, 0, 0.45), // the handle
+    box(0.06, 0.05, 0.5, GRIP_X, GRIP_Y - 0.025, 0, 0.45), // the handle
     box(0.2, 0.2, 0.07, -0.28, 0.1, 0.29, 0.2), // the wheels
     box(0.2, 0.2, 0.07, -0.28, 0.1, -0.29, 0.2),
   ])!;

@@ -23,6 +23,12 @@ for a in $AVATARS; do
   [ -s "$out/$a.glb" ] || curl -sfL -o "$out/$a.glb" "$HF/$a/${a}_lod1.glb"
 done
 
+# The refuse crew wears the same avatars with high-visibility clothing. Only a
+# fresh asset directory needs the texture tools (Python, Pillow, numpy, basisu).
+if [[ ! -s "$out/dustman-male-adult-10.ktx2" || ! -s "$out/dustman-male-adult-17.ktx2" ]]; then
+  python3 "$here/workwear.py"
+fi
+
 # The clips: walking, jogging (a slow run) and running, for men and women. These are the
 # versions that travel (motextr_xy): src/rocketbox.ts takes the travel out and keeps the
 # distance as the stride.

@@ -287,8 +287,8 @@ export class Figures {
   mesh: THREE.InstancedMesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>;
   capacity: number;
   sleeves: Uint8Array;
-  // Whether this group's people may be drawn life size in first person (LIFE_SIZE).
-  lifeSize = false;
+  // First-person replacement, with a separate uniformed pair for refuse crews.
+  lifeSize: boolean | 'dustman' = false;
   // You (people.ts's Walker): drawn life size in first and third person however near the
   // camera, and always, whatever the crowd round you.
   self = false;
@@ -354,8 +354,8 @@ export class Figures {
 
   // Returns whether they're drawn life size instead (and so hold their own umbrella).
   // `local`: the matrix to draw with when the group isn't in world space (`matrix` is).
-  set(i: number, matrix: THREE.Matrix4, anim: Anim, umbrella = -1, local = matrix) {
-    const claimed = this.lifeSize && !!LIFE_SIZE.claim?.(this, this.wearing[i] >= 0 ? this.wearing[i] : i, matrix, anim, umbrella);
+  set(i: number, matrix: THREE.Matrix4, anim: Anim, umbrella = -1, local = matrix, person?: number) {
+    const claimed = this.lifeSize && !!LIFE_SIZE.claim?.(this, person ?? (this.wearing[i] >= 0 ? this.wearing[i] : i), matrix, anim, umbrella);
     this.mesh.setMatrixAt(i, claimed ? NOWHERE : local);
     anim.write(this.attr.aAnimA, this.attr.aAnimB, i, this.sleeves[i]);
     return claimed;
