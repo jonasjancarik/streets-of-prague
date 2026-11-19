@@ -20,6 +20,7 @@ import { KINDS, STRIPS, STRIPS_ON } from './reflections.ts';
 import { PROBE_AT, PROBE_K, PROBE_MAP, PROBE_MIX, PROBE_NEAR, PROBE_PREV } from './probe.ts';
 
 export interface CarSpec {
+  headlights?: { forward: number; across: number; height: number; glow: number };
   L: number; W: number; H: number; mass: number; accel: number; vmax: number;
   grip: number; turn: number; weight: number; cabin?: Point2; color?: string;
   wheelbase?: number; traffic?: number; two?: 'bike' | 'moto'; heavy?: boolean;
@@ -72,7 +73,7 @@ export const TYPES: Record<string, CarSpec> = {
   // A fire engine: src/brigade.ts sends these to burning cars. Never parked or in traffic.
   fire: { L: 8.5, W: 2.5, H: 3.2, mass: 14000, accel: 2.4, vmax: 25, grip: 7, turn: 1.3, weight: 0, traffic: 0, color: '#c4161c', heavy: true, wheelbase: 5, drive: 'rwd', radius: 8.5, response: 4, brake: 8, fade: 0.3, drag: 0.4, reverse: 0.2, tough: 6, weather: 1.15 },
   // An ambulance: src/ambulance.ts sends these to people lying hurt. Never parked or in traffic.
-  ambulance: { L: 6, W: 2.1, H: 2.7, mass: 3200, accel: 5.5, vmax: 30, grip: 8, turn: 1.8, weight: 0, traffic: 0, color: '#e6dc24', wheelbase: 3.6, drive: 'rwd', radius: 6, response: 6, brake: 11, tough: 4.5, drag: 0.5, weather: 1.1 },
+  ambulance: { L: 6, W: 2.1, H: 2.7, headlights: { forward: 2.96, across: 0.74, height: 1.085, glow: 0.42 }, mass: 3200, accel: 5.5, vmax: 30, grip: 8, turn: 1.8, weight: 0, traffic: 0, color: '#e6dc24', wheelbase: 3.6, drive: 'rwd', radius: 6, response: 6, brake: 11, tough: 4.5, drag: 0.5, weather: 1.1 },
   // A dustcart: src/refuse.ts keeps one or two on their rounds in the centre. Never parked or in the ordinary mix.
   garbage: { L: 9.6, W: 2.5, H: 3.3, mass: 18000, accel: 2, vmax: 22, grip: 7, turn: 1.3, weight: 0, traffic: 0, color: '#e8701e', heavy: true, wheelbase: 4.6, drive: 'rwd', radius: 9, response: 4, brake: 8, fade: 0.3, drag: 0.4, reverse: 0.2, tough: 6, weather: 1.15 },
 };

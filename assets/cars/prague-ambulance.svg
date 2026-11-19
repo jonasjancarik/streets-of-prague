@@ -24,14 +24,6 @@
       <stop stop-color="#4e5142" stop-opacity="0"/><stop offset=".65" stop-color="#736954" stop-opacity=".08"/>
       <stop offset="1" stop-color="#665b46" stop-opacity=".27"/>
     </linearGradient>
-    <linearGradient id="reflector" x1="0" y1="0" x2="0" y2="1">
-      <stop stop-color="#434a53"/><stop offset=".3" stop-color="#c4d0d7"/><stop offset=".52" stop-color="#636970"/>
-      <stop offset=".65" stop-color="#eeeeec"/><stop offset="1" stop-color="#8c979c"/>
-    </linearGradient>
-    <radialGradient id="optic" cx=".42" cy=".36" r=".62">
-      <stop stop-color="#ffffff"/><stop offset=".16" stop-color="#a8b7c6"/><stop offset=".34" stop-color="#edf0f2"/>
-      <stop offset=".56" stop-color="#546374"/><stop offset=".8" stop-color="#bfc5c9"/><stop offset="1" stop-color="#30383f"/>
-    </radialGradient>
     <g id="side">
       <rect width="500" height="280" fill="#eee02b"/>
       <path d="M0 148H500V181H0z" fill="#b81f2a"/>
@@ -91,16 +83,6 @@
     <rect width="240" height="60" fill="#eee02b"/>
     <text x="120" y="26" font-size="18" text-anchor="middle">ZDRAVOTNICKÁ</text>
     <text x="120" y="47" font-size="18" text-anchor="middle">ZÁCHRANNÁ SLUŽBA</text>
-  </g>
-  <g transform="translate(514 307)">
-    <rect width="210" height="80" rx="4" fill="url(#reflector)"/>
-    <g stroke="#424c54" fill="url(#optic)" stroke-width="2">
-      <ellipse cx="52" cy="42" rx="38" ry="32"/><ellipse cx="133" cy="40" rx="30" ry="29"/>
-    </g>
-    <path d="M5 65Q62 80 164 64M5 69Q62 83 163 70" fill="none" stroke="#e0e6e8" stroke-width="2"/>
-    <path d="M176 8h27v51l-28 7z" fill="#ce8e44" stroke="#f7ce8a" stroke-width="2"/>
-    <path d="M180 10v52m5-52v51m5-51v49m5-49v48" stroke="#ffe1b1"/>
-    <path d="M6 6Q68 1 167 6" stroke="#fff" fill="none" stroke-width="3"/>
   </g>
   <g transform="translate(740 306)">
     <rect width="104" height="85" fill="#e6dc24"/>

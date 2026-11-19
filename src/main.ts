@@ -3106,6 +3106,7 @@ async function main() {
       // Looking straight down, the light map covers what's in view; the free camera sees further.
       const tan = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
       lightOpt.box = free || eyes ? undefined : [height * tan * camera.aspect + 6, height * tan + 6];
+      lightOpt.streetView = fromStreet;
       lightOpt.time = time.value;
       police.helis.night = sky.dark;
       lightOpt.spots = police.helis.lit;

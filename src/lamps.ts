@@ -1,3 +1,4 @@
+import type { CarSpec } from './car.ts';
 import { dataUrl } from './data.ts';
 import * as THREE from 'three';
 import { mirrored, mirroredGlow } from './mirror.ts';
@@ -275,7 +276,7 @@ interface LampTile { cells: Set<number>; lamps: Set<number>; hung: Set<number> }
 interface BridgeSpot { x: number; y: number; nx: number; ny: number; tile: LampTile }
 interface LitTram { parts: { x: number; y: number; ang: number }[]; look: unknown; levels?: { gz?: number }[] }
 // `broken`: which of its lamps are smashed (LAMP in car.ts: 1 and 2 the headlamps left and right, 4 and 8 the tail lamps).
-export interface LitCar { x: number; y: number; h: number; spec: { L: number; W: number; H: number }; mode: string; two?: string; speed: number; broken?: number; braking?: boolean }
+export interface LitCar { x: number; y: number; h: number; spec: Pick<CarSpec, 'L' | 'W' | 'H' | 'headlights'>; mode: string; two?: string; speed: number; broken?: number; braking?: boolean }
 
 // What gets in the lamps' way, as boxes: the cars, and with LAMP_SHADOWS at 3 the people,
 // the trams' sections and the posts. A texel each, two rows in a float
@@ -1085,7 +1086,7 @@ export class Lamps {
   // camera is (three.js's coordinates), `opt.wet` and `opt.murk` how wet the ground is and
   // how hazy the air (0..1), for the beams and glints.
   update<C extends LitCar>(x: number, y: number, r: number, on: number, cars: C[], carHeight: (x: number, y: number, car: C) => number, now: number, trams: LitTram[] = [], opt: {
-    box?: [number, number]; flashing?: Flashing[]; spots?: Spot[]; time?: number; blocks?: (put: Block) => void; eye?: THREE.Vector3; wet?: number; murk?: number;
+    box?: [number, number]; streetView?: boolean; flashing?: Flashing[]; spots?: Spot[]; time?: number; blocks?: (put: Block) => void; eye?: THREE.Vector3; wet?: number; murk?: number;
   } = {}) {
     LAMP_ON.value = on;
     if (this.target.width !== LAMP_SIZE.value) {
@@ -1160,12 +1161,14 @@ export class Lamps {
       if (c.mode === 'loose' && c.speed < 0.5) return; // parked: lights off
       const fx0 = Math.cos(c.h), fy = Math.sin(c.h), L = c.spec.L / 2, W = c.spec.W / 2;
       const z = this.carZ[ci], own = this.carIndex.get(c) ?? -1;
+      const mount = c.spec.headlights, headHeight = mount?.height ?? 0.75, headAcross = mount?.across ?? W - 0.3;
+      const beamOrigin = mount?.forward ?? L, headForward = mount?.forward ?? L - 0.05;
       // A smashed lamp is dark: with one headlamp left the beam is narrower and to its side.
       const broken = c.two ? 0 : c.broken ?? 0, heads = broken & 3, brake = c.braking ? 2.4 : 1;
-      if (!heads) add(c.x + fx0 * L, c.y + fy * L, z, 1, fx0, fy, c.two ? 16 : 24, c.two ? 3 : 5, HEAD, c.two ? 1.2 : 2.2, 0.75, own);
+      if (!heads) add(c.x + fx0 * beamOrigin, c.y + fy * beamOrigin, z, 1, fx0, fy, c.two ? 16 : 24, c.two ? 3 : 5, HEAD, c.two ? 1.2 : 2.2, headHeight, own);
       else if (heads < 3) {
-        const across = (heads === 1 ? -1 : 1) * (W - 0.3);
-        add(c.x + fx0 * L - fy * across, c.y + fy * L + fx0 * across, z, 1, fx0, fy, 22, 3.2, HEAD, 1.3, 0.75, own);
+        const across = (heads === 1 ? -1 : 1) * headAcross;
+        add(c.x + fx0 * beamOrigin - fy * across, c.y + fy * beamOrigin + fx0 * across, z, 1, fx0, fy, 22, 3.2, HEAD, 1.3, headHeight, own);
       }
       // The rear lights shine backwards onto the road from the bumper, a short beam from
       // each (not a round pool on the car, which would redden its roof and bonnet).
@@ -1173,17 +1176,20 @@ export class Lamps {
         const across = s * (W - 0.3);
         if (!(broken & (s > 0 ? 4 : 8))) add(c.x - fx0 * L - fy * across, c.y - fy * L + fx0 * across, z, 1, -fx0, -fy, c.two ? 2 : 3.5, c.two ? 0.6 : 1.2, TAIL, (c.two ? 0.3 : 0.22) * brake, 0.75, own);
         if (fx && !(broken & (s > 0 ? 1 : 2))) {
-          const hx = c.x + fx0 * (L - 0.05) - fy * across, hy = c.y + fy * (L - 0.05) + fx0 * across, len = c.two ? 11 : 16;
-          fx.beam(hx, hy, z + 0.75, fx0, fy, len, c.two ? 1.3 : 1.9, HEAD, 1, undefined, this.reach(hx, hy, z + 0.75, fx0, fy, len, own));
+          const hx = c.x + fx0 * headForward - fy * s * headAcross, hy = c.y + fy * headForward + fx0 * s * headAcross, len = c.two ? 11 : 16;
+          fx.beam(hx, hy, z + headHeight, fx0, fy, len, c.two ? 1.3 : 1.9, HEAD, 1, undefined, this.reach(hx, hy, z + headHeight, fx0, fy, len, own));
         }
       }
       // Two headlights and two rear lights (one each on a bike).
-      for (const [along, colour, size, left] of [[L - 0.05, HEAD, 0.9, 1], [-L - 0.05, TAIL, c.braking ? 0.8 : 0.5, 4]] as [number, THREE.Color, number, number][]) {
+      for (const [along, colour, size, left] of [[headForward, HEAD, mount?.glow ?? 0.9, 1], [-L - 0.05, TAIL, c.braking ? 0.8 : 0.5, 4]] as [number, THREE.Color, number, number][]) {
+        // The inset optics supply their own bloom at street level. A horizontal
+        // marker there reads as an extra light floating in front of the van.
+        if (left === 1 && mount && opt.streetView) continue;
         for (const s of c.two ? [0] : [-1, 1]) {
           if (g >= this.glows.instanceMatrix.count) break;
           if (broken & (s > 0 ? left : left * 2)) continue;
-          const across = s * (W - 0.3);
-          d.position.set(c.x + fx0 * along - fy * across, z + 0.75, -(c.y + fy * along + fx0 * across));
+          const across = s * (left === 1 ? headAcross : W - 0.3);
+          d.position.set(c.x + fx0 * along - fy * across, z + (left === 1 ? headHeight : 0.75), -(c.y + fy * along + fx0 * across));
           d.scale.set(size, 1, size);
           d.updateMatrix();
           this.glows.setMatrixAt(g, d.matrix);

@@ -90,6 +90,20 @@ export function ambulanceStreet(add: Add) {
     return point(nose - r * (1 - Math.cos(angle)), y,
       u < 0.55 ? (width - r) * u / 0.55 : width - r + r * Math.sin(angle));
   };
+  // Use the same perimeter for the aperture in the wing and the lens cover.
+  // The grille ends inboard of the inner edge at every height.
+  const lampStart = 0.514, lampEnd = 0.963;
+  const lampBottom = (t: number) => 0.957 + 0.105 * t + 0.020 * (1 - t) ** 5;
+  const lampTop = (t: number) => 1.154 + 0.127 * t - 0.041 * t ** 5;
+  const lampPoint = (side: number, t: number, v: number, recess = 0) => {
+    const y = THREE.MathUtils.lerp(lampBottom(t), lampTop(t), v);
+    const u = THREE.MathUtils.lerp(lampStart, lampEnd, t);
+    const p = noseAt(y, u);
+    const angle = Math.max(0, (u - 0.55) / 0.45) * Math.PI / 2;
+    p.x -= recess * Math.cos(angle);
+    p.z = side * (p.z - recess * Math.sin(angle));
+    return p;
+  };
   for (const side of [-1, 1]) {
     // Leave actual openings between the sill and header. Thin strips of
     // metal and gasket frame the glazing without blocking the view through it.
@@ -122,7 +136,17 @@ export function ambulanceStreet(add: Add) {
         flank(0, 0.135, yellow); flank(0.135, 0.16, seal); flank(0.16, 0.88, glass, true);
         flank(0.88, 0.903, seal); flank(0.903, 1, yellow);
       } else {
-        noseBand(0, 1, low === 0 ? trim : yellow);
+        if (high <= 8) {
+          const below = low === 0, colour = below ? trim : yellow;
+          noseBand(0, lampStart, colour);
+          noseBand(lampEnd, 1, colour);
+          panel(colour, 24, high - low, (t, v) => {
+            const y = below ? Math.min(heightAt(v), lampBottom(t)) : Math.max(heightAt(v), lampTop(t));
+            const p = noseAt(y, THREE.MathUtils.lerp(lampStart, lampEnd, t));
+            p.z *= side;
+            return p;
+          }, side > 0);
+        } else noseBand(0, 1, yellow);
         if (low === 0) {
           flank(0, 1, yellow, false, 'before');
           flank(0, 1, trim, false, 'after');
@@ -192,14 +216,8 @@ export function ambulanceStreet(add: Add) {
     }, true);
   // The Sprinter's black moulding fills the whole face below the lamps.
   grille(0.533, 0.668, 0.55, seal, 0.031);
-  grille(0.77, 1.151, 0.52, seal, 0.034);
-  for (const y of [0.81, 0.919, 1.034]) grille(y, y + 0.024, 0.50 + (y - 0.81) * 0.26, '#53585b', 0.054);
-  const badge = front(0.959, 0, 0.069);
-  add(new THREE.TorusGeometry(0.103, 0.008, 6, 36).rotateY(Math.PI / 2), steel, badge.x, badge.y, 0);
-  for (let i = 0; i < 3; i++) {
-    const a = i * Math.PI * 2 / 3;
-    tube('#d4d8d6', 0.008, [badge, point(badge.x, badge.y + 0.098 * Math.cos(a), 0.098 * Math.sin(a))]);
-  }
+  grille(0.77, 1.142, 0.425, seal, 0.014);
+  for (const y of [0.81, 0.919, 1.034]) grille(y, y + 0.024, 0.418 + (y - 0.81) * 0.22, '#53585b', 0.022);
   mould('#202729', 3.047, 0.648, 0, 0.032, 0.127, 0.49, 0.010);
   print([232, 300, 140, 31], 1, 1, (u, v) => point(3.065, 0.599 + 0.101 * v, 0.230 - 0.46 * u));
   print([740, 306, 104, 85], 12, 8, (u, v) => front(1.302 + 0.054 * v, (1 - 2 * u) * 0.109, 0.010));
@@ -209,20 +227,49 @@ export function ambulanceStreet(add: Add) {
   }
   print([232, 348, 240, 37], 32, 5, (u, v) => front(1.172 + 0.105 * v + 0.021 * (2 * u - 1) ** 2, 0.78 * (1 - 2 * u), 0.018));
   for (const side of [-1, 1]) {
-    const optic = (u: number, v: number, delta: number) => {
-      const z = side * (0.493 + 0.447 * u), y = 0.928 + 0.157 * u + v * (0.18 + 0.049 * Math.sin(Math.PI * u));
-      return front(y, z, delta);
-    };
-    panel(trim, 20, 6, (u, v) => optic(u, v, 0.029), side > 0);
-    print([514, 307, 210, 80], 20, 6, (u, v) => optic(0.027 + 0.944 * u, 0.055 + 0.887 * v, 0.041), side > 0);
-    for (const centre of [0.259, 0.629]) {
-      panel(headlamp, 16, 2, (u, v) => {
-        const a = 2 * Math.PI * u;
-        return optic(centre + 0.041 * v * Math.cos(a), 0.49 + 0.094 * v * Math.sin(a), 0.048);
-      }, side < 0);
+    // A dark bucket sits behind the wing. Its four returns close the recess
+    // even when the player walks round to look along the side of the van.
+    const socket = (u: number, v: number) => lampPoint(side, u, v, 0.122);
+    panel('#353b3e', 24, 4, socket, side > 0);
+    for (const edge of [0, 1]) {
+      panel('#697073', 24, 1, (u, d) => lampPoint(side, u, edge, d * 0.122), (side > 0) === (edge === 0));
+      panel('#50575b', 1, 6, (d, v) => lampPoint(side, edge, v, d * 0.122), (side > 0) === (edge === 0));
     }
-    const fog = front(0.607, side * 0.76, 0.014);
-    mould('#c2cdd0', fog.x, fog.y, fog.z, 0.033, 0.052, 0.122, 0.015);
+    // Mount the reflectors on their own axes behind the wraparound cover.
+    for (const [t, width, height] of [[0.25, 0.087, 0.063], [0.63, 0.065, 0.050]]) {
+      const centre = lampPoint(side, t, 0.52, 0.077);
+      const axis = point(1, 0.28, side * (0.16 + t * 0.50)).normalize();
+      const across = point(0, 1, 0).cross(axis).normalize(), up = axis.clone().cross(across);
+      const cup = (a: number, r: number, depth: number) => {
+        // A rounded rectangular reflector mouth, pinched towards the bulb.
+        const c = Math.cos(a), s = Math.sin(a);
+        return centre.clone().addScaledVector(across, width * r * Math.sign(c) * Math.abs(c) ** 0.67)
+          .addScaledVector(up, height * r * Math.sign(s) * Math.abs(s) ** 0.67).addScaledVector(axis, depth);
+      };
+      // Shallow flutes around the rim catch narrow highlights. The projector
+      // has its own curved lens, set back inside the reflector mouth.
+      for (let facet = 0; facet < 20; facet++) {
+        const shade = ['#bec6c9', '#a2acb1', '#ced3d2', '#b0babf'][facet % 4];
+        panel(shade, 2, 4, (u, v) => cup((facet + u) * Math.PI / 10, 0.39 + 0.61 * v,
+          -0.034 * (1 - v * v) - 0.002 * Math.sin(Math.PI * u)), true);
+      }
+      panel('#424d58', 28, 2, (u, v) => cup(u * Math.PI * 2, 0.30 + 0.12 * v, -0.022 - 0.006 * v), true);
+      panel(headlamp, 28, 4, (u, v) => cup(u * Math.PI * 2, 0.31 * v,
+        -0.022 + 0.015 * Math.sqrt(1 - v * v)), true);
+    }
+    // A thin inner light guide and black gasket trace the sweep of the lens.
+    for (const edge of [0, 1]) panel('#272d30', 24, 2, (u, v) =>
+      lampPoint(side, u, edge ? 1 - v * 0.041 : v * 0.041, 0.002), (side > 0) !== (edge === 1));
+    panel(headlamp, 20, 2, (u, v) => lampPoint(side, 0.09 + 0.65 * u, 0.085 + 0.044 * v, 0.027), side > 0);
+    panel('#ca883b', 7, 4, (u, v) => lampPoint(side, 0.81 + 0.15 * u, 0.18 + 0.58 * v, 0.045), side > 0);
+    for (const u of [0.83, 0.87, 0.91, 0.95]) {
+      panel('#edb566', 1, 3, (d, v) => lampPoint(side, u + d * 0.009, 0.21 + 0.50 * v, 0.042), side > 0);
+    }
+    const cover = surface(24, 6, (u, v) =>
+      lampPoint(side, u, v, -0.003 * Math.sin(Math.PI * u) * Math.sin(Math.PI * v)), side > 0);
+    cover.userData.cabWindow = true;
+    shell('#79888d', cover);
+    panel('#202528', 10, 3, (u, v) => front(0.576 + 0.062 * v + 0.018 * u, side * (0.67 + 0.17 * u), 0.008), side > 0);
     const door = (x: number, y: number) => point(x, y, side * (section(y)[2] + 0.007));
     tube('#929046', 0.008, [door(0.82, 2.31), door(0.82, 1.44), door(0.84, 0.72), door(0.90, 0.58), door(1.19, 0.58)]);
     mould(trim, 1.016, 1.32, side * 0.981, 0.217, 0.056, 0.041, 0.020);
