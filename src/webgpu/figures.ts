@@ -5,11 +5,12 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as THREE from 'three';
-import { float, vec3, vec4, int, ivec2, attribute, vertexIndex, texture, positionLocal, normalLocal, diffuseColor, mix, normalize, select, varying } from 'three/tsl';
+import { float, vec3, vec4, int, ivec2, attribute, vertexIndex, texture, positionLocal, positionGeometry, normalLocal, diffuseColor, mix, normalize, select, varying } from 'three/tsl';
+import { MeshBasicNodeMaterial } from 'three/webgpu';
 import { lampLit } from './lamps.ts';
 import { instanceMatrix, shareInstances } from './trees.ts';
 import { type N, addPort, follow } from './common.ts';
-import { FIGURE_SIZE } from '../figures.ts';
+import { FIGURE_SIZE, PEOPLE_SHADOWS } from '../figures.ts';
 
 addPort(/^figures-true$/, (node, legacy) => {
   const proto = Object.getPrototypeOf(node);
@@ -50,3 +51,16 @@ addPort(/^figures-true$/, (node, legacy) => {
   };
   lampLit(node);
 });
+
+// The people's stand-in in the sun's shadow map (PEOPLE_SHADOWS in ../figures.ts): drawn
+// only there, so all it needs is where its vertices are. One material for every group.
+let standIn: THREE.Material | null = null;
+PEOPLE_SHADOWS.make = () => {
+  if (standIn) return standIn;
+  const m = new MeshBasicNodeMaterial() as N;
+  m.name = 'figures-shadow';
+  // (As the people themselves: no bigger than FIGURE_SIZE.)
+  const shrink: N = float(1).min(follow(FIGURE_SIZE).div(instanceMatrix().mul(vec4(1, 0, 0, 0)).xyz.length()));
+  m.castShadowPositionNode = instanceMatrix().mul(vec4((positionGeometry as N).mul(shrink), 1)).xyz;
+  return (standIn = m);
+};

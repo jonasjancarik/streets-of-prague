@@ -1320,3 +1320,38 @@ transmission meshes and about 2,600 vertices. Alternating visibility in the
 same view for six four-second windows gave 28.3 ms/frame off and 28.7 ms/frame
 on, with an offline map build running. There was no GPU timing, so this is a
 check against a large added cost and does not isolate the cost of the meshes.
+
+## People's shadows on a phone, 19 November 2026 (branch `crowd-shadows`)
+
+Following the kept-shadow-map trial (branch `shadow-cache`), which found that on the Pixel 5
+the moving casters are the larger part of what drawing the sun's shadow map costs. A person
+is 506 vertices and 588 triangles, each vertex reading the animation textures four times,
+and the Old Town Square holds 225–340 of them.
+
+`?peopleshadows=full|simple|none` (`PEOPLE_SHADOWS` in `src/figures.ts`): `simple` puts a
+six-vertex shape as big as a standing person in the shadow map in each person's place, on a
+layer only the sun's shadow camera sees; `none` gives people no shadow. No graphics tier
+uses either yet: without the parameter people cast as before.
+
+Pixel 5, Chrome WebGPU over adb, Medium, 1×, standing on the Old Town Square, clear,
+`--ab` against `full` in one page, 48 s in four-second windows, no touches:
+
+| Instead of each person's own shape | `full` | Changed | Battery |
+|---|---|---|---|
+| The same mesh in one frame of its clip (one read a vertex, not four) | 30.1 ms | 31.0 ms | 30 °C |
+| The plain shape | 24.6 ms | 23.8 ms (3.0 %) | 34 °C |
+| The plain shape, again | 25.8 ms | 24.8 ms (3.9 %) | 34 °C |
+| No shadow | 25.1 ms | 23.6 ms (5.9 %) | 32 °C |
+| No shadow, again | 25.3 ms | 24.4 ms (3.8 %) | 34 °C |
+
+So about 1 ms of 25 on the busiest square, the plain shape saving about what no shadow
+does: the cost is the vertices, not the texture reads (the one-frame version looked the same
+as today's and was dropped). The first window of each run was `full`'s and its slowest, which
+flatters the changed side a little. One more run of the plain shape sat at a steady 30
+frames a second in both states (33.3 against 33.8 ms, with `&dev`), and two others broke
+off: the page closed in one, and in the other the frame rate fell to nothing in both
+states. The plain shape alone ran 30 s with no errors in the console; what broke those runs
+wasn't found.
+
+The look: the plain shape's shadow is a thin spike whatever the person does, so someone
+lying down or on a bike casts a standing one. Not measured: the drive, other tiers, the M5.

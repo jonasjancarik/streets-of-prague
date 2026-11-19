@@ -23,7 +23,7 @@ import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp, streetShare } f
 import { Car, TYPES, CarPool, collideBodies, contact, loadCars, ordinaryCarBodies, useKit, variantName } from './car.ts';
 import { CarOutline } from './carOutline.ts';
 import { RestingCars } from './restingCars.ts';
-import { loadKit, FIGURE_SIZE, SCALE, WARDROBE } from './figures.ts';
+import { loadKit, FIGURE_SIZE, SCALE, WARDROBE, PEOPLE_SHADOWS, CAST_LAYER } from './figures.ts';
 import { LifeSize } from './lifesize.ts';
 import { Traffic, trafficWanted, type TrafficAgent } from './traffic.ts';
 import { roadHint } from './roadLevels.ts';
@@ -310,6 +310,12 @@ async function main() {
   sun.castShadow = true;
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.4;
+  // The people's stand-ins in the shadow map (PEOPLE_SHADOWS, figures.ts) are on a layer of
+  // their own that only the sun's shadow camera sees, and only for the game's own view: for
+  // any other (the cars' probe, the mirror) three.js gives it that camera's layers, as before.
+  scene.onBeforeRender = (_renderer, _scene, by) => {
+    if (by !== sun.shadow.camera) sun.shadow.camera.layers.mask = by === camera ? 1 | (1 << CAST_LAYER) : 1;
+  };
 
   // The street graphs grow as tiles load (each tile carries the edges that touch it).
   const drive = new DriveGraph();
@@ -3082,6 +3088,7 @@ async function main() {
     // …and the trees near you are the ones made to be stood under (map/streetTree.ts).
     // (The free camera too, once it is tilted well off straight down.)
     const fromStreet = !!eyes || (!!free && free.tilt > 35);
+    PEOPLE_SHADOWS.street = fromStreet; // (people cast their own shapes there)
     // Keep the player's ring visible through tree crowns in the overhead view.
     walker.ring.material.depthTest = fromStreet;
     // (Seen from just behind you, the ring is only in the way.)

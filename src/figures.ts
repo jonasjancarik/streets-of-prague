@@ -24,6 +24,61 @@ export const FIGURE_SIZE = { value: SCALE };
 // (`umbrella`: the serial number of the umbrella they have up, or -1.)
 export const LIFE_SIZE: { claim: ((group: Figures, id: number, matrix: THREE.Matrix4, anim: Anim, umbrella: number) => boolean) | null } = { claim: null };
 const NOWHERE = new THREE.Matrix4().makeScale(0, 0, 0);
+
+// What stands in for a person in the sun's shadow map. A person is 506 vertices, and a
+// square full of people is a large part of what drawing the shadow map takes on a phone
+// (docs/performance-log.md, 19 November 2026).
+//  full: the person as drawn (and always from the street, where shadows are seen close up);
+//  simple: a plain shape as big as a standing person, six vertices, whatever the pose;
+//  none: no shadow.
+// The stand-in is a mesh of its own over the same instances, on a layer only the sun's
+// shadow camera sees (main.ts), so the picture itself never draws it.
+// (Tried and dropped: the person's own mesh in one frame of its clip, one read of the
+// animation texture a vertex instead of four. It looked the same and measured nothing.)
+// ?peopleshadows=full|simple|none overrides the graphics setting for one visit.
+export type PeopleShadows = 'full' | 'simple' | 'none';
+export const CAST_LAYER = 5;
+const askedShadows = new URLSearchParams(globalThis.location?.search ?? '').get('peopleshadows') as PeopleShadows | null;
+export const PEOPLE_SHADOWS = {
+  // What the graphics setting wants.
+  tier: 'full' as PeopleShadows,
+  // The view is from the street.
+  street: false,
+  get value(): PeopleShadows {
+    if (this.street) return 'full';
+    return askedShadows && ['full', 'simple', 'none'].includes(askedShadows) ? askedShadows : this.tier;
+  },
+  // The WebGPU side's maker of the stand-in's material (webgpu/figures.ts); without it people cast as drawn.
+  make: null as (() => THREE.Material) | null,
+};
+
+// A standing person as eight triangles: feet, shoulders, the top of the head.
+function standIn(kit: FigureKit) {
+  const made = standIns.get(kit);
+  if (made) return made;
+  kit.geometry.computeBoundingBox();
+  const box = kit.geometry.boundingBox!, size = box.getSize(new THREE.Vector3()), mid = box.getCenter(new THREE.Vector3());
+  // (Whichever way the model stands: its longest side is its height.)
+  const up = size.y >= size.z ? 1 : 2, deep = up === 1 ? 2 : 1;
+  const at = (across: number, high: number, back: number) => {
+    const v = [0, 0, 0];
+    v[0] = mid.x + across * size.x * 0.5;
+    v[up] = box.min.getComponent(up) + high * size.getComponent(up);
+    v[deep] = mid.getComponent(deep) + back * size.getComponent(deep) * 0.5;
+    return v;
+  };
+  // (The model stands with its arms a little out: the shape is narrower than its box.)
+  const feet = at(0, 0, 0), head = at(0, 1, 0);
+  const ring = [at(-0.55, 0.78, 0), at(0, 0.78, 0.7), at(0.55, 0.78, 0), at(0, 0.78, -0.7)];
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([feet, head, ...ring].flat()), 3));
+  const index: number[] = [];
+  for (let i = 0; i < 4; i++) index.push(0, 2 + i, 2 + (i + 1) % 4, 1, 2 + (i + 1) % 4, 2 + i);
+  g.setIndex(index);
+  standIns.set(kit, g);
+  return g;
+}
+const standIns = new WeakMap<FigureKit, THREE.BufferGeometry>();
 const FPS = 24;
 const PARTS = ['Skin', 'Shirt', 'Sleeve', 'Trousers', 'Shoes', 'Hair'];
 
@@ -306,8 +361,38 @@ export class Figures {
     return claimed;
   }
 
+  // The stand-in in the sun's shadow map (PEOPLE_SHADOWS), made when first wanted.
+  private cast: PeopleShadows = 'full';
+  private caster: THREE.InstancedMesh | null = null;
+  private makeCaster() {
+    const shape = standIn(this.kit), g = new THREE.BufferGeometry();
+    g.setIndex(shape.index);
+    g.setAttribute('position', shape.attributes.position);
+    const mesh = new THREE.InstancedMesh(g, PEOPLE_SHADOWS.make!(), this.capacity);
+    mesh.instanceMatrix = this.mesh.instanceMatrix;
+    mesh.userData.sharedMatrices = true; // (see configureRenderer in webgpu.ts)
+    mesh.count = this.mesh.count;
+    mesh.castShadow = true;
+    mesh.frustumCulled = false;
+    mesh.layers.set(CAST_LAYER);
+    mesh.matrixAutoUpdate = false;
+    this.mesh.add(mesh);
+    mesh.updateMatrixWorld(true);
+    return mesh;
+  }
+  private shadows() {
+    const want = PEOPLE_SHADOWS.make || PEOPLE_SHADOWS.value === 'none' ? PEOPLE_SHADOWS.value : 'full';
+    if (want === this.cast) return;
+    this.cast = want;
+    this.mesh.castShadow = want === 'full';
+    if (want === 'simple') this.caster ??= this.makeCaster();
+    if (this.caster) this.caster.visible = want === 'simple';
+  }
+
   commit(count = this.mesh.count) {
     this.mesh.count = count;
+    this.shadows();
+    if (this.caster) this.caster.count = count;
     send(this.mesh.instanceMatrix, count);
     send(this.attr.aAnimA, count);
     send(this.attr.aAnimB, count);
