@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { Car } from './car.ts';
 import { clamp } from './network.ts';
 import { Figures, Anim, SCALE } from './figures.ts';
+import { sendInstances } from './gpu.ts';
+import { cutAway } from './shading.ts';
 import { locomote, knocked } from './people.ts';
 import { along, pedals, steer } from './police.ts';
 import type { DriveEdge } from './network.ts';
@@ -33,7 +35,7 @@ const RUN = 4.6; // m/s
 const WRECKED = 90; // damage that puts an engine out of action
 const LEVEL_APART = 3; // m of height between a car in a tunnel and the street above it, at least
 
-interface Fighter { x: number; y: number; h: number; vx: number; vy: number; engine: Engine; fig: Figures; anim: Anim; down: number; spot: { x: number; y: number }; back: boolean; spraying: boolean; gone?: boolean; level?: number; gz?: number; detour?: number; chase?: number; best: number; stuck: number }
+interface Fighter { member: number; x: number; y: number; h: number; vx: number; vy: number; engine: Engine; fig: Figures; anim: Anim; down: number; spot: { x: number; y: number }; back: boolean; spraying: boolean; gone?: boolean; level?: number; gz?: number; detour?: number; chase?: number; best: number; stuck: number }
 interface Engine extends Follower { spraying?: boolean; car: Car; target: Car; phase: 'go' | 'work' | 'leave'; t: number; wrecked: boolean; crew: boolean; gone?: boolean; goal: { x: number; y: number }; astray?: boolean; mark: { x: number; y: number }; direct?: boolean; roads?: boolean }
 interface Call { target: Car; t: number; roads?: boolean } // `roads`: the last engine got stuck in a pedestrian zone; this one keeps to the streets
 interface BrigadeOptions {
@@ -55,6 +57,49 @@ export class Brigade {
   // Hoses spraying this frame: from the nozzle to where the water lands.
   jets: { from: Point3; to: Point3 }[] = [];
   spawnT = 0;
+
+  private hoses?: THREE.InstancedMesh;
+  private hosePoints = Array.from({ length: 7 }, () => new THREE.Vector3());
+  private hoseMatrix = new THREE.Matrix4();
+  private hoseScale = new THREE.Vector3();
+  private midpoint = new THREE.Vector3();
+
+  // Join the flexible tail of the hand nozzle to the engine's pump. The line
+  // leaves the crew-facing side of the engine before settling on the ground.
+  private hoseTo(f: Fighter, slot: number) {
+    if (!this.hoses) {
+      const pipe = new THREE.CylinderGeometry(.029, .029, 1, 8, 1, true).rotateX(Math.PI / 2);
+      this.hoses = new THREE.InstancedMesh(pipe, cutAway(new THREE.MeshStandardMaterial({ color: '#605953', roughness: .95 }), 'furniture'), (ENGINES + 2) * CREW * 6);
+      this.hoses.frustumCulled = false;
+      this.hoses.receiveShadow = true;
+      this.o.scene.add(this.hoses);
+    }
+    const car = f.engine.car, cx = Math.cos(car.h), cy = Math.sin(car.h);
+    const side = (f.y - car.y) * cx - (f.x - car.x) * cy >= 0 ? 1 : -1;
+    const p = this.hosePoints, fx = Math.cos(f.h), fy = Math.sin(f.h);
+    const pumpX = car.x - cx * (car.spec.L / 2 - .55), pumpY = car.y - cy * (car.spec.L / 2 - .55);
+    const z = this.o.height(car.x, car.y, car);
+    p[0].set(pumpX - side * cy * car.spec.W / 2, z + .97, -pumpY - side * cx * car.spec.W / 2);
+    p[1].copy(p[0]); p[1].x -= side * cy * .30; p[1].z -= side * cx * .30; p[1].y -= .19;
+    p[2].copy(p[1]); p[2].x -= side * cy * .34; p[2].z -= side * cx * .34;
+    p[2].y = this.o.height(p[2].x, -p[2].z, f) + .035;
+    // Matches the end of the local hose on the Rocketbox firefighter.
+    p[6].set(f.x - 1.30 * fx - .51 * fy, this.o.height(f.x, f.y, f) + .04, -f.y + 1.30 * fy - .51 * fx);
+    for (let i = 3; i < 6; i++) {
+      const t = (i - 2) / 4;
+      p[i].lerpVectors(p[2], p[6], t);
+      p[i].x -= side * cy * .24 * Math.sin(Math.PI * t);
+      p[i].z -= side * cx * .24 * Math.sin(Math.PI * t);
+      p[i].y = this.o.height(p[i].x, -p[i].z, f) + .035;
+    }
+    for (let i = 1; i < p.length && slot < this.hoses.instanceMatrix.count; i++) {
+      const a = p[i-1], b = p[i];
+      this.hoseMatrix.lookAt(a, b, THREE.Object3D.DEFAULT_UP).scale(this.hoseScale.set(1, 1, a.distanceTo(b) + .015));
+      this.hoseMatrix.setPosition(this.midpoint.lerpVectors(a,b,.5));
+      this.hoses.setMatrixAt(slot++, this.hoseMatrix);
+    }
+    return slot;
+  }
 
   constructor(o: BrigadeOptions) { this.o = o; }
 
@@ -204,11 +249,12 @@ export class Brigade {
       let fig = this.spare.pop();
       if (!fig) {
         fig = new Figures(o.kit, 1);
-        fig.look(0, { shirt: '#232c4a', trousers: '#151a28', skin: '#e3b99a', hair: '#2b2118', sleeves: true });
+        fig.lifeSize = 'fire';
+        fig.look(0, { shirt: '#232c4a', trousers: '#151a28', skin: '#e3b99a', hair: '#d7cd86', sleeves: true });
       }
       o.scene.add(fig.mesh);
       // (On the engine's level: out of an engine in a tunnel, in the tunnel.)
-      this.crew.push({ x, y, h: car.h, vx: 0, vy: 0, engine: e, fig, anim: new Anim(o.kit, 'idle'), down: 0, back: false, spraying: false, best: Infinity, stuck: 0,
+      this.crew.push({ member: i, x, y, h: car.h, vx: 0, vy: 0, engine: e, fig, anim: new Anim(o.kit, 'idle'), down: 0, back: false, spraying: false, best: Infinity, stuck: 0,
         spot: this.spot(e, i), level: car.level, gz: car.gz });
     }
   }
@@ -277,7 +323,13 @@ export class Brigade {
     if (!this.blocked(nx, f.y)) f.x = nx;
     if (!this.blocked(f.x, ny)) f.y = ny;
     if (f.down > 0) knocked(f.anim, dt, f.down);
-    else locomote(f.anim, dt, Math.hypot(f.vx, f.vy));
+    else {
+      const speed = Math.hypot(f.vx, f.vy), pose = speed < 0.2 ? 'hose' : 'hosewalk';
+      if (f.spraying && f.anim.clips[pose]) {
+        f.anim.play(pose, false, 0.22);
+        f.anim.step(dt, pose === 'hose' ? 1 : speed / 1.6 * f.anim.duration);
+      } else locomote(f.anim, dt, speed);
+    }
     if (f.back && !this.engines.includes(e) && o.offscreen(f.x, f.y)) f.gone = true;
   }
 
@@ -417,10 +469,16 @@ export class Brigade {
   render() {
     const { o } = this;
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(SCALE, SCALE, SCALE);
+    let hoses = 0;
     for (const f of this.crew) {
       m.compose(p.set(f.x, o.height(f.x, f.y, f), -f.y), q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, f.h), sc);
-      f.fig.set(0, m, f.anim);
+      if (f.fig.set(0, m, f.anim, -1, m, f.member) && f.spraying) hoses = this.hoseTo(f, hoses);
       f.fig.commit(1);
+    }
+    if (this.hoses) {
+      this.hoses.count = hoses;
+      this.hoses.visible = hoses > 0;
+      if (hoses) sendInstances(this.hoses);
     }
   }
 }

@@ -83,6 +83,7 @@ const FPS = 24;
 const PARTS = ['Skin', 'Shirt', 'Sleeve', 'Trousers', 'Shoes', 'Hair'];
 
 interface ClipInfo { row: number; frames: number; duration: number; loop: boolean }
+export type UniformRole = 'dustman' | 'police' | 'medic' | 'fire';
 export interface Look { shirt: string; trousers: string; skin: string; hair: string; sleeves: boolean }
 export interface FigureKit {
   geometry: THREE.BufferGeometry;
@@ -124,7 +125,7 @@ export async function loadKit(url = 'figures.glb') {
   let rows = 0;
   for (const clip of gltf.animations) {
     const frames = Math.round(clip.duration * FPS);
-    clips[clip.name] = { row: rows, frames, duration: frames / FPS, loop: ['idle', 'walk', 'jog', 'run', 'bike', 'moto', 'cuffedwalk', 'escort', 'cuff', 'push', 'hold'].includes(clip.name) };
+    clips[clip.name] = { row: rows, frames, duration: frames / FPS, loop: ['idle', 'walk', 'jog', 'run', 'bike', 'moto', 'cuffedwalk', 'escort', 'cuff', 'push', 'hold', 'attend', 'hose', 'hosewalk'].includes(clip.name) };
     rows += frames + 1;
   }
   const pos = new Float32Array(N * rows * 4), nrm = new Float32Array(N * rows * 4);
@@ -287,8 +288,8 @@ export class Figures {
   mesh: THREE.InstancedMesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>;
   capacity: number;
   sleeves: Uint8Array;
-  // First-person replacement, with a separate uniformed pair for refuse crews.
-  lifeSize: boolean | 'dustman' = false;
+  // First-person replacement, with role-specific outfits for uniformed crews.
+  lifeSize: boolean | UniformRole = false;
   // You (people.ts's Walker): drawn life size in first and third person however near the
   // camera, and always, whatever the crowd round you.
   self = false;

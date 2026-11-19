@@ -17,7 +17,7 @@ import type { Point3 } from './guns.ts';
 interface ChaseCar extends Follower { car: Car; calm: boolean; wrecked: boolean; gone?: boolean; reload?: number; side?: number }
 // `door`: the one of their car they got out of, left open till they're back. `led`: making
 // an arrest, moved by src/arrest.ts.
-export interface Officer { x: number; y: number; h: number; vx: number; vy: number; car: Car; fig: Figures; anim: Anim; down: number; back: boolean; gone?: boolean; level?: number; gz?: number; detour?: number; reload?: number; door?: number; led?: boolean; grip?: number }
+export interface Officer { avatarId: number; x: number; y: number; h: number; vx: number; vy: number; car: Car; fig: Figures; anim: Anim; down: number; back: boolean; gone?: boolean; level?: number; gz?: number; detour?: number; reload?: number; door?: number; led?: boolean; grip?: number }
 // A stretch of the way a police car or a fire engine can take: a street, or (`foot`) a
 // way meant for people.
 type Way = (DriveEdge | WalkEdge) & { mid?: Polyline; twin?: DriveEdge | null };
@@ -216,6 +216,7 @@ export class Police {
   r: () => number; edgesNear: PoliceOptions['edgesNear']; offscreen: PoliceOptions['offscreen'];
   onBusted: (by: Officer) => void; kit: FigureKit; bodyAt: NonNullable<PoliceOptions['bodyAt']>;
   height: PoliceOptions['height']; onShot: NonNullable<PoliceOptions['onShot']>;
+  private nextOfficerId = 0;
   spare: Figures[]; helis: Helicopters; heat: number; cars: ChaseCar[]; officers: Officer[];
   seen: boolean; lose: number; cool: Record<string, number>; spawnT: number; checkT: number; limit: number;
   nodes: Map<string, Point2>; links: Map<string, Link[]>; linked: number; walked = 0;
@@ -674,11 +675,12 @@ export class Police {
     let fig = this.spare.pop();
     if (!fig) {
       fig = new Figures(this.kit, 1);
+      fig.lifeSize = 'police';
       fig.look(0, { shirt: '#1f3a68', trousers: '#1a2438', skin: '#e3b99a', hair: '#15233f', sleeves: true });
     }
     this.scene.add(fig.mesh);
     // On the car's level: out of a car in a tunnel, in the tunnel (not on the street above).
-    this.officers.push({ x, y, h: car.h, vx: 0, vy: 0, car, fig, anim: new Anim(this.kit, 'idle'), down: 0, back: false, door, level: car.level, gz: car.gz });
+    this.officers.push({ avatarId: this.nextOfficerId++, x, y, h: car.h, vx: 0, vy: 0, car, fig, anim: new Anim(this.kit, 'idle'), down: 0, back: false, door, level: car.level, gz: car.gz });
   }
 
   blocked(x: number, y: number) {
@@ -879,7 +881,7 @@ export class Police {
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(SCALE, SCALE, SCALE);
     for (const o of this.officers) {
       m.compose(p.set(o.x, height(o.x, o.y, o), -o.y), q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, o.h), sc);
-      o.fig.set(0, m, o.anim);
+      o.fig.set(0, m, o.anim, -1, m, o.avatarId);
       o.fig.commit(1);
     }
   }

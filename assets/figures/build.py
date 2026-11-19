@@ -864,6 +864,45 @@ def hold(frames=24):
     return out
 
 
+def attend(frames=24):
+    """One knee down, one boot planted, leaning over the patient."""
+    out = []
+    for f in range(frames):
+        breath = math.sin(2 * math.pi * f / frames)
+        D, t = pose({"t": (0.06, 0, -0.46), "pitch": 0.22, "spine": 0.50 + 0.025 * breath, "head": 0.20})
+        leg(D, t, "L", Vector((0.35, 0.17, 0.10)), Vector((1, 0.25, 0)), Vector((1, 0, -0.18)))
+        leg(D, t, "R", Vector((-0.37, -0.14, 0.13)), Vector((1, -0.12, -1)), Vector((-0.7, 0, -0.35)))
+        for side in ("L", "R"):
+            hand(D, t, side, (0.49, 0.15, 0.79 + 0.02 * breath), (0, 1, -1))
+        out.append((D, t))
+    return out
+
+
+def hose_grip(D, t):
+    hand(D, t, "L", (0.46, 0.05, 1.31), (0, 1, -1))
+    hand(D, t, "R", (0.30, 0.06, 1.25), (0, 1, -1))
+
+
+def hose_walk():
+    steps = gait(GAITS["walk"])
+    for D, t in steps:
+        hose_grip(D, t)
+    return steps
+
+
+def hose(frames=16):
+    """Braced behind the branch pipe, one hand on its grip and one further forward."""
+    out = []
+    for f in range(frames):
+        sway = math.sin(2 * math.pi * f / frames)
+        D, t = pose({"t": (0, 0, -0.045), "spine": 0.13 + 0.015 * sway, "head": -0.11})
+        for side, sign in (("L", 1), ("R", -1)):
+            leg(D, t, side, Vector((sign * 0.17, sign * 0.16, 0.1)), Vector((1, sign * 0.2, 0)), Vector((1, 0, -0.18)))
+        hose_grip(D, t)
+        out.append((D, t))
+    return out
+
+
 CLIPS = {
     "idle": (idle(), True),
     "walk": (gait(GAITS["walk"]), True),
@@ -883,6 +922,9 @@ CLIPS = {
     "cuff": (cuff(), True),
     "push": (push(), True),
     "hold": (hold(), True),
+    "attend": (attend(), True),
+    "hose": (hose(), True),
+    "hosewalk": (hose_walk(), True),
 }
 
 

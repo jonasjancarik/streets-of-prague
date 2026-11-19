@@ -5,7 +5,8 @@ import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.j
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { LIFE_SIZE } from './figures.ts';
 import { cutAway } from './shading.ts';
-import type { Anim, Figures } from './figures.ts';
+import { fireGear } from './responderGear.ts';
+import type { Anim, Figures, UniformRole } from './figures.ts';
 import { shape as umbrellaShape, material as umbrellaMaterial, colour as umbrellaColour, chance } from './umbrellas.ts';
 
 // First person: the passers-by near you are life-size people from the Microsoft Rocketbox
@@ -30,8 +31,13 @@ const AVATARS: [string, 'f' | 'm'][] = [
   ['male-adult-01', 'm'], ['male-adult-04', 'm'], ['male-adult-07', 'm'], ['male-adult-10', 'm'],
   ['male-adult-13', 'm'], ['male-adult-17', 'm'], ['business-male-03', 'm'],
 ];
-// Reuse these rigs, heads, body meshes and normal maps for the dustcart crew.
-const DUSTMEN = ['male-adult-10', 'male-adult-17'];
+// Uniform variants keep each donor’s rig, head, mesh and normal maps.
+const UNIFORM_AVATARS: Record<UniformRole, string[]> = {
+  dustman: ['male-adult-10', 'male-adult-17'],
+  police: ['male-adult-10', 'female-adult-05'],
+  medic: ['male-adult-10', 'female-adult-05'],
+  fire: ['male-adult-10', 'male-adult-17'],
+};
 const CLIPS = { walk: 'walk_neutral_01', jog: 'run_slow_01', run: 'run_neutral_01' };
 type Move = keyof typeof CLIPS;
 const GAITS: Move[] = ['walk', 'jog', 'run'];
@@ -50,7 +56,7 @@ const TURN = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0),
 
 // The clips by name: the gaits, the ways of standing, 'umbrella' (standing with one) and
 // 'arm' (just its left arm).
-interface Kind { template: THREE.Object3D; clips: Record<string, THREE.AnimationClip>; stride: Record<Move, number>; standing: string[]; uniform?: THREE.MeshStandardMaterial }
+interface Kind { template: THREE.Object3D; clips: Record<string, THREE.AnimationClip>; stride: Record<Move, number>; standing: string[]; uniform?: THREE.MeshStandardMaterial; role?: UniformRole }
 interface Person {
   kind: number;
   root: THREE.Object3D;
@@ -69,13 +75,19 @@ interface Person {
   turn: THREE.Quaternion;
   speed: number;
   seen: boolean;
+  self: boolean;
+  yieldSlot: boolean;
+  nozzle?: THREE.Mesh;
 }
 
 export class LifeSize {
   group = new THREE.Group();
   enabled = true;
   private kinds: Kind[] = [];
-  private crewKinds: (number | undefined)[] = [];
+  private uniforms = new Map<string, number | null>();
+  private uniformLoader?: KTX2Loader;
+  private pendingUniforms = 0;
+  private gear?: ReturnType<typeof fireGear>;
   private figureActions: Record<string, THREE.AnimationClip> = {};
   private state: 'idle' | 'loading' | 'ready' | 'failed' = 'idle';
   private live = new Map<string, Person>();
@@ -84,6 +96,8 @@ export class LifeSize {
   private on = false;
   private cam = new THREE.Vector3();
   private reach = REACH;
+  private waitingCrew = 0;
+  private reserved = 0;
   private offered: number[] = []; // how far off this frame's candidates were
   private renderer: unknown;
   private umbrellas = new THREE.InstancedMesh(gripped(umbrellaShape()), umbrellaMaterial(), MOST);
@@ -137,23 +151,6 @@ export class LifeSize {
         }
         return kind;
       }));
-      const uniforms = await Promise.all(DUSTMEN.map(async (name) => {
-        const base = this.kinds[AVATARS.findIndex(([avatar]) => avatar === name)];
-        let body: THREE.MeshStandardMaterial | undefined;
-        base.template.traverse((o) => {
-          if (o instanceof THREE.SkinnedMesh && o.material instanceof THREE.MeshStandardMaterial && o.material.name.endsWith('_body')) body = o.material;
-        });
-        if (!body) return;
-        try {
-          const map = await ktx2!.loadAsync(`rocketbox/dustman-${name}.ktx2`);
-          map.colorSpace = THREE.SRGBColorSpace;
-          const uniform = body.clone();
-          uniform.map = map;
-          cutAway(uniform, 'rocketbox');
-          return { ...base, uniform, standing: ['idle_neutral_01', 'idle_neutral_02'] };
-        } catch (e) { console.warn('Dustman uniform could not load', name, e); }
-      }));
-      this.crewKinds = uniforms.map((kind) => kind ? this.kinds.push(kind) - 1 : undefined);
       this.spare = this.kinds.map(() => []);
       this.state = 'ready';
     } catch (e) {
@@ -164,8 +161,46 @@ export class LifeSize {
     }
   }
 
+  // The person can keep their instanced outfit while this particular texture
+  // loads. The first crew to appear shares one decoder across concurrent loads.
+  private uniformKind(role: UniformRole, id: number) {
+    const donors = UNIFORM_AVATARS[role], name = donors[id % donors.length], key = role + '-' + name;
+    if (!this.uniforms.has(key)) {
+      this.uniforms.set(key, null);
+      void this.loadUniform(key, name, role);
+    }
+    return this.uniforms.get(key);
+  }
+
+  private async loadUniform(key: string, name: string, role: UniformRole) {
+    const base = this.kinds[AVATARS.findIndex(([avatar]) => avatar === name)];
+    let body: THREE.MeshStandardMaterial | undefined;
+    base.template.traverse((o) => {
+      if (o instanceof THREE.SkinnedMesh && o.material instanceof THREE.MeshStandardMaterial && o.material.name.endsWith('_body')) body = o.material;
+    });
+    if (!body) return;
+    this.pendingUniforms++;
+    try {
+      this.uniformLoader ??= new KTX2Loader().setTranscoderPath('rocketbox/').detectSupport(this.renderer as never);
+      const map = await this.uniformLoader.loadAsync(`rocketbox/${key}.ktx2`);
+      map.colorSpace = THREE.SRGBColorSpace;
+      const uniform = body.clone();
+      uniform.map = map;
+      cutAway(uniform, 'rocketbox');
+      const index = this.kinds.push({ ...base, role, uniform, standing: ['idle_neutral_01', 'idle_neutral_02'] }) - 1;
+      this.spare[index] = [];
+      this.uniforms.set(key, index);
+    } catch (e) { console.warn('Crew uniform could not load', key, e); }
+    finally {
+      if (--this.pendingUniforms === 0) {
+        this.uniformLoader?.dispose();
+        this.uniformLoader = undefined;
+      }
+    }
+  }
+
   // Not in the middle of loading (so dispose() leaves nothing behind).
-  get idle() { return this.state !== 'loading'; }
+  get idle() { return this.state !== 'loading' && this.pendingUniforms === 0; }
 
   // Lets go of the avatars, their clips and textures, and stops offering to draw anyone.
   dispose() {
@@ -188,6 +223,7 @@ export class LifeSize {
       if (k.uniform.map) textures.add(k.uniform.map);
       k.uniform.dispose();
     }
+    if (this.gear) { free(this.gear.helmet); free(this.gear.nozzle); }
     for (const t of textures) t.dispose();
     for (const p of [...this.live.values(), ...this.spare.flat()]) {
       p.mixer.uncacheRoot(p.root);
@@ -212,12 +248,20 @@ export class LifeSize {
     if (gid === undefined) this.ids.set(fig, (gid = this.ids_++));
     const key = `${gid}:${id}`;
     let p = this.live.get(key);
+    if (p?.yieldSlot) return false;
     if (!p) {
       // (Not someone the camera is inside; you, though, always: see Figures.self.)
-      if (!fig.self && (d > this.reach || d < 1 || this.live.size >= MOST)) return false;
-      const kind = fig.lifeSize === 'dustman' ? this.crewKinds[id % DUSTMEN.length] : (gid * 7919 + id * 104729) % AVATARS.length;
-      if (kind === undefined) return false;
+      if (!fig.self && (d > this.reach || d < 1)) return false;
+      const role = typeof fig.lifeSize === 'string' ? fig.lifeSize : undefined;
+      const kind = role ? this.uniformKind(role, id) : (gid * 7919 + id * 104729) % AVATARS.length;
+      if (kind == null) return false;
+      if (!fig.self && this.live.size >= MOST - (role ? 0 : this.reserved)) {
+        if (role) this.waitingCrew++;
+        return false;
+      }
       p = this.take(kind);
+      p.self = fig.self;
+      p.yieldSlot = false;
       p.pos.copy(pos);
       p.last.copy(pos);
       p.speed = 0;
@@ -280,6 +324,17 @@ export class LifeSize {
     if (uniform) root.traverse((o) => {
       if (o instanceof THREE.SkinnedMesh && o.material.name === uniform.name) o.material = uniform;
     });
+    let nozzle: THREE.Mesh | undefined;
+    if (k.role === 'fire') {
+      this.gear ??= fireGear();
+      const head = root.getObjectByName('Bip01_Head')!, helmet = this.gear.helmet.clone();
+      head.getWorldPosition(helmet.position);
+      // attach preserves the upright orientation and metre scale on the cm rig.
+      head.attach(helmet);
+      nozzle = this.gear.nozzle.clone();
+      nozzle.visible = false;
+      root.add(nozzle);
+    }
     const mixer = new THREE.AnimationMixer(root);
     const actions: Person['actions'] = {}, w: Person['w'] = {}, want: Person['want'] = {}, t: Person['t'] = {};
     for (const c in k.clips) {
@@ -301,9 +356,9 @@ export class LifeSize {
     }
     this.group.add(root);
     return {
-      kind, root, mixer, actions, w, want, t, phase: 0, rest: k.standing[0], umbrella: -1,
+      kind, root, mixer, actions, w, want, t, nozzle, phase: 0, rest: k.standing[0], umbrella: -1,
       hand: root.getObjectByName('Bip01_L_Hand') ?? root, phone,
-      pos: new THREE.Vector3(), last: new THREE.Vector3(), turn: new THREE.Quaternion(), speed: 0, seen: false,
+      pos: new THREE.Vector3(), last: new THREE.Vector3(), turn: new THREE.Quaternion(), speed: 0, seen: false, self: false, yieldSlot: false,
     };
   }
 
@@ -319,6 +374,18 @@ export class LifeSize {
     const o = this.offered.sort((a, b) => a - b);
     this.reach = o.length > MOST ? Math.min(REACH, o[MOST - 1]) : REACH;
     o.length = 0;
+    // A nearby responder can arrive after all slots are held by civilians.
+    // Give the farthest civilians back to their instanced figures on the next
+    // claim, reserving the released slots until the waiting crew can take them.
+    this.reserved = this.waitingCrew;
+    if (this.waitingCrew) {
+      const present = [...this.live.values()].filter(p => p.seen);
+      const need = Math.max(0, present.length + this.waitingCrew - MOST);
+      const civilians = present.filter(p => !p.self && !this.kinds[p.kind].role)
+        .sort((a, b) => b.pos.distanceToSquared(this.cam) - a.pos.distanceToSquared(this.cam));
+      for (let i = 0; i < Math.min(need, civilians.length); i++) civilians[i].yieldSlot = true;
+      this.waitingCrew = 0;
+    }
     let held = 0;
     for (const [key, p] of this.live) {
       if (!p.seen || !this.on) {
@@ -364,6 +431,7 @@ export class LifeSize {
         if (c.includes('phone')) phone += p.w[c];
       }
       p.phone.visible = phone > 0.5;
+      if (p.nozzle) p.nozzle.visible = (p.w.hose ?? 0) + (p.w.hosewalk ?? 0) > 0.5;
       p.mixer.update(0);
       p.root.position.copy(p.pos);
       p.root.quaternion.copy(p.turn).multiply(TURN);

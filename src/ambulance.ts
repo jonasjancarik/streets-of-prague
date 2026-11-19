@@ -29,7 +29,7 @@ const RUN_AFTER = 70; // m: and gives up when you're further than this
 const FAR = 900; // m: someone hurt further than this from you is left to get up on their own
 
 interface FootPoint { x: number; y: number }
-interface Medic { x: number; y: number; h: number; vx: number; vy: number; rig: Rig; fig: Figures; anim: Anim; down: number; spot: FootPoint; back: boolean; gone?: boolean; gz?: number; detour?: number; best: number; stuck: number; chase?: number; footGoal?: FootPoint; footPath?: FootPoint[]; footRetry?: number }
+interface Medic { member: number; x: number; y: number; h: number; vx: number; vy: number; rig: Rig; fig: Figures; anim: Anim; down: number; spot: FootPoint; back: boolean; gone?: boolean; gz?: number; detour?: number; best: number; stuck: number; chase?: number; footGoal?: FootPoint; footPath?: FootPoint[]; footRetry?: number }
 interface Rig extends Follower { car: Car; patient: Pedestrian; phase: 'go' | 'work' | 'leave'; t: number; wrecked: boolean; crew: boolean; gone?: boolean; goal: { x: number; y: number }; astray?: boolean; mark: { x: number; y: number }; direct?: boolean; roads?: boolean; treated: number; done: number; load: number; carried: boolean }
 interface Call { patient: Pedestrian; t: number; roads?: boolean }
 interface AmbulanceOptions {
@@ -72,6 +72,11 @@ export class Ambulances {
   // Where the crew's i-th kneels: beside the patient, on the side the ambulance came from.
   spot(r: Rig, i: number) {
     const tp = r.patient, a = Math.atan2(r.car.y - tp.y, r.car.x - tp.x) + (i ? 1 : -1) * 0.9;
+    // In the fall pose the torso lies behind the person's standing origin.
+    // Take opposite sides, one near the shoulder and one near the hip, if clear.
+    const fx = Math.cos(tp.h), fy = Math.sin(tp.h), side = i ? -1 : 1, along = i ? -0.22 : -0.60;
+    const x = tp.x + fx * along - fy * .56 * side, y = tp.y + fy * along + fx * .56 * side;
+    if (!this.blocked(x, y) && !this.o.bodyAt(x, y, .30, r.car)) return { x, y };
     // (Closer in, where a wall or a parked car is in the way.)
     let stand = 1.1;
     while (stand > 0.5 && this.blocked(tp.x + Math.cos(a) * stand, tp.y + Math.sin(a) * stand)) stand -= 0.2;
@@ -166,10 +171,11 @@ export class Ambulances {
       let fig = this.spare.pop();
       if (!fig) {
         fig = new Figures(o.kit, 1);
-        fig.look(0, { shirt: '#d7e01f', trousers: '#1c3a2c', skin: '#e3b99a', hair: '#2b2118', sleeves: true });
+        fig.lifeSize = 'medic';
+        fig.look(0, { shirt: '#d7e01f', trousers: '#b52e27', skin: '#e3b99a', hair: '#2b2118', sleeves: true });
       }
       o.scene.add(fig.mesh);
-      this.crew.push({ x, y, h: car.h, vx: 0, vy: 0, rig: r, fig, anim: new Anim(o.kit, 'idle'), down: 0, back: false, spot: this.spot(r, i), best: Infinity, stuck: 0 });
+      this.crew.push({ member: i, x, y, h: car.h, vx: 0, vy: 0, rig: r, fig, anim: new Anim(o.kit, 'idle'), down: 0, back: false, spot: this.spot(r, i), best: Infinity, stuck: 0 });
     }
   }
 
@@ -254,6 +260,7 @@ export class Ambulances {
 
   walk(m: Medic, dt: number, me: { x: number; y: number }) {
     const { o } = this, r = m.rig, tp = r.patient;
+    let treating = false;
     if (m.chase !== undefined && m.down <= 0) {
       // Their ambulance is gone: after whoever took it, until they lose them.
       m.chase -= dt;
@@ -273,10 +280,12 @@ export class Ambulances {
         this.walkTo(m, at, WALK, dt);
       } else if (attending) {
         const d = Math.hypot(m.spot.x - m.x, m.spot.y - m.y);
-        if (d > 0.5) this.walkTo(m, m.spot, d > 10 ? RUN : WALK * 1.6, dt);
+        if (d > 0.23) this.walkTo(m, m.spot, d > 10 ? RUN : WALK * 1.6, dt);
         else {
           m.vx = m.vy = 0;
-          m.h = Math.atan2(tp.y - m.y, tp.x - m.x);
+          const along = m.member ? -0.22 : -0.60;
+          m.h = Math.atan2(tp.y + along * Math.sin(tp.h) - m.y, tp.x + along * Math.cos(tp.h) - m.x);
+          treating = true;
         }
       } else {
         // Done (or the ambulance is gone): back to it, or away if it can't take them.
@@ -292,6 +301,7 @@ export class Ambulances {
     if (!this.blocked(nx, m.y)) m.x = nx;
     if (!this.blocked(m.x, ny)) m.y = ny;
     if (m.down > 0) knocked(m.anim, dt, m.down);
+    else if (treating && m.anim.clips.attend) { m.anim.play('attend', false, 0.3); m.anim.step(dt); }
     else locomote(m.anim, dt, Math.hypot(m.vx, m.vy));
     if (m.back && !this.rigs.includes(r) && o.offscreen(m.x, m.y)) m.gone = true;
   }
@@ -449,7 +459,7 @@ export class Ambulances {
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(SCALE, SCALE, SCALE);
     for (const f of this.crew) {
       m.compose(p.set(f.x, o.height(f.x, f.y, f), -f.y), q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, f.h), sc);
-      f.fig.set(0, m, f.anim);
+      f.fig.set(0, m, f.anim, -1, m, f.member);
       f.fig.commit(1);
     }
   }

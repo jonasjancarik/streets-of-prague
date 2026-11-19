@@ -1236,7 +1236,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   the truck's steps on slopes, and the bin handle stays within reach as the bin tilts. From above
   they use the simpler figures in crew colours. Rebuild their clothing textures with
   `python3 assets/rocketbox/workwear.py` (Pillow, NumPy and basisu).
-  Police and separate courier and rider groups use their usual figures.
+  Nearby police, paramedics and firefighters also use uniformed avatars. Police wear navy
+  jackets marked POLICIE. Medics kneel to treat a patient, and firefighters wear helmets
+  and brace the nozzle as they spray. Service outfits load when the crew is close enough
+  to see. A nearby responder can take the place of a more distant civilian in the same
+  avatar budget. Separate courier and rider groups use their usual figures.
   The avatars' code (with the
   texture and mesh decoders only they use) and the files (about 18 MB, in `public/rocketbox/`)
   load the first time first person is on (`src/lifesize.ts` imports `src/rocketbox.ts`

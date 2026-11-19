@@ -23,11 +23,12 @@ for a in $AVATARS; do
   [ -s "$out/$a.glb" ] || curl -sfL -o "$out/$a.glb" "$HF/$a/${a}_lod1.glb"
 done
 
-# The refuse crew wears the same avatars with high-visibility clothing. Only a
-# fresh asset directory needs the texture tools (Python, Pillow, numpy, basisu).
-if [[ ! -s "$out/dustman-male-adult-10.ktx2" || ! -s "$out/dustman-male-adult-17.ktx2" ]]; then
-  python3 "$here/workwear.py"
-fi
+# Service uniforms reuse the civilian rigs. Rebuilding missing textures
+# requires Python with Pillow and numpy, and basisu.
+for name in police-male-adult-10 police-female-adult-05 medic-male-adult-10 medic-female-adult-05 \
+    fire-male-adult-10 fire-male-adult-17 dustman-male-adult-10 dustman-male-adult-17; do
+  if [[ ! -s "$out/$name.ktx2" ]]; then python3 "$here/workwear.py" --missing; break; fi
+done
 
 # The clips: walking, jogging (a slow run) and running, for men and women. These are the
 # versions that travel (motextr_xy): src/rocketbox.ts takes the travel out and keeps the
