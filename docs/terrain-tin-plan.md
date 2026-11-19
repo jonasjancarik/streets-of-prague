@@ -1292,3 +1292,43 @@ time to triangulate a tile, before `praha`.
   1.3 m), and the trunk link at 50.0969, 14.4018 (1.4 m). The drive-through scenario
   passes. From above, the pit at Řepy and its torn edges are gone, and the slip road
   runs down the bank. Pictures in `docs/evidence/tin/repy` (local).
+
+- 19 November 2026, night: the Strahov tunnel's exit under Patočkova (50.0876,
+  14.3814), with two rules that use the LiDAR (`tin` 4aa63e1a, `dtm_heights.py`). At
+  the portal, the survey's kerbs on the walls above the road held the lattice points
+  beside them metres up, and the ground tore into a hole with cut slabs round it. A point
+  whose nearest kerbs are all more than 3 m above flat bare-earth LiDAR takes the
+  LiDAR's height (`below_wall`, 4,300 points). A point the street rules left more than
+  3 m off flat LiDAR goes back to the LiDAR too (`scan_held`, 32,000 points). Neither
+  applies under the map's bridges or in tunnels.
+
+  On the first city build, steps over 1 m fell 6 → 3: Patočkova, the trunk link beside
+  it and the trunk link at 50.0969, 14.4018 were fixed. Bridge joins over 1 m rose
+  112 → 123, though. OSM ends bridges a few metres short of their abutments, so a
+  street's last metres lie on the deck, where the bare-earth LiDAR has the road below.
+  Both rules pulled those points down to it: at 5. května over Hvězdova (50.0387,
+  14.4880) the joins went from under 0.2 m to 4.1 m, a trench 6 m deep. Now neither rule
+  acts within 6 m of a bridge's end (`END_CLEAR`, `tin` 7df3ea8a). On test windows,
+  keeping both rules 6 m from the whole bridge instead brought back the trunk link's hump
+  at Strahov, so the margin is round the ends only.
+
+  | `praha`, mesh | After Řepy | Both rules | With the end margin |
+  |---|---|---|---|
+  | Steps over 0.25 / 1 m | 172 / 6 | 165 / 3 | 167 / 4 |
+  | Bumps over 0.5 m | 130 | 127 | 130 |
+  | Off the LiDAR over 2 m (streets) | 231 | 220 | 222 |
+  | Bridge joins over 0.5 / 1 m | 268 / 112 | 276 / 123 | 267 / 115 |
+  | Samples off the LiDAR by more than 1 m | 0.08 % | 0.07 % | 0.07 % |
+
+  With the margin, 5. května's bridge ends and the main station's footways are back
+  where they were before the two rules, and so is Palackého most (a 5.2 m join, which
+  the rules alone had brought to 0.5 m). From above, the hole and the cut slabs at the
+  Strahov portal stay gone. The margin brought back Patočkova's step (1.4 m at
+  50.08773, 14.38139, within 6 m of the deck's end over the portal), and test windows
+  don't reproduce that step, so the next attempt needs a city build. Three joins are
+  worse than before the rules: a 2 m scrap of footway at a footbridge's end (50.04415,
+  14.44898; deck 275 m, the ground beside it pulled to 266–270 m, 0.9 → 6.1 m), a service
+  road at 50.06099, 14.42797 (0.1 → 1.9 m) and a footway at 50.10566, 14.26742 (0.1 →
+  0.6 m). The first build's drive-through scenario passed: cars get through the Strahov
+  tunnel both ways and past the main station. The mesh has 56.7 million triangles and
+  no missing tiles. Pictures in `docs/evidence/tin/strahov` (local).
