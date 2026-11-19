@@ -47,12 +47,16 @@ for (const f of selected ? selected.map((k) => `${k}.json`) : readdirSync(`${dir
   const at = sides ? sides.at : () => 0;
   const height = (x, y, s) => H(x, y, sides ? s : false);
   const [x0, y0, x1, y1] = t.box;
+  // (A side is read a millimetre inside the tile: the water's and the terraces' outlines
+  // are clipped to it, and a sample on its edge lies on theirs.)
+  const inX = (x) => Math.min(Math.max(x, x0 + 1e-3), x1 - 1e-3), inY = (y) => Math.min(Math.max(y, y0 + 1e-3), y1 - 1e-3);
+  const sideAt = (x, y) => at(inX(x), inY(y));
   const nx = Math.round((x1 - x0) / GRID) + 1, ny = Math.round((y1 - y0) / GRID) + 1;
   const gx = (i) => (i === nx - 1 ? x1 : x0 + i * GRID), gy = (j) => (j === ny - 1 ? y1 : y0 + j * GRID);
   const grid = new Float32Array(nx * ny), side = new Uint8Array(nx * ny), paved = new Uint8Array(nx * ny);
   const onPaved = onPolygons([...PAVED_ROADS.flatMap((r) => t.roads?.[r] ?? []), ...PAVED_AREAS.flatMap((a) => t.areas?.[a] ?? [])]);
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
-    const x = gx(i), y = gy(j), s = at(x, y);
+    const x = gx(i), y = gy(j), s = sideAt(x, y);
     side[j * nx + i] = s;
     paved[j * nx + i] = onPaved(x, y) ? 1 : 0;
     grid[j * nx + i] = height(x, y, s);
@@ -69,6 +73,9 @@ for (const f of selected ? selected.map((k) => `${k}.json`) : readdirSync(`${dir
       const a = closed[i], b = closed[i + 1], ka = key(a), kb = key(b);
       if (ka === kb) continue;
       const id = ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
+      // (Nor is the tile's own edge, where an outline was clipped, a step.)
+      const along = (u, v, w) => Math.abs(u - w) < 1e-4 && Math.abs(v - w) < 1e-4;
+      if (along(a[0], b[0], x0) || along(a[0], b[0], x1) || along(a[1], b[1], y0) || along(a[1], b[1], y1)) { flush(); continue; }
       if (seen.has(id)) { flush(); continue; }
       seen.add(id);
       if (!run.length) run.push(a);
@@ -85,7 +92,7 @@ for (const f of selected ? selected.map((k) => `${k}.json`) : readdirSync(`${dir
       const nxl = -dy / len, nyl = dx / len, steps = Math.max(1, Math.ceil(len / LINE));
       for (let s = 0; s < steps + (i === pts.length - 2 ? 1 : 0); s++) {
         const x = a[0] + (dx * s) / steps, y = a[1] + (dy * s) / steps;
-        const l = at(x + nxl * ASIDE, y + nyl * ASIDE), r = at(x - nxl * ASIDE, y - nyl * ASIDE);
+        const l = sideAt(x + nxl * ASIDE, y + nyl * ASIDE), r = sideAt(x - nxl * ASIDE, y - nyl * ASIDE);
         lines.push(x, y, height(x, y, l), height(x, y, r), l, r);
         m++;
       }

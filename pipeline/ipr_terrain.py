@@ -431,6 +431,9 @@ def main() -> None:
                     help="trial: each step's outline with the ground's height on either side of it (step_lines.py)")
     ap.add_argument("--step-lines-scan", action="store_true",
                     help="trial: the step lines read the ground beside each step from the LiDAR (--survey-scan's), not the lattice")
+    ap.add_argument("--tin", action="store_true",
+                    help="the city pass for the mesh (tin_tiles.py): the step lines, the walls' tops straight and the ground behind "
+                         "raised to them, with --survey-scan their crowns from the LiDAR")
     ap.add_argument("--resume", action="store_true", help="reuse completed terrain output if its inputs and binary files match")
     ap.add_argument("--no-assemble", action="store_true", help="leave output staged; assemble the complete generation separately")
     args = ap.parse_args()
@@ -468,6 +471,12 @@ def main() -> None:
         options["lidar_ground"] = True
     if args.lidar_window > 1:
         options["lidar_window"] = args.lidar_window
+    if args.tin:
+        # (What the walls-tin trial ran with: step_lines.straight_tops and its two parts.)
+        args.step_lines = True
+        step_lines.STRAIGHT_TOPS = step_lines.STRAIGHT_FILL = True
+        step_lines.STRAIGHT_CROWN = bool(options.get("survey_scan"))
+        options["tin"] = True
     if args.step_lines:
         options["step_lines"] = True
     if args.step_lines_scan:
@@ -674,6 +683,13 @@ def main() -> None:
             got = step_lines.for_tile(boxes[key].bounds, tile_water.get(key, []), listed, read, driven, soft.get(key))
             if got:
                 lines_by_tile[f"{key[0]}_{key[1]}"] = got
+        own.home = None
+        if step_lines.STRAIGHT_TOPS:  # (a trial, off by default: step_lines.straight_tops)
+            by_key = {tuple(map(int, k.split("_"))): v for k, v in lines_by_tile.items()}
+            lattice = (tiles, labels, N, T, step, gx0, gy0) if step_lines.STRAIGHT_FILL else None
+            walls, metres, raised = step_lines.straight_tops(by_key, ids, {k: boxes[k].bounds for k in by_key}, lattice, driven,
+                                                          ipr_lidar.sampler(options["survey_scan"], local)[0] if step_lines.STRAIGHT_CROWN and options.get("survey_scan") else None)
+            print(f"  straight tops: {walls} stretches of wall, {metres:.0f} m moved, {raised} lattice points raised")
         print(f"  {sum(len(v) for v in lines_by_tile.values())} step lines, {sum(len(l['pts']) for v in lines_by_tile.values() for l in v)} points")
         timings.lap("step_lines")
     # The heights, then each point's label as a byte (dtm_heights.py): 0 the plain ground,

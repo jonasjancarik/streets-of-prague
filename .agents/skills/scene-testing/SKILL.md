@@ -130,6 +130,11 @@ in compass degrees (0 north, 90 east), speeds in km/h.
   whether the game was opened with `?countryside` (`--extra "&countryside"`); the
   scenarios `countryside-edge`, `-traffic`, `-taxi` and `-police` need it and skip
   themselves without.
+- `t.heights(where)`: the heights at a place, `{ level: metres }` for the ground (0) and
+  each bridge or tunnel level there, in the game's metres (above 180 m). What lies over a
+  street: `drive-through` checks that nothing stands 3 m over Wilsonova's carriageways at
+  Bulhar, where a slab did (a car drives under such a slab, so driving through doesn't
+  show it).
 - `t.builtMap()`: whether your current position is inside an available prebuilt tile
   and the exact map extent from `index.json`. Unlike `t.countryside()`, this checks
   your location and excludes generated countryside, including the outer part of a

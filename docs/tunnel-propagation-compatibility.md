@@ -18,10 +18,14 @@ The adjoining bridge sampler at 95% also became NaN.
 
 ## Component selection
 
-Harmonic propagation is now limited to components whose source ways are all bridges
-and whose provided anchors are finite. Components containing a tunnel, or any
-non-finite anchor, use the original two-nearest-anchor propagation for the whole
-component. This preserves one model at shared bridge/tunnel nodes and keeps supported
+Harmonic propagation is now limited to components whose provided anchors are
+finite. Components with any non-finite anchor use the original two-nearest-anchor
+propagation for the whole component. (Until 18 November 2026 components containing
+a tunnel did too, whatever their anchors. Past the cover rule's pins both nearest
+anchors lay by one portal, so each half of the Strahov tunnel ran level from its own
+portal and the halves met in a ramp of 103 % under Strahov, where players got stuck.
+`TUNNELS_HARMONIC` in `structures.py` now gives such components the harmonic solve;
+0 brings the old selection back to compare.) This preserves one model at shared bridge/tunnel nodes and keeps supported
 interiors where the two nearer anchors are known. Unknown heights remain unknown.
 
 Selection records every non-bridge way's membership when constructing `Net`, including

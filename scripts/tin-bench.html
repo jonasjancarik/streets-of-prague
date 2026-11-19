@@ -1,0 +1,67 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Mesh triangulation bench</title>
+<pre id="out">running…</pre>
+<script type="module">
+// How long the game takes to make a tile's ground from its mesh file (src/tin.ts):
+// unpacking, decoding, triangulating with the breaklines kept, the sampler's index, and
+// the shading texture drawn from it (all on the main thread when a tile loads).
+// ?map=ujezd-lidar&runs=3; &check compares the shading with every texel read the slow way. scripts/tin-bench.mjs opens it on a phone over adb.
+import { buildTin, decodeTin, tinSampler } from '/src/tin.ts';
+import { tinRelief } from '/src/tiles.ts';
+import { DataUtils } from 'three';
+const fromHalf = (v) => DataUtils.fromHalfFloat(v);
+const q = new URLSearchParams(location.search), map = q.get('map') ?? 'ujezd-lidar', runs = Number(q.get('runs') ?? 3), check = q.has('check');
+const index = await fetch(`/data/${map}_now/index.json`).then((r) => r.json());
+const files = [];
+for (const k of index.tin.tiles) {
+  const t = await fetch(`/data/${map}_now/tiles/${k}.json`).then((r) => r.json());
+  let raw = await fetch(`/data/${map}_now/tiles/${k}.tin.bin.gz`).then((r) => r.arrayBuffer());
+  // (The dev server sends .gz files as Content-Encoding: gzip and the browser unpacks them;
+  // the live site doesn't, and the game unpacks them itself. Packed again here, untimed.)
+  if (!isGzip(raw)) raw = await pipe(raw, new CompressionStream('gzip'));
+  files.push({ k, box: t.box, raw });
+}
+function isGzip(buf) { const b = new Uint8Array(buf, 0, Math.min(3, buf.byteLength)); return b[0] === 0x1f && b[1] === 0x8b && b[2] === 8; }
+function pipe(buf, stream) { return new Response(new Blob([buf]).stream().pipeThrough(stream)).arrayBuffer(); }
+const unzip = (buf) => pipe(buf, new DecompressionStream('gzip'));
+const rows = files.map(({ k }) => ({ k, unzip: [], decode: [], build: [], sampler: [], shading: [] }));
+for (let r = 0; r < runs; r++) for (const [n, f] of files.entries()) {
+  let t0 = performance.now();
+  const buf = await unzip(f.raw);
+  let t1 = performance.now(); rows[n].unzip.push(t1 - t0); t0 = t1;
+  const file = decodeTin(buf, f.box);
+  t1 = performance.now(); rows[n].decode.push(t1 - t0); t0 = t1;
+  const mesh = buildTin(file);
+  t1 = performance.now(); rows[n].build.push(t1 - t0); t0 = t1;
+  const { sample, labelAt } = tinSampler(mesh, 0, () => 0);
+  t1 = performance.now(); rows[n].sampler.push(t1 - t0); t0 = t1;
+  const tex = tinRelief(mesh, sample, labelAt, f.box).texture;
+  t1 = performance.now(); rows[n].shading.push(t1 - t0);
+  if (check && r === 0) {
+    // Against every texel read through the sampler, as the shading was drawn before.
+    const t2 = performance.now();
+    const slow = tinRelief(mesh, sample, labelAt, f.box, 1, false).texture, a = tex.image.data, b = slow.image.data;
+    rows[n].slowShading = +(performance.now() - t2).toFixed(1);
+    let off = 0, worst = 0;
+    for (let q = 0; q < a.length; q++) {
+      const e = Math.abs(fromHalf(a[q]) - fromHalf(b[q]));
+      if (e > 0.01) off++;
+      worst = Math.max(worst, e);
+    }
+    rows[n].texels = a.length; rows[n].off = off; rows[n].worst = +worst.toFixed(3);
+    slow.dispose();
+  }
+  tex.dispose();
+  rows[n].points = file.xy.length; rows[n].triangles = mesh.tri.length / 3;
+}
+const med = (a) => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)];
+const out = rows.map((r) => ({ k: r.k, points: r.points, triangles: r.triangles, unzip: +med(r.unzip).toFixed(1), decode: +med(r.decode).toFixed(1), build: +med(r.build).toFixed(1), sampler: +med(r.sampler).toFixed(1), shading: +med(r.shading).toFixed(1),
+  ...(check ? { slowShading: r.slowShading, texels: r.texels, off: r.off, worst: r.worst } : {}) }));
+const total = (f) => +out.reduce((a, r) => a + r[f], 0).toFixed(0);
+const all = out.map((r) => r.unzip + r.decode + r.build + r.sampler + r.shading).sort((a, b) => a - b);
+window.__result = { map, tiles: out.length, runs, ua: navigator.userAgent, cores: navigator.hardwareConcurrency,
+  total: { unzip: total('unzip'), decode: total('decode'), build: total('build'), sampler: total('sampler'), shading: total('shading') },
+  perTile: { median: +all[Math.floor(all.length / 2)].toFixed(1), max: +all[all.length - 1].toFixed(1) }, rows: out };
+document.getElementById('out').textContent = JSON.stringify(window.__result, null, 1);
+</script>

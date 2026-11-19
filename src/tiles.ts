@@ -10,6 +10,7 @@ import { TreePool } from './trees.ts';
 import { groundStairs, stairLandings } from './map/stairs.ts';
 import { powerMesh, readPowerGrid, type PowerGrid } from './map/powerGrid.ts';
 import { Surfaces } from './surface.ts';
+import { buildTin, decodeTin, tinGrid, tinNearSteps, tinSampler, TIN_FORMAT, type TinFile, type TinMesh } from './tin.ts';
 import { shadeBuildings, shadeLandmark, cutAway, broad, ROOF_CLUTTER, roadRasterEnabled } from './shading.ts';
 import { loadFacadeAtlas } from './facades.ts';
 import type { Footprint } from './facades.ts';
@@ -217,6 +218,52 @@ function relief(buffer: ArrayBuffer, bareBuffer: ArrayBuffer | null, box: Bounds
     tex.needsUpdate = true;
   };
   return { texture: tex, box: [x0 - half, y0 - half, x0 + (n - 1) * step + half, y0 + (n - 1) * step + half], sample: heightSampler(hm, box, n, step, labels, terraceAt(terraces), flatTerraces(terraces, ref), stepLineIndex(stepLines, ref, lineReach(step), unit)), hm, labels, edges };
+}
+
+// Trial (tin.ts): the hill shading from the TIN, a texel a metre, each texel's slope on
+// its own side of a step.
+// The hill shade of a tile drawn from its mesh: each texel lit by the slope across it,
+// the heights half a texel either side of its middle, across and along, read on the side
+// its middle lies on. Those points make three grids, which tinGrid fills in one pass
+// over the triangles each. Where a texel's points don't all lie in triangles of its
+// side, or near a wall or the water's edge, where the sampler reads the step's line
+// rather than the triangles (and past the tile's edge), it reads them from the sampler,
+// as every texel did before (`fast` false: all of them, for checking).
+export function tinRelief(mesh: TinMesh, sample: (x: number, y: number, side?: number | boolean) => number, labelAt: (x: number, y: number) => number, box: Bounds, res = 1, fast = true) {
+  const [x0, y0, x1] = box, m = Math.round((x1 - x0) / res) + 1, d = res / 2;
+  const L = [-110, 80, 190], ll = Math.hypot(...L), lx = L[0] / ll, ly = L[1] / ll, lz = L[2] / ll;
+  const px = new Uint16Array(m * m);
+  const mid = fast ? tinGrid(mesh, 0, 0, m, m, res) : null;
+  const across = fast ? tinGrid(mesh, -d, 0, m + 1, m, res) : null; // (i - ½, j): texel i has i and i + 1
+  const along = fast ? tinGrid(mesh, 0, -d, m, m + 1, res) : null; // (i, j - ½): texel j has j and j + 1
+  const lab = mesh.labels, walls = fast ? tinNearSteps(mesh, m, res, 0.3 + d) : null;
+  for (let j = 0; j < m; j++) for (let i = 0; i < m; i++) {
+    const x = x0 + i * res, y = y0 + j * res;
+    let dx = NaN, dy = NaN;
+    const c = mid ? mid.tri[j * m + i] : -1, s = c >= 0 ? lab[c] : -1;
+    if (c >= 0 && across && along && !walls![j * m + i]) {
+      const w = j * (m + 1) + i, e = w + 1, n0 = j * m + i, n1 = n0 + m;
+      const tw = across.tri[w], te = across.tri[e], ts = along.tri[n0], tn = along.tri[n1];
+      if (tw >= 0 && te >= 0 && ts >= 0 && tn >= 0 && lab[tw] === s && lab[te] === s && lab[ts] === s && lab[tn] === s) {
+        dx = (across.h[e] - across.h[w]) / (2 * d);
+        dy = (along.h[n1] - along.h[n0]) / (2 * d);
+      }
+    }
+    if (!(Number.isFinite(dx) && Number.isFinite(dy))) {
+      const s = labelAt(x, y), side = s >= 0 ? s : false;
+      dx = (sample(x + d, y, side) - sample(x - d, y, side)) / (2 * d);
+      dy = (sample(x, y + d, side) - sample(x, y - d, side)) / (2 * d);
+    }
+    const ok = Number.isFinite(dx) && Number.isFinite(dy);
+    const nl = Math.hypot(ok ? dx : 0, ok ? dy : 0, 1);
+    const lit = ok ? (-dx * lx - dy * ly + lz) / nl / lz : 1;
+    const shade = Math.round(128 * Math.max(0.55, Math.min(1.35, 1 + 1.1 * (lit - 1)))) / 127.5;
+    px[j * m + i] = THREE.DataUtils.toHalfFloat(shade * broad(x, y));
+  }
+  const tex = new THREE.DataTexture(px, m, m, THREE.RedFormat, THREE.HalfFloatType);
+  tex.magFilter = tex.minFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  return { texture: tex, box: [x0 - res / 2, y0 - res / 2, x0 + (m - 1) * res + res / 2, y0 + (m - 1) * res + res / 2] };
 }
 
 const shadowerBox = new WeakMap<Shadower, Bounds>();
@@ -526,6 +573,8 @@ export class TileWorld {
   private roadProfiles: Promise<ReturnType<typeof readRoadProfile>> | null;
   private stationTracks: Promise<ReturnType<typeof readStationTracks>> | null;
   private stepLines: boolean;
+  private tins: Promise<Set<string>> | null;
+  private tinJson: boolean;
   private bridgeSurfacePreview: Promise<ReturnType<typeof readBridgeSurfacePreview>> | null;
   grid: {
     res: number; height: (x: number, y: number) => number; at: (x: number, y: number) => number;
@@ -548,6 +597,11 @@ export class TileWorld {
     const station = area === 'praha' && query.has('stationtracks');
     // ?lines=off: a map's step lines (pipeline/step_lines.py, a trial) left out, to compare.
     this.stepLines = query.get('lines') !== 'off';
+    // The tiles whose ground is a mesh (tin.ts): those index.json lists, or the trial copy's
+    // (?area=walls-tin). ?tin=off: the lattice everywhere, to compare.
+    this.tinJson = !index.tin && area.startsWith('walls-tin');
+    this.tins = query.get('tin') === 'off' ? null : index.tin?.format === TIN_FORMAT ? Promise.resolve(new Set(index.tin.tiles))
+      : this.tinJson ? fetch(dataUrl(area, 'tin/index.json')).then((r) => (r.ok ? r.json() as Promise<string[]> : [])).then((k) => new Set(k)).catch(() => new Set<string>()) : null;
     this.bridgeSurfacePreview = (query.has('bridgesurfaces') || station) ? fetch(dataUrl(area, 'bridge-surfaces.json'))
       .then(async (r) => r.ok ? readBridgeSurfacePreview(await r.json(), area, index.built) : null)
       .catch(() => null) : null;
@@ -1343,6 +1397,21 @@ export class TileWorld {
     const shared = !!terrain && Math.abs((terrain.n - 1) * terrain.step - (x1 - x0)) < 0.01;
     const around = shared ? (di: number, dj: number) => this.byIndex.get((t.i + di) * 65536 + t.j + dj)?.relief?.hm ?? null : null;
     const shade = height && terrain ? relief(height, bare, t.box, terrain.n, terrain.step, this.ref, around, t.terraces, terrain.unit, this.stepLines ? t.stepLines : undefined) : null;
+    let tin: TinMesh | null = null;
+    if (shade && this.tins && (await this.tins).has(k)) {
+      const file = this.tinJson ? await fetch(dataUrl(this.area, `tin/${k}.json`)).then((r) => (r.ok ? r.json() as Promise<TinFile> : null))
+        : await fetchBinary(dataUrl(this.area, `tiles/${k}.tin.bin.gz`), true).then((b) => (b ? decodeTin(b, t.box) : null));
+      if (file) {
+        const t1 = performance.now();
+        tin = buildTin(file);
+        const { sample, labelAt } = tinSampler(tin, this.ref, shade.sample);
+        shade.sample = sample;
+        shade.texture.dispose();
+        Object.assign(shade, tinRelief(tin, sample, labelAt, t.box), { edges: () => {} });
+        ((globalThis as unknown as { __tin?: unknown[] }).__tin ??= []).push({ k, triangles: tin.tri.length / 3, kept: tin.kept, lost: tin.lost, ms: Math.round(performance.now() - t1), texture: (shade.texture.image as { width: number }).width });
+        console.info(`tin ${k}: ${tin.tri.length / 3} triangles, steps kept ${tin.kept}, lost ${tin.lost}, ${Math.round(performance.now() - t1)} ms`);
+      }
+    }
     const pilot = this.roadProfiles && this.available.has(k) && shade ? await this.roadProfiles : null;
     const roadProfile = pilot?.tiles.includes(k) ? pilot.profile : undefined;
     if (shade && roadProfile) shade.sample = withRoadProfile(shade.sample, roadProfile, this.ref);
@@ -1353,7 +1422,7 @@ export class TileWorld {
     if (shade && surfaces) shade.sample = withRoadSurfaces(shade.sample, surfaces, this.ref, terraceAt(t.terraces));
     const hAt = shade ? shade.sample : () => 0;
     const ground = shade && terrain ? { hm: shade.hm, box: t.box, n: terrain.n, step: terrain.step, labels: shade.labels,
-      terraces: t.terraces, stepLines: this.stepLines ? t.stepLines : undefined, unit: terrain.unit, ref: this.ref, ...(roadProfile ? { roadProfile } : {}), ...(surfaces ? { roadSurfaces: surfaces } : {}) } : null;
+      terraces: t.terraces, stepLines: this.stepLines ? t.stepLines : undefined, unit: terrain.unit, ref: this.ref, ...(roadProfile ? { roadProfile } : {}), ...(surfaces ? { roadSurfaces: surfaces } : {}), ...(tin ? { tin } : {}) } : null;
     // Bridges above the ground and tunnels below it, each level with its own heights.
     // (Charles Bridge's cutwaters come off its deck.)
     const structures = clipDecks(t.structures || [], this.charles.piers, t.box);

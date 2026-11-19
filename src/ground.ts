@@ -359,6 +359,7 @@ function subdivide(pos: number[], idx: number[], extra: number[] | null, max: nu
 
 // Set while a Surfaces is being built: terrain height (m) at a point, or null for flat.
 let groundHeight: HeightAt | null = null;
+let groundMax = 8; // m: the longest edge of the ground's triangles (finer on a TIN tile, tin.ts)
 // Set while the ground of a tile with steps in it is built (banks, retaining walls: see
 // pointLabels in terrain.ts): the label of the side a point is on (the water, a terrace
 // or the plain ground), and the outlines the steps run along. Every layer is cut along
@@ -394,7 +395,7 @@ function cutAtSteps(pos: number[], idx: number[], extra: number[] | null, at: (x
   const sideAt = (i: number) => (side[i] ??= at(pos[i * 3], -pos[i * 3 + 2]));
   const crossesStep = (i: number, j: number, d2: number) => d2 > STEP_FINE * STEP_FINE && sideAt(i) !== sideAt(j);
   const refine = refineRoads ? (i: number, j: number, d2: number) => crossesStep(i, j, d2) || refineRoads(i, j, d2) : crossesStep;
-  idx = subdivide(pos, idx, extra, 8, refine);
+  idx = subdivide(pos, idx, extra, groundMax, refine);
   return cutTerrainSteps(pos, idx, extra, at, stepIndex!);
 }
 
@@ -445,7 +446,7 @@ function finish(pos: number[], idx: number[], extra: number[] | null = null, ras
     const refine = !afloat && (roadBoxes || refineRaster)
       ? (i: number, j: number, d2: number) => refineRoad(pos, i, j, d2) || !!refineRaster?.(i, j, d2) : null;
     if (sideOf && !afloat) ({ pos, idx, side, extra } = cutAtSteps(pos, idx, extra, sideOf, refine));
-    else idx = subdivide(pos, idx, extra, 8, refine);
+    else idx = subdivide(pos, idx, extra, groundMax, refine);
     if (groundBox) ({ pos, idx, extra, side } = conformTerrainEdges(pos, idx, extra, side, groundBox, STEP_FINE));
     for (let i = 0, k = 0; i < pos.length; i += 3, k++) pos[i + 1] = groundHeight(pos[i], -pos[i + 2], afloat ? WATER : side ? side[k] : false);
   }
@@ -473,7 +474,7 @@ function finish(pos: number[], idx: number[], extra: number[] | null = null, ras
 //
 // `steps`: the terrain knows the steps in it (the tile's terraces; its water is in `d`),
 // so the layers are cut along them and the steps get walls (see `sideOf`).
-export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [], parkingZones = [], height = null, levels = null, steps = null, roadProfile, roadSurfaceBoxes, paint = true, rasterRoads = false }: {
+export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [], parkingZones = [], height = null, levels = null, steps = null, roadProfile, roadSurfaceBoxes, paint = true, rasterRoads = false, fine }: {
   box: Bounds; edges?: GroundRoadEdge[]; buildings?: { rings: Point2[][] }[];
   parkingZones?: (string | null)[]; height?: HeightAt | null; levels?: GroundLevel[] | null; steps?: Terrace[] | null;
   // false: no lane lines (see TILE_LOOK in tiles.ts)
@@ -481,8 +482,10 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
   roadProfile?: RoadProfile;
   roadSurfaceBoxes?: Bounds[];
   rasterRoads?: boolean;
+  fine?: number;
 }): GroundResult {
   paintRoads = paint;
+  groundMax = fine ?? 8;
   // The steps in the terrain: which side a point is on, and their outlines (stepEdges.ts).
   const sides = height ? stepSides(steps, d.areas.water ?? []) : null;
   const at: typeof sideOf = sides?.at ?? null, outlines = sides?.outlines ?? [];

@@ -259,11 +259,12 @@ def main():
                   N, T, step, gx0, gy0, ti, tj, args.tiles,
                   [LineString(way["pts"]).buffer(way["w"] / 2) for way in ways if way["kind"] == "bridge" and len(way["pts"]) > 1],
                   ipr_lidar.sampler(ipr_lidar.CACHE, local)[0] if args.step_lines_scan or args.wall_walk else None,
-                  args.wall_walk, ids, soft)
+                  args.wall_walk, ids, soft,
+                  ipr_lidar.sampler(ipr_lidar.CACHE, local)[0] if step_lines.STRAIGHT_CROWN else None)
     print(f"{len(tiles)} tiles round {ti}_{tj} in {time.perf_counter() - started:.0f} s")
 
 
-def write_map(out, built, tiles, labels, terraces, found, steep, tile_water, boxes, streets, N, T, step, gx0, gy0, ti, tj, reach, decks=(), scan_at=None, wall_walk=False, ids=None, soft=None):
+def write_map(out, built, tiles, labels, terraces, found, steep, tile_water, boxes, streets, N, T, step, gx0, gy0, ti, tj, reach, decks=(), scan_at=None, wall_walk=False, ids=None, soft=None, crown_at=None):
     """A map folder for the offline checks: the window's tiles as built here (their
     heights and labels, bridge and tunnel levels, terraces and step lines, as
     ipr_terrain.main and layers.assemble write them), and a ring of tiles round them and
@@ -282,6 +283,18 @@ def write_map(out, built, tiles, labels, terraces, found, steep, tile_water, box
     if scan_at is not None:
         own = step_lines.walk_reader(own, scan_at, decks) if wall_walk else step_lines.scan_reader(own, scan_at, decks)
     driven = step_lines.crossing(list(streets.values()), decks)
+    lines_at = {}
+    for key in tiles:
+        if terraces.get(key):
+            own.home = key
+            got = step_lines.for_tile(boxes[key].bounds, tile_water.get(key, []), terraces[key], own, driven, (soft or {}).get(key))
+            if got:
+                lines_at[key] = got
+    own.home = None
+    if step_lines.STRAIGHT_TOPS:
+        lattice = (tiles, labels, N, T, step, gx0, gy0) if step_lines.STRAIGHT_FILL else None
+        walls, metres, raised = step_lines.straight_tops(lines_at, ids or {}, {k: boxes[k].bounds for k in lines_at}, lattice, driven, crown_at)
+        print(f"  straight tops: {walls} stretches of wall, {metres:.0f} m moved, {raised} lattice points raised")
     for i in range(ti - reach - 1, ti + reach + 2):
         for j in range(tj - reach - 1, tj + reach + 2):
             k = f"{i}_{j}"
@@ -308,10 +321,8 @@ def write_map(out, built, tiles, labels, terraces, found, steep, tile_water, box
                 print(f"  note: tile {k} has other bridge and tunnel levels here than in the built map ({was}); its streets' levels are the built map's")
             if terraces.get((i, j)):
                 t["terraces"] = terraces[(i, j)]
-                own.home = (i, j)
-                lines = step_lines.for_tile(boxes[(i, j)].bounds, tile_water.get((i, j), []), terraces[(i, j)], own, driven, (soft or {}).get((i, j)))
-                if lines:
-                    t["stepLines"] = lines
+                if lines_at.get((i, j)):
+                    t["stepLines"] = lines_at[(i, j)]
             (out / "tiles" / f"{k}.json").write_text(layers.dumps(t))
     for name in ("index.json", "road-profile.json"):
         if (built / name).exists() and not (out / name).exists():

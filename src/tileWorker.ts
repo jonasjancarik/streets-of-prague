@@ -32,6 +32,7 @@ import { skyView } from './map/skyView.ts';
 import { stepEdges, stampEdges, parapetArrays } from './stepEdges.ts';
 import type { StepEdge } from './stepEdges.ts';
 import type { Bounds, Point2 } from './map/geo.ts';
+import { tinSampler } from './tin.ts';
 import type { HeightGrid, BuildingArrays, LandResult, TreeTrunk, WorkerJobs, WorkerRequest, WorkerResponse } from './contracts.ts';
 
 type LandData = WorkerJobs['land']['data'];
@@ -83,7 +84,8 @@ function groundAt(g: HeightGrid | null) {
   if (!g) return () => 0;
   const ref = g.ref ?? 0;
   const base = heightSampler(g.hm, g.box, g.n, g.step, g.labels, terraceAt(g.terraces), flatTerraces(g.terraces, ref), stepLineIndex(g.stepLines, ref, lineReach(g.step), g.unit));
-  const profiled = withRoadProfile(withRamps(base, g.ramps, ref), g.roadProfile, ref);
+  const own = g.tin ? tinSampler(g.tin, ref, base).sample : base;
+  const profiled = withRoadProfile(withRamps(own, g.ramps, ref), g.roadProfile, ref);
   return withRoadSurfaces(profiled, g.roadSurfaces, ref, g.roadSurfaces ? terraceAt(g.terraces) : null);
 }
 
@@ -442,7 +444,7 @@ worker.onmessage = async (event: MessageEvent<unknown>) => {
         const { d, ground, levels, ...opts } = event.data.data;
         const started = performance.now();
         const result = groundLayers(d, {
-          ...opts, height: ground ? groundAt(ground) : null, roadProfile: ground?.roadProfile,
+          ...opts, height: ground ? groundAt(ground) : null, roadProfile: ground?.roadProfile, fine: ground?.tin ? 2 : undefined,
           roadSurfaceBoxes: ground?.roadSurfaces?.map((p) => p.box),
           steps: ground?.labels ? ground.terraces ?? [] : null,
           levels: levels ? levels.map((l) => ({ level: l.level, kind: l.kind, polys: l.polys, height: groundAt(l.heights) })) : null,

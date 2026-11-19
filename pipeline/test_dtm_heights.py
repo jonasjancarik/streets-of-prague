@@ -293,7 +293,10 @@ class DeckKerbTests(unittest.TestCase):
         lines = [[(2, 20, 200), (62, 20, 200)], [(2, 44, 200), (62, 44, 200)],
                  [(28, 2, 209), (28, 62, 209)], [(36, 2, 209), (36, 62, 209)]]
         flat = lambda xs, ys, reach: (np.full(len(xs), 200.0, dtype=np.float32), np.full(len(xs), 200.0, dtype=np.float32))  # noqa: E731
-        with patch.object(dh, 'survey', return_value=([box(2, 2, 62, 62)], [np.array(c, float) for c in lines], [])):
+        # (One surface with its kerbs across its middle, more than SURVEY_REACH from many of
+        # its points: here they're its own, not across a wall, so no reach.)
+        with patch.object(dh, 'survey', return_value=([box(2, 2, 62, 62)], [np.array(c, float) for c in lines], [])), \
+                patch.object(dh, 'SURVEY_REACH', 1e9), patch.object(dh, 'SURVEY_GONE', 2e9):
             out = dh.apply('test', None, Identity(), tiles, 16, 4.0, 0, 0, None, boxes, bridges=bridges,
                            scan=flat if scan else None, level_across=False, bridge_ends=ends)
         return tiles[0, 0], out
@@ -508,6 +511,42 @@ class LidarGroundTests(unittest.TestCase):
     def test_a_deck_s_kerbs_over_a_street_are_not_its_height(self):
         # (The railway over Čuprova.)
         self.assertAlmostEqual(float(self.build(200.0, deck=209.0)[8, 8]), 200.0, delta=0.01)
+
+
+class BelowAWallTests(unittest.TestCase):
+    """A surveyed surface that reaches over a retaining wall (the Strahov tunnel's exit
+    under Patočkova): its kerbs at 206 m along y = 42 and up its sides, on the terrace
+    the scan has from y = 38; south of that the scan has the road below the wall, 200 m."""
+
+    def build(self, scan, ends=()):
+        tiles = {(0, 0): np.full((17, 17), 200.0, dtype=np.float32)}
+        boxes = {(0, 0): box(0, 0, 64, 64)}
+        lines = [[(2, 30, 206), (2, 42, 206), (62, 42, 206), (62, 30, 206)]]
+
+        def terrace(xs, ys, reach):
+            ys = np.asarray(ys)
+            lo = np.where(ys - reach >= 38, 206.0, 200.0).astype(np.float32)
+            hi = np.where(ys + reach >= 38, 206.0, 200.0).astype(np.float32)
+            return lo, hi
+        with patch.object(dh, 'survey', return_value=([box(2, 30, 62, 42)], [np.array(c, float) for c in lines], [])):
+            out = dh.apply('test', None, Identity(), tiles, 16, 4.0, 0, 0, None, boxes,
+                           scan=terrace if scan else None, level_across=False, no_feather=True,
+                           bridge_ends=ends)
+        return tiles[0, 0], out
+
+    def test_the_ground_below_the_wall_is_the_scan_s(self):
+        before, _ = self.build(scan=False)
+        after, out = self.build(scan=True)
+        self.assertGreater(float(before[8, 8]), 205.0)  # (32, 32): the kerbs' height
+        self.assertGreater(out['below_wall'], 0)
+        self.assertAlmostEqual(float(after[8, 8]), 200.0, delta=0.01)
+        self.assertGreater(float(after[10, 8]), 205.0)  # (32, 40): on the terrace, the survey's
+
+    def test_not_by_a_bridge_s_end(self):
+        # A bridge coming down at (32, 30): the scan's road there is under its deck.
+        after, _ = self.build(scan=True, ends=[(32.0, 30.0)])
+        self.assertGreater(float(after[8, 8]), 205.0)
+        self.assertAlmostEqual(float(after[8, 4]), 200.0, delta=0.01)  # (16, 32): 16 m from it
 
 
 if __name__ == '__main__':

@@ -33,6 +33,8 @@ from scipy.spatial import Delaunay, cKDTree
 HERE = Path(__file__).resolve().parent
 NEAR_LINE = 0.35  # m: grid samples this close to a step are on it, not on either side
 SNAP = 0.01  # m: points closer than this are one
+DUP = 0.1  # m: a step this close all along to one already taken is the same wall
+MAX_SPLITS = 40  # rounds of splitting a step segment the triangulation misses at its midpoint
 
 
 def load(target: Path, k: str):
@@ -48,6 +50,20 @@ def load(target: Path, k: str):
         pieces.append(lines[at:at + m])
         at += m
     return meta, heights, sides, paved, pieces
+
+
+def load_kerbs(target: Path, k: str) -> list[np.ndarray]:
+    """The kerbs tin_tiles.py put beside the target: runs of (x, y, h, h, side, side)."""
+    f = target / f"{k}.kerbs.bin"
+    if not f.exists():
+        return []
+    lengths = json.loads((target / f"{k}.json").read_text()).get("kerbs", [])
+    rows = np.frombuffer(f.read_bytes(), np.float32).reshape(-1, 6).astype(np.float64)
+    out, at = [], 0
+    for m in lengths:
+        out.append(rows[at:at + m])
+        at += m
+    return out
 
 
 def runs(piece: np.ndarray):
@@ -141,13 +157,36 @@ def build(target: Path, k: str, tol: float, loose: float | None = None):
     gy = np.where(np.arange(ny) == ny - 1, y1, y0 + np.arange(ny) * g)
     P = Points()
 
+    def side_at(x, y):
+        """The target's side label at points (its nearest sample)."""
+        i = np.clip(np.round((np.asarray(x) - x0) / g).astype(int), 0, nx - 1)
+        j = np.clip(np.round((np.asarray(y) - y0) / g).astype(int), 0, ny - 1)
+        return sides[j, i].astype(int)
+
     # The steps.
     steps = []  # [run, kept sample indices, vertex ids]
+    # The same wall can come twice, once from each side's outline (labels swapped) with
+    # its own samples; the two copies cross each other in a zigzag and can't both be edges.
+    seen: dict[tuple[int, int], list[cKDTree]] = {}
     for piece in pieces:
         for run in runs(piece):
+            lr = (int(run[0, 4]), int(run[0, 5]))
+            twin = seen.get((lr[1], lr[0]), []) + seen.get(lr, [])
+            if any(np.all(t.query(run[:, :2])[0] < DUP) for t in twin):
+                continue
+            seen.setdefault(lr, []).append(cKDTree(run[:, :2]))
+            # (Every point with the run's two sides: its last is where the labels change,
+            # and with its own labels a wall's last point had one side, the plain ground's.)
+            run = run.copy()
+            run[:, 4], run[:, 5] = lr
             kept = thin(run, tol)
-            ids = [P.add(run[i, 0], run[i, 1], {int(run[i, 4]): run[i, 2], int(run[i, 5]): run[i, 3]}, 1) for i in kept]
+            ids = [P.add(run[i, 0], run[i, 1], {lr[0]: run[i, 2], lr[1]: run[i, 3]}, 1) for i in kept]
             steps.append([run, kept, ids])
+    # The kerbs: breaklines with one height (the same side either way).
+    for run in load_kerbs(target, k):
+        kept = thin(run, tol)
+        ids = [P.add(run[i, 0], run[i, 1], {int(run[i, 4]): run[i, 2]}, 1) for i in kept]
+        steps.append([run, kept, ids])
     line_xy = np.concatenate([r[:, :2] for r, _, _ in steps]) if steps else np.zeros((0, 2))
 
     # The tile's edges: the grid's outer rows and columns, thinned between the corners and
@@ -182,7 +221,7 @@ def build(target: Path, k: str, tol: float, loose: float | None = None):
     fx, fy, fh, fs, ft = sx[free], sy[free], sh[free], ss[free], st[free]
     near = ~free
 
-    rounds = 0
+    rounds = splits = 0
     while True:
         rounds += 1
         xy = np.asarray(P.xy)
@@ -198,17 +237,30 @@ def build(target: Path, k: str, tol: float, loose: float | None = None):
             run, kept, ids = st
             nk, nids = [kept[0]], [ids[0]]
             for (ka, ia), (kb, ib) in zip(zip(kept, ids), zip(kept[1:], ids[1:])):
-                if ia != ib and (min(ia, ib), max(ia, ib)) not in edges and kb - ka > 1:
-                    m = (ka + kb) // 2
-                    nk.append(m)
-                    nids.append(P.add(run[m, 0], run[m, 1], {int(run[m, 4]): run[m, 2], int(run[m, 5]): run[m, 3]}, 1))
-                    missing += 1
+                if ia != ib and (min(ia, ib), max(ia, ib)) not in edges:
+                    if kb - ka > 1:
+                        m = (ka + kb) // 2
+                        nk.append(m)
+                        nids.append(P.add(run[m, 0], run[m, 1], {int(run[m, 4]): run[m, 2], int(run[m, 5]): run[m, 3]}, 1))
+                        missing += 1
+                    elif splits < MAX_SPLITS:
+                        # (No sample left between: the midpoint, its heights halfway.)
+                        (xa, ya), (xb, yb) = P.xy[ia], P.xy[ib]
+                        ha, hb = P.h[ia], P.h[ib]
+                        hm = {s_: (ha[s_] + hb[s_]) / 2 if s_ in hb else ha[s_] for s_ in ha}
+                        hm.update({s_: v for s_, v in hb.items() if s_ not in hm})
+                        mid = P.add((xa + xb) / 2, (ya + yb) / 2, hm, 1)
+                        if mid not in (ia, ib):
+                            nk.append(ka)
+                            nids.append(mid)
+                            missing += 1
                 nk.append(kb)
                 nids.append(ib)
             st[1], st[2] = nk, nids
         if missing:
+            splits += 1
             continue
-        labels = label_triangles(tri, P, steps)
+        labels = label_triangles(tri, P, steps, side_at)
         err, where, wrong = errors(tri, P, labels, fx, fy, fh, fs)
         over = err - ft
         bad = np.flatnonzero(over > 0)
@@ -227,7 +279,7 @@ def build(target: Path, k: str, tol: float, loose: float | None = None):
                 near=int(near.sum()), near_err=near_err, near_wrong=int(near_wrong))
 
 
-def label_triangles(tri: Delaunay, P: Points, steps) -> np.ndarray:
+def label_triangles(tri: Delaunay, P: Points, steps, side_at=None) -> np.ndarray:
     """Each triangle's side: from the steps' segments it touches, then flooded across the
     edges that aren't steps; failing those, from a vertex with only one side."""
     simp, nb = tri.simplices, tri.neighbors
@@ -252,6 +304,13 @@ def label_triangles(tri: Delaunay, P: Points, steps) -> np.ndarray:
                 if labels[t] < 0:
                     labels[t] = s[0] if left else s[1]
                     q.append(t)
+    if side_at is not None:
+        # (No triangle crosses a step, so the side at its middle is its side; the flood
+        # below leaked through gaps in the outlines and put water on the land's side.)
+        free = labels < 0
+        mid = xy[simp[free]].mean(axis=1)
+        labels[free] = side_at(mid[:, 0], mid[:, 1])
+        return labels
     for t, vs in enumerate(simp):
         if labels[t] >= 0:
             continue
@@ -336,8 +395,145 @@ def encode(res) -> dict[str, int]:
                      np.diff(np.r_[0, qy.astype(np.int32)]).astype(np.int16).tobytes(),
                      qh.tobytes(), idx.tobytes(), labels.astype(np.uint8).tobytes(),
                      np.asarray(pairs, np.uint16).tobytes()])
-    return dict(vertices=len(V), triangles=len(simp), steps=len(pairs), raw=len(body),
-                gz=len(gzip.compress(body, 9)), body=body)
+    # Points only: the game triangulates them itself (the steps' segments are Delaunay
+    # edges already, the conforming split put in the points that make them so), and
+    # floods the labels from the steps. A vertex once, with a second height where it is
+    # on a step; the steps as runs of vertex indices.
+    order = np.lexsort((np.asarray(P.xy)[:, 0], np.asarray(P.xy)[:, 1]))
+    rank = np.empty(len(order), np.int64)
+    rank[order] = np.arange(len(order))
+    XY = np.asarray(P.xy)[order]
+    px = np.round((XY[:, 0] - x0) * 100).astype(np.int64)
+    py = np.round((XY[:, 1] - y0) * 100).astype(np.int64)
+    lo2 = min(min(h.values()) for h in P.h)
+    first = np.array([round((next(iter(P.h[v].values())) - lo2) * 100) for v in order], np.int64)
+    second = [round((list(P.h[v].values())[1] - lo2) * 100) if len(P.h[v]) > 1 else -1 for v in order]
+    second = np.array([v for v in second if v >= 0], np.uint16)
+    runs_ix = np.concatenate([np.r_[len(vids), rank[np.asarray(vids)]] for run, kept, vids in res["steps"]]) if res["steps"] else np.zeros(0, np.int64)
+    pts = b"".join([np.diff(np.r_[0, py]).astype(np.int32).tobytes(), np.diff(np.r_[0, px]).astype(np.int32).tobytes(),
+                    first.astype(np.uint16).tobytes(), second.tobytes(), runs_ix.astype(np.uint16).tobytes()])
+    return dict(vertices=len(V), points=len(P.xy), triangles=len(simp), steps=len(pairs), raw=len(body),
+                gz=len(gzip.compress(body, 9)), gz_points=len(gzip.compress(pts, 9)), body=body)
+
+
+FORMAT = 1
+
+
+def write(res) -> bytes:
+    """A tile's mesh file (tiles/<k>.tin.bin.gz once gzipped), little-endian. The game
+    builds the triangles itself (src/tin.ts): the fit's breakline segments are Delaunay
+    edges already, its conforming split put in the points that make them so.
+
+    Header (44 bytes): b"TIN1", u16 FORMAT, u16 flags (1: point ids are u32), f32 x0 y0 x1
+    y1 (the tile's box in the map's metres), f32 base (the lowest height, m a.s.l.), u32
+    points, u32 extra heights, u32 breaklines, u32 point ids in the breaklines.
+    Then, the points sorted by y and x: u16 x across the box (0 its west edge, 65535 its
+    east), u16 y the same but as the difference from the point before; u16 the first
+    height in cm above base; u8 its side (0 plain ground, 1 water, 2 and up the tile's
+    terraces); u8 how many more sides the point has (on a wall: the other side's height).
+    Then those extra heights, u16 cm above base each, and their sides, u8 each.
+    Then the breaklines: u16 points in each, u8 its left side and u8 its right (the same
+    for a kerb), and the point ids, one line after another (u16, or u32 with flag 1)."""
+    P = res["P"]
+    x0, y0, x1, y1 = res["meta"]["box"]
+    xy = np.asarray(P.xy)
+    qx = np.clip(np.round((xy[:, 0] - x0) / (x1 - x0) * 65535), 0, 65535).astype(np.int64)
+    qy = np.clip(np.round((xy[:, 1] - y0) / (y1 - y0) * 65535), 0, 65535).astype(np.int64)
+    order = np.lexsort((qx, qy))
+    rank = np.empty(len(order), np.int64)
+    rank[order] = np.arange(len(order))
+    base = min(min(h.values()) for h in P.h)
+    hs = [sorted(P.h[v].items()) for v in order]
+    first_h = np.array([round((x[0][1] - base) * 100) for x in hs], np.int64)
+    first_s = np.array([x[0][0] for x in hs], np.int64)
+    more = np.array([len(x) - 1 for x in hs], np.int64)
+    extra = [(s_, round((v - base) * 100)) for x in hs for s_, v in x[1:]]
+    if first_h.max(initial=0) > 65535 or max((e for _, e in extra), default=0) > 65535:
+        raise ValueError("heights span more than 655 m")
+    if max(first_s.max(initial=0), max((s_ for s_, _ in extra), default=0)) > 255:
+        raise ValueError("more than 256 sides")
+    lines = []
+    for run, kept, ids in res["steps"]:
+        seq = [int(rank[v]) for i, v in enumerate(ids) if i == 0 or v != ids[i - 1]]
+        if len(seq) >= 2:
+            lines.append((int(run[0, 4]), int(run[0, 5]), seq))
+    wide = len(order) > 65535
+    idt = np.uint32 if wide else np.uint16
+    nid = sum(len(q) for _, _, q in lines)
+    head = b"TIN1" + np.array([FORMAT, 1 if wide else 0], np.uint16).tobytes() + \
+        np.array([x0, y0, x1, y1, base], np.float32).tobytes() + \
+        np.array([len(order), len(extra), len(lines), nid], np.uint32).tobytes()
+    body = [qx[order].astype(np.uint16).tobytes(), np.diff(np.r_[0, qy[order]]).astype(np.uint16).tobytes(),
+            first_h.astype(np.uint16).tobytes(), first_s.astype(np.uint8).tobytes(), more.astype(np.uint8).tobytes(),
+            np.array([e for _, e in extra], np.uint16).tobytes(), np.array([s_ for s_, _ in extra], np.uint8).tobytes(),
+            np.array([len(q) for _, _, q in lines], np.uint16).tobytes(),
+            np.array([[l, r] for l, r, _ in lines], np.uint8).reshape(-1).tobytes(),
+            np.array([v for _, _, q in lines for v in q], idt).tobytes()]
+    return head + b"".join(body)
+
+
+def game_labels(tri: Delaunay, P: Points, steps) -> np.ndarray:
+    """Each triangle's side as the game finds it (src/tin.ts), without the side lattice:
+    a triangle with a breakline for an edge is on the side of it it lies on (of two such
+    edges, the side all its corners have wins); else the side of a corner with one side;
+    the rest (all its corners on breaklines, as across a narrow arm of water) from its
+    neighbours, flooding across the edges that aren't breaklines; failing that, the side
+    its corners share."""
+    xy = np.asarray(P.xy)
+    simp, nb = tri.simplices, tri.neighbors
+    seg = {}
+    for run, kept, ids in steps:
+        for ia, ib in zip(ids, ids[1:]):
+            if ia != ib:
+                seg[(ia, ib)] = (int(run[0, 4]), int(run[0, 5]))
+                seg[(ib, ia)] = (int(run[0, 5]), int(run[0, 4]))
+    out = np.full(len(simp), -1)
+    for t, vs in enumerate(simp):
+        got = None
+        for u, v, w in ((vs[0], vs[1], vs[2]), (vs[1], vs[2], vs[0]), (vs[2], vs[0], vs[1])):
+            s_ = seg.get((u, v))
+            if s_ is None:
+                continue
+            d, e = xy[v] - xy[u], xy[w] - xy[u]
+            side = s_[0] if d[0] * e[1] - d[1] * e[0] > 0 else s_[1]
+            if got is None:
+                got = side
+            if all(side in P.h[x] for x in vs):
+                got = side
+                break
+        if got is None:
+            got = next((next(iter(P.h[v])) for v in vs if len(P.h[v]) == 1), None)
+        if got is not None:
+            out[t] = got
+    q = deque(np.flatnonzero(out >= 0).tolist())
+    while q:
+        t = q.popleft()
+        for m in range(3):
+            o = nb[t, m]
+            if o < 0 or out[o] >= 0:
+                continue
+            u, v = [simp[t, x] for x in range(3) if x != m]
+            if (u, v) in seg:
+                continue
+            out[o] = out[t]
+            q.append(o)
+    for t in np.flatnonzero(out < 0):
+        common = set(P.h[simp[t, 0]]) & set(P.h[simp[t, 1]]) & set(P.h[simp[t, 2]])
+        out[t] = min(common) if common else 0
+    return out
+
+
+def label_check(res) -> tuple[int, float]:
+    """Triangles the game's rule (game_labels) puts on another side than the fit did, and
+    their area in m² (the flat ones along the tile's edge, which Delaunator doesn't make,
+    left out)."""
+    tri, P, labels = res["tri"], res["P"], res["labels"]
+    got = game_labels(tri, P, res["steps"])
+    xy = np.asarray(P.xy)[tri.simplices]
+    d1, d2 = xy[:, 1] - xy[:, 0], xy[:, 2] - xy[:, 0]
+    area = np.abs(d1[:, 0] * d2[:, 1] - d1[:, 1] * d2[:, 0]) / 2
+    off = (got != labels) & (area > 1e-6)
+    return int(off.sum()), float(area[off].sum())
 
 
 def main():
@@ -347,12 +543,13 @@ def main():
     ap.add_argument("--loose", type=float, help="the tolerance off paved ground (default: --tol)")
     ap.add_argument("--tiles")
     ap.add_argument("--out")
+    ap.add_argument("--target", help="the folder tin-target.mjs wrote (default .cache/tin/target)")
     a = ap.parse_args()
-    target = HERE / ".cache/tin/target" / a.area
+    target = (Path(a.target) if a.target else HERE / ".cache/tin/target") / a.area
     out = Path(a.out) if a.out else HERE / ".cache/tin" / a.area
     out.mkdir(parents=True, exist_ok=True)
     keys = a.tiles.split(",") if a.tiles else sorted(p.stem for p in target.glob("*.json"))
-    total, rows = dict(vertices=0, triangles=0, gz=0, seconds=0.0), []
+    total, rows = dict(vertices=0, points=0, triangles=0, gz=0, gz_points=0, seconds=0.0), []
     for k in keys:
         t0 = time.time()
         res = build(target, k, a.tol, a.loose)
