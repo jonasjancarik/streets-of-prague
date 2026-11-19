@@ -99,8 +99,9 @@ export class LifeSize {
 
   private async load() {
     this.state = 'loading';
+    let ktx2: KTX2Loader | undefined;
     try {
-      const ktx2 = new KTX2Loader().setTranscoderPath('rocketbox/');
+      ktx2 = new KTX2Loader().setTranscoderPath('rocketbox/');
       ktx2.detectSupport(this.renderer as never);
       const loader = new GLTFLoader().setKTX2Loader(ktx2).setMeshoptDecoder(MeshoptDecoder);
       const byName = readClips(await (await fetch('rocketbox/clips.bin')).arrayBuffer());
@@ -130,7 +131,42 @@ export class LifeSize {
     } catch (e) {
       console.warn('Life-size people could not load', e);
       this.state = 'failed';
+    } finally {
+      ktx2?.dispose(); // (its decoding workers: everything's decoded by now)
     }
+  }
+
+  // Not in the middle of loading (so dispose() leaves nothing behind).
+  get idle() { return this.state !== 'loading'; }
+
+  // Lets go of the avatars, their clips and textures, and stops offering to draw anyone.
+  dispose() {
+    if (LIFE_SIZE.claim) LIFE_SIZE.claim = null;
+    this.group.removeFromParent();
+    const textures = new Set<THREE.Texture>();
+    const seen = new Set<object>();
+    const free = (o: THREE.Object3D) => o.traverse((m) => {
+      if (!(m instanceof THREE.Mesh)) return;
+      if (m.geometry !== PHONE && !seen.has(m.geometry)) { seen.add(m.geometry); m.geometry.dispose(); }
+      for (const mat of Array.isArray(m.material) ? m.material : [m.material]) {
+        if (mat === PHONE_LOOK || seen.has(mat)) continue;
+        seen.add(mat);
+        for (const v of Object.values(mat)) if (v instanceof THREE.Texture) textures.add(v);
+        mat.dispose();
+      }
+    });
+    for (const k of this.kinds) free(k.template);
+    for (const t of textures) t.dispose();
+    for (const p of [...this.live.values(), ...this.spare.flat()]) {
+      p.mixer.uncacheRoot(p.root);
+      p.root.traverse((m) => { if (m instanceof THREE.SkinnedMesh) m.skeleton.dispose(); });
+    }
+    this.umbrellas.dispose();
+    this.umbrellas.geometry.dispose();
+    (this.umbrellas.material as THREE.Material).dispose();
+    this.kinds = [];
+    this.live.clear();
+    this.spare = [];
   }
 
   // A person in the crowd, as they're drawn: true if they're shown life size instead.

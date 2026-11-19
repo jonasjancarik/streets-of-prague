@@ -1171,8 +1171,12 @@ record the measurements, merge decisions and pending landmark asset activation.
   anyone with their umbrella up holds it in the left hand, with Rocketbox's umbrella clip
   standing and that clip's left arm over the walk when moving.
   Only the crowd's people, and only while they walk, jog, run or stand: falling, fleeing,
-  getting up, police, couriers and riders stay the usual figures. The files (about 18 MB,
-  in `public/rocketbox/`) load the first time first person is on. `?rocketbox=0` keeps the
+  getting up, police, couriers and riders stay the usual figures. Their code (with the
+  texture and mesh decoders only they use) and the files (about 18 MB, in `public/rocketbox/`)
+  load the first time first person is on (`src/lifesize.ts` imports `src/rocketbox.ts`
+  then), and two minutes after leaving first person, paused or not, they're freed again
+  (`freeAfter`); the next look from the street loads them from the browser's cache
+  (`scenarios/life-size-lazy.ts`). `?rocketbox=0` keeps the
   usual figures, to compare (`window.__drive.lifeSize.enabled` from a script or `bench.mjs --ab`).
   Rebuild with `assets/rocketbox/build.sh`; the avatars' list is in both it and `AVATARS`.
   The clips are read from Rocketbox's original FBX files and moved onto the avatars' own

@@ -23,7 +23,7 @@ import { Car, TYPES, CarPool, collideBodies, contact, loadCars, ordinaryCarBodie
 import { CarOutline } from './carOutline.ts';
 import { RestingCars } from './restingCars.ts';
 import { loadKit, FIGURE_SIZE, SCALE, WARDROBE } from './figures.ts';
-import { LifeSize } from './rocketbox.ts';
+import { LifeSize } from './lifesize.ts';
 import { Traffic, trafficWanted, type TrafficAgent } from './traffic.ts';
 import { roadHint } from './roadLevels.ts';
 import { preparePeople, pickPerson } from './spawn.ts';
@@ -292,7 +292,7 @@ async function main() {
   renderer.domElement.addEventListener('webglcontextlost', () => telemetry.error('graphics lost', 'WebGL context lost'));
 
   const scene = new THREE.Scene();
-  // First person: life-size people near you (rocketbox.ts), loaded the first time it's on.
+  // First person: life-size people near you (lifesize.ts, rocketbox.ts), loaded the first time it's on.
   const lifeSize = new LifeSize(scene, renderer);
   // (?rocketbox=0 keeps the usual figures, to compare.)
   lifeSize.enabled = params.get('rocketbox') !== '0';
