@@ -370,6 +370,12 @@
       .ls-update[hidden] { display: none; }
       .ls-warn { margin: calc(0.8 * var(--u)) 0 0; padding-left: 0.8em; border-left: 0.3em solid #e2342b; font-size: 0.9em; line-height: 1.4; color: var(--poster-paper); }
       .ls-warn[hidden] { display: none; }
+      /* The test version (beta.streetsofprague.com, src/testversion.ts): where the regular game is, and what's new here. */
+      .ls-test { margin: calc(0.8 * var(--u)) 0 0; padding: 0.5em 0.8em; border-left: 0.3em solid var(--poster-paper); background: rgba(20, 13, 12, 0.75); font-size: 0.9em; line-height: 1.35; letter-spacing: 0.06em; color: var(--poster-paper); }
+      .ls-test p { margin: 0; }
+      .ls-test a { color: inherit; text-underline-offset: 0.2em; }
+      .ls-test button { margin-top: 0.3em; font: inherit; letter-spacing: inherit; color: inherit; background: none; border: 0; padding: 0; text-decoration: underline; text-underline-offset: 0.25em; cursor: pointer; }
+      .ls-test button.new::after { content: ''; display: inline-block; width: 0.45em; height: 0.45em; margin: 0 0 0.15em 0.4em; border-radius: 50%; background: #e2342b; vertical-align: middle; }
       .slow-hint { top: calc(max(12px, env(safe-area-inset-top)) + 52px); right: max(12px, env(safe-area-inset-right)); z-index: 6; width: min(460px, calc(100vw - 32px)); box-sizing: border-box; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; padding: 14px 16px; font: 15px/1.4 Inter, system-ui, sans-serif; color: var(--ink); }
       .slow-hint p { margin: 0; align-self: stretch; }
       button.ls-news { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.25em; cursor: pointer; }
@@ -520,6 +526,11 @@
       .corner { position: fixed; top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); z-index: 4; display: flex; gap: 6px; }
       .corner-btn { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; color: var(--ink); background: var(--paper); border: 1px solid rgba(236, 228, 214, 0.3); box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.3); cursor: pointer; opacity: 0.8; -webkit-tap-highlight-color: transparent; }
       .corner-btn[hidden] { display: none; }
+      .corner-test { width: auto; padding: 0 10px; font: 16px/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; border-left: 3px solid var(--ink); opacity: 0.85; }
+      .news.test-notes ul { margin: 0 0 14px; padding-left: 1.2em; color: var(--ink); }
+      .news.test-notes li + li { margin-top: 6px; }
+      .news.test-notes ul[hidden] { display: none; }
+      .news.test-notes a { color: var(--ink); }
       .corner-feedback { width: auto; display: flex; align-items: center; gap: 6px; padding: 0 10px 0 8px; font: 16px/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; border-left: 3px solid var(--edge); opacity: 0.95; }
       /* Only a phone-sized screen gets the bare icon; a tablet has room for the word. */
       @media (max-width: 640px) {

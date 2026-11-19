@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { defineConfig } from 'vite';
 import { runningBench } from './scripts/game-lock.mjs';
+import { betaNotes } from './scripts/beta-notes.mjs';
 
 // The dev server listens on every interface (package.json); these are the names it
 // may be reached by besides localhost and IP addresses: the machine's .local name on
@@ -84,9 +85,12 @@ const version = git('describe --tags --always --dirty') || 'dev';
 // passes that version's name. Elsewhere the panel shows the day the map was built.
 const data = process.env.VITE_DATA_VERSION ?? '';
 const built = new Date().toISOString().slice(0, 10);
+// The beta's deploy scripts build with VITE_CHANNEL=beta, and the beta carries its notes on
+// what differs from the regular game (scripts/beta-notes.mjs, src/testversion.ts).
+const notes = process.env.VITE_CHANNEL === 'beta' ? betaNotes().notes : null;
 
 export default defineConfig({
-  define: { __APP_VERSION__: JSON.stringify(version), __APP_BUILT__: JSON.stringify(built), __DATA_VERSION__: JSON.stringify(data) },
+  define: { __APP_VERSION__: JSON.stringify(version), __APP_BUILT__: JSON.stringify(built), __DATA_VERSION__: JSON.stringify(data), __BETA_NOTES__: JSON.stringify(notes) },
   server: {
     allowedHosts,
     // Other checkouts of the game live under .claude/worktrees, each with a dev server

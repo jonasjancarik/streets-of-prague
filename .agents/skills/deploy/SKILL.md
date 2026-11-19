@@ -56,6 +56,17 @@ It builds the current commit and deploys it as the assets-only Worker
 (about 1.4 GB, some minutes), and an interrupted one is finished by running it again.
 `--dry-run` uploads and builds but deploys nothing.
 
+**Notes for the beta.** The beta calls itself the test version: its start screen links to
+the regular game and lists what's different, from `deploy/beta-notes.json`. Before each
+beta deploy, run `node scripts/beta-notes.mjs` (the deploy scripts run it too, and only
+warn). It prints the commits since the last release. Rewrite them as a few short lines
+for players, in `en` and `cs`, about what they'll see or feel in the game, not how it was
+built ("Helicopters fly over Prague, and you can land on roofs", not "Add helicopter
+system"). Leave out fixes nobody would notice. Set `"after"` to the latest release tag
+the script names, commit the file, then deploy. Notes written after an older release, or
+a beta that is the release itself, show no list, only the link to the regular game, so a
+release needs no clean-up.
+
 `scripts/deploy-mbxp.sh` deploys to mbxp as before, but beta.streetsofprague.com is a
 Worker custom domain now and doesn't reach it; the handbook's "Deploying" says how to
 point the address back.

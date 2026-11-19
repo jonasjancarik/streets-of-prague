@@ -3,6 +3,7 @@ import { getLang, onLang, t } from './i18n.ts';
 import { privacyLink } from './credits.ts';
 import { el, sheet, trapField, postForm, humanCheck } from './newsletter.ts';
 import { graphicsReport } from './graphicswarning.ts';
+import { TEST_VERSION } from './testversion.ts';
 
 declare const __APP_VERSION__: string; // set by vite.config.js
 declare const __APP_BUILT__: string;
@@ -64,7 +65,7 @@ const FAILED = 'Sending didn\'t work this time. Please try again later.';
 
 function context(extra: () => string) {
   const lines = [
-    `Version ${__APP_VERSION__} · ${__APP_BUILT__} · map data ${__DATA_VERSION__ || 'local'}`,
+    `Version ${__APP_VERSION__} · ${__APP_BUILT__} · map data ${__DATA_VERSION__ || 'local'}${TEST_VERSION ? ' · test version (beta)' : ''}`,
     `Page: ${location.origin}${location.pathname} · language ${getLang()}`,
     `Browser: ${navigator.userAgent}`,
     `Window: ${innerWidth}×${innerHeight} at ${devicePixelRatio}x${matchMedia('(pointer: coarse)').matches ? ' · touch' : ''}`,

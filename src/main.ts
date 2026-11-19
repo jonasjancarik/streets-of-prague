@@ -1667,7 +1667,7 @@ async function main() {
   onLang(labelMap);
   mapButton.addEventListener('click', () => { mapButton.blur(); void openMap(); });
   const cornerBox = document.querySelector('.corner');
-  cornerBox?.insertBefore(mapButton, cornerBox.querySelector('.corner-btn:not(.corner-feedback)'));
+  cornerBox?.insertBefore(mapButton, cornerBox.querySelector('.corner-btn:not(.corner-feedback):not(.corner-test)'));
   $('nav').addEventListener('click', () => { void openMap(); });
   // The small map in the corner; a click opens the big one.
   const minimap = new Minimap($('minimap') as HTMLCanvasElement, drive, (x, y, r) => edgesNear(x, y, r));

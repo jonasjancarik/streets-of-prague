@@ -22,6 +22,9 @@ PORT=3017
 cd "$(dirname "$0")/.."
 git diff --quiet HEAD || { echo "Commit your changes first." >&2; exit 1; }
 SHA=$(git rev-parse HEAD)
+# The beta is the test version, with notes on what differs from the regular game.
+node scripts/beta-notes.mjs
+export VITE_CHANNEL=beta
 
 # --cloudflare-map: the beta reads the map production serves (deploy/data-version, from
 # data.streetsofprague.com) instead of one sent from here: no map goes to mbxp, which is

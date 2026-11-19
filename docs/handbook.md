@@ -2009,6 +2009,18 @@ statistics go to production's Worker, as mbxp's do. The hostname is a Worker cus
 domain now; to send it back to mbxp, remove the custom domain and recreate the proxied
 CNAME to the tunnel, `9e92b145-1491-421a-942e-b33e6cb89a09.cfargotunnel.com`.
 
+Both beta scripts build with `VITE_CHANNEL=beta`, which makes the game the test version
+(`src/testversion.ts`): its start screen says the regular game is at
+play.streetsofprague.com and has a "What's new here" sheet, a "Test version" button in
+the game's corner opens the same sheet, and feedback messages say they came from it.
+The list in the sheet is `deploy/beta-notes.json` (English and Czech lines, and `after`,
+the release they were written after), baked into the build by `vite.config.js` through
+`scripts/beta-notes.mjs`. The list is left out when `after` isn't the latest release or
+when the beta is that release itself; running the script prints the notes, the commits
+since the release and a warning when the notes are missing or behind. A list the player
+hasn't opened yet has a red dot. To see it locally, run the dev server with
+`VITE_CHANNEL=beta`.
+
 The main site serves the app as Worker static assets, with a small Worker for the
 newsletter signup, the feedback form and the statistics (below). That Worker answers at
 <https://play.streetsofprague.com> and at <https://streetsofprague.com>, and

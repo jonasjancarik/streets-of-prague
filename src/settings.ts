@@ -18,6 +18,7 @@ import type { TouchDrive } from './touch.ts';
 import { TUNNEL_VIEWS, tunnelView, setTunnelView } from './tunnelView.ts';
 import type { TunnelView } from './tunnelView.ts';
 import { feedbackLink, feedbackOpen } from './feedback.ts';
+import { testVersionButton } from './testversion.ts';
 import { apple, install, installWay, onInstallChange } from './install.ts';
 import { LEVELS, difficulty, setDifficulty } from './difficulty.ts';
 import type { Level } from './difficulty.ts';
@@ -310,6 +311,8 @@ export function setupSettings({ sound, graphics, weather, saves }: {
     relabel.push(() => { ask.innerHTML = `${icon(BUBBLE)}<span>${t('Feedback')}</span>`; ask.title = ask.ariaLabel = t('Send feedback'); });
     ask.addEventListener('click', () => { ask.blur(); feedback(); });
   }
+
+  testVersionButton(corner);
 
   // On a phone the credits live here (their corner has these buttons now).
   const credits = el('button', 'settings-credits', box) as HTMLButtonElement;

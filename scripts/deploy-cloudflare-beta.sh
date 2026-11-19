@@ -14,6 +14,9 @@ cd "$(dirname "$0")/.."
 [[ -z ${1:-} || ${1:-} == --dry-run ]] || { echo 'Usage: scripts/deploy-cloudflare-beta.sh [--dry-run]' >&2; exit 1; }
 git diff --quiet HEAD || { echo 'Commit your changes first.' >&2; exit 1; }
 echo "Deploying $(git describe --tags --always) to the beta on Cloudflare."
+# The beta is the test version, with notes on what differs from the regular game.
+node scripts/beta-notes.mjs
+export VITE_CHANNEL=beta
 
 node scripts/check-data-format.mjs public/data
 npm run typecheck

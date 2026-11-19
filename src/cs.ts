@@ -618,4 +618,11 @@ export const CS: Record<string, string> = {
   'privacy.feedback': 'Zpětná vazba, kterou pošleš, přijde autorovi e-mailem spolu s tvojí adresou, pokud ji uvedeš, s verzí hry, tvým prohlížečem a grafickou kartou a s místem, kde ve hře právě jsi. Slouží jen k opravám hry a k odpovědi tobě.',
   'privacy.contact': 'Hru vytvořil Jonáš Jančařík. Pokud chceš vědět, co se o tobě uchovává, nebo to nechat smazat, napiš na <a href="mailto:jonas@streetsofprague.com">jonas@streetsofprague.com</a>.',
   Close: 'Zavřít',
+  'What’s new in the test version': 'Co je nového v testovací verzi',
+  'This version has a few things the regular game doesn’t have yet:': 'Tahle verze má pár věcí, které běžná hra ještě nemá:',
+  'This version has the newest changes before the regular game gets them. They may not be finished.': 'Tahle verze dostává nejnovější změny dřív než běžná hra. Nemusí být hotové.',
+  'Things may break here more often. The regular game is at ': 'Něco se tu může rozbít častěji. Běžná hra je na ',
+  'This is the test version of the game. The regular game is at ': 'Tohle je testovací verze hry. Běžná hra je na ',
+  'What’s new here': 'Co je tu nového',
+  'Test version': 'Testovací verze',
 };
