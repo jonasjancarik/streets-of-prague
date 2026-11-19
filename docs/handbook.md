@@ -173,6 +173,7 @@ Graphics (<kbd>G</kbd> cycles it, remembered in the browser):
 | Sprays of leaves and needles on trees and shrubs seen from above | On | On | Off | Off | Off |
 | Shadows that soften with distance from what casts them | On | Off | Off | Off | Off |
 | A soft shade under every car | On | On | On | On | Off |
+| A person's shadow from the sun | Their own shape | Their own shape | Their own shape | A plain shape | A plain shape |
 | Maximum crowd | 1200 | 1200 | 1200 | 1200 | 600 |
 
 The sun shadow map covers just what is on screen, as the sun sees it, so shadows stay
@@ -690,7 +691,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   trail a wake (`src/webgpu/wake.ts`). On Ultra the sun's shadows go through a filter of our
   own (`src/webgpu/shadows.ts`): it reads how far above a pixel its caster stands and widens
   the edge by 3.6 cm a metre, so a shadow is sharp at the foot of a wall and soft across the
-  street (`?softshadows=on|off`).
+  street (`?softshadows=on|off`). On Low and Lowest a person's shadow is that of a plain
+  six-cornered shape as tall as they are, whatever they are doing, because a person's 506
+  vertices drawn again for the shadow map cost a phone about a millisecond a frame on a full
+  square (`PEOPLE_SHADOWS` in `src/figures.ts`; from the street people always cast their own
+  shape; `?peopleshadows=full|simple|none` chooses for one visit).
   At night a landmark is lit by the floodlights at its foot all the way up, fading towards
   its top, spires included (`TALL` in `src/webgpu/lamps.ts`; the floodlights themselves are
   the surveyed festive lighting). As in Prague, that lighting goes off at midnight and comes
