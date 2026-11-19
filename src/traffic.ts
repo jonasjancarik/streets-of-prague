@@ -626,12 +626,39 @@ export class Traffic {
       if (a.around) a.around = passingYou ? Math.max(a.around - dt, 1) : Math.max(0, a.around - dt);
       if (front?.around) a.around = Math.max(a.around ?? 0, Math.min(8, front.around + 3));
 
+      // Close behind the player, make room to turn before pulling out. Stay on this
+      // leg and check the rear of the car against the same obstacles as the front.
+      let retreat = 0;
+      if (still?.kind === 'player' && stillGap < 3.2 && Math.abs(want - a.off) > 0.3
+        && Math.abs(a.off) < 0.05 && a.speed < 0.3 && !c.two && !held) {
+        const back = Math.min(1.2 * dt, 3.2 - stillGap, a.route.s - a.route.leg.s0);
+        if (back > 0.001) {
+          const tail = c.offsets[0]; // rear-most collision circle
+          retreat = back;
+          for (let i = 0; i < found.length; i++) {
+            const o = found[i];
+            if (o.car === c || (o.z !== undefined && c.gz !== undefined && Math.abs(o.z - c.gz) > 3)) continue;
+            const dx = o.x - c.x, dy = o.y - c.y;
+            const along = dx * fx + dy * fy, side = dx * fy - dy * fx;
+            const r = c.r + o.r + 0.55;
+            if (along < tail && Math.abs(side) < r && tail - along < back + Math.sqrt(r * r - side * side)) {
+              retreat = 0;
+              break;
+            }
+          }
+        }
+        if (retreat || stillGap < 1.9) {
+          want = a.off;
+          target = 0;
+        }
+      }
+
       // (A bus picks up speed slowly.)
       const acc = target > a.speed ? (c.spec.heavy ? 1.2 : 3) : 9;
       // The brake lights: slowing down for something, or standing with a foot on the pedal.
       c.braking = target < a.speed - 0.4 || (a.speed < 0.3 && target < 0.3);
       a.speed += clamp(target - a.speed, -acc * dt, acc * dt);
-      const p = a.route.advance(a.speed * dt);
+      const p = a.route.advance(retreat ? -retreat : a.speed * dt);
       if (a.route.ended || (c.spec.heavy && c.type !== 'bus' && c.type !== 'minibus' && c.type !== 'garbage' && !lorryRoad(a.route.head))) { a.gone = true; continue; }
       const prevX = c.x, prevY = c.y;
       c.x = p.x;

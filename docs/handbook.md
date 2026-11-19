@@ -456,12 +456,19 @@ that without a new renderer.
   four stars they shoot out of the cars too. Gunshots send people running. Stay out of
   sight and the stars go one at a time; they blink while nobody can see you
   (`src/police.ts`, `src/helicopter.ts`).
-- **Your own helicopter.** One always stands on the lawn of Palackého náměstí: E gets
-  in, W/S fly, A/D turn, Space climbs, Shift comes down. Within 30 m of the ground
-  under a building the buildings are in the way (over a bridge's parapet, it's the river
-  below that counts); land on open ground to get out. Once it's been flown off, another is put
-  down there while the lawn is out of sight, and the oldest one left elsewhere out of
-  sight goes, so there are never more than four (`parkHelicopter` in `src/main.ts`).
+- **Your own helicopter.** Look for one in Zítkovy sady by Palackého náměstí,
+  on the school field at Na Vítězné pláni, and at hospitals and airfields across Prague.
+  The full list of landing spots is in `src/helipads.ts`. Press E to get in.
+  W/S fly, A/D turn, Space climbs and Shift comes down. Climb above a building’s roof to fly over it.
+  Land on open ground, a bridge deck or a flat or gently sloping roof and press E to
+  step out. Both skids need support. A pitched roof or an overhanging skid prevents
+  landing. In flight, press E to jump out, then hold Space to open your parachute
+  and steer with A/D. On a controller, press X then hold A. On touch, tap Jump out
+  then hold Jump. You can bail out after engine failure too. If you splash down,
+  you return to dry land. Impacts, gunfire and nearby vehicle explosions damage the aircraft.
+  At 100% damage the engine fails, and the helicopter explodes on impact. Once you
+  fly away from a pad, another helicopter can appear there when the pad is out of
+  sight. The game clears away older helicopters left elsewhere when they are out of view.
 - **Health.** Shots hurt you, far less in a car (the car takes most of it), and so
   does being run down, knocked over by a tram or thrown off a bike. A bar under the
   stars shows how much you have left once you're hurt, and it comes back by itself
@@ -1070,7 +1077,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   honks at you standing in its lane (the whole queue behind you joins in, later and
   less often; a cyclist rings the bell), after 5–10 s goes round you too, on whichever
   side has room and on through a junction the street crosses straight, with the queue
-  following, and gives way to the right (`src/traffic.ts`), and stops at red lights; pedestrians on the footpath network who round its
+  following. A car stopped close behind you backs up to make room to turn if the way
+  behind it is clear. Traffic gives way to the right (`src/traffic.ts`) and stops at red
+  lights; pedestrians on the footpath network who round its
   corners, step past parked cars and bikes in their way, leap out of the way of fast
   cars and get knocked over, then get up again (`src/people.ts`). Traffic and
   people live within about 330 m of the player.
@@ -1090,10 +1099,17 @@ record the measurements, merge decisions and pending landmark asset activation.
   tourists crowd.
 - **Bikes and motorbikes.** Cyclists and motorcyclists ride with the traffic, and bikes
   and motorbikes stand on the pavements around you: E gets you on one, and it leans
-  into the turns. Take one from someone riding it and they're pushed off (knocked
-  down if it was going), then run. Hit something hard and you're thrown off (a motorbike takes a harder knock than a bicycle). Get out of anything doing more than about 15 km/h (car, bike or tram) and you fall and get hurt. On foot,
+  into the turns. A collision that knocks a rider off or hits an unattended bike
+  leaves the bike lying on its side until someone gets on. Take one from someone
+  riding it and they're pushed off (knocked down if it was going), then run. Hit
+  something hard and you're thrown off (a motorbike takes a harder knock than a
+  bicycle). Get out of anything doing more than about 15 km/h (car, bike or tram)
+  and you fall and get hurt. On foot,
   Space jumps (not at a tram stop, where it waits for a tram); in the air, a car can't
-  knock you over. Jump at a car that's standing still and you climb onto it and can
+  knock you over. Move towards a bridge parapet, roof edge or steep drop and jump. Hold Space
+  (Jump on touch, A on a controller) during the fall to open a parachute. It stays
+  open until you land. Steer gently with A/D or the stick. If you land in the
+  river you return to where you jumped. Jump at a car that's standing still and you climb onto it and can
   walk over its bonnet, roof or boot and drop off the other side. If it drives off with
   you on top, you ride along until it goes faster than about 30 km/h and throws you off.
 - **Shared bikes.** Rows of bikes use real station locations, but fictional operator

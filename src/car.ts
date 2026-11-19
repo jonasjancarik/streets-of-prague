@@ -918,6 +918,8 @@ export class Car {
   touchDriving = false;
   rider: Look | null;
   lean: number;
+  // Which side an unmounted bike fell onto.
+  tipped?: -1 | 1;
   r: number;
   offsets: number[];
   samples: Point2[];
@@ -1636,6 +1638,7 @@ export class CarPool {
             d.position.set(c.x, 0, -c.y);
             d.rotation.set(-c.lean, c.h, 0, 'YZX');
           }
+          if (c.tipped) d.position.y += Math.abs(Math.sin(c.lean)) * c.spec.W / 2;
           d.updateMatrix();
           // Noted after the ground was sampled, which tracks the car (level, gz, …).
           if (keep) {
@@ -1713,7 +1716,8 @@ export class CarPool {
   lean(c: Car, dt: number) {
     const yaw = dt > 0 && c.lastH !== undefined ? Math.atan2(Math.sin(c.h - c.lastH), Math.cos(c.h - c.lastH)) / dt : 0;
     c.lastH = c.h;
-    const want = !c.rider && c.speed < 0.3 ? 0.2 : clamp(Math.atan((c.forwardSpeed * yaw) / 9.81), -0.7, 0.7);
+    const want = c.tipped ? c.tipped * Math.PI / 2
+      : !c.rider && c.speed < 0.3 ? 0.2 : clamp(Math.atan((c.forwardSpeed * yaw) / 9.81), -0.7, 0.7);
     c.lean += (want - c.lean) * Math.min(1, dt * 6);
   }
 

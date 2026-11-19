@@ -20,6 +20,7 @@ export default {
     await t.wait(2);
     t.check('the rider is off the bike', !c!.rider && c!.mode === 'loose', `mode ${c!.mode}, the car ${Math.round(Math.hypot(car.x - c!.x, car.y - c!.y) * 10) / 10} m from the bike at ${Math.round(car.speed * 3.6)} km/h, the bike turned ${Math.round((c!.h - car.h) * 180 / Math.PI)}°, damage ${Math.round(car.damage)}, at ${t.where().lat}, ${t.where().lon}`);
     t.check('the bike has lost its box', !c!.courier);
+    t.check('the bike falls onto its side', !!c!.tipped);
     t.check('the bag lies near the bike', t.bags().lying.length === 1);
     t.unhurt = false;
   },

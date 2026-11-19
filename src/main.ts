@@ -1,3 +1,4 @@
+import { ROOFTOP } from './roofSurface.ts';
 import { headingUpOn } from './headingup.ts';
 import { DATA_FORMAT, dataUrl, mapData } from './data.ts';
 import { ANYWHERE, anywhereIndex } from './countrysideTiles.ts';
@@ -88,11 +89,12 @@ import { Brigade } from './brigade.ts';
 import { Ambulances } from './ambulance.ts';
 import { Refuse } from './refuse.ts';
 import { Tracers, Health, MAX_HEALTH } from './guns.ts';
-import { trace, strike, assist as aimAssist, PACE, gunOn, setGun } from './pistol.ts';
+import { trace, strike, assist as aimAssist, DAMAGE, PACE, gunOn, setGun } from './pistol.ts';
 import { keyHelp, type HelpMode } from './keyhelp.ts';
 import type { Hit } from './pistol.ts';
 import { BURNING, Fires } from './fire.ts';
 import { Chopper, loadHelicopters } from './helicopter.ts';
+import { HELIPADS } from './helipads.ts';
 import { Boats } from './boats.ts';
 import { isMapIndex } from './contracts.ts';
 import type { MapIndex } from './contracts.ts';
@@ -509,7 +511,7 @@ async function main() {
   const boats = new Boats(scene, world, islands, undefined, river.fairway);
 
   // ---- Player ------------------------------------------------------------
-  const walker = new Walker(grid, kit);
+  const walker = new Walker(grid, kit, world, (helicopter) => showBanner(t(helicopter ? 'Back on dry land' : 'Back where you jumped after a splash')));
   scene.add(walker.mesh);
   // A courier's bag you've picked up rides on your back.
   const bags = new Bags(scene, (x, y) => ground(x, y));
@@ -534,7 +536,7 @@ async function main() {
   };
   standAtStart(sx, sy);
   let inCar: Car | null = null, inHeli: Chopper | null = null;
-  const choppers: Chopper[] = []; // helicopters you can fly (on Palackého náměstí, and from the developer tools)
+  const choppers: Chopper[] = []; // helicopters you can fly
   let height = 100;
   let heightWanted = height; // where the camera is heading (zooming out, speeding up)
   const camPos = new THREE.Vector3(walker.x, 0, -walker.y);
@@ -805,7 +807,11 @@ async function main() {
     if (ferries.me) { ferries.leave(); pid.leave(); }
     if (busRide.on) leaveBus();
     boats.me = null;
-    if (inHeli) enterOrExit();
+    if (inHeli) {
+      Object.assign(walker, { x: inHeli.x, y: inHeli.y, level: inHeli.level, gz: inHeli.z, _tx: inHeli.x, _ty: inHeli.y });
+      inHeli = null;
+      walker.sync();
+    }
     if (inCar) enterOrExit();
     walker.mesh.visible = true;
     walker.knock((seeded() - 0.5) * 2, (seeded() - 0.5) * 2);
@@ -849,7 +855,7 @@ async function main() {
       crowd.scare(from[0], from[1], 35);
       if (!hit) return;
       telemetry.did('shot by the police');
-      if (inCar) { inCar.damage += 6; hurt(inCar.two ? 10 : 3); } else hurt(inHeli ? 3 : 10);
+      if (inCar) { inCar.damage += 6; hurt(inCar.two ? 10 : 3); } else { inHeli?.hit(6); hurt(inHeli ? 3 : 10); }
       shake = Math.max(shake, 0.3);
     },
     // Officers on foot go round cars and trams (see obstacles below).
@@ -891,13 +897,14 @@ async function main() {
     // From the hand on foot, out of the window in a car.
     const off = inCar ? inCar.spec.W / 2 + 0.2 : 0.5, sx = me.x + lx * off, sy = me.y + ly * off;
     const base = ground(me.x, me.y, inCar || walker), z = base + (inCar ? inCar.spec.H * 0.8 : 1.3);
-    const hit = trace(sx, sy, h, { wall: (x, y) => grid.at(x, y) === 255, cars, trams: trams.bodies(me.x, me.y, 80).flatMap((b) => b.circles.map(([x, y]) => ({ x, y, r: 1.25 }))), skip: inCar });
+    const hit = trace(sx, sy, h, { wall: (x, y) => !inCar && walker.onRoof ? world.rooftopAt(x, y) > z : grid.at(x, y) === 255, cars, helicopters: choppers, z, trams: trams.bodies(me.x, me.y, 80).flatMap((b) => b.circles.map(([x, y]) => ({ x, y, r: 1.25 }))), skip: inCar });
     tracers.fire([sx, sy, z], [hit.x, hit.y, hit.car ? base + hit.car.spec.H * 0.6 : z - 0.2]);
     sound.shot(0, 0);
     crowd.scare(sx, sy, 45);
     crowd.scare(hit.x, hit.y, 12);
     police.crime('gunfire', sx, sy);
     telemetry.did('fired a gun');
+    hit.heli?.hit(DAMAGE);
     const c = hit.car;
     if (c) {
       strike(c, hit.x, hit.y);
@@ -1035,6 +1042,10 @@ async function main() {
       tileCars.delete(best); // it's yours now: it stays when its tile unloads
     }
     best.mode = 'player';
+    if (best.tipped) {
+      best.tipped = undefined;
+      best.lean = 0;
+    }
     // (A car taken from its driver also counts as the crime, in police.ts.)
     telemetry.did(`drove: ${VEHICLE_NAMES[best.type]?.toLowerCase() ?? 'car'}`);
     if (best.share) telemetry.did('rented a shared bike');
@@ -1056,6 +1067,7 @@ async function main() {
   // (`only`, for the test kit: into this car and nothing else that E could mean here.)
   let only: Car | null = null;
   const enterOrExit = (quick = true) => {
+    if (walker.flight) return;
     if (getIn.active) {
       if (!quick && getIn.walking) getIn.cancel();
       if (!quick) return;
@@ -1066,8 +1078,8 @@ async function main() {
     // On a bus: off now while it stands at a stop, else at the next one. Onto one standing at a stop.
     if (busRide.on) { if (busRide.canLeave()) leaveBus(); else busRide.off = true; return; }
     const bus = !only && !inCar && !inHeli && !ride.on && !boats.me && !funicular.me && !ferries.me ? busRide.boardable(walker.x, walker.y) : null;
-    if (bus) { busRide.board(bus, walker); pid.board(clock.t); return; }
-    if (!only && !inCar && !inHeli && !ride.on && !boats.me && !funicular.me && !ferries.me && taxi.enter()) return;
+    if (bus && !walker.onRoof) { busRide.board(bus, walker); pid.board(clock.t); return; }
+    if (!only && !inCar && !inHeli && !ride.on && !boats.me && !funicular.me && !ferries.me && !walker.onRoof && taxi.enter()) return;
     // On the funicular: off beside it, when it stands at a station.
     if (funicular.me) {
       const c = funicular.me;
@@ -1116,8 +1128,14 @@ async function main() {
       return;
     }
     if (inHeli) {
-      if (!inHeli.landed) return;
       const c = inHeli;
+      if (!c.landed) {
+        if (c.canBailOut) {
+          walker.jumpFromHelicopter(c);
+          inHeli = null;
+        }
+        return;
+      }
       // Out onto what it landed on (a bridge's deck, not the ground under it).
       const level = c.level, lx = -Math.sin(c.h), ly = Math.cos(c.h);
       Object.assign(walker, { x: c.x, y: c.y, _tx: c.x, _ty: c.y, level, gz: c.z });
@@ -1130,7 +1148,7 @@ async function main() {
       return;
     }
     if (!inCar) {
-      const heli = only ? undefined : choppers.find((c) => c.landed && Math.hypot(c.x - walker.x, c.y - walker.y) < 4);
+      const heli = only ? undefined : choppers.find((c) => Math.hypot(c.x - walker.x, c.y - walker.y) < 4 && Math.abs(c.z - walker.mesh.position.y) < 2.5 && c.landed);
       if (heli) {
         inHeli = heli;
         telemetry.did('flew a helicopter');
@@ -1149,6 +1167,7 @@ async function main() {
       if (!quick) fallOut(vx, vy);
       return;
     }
+    if (walker.onRoof) return;
     const boat = only ? null : boats.near(walker.x, walker.y, world.groundFor(walker, walker.x, walker.y) + walker.z + walker.perch);
     if (boat) {
       boats.me = boat;
@@ -1284,12 +1303,20 @@ async function main() {
   // Not while you're being arrested (or still coming round): your hands are up or cuffed.
   const interact = () => { if (!arrest.active && frozen <= 0) enterOrExit(false); };
 
+  // Keep a knocked-down bike on its side until someone picks it up.
+  const tipBike = (c: Car, dx: number, dy: number) => {
+    if (!c.two || c.tipped) return;
+    const across = dy * Math.cos(c.h) - dx * Math.sin(c.h);
+    c.tipped = (Math.abs(across) > 0.01 ? across : c.lean) < 0 ? -1 : 1;
+  };
+
   // A hard knock on a bike or motorbike throws you off it.
   const throwOff = () => {
     const c = inCar;
     if (!c) return;
     telemetry.did('thrown off a bike');
     enterOrExit();
+    if (inCar !== c) tipBike(c, c.vx, c.vy);
     hurt(Math.hypot(c.vx, c.vy) * 1.5);
     walker.knock(c.vx * 0.6, c.vy * 0.6);
     c.vx *= 0.4;
@@ -1300,7 +1327,9 @@ async function main() {
   // Whoever rides a bike or moped that's been hit hard goes over the handlebars, to the side
   // away from the blow, and runs once up again; a courier leaves the bag on the ground.
   const throwRider = (c: Car, vx: number, vy: number, hurt = 0) => {
-    if (!c.two || !c.rider) return;
+    if (!c.two) return;
+    tipBike(c, vx, vy);
+    if (!c.rider) return;
     const off = c.spec.W / 2 + 0.5;
     let lx = -Math.sin(c.h), ly = Math.cos(c.h);
     if (vx * lx + vy * ly < 0) { lx = -lx; ly = -ly; }
@@ -1330,6 +1359,8 @@ async function main() {
   // Jump anywhere in the area: load the tiles there first, then land on a pavement
   // (or on the road, if you're driving) and bring the traffic and people along.
   const teleportTo = async (x: number, y: number) => {
+    walker.endFlight();
+    walker.level = undefined; walker._tx = undefined;
     inspector.reset();
     if (ride.on) getOff();
     const who = inCar || inHeli || walker;
@@ -1359,6 +1390,11 @@ async function main() {
   const assist = new LaneAssist(drive, (x, y, r) => edgesNear(x, y, r));
   let assisted = false;
   // Developer tools: a helicopter on the nearest open ground, facing the way you do.
+  const heliSurface = (x: number, y: number, z: number) => {
+    const surface = world.landingAt(x, y, z);
+    if (!surface.level && world.waterAt(x, y)) return { ...surface, water: true, h: world.terrainAt(x, y, true) };
+    return surface;
+  };
   const addChopper = () => {
     const who = inCar || inHeli || walker;
     for (let r = 8; r < 80; r += 2) for (let a = 0; a < 12; a++) {
@@ -1366,29 +1402,10 @@ async function main() {
       let open = true;
       for (let dx = -5; dx <= 5 && open; dx += 1) for (let dy = -5; dy <= 5 && open; dy += 1) open = grid.at(x + dx, y + dy) === 0;
       if (!open) continue;
-      choppers.push(new Chopper(scene, grid, (x, y, z) => world.below(x, y, z), x, y, who.h, inHeli ? inHeli.z : ground(who.x, who.y, who) + 1));
+      choppers.push(new Chopper(scene, grid, heliSurface, (x, y) => world.rooftopAt(x, y), x, y, who.h, inHeli ? inHeli.z : ground(who.x, who.y, who) + 1));
       return true;
     }
     return false;
-  };
-  // A helicopter always stands on the lawn of Palackého náměstí, nose to the north, so
-  // there's one to find. Once it's been flown off, another is put down there while the
-  // lawn is out of sight, and the oldest one left elsewhere out of sight goes, so there
-  // are never more than a few.
-  let heliPad: [number, number] | null = null, padded = false;
-  const parkHelicopter = () => {
-    heliPad ??= dev.toLocal(14.4147706, 50.0722078);
-    const [x, y] = heliPad;
-    // (Not until its tile is here; after the first, not where you'd see it appear.)
-    if (grid.at(x, y) !== 0 || (padded && !offscreen(x, y))) return;
-    if (choppers.some((c) => Math.hypot(c.x - x, c.y - y) < 30)) return;
-    if (choppers.length >= 4) {
-      const old = choppers.findIndex((c) => c !== inHeli && offscreen(c.x, c.y));
-      if (old < 0) return;
-      choppers.splice(old, 1)[0].remove(scene);
-    }
-    choppers.push(new Chopper(scene, grid, (x, y, z) => world.below(x, y, z), x, y, Math.PI / 2));
-    padded = true;
   };
   // Developer tools: the nearest person on the pavement is left lying hurt (the ambulance comes).
   const hurtNearest = (grave = true) => {
@@ -1437,6 +1454,41 @@ async function main() {
     season: { day: () => season.day, set: (day) => season.set(day), label: () => season.label() },
     weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k, true); }, label: () => weather.name },
     reach: () => world.country?.box ?? null });
+  const helipads = HELIPADS.flatMap(({ at: [lat, lon], roof }) => {
+    const pos = dev.toLocal(lon, lat);
+    return pos ? [{ pos, roof, waiting: null as Chopper | null, served: false }] : [];
+  });
+  const parkHelicopters = () => {
+    for (const pad of helipads) {
+      const [x, y] = pad.pos;
+      if (pad.waiting && (pad.waiting === inHeli || pad.waiting.wrecked)) pad.waiting = null;
+      // Unused aircraft stream in with their pads. Aircraft the player takes
+      // stay where they were left until the world needs to clear them away.
+      if (!world.tileAt(x, y)) {
+        if (pad.waiting && offscreen(x, y)) {
+          choppers.splice(choppers.indexOf(pad.waiting), 1)[0].remove(scene);
+          pad.waiting = null;
+        }
+        pad.served = false;
+        continue;
+      }
+      if (pad.waiting || (pad.served && !offscreen(x, y))) continue;
+      const z = pad.roof ? world.rooftopAt(x, y) : world.terrainAt(x, y);
+      if (!Number.isFinite(z) || (!pad.roof && (grid.at(x, y) !== 0 || world.waterAt(x, y)))) continue;
+      const near = (c: Chopper, radius: number) => Math.hypot(c.x - x, c.y - y) < radius && Math.abs(c.z - z) < 4;
+      if (choppers.some((c) => !c.wrecked && near(c, 30))) continue;
+      const wreck = choppers.findIndex((c) => c.wrecked && c !== inHeli && near(c, 6));
+      if (wreck >= 0) choppers.splice(wreck, 1)[0].remove(scene);
+      pad.waiting = new Chopper(scene, grid, heliSurface, (x, y) => world.rooftopAt(x, y), x, y, Math.PI / 2, z);
+      choppers.push(pad.waiting);
+      pad.served = true;
+    }
+    const isWaiting = (c: Chopper) => helipads.some((pad) => pad.waiting === c);
+    if (choppers.filter((c) => !isWaiting(c)).length > 4) {
+      const old = choppers.findIndex((c) => c !== inHeli && offscreen(c.x, c.y) && !isWaiting(c));
+      if (old >= 0) choppers.splice(old, 1)[0].remove(scene);
+    }
+  };
   // ---- Saved games (save.ts) ---------------------------------------------
   // The game saves itself into the "auto" slot every few seconds and when the page is
   // left; a refresh then offers to continue from there (see `resume`). Test runs (?go)
@@ -1792,6 +1844,8 @@ async function main() {
         const d = Math.hypot(p.x - x, p.y - y) || 1;
         return [((p.x - x) / d) * v, ((p.y - y) / d) * v] as const;
       };
+      const altitude = ground(x, y, c);
+      for (const heli of choppers) heli.hit(120 * Math.max(0, 1 - Math.hypot(heli.x - x, heli.y - y, heli.z - altitude) / BLAST));
       const d = Math.hypot(x - px(), y - py());
       sound.boom(d, x - px());
       hapticBlast(d);
@@ -2066,7 +2120,30 @@ async function main() {
     }
     // In the helicopter Space climbs and Shift comes down.
     const heliTurn = inHeli && ctl.aim ? clamp(turnOf(inHeli.h, ctl.aim.h) * 1.2, -1, 1) : ctl.turn;
-    for (const c of choppers) c.update(dt, c === inHeli ? { move: ctl.move, turn: heliTurn, up: ctl.brake, down: ctl.run } : null);
+    for (const c of choppers) {
+      if (!c.update(dt, c === inHeli ? { move: ctl.move, turn: heliTurn, up: ctl.brake, down: ctl.run } : null)) continue;
+      const distance = Math.hypot(c.x - px(), c.y - py(), c.z - (inHeli?.z ?? walker.flight?.height ?? ground(px(), py(), inCar || walker)));
+      fires.fireball(c.x, c.y, c.z + 0.6);
+      sound.boom(distance, c.x - px());
+      hapticBlast(distance);
+      shake = Math.max(shake, 1.4 * 30 / (30 + distance));
+      if (c === inHeli) {
+        Object.assign(walker, { x: c.x, y: c.y, level: c.level, gz: c.z, _tx: c.x, _ty: c.y });
+        walker.mesh.visible = true;
+        inHeli = null;
+        walker.sync();
+      }
+      hurt(MAX_HEALTH * Math.max(0, 1 - distance / BLAST));
+      for (const other of choppers) if (other !== c) {
+        const d = Math.hypot(other.x - c.x, other.y - c.y, other.z - c.z);
+        other.hit(120 * Math.max(0, 1 - d / BLAST));
+      }
+      for (const car of carsNear(c.x, c.y, BLAST)) {
+        const d = Math.hypot(car.x - c.x, car.y - c.y, ground(car.x, car.y, car) - c.z);
+        car.damage += 120 * Math.max(0, 1 - d / BLAST);
+        fires.check(car);
+      }
+    }
 
     const movers = moverList;
     movers.length = 0;
@@ -2077,7 +2154,7 @@ async function main() {
     }
     for (const c of movers) c.update(dt, null, grid);
     const me = inCar || inHeli || walker;
-    police.update(dt, { x: me.x, y: me.y, z: inHeli ? inHeli.z : ground(me.x, me.y, inCar || walker), level: inHeli ? 0 : world.track(inCar || walker), vx: me.vx, vy: me.vy, speed: Math.hypot(me.vx, me.vy), car: inCar, air: (!!inHeli && !inHeli.landed) || ride.on || passenger(), riding: ride.on || passenger() });
+    police.update(dt, { x: me.x, y: me.y, z: inHeli ? inHeli.z : ground(me.x, me.y, inCar || walker), level: inHeli ? 0 : world.track(inCar || walker), vx: me.vx, vy: me.vy, speed: Math.hypot(me.vx, me.vy), car: inCar, air: !!walker.flight || (!inHeli && walker.onRoof) || (!!inHeli && !inHeli.landed) || ride.on || passenger(), riding: ride.on || passenger() });
     inspector.update(dt, { x: me.x, y: me.y, h: inCar ? inCar.h : walker.h, onFoot: !inCar && !inHeli && !ride.on && !passenger() && !boats.me && !funicular.me && !ferries.me, inVehicle: !!inCar || !!inHeli || passenger() || !!boats.me });
     brigade.update(dt, me);
     ambulances.update(dt, me);
@@ -2115,7 +2192,7 @@ async function main() {
     syncResting();
     for (const c of cops) pushCar(hash, c);
     if (inCar) pushCar(hash, inCar);
-    else if (!inHeli && !ride.on && !passenger()) hash.add(obstacle(walker.x, walker.y, walker.gz, 0.5, walker.vx, walker.vy, 'player'));
+    else if (!inHeli && !ride.on && !passenger()) hash.add(obstacle(walker.x, walker.y, walker.flight?.height ?? walker.gz, 0.5, walker.vx, walker.vy, 'player'));
     // (People walking along the pavement only where a car is driving along it too.)
     traffic.gatherPavementCars();
     for (const p of crowd.people) if (p.state !== 'walk' || p.e.side === 0 || traffic.pavementNear(p.x, p.y, 12)) person(p);
@@ -2166,7 +2243,12 @@ async function main() {
 
     // ---- Collisions ------------------------------------------------------
     // Two cars that have just met: the lamps the blow landed on break.
-    const smash = (a: Car, b: Car, hit: number) => { a.knock(contact.x, contact.y, hit); b.knock(contact.x, contact.y, hit); };
+    const smash = (a: Car, b: Car, hit: number) => {
+      a.knock(contact.x, contact.y, hit); b.knock(contact.x, contact.y, hit);
+      if (hit < 1) return;
+      if (a.mode === 'loose') tipBike(a, a.x - contact.x, a.y - contact.y);
+      if (b.mode === 'loose') tipBike(b, b.x - contact.x, b.y - contact.y);
+    };
     const active = activeList;
     active.length = 0;
     if (inCar) active.push(inCar);
@@ -2174,6 +2256,20 @@ async function main() {
     for (const c of cops) active.push(c);
     // A car a tram is pushing off its track, even while it still stands.
     for (const c of trams.shoved()) if (!active.includes(c)) active.push(c);
+    for (const heli of choppers) {
+      if (heli.wrecked || Math.hypot(heli.x - me.x, heli.y - me.y) > LIFE_RADIUS) continue;
+      for (const car of carsNear(heli.x, heli.y, 8, nearA)) {
+        const dz = heli.z - (car.gz ?? ground(car.x, car.y, car));
+        if (dz > car.spec.H || dz < -3 || car.gap(heli.x, heli.y) > 1.3) continue;
+        const dx = heli.x - car.x, dy = heli.y - car.y, d = Math.hypot(dx, dy) || 1;
+        const closing = ((car.vx - heli.vx) * dx + (car.vy - heli.vy) * dy) / d;
+        if (closing <= 5) continue;
+        heli.impact(closing);
+        car.takeImpactDamage(Math.max(0, closing - 8));
+        car.vx -= closing * dx / d;
+        car.vy -= closing * dy / d;
+      }
+    }
     const done = doneSet;
     done.clear();
     for (const a of active) {
@@ -2285,6 +2381,7 @@ async function main() {
           if (t.v.driven && t.v.rider) { stats.wrecked++; police.crime('wreck', a.x, a.y, a); }
         }
         const hit = collideBodies(t, t.circles, 1.25, 0, a, ca, a.r, 1 / a.mass);
+        if (hit >= 1 && a.mode === 'loose') tipBike(a, a.x - contact.x, a.y - contact.y);
         // Pushing a car off the track: ahead, and to the right, away from the other track.
         if (hit && t.v.shove.includes(a)) {
           const ang = t.v.parts[2].ang, rx = Math.sin(ang), ry = -Math.cos(ang);
@@ -2393,7 +2490,7 @@ async function main() {
         }
       });
     }
-    if (!inCar && !inHeli && !ride.on && !getIn.active && !arrest.active) {
+    if (!walker.flight && !walker.onRoof && !inCar && !inHeli && !ride.on && !getIn.active && !arrest.active) {
       offTrams(walker, 0.35, (x, y) => !walker.blocked(x, y), (vx, vy) => {
         if (walker.down <= 0) { walker.knock(vx, vy); hurt(Math.hypot(vx, vy) * 2.5); shake = 0.8; }
       });
@@ -2674,14 +2771,14 @@ async function main() {
       move: touch.move || pad.move || (input.up ? 1 : 0) - (input.down ? 1 : 0),
       turn: touch.turn || pad.turn || (input.left ? 1 : 0) - (input.right ? 1 : 0),
       run: input.run || touch.run,
-      brake: input.brake || touch.brake,
+      brake: input.brake || touch.brake || (!inCar && !inHeli && !ride.on && touch.jumpHeld),
       jump: input.jump,
       aim: touch.aim || pad.aim,
     };
     // On a tram, Shift speeds up the ride: the whole world runs faster, in steps short
     // enough for the physics.
     // At a tram stop, hold Space to wait: the same speed-up, until a tram is close.
-    board.update(dt, walker.x, walker.y, !ride.on && !inCar && !inHeli);
+    board.update(dt, walker.x, walker.y, !ride.on && !inCar && !inHeli && !walker.flight && !walker.onRoof);
     // It waits for a tram or bus to your platform, not one at the stop's other side, and
     // lets the clock run normally while you walk about. (The same waiting for a taxi on its way.)
     const waiting = (!!board.shown && board.mine > 8 || taxi.state === 'coming') && (input.brake || touch.fast) && !ctl.move;
@@ -2791,16 +2888,16 @@ async function main() {
     steerGuide.update(dt, inCar, inCar && guideOn && !usingPad() ? held : null, (x, y) => ground(x, y, inCar), clamp(height / 120, 1, 3));
     spray.update(dt * scale, drawn, ground, renderer.domElement.height);
     water.update(dt * scale, cannon.jet ? [...brigade.jets, cannon.jet] : brigade.jets, renderer.domElement.height);
-    for (const c of choppers) c.render();
     surfaceT -= dt;
     if (inCar && surfaceT < 0) { surfaceT = 0.2; surface = surfaceUnder(inCar.x, inCar.y); }
     busyT -= dt;
     if (busyT < 0) {
       busyT = 0.5;
-      parkHelicopter();
+      parkHelicopters();
       busy = clamp(footfall.around(px(), py(), 150) / 0.2, 0, 1);
       road = roadNoise(edgesNear(px(), py(), ROAD_FAR), px(), py());
     }
+    for (const c of choppers) c.render();
     if (hornHeld && !inCar && !ride.driving) honk(false);
     if (hornHeld && (hornT -= dt) < 0) { hornT = 0.5; scareAhead(); }
     sound.update(dt, { x: px(), y: py(), car: inCar, throttle: ctl.move, surface, trams: trams.list, quiet: metro.active, rain: weather.now.rain, wet: weather.now.wet, snow: weather.now.snow, strikes: weather.now.strikes, busy, road, hour: (clock.t % 86400) / 3600, season, aloft: inHeli ? clamp((inHeli.air - 5) / 40, 0, 1) : 0, sirens: [
@@ -2814,7 +2911,7 @@ async function main() {
     // On the metro, over the train as it goes (see Metro.view).
     const underway = metro.view();
     // In the air the camera rises with the helicopter, so it stays well above it.
-    const want = (underway ? underway.height : inHeli ? 130 + sp * 2.5 : inCar ? 120 + sp * 3.4 : ride.driving ? 120 + (ride.v?.speed ?? 0) * 3.4 : ride.on ? 125 + (scale - 1) * 12 : 100) * zoom + (inHeli ? inHeli.air : 0);
+    const want = (underway ? underway.height : inHeli ? 130 + sp * 2.5 : inCar ? 120 + sp * 3.4 : ride.driving ? 120 + (ride.v?.speed ?? 0) * 3.4 : ride.on ? 125 + (scale - 1) * 12 : 100) * zoom + (inHeli ? inHeli.z - world.heightAt(inHeli.x, inHeli.y) : 0);
     heightWanted = want;
     height += (want - height) * Math.min(1, dt * (want > height ? 1.6 : 0.9));
     // (Heading-up keeps the vehicle in the middle of the screen instead of looking ahead of it.)
@@ -2843,6 +2940,7 @@ async function main() {
     const body = inHeli || underway || approaching ? null : inCar || walker;
     const deep = !!body && world.buried(body);
     const below = underway ? underway.ground
+      : body === walker && (walker.flight || walker.onRoof) ? walker.mesh.position.y
       : deep ? Math.max(world.terrainAt(px(), py()), body.gz ?? 0) : ground(camPos.x, -camPos.z, body);
     camGround += (below - camGround) * Math.min(1, dt * 3);
     const free = testkit?.cam;
@@ -3013,19 +3111,20 @@ async function main() {
     }
     if (clock.label() !== clockShown) $('clock').textContent = clockShown = clock.label();
     // On a touch screen the buttons say what they do, so the hint only reports lane assist.
-    const canBoard = !inCar && !inHeli && !ride.on && !metro.active && ride.boardable(walker.x, walker.y);
-    const canBus = !inCar && !inHeli && !ride.on && !metro.active && !passenger() ? busRide.boardable(walker.x, walker.y) : null;
-    const station = !inCar && !inHeli && !ride.on && !metro.active ? metro.near(walker.x, walker.y) : null;
+    const streetLevel = !walker.flight && !walker.onRoof;
+    const canBoard = streetLevel && !inCar && !inHeli && !ride.on && !metro.active && ride.boardable(walker.x, walker.y);
+    const canBus = streetLevel && !inCar && !inHeli && !ride.on && !metro.active && !passenger() ? busRide.boardable(walker.x, walker.y) : null;
+    const station = streetLevel && !inCar && !inHeli && !ride.on && !metro.active ? metro.near(walker.x, walker.y) : null;
     const gap = (c: Car) => c.gap(walker.x, walker.y);
-    const enterable = !inCar && !inHeli && !ride.on
+    const enterable = streetLevel && !inCar && !inHeli && !ride.on
       ? [...carsNear(walker.x, walker.y, 5)].filter((c) => gap(c) < 1.8 && !c.burnt && !apartOnFoot(c)).sort((a, b) => gap(a) - gap(b))[0]
       : undefined;
     const boat = !inCar && !inHeli && !ride.on && !boats.me ? boats.near(walker.x, walker.y, world.groundFor(walker, walker.x, walker.y) + walker.z + walker.perch) : null;
-    const onFoot = !inCar && !inHeli && !ride.on && !metro.active && !boats.me && !passenger();
+    const onFoot = streetLevel && !inCar && !inHeli && !ride.on && !metro.active && !boats.me && !passenger();
     const cabin = onFoot ? funicular.near(walker.x, walker.y) : null;
     const shut = onFoot && !cabin ? funicular.near(walker.x, walker.y, true) : null;
     const ferryHere = onFoot && !ferries.me ? ferries.near(walker.x, walker.y, true) : null;
-    const canEnter = !inCar && !inHeli && !ride.on && !metro.active && (!!enterable || !!boat || choppers.some((c) => c.landed && Math.hypot(c.x - walker.x, c.y - walker.y) < 4));
+    const canEnter = !walker.flight && !inCar && !inHeli && !ride.on && !metro.active && (!!enterable || !!boat || choppers.some((c) => Math.hypot(c.x - walker.x, c.y - walker.y) < 4 && Math.abs(c.z - walker.mesh.position.y) < 2.5 && c.landed));
     const getIn = t(enterable?.two ? '<b>E</b> get on' : !enterable && boat ? (boat.kind === 'swan' ? '<b>E</b> get in the swan' : '<b>E</b> get in the pedal boat') : '<b>E</b> get in');
     const ticketHint = () => pid.state === 'grace'
       ? `${touch.active ? t('Buy a ticket ({price})', { price: kc(TICKET.price) }) : usingPad() ? `<b>B</b> ${t('Buy a ticket ({price})', { price: kc(TICKET.price) })}` : TICKETS.map((k, i) => `<b>${i + 1}</b> ${validity(k.minutes)} ${kc(k.price)}`).join(' · ')} · ${t('{secs} s left', { secs: Math.ceil(pid.left) })}`
@@ -3035,7 +3134,13 @@ async function main() {
     else if (inHeli) {
       const up = t('{n} m up', { n: Math.round(inHeli.air) });
       if (touch.active) hint = inHeli.landed ? '' : up;
-      else hint = inHeli.landed ? t('<b>Space</b> take off · <b>E</b> get out') : `${up} · ${t('<b>Space</b> climb · <b>Shift</b> down · land to get out')}`;
+      else hint = inHeli.landed ? t('<b>Space</b> take off · <b>E</b> get out') : `${up} · ${t('<b>Space</b> climb · <b>Shift</b> down')}`;
+      if (!inHeli.landed && inHeli.air < 1 && inHeli.level === ROOFTOP) hint = t('Find a flatter spot to land');
+      if (inHeli.damage >= 100) hint = t('Engine failed');
+      else if (inHeli.damage > 0) hint = [hint, t('Helicopter damage: {n}%', { n: Math.round(inHeli.damage) })].filter(Boolean).join(' · ');
+      if (inHeli.canBailOut && !touch.active) hint += ' · ' + t('<b>E</b> jump out');
+    } else if (walker.flight?.helicopter && !walker.flight.open) {
+      hint = touch.active ? t('Hold Jump to open your parachute') : t('Hold <b>Space</b> to open your parachute');
     } else if (inCar) {
       if (!assisted) hint = touch.active ? '' : inCar.type === 'fire' ? t('<b>E</b> get out · <b>F</b> water cannon · <b>Shift</b> lane assist') : t(inCar.two ? '<b>E</b> get off · <b>Shift</b> lane assist' : '<b>E</b> get out · <b>Shift</b> lane assist');
       // While the assist is on, the panel stays empty so it doesn't grow.
@@ -3133,7 +3238,7 @@ async function main() {
     }
     const stealLabel = busRide.on ? 'Take over the bus' : 'Take over the tram', stealBtn = $('t-steal');
     if (stealBtn.dataset.t !== stealLabel) { stealBtn.dataset.t = stealLabel; stealBtn.textContent = t(stealLabel); }
-    touch.update({ car: inCar || inHeli, engine: inCar?.type === 'fire', driving: ride.driving, tram: (ride.on && !ride.driving) || passenger() || (!!funicular.me || !!ferries.me), steal: (ride.on && !ride.driving) || busRide.on, wait: !!board.shown || taxi.state === 'coming', label: cab || label || (station ? 'Metro' : null), canEnter: !!cab || canEnter || !!canBoard || !!station || !!cabin || !!ferryHere?.open || funicular.me?.stop != null || ferries.me?.stop != null, limit: assisted ? assist.limit : null });
+    touch.update({ car: inCar || inHeli, engine: inCar?.type === 'fire', driving: ride.driving, tram: (ride.on && !ride.driving) || passenger() || (!!funicular.me || !!ferries.me), steal: (ride.on && !ride.driving) || busRide.on, wait: !!board.shown || taxi.state === 'coming', label: inHeli?.canBailOut ? 'Jump out' : cab || label || (station ? 'Metro' : null), canEnter: !!cab || canEnter || !!canBoard || !!station || !!cabin || !!ferryHere?.open || funicular.me?.stop != null || ferries.me?.stop != null, limit: assisted ? assist.limit : null });
     show('tally', `${tn(stats.wrecked, '{n} car wrecked|{n} cars wrecked')}${stats.busted ? ` · ${t('busted {n}×', { n: stats.busted })}` : ''}${stats.wasted ? ` · ${t('wasted {n}×', { n: stats.wasted })}` : ''}`);
     // Wanted stars: they blink while the police have lost sight of you.
     const stars = police.stars, wanted = $('wanted');

@@ -26,7 +26,7 @@ function keysFor(s: HelpState): { title: string; keys: Keys; note?: string } {
       keys: {
         W: ['walk', 'Walk forwards and back'], S: ['back', 'Walk forwards and back'],
         A: ['left', 'Turn'], D: ['right', 'Turn'],
-        Shift: ['run', 'Run'], Space: ['jump', 'Jump'],
+        Shift: ['run', 'Run'], Space: ['jump', 'Jump. Hold Space during a long fall to open your parachute, then steer with A or D'],
         E: ['get in', 'Get into the nearest car, onto a bike or motorbike, or onto a tram at a stop'],
         T: ['taxi', 'Get a taxi: wave one down or order one through an app'],
         J: ['jobs', 'Jobs: ask for work, take the job on offer, turn it down for another, or give one up'],
@@ -83,7 +83,7 @@ function keysFor(s: HelpState): { title: string; keys: Keys; note?: string } {
         W: ['ahead', 'Fly forwards and back'], S: ['back', 'Fly forwards and back'],
         A: ['left', 'Turn'], D: ['right', 'Turn'],
         Space: ['climb', 'Climb and come down'], Shift: ['down', 'Climb and come down'],
-        E: ['get out', 'Get out, once landed on open ground'],
+        E: ['get out', 'Get out after landing or jump out in flight'],
       },
     };
   }

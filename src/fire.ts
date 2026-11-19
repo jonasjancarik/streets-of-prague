@@ -266,11 +266,15 @@ export class Fires {
     const blamed = this.blamed.has(c);
     this.onBlast(c, blamed);
     if (!seen) return;
-    const r = this.r, z = this.height(c.x, c.y, c) + 0.6;
-    const at = (spread: number) => [c.x + (r() - 0.5) * spread, c.y + (r() - 0.5) * spread] as const;
+    this.fireball(c.x, c.y, this.height(c.x, c.y, c) + 0.6);
+  }
+
+  fireball(cx: number, cy: number, z: number) {
+    const r = this.r;
+    const at = (spread: number) => [cx + (r() - 0.5) * spread, cy + (r() - 0.5) * spread] as const;
     // The flash, and its glow on the ground round about.
-    this.flames.add({ x: c.x, y: c.y, z: z + 1, vx: 0, vy: 0, vz: 0, r0: 2, r1: 7, life: 0.3, rgb: [1.6, 1.4, 1], a: 1 });
-    this.flames.add({ x: c.x, y: c.y, z: z - 0.5, vx: 0, vy: 0, vz: 0, r0: 10, r1: 13, life: 0.7, rgb: [1, 0.45, 0.1], a: 0.5 });
+    this.flames.add({ x: cx, y: cy, z: z + 1, vx: 0, vy: 0, vz: 0, r0: 2, r1: 7, life: 0.3, rgb: [1.6, 1.4, 1], a: 1 });
+    this.flames.add({ x: cx, y: cy, z: z - 0.5, vx: 0, vy: 0, vz: 0, r0: 10, r1: 13, life: 0.7, rgb: [1, 0.45, 0.1], a: 0.5 });
     // A fireball of flames boiling up and out.
     for (let i = 0; i < 14; i++) {
       const [x, y] = at(3), a = r() * Math.PI * 2, v = 2 + r() * 4;
@@ -284,7 +288,7 @@ export class Fires {
         r0: 1.5, r1: 4 + r() * 3, life: 3 + r() * 2.5, rgb: [0.08, 0.075, 0.07], a: 0.75 });
     }
     // And a scorch mark on the ground under the wreck.
-    this.smoke.add({ x: c.x, y: c.y, z: z - 0.55, vx: 0, vy: 0, vz: 0, r0: 3.4, r1: 3.6, life: 60, rgb: [0.03, 0.03, 0.03], a: 0.7 });
+    this.smoke.add({ x: cx, y: cy, z: z - 0.55, vx: 0, vy: 0, vz: 0, r0: 3.4, r1: 3.6, life: 60, rgb: [0.03, 0.03, 0.03], a: 0.7 });
   }
 
   // Dev teleport and the like: nothing burning is left behind.

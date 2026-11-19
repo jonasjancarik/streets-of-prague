@@ -6,6 +6,9 @@ import type { WalkEdge, WalkGraph } from './network.ts';
 import type { Footfall } from './footfall.ts';
 import type { Point2 } from './map/geo.ts';
 import { fences } from './fences.ts';
+import type { TileWorld } from './tiles.ts';
+import { ROOFTOP } from './roofSurface.ts';
+import { parachute } from './parachute.ts';
 import { Umbrellas } from './umbrellas.ts';
 
 interface WalkGrid {
@@ -513,7 +516,10 @@ export class Walker {
   _tx?: number;
   _ty?: number;
 
-  constructor(grid: WalkGrid, kit: FigureKit) {
+  flight: { height: number; vz: number; heldTime: number; open: boolean; fromX: number; fromY: number; deck: number; helicopter?: boolean } | null = null;
+  private canopy?: THREE.Group;
+
+  constructor(grid: WalkGrid, kit: FigureKit, private world: TileWorld, private splash: (helicopter: boolean) => void) {
     this.grid = grid;
     this.x = this.y = 0;
     this.h = 0;
@@ -538,6 +544,7 @@ export class Walker {
     this.mesh.add(this.ring);
   }
 
+  get onRoof() { return this.level === ROOFTOP; }
   // In the air, high enough for a car to pass under your feet.
   get airborne() { return this.z + this.perch > 0.5; }
   get jumping() { return this.anim.name === 'jump' && !this.anim.done; }
@@ -549,11 +556,116 @@ export class Walker {
     const g = this.ground, r = 0.3;
     if (g.at(x, y) || g.at(x + r, y) || g.at(x - r, y) || g.at(x, y + r) || g.at(x, y - r)) return true;
     // A fence or a hedge stops you coming up to it, unless you're jumping (or already in it).
-    return this.perch < 0.3 && fences.blocks(x, y, 0.15, this.z) && !fences.blocks(this.x, this.y, 0.15, this.z);
+    return !this.onRoof && this.perch < 0.3 && fences.blocks(x, y, 0.15, this.z) && !fences.blocks(this.x, this.y, 0.15, this.z);
+  }
+
+  private leaveLedge(dt: number) {
+    const speed = Math.hypot(this.vx, this.vy);
+    if (speed < 1) return false;
+    const deck = this.level ?? 0, height = this.gz ?? 0;
+    // The walker's collision radius meets an oblique lip before its centre does.
+    // A short vault also clears the thickness of a quay wall or bridge parapet.
+    for (const distance of [0.38, 0.85, 1.45, 2.2]) {
+      const reach = dt + distance / speed;
+      const x = this.x + this.vx * reach, y = this.y + this.vy * reach;
+      const water = this.world.waterAt(x, y);
+      const ahead = !deck && water ? this.world.terrainAt(x, y, true) : this.world.levelAt(x, y, deck);
+      if (ahead >= height - 1.5) continue;
+      const below = this.world.landingAt(x, y, height);
+      const surface = !below.level && water ? this.world.terrainAt(x, y, true) : below.h;
+      if (height - surface <= 1.5 || this.world.rooftopAt(x, y) > height + this.z) continue;
+      if (!water && this.world.cellAt(x, y, below.level, below.h) !== 0) continue;
+      this.flight = { height: height + this.z, vz: 1, heldTime: 0, open: false, fromX: this.x, fromY: this.y, deck };
+      this.x = x; this.y = y;
+      this.h = Math.atan2(this.vy, this.vx);
+      this.sync();
+      return true;
+    }
+    return false;
+  }
+
+  jumpFromHelicopter(c: { x: number; y: number; h: number; z: number; vx: number; vy: number; vz: number }) {
+    // While aboard, the hidden walker stays at the boarding spot. Keep it as
+    // a fallback if the splashdown has no reachable bank among the loaded tiles.
+    this.flight = { height: c.z + 0.8, vz: c.vz, heldTime: 0, open: false,
+      fromX: this.x, fromY: this.y, deck: this.level ?? 0, helicopter: true };
+    this.x = c.x; this.y = c.y;
+    const lx = -Math.sin(c.h), ly = Math.cos(c.h);
+    let side = 0;
+    for (const k of [1, -1]) {
+      const x = c.x + k * lx * 2, y = c.y + k * ly * 2;
+      if (this.world.rooftopAt(x, y) >= c.z || this.world.landingAt(x, y, c.z).h >= c.z) continue;
+      this.x = x; this.y = y; side = k; break;
+    }
+    this.h = c.h;
+    this.vx = c.vx + lx * side * 2; this.vy = c.vy + ly * side * 2;
+    this.perch = this.side = this.speed = this.down = 0;
+    this.level = undefined;
+    this._tx = undefined;
+    this.mesh.visible = true;
+    this.anim.play('jump', true);
+    this.sync();
+  }
+
+  endFlight() {
+    this.flight = null;
+    this.z = 0;
+    if (this.canopy) this.canopy.visible = false;
+  }
+
+  private fly(dt: number, held: boolean, turn: number, aim?: { h: number } | null) {
+    const f = this.flight!;
+    f.heldTime = held ? f.heldTime + dt : 0;
+    if (!f.open && f.heldTime >= 0.18) {
+      f.open = true;
+      if (!this.canopy) { this.canopy = parachute(); this.mesh.add(this.canopy); }
+      this.canopy.visible = true;
+    }
+    if (f.open) {
+      if (aim) turn = clamp(Math.atan2(Math.sin(aim.h - this.h), Math.cos(aim.h - this.h)), -1, 1);
+      this.h += turn * 0.85 * dt;
+      const k = Math.min(1, 2.5 * dt);
+      this.vx += (3.8 * Math.cos(this.h) - this.vx) * k;
+      this.vy += (3.8 * Math.sin(this.h) - this.vy) * k;
+      f.vz += (-2.4 - f.vz) * k;
+    } else f.vz -= 9.81 * dt;
+    const nx = this.x + this.vx * dt, ny = this.y + this.vy * dt;
+    let under = this.world.landingAt(nx, ny, f.height);
+    let wet = !under.level && this.world.waterAt(nx, ny);
+    // Keep the landing clear, even when the player turns towards a wall.
+    const clear = wet || (under.h <= f.height + 0.6 && this.world.cellAt(nx, ny, under.level, under.h) === 0);
+    if (clear && this.world.rooftopAt(nx, ny) <= f.height + 0.6) {
+      this.x = nx; this.y = ny;
+    } else {
+      under = this.world.landingAt(this.x, this.y, f.height);
+      wet = !under.level && this.world.waterAt(this.x, this.y);
+    }
+    const surface = wet ? this.world.terrainAt(this.x, this.y, true) : under.h;
+    f.height += f.vz * dt;
+    if (f.height <= surface) {
+      this.endFlight();
+      if (wet) {
+        this.x = f.fromX; this.y = f.fromY;
+        this.level = f.deck;
+        if (f.helicopter) {
+          const dry = { at: (x: number, y: number) => this.world.waterAt(x, y) === false
+            ? this.world.cellAt(x, y, 0, this.world.terrainAt(x, y)) : 255 };
+          const [x, y] = nearestWalkable(dry, nx, ny, 200);
+          if (dry.at(x, y) === 0) { this.x = x; this.y = y; this.level = 0; }
+        }
+        this.splash(!!f.helicopter);
+      } else this.level = under.level;
+      this.gz = this.world.levelAt(this.x, this.y, this.level);
+      this._tx = this.x; this._ty = this.y;
+      this.speed = this.side = this.vx = this.vy = 0;
+      this.anim.play('idle', true, 0.1);
+    }
+    this.sync();
   }
 
   // `strafe` (first person): left/right step sideways instead of turning.
-  update(dt: number, ctl: { turn: number; move: number; run: boolean; jump: boolean; aim?: { h: number; mag: number } | null; strafe?: boolean }) {
+  update(dt: number, ctl: { turn: number; move: number; run: boolean; jump: boolean; brake?: boolean; aim?: { h: number; mag: number } | null; strafe?: boolean }) {
+    if (this.flight) { this.fly(dt, !!ctl.brake, ctl.turn, ctl.aim); return; }
     const a = this.anim;
     if (this.down > 0) {
       this.down -= dt;
@@ -594,6 +706,7 @@ export class Walker {
     const c = Math.cos(this.h), sn = Math.sin(this.h);
     this.vx = c * this.speed - sn * this.side;
     this.vy = sn * this.speed + c * this.side;
+    if (this.jumping && this.z > 0.45 && (this.level ?? 0) >= 0 && this.leaveLedge(dt)) return;
     if (!this.blocked(this.x + this.vx * dt, this.y)) this.x += this.vx * dt;
     if (!this.blocked(this.x, this.y + this.vy * dt)) this.y += this.vy * dt;
     // (Sideways, the legs walk at the pace you go.)
@@ -606,6 +719,7 @@ export class Walker {
   }
 
   knock(vx: number, vy: number) {
+    this.endFlight();
     this.down = 2.2;
     this.vx = vx;
     this.vy = vy;
@@ -615,6 +729,7 @@ export class Walker {
 
   sync() {
     const g = this.ground, ground = g.height ? g.height(this.x, this.y) : 0;
+    if (this.flight) this.z = this.flight.height - ground;
     this.mesh.position.set(this.x, ground + this.perch + this.z, -this.y);
     this.mesh.rotation.set(0, this.h, 0);
     this.ring.position.y = 0.05 - this.z;

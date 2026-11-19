@@ -1,3 +1,4 @@
+import type { Chopper } from './helicopter.ts';
 import type { Car } from './car.ts';
 import { LAMP } from './car.ts';
 
@@ -29,7 +30,7 @@ const ASSIST = 0.3; // radians either side of where you face that a car is aimed
 const LAMP_REACH = 0.45; // m from a lamp that a bullet still smashes it
 
 export interface Target { x: number; y: number; r: number }
-export interface Hit { x: number; y: number; d: number; car: Car | null; tram: boolean }
+export interface Hit { x: number; y: number; d: number; car: Car | null; tram: boolean; heli?: Chopper }
 
 // Where a ray from (x, y) along `h` first enters a car's box, as a distance, or Infinity.
 function intoCar(c: Car, x: number, y: number, dx: number, dy: number) {
@@ -60,7 +61,7 @@ function intoCircle(t: Target, x: number, y: number, dx: number, dy: number) {
 
 // Where a shot from (x, y) along heading `h` goes. `wall` says whether a point is inside
 // a building; `cars` and `trams` are what stand about; `skip`, the car you shoot from.
-export function trace(x: number, y: number, h: number, o: { wall: (x: number, y: number) => boolean; cars: Iterable<Car>; trams: Iterable<Target>; skip?: Car | null }): Hit {
+export function trace(x: number, y: number, h: number, o: { wall: (x: number, y: number) => boolean; cars: Iterable<Car>; trams: Iterable<Target>; helicopters?: Iterable<Chopper>; z?: number; skip?: Car | null }): Hit {
   const dx = Math.cos(h), dy = Math.sin(h);
   let d = RANGE;
   for (let s = STEP; s < RANGE; s += STEP) if (o.wall(x + dx * s, y + dy * s)) { d = s; break; }
@@ -74,7 +75,13 @@ export function trace(x: number, y: number, h: number, o: { wall: (x: number, y:
     const s = intoCircle(t, x, y, dx, dy);
     if (s < d) { d = s; car = null; tram = true; }
   }
-  return { x: x + dx * d, y: y + dy * d, d, car, tram };
+  let heli: Chopper | undefined;
+  for (const c of o.helicopters ?? []) {
+    if (c.wrecked || o.z === undefined || o.z < c.z || o.z > c.z + 3) continue;
+    const s = intoCircle({ x: c.x, y: c.y, r: 2 }, x, y, dx, dy);
+    if (s < d) { d = s; car = null; tram = false; heli = c; }
+  }
+  return { x: x + dx * d, y: y + dy * d, d, car, tram, heli };
 }
 
 // A bullet into a car at (x, y): damage, and the lamp it lands on smashed.

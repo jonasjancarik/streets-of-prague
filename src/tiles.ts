@@ -1,3 +1,4 @@
+import { roofLookup, ROOFTOP } from './roofSurface.ts';
 import { dataUrl } from './data.ts';
 import * as telemetry from './telemetry.ts';
 import * as THREE from 'three';
@@ -89,6 +90,7 @@ interface Tile {
   source: TileSource; shown: boolean; dressing: Promise<void> | null; drawn: TileMeshes | null;
   drawMs: Record<string, number>; drawAfter: number;
   // The ground's triangles (the plain ground and the walls at its steps), when drawn.
+  roofSurfaces?: ((x: number, y: number) => number)[];
   groundTriangles?: { ground: number; walls: number };
   // The walls, fences and wires: made with the tile (cars knock the fences and poles
   // down wherever they are) and put in the scene with the rest.
@@ -800,15 +802,35 @@ export class TileWorld {
     return mesh ? [mesh] : [];
   }
 
+  rooftopAt(x: number, y: number) {
+    const tile = this.tileAt(x, y);
+    let h = -Infinity;
+    if (tile) {
+      // Whole buildings may be owned by the adjoining tile.
+      for (let i = tile.i - 1; i <= tile.i + 1; i++) for (let j = tile.j - 1; j <= tile.j + 1; j++) {
+        const roofs = this.byIndex.get(i * 65536 + j)?.roofSurfaces;
+        if (roofs) for (const roof of roofs) h = Math.max(h, roof(x, y));
+      }
+    }
+    return h;
+  }
+
+  landingAt(x: number, y: number, z: number) {
+    const below = this.below(x, y, z), top = this.rooftopAt(x, y);
+    if (top > below.h && top <= z + 0.6) return { ...below, h: top, level: ROOFTOP };
+    return below;
+  }
+
   // Height of a level at a point: of the ground at level 0, of a bridge or tunnel
   // level where it is (NaN elsewhere).
   levelAt(x: number, y: number, level: number) {
+    if (level === ROOFTOP) return this.rooftopAt(x, y);
     if (level === 0) return this.terrainAt(x, y);
     const t = this.tileAt(x, y);
     if (t) for (const l of t.levels) {
       if (l.level !== level || !l.grid.at(x, y)) continue;
       const h = l.sample(x, y);
-      return Number.isNaN(h) ? this.terrainAt(x, y) : h;
+      return Number.isFinite(h) ? h : this.terrainAt(x, y);
     }
     return NaN;
   }
@@ -831,7 +853,7 @@ export class TileWorld {
   surfaceAt(x: number, y: number, level?: number) {
     if (level !== undefined) {
       const h = this.levelAt(x, y, level);
-      return Number.isNaN(h) ? this.terrainAt(x, y) : h;
+      return Number.isFinite(h) ? h : this.terrainAt(x, y);
     }
     return this.guess(x, y).h;
   }
@@ -873,6 +895,11 @@ export class TileWorld {
     who._tx = who.x;
     who._ty = who.y;
     const { x, y } = who, t = this.tileAt(x, y);
+    if (who.level === ROOFTOP) {
+      const top = this.rooftopAt(x, y);
+      if (Number.isFinite(top)) { who.gz = top; return ROOFTOP; }
+      who.level = undefined;
+    }
     if (roadLevel !== undefined) {
       who.hint = undefined;
       who._roadTerrainRevision = this.terrainRevision;
@@ -970,6 +997,7 @@ export class TileWorld {
   cellAt(x: number, y: number, level: number, z: number) {
     const t = this.tileAt(x, y);
     if (!t) return 255;
+    if (level === ROOFTOP) return Math.abs(this.rooftopAt(x, y) - z) <= CLIMB ? 0 : 255;
     const g = t.grid.at(x, y);
     if (level === 0 && g === 0) return 0;
     for (const l of t.levels) {
@@ -1699,6 +1727,10 @@ export class TileWorld {
       s.ground?.roadSurfaces?.length ? { sample: shade.sample, boxes: s.ground.roadSurfaces.map((p) => p.box) } : undefined) : null;
     if (hidden) group.add(hidden);
     const buildings = arraysOf.map((arrays, n) => buildingMesh(arrays, (skyResult && !location.search.includes('nosky') ? skyResult.walls[n] : null)));
+    tile.roofSurfaces = buildings.map((mesh, i) => roofLookup(mesh, arraysOf[i].parts?.extras));
+    for (const model of landmarks) model.traverse((o) => {
+      if (o instanceof THREE.Mesh) tile.roofSurfaces!.push(roofLookup(o));
+    });
     const transmission = power ? powerMesh(power, k, this.ref, tile.sample) : null;
     const own = [...buildings, ...(hidden ? [hidden] : []), ...(transmission ? [transmission] : [])];
     const smoke = iprArrays?.chimneys ? chimneySmoke(iprArrays.chimneys, this.scene) : null;
@@ -1731,6 +1763,7 @@ export class TileWorld {
     const drawn = tile.drawn;
     if (!drawn) return;
     tile.drawn = null;
+    tile.roofSurfaces = undefined;
     this.trees.remove(tile.k);
     this.scene.remove(drawn.group);
     // (The landmarks and what stays with the tile go into a new group next time.)

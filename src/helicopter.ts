@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clamp } from './network.ts';
+import { ROOFTOP } from './roofSurface.ts';
 import { turnOf } from './assist.ts';
 
 interface Flyer { x: number; y: number; vx: number; vy: number }
@@ -229,13 +230,13 @@ export class Helicopters {
 // fly forwards and back, A and D turn, Space climbs and Shift comes down; let go and
 // it holds its height. Below the rooftops the buildings are in the way, so either fly
 // along the streets or climb over them. A bridge's deck is ground to land on from
-// above and a ceiling from below. You can only get out once it has landed on open
-// ground or on a bridge.
+// above and a ceiling from below. E steps out after landing or starts a parachute
+// jump when there are at least two metres of clearance.
 
-const ROOFS = 30; // m above the ground: higher than that, the buildings don't matter
+const OBSTACLE = 30; // fallback clearance for unmapped solid objects
 const TALL = 4; // m: the room it needs under a bridge
 // What's under and over a point in the air (see TileWorld.below).
-type Below = (x: number, y: number, z: number) => { level: number; h: number; roof: number };
+type Below = (x: number, y: number, z: number) => { level: number; h: number; roof: number; water?: boolean };
 const FLY = { top: 250 / 3.6, accel: 20, yaw: 1.7, climb: 9 }; // top is 250 km/h
 
 export class Chopper {
@@ -246,10 +247,14 @@ export class Chopper {
   g: THREE.Group; rotor: THREE.Group; tail: THREE.Group;
   pitch?: number; roll?: number;
   blades = 0; fan = 0; // the rotors' angles
+  damage = 0;
+  wrecked = false;
+  private impactCooldown = 0;
+  private resting = true;
   private blurred: (spin: number) => void;
 
   // `z`: the height to put it down from (onto a bridge's deck, or the ground under it).
-  constructor(scene: THREE.Scene, grid: { at(x: number, y: number): number }, below: Below, x: number, y: number, h: number, z = Infinity) {
+  constructor(scene: THREE.Scene, grid: { at(x: number, y: number): number }, below: Below, private rooftop: (x: number, y: number) => number, x: number, y: number, h: number, z = Infinity) {
     this.grid = grid; this.below = below; this.x = x; this.y = y; this.h = h;
     this.vx = 0; this.vy = 0; this.vz = 0; this.w = 0; this.spin = 0;
     this.z = below(x, y, z).h;
@@ -263,21 +268,63 @@ export class Chopper {
   height(x: number, y: number) { return this.below(x, y, this.z).h; }
   // The bridge it's over or on (0 for the ground).
   get level() { return this.below(this.x, this.y, this.z).level; }
+  get canBailOut() { return !this.wrecked && this.air >= 2; }
   get air() { return this.z - this.height(this.x, this.y); }
   // Rooftop height counts as the floor over buildings.
-  solid(x: number, y: number) { return this.grid.at(x, y) === 255 && !this.below(x, y, this.z).level; }
-  floor(x: number, y: number) { return this.height(x, y) + (this.solid(x, y) ? ROOFS : 0); }
-  get landed() { return this.air < 0.6 && !this.solid(this.x, this.y); }
+  floor(x: number, y: number) {
+    const top = this.rooftop(x, y);
+    const surface = this.below(x, y, this.z);
+    if (Number.isFinite(top)) return Math.max(surface.h, top);
+    const solid = !surface.level && !surface.water && this.grid.at(x, y) === 255;
+    return surface.h + (solid ? OBSTACLE : 0);
+  }
+  // Two skids, four metres long and two apart. Check the centreline as well:
+  // two skids at equal heights could be straddling a pitched roof's ridge.
+  private roofSupportsSkids() {
+    const cs = Math.cos(this.h), sn = Math.sin(this.h);
+    const grade = Math.tan(8 * Math.PI / 180);
+    const top = this.rooftop(this.x, this.y);
+    for (const along of [-2, 0, 2]) for (const side of [-1, 0, 1]) {
+      if (!along && !side) continue;
+      const h = this.rooftop(this.x + along * cs - side * sn, this.y + along * sn + side * cs);
+      if (Math.abs(h - top) > grade * Math.hypot(along, side)) return false;
+    }
+    return true;
+  }
+
+  get landed() {
+    if (this.damage >= 100 || Math.abs(this.vz) > 1.5) return false;
+    const floor = this.below(this.x, this.y, this.z);
+    if (this.z - floor.h >= 0.6) return false;
+    return floor.level === ROOFTOP ? this.roofSupportsSkids() : !!floor.level || this.grid.at(this.x, this.y) !== 255;
+  }
+
+  hit(points: number) {
+    this.damage = Math.min(100, this.damage + Math.max(0, points));
+    if (this.damage >= 100) this.resting = false;
+  }
+
+  impact(speed: number) {
+    if (this.impactCooldown > 0 || speed <= 5) return;
+    this.hit((speed - 5) * 4);
+    this.impactCooldown = 0.25;
+  }
 
   // `ctl`: { move -1..1, turn -1..1 (left +), up, down } or null when nobody's flying it.
   update(dt: number, ctl: { move: number; turn: number; up: boolean; down: boolean } | null) {
-    const flying = !!ctl;
+    if (this.wrecked) return false;
+    const failed = this.damage >= 100;
+    this.impactCooldown = Math.max(0, this.impactCooldown - dt);
+    const flying = !!ctl && !failed;
     this.spin += ((flying ? 1 : 0) - this.spin) * Math.min(1, dt * (flying ? 0.8 : 0.4));
-    const lift = this.spin > 0.85; // the rotor needs to be up to speed
+    const lift = flying && this.spin > 0.85; // the rotor needs to be up to speed
     this.blades = (this.blades + dt * ROTOR * this.spin) % (Math.PI * 2);
     this.fan = (this.fan + dt * FAN * this.spin) % (Math.PI * 2);
+    // Parked aircraft keep their landing height when the roof tile leaves the view.
+    if (!flying && this.resting) return;
+    this.resting = false;
     ctl = ctl || { move: 0, turn: 0, up: false, down: false };
-    const low = this.air < 0.6;
+    const low = this.landed;
     const fx = Math.cos(this.h), fy = Math.sin(this.h);
     // Forwards and back along the nose; the air slows everything else down.
     if (lift && !low) {
@@ -293,7 +340,8 @@ export class Chopper {
     if (low) { this.vx *= Math.exp(-8 * dt); this.vy *= Math.exp(-8 * dt); }
     this.h += this.w * dt;
     const wantZ = lift ? (ctl.up ? FLY.climb : ctl.down ? -FLY.climb * 0.8 : 0) : -4;
-    this.vz += (wantZ - this.vz) * Math.min(1, dt * 3);
+    if (failed || (!flying && !low)) this.vz -= 9.81 * dt;
+    else this.vz += (wantZ - this.vz) * Math.min(1, dt * 3);
 
     // Below the rooftops, buildings stop you like walls.
     // (Below the rooftops from the ground at each spot looked at: over a bridge's deck,
@@ -302,15 +350,43 @@ export class Chopper {
     const nx = this.x + this.vx * dt, ny = this.y + this.vy * dt;
     // So does the side of a bridge's deck.
     const hits = (x: number, y: number) => this.below(x, y, this.z).roof - TALL < this.z - 1
-      || [[3, 0], [-3, 0], [0, 3], [0, -3], [0, 0]].some(([a, b]) => this.z - this.height(x + a, y + b) < ROOFS && this.solid(x + a, y + b));
-    if (!hits(nx, this.y)) this.x = nx; else this.vx *= -0.2;
-    if (!hits(this.x, ny)) this.y = ny; else this.vy *= -0.2;
+      || [[3, 0], [-3, 0], [0, 3], [0, -3], [0, 0]].some(([a, b]) => this.floor(x + a, y + b) > this.z + 0.6);
+    let impact = 0;
+    if (nx === this.x || !hits(nx, this.y)) this.x = nx;
+    else { impact = Math.abs(this.vx); this.vx *= -0.2; }
+    if (ny === this.y || !hits(this.x, ny)) this.y = ny;
+    else { impact = Math.max(impact, Math.abs(this.vy)); this.vy *= -0.2; }
     this.z += this.vz * dt;
     const floor = Math.min(this.floor(this.x, this.y), Math.max(this.height(this.x, this.y), this.below(this.x, this.y, this.z).roof - TALL));
     const roof = this.below(this.x, this.y, this.z).roof - TALL;
-    if (this.z > roof) { this.z = roof; this.vz = Math.min(0, this.vz); }
-    if (this.z < floor) { this.z = floor; this.vz = Math.max(0, this.vz); }
+    if (this.z > roof) { impact = Math.max(impact, this.vz); this.z = roof; this.vz = Math.min(0, this.vz); }
+    if (this.z <= floor) {
+      // Full controlled descent is safe onto level ground. A sloping or
+      // unsupported roof strikes the aircraft at the actual closing speed.
+      const supported = this.level !== ROOFTOP || this.roofSupportsSkids();
+      impact = Math.max(impact, -this.vz - (supported ? 3 : 0));
+      this.z = floor;
+      this.vz = Math.max(0, this.vz);
+      if (!supported && lift && this.damage < 100) {
+        // The pilot can pull away after the skids glance off a pitched roof.
+        this.vz = 3;
+      }
+    }
+    this.impact(impact);
+    if (this.damage >= 100 && this.z <= floor + 0.01) {
+      this.wrecked = true;
+      this.vx = this.vy = this.vz = this.spin = 0;
+      this.roll = 0.85;
+      this.pitch = -0.18;
+      this.rotor.visible = false;
+      this.tail.visible = false;
+      this.g.traverse((o) => {
+        if (o instanceof THREE.Mesh && !o.material.transparent) o.material = shared('#282523');
+      });
+      return true;
+    }
     this.z = Math.min(this.z, this.height(this.x, this.y) + 220);
+    if (!flying && this.z === floor && this.speed < 0.05) this.resting = true;
 
     const vf = this.vx * fx + this.vy * fy;
     this.pitch = -0.25 * clamp(vf / FLY.top, -1, 1) * (low ? 0 : 1);

@@ -20,6 +20,7 @@ export default {
       t.push(kmh, wall!.heading, bike);
       await t.wait(3);
       t.check(`at ${kmh} km/h the rider ${thrown ? 'comes off' : 'stays on'}`, (t.probe().mode === 'foot') === thrown, t.probe().mode);
+      t.check(`at ${kmh} km/h the motorbike ${thrown ? 'falls over' : 'stays upright'}`, !!bike.tipped === thrown);
       if (!thrown) t.exit();
     }
     t.unhurt = false;
