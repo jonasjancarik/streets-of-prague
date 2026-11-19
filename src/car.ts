@@ -1256,6 +1256,20 @@ vLit += 4. * mod(floor(paint.w / ${AREA_STEP}.), ${DENT_STEP / AREA_STEP}.);`)
     .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n  reflectedLight.directDiffuse += carCoat(coatC, normal, normalize(vViewPosition), lampLightOn(vLampW, normal), area, cameraPosition + (vec4(-vViewPosition, 0.) * viewMatrix).xyz);');
 };
 material.customProgramCacheKey = () => 'cars';
+// Worn enamel and rubber pick up little of the surrounding street when dry.
+// The blue-grey cab glazing keeps the normal vehicle reflections.
+export const DUSTCART_COAT = { dry: 0.055, wet: 0.23 };
+const dustcartMaterial = material.clone();
+dustcartMaterial.specular.setScalar(0.035);
+dustcartMaterial.shininess = 18;
+dustcartMaterial.customProgramCacheKey = () => 'cars-dustcart';
+dustcartMaterial.onBeforeCompile = (sh, renderer) => {
+  material.onBeforeCompile(sh, renderer);
+  sh.fragmentShader = sh.fragmentShader.replace('reflectedLight.directDiffuse += carCoat(',
+    `float finish = (dot(vColor.rgb, vec3(.3,.59,.11)) < .04 && vColor.b > vColor.r * 1.25)
+      ? 1. : mix(${DUSTCART_COAT.dry}, ${DUSTCART_COAT.wet}, uWet);
+     reflectedLight.directDiffuse += finish * carCoat(`);
+};
 // The window pass shares the car shader (including dents, cracks and reflections)
 // and instance transforms with the opaque body. Only a street ambulance uses it.
 let ambulanceMaterials: THREE.MeshPhongMaterial[] | undefined;
@@ -1924,7 +1938,8 @@ export class CarPool {
     geometry.setAttribute('doors', new THREE.InstancedBufferAttribute(new Float32Array(CarPool.pageCapacity * 4), 4));
     const street = key === STREET_AMBULANCE;
     if (street) for (const g of body.groups) geometry.addGroup(g.start, g.count, g.materialIndex);
-    const mesh = mirrored(new THREE.InstancedMesh(geometry, street ? streetMaterials() : material, CarPool.pageCapacity));
+    const finish = key === 'garbage' || key === 'garbage|burnt' ? dustcartMaterial : material;
+    const mesh = mirrored(new THREE.InstancedMesh(geometry, street ? streetMaterials() : finish, CarPool.pageCapacity));
     mesh.userData.sharedMatrices = true; // (see configureRenderer in webgpu.ts)
     mesh.count = 0;
     mesh.visible = false;

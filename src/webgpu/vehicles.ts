@@ -5,7 +5,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Fn, float, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, cameraWorldMatrix, diffuseColor, renderGroup, positionLocal, positionWorld, positionViewDirection, normalLocal, positionGeometry, materialColor, normalize, dot, smoothstep, mix, select, sin, min, cos, max, floor, mod, exp2, reflect, atan, pow, uniform, texture, cubeTexture, length, clamp, step, distance } from 'three/tsl';
-import { LAMP_GLOW, CAR_GLOSS, CAR_MIRROR, CAR_REFLECT as R, CAR_STRIPS as CS, AREA_STEP, DENT_STEP, DENT_SHAPE as DS } from '../car.ts';
+import { LAMP_GLOW, CAR_GLOSS, DUSTCART_COAT, CAR_MIRROR, CAR_REFLECT as R, CAR_STRIPS as CS, AREA_STEP, DENT_STEP, DENT_SHAPE as DS } from '../car.ts';
 import { STRIPS, STRIPS_ON, onStrips } from '../reflections.ts';
 import { PROBE_AT, PROBE_K, PROBE_MAP, PROBE_MIX, PROBE_NEAR, PROBE_PREV, onProbe } from '../probe.ts';
 import { SKY_REF, STREET_REF, SUN_DIR, SUN_LIGHT } from '../shading.ts';
@@ -144,10 +144,11 @@ const carCoat = (c: N): N => {
   return mix(tint, mirrored, uMirror).add(lamp.mul(coat.mul(CAR_GLOSS.lamps).add(rim.mul(CAR_GLOSS.rimLamps))));
 };
 
-addPort(/^cars(?:-service)?$/, (node, legacy) => {
+addPort(/^cars(?:-service|-dustcart)?$/, (node, legacy) => {
   // On the detailed ambulance, dark rubber and interior trim have a satin
   // finish. Vinyl is printed onto white vertices and retains the paint gloss.
-  const serviceBody = legacy.customProgramCacheKey() === 'cars-service';
+  const key = legacy.customProgramCacheKey();
+  const serviceBody = key === 'cars-service';
   const proto = Object.getPrototypeOf(node);
   // (Before the instance's own transform goes on, in setupPosition.)
   node.setupPosition = function (builder: N) {
@@ -172,6 +173,10 @@ addPort(/^cars(?:-service)?$/, (node, legacy) => {
   };
   glow(node, () => Fn(() => {
     const coat = carCoat(diffuseColor.rgb);
+    if (key === 'cars-dustcart') {
+      const cabGlass = luma(tinted).lessThan(0.04).and(tinted.b.greaterThan(tinted.r.mul(1.25)));
+      return coat.mul(select(cabGlass, float(1), mix(DUSTCART_COAT.dry, DUSTCART_COAT.wet, uWet)));
+    }
     return serviceBody ? coat.mul(mix(0.035, 1, smoothstep(0.035, 0.22, luma(vertexColor().rgb)))) : coat;
   })());
   glow(node, () => select(lamp.lessThan(0.5), vec3(0), tinted).mul(max(shine, 0)).mul(LAMP_GLOW));
