@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="2048" height="1024" viewBox="0 0 1024 512">
+  <!-- Rebuild from the repository root:
+       rsvg-convert assets/cars/prague-ambulance.svg -o /tmp/ambulance-livery.png
+       cwebp -lossless -z 8 /tmp/ambulance-livery.png -o public/ambulance-livery.webp
+       The two box sides, rear doors, bonnet stripes and registration plates.
+       Each panel is drawn as vinyl seen from outside, so lettering reads on both sides. -->
+  <defs>
+    <linearGradient id="gold" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop stop-color="#ffc03a"/><stop offset="1" stop-color="#e5a126"/>
+    </linearGradient>
+    <pattern id="checks" width="116" height="86" patternUnits="userSpaceOnUse" y="184">
+      <rect width="116" height="86" fill="url(#gold)"/>
+      <path d="M0 0h58v43H0z M58 43h58v43H58z" fill="#006856"/>
+    </pattern>
+    <pattern id="edge" width="9" height="9" patternUnits="userSpaceOnUse">
+      <path d="M0 0h8v8H0z" fill="#c99731"/>
+    </pattern>
+    <g id="star">
+      <path d="M-13-56H13V-23L41-40 55-16 27 0 55 16 41 40 13 23V56H-13V23L-41 40-55 16-27 0-55-16-41-40-13-23Z" fill="#144b91" stroke="#f4f3df" stroke-width="2"/>
+      <path d="M0-43V43" stroke="#f7f8eb" stroke-width="3.4" />
+      <path d="M8-35C-15-41-17-14 0-6S14 10 1 17-8 28-2 32" fill="none" stroke="#f7f8eb" stroke-width="3.6" stroke-linecap="round"/>
+    </g>
+    <linearGradient id="sill" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#4e5142" stop-opacity="0"/><stop offset=".65" stop-color="#736954" stop-opacity=".08"/>
+      <stop offset="1" stop-color="#665b46" stop-opacity=".27"/>
+    </linearGradient>
+    <linearGradient id="reflector" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#434a53"/><stop offset=".3" stop-color="#c4d0d7"/><stop offset=".52" stop-color="#636970"/>
+      <stop offset=".65" stop-color="#eeeeec"/><stop offset="1" stop-color="#8c979c"/>
+    </linearGradient>
+    <radialGradient id="optic" cx=".42" cy=".36" r=".62">
+      <stop stop-color="#ffffff"/><stop offset=".16" stop-color="#a8b7c6"/><stop offset=".34" stop-color="#edf0f2"/>
+      <stop offset=".56" stop-color="#546374"/><stop offset=".8" stop-color="#bfc5c9"/><stop offset="1" stop-color="#30383f"/>
+    </radialGradient>
+    <g id="side">
+      <rect width="500" height="280" fill="#eee02b"/>
+      <path d="M0 148H500V181H0z" fill="#b81f2a"/>
+      <path d="M0 185H500V278H0z" fill="url(#checks)"/>
+      <rect x="2" y="1" width="496" height="6" fill="url(#edge)"/>
+      <rect x="490" y="7" width="8" height="267" fill="url(#edge)"/>
+      <use xlink:href="#star" transform="translate(59 133) scale(1.13 1.87)"/>
+      <path d="M107 132H153l4-3 4 3h21l5-5 5 5h16l5 8 5-47 5 61 6-23 5 1h16l5-4 7 4h228" fill="none" stroke="#26302d" stroke-linejoin="round" stroke-width="1.5"/>
+      <rect y="216" width="500" height="64" fill="url(#sill)"/>
+    </g>
+    <g id="city">
+      <rect x="-23" y="-25" width="46" height="50" rx="1.7" fill="#bd1924" stroke="#f4d749"/>
+      <text fill="#ffe04c" font-family="Georgia,serif" font-weight="bold" font-size="9" letter-spacing="0.5">
+        <tspan x="-19" y="-12">PRAHA</tspan><tspan x="-19" dy="10">PRAGUE</tspan><tspan x="-19" dy="10">PRAGA</tspan><tspan x="-19" dy="10">PRAG</tspan>
+      </text>
+    </g>
+    <g id="service" fill="#191e1c" text-anchor="middle" font-family="Arial, sans-serif" font-weight="bold">
+      <text font-size="19" textLength="145" lengthAdjust="spacingAndGlyphs" y="0">ZDRAVOTNICKÁ</text>
+      <text font-size="20" textLength="109" lengthAdjust="spacingAndGlyphs" y="21">ZÁCHRANNÁ</text>
+      <text font-size="22" y="44">SLUŽBA</text>
+      <text font-size="8" font-weight="normal" letter-spacing="1" y="56">HL. M. PRAHY</text>
+    </g>
+    <g id="call" fill="#182627">
+      <path d="M1 0h11v21H1z M3-4h2v4H3z"/><path d="M3 4h7v7H3z M3 14h2v2H3z M8 14h2v2H8z M3 18h2v1H3z M8 18h2v1H8z" fill="#eee02b"/>
+      <text x="16" y="21" font-family="Arial,sans-serif" font-size="33" font-style="italic" font-weight="bold">155</text>
+    </g>
+  </defs>
+  <rect width="1024" height="512" fill="#fff"/>
+  <g transform="translate(4 4)">
+    <use xlink:href="#side"/><use xlink:href="#service" transform="translate(191 39)"/>
+    <use xlink:href="#city" transform="translate(274 159)"/><use xlink:href="#call" transform="translate(410 97)"/>
+  </g>
+  <g transform="translate(516 4)">
+    <use xlink:href="#side" transform="translate(500 0) scale(-1 1)"/>
+    <use xlink:href="#service" transform="translate(284 42)"/>
+    <use xlink:href="#city" transform="translate(212 159)"/><use xlink:href="#call" transform="translate(28 97)"/>
+  </g>
+  <g transform="translate(4 292)">
+    <rect width="214" height="211" fill="#eee02b"/>
+    <path d="M0 119h214v24H0z" fill="#b81f2a"/>
+    <path d="M0 147h214v61H0z" fill="url(#checks)"/>
+    <use xlink:href="#call" transform="translate(137 102) scale(.73)"/>
+    <use xlink:href="#city" transform="translate(61 124) scale(.52)"/>
+    <rect x="3" y="1" width="208" height="5" fill="url(#edge)"/>
+    <text x="107" y="20" fill="#242725" font-family="Arial,sans-serif" text-anchor="middle" font-size="11" font-weight="bold">ZÁCHRANNÁ SLUŽBA</text>
+  </g>
+  <g transform="translate(232 300)">
+    <rect width="140" height="31" rx="3" fill="#edece8" stroke="#333c40" stroke-width="1.7"/>
+    <path d="M2 2h15v27H2z" fill="#174787"/><text x="5" y="24" fill="white" font-family="Arial" font-size="7">CZ</text>
+    <text x="21" y="24" font-family="Arial,sans-serif" font-size="24" fill="#12181a" letter-spacing="1">7AZ 5170</text>
+  </g>
+  <g transform="translate(232 348)">
+    <rect width="240" height="37" fill="#f2f2df"/>
+    <path d="M-1 0h20l22 37H14z M43 0h23l19 37H61z M91 0h24l12 37h-25z M139 0h24l4 37h-25z M188 0h24l-3 37h-24z M234 0h6v37h-15z" fill="#c92830"/>
+  </g>
+  <g transform="translate(232 399)" font-family="Arial,sans-serif" font-weight="bold" fill="#202a28">
+    <rect width="240" height="60" fill="#eee02b"/>
+    <text x="120" y="26" font-size="18" text-anchor="middle">ZDRAVOTNICKÁ</text>
+    <text x="120" y="47" font-size="18" text-anchor="middle">ZÁCHRANNÁ SLUŽBA</text>
+  </g>
+  <g transform="translate(514 307)">
+    <rect width="210" height="80" rx="4" fill="url(#reflector)"/>
+    <g stroke="#424c54" fill="url(#optic)" stroke-width="2">
+      <ellipse cx="52" cy="42" rx="38" ry="32"/><ellipse cx="133" cy="40" rx="30" ry="29"/>
+    </g>
+    <path d="M5 65Q62 80 164 64M5 69Q62 83 163 70" fill="none" stroke="#e0e6e8" stroke-width="2"/>
+    <path d="M176 8h27v51l-28 7z" fill="#ce8e44" stroke="#f7ce8a" stroke-width="2"/>
+    <path d="M180 10v52m5-52v51m5-51v49m5-49v48" stroke="#ffe1b1"/>
+    <path d="M6 6Q68 1 167 6" stroke="#fff" fill="none" stroke-width="3"/>
+  </g>
+  <g transform="translate(740 306)">
+    <rect width="104" height="85" fill="#e6dc24"/>
+    <path d="M23 10h58v25c0 18-9 28-29 41-21-12-29-23-29-41z" fill="#255485" stroke="#ad932c" stroke-width="3"/>
+    <path d="M28 20h48v12H28z" fill="#bd2a31"/>
+    <text x="52" y="29" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="8" fill="#f4e4af">PRAHA</text>
+    <use xlink:href="#star" transform="translate(52 47) scale(.22)"/>
+  </g>
+  <g transform="translate(740 408)" fill="#232926" font-family="Arial,sans-serif">
+    <rect width="200" height="55" fill="#e6dc24"/>
+    <text x="4" y="33" font-size="27" font-weight="bold">170</text>
+    <text x="63" y="21" font-size="12">ZDRAVOTNICKÁ</text>
+    <text x="63" y="37" font-size="12">ZÁCHRANNÁ SLUŽBA</text>
+  </g>
+</svg>

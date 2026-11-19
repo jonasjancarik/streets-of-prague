@@ -145,8 +145,18 @@ const checks = `(async () => {
         assert(active.visible && active.count === 1 && !inactive?.visible, 'one ambulance body in the selected view');
         assert(pool.matrixOf(rig, matrix) && matrix.elements[12] === 19 && matrix.elements[14] === -27,
           'same ambulance placement through camera changes');
-        if (street) assert(active.geometry.getAttribute('position').count > page(simple).geometry.getAttribute('position').count,
-          'street ambulance uses the detailed geometry');
+        if (street) {
+          assert(active.geometry.getAttribute('position').count > page(simple).geometry.getAttribute('position').count,
+            'street ambulance uses the detailed geometry');
+          if (!wreck) {
+            const groups = active.geometry.groups, materials = active.material;
+            assert(groups.length === 2 && groups[1].start === groups[0].count &&
+              groups[1].start + groups[1].count === active.geometry.getAttribute('position').count,
+              'cab windows and body cover exactly one model');
+            assert(materials[0].map?.isTexture && materials[1].transparent && !materials[1].depthWrite,
+              'printed body and see-through cab windows');
+          } else assert(!Array.isArray(active.material) && !active.material.map, 'wreck has no bright printed livery');
+        }
       }
     }
     pool.render([]);

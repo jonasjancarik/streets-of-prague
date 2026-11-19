@@ -403,11 +403,16 @@ function doorsOf(type: string) {
 // white pillars, three doors on the right, and the line board over the windscreen.
 // (Forward is +x, right +z, the ground y = 0, as for the car bodies.)
 const HEADLAMP = '#fff6d8', TAIL_LAMP = '#b3161b'; // (a box in one of these is a lamp)
-function boxBuilder(paintColour?: string) {
-  const parts: THREE.BufferGeometry[] = [];
+function boxBuilder(paintColour?: string, streetAmbulance = false) {
+  const parts: THREE.BufferGeometry[] = [], windows: THREE.BufferGeometry[] = [];
   const c = new THREE.Color();
   const add = (g: THREE.BufferGeometry, colour: string, x: number, y: number, z: number) => {
-    g.deleteAttribute('uv');
+    if (streetAmbulance && !g.userData.printed) {
+      // An unprinted part samples the blank margin of the service livery.
+      const uv = new Float32Array(g.attributes.position.count * 2);
+      for (let i = 0; i < uv.length; i += 2) { uv[i] = 0.99; uv[i + 1] = 0.03; }
+      g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    } else if (!streetAmbulance) g.deleteAttribute('uv');
     g.translate(x, y, z);
     c.set(colour === paintColour ? '#ffffff' : colour);
     const col = new Float32Array(g.attributes.position.count * 3);
@@ -415,7 +420,7 @@ function boxBuilder(paintColour?: string) {
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
     g.setAttribute('painted', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(colour === paintColour ? 1 : 0), 1));
     if (colour === HEADLAMP || colour === TAIL_LAMP) markLamp(g, colour === HEADLAMP);
-    parts.push(g.index ? g.toNonIndexed() : g);
+    (g.userData.cabWindow ? windows : parts).push(g.index ? g.toNonIndexed() : g);
   };
   const box = (colour: string, x0: number, x1: number, y0: number, y1: number, w: number, z = 0) =>
     add(new THREE.BoxGeometry(x1 - x0, y1 - y0, w), colour, (x0 + x1) / 2, (y0 + y1) / 2, z);
@@ -472,7 +477,15 @@ function boxBuilder(paintColour?: string) {
       }
     }
   };
-  return { add, box, rounded, panel, wheel, roadWheel, done: () => mergeGeometries(parts) };
+  const done = () => {
+    if (!windows.length) return mergeGeometries(parts);
+    const body = mergeGeometries(parts.concat(windows));
+    const opaqueCount = parts.reduce((sum, g) => sum + g.attributes.position.count, 0);
+    body.addGroup(0, opaqueCount, 0);
+    body.addGroup(opaqueCount, body.attributes.position.count - opaqueCount, 1);
+    return body;
+  };
+  return { add, box, rounded, panel, wheel, roadWheel, done };
 }
 
 function busGeometry(S: CarSpec): THREE.BufferGeometry {
@@ -654,7 +667,7 @@ function fireGeometry(S: CarSpec): THREE.BufferGeometry {
 // Prague's yellow box ambulance. The short bonnet and inclined screen distinguish
 // the van cab from its full-height patient compartment in both camera views.
 function ambulanceGeometry(S: CarSpec, street = false): THREE.BufferGeometry {
-  const { add, box, panel, rounded, roadWheel, done } = boxBuilder();
+  const { add, box, panel, rounded, roadWheel, done } = boxBuilder(undefined, street);
   const L = S.L / 2, W = S.W, cab = 0.77, roof = S.H;
   const yellow = '#e6dc24', red = '#df3829', blue = '#15569b', trim = '#303438', glass = '#273841';
   const frontAxle = 1.82, rearAxle = -1.78;
@@ -679,7 +692,6 @@ function ambulanceGeometry(S: CarSpec, street = false): THREE.BufferGeometry {
     box('#eeeada', L + 0.035, L + 0.048, 0.53, 0.65, 0.49);
   }
   const number = street ? null : letteringGeometry(['155'], 0.048);
-  const city = street ? letteringGeometry(['PRAHA'], 0.013) : null;
   // Outline the six arms of the Star of Life in a single plane.
   const star = new THREE.Shape();
   const corners = [[0.10, 0.32], [-0.10, 0.32], [-0.10, 0.174]];
@@ -722,23 +734,20 @@ function ambulanceGeometry(S: CarSpec, street = false): THREE.BufferGeometry {
       box(trim, 1.93, 2.01, 1.66, 1.74, 0.30, z);
       box(trim, 1.91, 2.04, 1.59, 1.88, 0.10, z + side * 0.15);
       box(trim, cab + 0.22, cab + 0.39, 1.34, 1.39, 0.04, z - side * 0.06);
-    }
-    box(red, -L + 0.08, cab - 0.06, 2.40, 2.49, 0.015, z);
-    for (let i = 0; i < 8; i++) {
-      const x = -L + 0.09 + i * 0.45, y = i % 2 === 0 ? 1.08 : 1.29;
-      box(red, x, x + 0.45, y, y + 0.21, 0.026, z);
-    }
-    add(emblem.clone().rotateY(facing), blue, -2.39, 1.94, z + side * 0.008);
-    add(insignia.clone().rotateY(facing), '#f5f5e8', -2.39, 1.94, z + side * 0.012);
-    if (!street) {
+      box(red, -L + 0.08, cab - 0.06, 2.40, 2.49, 0.015, z);
+      for (let i = 0; i < 8; i++) {
+        const x = -L + 0.09 + i * 0.45, y = i % 2 === 0 ? 1.08 : 1.29;
+        box(red, x, x + 0.45, y, y + 0.21, 0.026, z);
+      }
+      add(emblem.clone().rotateY(facing), blue, -2.39, 1.94, z + side * 0.008);
+      add(insignia.clone().rotateY(facing), '#f5f5e8', -2.39, 1.94, z + side * 0.012);
       box(red, cab + 0.06, 1.84, 1.12, 1.24, 0.025, z - side * 0.056);
       box('#90914b', cab + 0.10, cab + 0.12, 0.65, 1.42, 0.02, z - side * 0.057);
       box(trim, cab + 0.10, frontAxle - 0.53, 0.47, 0.54, 0.15, z - side * 0.09);
     }
     if (number) add(number.clone().rotateY(facing), '#253544', -1.23, 1.75, z + side * 0.008);
-    if (city) add(city.clone().rotateY(facing), '#334653', -1.23, 1.58, z + side * 0.008);
     // Access to the treatment compartment is on the kerb side.
-    if (side > 0) {
+    if (!street && side > 0) {
       for (const x of [-0.39, 0.62]) box('#8f8d47', x, x + 0.018, 0.64, 2.35, 0.035, z);
       box(glass, -0.30, 0.52, 1.75, 2.25, 0.03, z);
       box(trim, -0.32, -0.22, 1.53, 1.67, 0.05, z);
@@ -753,7 +762,7 @@ function ambulanceGeometry(S: CarSpec, street = false): THREE.BufferGeometry {
       box(HEADLAMP, L - 0.04, L + 0.014, 0.91, 1.04, 0.34, side * 0.75);
       box(glass, -L - 0.026, -L + 0.015, 1.65, 2.22, 0.67, side * 0.41);
     }
-    box(red, -L - 0.035, -L + 0.01, 1.14, 1.39, 0.85, side * 0.46);
+    if (!street) box(red, -L - 0.035, -L + 0.01, 1.14, 1.39, 0.85, side * 0.46);
     if (!street) box(TAIL_LAMP, -L - 0.045, -L + 0.02, 0.86, 1.52, 0.13, side * 0.95);
   }
   box(trim, -L - 0.031, -L, 0.61, 2.51, 0.022);
@@ -1246,6 +1255,33 @@ vLit += 4. * mod(floor(paint.w / ${AREA_STEP}.), ${DENT_STEP / AREA_STEP}.);`)
     .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n  reflectedLight.directDiffuse += carCoat(coatC, normal, normalize(vViewPosition), lampLightOn(vLampW, normal), area, cameraPosition + (vec4(-vViewPosition, 0.) * viewMatrix).xyz);');
 };
 material.customProgramCacheKey = () => 'cars';
+// The window pass shares the car shader (including dents, cracks and reflections)
+// and instance transforms with the opaque body. Only a street ambulance uses it.
+let ambulanceMaterials: THREE.MeshPhongMaterial[] | undefined;
+function streetMaterials() {
+  if (!ambulanceMaterials) {
+    const body = material.clone(), glass = material.clone();
+    body.map = new THREE.TextureLoader().load(import.meta.env.BASE_URL + 'ambulance-livery.webp');
+    body.map.colorSpace = THREE.SRGBColorSpace;
+    body.map.anisotropy = 4;
+    glass.transparent = true;
+    glass.opacity = 0.48;
+    glass.depthWrite = false;
+    for (const part of [body, glass]) {
+      part.onBeforeCompile = material.onBeforeCompile;
+      part.customProgramCacheKey = material.customProgramCacheKey;
+    }
+    body.specular.setScalar(0.07);
+    body.customProgramCacheKey = () => 'cars-service';
+    body.onBeforeCompile = (sh, renderer) => {
+      material.onBeforeCompile(sh, renderer);
+      sh.fragmentShader = sh.fragmentShader.replace('reflectedLight.directDiffuse += carCoat(',
+        'reflectedLight.directDiffuse += mix(.035, 1., smoothstep(.035, .22, dot(vColor.rgb, vec3(.3,.59,.11)))) * carCoat(');
+    };
+    ambulanceMaterials = [body, glass];
+  }
+  return ambulanceMaterials;
+}
 const depthMaterial = new THREE.MeshDepthMaterial();
 
 // Points round a car's outline for its collisions, the same for every car of a type
@@ -1800,7 +1836,7 @@ export class CarPool {
   scene: THREE.Scene;
   // 128 cars (8 KiB of matrices); overflow retains the original page.
   static readonly pageCapacity = 128;
-  meshes: Map<string, THREE.InstancedMesh<THREE.BufferGeometry, THREE.MeshPhongMaterial>[]>;
+  meshes: Map<string, THREE.InstancedMesh<THREE.BufferGeometry, THREE.MeshPhongMaterial | THREE.MeshPhongMaterial[]>[]>;
   prepared = new Set<string>();
   overflowPages = 0;
   latePages = 0;
@@ -1885,7 +1921,9 @@ export class CarPool {
       geometry.setAttribute('hinge', hinge);
     }
     geometry.setAttribute('doors', new THREE.InstancedBufferAttribute(new Float32Array(CarPool.pageCapacity * 4), 4));
-    const mesh = mirrored(new THREE.InstancedMesh(geometry, material, CarPool.pageCapacity));
+    const street = key === STREET_AMBULANCE;
+    if (street) for (const g of body.groups) geometry.addGroup(g.start, g.count, g.materialIndex);
+    const mesh = mirrored(new THREE.InstancedMesh(geometry, street ? streetMaterials() : material, CarPool.pageCapacity));
     mesh.userData.sharedMatrices = true; // (see configureRenderer in webgpu.ts)
     mesh.count = 0;
     mesh.visible = false;

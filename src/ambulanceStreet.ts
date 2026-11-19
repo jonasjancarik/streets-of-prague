@@ -32,8 +32,8 @@ function front(y: number, z: number, offset = 0) {
   return point(nose - radius * (1 - Math.sqrt(1 - u * u)) + offset, y, z);
 }
 function wheelLip(x: number, axle: number) {
-  const dx = (x - axle) / 0.57;
-  return Math.abs(dx) >= 1 ? 0.45 : 0.45 + 0.61 * Math.sqrt(1 - dx * dx);
+  const dx = (x - axle) / 0.49;
+  return Math.abs(dx) >= 1 ? 0.45 : 0.45 + 0.49 * Math.sqrt(1 - dx * dx);
 }
 
 // Curved body panels and flush decals, triangulated along the surface. Shared
@@ -66,8 +66,23 @@ export function ambulanceStreet(add: Add) {
   const panel = (colour: string, cols: number, rows: number, at: (u: number, v: number) => Point, reverse = false) =>
     shell(colour, surface(cols, rows, at, reverse));
 
-  const last = cabSections.length - 1, back = 0.715;
-  const cabHeight = (v: number) => cabSections[Math.round(v * last)][0];
+  // The atlas is authored in a 1024 x 512 layout. Set UVs only on printed
+  // surfaces; the rest of the vehicle retains its own material colours.
+  const print = (area: [number, number, number, number], cols: number, rows: number,
+    at: (u: number, v: number) => Point, reverse = false, texV: (u: number, v: number) => number = (_, v) => v) => {
+    const g = surface(cols, rows, at, reverse), [x, y, width, height] = area;
+    const uv = new Float32Array(g.attributes.position.count * 2);
+    for (let j = 0; j <= rows; j++) for (let i = 0; i <= cols; i++) {
+      const k = 2 * (j * (cols + 1) + i);
+      uv[k] = (x + 0.5 + (width - 1) * i / cols) / 1024;
+      uv[k + 1] = 1 - (y + 0.5 + (height - 1) * (1 - texV(i / cols, j / rows))) / 512;
+    }
+    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    g.userData.printed = true;
+    shell('#ffffff', g);
+  };
+  const back = 0.715, last = cabSections.length - 1;
+  const glaze = (g: THREE.BufferGeometry) => { g.userData.cabWindow = true; shell(glass, g); };
   // Perimeter from the middle of the flat face round its cylindrical corner.
   const noseAt = (y: number, u: number) => {
     const [, nose, width, r] = section(y);
@@ -76,33 +91,93 @@ export function ambulanceStreet(add: Add) {
       u < 0.55 ? (width - r) * u / 0.55 : width - r + r * Math.sin(angle));
   };
   for (const side of [-1, 1]) {
-    for (const [colour, low, high] of [[trim, 0, 2], [yellow, 2, last]] as const) {
-      panel(colour, 20, high - low, (u, v) => {
-        const p = noseAt(cabSections[low + Math.round(v * (high - low))][0], u);
-        p.z *= side;
-        return p;
-      }, side > 0);
+    // Leave actual openings between the sill and header. Thin strips of
+    // metal and gasket frame the glazing without blocking the view through it.
+    for (const [low, high] of [[0, 5], [5, 8], [8, 12], [12, last]]) {
+      const windowBand = low === 8;
+      const heightAt = (v: number) => cabSections[low + Math.round(v * (high - low))][0];
+      const noseBand = (from: number, to: number, colour: string, isGlass = false) => {
+        const g = surface(16, high - low, (u, v) => {
+          const p = noseAt(heightAt(v), THREE.MathUtils.lerp(from, to, u));
+          p.z *= side;
+          return p;
+        }, side > 0);
+        if (isGlass) glaze(g); else shell(colour, g);
+      };
+      const flank = (from: number, to: number, colour: string, isGlass = false, bumperEdge?: 'before' | 'after') => {
+        const g = surface(windowBand ? 8 : 48, high - low, (u, v) => {
+          const y = heightAt(v), [, nose, width, r] = section(y);
+          // The moulded bumper meets the wing behind the headlight, sharing
+          // the exact edge vertices so neither yellow nor black shows through.
+          const seam = 2.29 + 0.19 * THREE.MathUtils.smoothstep(y, 0.48, 1.13);
+          const a = bumperEdge === 'after' ? seam : back, b = bumperEdge === 'before' ? seam : nose - r;
+          const x = THREE.MathUtils.lerp(a, b, THREE.MathUtils.lerp(from, to, u));
+          const fender = Math.max(0, wheelLip(x, 1.82) - 0.46);
+          return point(x, y + fender * Math.max(0, (1.13 - y) / 0.67), side * width);
+        }, side < 0);
+        if (isGlass) glaze(g); else shell(colour, g);
+      };
+      if (windowBand) {
+        noseBand(0, 0.89, glass, true); noseBand(0.89, 0.915, seal); noseBand(0.915, 1, yellow);
+        flank(0, 0.135, yellow); flank(0.135, 0.16, seal); flank(0.16, 0.88, glass, true);
+        flank(0.88, 0.903, seal); flank(0.903, 1, yellow);
+      } else {
+        noseBand(0, 1, low === 0 ? trim : yellow);
+        if (low === 0) {
+          flank(0, 1, yellow, false, 'before');
+          flank(0, 1, trim, false, 'after');
+        } else flank(0, 1, yellow);
+      }
     }
-    panel(yellow, 48, last, (u, v) => {
-      const y = cabHeight(v), [, nose, w, r] = section(y), x = back + u * (nose - r - back);
-      const fender = Math.max(0, wheelLip(x, 1.82) - 0.46);
-      return point(x, y + fender * Math.max(0, (1.13 - y) / 0.67), side * w);
-    }, side < 0);
     panel(yellow, 20, 1, (u, v) => {
       const p = noseAt(2.50, u);
       return point(back + (p.x - back) * v, p.y, p.z * side);
     }, side < 0);
   }
 
-  // Glass and rubber gasket share their curvature with the underlying cab.
-  const screen = (colour: string, low: number, high: number, span: number, offset: number) =>
-    panel(colour, 32, 12, (u, v) => {
-      const t = u * 2 - 1;
-      const y = THREE.MathUtils.lerp(low + 0.055 * t * t, high - 0.06 * t * t, v);
-      return front(y, t * span * section(y)[2], offset);
-    }, true);
-  screen(seal, 1.408, 2.376, 0.975, 0.012);
-  screen(glass, 1.438, 2.353, 0.949, 0.020);
+  // Bonded glass has a black ceramic edge across the scuttle and header.
+  for (const y of [1.40, 2.32]) {
+    panel(seal, 28, 1, (u, v) => {
+      const h = y + (y < 2 ? 1 : -1) * v * 0.035;
+      return front(h, (1 - 2 * u) * section(h)[2] * 0.962, 0.010);
+    });
+  }
+  // The moulding over the cab rises from the screen to the patient box.
+  panel(yellow, 32, 12, (u, v) => {
+    const t = 2 * u - 1;
+    const nose = 1.635 - 0.115 * t * t;
+    return point(THREE.MathUtils.lerp(nose, 0.735, v),
+      2.358 + 0.288 * Math.sin(v * Math.PI * 0.50) - 0.052 * t * t, t * (0.825 + 0.135 * v));
+  }, true);
+  for (const side of [-1, 1]) panel(yellow, 12, 4, (u, v) => {
+    const x = THREE.MathUtils.lerp(1.52, 0.735, u);
+    const top = 2.306 + 0.288 * Math.sin(u * Math.PI * 0.50);
+    const width = 0.842 + 0.135 * u - 0.043 * (1 - v) ** 3 - 0.017 * v ** 4;
+    return point(x, THREE.MathUtils.lerp(2.305, top, v), side * width);
+  }, side > 0);
+  // The bulkhead, dashboard and upholstery can be seen from the opposite
+  // window. The back and underside of the cab do not open into the patient box.
+  mould('#68645d', 0.77, 1.69, 0, 0.10, 1.60, 1.78, 0.045);
+  mould('#363a3a', 1.49, 1.055, 0, 1.43, 0.21, 1.80, 0.07);
+  mould('#a39d90', 1.13, 2.392, 0, 0.69, 0.085, 1.59, 0.039);
+  mould('#383d3d', 1.98, 1.423, 0, 0.56, 0.20, 1.72, 0.090);
+  mould('#222827', 1.90, 1.52, -0.43, 0.33, 0.16, 0.39, 0.075);
+  for (const side of [-1, 1]) {
+    const z = side * 0.44;
+    mould('#505353', 1.19, 1.16, z, 0.56, 0.17, 0.53, 0.072);
+    const seat = new RoundedBoxGeometry(0.19, 0.64, 0.52, 2, 0.072).rotateZ(0.105);
+    add(seat, '#454a4a', 1.03, 1.50, z);
+    mould('#494d4c', 0.999, 1.91, z, 0.17, 0.21, 0.29, 0.069);
+    mould('#85847a', 1.38, 2.26, z, 0.065, 0.10, 0.46, 0.025);
+    tube('#373b3b', 0.014, [point(0.93, 1.83, z + side * 0.23), point(1.09, 1.26, z - side * 0.16)]);
+  }
+  const wheelCentre = point(1.74, 1.50, -0.43);
+  add(new THREE.TorusGeometry(0.173, 0.023, 8, 36).rotateY(Math.PI / 2).rotateZ(-0.31), '#242a2b', wheelCentre.x, wheelCentre.y, wheelCentre.z);
+  mould('#303536', 1.74, 1.50, -0.43, 0.061, 0.108, 0.134, 0.027);
+  for (const offset of [-0.16, 0.16]) tube(trim, 0.016, [wheelCentre, point(1.74, 1.50, -0.43 + offset)]);
+  tube(trim, 0.017, [point(1.73, 1.49, -0.43), point(1.70, 1.34, -0.43)]);
+  mould('#242628', 1.72, 2.19, 0, 0.056, 0.080, 0.23, 0.026);
+  tube(trim, 0.013, [point(1.72, 2.19, 0), point(1.76, 2.25, 0)]);
   for (const z of [-0.42, 0.44]) {
     tube(seal, 0.014, [front(1.466, z - 0.16, 0.039), front(1.50, z + 0.03, 0.039)]);
     tube(trim, 0.013, [-0.28, 0, 0.28].map((dz, i) => front(1.50 + i * 0.014, z + dz, 0.042)));
@@ -115,55 +190,71 @@ export function ambulanceStreet(add: Add) {
       const y = THREE.MathUtils.lerp(y0 + t * t * 0.018, y1 + t * t * 0.018, v);
       return front(y, t * (width + 0.085 * v), offset);
     }, true);
-  grille(0.48, 0.585, 0.38, seal, 0.026);
-  grille(0.765, 1.115, 0.43, seal, 0.017);
-  for (const y of [0.81, 0.92, 1.03]) grille(y, y + 0.026, 0.445 + (y - 0.81) * 0.24, steel, 0.029);
-  mould('#e7e6df', 3.026, 0.633, 0, 0.034, 0.107, 0.46, 0.008);
+  // The Sprinter's black moulding fills the whole face below the lamps.
+  grille(0.533, 0.668, 0.55, seal, 0.031);
+  grille(0.77, 1.151, 0.52, seal, 0.034);
+  for (const y of [0.81, 0.919, 1.034]) grille(y, y + 0.024, 0.50 + (y - 0.81) * 0.26, '#53585b', 0.054);
+  const badge = front(0.959, 0, 0.069);
+  add(new THREE.TorusGeometry(0.103, 0.008, 6, 36).rotateY(Math.PI / 2), steel, badge.x, badge.y, 0);
+  for (let i = 0; i < 3; i++) {
+    const a = i * Math.PI * 2 / 3;
+    tube('#d4d8d6', 0.008, [badge, point(badge.x, badge.y + 0.098 * Math.cos(a), 0.098 * Math.sin(a))]);
+  }
+  mould('#202729', 3.047, 0.648, 0, 0.032, 0.127, 0.49, 0.010);
+  print([232, 300, 140, 31], 1, 1, (u, v) => point(3.065, 0.599 + 0.101 * v, 0.230 - 0.46 * u));
+  print([740, 306, 104, 85], 12, 8, (u, v) => front(1.302 + 0.054 * v, (1 - 2 * u) * 0.109, 0.010));
   for (const side of [-1, 1]) {
-    const lens = (colour: string, inset: number, offset: number) =>
-      panel(colour, 18, 5, (u, v) => {
-        const z = (0.505 + inset + u * (0.439 - 2 * inset)) * side;
-        const y = 0.982 + 0.124 * u + inset + (0.102 + 0.038 * Math.sin(Math.PI * u) - 2 * inset) * v;
-        return front(y, z, offset);
-      }, side > 0);
-    lens(trim, 0, 0.024);
-    lens(headlamp, 0.014, 0.035);
-    // A narrow reflector visible through the lower edge of each lens.
-    panel('#bccbd1', 16, 1, (u, v) => {
-      const z = side * (0.54 + 0.37 * u);
-      return front(1.008 + 0.11 * u + 0.012 * v, z, 0.041);
-    }, side > 0);
-    // The black bumper returns round each front corner to the wheel opening.
-    panel(trim, 12, 4, (u, v) => {
-      const y = 0.46 + v * 0.23, [, nose, w, r] = section(y);
-      return point(THREE.MathUtils.lerp(2.42, nose - r, u), y, side * (w + 0.001));
-    }, side < 0);
-    const fog = front(0.607, side * 0.76, 0.014);
-    mould('#c2cdd0', fog.x, fog.y, fog.z, 0.033, 0.052, 0.122, 0.015);
-    // One broad side window tapers towards the A-pillar.
-    for (const [colour, inset, offset] of [[seal, 0, 0.004], [glass, 0.035, 0.009]] as const) {
-      panel(colour, 14, 12, (u, v) => {
-        const y = 1.42 + inset + v * (0.92 - 2 * inset) + 0.033 * (1 - u) ** 4 - 0.05 * u ** 5 * v;
-        const [, nose, width, r] = section(y);
-        return point(THREE.MathUtils.lerp(0.88 + inset, nose - r - 0.06 - inset, u), y, side * (width + offset));
+    panel(trim, 10, 4, (u, v) => front(1.349 + 0.032 * v, side * (0.38 + 0.25 * u), 0.010), side > 0);
+    for (let i = 0; i < 5; i++) panel('#555957', 2, 1, (u, v) => front(1.354 + 0.020 * v, side * (0.399 + 0.045 * i + 0.012 * u), 0.012), side > 0);
+  }
+  print([232, 348, 240, 37], 32, 5, (u, v) => front(1.172 + 0.105 * v + 0.021 * (2 * u - 1) ** 2, 0.78 * (1 - 2 * u), 0.018));
+  for (const side of [-1, 1]) {
+    const optic = (u: number, v: number, delta: number) => {
+      const z = side * (0.493 + 0.447 * u), y = 0.928 + 0.157 * u + v * (0.18 + 0.049 * Math.sin(Math.PI * u));
+      return front(y, z, delta);
+    };
+    panel(trim, 20, 6, (u, v) => optic(u, v, 0.029), side > 0);
+    print([514, 307, 210, 80], 20, 6, (u, v) => optic(0.027 + 0.944 * u, 0.055 + 0.887 * v, 0.041), side > 0);
+    for (const centre of [0.259, 0.629]) {
+      panel(headlamp, 16, 2, (u, v) => {
+        const a = 2 * Math.PI * u;
+        return optic(centre + 0.041 * v * Math.cos(a), 0.49 + 0.094 * v * Math.sin(a), 0.048);
       }, side < 0);
     }
+    const fog = front(0.607, side * 0.76, 0.014);
+    mould('#c2cdd0', fog.x, fog.y, fog.z, 0.033, 0.052, 0.122, 0.015);
     const door = (x: number, y: number) => point(x, y, side * (section(y)[2] + 0.007));
     tube('#929046', 0.008, [door(0.82, 2.31), door(0.82, 1.44), door(0.84, 0.72), door(0.90, 0.58), door(1.19, 0.58)]);
     mould(trim, 1.016, 1.32, side * 0.981, 0.217, 0.056, 0.041, 0.020);
     tube(trim, 0.031, [door(1.95, 1.50), point(1.96, 1.52, side * 1.06), point(1.93, 1.66, side * 1.13)]);
     mould(trim, 1.925, 1.75, side * 1.15, 0.151, 0.286, 0.180, 0.064);
     mould('#76878e', 1.847, 1.765, side * 1.15, 0.012, 0.206, 0.123, 0.005);
-    panel('#df3829', 12, 2, (u, v) => door(0.86 + u * 0.99, 1.13 + v * 0.092), side < 0);
+    const belt = (colour: string, low: number, high: number, end: number) =>
+      panel(colour, 24, 4, (u, v) => {
+        const y = low + v * (high - low) - 0.055 * u ** 3;
+        const [, nose, width, r] = section(y);
+        const x = THREE.MathUtils.lerp(0.83, Math.min(end, nose - 0.65 * r), u);
+        const dx = Math.max(0, x - (nose - r));
+        return point(x, y, side * (width - r + Math.sqrt(Math.max(0, r * r - dx * dx)) + 0.014));
+      }, side < 0);
+    belt('#b8202c', 1.13, 1.35, 2.49);
+    belt('#006653', 0.81, 1.08, 1.32);
+    print([740, 408, 200, 55], 8, 2, (u, v) => door(1.155 + side * (u - 0.5) * 0.54, 1.076 + v * 0.080));
     // Black wheel-well liner just inside the arch, and a painted rolled lip.
     const arch = (axle: number, w: number) => {
+      // Close the inside of the recess behind the tyre, including the gap
+      // above its shoulder when viewed at an oblique angle.
+      panel(seal, 32, 1, (u, v) => {
+        const a = Math.PI * (1 - u);
+        return point(axle + 0.495 * Math.cos(a), 0.35 + v * (0.10 + 0.50 * Math.sin(a)), side * (w - 0.20));
+      }, side < 0);
       panel(seal, 32, 1, (u, v) => {
         const a = (1 - u) * Math.PI;
-        return point(axle + 0.565 * Math.cos(a), 0.45 + 0.612 * Math.sin(a), side * (w - 0.15 + v * 0.15));
+        return point(axle + 0.49 * Math.cos(a), 0.45 + 0.491 * Math.sin(a), side * (w - 0.15 + v * 0.15));
       }, side > 0);
       const lip = Array.from({ length: 17 }, (_, i) => {
         const a = (1 - i / 16) * Math.PI;
-        return point(axle + 0.565 * Math.cos(a), 0.45 + 0.612 * Math.sin(a), side * w);
+        return point(axle + 0.49 * Math.cos(a), 0.45 + 0.491 * Math.sin(a), side * w);
       });
       tube(yellow, 0.019, lip);
     };
@@ -173,57 +264,78 @@ export function ambulanceStreet(add: Add) {
   }
 
   // The patient's box has moulded corner caps and skirt cut-outs for the
-  // back wheels. Its flat faces carry the same livery as the overhead mesh.
+  // back wheels. The livery is printed across both body sections below.
   mould(yellow, -1.115, 1.915, 0, 3.77, 1.57, 2.10, 0.095);
   const skirt = new THREE.Shape();
   skirt.moveTo(-2.99, 1.28); skirt.lineTo(0.765, 1.28); skirt.lineTo(0.765, 0.55);
-  skirt.lineTo(-1.20, 0.55);
-  skirt.absellipse(-1.78, 0.46, 0.58, 0.61, 0, Math.PI, false, 0);
+  skirt.lineTo(-1.28, 0.55);
+  skirt.absellipse(-1.78, 0.45, 0.50, 0.49, 0, Math.PI, false, 0);
   skirt.lineTo(-2.99, 0.55); skirt.closePath();
   const skirtGeo = new THREE.ExtrudeGeometry(skirt, { depth: 2.014, bevelEnabled: true, bevelSize: 0.02, bevelThickness: 0.023, bevelSegments: 3, curveSegments: 18 });
   add(skirtGeo, yellow, 0, 0, -1.007);
   // Rounded tyre shoulders and dished rims catch the light as continuous rings.
   for (const axle of [1.82, -1.78]) for (const side of [-1, 1]) {
     const radial = (colour: string, profile: [number, number][]) =>
-      add(new THREE.LatheGeometry(profile.map(([r, z]) => new THREE.Vector2(r, z)), 48)
-        .rotateX(side * Math.PI / 2), colour, axle, 0.50, side * 0.871);
+      add(new THREE.LatheGeometry(profile.map(([r, z]) => new THREE.Vector2(r * 0.84, z)), 48)
+        .rotateX(side * Math.PI / 2), colour, axle, 0.42, side * 0.871);
     radial('#212426', [[0.285, -0.146], [0.42, -0.145], [0.479, -0.122], [0.498, -0.080], [0.50, 0.068], [0.488, 0.112], [0.453, 0.137], [0.38, 0.145], [0.285, 0.14]]);
-    radial(steel, [[0.29, 0.139], [0.279, 0.153], [0.265, 0.142], [0.22, 0.119], [0.17, 0.122], [0.12, 0.139], [0.002, 0.137]]);
+    radial('#747d80', [[0.29, 0.139], [0.279, 0.153], [0.265, 0.142], [0.22, 0.119], [0.17, 0.122], [0.12, 0.139], [0.002, 0.137]]);
     radial('#60676b', [[0.002, 0.141], [0.102, 0.14], [0.096, 0.166], [0.080, 0.178], [0.002, 0.178]]);
     for (let i = 0; i < 8; i++) {
       const a = i * Math.PI / 4;
-      add(new THREE.CircleGeometry(0.034, 12).rotateY(side < 0 ? Math.PI : 0), seal,
-        axle + 0.213 * Math.cos(a), 0.50 + 0.213 * Math.sin(a), side * 1.006);
+      add(new THREE.CircleGeometry(0.029, 12).rotateY(side < 0 ? Math.PI : 0), seal,
+        axle + 0.179 * Math.cos(a), 0.42 + 0.179 * Math.sin(a), side * 1.006);
+    }
+    for (let i = 0; i < 6; i++) {
+      const a = i * Math.PI / 3, x = axle + 0.106 * Math.cos(a), y = 0.42 + 0.106 * Math.sin(a);
+      add(new THREE.CylinderGeometry(0.017, 0.019, 0.022, 6).rotateX(Math.PI / 2),
+        '#7f8580', x, y, side * 1.016);
+      const tick = new THREE.Shape([new THREE.Vector2(-0.014, 0), new THREE.Vector2(0.014, 0), new THREE.Vector2(0.007, 0.034)]);
+      add(new THREE.ShapeGeometry(tick).rotateZ(a).rotateY(side < 0 ? Math.PI : 0),
+        '#c4cb3e', x, y, side * 1.030);
     }
   }
 
-  // Smooth signwriter's numerals for the emergency number seen from the pavement.
-  const one = new THREE.Shape();
-  one.moveTo(0.07, 0); one.lineTo(0.07, 0.235); one.lineTo(0.012, 0.207);
-  one.lineTo(0, 0.256); one.lineTo(0.078, 0.31); one.lineTo(0.132, 0.31); one.lineTo(0.132, 0);
-  const five = new THREE.Shape();
-  five.moveTo(0.190, 0.311); five.lineTo(0.022, 0.311); five.lineTo(0.010, 0.145);
-  five.quadraticCurveTo(0.125, 0.183, 0.138, 0.117);
-  five.bezierCurveTo(0.160, 0.044, 0.070, 0.038, 0.019, 0.072);
-  five.lineTo(0, 0.021);
-  five.bezierCurveTo(0.081, -0.027, 0.204, -0.006, 0.205, 0.105);
-  five.bezierCurveTo(0.207, 0.187, 0.138, 0.221, 0.073, 0.207);
-  five.lineTo(0.078, 0.254); five.lineTo(0.190, 0.254);
-  const digits = [one, five, five];
-  const offsets = [-0.32, -0.139, 0.098];
-  digits.forEach((shape, i) => {
-    const numeral = new THREE.ShapeGeometry(shape, 8);
-    for (const side of [-1, 1]) {
-      add(numeral.clone().rotateY(side < 0 ? Math.PI : 0), '#253544', -1.23 + side * offsets[i], 1.75, side * 1.058);
+  // The lower vinyl follows the wheel arch. Mapping height in metres, even
+  // where the skirt curves, keeps the printed squares and lettering undistorted.
+  for (const side of [-1, 1]) {
+    const xAt = (u: number) => side > 0 ? -2.935 + u * 3.63 : 0.695 - u * 3.63;
+    const yAt = (u: number, v: number) => THREE.MathUtils.lerp(Math.max(0.566, wheelLip(xAt(u), -1.78) + 0.027), 2.621, v);
+    print([side > 0 ? 4 : 516, 4, 500, 280], 100, 8, (u, v) => {
+      const y = yAt(u, v);
+      return point(xAt(u), y, side * 1.054);
+    }, false, (u, v) => (yAt(u, v) - 0.566) / (2.621 - 0.566));
+    // Glass inset, rubber gasket and a flush door latch on the kerb side.
+    if (side > 0) {
+      for (const x of [-0.98, 0.10]) mould('#827c53', x, 1.53, 1.056, 0.014, 1.79, 0.012, 0.005);
+      mould('#93938b', -0.44, 2.424, 1.056, 1.09, 0.030, 0.016, 0.007);
+      mould('#d8dbcf', -0.44, 2.034, 1.059, 0.663, 0.663, 0.018, 0.008);
+      mould(seal, -0.44, 2.034, 1.075, 0.609, 0.614, 0.024, 0.011);
+      mould(glass, -0.44, 2.034, 1.091, 0.561, 0.567, 0.012, 0.005);
+      mould(trim, -0.85, 1.435, 1.070, 0.078, 0.147, 0.025, 0.012);
+      mould(trim, -0.43, 0.475, 1.05, 1.06, 0.082, 0.20, 0.038);
+      for (const z of [1.065, 1.11]) mould(steel, -0.43, 0.519, z, 1.00, 0.014, 0.023, 0.005);
     }
-    add(numeral.scale(0.51, 0.51, 1).rotateY(-Math.PI / 2), '#253544', -3.014, 0.86, 0.48 + offsets[i] * 0.51);
-  });
+    // Flush lockers: narrow seals and recessed paddle handles, clear of the wheel.
+    for (const x of [0.18, 0.65, -1.19]) mould('#797751', x, 1.10, side * 1.057, 0.011, 0.69, 0.009, 0.004);
+    mould('#e3dcab', 0.415, 1.443, side * 1.058, 0.48, 0.024, 0.012, 0.005);
+    mould('#343a38', 0.42, 1.32, side * 1.071, 0.087, 0.116, 0.022, 0.010);
+    mould(steel, 0.42, 1.321, side * 1.085, 0.035, 0.065, 0.010, 0.004);
+    mould('#aec3c9', -0.08, 2.576, side * 1.063, 0.17, 0.054, 0.021, 0.010);
+    for (const x of [-2.76, -1.24, 0.48]) mould('#e0a347', x, 0.822, side * 1.055, 0.113, 0.037, 0.025, 0.010);
+  }
+  print([4, 292, 214, 211], 1, 1, (u, v) => point(-3.017, 0.61 + 2.015 * v, -0.939 + 1.878 * u));
+  print([232, 300, 140, 31], 1, 1, (u, v) => point(-3.041, 0.748 + 0.102 * v, -0.685 + 0.47 * u));
+  print([232, 399, 240, 60], 24, 4, (u, v) => front(2.344 + v * 0.095, (1 - 2 * u) * 0.37, 0.023));
 
   // Curved blue end caps and an aluminium spine over the windscreen.
   mould(trim, 1.275, 2.54, 0, 0.285, 0.14, 1.78, 0.06);
   mould('#c1cbd1', 1.275, 2.66, 0, 0.286, 0.145, 1.75, 0.060);
   for (const side of [-1, 1]) {
+    // Separate LED optics behind the clear front edge of the bar.
+    for (let lamp = 0; lamp < 4; lamp++) mould('#93b8cf', 1.423, 2.668, side * (0.41 + 0.108 * lamp), 0.022, 0.054, 0.071, 0.010);
     mould('#21569d', 1.275, 2.665, side * 0.59, 0.29, 0.16, 0.59, 0.065);
+    mould('#d9dcd3', 1.275, 2.745, side * 0.59, 0.20, 0.012, 0.52, 0.005);
     mould('#21569d', -2.80, 2.695, side * 0.84, 0.306, 0.16, 0.31, 0.059);
     mould(seal, -3.006, 1.94, side * 0.45, 0.038, 0.60, 0.72, 0.018);
     mould(glass, -3.028, 1.94, side * 0.45, 0.019, 0.54, 0.662, 0.009);

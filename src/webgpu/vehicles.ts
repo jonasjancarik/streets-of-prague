@@ -144,7 +144,10 @@ const carCoat = (c: N): N => {
   return mix(tint, mirrored, uMirror).add(lamp.mul(coat.mul(CAR_GLOSS.lamps).add(rim.mul(CAR_GLOSS.rimLamps))));
 };
 
-addPort(/^cars$/, (node) => {
+addPort(/^cars(?:-service)?$/, (node, legacy) => {
+  // On the detailed ambulance, dark rubber and interior trim have a satin
+  // finish. Vinyl is printed onto white vertices and retains the paint gloss.
+  const serviceBody = legacy.customProgramCacheKey() === 'cars-service';
   const proto = Object.getPrototypeOf(node);
   // (Before the instance's own transform goes on, in setupPosition.)
   node.setupPosition = function (builder: N) {
@@ -167,7 +170,10 @@ addPort(/^cars$/, (node) => {
     diffuseColor.assign(vec4(mix(diffuseColor.rgb, vec3(0.8, 0.82, 0.86), cover), diffuseColor.a));
     diffuseColor.rgb.mulAssign(mix(1, CAR_GLOSS.darker, uWet.mul(carTop())));
   };
-  glow(node, () => Fn(() => carCoat(diffuseColor.rgb))());
+  glow(node, () => Fn(() => {
+    const coat = carCoat(diffuseColor.rgb);
+    return serviceBody ? coat.mul(mix(0.035, 1, smoothstep(0.035, 0.22, luma(vertexColor().rgb)))) : coat;
+  })());
   glow(node, () => select(lamp.lessThan(0.5), vec3(0), tinted).mul(max(shine, 0)).mul(LAMP_GLOW));
   lampLit(node);
 });
