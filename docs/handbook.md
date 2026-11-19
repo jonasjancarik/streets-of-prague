@@ -216,6 +216,33 @@ back, and the clock returns to what it was. It is the developer panel's free cam
 (`t.cam`) with the game paused. WebGL keeps MSAA on at every tier because it cannot change
 that without a new renderer.
 
+## Art direction
+
+<!-- read_when: designing or reviewing vehicles, buildings, vegetation, street furniture or lighting for either camera -->
+
+**Top-down.** Judge the street at normal driving zoom, in motion. Coming up to a junction,
+you should be able to follow the kerb, spot a pedestrian and tell which way a van is facing.
+Give each object a distinctive outline and a few broad areas of colour. On the dustcart,
+the orange cab and the black hose curled over the pale steel cover identify it from above.
+A roofline and its cast shadow can do much of the work of describing a building. Keep
+paving distinct from asphalt, and soften fine patterns if they shimmer as the camera moves.
+
+**First person.** Aim for a street that looks real from the pavement. Work from photographs
+of the Prague place or vehicle, starting with proportions and how the parts fit together.
+At a building entrance, model the depth of the doorway and the step where it meets the
+pavement. On a vehicle, spend detail where the player can see through, around
+or into something. The ambulance windscreen reveals the seats and steering wheel. Its
+headlamps have reflectors behind clear covers, with the beam starting at the lamp. Rubber,
+glass and painted metal should respond differently to the same light. Use local service
+colours and markings for recognition. Leave manufacturer badges off or invent one.
+
+**Choosing the model.** Use one model when it looks right in both views. If a close-up needs
+a cab interior or recessed lights, put that geometry on a separate street model so the
+overhead view stays light. Both versions of a vehicle should agree on its footprint,
+livery, lamp positions and damage. Check the same subject from above and on foot in
+`?fps`, walking around it to catch details that look convincing from only one angle.
+For working lights, check the same spot again after dark.
+
 ## Playing
 
 - On foot, the yellow ring stays visible from above when you walk under trees.
