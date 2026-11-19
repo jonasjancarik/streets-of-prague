@@ -12,6 +12,7 @@ const check = `(async () => {
   const { POST } = await import(performance.getEntriesByType('resource').find(e => new URL(e.name).pathname === '/src/post.ts').name);
   const { CANOPY_LEAVES } = await import(performance.getEntriesByType('resource').find(e => new URL(e.name).pathname === '/src/trees.ts').name);
   const { AutoTier } = await import('/src/graphics.ts');
+  const { PEOPLE_SHADOWS } = await import(performance.getEntriesByType('resource').find(e => new URL(e.name).pathname === '/src/figures.ts').name);
   const assert = (ok, message) => { if (!ok) throw new Error(message); };
   for (const [tier, size, samples, look, cars, crowd, blur] of [
     ['lowest',1024,0,0,0,0.5,1], ['high',2048,4,1,2,1,1], ['ultra',4096,4,1,3,1,2],
@@ -28,6 +29,7 @@ const check = `(async () => {
     assert(POST.on === (tier === 'high' || tier === 'ultra'), tier + ': default bloom');
     assert(CANOPY_LEAVES.value === (tier === 'high' || tier === 'ultra'), tier + ': default canopy sprays');
     assert(LAMP_SHADOWS.value === cars && g.crowd === crowd, tier + ': lamps/crowd');
+    assert(PEOPLE_SHADOWS.tier === (tier === 'low' || tier === 'lowest' ? 'simple' : 'full'), tier + ": people's shadows");
     assert(LIGHT_FX.value === Number(tier === 'high' || tier === 'ultra'), tier + ': beams and glints');
     assert(r.getPixelRatio() === 1, tier + ': fixed DPR');
     if (r.backend?.isWebGPUBackend) {

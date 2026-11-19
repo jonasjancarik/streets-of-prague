@@ -1330,8 +1330,8 @@ and the Old Town Square holds 225–340 of them.
 
 `?peopleshadows=full|simple|none` (`PEOPLE_SHADOWS` in `src/figures.ts`): `simple` puts a
 six-vertex shape as big as a standing person in the shadow map in each person's place, on a
-layer only the sun's shadow camera sees; `none` gives people no shadow. No graphics tier
-uses either yet: without the parameter people cast as before.
+layer only the sun's shadow camera sees; `none` gives people no shadow. Low and Lowest
+use `simple` (chosen by the user from the pictures, 19 November); the other tiers cast as before.
 
 Pixel 5, Chrome WebGPU over adb, Medium, 1×, standing on the Old Town Square, clear,
 `--ab` against `full` in one page, 48 s in four-second windows, no touches:
@@ -1353,5 +1353,12 @@ off: the page closed in one, and in the other the frame rate fell to nothing in 
 states. The plain shape alone ran 30 s with no errors in the console; what broke those runs
 wasn't found.
 
+With Low and Lowest set to the plain shape, again on the phone at Low (its own pixel
+ratio, the same switch in one page, 32–34 °C, no touches): standing 27.6 → 26.1 ms (5.2 %)
+and 22.2 → 21.7 ms (2.2 %), the drive from Újezd 38.4 → 37.9 ms (1.3 %, within its noise).
+All three ran through.
+
 The look: the plain shape's shadow is a thin spike whatever the person does, so someone
-lying down or on a bike casts a standing one. Not measured: the drive, other tiers, the M5.
+lying down or on a bike casts a standing one. `check-graphics` covers the tiers' choice;
+it stops at "high: actual MSAA depth texture", as it does without this change. Not
+measured: Medium and up (unchanged), the M5.
