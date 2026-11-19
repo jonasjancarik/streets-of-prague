@@ -175,14 +175,14 @@ export class LifeSize {
     if (anim.name !== 'idle' && !GAITS.includes(anim.name as Move)) return false;
     const pos = _p.setFromMatrixPosition(matrix);
     const d = Math.hypot(pos.x - this.cam.x, pos.z - this.cam.z);
-    if (d < REACH + SLACK) this.offered.push(d);
+    if (d < REACH + SLACK && !fig.self) this.offered.push(d);
     let gid = this.ids.get(fig);
     if (gid === undefined) this.ids.set(fig, (gid = this.ids_++));
     const key = `${gid}:${id}`;
     let p = this.live.get(key);
     if (!p) {
-      // (Not you: the camera is in your own head.)
-      if (d > this.reach || d < 1 || this.live.size >= MOST) return false;
+      // (Not someone the camera is inside; you, though, always: see Figures.self.)
+      if (!fig.self && (d > this.reach || d < 1 || this.live.size >= MOST)) return false;
       p = this.take((gid * 7919 + id * 104729) % this.kinds.length);
       p.pos.copy(pos);
       p.last.copy(pos);
@@ -197,7 +197,7 @@ export class LifeSize {
       this.live.set(key, p);
       this.pose(p, anim);
       for (const c in p.w) p.w[c] = p.want[c];
-    } else if (d > this.reach + SLACK) return false;
+    } else if (!fig.self && d > this.reach + SLACK) return false;
     p.pos.copy(pos);
     matrix.decompose(_v, p.turn, _s);
     p.umbrella = umbrella;

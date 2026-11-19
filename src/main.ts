@@ -3086,6 +3086,8 @@ async function main() {
     walker.ring.material.depthTest = fromStreet;
     // (Seen from just behind you, the ring is only in the way.)
     walker.ring.visible = !(eyes && eyes.third);
+    // At street level you're a life-size person too, like everyone round you (rocketbox.ts).
+    walker.fig.lifeSize = walker.fig.self = !!eyes && !underway;
     carOutline.update(fromStreet ? null : inCar, carPool);
     world.trees.street(fromStreet, free ? free.x : camera.position.x, free ? -free.y : camera.position.z);
     world.trees.canopy(true, fromStreet);
