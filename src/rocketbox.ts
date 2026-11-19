@@ -11,9 +11,8 @@ import { shape as umbrellaShape, material as umbrellaMaterial, colour as umbrell
 // First person: the passers-by near you are life-size people from the Microsoft Rocketbox
 // avatar library (MIT), walking, jogging, running and standing about with their own
 // motion-captured clips (public/rocketbox/, built by assets/rocketbox/build.sh). From above
-// they'd be a few pixels, so this is only for the street-level view; everyone further off,
-// and anyone doing something the clips don't cover (falling, fleeing a car, getting up), stays
-// the usual instanced figure.
+// they'd be a few pixels, so this is only for the street-level view; everyone further off
+// stays the usual instanced figure. Special actions use the figure clips fitted to Bip01.
 //
 // Each frame the crowd offers its people as it draws them (LIFE_SIZE.claim in figures.ts);
 // one near enough is taken and their instance drawn at zero size, and frame() then poses the
@@ -74,6 +73,7 @@ export class LifeSize {
   group = new THREE.Group();
   enabled = true;
   private kinds: Kind[] = [];
+  private figureActions: Record<string, THREE.AnimationClip> = {};
   private state: 'idle' | 'loading' | 'ready' | 'failed' = 'idle';
   private live = new Map<string, Person>();
   private spare: Person[][] = [];
@@ -104,7 +104,9 @@ export class LifeSize {
       ktx2 = new KTX2Loader().setTranscoderPath('rocketbox/');
       ktx2.detectSupport(this.renderer as never);
       const loader = new GLTFLoader().setKTX2Loader(ktx2).setMeshoptDecoder(MeshoptDecoder);
-      const byName = readClips(await (await fetch('rocketbox/clips.bin')).arrayBuffer());
+      const [byName, figureActions] = await Promise.all(['clips', 'actions'].map(async (file) =>
+        readClips(await (await fetch(`rocketbox/${file}.bin`)).arrayBuffer())));
+      this.figureActions = figureActions;
       this.kinds = await Promise.all(AVATARS.map(async ([name, sex]) => {
         const g = await loader.loadAsync(`rocketbox/${name}.glb`);
         g.scene.traverse((o) => {
@@ -124,6 +126,12 @@ export class LifeSize {
         for (const name of STANDING[sex]) kind.clips[name] = inPlace(byName[`${sex}_${name}`], hips)[0];
         const umbrella = (kind.clips.umbrella = inPlace(byName[`${sex}_${UMBRELLA[sex]}`], hips)[0]);
         kind.clips.arm = new THREE.AnimationClip('arm', umbrella.duration, umbrella.tracks.filter((t) => LEFT_ARM.test(t.name)));
+        for (const [name, clip] of Object.entries(figureActions)) {
+          // actions.mjs stores travel in units of the reference avatar's hip height.
+          const position = clip.tracks[0].clone();
+          for (let i = 0; i < position.values.length; i++) position.values[i] *= hips;
+          kind.clips[name] = new THREE.AnimationClip(name, clip.duration, [position, ...clip.tracks.slice(1)]);
+        }
         return kind;
       }));
       this.spare = this.kinds.map(() => []);
@@ -172,7 +180,7 @@ export class LifeSize {
   // A person in the crowd, as they're drawn: true if they're shown life size instead.
   private claim(fig: Figures, id: number, matrix: THREE.Matrix4, anim: Anim, umbrella: number) {
     if (!this.on) return false;
-    if (anim.name !== 'idle' && !GAITS.includes(anim.name as Move)) return false;
+    if (anim.name !== 'idle' && !GAITS.includes(anim.name as Move) && !this.figureActions[anim.name]) return false;
     const pos = _p.setFromMatrixPosition(matrix);
     const d = Math.hypot(pos.x - this.cam.x, pos.z - this.cam.z);
     if (d < REACH + SLACK && !fig.self) this.offered.push(d);
@@ -196,7 +204,7 @@ export class LifeSize {
       p.umbrella = umbrella;
       this.live.set(key, p);
       this.pose(p, anim);
-      for (const c in p.w) p.w[c] = p.want[c];
+      for (const c in p.w) p.w[c] = p.want[c] ?? 0;
     } else if (!fig.self && d > this.reach + SLACK) return false;
     p.pos.copy(pos);
     matrix.decompose(_v, p.turn, _s);
@@ -207,10 +215,29 @@ export class LifeSize {
   }
   private ids_ = 0;
 
+  // Gameplay can hold, restart or scrub an action, including the jump apex.
+  private setActionTime(p: Person, anim: Anim, name: string, time: number) {
+    const clip = this.kinds[p.kind].clips[name];
+    if (!p.actions[name]) {
+      p.actions[name] = p.mixer.clipAction(clip).play();
+      p.w[name] = p.want[name] = 0;
+    }
+    const len = clip.duration;
+    p.t[name] = anim.clips[name].loop ? ((time % len) + len) % len : Math.max(0, Math.min(time, len));
+  }
+
   // Which clips should show, from the figure's own animation.
   private pose(p: Person, anim: Anim) {
     for (const c in p.want) p.want[c] = 0;
     const up = p.umbrella >= 0;
+    if (anim.from && anim.w > 0 && this.figureActions[anim.from] && anim.from !== anim.name) {
+      this.setActionTime(p, anim, anim.from, anim.ft);
+    }
+    if (this.figureActions[anim.name]) {
+      this.setActionTime(p, anim, anim.name, anim.t);
+      p.want[anim.name] = 1;
+      return;
+    }
     if (anim.name === 'idle') { p.want[up ? 'umbrella' : p.rest] = 1; return; }
     const g = anim.blend ? anim.gait : GAITS.indexOf(anim.name as Move);
     const lo = Math.min(Math.floor(g), GAITS.length - 2), mix = Math.min(1, Math.max(0, g - lo));
@@ -226,6 +253,7 @@ export class LifeSize {
     const mixer = new THREE.AnimationMixer(root);
     const actions: Person['actions'] = {}, w: Person['w'] = {}, want: Person['want'] = {}, t: Person['t'] = {};
     for (const c in k.clips) {
+      if (this.figureActions[c]) continue; // bound on the first use of this action
       actions[c] = mixer.clipAction(k.clips[c]);
       actions[c].play();
       w[c] = want[c] = t[c] = 0;
@@ -299,6 +327,7 @@ export class LifeSize {
         a.setEffectiveWeight(c === 'arm' ? p.w[c] * OVER : p.w[c]);
         if (p.w[c] === 0) continue;
         if (c in k.stride) { a.time = p.phase * len; continue; }
+        if (this.figureActions[c]) { a.time = p.t[c]; continue; }
         p.t[c] += dt;
         // (The umbrella's clips go round; a way of standing is held at its end as it fades.)
         a.time = c === 'umbrella' || c === 'arm' ? p.t[c] % len : Math.min(p.t[c], len);

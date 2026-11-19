@@ -1193,8 +1193,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   looking round, texting or calling on a phone, with a phone in the hand). In the rain
   anyone with their umbrella up holds it in the left hand, with Rocketbox's umbrella clip
   standing and that clip's left arm over the walk when moving.
-  Only the crowd's people, and only while they walk, jog, run or stand: falling, fleeing,
-  getting up, police, couriers and riders stay the usual figures. Their code (with the
+  The player and nearby pedestrians keep their avatar when they jump, fall, get up or
+  interact with a car. These actions follow the figure animation's clock. Rebuild
+  them from `public/figures.glb` with `node assets/rocketbox/actions.mjs` after editing
+  the poses. Police and separate courier and rider groups use their usual figures.
+  The avatars' code (with the
   texture and mesh decoders only they use) and the files (about 18 MB, in `public/rocketbox/`)
   load the first time first person is on (`src/lifesize.ts` imports `src/rocketbox.ts`
   then), and two minutes after leaving first person, paused or not, they're freed again

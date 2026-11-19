@@ -44,6 +44,7 @@ done
 [ -s "$work/Female_Adult_01.fbx" ] || curl -sfL -o "$work/Female_Adult_01.fbx" \
   "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_01/Export/Female_Adult_01.fbx"
 node "$here/clips.mjs" "$work/anims" "$work/Female_Adult_01.fbx" "$out/female-adult-01.glb" "$out/clips.bin"
+node "$here/actions.mjs"
 rm -f "$out/clips.glb"
 
 # KTX2 textures are decoded in the browser by three.js's Basis transcoder.
