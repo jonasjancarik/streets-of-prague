@@ -492,8 +492,8 @@ vec3 bitumenRoof(vec3 c, vec2 wp, vec2 q, float seed) {
   vec2 lo = .1 + .3 * h.xy, hi = lo + .25 + .3 * h.yz;
   vec2 in2 = step(lo, f) * step(f, min(hi, .95));
   vec2 rim2 = step(lo - .015, f) * step(f, min(hi, .95) + .015);
-  float patch = in2.x * in2.y * step(.78, h.z), rim = rim2.x * rim2.y * step(.78, h.z) - patch;
-  t = mix(t, mix(vec3(luma(c)), c, .6) * (.84 + .08 * vnoise(wp * 3.)), patch * detail(wp, 1.));
+  float repair = in2.x * in2.y * step(.78, h.z), rim = rim2.x * rim2.y * step(.78, h.z) - repair;
+  t = mix(t, mix(vec3(luma(c)), c, .6) * (.84 + .08 * vnoise(wp * 3.)), repair * detail(wp, 1.));
   t = mix(t, c * 1.18, rim * .7 * detail(wp, .3));
   t *= 1. + (vnoise(wp * 25.) - .5) * .1 * detail(wp, .05);
   return flatAge(t, wp, q, seed);
