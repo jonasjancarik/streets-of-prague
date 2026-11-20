@@ -3121,10 +3121,12 @@ async function main() {
     // Keep the player's ring visible through tree crowns in the overhead view.
     walker.ring.material.depthTest = fromStreet;
     // (Seen from just behind you, the ring is only in the way.)
-    walker.ring.visible = !(eyes && eyes.third);
+    walker.ring.visible = !(eyes && eyes.third) && !vr?.active;
     // At street level you're a life-size person too, like everyone round you (rocketbox.ts).
-    walker.fig.lifeSize = walker.fig.self = !!eyes && !underway;
-    if (walker.mesh.visible) walker.drawFigure();
+    // (Not in the headset, where your eyes are inside your own head.)
+    walker.fig.lifeSize = walker.fig.self = !!eyes && !underway && !vr?.active;
+    if (vr?.active) walker.fig.commit(0);
+    else if (walker.mesh.visible) walker.drawFigure();
     carOutline.update(fromStreet ? null : inCar, carPool);
     streetSurfaceView(fromStreet && !!DOME_NODE.value);
     const streetWalls = fromStreet && !!DOME_NODE.value;
