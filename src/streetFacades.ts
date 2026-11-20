@@ -3,6 +3,7 @@ import type { Tier } from './graphics.ts';
 import type { TileWorkers } from './tileWorkers.ts';
 import type { FacadeGeometry } from './map/streetFacade.ts';
 import { FACADE_ON, STREET_FACADE } from './facades.ts';
+import type { StreetPlates } from './streetPlates.ts';
 import { mirrored } from './mirror.ts';
 
 const budgets = { lowest: [0, 0], low: [20, 8], medium: [27, 12], high: [34, 18], ultra: [40, 24] } as const;
@@ -53,6 +54,7 @@ function mask(w: Wall, hide: boolean) {
 }
 
 export class StreetFacades {
+  plates?: StreetPlates;
   private sources = new Map<THREE.Mesh, Source>();
   private wanted = new Set<Wall>();
   private live = new Set<Wall>();
@@ -77,6 +79,7 @@ export class StreetFacades {
   }
   private remove(w: Wall) {
     if (!w.mesh) return;
+    this.plates?.remove(w.mesh);
     mask(w, false); this.scene.remove(w.mesh); w.mesh.geometry.dispose(); w.mesh = undefined; this.live.delete(w);
   }
   update(street: boolean, x: number, y: number, z: number, tier: Tier = 'high', finishesReady = true) {
@@ -133,6 +136,8 @@ export class StreetFacades {
     g.computeBoundingSphere();
     const mesh = mirrored(new THREE.Mesh(g, material)); mesh.castShadow = mesh.receiveShadow = true;
     mesh.name = 'Street façade'; mesh.userData.streetFacade = true; mesh.matrixAutoUpdate = false;
-    this.scene.add(mesh); mask(w, true); w.mesh = mesh; this.live.add(w);
+    this.scene.add(mesh);
+    this.plates?.add(mesh, data.plateMounts, w.nx, w.nz);
+    mask(w, true); w.mesh = mesh; this.live.add(w);
   }
 }

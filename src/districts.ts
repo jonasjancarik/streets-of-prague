@@ -15,7 +15,7 @@ const DEPTH = 30; // m inside a new part before it counts
 const AGAIN = 90; // s before the same name comes up again
 const FIRST = 1.5; // s after the start before the first title
 
-function inside(d: District, x: number, y: number): boolean {
+export function insideDistrict(d: { box: readonly number[]; rings: number[][] }, x: number, y: number): boolean {
   const [x0, y0, x1, y1] = d.box;
   if (x < x0 || x > x1 || y < y0 || y > y1) return false;
   let odd = false;
@@ -65,8 +65,8 @@ export class Districts {
 
   // The part of town at (x, y), or null outside them all.
   at(x: number, y: number): District | null {
-    if (this.current && inside(this.current, x, y)) return this.current;
-    return this.list.find((d) => d !== this.current && inside(d, x, y)) ?? null;
+    if (this.current && insideDistrict(this.current, x, y)) return this.current;
+    return this.list.find((d) => d !== this.current && insideDistrict(d, x, y)) ?? null;
   }
 
   // `busy`: something else has the middle of the screen (a banner, the metro); the title

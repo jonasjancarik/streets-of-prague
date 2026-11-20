@@ -95,6 +95,7 @@ libraries to `dist/licenses.txt`.
   data at AWS ([their sources](https://github.com/tilezen/joerd/blob/master/docs/attribution.md):
   SRTM, EU-DEM produced using Copernicus data and information funded by the European
   Union, and others).
+- Borough numbers on street plates use simplified [RÚIAN district polygons from ČÚZK](https://ags.cuzk.gov.cz/arcgis/rest/services/RUIAN/MapServer/9).
 - Tram and metro timetables: [PID / ROPID](https://pid.cz/o-systemu/opendata/), CC BY 4.0.
 - 3D buildings, bridges and terrain: datový podklad ©
   [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model), CC BY.

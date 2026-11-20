@@ -191,6 +191,7 @@ const j = (i + 1) % outer.length;
 
 export interface FacadeGeometry {
   position: Float32Array; normal: Float32Array; color: Float32Array; facade: Float32Array; sky: Float32Array; detail: Float32Array;
+  plateMounts: Float32Array; // a clear patch of plaster near either end, in world coordinates
 }
 const cross = (ax: number, ay: number, bx: number, by: number) => ax * by - ay * bx;
 function clip(poly: Point[], a: V2, b: V2, sign: number) {
@@ -302,5 +303,37 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
     }
   }
   if (!modeled || !pos.length) return null;
-  return { position: new Float32Array(pos), normal: new Float32Array(norm), color: new Float32Array(col), facade: new Float32Array(fac), sky: new Float32Array(shade), detail: new Float32Array(detail) };
+  // Find room for an 80 × 40 cm enamel plate. Keep the whole tablet clear of
+  // door surrounds, sills, the storey cornice and holes in the source wall.
+  const mounts: number[] = [];
+  function mount(u: number, h: number) {
+    const left = u - .44, right = u + .44, low = h - .24, high = h + .24;
+    if (left < 0 || right > width || high > ground - .30) return false;
+    for (let j = Math.floor(left / bay); j <= Math.min(bays - 1, Math.floor(right / bay)); j++) {
+      const start = j * bay + (bay - mw) / 2, layer = streetModule(w, j, 0, bays);
+      if (openings[layer].some(([x0, y0, x1, y1]) =>
+        right > start + x0 / 256 * mw - .23 && left < start + x1 / 256 * mw + .23 &&
+        high > (1 - y1 / 512) * ground - .15 && low < (1 - y0 / 512) * ground + .24)) return false;
+    }
+    if (![left, right].every(x => onWall(x, low) && onWall(x, high))) return false;
+    for (const tri of triangles) {
+      const k = tri * 12, x = f[k], y = f[k + 1];
+      const ux = f[k + 4] - x, uy = f[k + 5] - y, vx = f[k + 8] - x, vy = f[k + 9] - y;
+      const det = cross(ux, uy, vx, vy);
+      if (Math.abs(det) < 1e-6) continue;
+      const a = cross(u - x, h - y, vx, vy) / det, b = cross(ux, uy, u - x, h - y) / det;
+      if (a < -1e-5 || b < -1e-5 || a + b > 1.00001) continue;
+      const i = tri * 9;
+      for (let j = i; j < i + 3; j++) mounts.push(p[j] + a * (p[j + 3] - p[j]) + b * (p[j + 6] - p[j]));
+      return true;
+    }
+    return false;
+  }
+  if (width >= 4) for (const end of [0, 1]) {
+    for (const inset of [.58, .95, 1.45, 2.05]) {
+      if (inset >= width / 2) break;
+      if ([2.75, 3.1, 2.4, 3.55].some(h => mount(end ? width - inset : inset, h))) break;
+    }
+  }
+  return { plateMounts: Float32Array.from(mounts), position: new Float32Array(pos), normal: new Float32Array(norm), color: new Float32Array(col), facade: new Float32Array(fac), sky: new Float32Array(shade), detail: new Float32Array(detail) };
 }

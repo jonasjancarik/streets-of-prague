@@ -245,6 +245,13 @@ Check emergency lights in full daylight as well as after dark. At the peak of a 
 the LED face looks nearly white and the colour shows around its edges. On the
 ambulance, the red and blue flashes are visible on both the roof and the grille.
 
+Near a junction of named streets, look up for Prague’s red enamel street plates.
+The name follows the street parallel to the wall. The smaller line gives the
+cadastral area and the Prague 1–10 borough from RÚIAN. The game infers a mounting
+point on clear plaster near the corner. The curved face, proportions and enamel
+border follow the examples in [IPR’s Pražský uličník](https://prazskyulicnik.az.iprpraha.cz/clanky/vyvoj-oznaceni-ulic-v-terenu).
+The map supplies the names, while individual sign positions are approximate.
+
 The fire engine shows its roof ladder and hose rack from above. Within 24 m on foot,
 you can see through the crew cab, read the rear pump gauges and follow a firefighter’s
 hose to the coupling beside the lockers. Two marked police cars share patrol and pursuit

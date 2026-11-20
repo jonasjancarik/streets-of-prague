@@ -83,6 +83,7 @@ import { LaneAssist, turnOf, project } from './assist.ts';
 import { Sound, surfaceOf } from './audio.ts';
 import { roadNoise, ROAD_FAR } from './soundmix.ts';
 import type { Surface, HornKind, Rotor } from './audio.ts';
+import { StreetPlates } from './streetPlates.ts';
 import { eyesFor, initialView, WalkingGait, type Eyes, type PlayerView } from './streetView.ts';
 import { setupTouch } from './touch.ts';
 import { setupGamepad, padLabels, usingPad } from './gamepad.ts';
@@ -1468,6 +1469,8 @@ async function main() {
     season: { day: () => season.day, set: (day) => season.set(day), label: () => season.label() },
     weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k, true); }, label: () => weather.name },
     reach: () => world.country?.box ?? null });
+  world.facades.plates = new StreetPlates(names, (x, y) => districts.at(x, y)?.name ?? null,
+    (x, y) => world.terrainAt(x, y), dev.toLonLat);
   const helipads = HELIPADS.flatMap(({ at: [lat, lon], roof }) => {
     const pos = dev.toLocal(lon, lat);
     return pos ? [{ pos, roof, waiting: null as Chopper | null, served: false }] : [];
