@@ -488,7 +488,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     # street on the ground meets included: a bridge's own width comes from its deck there
     # (the ramps at Radotín came out a lane narrow without it). Only drawn where _deck says.
     met = _met(raised, on_ground)
-    measure = _areas(shapely.union(surface, _areas(shapely.intersection(met, clip, grid_size=GRID)), grid_size=GRID)) \
+    measure = _areas(shapely.union(_areas(surface), _areas(shapely.intersection(met, clip, grid_size=GRID)), grid_size=GRID)) \
         if not met.is_empty else surface
     timer.lap("dtm_streets")
     kerbs = Kerbs(sidewalks, [LineString(r["pts"]) for r in rails if r["kind"] == "tram"], [w[0] for w in car_ways], measure)
