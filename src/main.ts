@@ -2857,8 +2857,9 @@ async function main() {
     trams.sync(camPos.x, -camPos.z, viewRadius() + 150, ground);
     metro.update(dt);
     metro.sync(camPos.x, -camPos.z, viewRadius() + 60, ground);
-    tramStops.sync(camPos.x, -camPos.z, viewRadius() + 60, ground);
-    busStops.sync(camPos.x, -camPos.z, viewRadius() + 60, ground);
+    const fromStreet = !!eyes || (testkit?.cam?.tilt ?? 0) > 35;
+    tramStops.sync(camPos.x, -camPos.z, viewRadius() + 60, ground, fromStreet);
+    busStops.sync(camPos.x, -camPos.z, viewRadius() + 60, ground, fromStreet);
     crowd.umbrellas.wet = weather.now.rain;
     crowd.render(ground, (x, y) => !offscreen(x, y));
     birds.update(dt, Object.assign(birdsView, { x: camPos.x, y: -camPos.z, radius: viewRadius(), height: eyes ? 1000 : height, dark: sky.dark, rain: weather.now.rain, snow: weather.now.snow }));
@@ -2899,7 +2900,6 @@ async function main() {
       for (const e of brigade.engines) see(e.car);
       for (const r of ambulances.rigs) see(r.car);
     }
-    const fromStreet = !!eyes || (testkit?.cam?.tilt ?? 0) > 35;
     carPool.render(drawn, ground, dt, world.terrainRevision, fromStreet, camera.position);
     refuse.render(carPool);
     blinkers.update(dt, inCar, inCar ? satnav.signal(inCar.speed) : null, carPool);

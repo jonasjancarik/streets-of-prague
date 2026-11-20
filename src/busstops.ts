@@ -3,12 +3,12 @@ import type { BusLine } from './buses.ts';
 import type { DriveEdge } from './network.ts';
 import type { Traffic, TrafficAgent } from './traffic.ts';
 import { project } from './buses.ts';
-import { nameMaterial, postGeometry, postMaterial } from './tramstops.ts';
+import { StopSign, type StopRoute } from './stopSign.ts';
 import { getLang, t } from './i18n.ts';
 
 // Bus stops, and riding a bus. Every stop of the bus lines (buses.json) gets a sign on
-// the pavement beside where the bus pulls up: a blue plate with a black bus, as on the
-// real stops, lying flat so it reads from above, and the stop's name on the pole.
+// the pavement beside where the bus pulls up. The overhead marker and the upright
+// street sign share that position.
 //
 // Standing at one, the board (src/board.ts) lists the buses coming, counted down from
 // where they actually are. Few buses are about at a time, so when none of the stop's
@@ -63,41 +63,10 @@ export interface BusStop {
   x: number; y: number; ang: number; name: string;
   // The lines that stop here, and where along each.
   lines: { line: BusLine; at: number; i: number }[];
-  placed: boolean; mesh: THREE.Group | null; shown: boolean;
+  placed: boolean; mesh: StopSign | null; shown: boolean;
 }
 // `mine`: it stops at the sign you stand by, not across the street.
 export interface DueBus { ref: string; colour: string; headsign: string; eta: number; here: boolean; mine: boolean; key: unknown; trip?: string; departure?: number; late?: number; position: () => { x: number; y: number } }
-
-const topMaterial = (() => {
-  const c = document.createElement('canvas');
-  c.width = c.height = 64;
-  const g = c.getContext('2d');
-  if (!g) throw new Error('Cannot create bus stop sign canvas');
-  // The blue stop plate with a white frame, a pale field and a black bus in side view.
-  g.fillStyle = '#0b4a9c';
-  g.beginPath();
-  g.roundRect(1, 1, 62, 62, 5);
-  g.fill();
-  g.strokeStyle = '#fff';
-  g.lineWidth = 2.5;
-  g.strokeRect(6, 6, 52, 52);
-  g.fillStyle = '#eef0ee';
-  g.fillRect(10, 10, 44, 44);
-  g.fillStyle = '#16181a';
-  g.beginPath();
-  g.roundRect(13, 22, 38, 17, 3); // body
-  g.fill();
-  g.fillStyle = '#eef0ee';
-  for (const x of [16, 23, 30, 37]) g.fillRect(x, 25, 5, 6); // windows
-  g.fillRect(44, 25, 4, 10); // the front door
-  g.fillStyle = '#16181a';
-  for (const x of [20, 43]) { g.beginPath(); g.arc(x, 40, 3.5, 0, Math.PI * 2); g.fill(); } // wheels
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide });
-})();
-const topGeometry = new THREE.PlaneGeometry(1.9, 1.9).rotateX(-Math.PI / 2);
-const plateGeometry = new THREE.PlaneGeometry(1.6, 0.3);
 
 interface BusStopsOptions {
   scene: THREE.Scene; traffic: Traffic;
@@ -182,23 +151,19 @@ export class BusStops {
   }
 
   private build(s: BusStop) {
-    const mesh = new THREE.Group();
-    const post = new THREE.Mesh(postGeometry, postMaterial);
-    post.castShadow = true;
-    const top = new THREE.Mesh(topGeometry, topMaterial);
-    top.position.y = 2.7;
-    top.rotation.y = s.ang;
-    const plate = new THREE.Mesh(plateGeometry, nameMaterial(s.name));
-    plate.position.y = 2.35;
-    plate.rotation.y = s.ang;
-    mesh.add(post, top, plate);
-    return mesh;
+    const routes: StopRoute[] = [];
+    for (const { line, i } of s.lines) {
+      if (routes.some(r => r.ref === line.ref && r.to === line.to)) continue;
+      routes.push({ ref: line.ref, to: line.to, preceding: line.stops.slice(Math.max(0, i - 4), i).map(stop => stop[1]),
+        following: line.stops.slice(i + 1, i + 6).map(stop => stop[1]) });
+    }
+    return new StopSign('bus', s.name, s.ang, routes);
   }
 
   // Only signs near the view are in the scene (and only once their street has loaded).
   // Looks only at the stops filed near the view and those shown now, in the order of
   // `stops`, as going through them all would.
-  sync(x: number, y: number, r: number, height: (x: number, y: number) => number) {
+  sync(x: number, y: number, r: number, height: (x: number, y: number) => number, street = false) {
     const visit = this.visit, now = performance.now();
     visit.length = 0;
     for (const s of this.shownNow) visit.push(s);
@@ -222,9 +187,12 @@ export class BusStops {
       if (show !== s.shown) {
         s.shown = show;
         if (show) this.o.scene.add(s.mesh ??= this.build(s));
-        else if (s.mesh) this.o.scene.remove(s.mesh);
+        else if (s.mesh) { s.mesh.view(false); this.o.scene.remove(s.mesh); }
       }
-      if (show) { s.mesh!.position.set(s.x, height(s.x, s.y), -s.y); this.shownNow.push(s); }
+      if (show) {
+        s.mesh!.position.set(s.x, height(s.x, s.y), -s.y);
+        s.mesh!.view(street, s.x - x, s.y - y); this.shownNow.push(s);
+      }
     }
   }
 

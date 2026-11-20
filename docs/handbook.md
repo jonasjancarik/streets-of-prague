@@ -243,6 +243,10 @@ livery, lamp positions and damage. Check the same subject from above and on foot
 `?fps`, walking around it to catch details that look convincing from only one angle.
 For working lights, check the same spot again after dark.
 
+A tram or bus stop keeps its blue pictogram visible from above. On foot the same spot
+has an upright red frame. You can read the stop name, line numbers and printed route
+diagrams from either approach along the pavement.
+
 ## Playing
 
 - On foot, the yellow ring stays visible from above when you walk under trees.
