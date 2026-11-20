@@ -833,7 +833,7 @@ function ambulanceGeometry(S: CarSpec, street = false): THREE.BufferGeometry {
   add(insignia.clone().scale(2, 2, 1).rotateX(-Math.PI / 2), '#f5f5e8', -0.24, roof + 0.010, 0);
   rounded('#c7c9bd', -2.38, -1.57, roof - 0.02, roof + 0.13, 0.90, 0.11, 0.04);
   for (let i = 0; i < 5; i++) box(trim, -2.25 + i * 0.12, -2.21 + i * 0.12, roof + 0.126, roof + 0.136, 0.63);
-  // The blue lenses are visible with the beacons switched off as well.
+  // The coloured lenses are visible with the beacons switched off as well.
   if (!street) {
     box(trim, 1.12, 1.43, 2.47, 2.63, 1.78);
     box('#cdd7de', 1.13, 1.42, 2.62, 2.74, 0.52);
@@ -866,8 +866,8 @@ function ambulanceGeometry(S: CarSpec, street = false): THREE.BufferGeometry {
       box(trim, -0.36, 0.65, 0.41, 0.49, 0.20, z - 0.01);
     }
     if (!street) {
-      box(blue, 1.13, 1.42, 2.62, 2.74, 0.57, side * 0.60);
-      box(blue, -2.96, -2.65, 2.64, 2.77, 0.30, side * 0.84);
+      box(side < 0 ? red : blue, 1.13, 1.42, 2.62, 2.74, 0.57, side * 0.60);
+      box(side < 0 ? red : blue, -2.96, -2.65, 2.64, 2.77, 0.30, side * 0.84);
       // Wrap the headlamp round the shoulder of the bonnet.
       panel(HEADLAMP, [[L - 0.34, 1.16], [L - 0.13, 1.20], [L, 1.02],
         [L - 0.02, 0.94], [L - 0.22, 1.00]], 0.27, side * 0.84);

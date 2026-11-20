@@ -375,15 +375,16 @@ export function ambulanceStreet(add: Add) {
   print([232, 300, 140, 31], 1, 1, (u, v) => point(-3.041, 0.748 + 0.102 * v, -0.685 + 0.47 * u));
   print([232, 399, 240, 60], 24, 4, (u, v) => front(2.344 + v * 0.095, (1 - 2 * u) * 0.37, 0.023));
 
-  // Curved blue end caps and an aluminium spine over the windscreen.
+  // Coloured end caps and an aluminium spine over the windscreen.
   mould(trim, 1.275, 2.54, 0, 0.285, 0.14, 1.78, 0.06);
   mould('#c1cbd1', 1.275, 2.66, 0, 0.286, 0.145, 1.75, 0.060);
   for (const side of [-1, 1]) {
+    mould(seal, 3.016, .96, side * .305, .041, .066, .162, .012);
     // Separate LED optics behind the clear front edge of the bar.
     for (let lamp = 0; lamp < 4; lamp++) mould('#93b8cf', 1.423, 2.668, side * (0.41 + 0.108 * lamp), 0.022, 0.054, 0.071, 0.010);
-    mould('#21569d', 1.275, 2.665, side * 0.59, 0.29, 0.16, 0.59, 0.065);
+    mould(side < 0 ? '#a52832' : '#21569d', 1.275, 2.665, side * 0.59, 0.29, 0.16, 0.59, 0.065);
     mould('#d9dcd3', 1.275, 2.745, side * 0.59, 0.20, 0.012, 0.52, 0.005);
-    mould('#21569d', -2.80, 2.695, side * 0.84, 0.306, 0.16, 0.31, 0.059);
+    mould(side < 0 ? '#a52832' : '#21569d', -2.80, 2.695, side * 0.84, 0.306, 0.16, 0.31, 0.059);
     mould(seal, -3.006, 1.94, side * 0.45, 0.038, 0.60, 0.72, 0.018);
     mould(glass, -3.028, 1.94, side * 0.45, 0.019, 0.54, 0.662, 0.009);
     for (const y of [0.87, 2.28]) mould(steel, -3.014, y, side * 0.88, 0.043, 0.092, 0.17, 0.018);

@@ -241,7 +241,9 @@ a cab interior or recessed lights, put that geometry on a separate street model 
 overhead view stays light. Both versions of a vehicle should agree on its footprint,
 livery, lamp positions and damage. Check the same subject from above and on foot in
 `?fps`, walking around it to catch details that look convincing from only one angle.
-For working lights, check the same spot again after dark.
+Check emergency lights in full daylight as well as after dark. At the peak of a flash,
+the LED face looks nearly white and the colour shows around its edges. On the
+ambulance, the red and blue flashes are visible on both the roof and the grille.
 
 The fire engine shows its roof ladder and hose rack from above. Within 24 m on foot,
 you can see through the crew cab, read the rear pump gauges and follow a firefighter’s
@@ -563,7 +565,7 @@ the same signal phase as the overhead light.
   drive, or caught near a blast stays on the ground instead of getting up after a few
   seconds; so does anyone a stray police bullet hits on the pavement. An ambulance is
   called from a few hundred metres away, drives to them by the streets (and through
-  pedestrian zones, as the fire engine does) with blue lights and a quick two-tone
+  pedestrian zones, as the fire engine does) with red and blue lights and a quick two-tone
   siren, and its two paramedics get out and see to the patient for about nine seconds.
   Someone only hurt gets up and walks on. Someone badly hurt (a car faster than about
   48 km/h, a tram, a close blast, a bullet) is carried to the back of the ambulance by

@@ -494,7 +494,7 @@ async function main() {
   const terraceView = { x: 0, y: 0, radius: 0, day: 0, loaded: (x: number, y: number) => !!world.tileAt(x, y), open: birdsView.open, ground: birdsView.ground };
   // The emergency vehicles with their lights going, and what the lamps need each frame
   // besides the cars (the people in view stand in their light too).
-  const flashing: Flashing[] = [];
+  const flashing: Flashing<Car>[] = [];
   const lightOpt: Parameters<Lamps['update']>[8] & object = {
     flashing, eye: camera.position,
     blocks: (put) => {
@@ -2875,9 +2875,8 @@ async function main() {
       flashing.length = 0;
       for (const car of chasing) flashing.push({ car, reach: 19, rate: 1.4 });
       for (const car of engines) flashing.push({ car, reach: 24, rate: 1.2 });
-      for (const car of rescue) flashing.push({ car, reach: 18, rate: 1.6 });
+      for (const car of rescue) flashing.push({ car, reach: 18, rate: 1.6, redLeft: true });
       for (const car of carts) flashing.push({ car, reach: 14, rate: 1, amber: true });
-      beacons.draw([...chasing, ...engines, ...rescue, ...carts], ground, time.value);
     }
     brigade.render();
     ambulances.render();
@@ -3126,6 +3125,7 @@ async function main() {
       lamps.update(camPos.x, -camPos.z, viewRadius() + 10, sky.dark, drawn, ground, now, trams.list, lightOpt);
     }
     signals.street(fromStreet);
+    beacons.draw(flashing, carPool, camera, time.value);
     signals.update(camPos.x, -camPos.z, viewRadius() + 10, now);
     streaks.update(camera, [lamps.glows, signals.flares, signals.glows], (x, y) => world.heightAt(x, y), viewRadius() + 10, time.value);
     weatherFx.tint.value.copy(sky.tint);

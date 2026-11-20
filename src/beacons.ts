@@ -1,33 +1,37 @@
 import * as THREE from 'three';
-import type { Car } from './car.ts';
+import type { Car, CarPool } from './car.ts';
 import { sendInstances } from './gpu.ts';
-import { strobe } from './lamps.ts';
+import { strobe, type Flashing } from './lamps.ts';
 
-// Flashing blue lights for emergency vehicles: the lamps on the roof, for any cars it's
-// given each frame. Police cars, fire engines and ambulances use it, and dustcarts their
-// amber ones. The light they throw on the street is in the lamps' light map (lamps.ts);
-// by day a flat glow on the ground only read as a marker ring, so there is none.
-
+// The LED face clips towards white at the peak of a pulse. A small coloured
+// fringe keeps the flash readable against sunlit plaster as well as at night.
 const LAMPS = 64;
-const BLUE = new THREE.Color('#3d7bff');
-const DIM = new THREE.Color('#0d1a3a');
-const AMBER = new THREE.Color('#ffa21f');
-const DIM_AMBER = new THREE.Color('#3a2408');
+const BLUE_CORE = new THREE.Color(1.10, 2.8, 8), RED_CORE = new THREE.Color(8, 1.30, .78);
+const BLUE = new THREE.Color('#2176ff'), RED = new THREE.Color('#ff2331');
+const AMBER = new THREE.Color('#ffa21f'), DIM_AMBER = new THREE.Color('#3a2408');
 
-// Where a type carries its lamps: [metres forward of the middle, fraction of half-width sideways, metres above the roof].
+// Along the body in metres, left as a fraction of half-width, height above roof.
 type Lamp = [number, number, number];
-const BARS: Record<string, { lamps: Lamp[]; rate: number; amber?: boolean }> = {
-  // The blue ends of the bar above the cabin.
-  police: { lamps: [[0, -0.64, 0.163], [0, -0.42, 0.163], [0, 0.42, 0.163], [0, 0.64, 0.163]], rate: 1.4 },
-  // A bar across the cab roof, and one at the back of the body.
-  fire: { lamps: [[3.7, -0.62, 0.158], [3.7, -0.38, 0.158], [3.7, 0.38, 0.158], [3.7, 0.62, 0.158], [-3.8, -0.8, 0.16], [-3.8, 0.8, 0.16]], rate: 1.2 },
-  // A bar across the cab roof, and two at the back.
-  ambulance: { lamps: [[1.275, -0.68, 0.01], [1.275, -0.40, 0.01], [1.275, 0.40, 0.01], [1.275, 0.68, 0.01], [-2.8, -0.8, 0.04], [-2.8, 0.8, 0.04]], rate: 1.6 },
-  // A dustcart at work: amber, two on the cab (low, in front of the body) and two on the
-  // tailgate.
-  garbage: { lamps: [[2.99, -0.6, -0.24], [2.99, 0.6, -0.24], [-3.98, -0.64, 0.04], [-3.98, 0.64, 0.04]], rate: 1, amber: true },
+const BARS: Record<string, Lamp[]> = {
+  police: [[-.25, -.64, .163], [-.25, -.42, .163], [-.25, .42, .163], [-.25, .64, .163]],
+  fire: [[3.7, -.62, .158], [3.7, -.38, .158], [3.7, .38, .158], [3.7, .62, .158], [-3.8, -.8, .16], [-3.8, .8, .16]],
+  ambulance: [[1.275, -.68, .033], [1.275, -.40, .033], [1.275, .40, .033], [1.275, .68, .033],
+    [-2.80, -.80, .058], [-2.80, .80, .058], [3.035, -.29, -1.74], [3.035, .29, -1.74]],
+  garbage: [[2.99, -.6, -.24], [2.99, .6, -.24], [-3.98, -.64, .04], [-3.98, .64, .04]],
 };
-const OTHER = BARS.police;
+
+function coronaTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 64;
+  const ctx = canvas.getContext('2d')!;
+  const falloff = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  for (const [r, alpha] of [[0, .98], [.15, .87], [.30, .49], [.54, .18], [.78, .045], [1, 0]]) {
+    falloff.addColorStop(r, `rgba(255,255,255,${alpha})`);
+  }
+  ctx.fillStyle = falloff;
+  ctx.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(canvas);
+}
 
 // What a police car, fire engine or ambulance you're driving has on (Car.beacon): its
 // lights, its lights and siren, or nothing (null, as for any other car).
@@ -39,47 +43,64 @@ export function ownBeacon(car: Car | null | undefined): 'lights' | 'siren' | nul
 
 export class Beacons {
   private lamps: THREE.InstancedMesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>;
+  private halos: THREE.InstancedMesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
   private dummy = new THREE.Object3D();
+  private body = new THREE.Matrix4();
 
   constructor(scene: THREE.Scene) {
-    this.lamps = new THREE.InstancedMesh(new THREE.BoxGeometry(0.26, 0.14, 0.3), new THREE.MeshBasicMaterial(), LAMPS);
-    const m = this.lamps;
-    m.count = 0;
-    m.frustumCulled = false;
-    m.setColorAt(0, new THREE.Color());
-    scene.add(m);
+    this.lamps = new THREE.InstancedMesh(new THREE.BoxGeometry(.26, .14, .30),
+      new THREE.MeshBasicMaterial({ toneMapped: false }), LAMPS);
+    this.halos = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1),
+      new THREE.MeshBasicMaterial({ map: coronaTexture(), transparent: true, depthWrite: false, toneMapped: false }), LAMPS);
+    this.lamps.name = 'Beacon LEDs';
+    this.halos.name = 'Beacon halos';
+    this.halos.renderOrder = 5;
+    for (const mesh of [this.lamps, this.halos]) {
+      mesh.count = 0;
+      mesh.frustumCulled = false;
+      mesh.setColorAt(0, BLUE);
+      scene.add(mesh);
+    }
   }
 
-  // `lit`: the cars with their lights on. `height`: ground height under a car.
-  draw(lit: Car[], height: (x: number, y: number, who: Car) => number, time: number) {
+  draw(lit: Flashing<Car>[], pool: CarPool, camera: THREE.Camera, time: number) {
     const d = this.dummy;
-    let n = 0;
-    for (const c of lit) {
-      const S = c.spec, bar = BARS[c.type] ?? OTHER;
-      const fx = Math.cos(c.h), fy = Math.sin(c.h);
-      const cabin = S.cabin ?? [0, 0], mid = (cabin[0] + cabin[1]) / 2;
-      const base = height(c.x, c.y, c);
-      // (The same flashes as the light they throw on the street: lamps.ts.)
-      const [left, right] = strobe(time, bar.rate);
-      bar.lamps.forEach(([ahead, across, up]) => {
-        if (n >= LAMPS) return;
-        const f = (c.type === 'police' ? mid : 0) + ahead, off = across * S.W / 2;
-        d.position.set(c.x + fx * f - fy * off, base + S.H + up, -(c.y + fy * f + fx * off));
-        d.rotation.set(0, c.h, 0);
-        // On a fitted housing the lens itself shows between flashes. The lit
-        // insert reaches both faces of the bar and follows its shallow profile.
-        const on = (across < 0 ? right : left) > 0.5;
-        if (c.type === 'police' || c.type === 'fire') {
-          if (!on) return;
-          d.scale.set(c.type === 'police' ? 1.25 : 1.34, c.type === 'police' ? .41 : .58, .69);
-        } else d.scale.setScalar(bar.amber ? 0.55 : 1);
+    let n = 0, halos = 0;
+    for (const { car, rate, amber, redLeft } of lit) {
+      if (!pool.matrixOf(car, this.body)) continue;
+      const [left, right] = strobe(time, rate);
+      for (const [ahead, across, up] of BARS[car.type]) {
+        if (n >= LAMPS) break;
+        const on = across > 0 ? left : right;
+        if (!amber && !on) continue;
+        const grille = up < -1, red = redLeft && (grille ? across < 0 : across > 0);
+        d.position.set(ahead, car.spec.H + up, -across * car.spec.W / 2);
+        d.quaternion.identity();
+        if (amber) d.scale.setScalar(.55);
+        else if (grille) d.scale.set(.09, .29, .45);
+        else d.scale.set(car.type === 'police' ? 1.25 : 1.34, car.type === 'fire' ? .58 : .41, .69);
         d.updateMatrix();
+        d.matrix.premultiply(this.body);
         this.lamps.setMatrixAt(n, d.matrix);
-        this.lamps.setColorAt(n, on ? (bar.amber ? AMBER : BLUE) : bar.amber ? DIM_AMBER : DIM);
-        n++;
-      });
+        this.lamps.setColorAt(n++, amber ? (on ? AMBER : DIM_AMBER) : red ? RED_CORE : BLUE_CORE);
+        if (amber) continue;
+
+        // Centre the halo inside the lamp. The opaque LED and body depth
+        // then mask its middle and occlude it on the far side of the vehicle.
+        d.position.setFromMatrixPosition(d.matrix);
+        d.quaternion.copy(camera.quaternion);
+        const size = grille ? .58 : 1.05;
+        d.scale.set(size, size, 1);
+        d.updateMatrix();
+        this.halos.setMatrixAt(halos, d.matrix);
+        this.halos.setColorAt(halos++, red ? RED : BLUE);
+      }
     }
     this.lamps.count = n;
+    this.halos.count = halos;
+    this.lamps.visible = n > 0;
+    this.halos.visible = halos > 0;
     sendInstances(this.lamps);
+    sendInstances(this.halos);
   }
 }

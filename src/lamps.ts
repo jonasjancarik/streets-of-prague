@@ -197,7 +197,7 @@ export function floodlightsAt(secOfDay: number) {
   const h = secOfDay / 3600;
   FLOOD_ON.value = h >= 12 ? 1 : Math.min(1, Math.max(0, 1 - h * 6));
 }
-const BEACON = new THREE.Color(0.12, 0.38, 1), AMBER_BEACON = new THREE.Color(1, 0.55, 0.1);
+const BEACON = new THREE.Color(0.12, 0.38, 1), AMBER_BEACON = new THREE.Color(1, 0.55, 0.1), RED_BEACON = new THREE.Color(1, .045, .065);
 const HEAD = new THREE.Color('#fff4df'), TAIL = new THREE.Color('#ff2a1a'), CABIN = new THREE.Color('#fff0d8');
 const TRAM_SECTION = 10.2; // m (trams.ts)
 
@@ -302,7 +302,7 @@ export interface Spot { x: number; y: number; z: number; tx: number; ty: number 
 const SEARCH = new THREE.Color('#fff3d6');
 const SEARCH_R = 9; // m: how wide its pool of light is
 
-export interface Flashing { car: LitCar; reach: number; rate: number; amber?: boolean }
+export interface Flashing<T extends LitCar = LitCar> { car: T; reach: number; rate: number; amber?: boolean; redLeft?: boolean }
 // How lit each side of a light bar is at `time` (0..1 each), `rate` cycles a second: two
 // short flashes on the left, then two on the right.
 export function strobe(time: number, rate: number): [number, number] {
@@ -1212,7 +1212,7 @@ export class Lamps {
       const sx = -Math.sin(c.h), sy = Math.cos(c.h), half = c.spec.W / 2;
       for (const [side, lit] of [[1, left], [-1, right]] as [number, number][]) {
         // (A little always shows between the flashes: the bar's glow.)
-        add(c.x + sx * side * half, c.y + sy * side * half, z, 0, 1, 0, f.reach, f.reach, f.amber ? AMBER_BEACON : BEACON, 0.12 + 1.9 * lit, up, own);
+        add(c.x + sx * side * half, c.y + sy * side * half, z, 0, 1, 0, f.reach, f.reach, f.amber ? AMBER_BEACON : f.redLeft && side > 0 ? RED_BEACON : BEACON, 0.12 + 1.9 * lit, up, own);
       }
     }
     for (const v of trams) {
