@@ -1356,6 +1356,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   doors and the modern sliding doors reveal the steps or level floor when boarding.
   After dark the saloon lights pick out the seats and handrails through the glazing.
   Close models are prepared one section at a time as a tram approaches.
+- Embedded tram rails show a polished running head and a dark flange groove on the
+  inside. Joints cross the concrete bed at right angles to the track, including on
+  curves and bridges. At walking height the asphalt beside it picks up the aggregate
+  and small surface normals of a four-metre road scan.
 - **Tram tracks** are OSM's `railway=tram` ways, including those mapped on the same way
   as a street or a bus lane (`highway=busway` or `service` with `railway=tram`, as on
   Lidická and round Anděl: about 300 ways across Prague): `pipeline/osm_area.py` takes

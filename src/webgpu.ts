@@ -11,7 +11,7 @@ import * as THREE from 'three';
 import { WebGPURenderer, MeshLambertNodeMaterial, CubeRenderTarget } from 'three/webgpu';
 import { PROBE_OPTIONS, PROBE_SIZE, setProbeTargets } from './probe.ts';
 import {
-  Fn, If, Discard, float, vec2, vec3, vec4, texture, materialReference, positionWorld, normalView, materialColor, fract, floor, mod, dot,
+  Fn, If, Discard, float, vec2, vec3, vec4, texture, materialReference, positionWorld, normalView, normalWorldGeometry, materialColor, fract, floor, mod, dot,
   mix, smoothstep, step, length, fwidth, abs, sqrt, min, max, distance, cos, sin, select, clamp, transformNormalToView,
   attribute, positionLocal, modelViewMatrix, cameraProjectionMatrix, screenSize, uniform, renderGroup, uv, cameraPosition, normalize,
 } from 'three/tsl';
@@ -37,6 +37,7 @@ import './webgpu/underground.ts';
 import { CloudSunNode } from './webgpu/clouds.ts';
 import { gradeCurve } from './webgpu/grade.ts';
 import { makePost } from './webgpu/post.ts';
+import { ASPHALT_SCAN, STREET_SURFACE, onAsphaltScan } from './streetSurface.ts';
 import { dome } from './webgpu/dome.ts';
 import { DOME_NODE, DOME } from './sky.ts';
 import { OLD_GRADE } from './grade.ts';
@@ -54,11 +55,50 @@ const hedgeColour = vec4(materialColor.rgb.mul(followColor(HEDGE_SEASON)).mul(he
 addPort(/^hedge-season$/, (node) => { node.colorNode = hedgeColour; });
 // The cars' probe of the street (probe.ts) needs WebGPU's kind of cube target.
 setProbeTargets(() => new CubeRenderTarget(PROBE_SIZE, PROBE_OPTIONS) as never);
+const surfaceDetail: N = follow(STREET_SURFACE);
+const scan = texture(ASPHALT_SCAN.value);
+onAsphaltScan(t => { scan.value = t; });
+// The scan covers four metres. Hardware mipmaps take the aggregate back to its
+// mean at distance; anisotropic filtering preserves it at the player's feet.
+const aggregate = (p: N) => scan.sample(p.div(4));
+const trackCoord: N = attribute('trackCoord', 'float');
+function railProfile(base: N) {
+  const u = trackCoord, width = max(.004, fwidth(u).mul(.6));
+  const edge = (p: number) => smoothstep(float(p).sub(width),float(p).add(width),u);
+  const band = (a: number,b: number) => edge(a).sub(edge(b));
+  // From the track centre outwards: the narrow keeper lip, flangeway, running
+  // head, and the dark bedding seal. The two running faces are 1.435 m apart.
+  const steel = base.mul(.83).add(vec3(.12,.12,.105).mul(band(.10,.235)))
+    .mul(float(1).sub(band(.25,.483).mul(.58)))
+    .add(vec3(.20,.225,.23).mul(band(.483,.865))).add(vec3(.064,.069,.066).mul(band(.54,.67)));
+  return mix(base,steel,float(1).sub(smoothstep(.12,.72,fwidth(u))));
+}
+function tramConcrete(c: N,p: N) {
+  const a=trackCoord.div(6), seam=abs(fract(a.add(.5)).sub(.5)).mul(6);
+  const aa=max(.003,fwidth(trackCoord).mul(.62));
+  const joint=float(1).sub(smoothstep(float(.014).sub(aa),float(.014).add(aa),seam))
+    .mul(float(1).sub(smoothstep(.03,.20,aa)));
+  const age = vnoise(vec2(floor(a), .31)).mul(.075).add(.96);
+  const concrete = c.mul(age).mul(fbm2(p.mul(.44)).mul(.16).add(.91)).toVar();
+  If(surfaceDetail.greaterThan(.5), () => {
+    // Individual grains in cast concrete are finer and paler than the stones
+    // in the surrounding bitumen. The saw cut has a weathered arris.
+    concrete.mulAssign(aggregate(p.mul(1.65)).r.sub(.5).mul(.59).add(1));
+    const rim = float(1).sub(smoothstep(.018, .042, seam)).mul(float(1).sub(smoothstep(.014,.09,aa)));
+    concrete.mulAssign(rim.mul(.07).add(1));
+  });
+  return grit(concrete.mul(float(1).sub(joint.mul(.48))),p);
+}
 function pAsphalt(c0: N, p: N) {
   const c = c0.mul(fbm(p.mul(0.3)).mul(0.18).add(0.9)).toVar();
   c.mulAssign(mix(1, 0.9, smoothstep(0.62, 0.66, fbm(p.mul(0.07).add(3)))));
   const d = detail(p, 0.06), dc = detail(p, 0.15);
-  If(d.greaterThan(0), () => { c.addAssign(vnoise(p.mul(16)).sub(0.5).mul(0.07).mul(d)); });
+  If(surfaceDetail.greaterThan(.5), () => {
+    const stone=aggregate(p).r.sub(.5);
+    c.mulAssign(float(1).add(stone.mul(1.48)));
+  }).Else(() => {
+    If(d.greaterThan(0), () => { c.addAssign(vnoise(p.mul(16)).sub(0.5).mul(0.07).mul(d)); });
+  });
   // (Fainter than it was: these streaks run north to south whichever way the street does, and
   // what traffic leaves along the lanes is now laid on the street itself, ground.ts streetWear.)
   c.mulAssign(float(1).sub(smoothstep(0.6, 0.85, vnoise(p.mul(vec2(0.9, 0.25)).add(23))).mul(0.06)));
@@ -181,7 +221,13 @@ function grit(c0: N, p: N) {
 }
 function pattern(id: number, c: N, p: N, time: N, seasonal: boolean): N {
   switch (id) {
-    case 1: return grit(pAsphalt(c, p), p);
+    case 1: {
+      const road = pAsphalt(c,p).toVar();
+      If(surfaceDetail.lessThan(.5),()=>{ road.assign(grit(road,p)); });
+      return road;
+    }
+    case 18: return railProfile(c);
+    case 19: return tramConcrete(c,p);
     case 2: return grit(pSetts(c, p, 0.17, 0.14), p);
     case 3: return grit(pMosaic(c, p), p);
     case 16: return grit(pPaved(c, p), p);
@@ -204,7 +250,7 @@ function pattern(id: number, c: N, p: N, time: N, seasonal: boolean): N {
 // WEATHER_GLSL: the colour, and in .a how much of a mirror the ground is there (shine).
 function weathered(id: number, c0: N, p: N, time: N) {
   if (id === 10 || id === 17) return vec4(c0, select(uWater.greaterThan(0.5), 0, 0.35));
-  const paved = id <= 4 || id === 9 || id === 16, road = id === 1 || id === 2;
+  const paved = id <= 4 || id === 9 || id === 16 || id === 18 || id === 19, road = id === 1 || id === 2;
   const c = vec3(c0).toVar(), shine = float(0).toVar();
   // (Derivatives outside the branches.)
   const ripple = paved ? detail(p, 0.12) : float(0);
@@ -350,7 +396,14 @@ function groundGraph(id: number, time: { value: number }, { relief, deck, photo,
       }
       return slope ? e.add(waterShine(positionWorld, wp, slope, timeOf(time), uSkyRef, l, quietWater)) : e;
     })(),
-    normal: slope ? transformNormalToView(waveNormal(slope)) : null,
+    normal: slope ? transformNormalToView(waveNormal(slope)) : id === 1 ? Fn(() => {
+      const n = normalWorldGeometry.toVar();
+      If(surfaceDetail.greaterThan(.5),()=>{
+        const xy=aggregate(wp).gb.sub(.5).mul(.48).mul(float(1).sub(uWet.mul(.65)));
+        n.assign(normalize(n.add(vec3(xy.x,0,xy.y.negate()).mul(abs(n.y)))));
+      });
+      return transformNormalToView(n);
+    })() : null,
   };
   byKey.set(key, graph);
   return graph;

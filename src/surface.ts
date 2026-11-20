@@ -9,7 +9,7 @@ import type { RoadRaster } from './roadRaster.ts';
 export interface GroundLayer {
   order: number;
   // `hold`: thin paint that keeps a width in pixels from high up (see held in shading.ts).
-  geometry: { position: Float32Array; normal: Float32Array; index: Uint32Array; alpha?: Float32Array; hold?: Float32Array };
+  geometry: { position: Float32Array; normal: Float32Array; index: Uint32Array; alpha?: Float32Array; hold?: Float32Array; trackCoord?: Float32Array };
   color?: string;
   pattern?: string;
   blend?: number | null;
@@ -55,6 +55,7 @@ export class Surfaces {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(l.geometry.position, 3));
       g.setAttribute('normal', new THREE.BufferAttribute(l.geometry.normal, 3));
+      if (l.geometry.trackCoord) g.setAttribute('trackCoord', new THREE.BufferAttribute(l.geometry.trackCoord, 1));
       if (l.geometry.alpha) g.setAttribute('alpha', new THREE.BufferAttribute(l.geometry.alpha, 1));
       g.setIndex(new THREE.BufferAttribute(l.geometry.index, 1));
       const raster = l.raster ? this.coverageTexture(l.raster) : null;

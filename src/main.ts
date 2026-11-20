@@ -9,6 +9,7 @@ import { renderMirror } from './mirror.ts';
 import { renderProbe } from './probe.ts';
 import { POST, drawPost } from './post.ts';
 import { setupPhoto } from './photo.ts';
+import { streetSurfaceView } from './streetSurface.ts';
 import { wantCloudBank } from './cloudBank.ts';
 import { DOME_NODE } from './sky.ts';
 import { Streaks } from './streaks.ts';
@@ -3100,6 +3101,7 @@ async function main() {
     walker.fig.lifeSize = walker.fig.self = !!eyes && !underway;
     if (walker.mesh.visible) walker.drawFigure();
     carOutline.update(fromStreet ? null : inCar, carPool);
+    streetSurfaceView(fromStreet && !!DOME_NODE.value);
     world.furnitureCamera(fromStreet);
     world.trees.street(fromStreet, free ? free.x : camera.position.x, free ? -free.y : camera.position.z);
     world.trees.canopy(true, fromStreet);

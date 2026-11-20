@@ -38,6 +38,11 @@ up and packed by the scripts beside them. The prompts are kept with the sources.
 - **Character portraits** (`portraits/sheetN.webp` → `public/portraits/`): generated
   with ChatGPT; faces that came out too alike were redone one by one with Codex
   (`portraits/faces/`). `portraits/cut.py` cuts them out.
+- **Close asphalt** (`ground/asphalt.py` → `public/street-asphalt.webp`):
+  [Asphalt 04, Poly Haven](https://polyhaven.com/a/asphalt_04), photographed by
+  Sergej Majboroda and processed by Jenelle van Heerden, CC0. The script takes
+  `asphalt_04_diff_1k.jpg` and `asphalt_04_nor_gl_1k.jpg` from the 1K JPEG set.
+  The four-metre scan supplies relative grain and normals; the game colours each road.
 - **Fair-weather clouds** (`sky/clouds.py` → `public/cloud-bank.webp`): an original
   procedural volume built from the game's cloud-shadow field. The atlas records the
   light passing through it at twelve compass headings and seven elevations.

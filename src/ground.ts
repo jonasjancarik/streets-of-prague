@@ -179,6 +179,35 @@ function strips(lines: Point2[][], w: number, dash: Point2 | null = null, hold =
   return { ...g, hold: out };
 }
 
+// Coordinates across a single grooved rail or along its concrete bed. Carry
+// them through the same terrain refinement as shade, then name the attribute
+// for the surface shader. Positive offsets lie to the right of the track.
+function tramRibbon(lines: Point2[][], rails: boolean): GroundGeometry {
+  const pos: number[] = [], idx: number[] = [], coord: number[] = [];
+  for (const pts of lines) {
+    if (pts.length < 2) continue;
+    for (const sign of rails ? [-1, 1] : [1]) {
+      const inside = offsetLine(pts, rails ? sign * .648 : -1.25);
+      const outside = offsetLine(pts, rails ? sign * .792 : 1.25);
+      const dx = pts[1][0] - pts[0][0], dy = pts[1][1] - pts[0][1];
+      const first = Math.hypot(dx, dy) || 1;
+      let along = (pts[0][0] * dx + pts[0][1] * dy) / first;
+      for (let j = 0; j < pts.length; j++) {
+        if (j) along += Math.hypot(pts[j][0] - pts[j - 1][0], pts[j][1] - pts[j - 1][1]);
+        const i = pos.length / 3;
+        pos.push(inside[j][0], 0, -inside[j][1], outside[j][0], 0, -outside[j][1]);
+        coord.push(rails ? 0 : along, rails ? 1 : along);
+        if (j) {
+          if (sign > 0) idx.push(i - 2, i - 1, i, i - 1, i + 1, i);
+          else idx.push(i - 2, i, i - 1, i - 1, i, i + 1);
+        }
+      }
+    }
+  }
+  const { alpha, ...g } = finish(pos, idx, coord);
+  return alpha ? { ...g, trackCoord: alpha } : g;
+}
+
 // A soft band just outside each ring, fading from `alpha` at the ring to 0.
 function skirts(ringsList: Polygons, width: number, outside: boolean, skip: (a: Point2, b: Point2) => boolean = () => false): GroundGeometry {
   const { pos, idx, alpha } = skirtParts(ringsList, width, outside, skip);
@@ -779,8 +808,8 @@ function deckLayers(polys: Polygons, trams: Point2[][], edges: GroundRoadEdge[],
     add(strips(ways.flatMap((w) => [offsetLine(w.pts, w.half), offsetLine(w.pts, -w.half)]), 0.25), COLORS.kerb, 'concrete');
   } else if (railway.length) add(polygons(polys), COLORS.ballast, 'gravel', true);
   else add(polygons(polys), COLORS.bridge, 'asphalt');
-  add(strips(trams, 2.5), COLORS.trackbed, 'concrete');
-  add(strips(trams.flatMap((pts) => [offsetLine(pts, 0.72), offsetLine(pts, -0.72)]), 0.1), COLORS.steel);
+  add(tramRibbon(trams, false), COLORS.trackbed, 'tramBed');
+  add(tramRibbon(trams, true), COLORS.steel, 'groovedRail');
   if (station && railway.length) railwayLayers(railway, (g, color, pattern) => add(g, color, pattern, true));
   else if (railway.length) add(strips(railway.flatMap(pts => [offsetLine(pts, 0.72), offsetLine(pts, -0.72)]), 0.12), COLORS.steel, 'flat', true);
   const { dashed, solid } = roadPaint(edges, trams);
@@ -1068,8 +1097,8 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
 
     // Tram tracks: concrete bed and two rails at standard gauge.
     const trams = d.rails.filter((r) => r.kind === 'tram').map((r) => r.pts);
-    add(strips(trams, 2.5), COLORS.trackbed, 'concrete');
-    add(strips(trams.flatMap((pts) => [offsetLine(pts, 0.72), offsetLine(pts, -0.72)]), 0.1), COLORS.steel);
+    add(tramRibbon(trams, false), COLORS.trackbed, 'tramBed');
+    add(tramRibbon(trams, true), COLORS.steel, 'groovedRail');
     add(strips(d.rails.filter((r) => r.kind === 'funicular').map((r) => r.pts), 3), COLORS.funicular, 'concrete');
 
     const { dashed, solid } = roadPaint(edges, trams);
