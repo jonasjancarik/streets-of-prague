@@ -1,3 +1,4 @@
+import { MetroStreetMarker } from './metroMarker.ts';
 import { padLabels } from './gamepad.ts';
 import * as THREE from 'three';
 import type { Point2 } from './map/geo.ts';
@@ -20,7 +21,7 @@ export interface MetroLine {
 interface Station { name: string; entrances: Point2[]; lines: { line: MetroLine; i: number }[]; onMap: boolean }
 // `placed`: moved out onto the pavement (see place()); `gone`: another of the
 // station's entrances ended up in the same spot.
-interface Entrance { x: number; y: number; station: Station; mesh: THREE.Group; shown: boolean; placed: boolean; gone: boolean }
+interface Entrance { x: number; y: number; station: Station; mesh: THREE.Group; street?: MetroStreetMarker; facing: number; shown: boolean; placed: boolean; gone: boolean }
 interface MetroLeg { line: MetroLine; i: number; j: number }
 // A stretch of the ride: the wait for a train, a change of line, or the ride from
 // station a to the next one, b. `from`/`to` in game seconds; `real`: how many seconds
@@ -157,7 +158,7 @@ export class Metro {
         const sign = new THREE.Mesh(signGeometry, signMaterial(st.lines[0].line.colour));
         sign.position.y = 2.85;
         mesh.add(post, sign);
-        this.entrances.push({ x, y, station: st, mesh, shown: false, placed: false, gone: false });
+        this.entrances.push({ x, y, station: st, mesh, facing: 0, shown: false, placed: false, gone: false });
       }
     }
     this.active = false; // the metro screen is up
@@ -190,7 +191,7 @@ export class Metro {
 
   // Signs near the view, on the ground. Only those are in the scene: hidden ones
   // would still be gone through every frame, all 331 of them.
-  sync(x: number, y: number, r: number, height: (x: number, y: number) => number) {
+  sync(x: number, y: number, r: number, height: (x: number, y: number) => number, street = false) {
     for (const en of this.entrances) {
       const near = Math.abs(en.x - x) < r && Math.abs(en.y - y) < r;
       if (near && !en.placed) this.place(en);
@@ -198,9 +199,20 @@ export class Metro {
       if (show !== en.shown) {
         en.shown = show;
         if (show) this.scene.add(en.mesh);
-        else this.scene.remove(en.mesh);
+        else { en.street?.detail(false); this.scene.remove(en.mesh); }
       }
-      if (show) en.mesh.position.set(en.x, height(en.x, en.y), -en.y);
+      if (show) {
+        en.mesh.position.set(en.x, height(en.x, en.y), -en.y);
+        en.mesh.children[0].visible = en.mesh.children[1].visible = !street;
+        if (street && !en.street) {
+          en.street = new MetroStreetMarker(en.station, en.facing);
+          en.mesh.add(en.street);
+        }
+        if (en.street) {
+          en.street.visible = street;
+          en.street.detail(street && (en.x - x) ** 2 + (en.y - y) ** 2 < 55 ** 2);
+        }
+      }
     }
   }
 
@@ -210,7 +222,12 @@ export class Metro {
   // together make one sign.
   private place(en: Entrance) {
     if (!this.ready(en.x, en.y)) return;
-    [en.x, en.y] = this.standAt(en.x, en.y);
+    const [oldX, oldY] = [en.x, en.y];
+    [en.x, en.y] = this.standAt(oldX, oldY);
+    const stop = en.station.lines[0], centre = stop.line.stations[stop.i].at;
+    const moved = Math.hypot(en.x - oldX, en.y - oldY) > .3;
+    en.facing = Math.atan2(en.x - (moved ? oldX : centre[0]), (moved ? oldY : centre[1]) - en.y);
+    if (en.street) en.street.rotation.y = en.facing;
     en.placed = true;
     en.gone = this.entrances.some((o) => o !== en && o.station === en.station && o.placed && !o.gone && Math.hypot(o.x - en.x, o.y - en.y) < MERGE);
   }

@@ -2859,7 +2859,7 @@ async function main() {
     const fromStreet = !!eyes || (testkit?.cam?.tilt ?? 0) > 35;
     trams.sync(camPos.x, -camPos.z, viewRadius() + 150, ground, fromStreet, dt, ride.passengers?.doors ? ride.v : null);
     metro.update(dt);
-    metro.sync(camPos.x, -camPos.z, viewRadius() + 60, ground);
+    metro.sync(camPos.x, -camPos.z, viewRadius() + 60, ground, fromStreet);
     tramStops.sync(camPos.x, -camPos.z, viewRadius() + 60, ground, fromStreet);
     busStops.sync(camPos.x, -camPos.z, viewRadius() + 60, ground, fromStreet);
     crowd.umbrellas.wet = weather.now.rain;

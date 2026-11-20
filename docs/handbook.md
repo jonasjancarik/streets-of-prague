@@ -245,7 +245,8 @@ For working lights, check the same spot again after dark.
 
 A tram or bus stop keeps its blue pictogram visible from above. On foot the same spot
 has an upright red frame. You can read the stop name, line numbers and printed route
-diagrams from either approach along the pavement.
+diagrams from either approach along the pavement. At metro entrances a four-sided
+lantern gives the line letters, with the station name and neighbouring stops below it.
 
 ## Playing
 
