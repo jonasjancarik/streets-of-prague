@@ -49,6 +49,9 @@ function outline(l: number, b: number, r: number, t: number, rise: number, oval:
   for (let j = 0; j <= 10; j++) { const a = j * Math.PI / 10; p.push([(l + r) / 2 + Math.cos(a) * (r - l) / 2, t - rise + Math.sin(a) * rise]); }
   return p;
 }
+// Shopfronts identified in the source artwork (assets/facades/sheet*.txt).
+// Only their inset glass panes see merchandise; doors, shutters and flats keep their own finish.
+const SHOPFRONTS = new Set([6, 20, 30, 58, 66, 71, 80, 81, 91, 95, 102, 115, 119, 128, 139]);
 function cellShape(layer: number, bay: number, storey: number, moduleWidth: number, upper: boolean, style: number) {
   const tris: Triangle[] = [], holes: V2[][] = [], regions = openings[layer] || [];
   const pt = (p: V2, d: number): Point => [p[0], p[1], d];
@@ -88,6 +91,7 @@ const j = (i + 1) % outer.length;
     ring(bead, lip, bevel, projection, 1);
     const inner = outline(l + .014, b + .010, r - .014, t - .014, rise, oval);
     ring(lip, inner, projection, () => -inset, .75, S.reveal);
+    const glassFinish = !upper && SHOPFRONTS.has(layer) ? S.display : S.glass;
     const panes: V2[][] = [];
     for (let k = 0; k < lights.length; k += 4) {
       const [lx, ty, rx, by] = lights.slice(k, k + 4), x = (q: number) => (bay - moduleWidth) / 2 + moduleWidth * q / 256;
@@ -97,7 +101,7 @@ const j = (i + 1) % outer.length;
       if (panes.some(p => glass[0][0] < p[2][0] && glass[2][0] > p[0][0] && glass[0][1] < p[2][1] && glass[2][1] > p[0][1])) continue;
       panes.push(glass);
       ring(glass, glass, () => -inset, () => -inset - .038, .80);
-      fill(glass, [], -inset - .038, .94, S.glass);
+      fill(glass, [], -inset - .038, .94, glassFinish);
     }
     const timber = [8, 9, 18, 19, 34, 42, 44, 45, 56, 57, 67, 69, 79, 82, 90, 93, 105, 114, 117, 130, 138, 141, 143].includes(layer);
     const barred = [10, 21, 22, 54, 55, 68, 92, 116, 140].includes(layer) && !panes.length;
@@ -119,7 +123,7 @@ const j = (i + 1) % outer.length;
         ring(rail, rail, () => -.032, () => -.016, 1, S.iron); fill(rail, [], -.016, 1, S.iron);
       }
     }
-    fill(inner, panes, -inset, .92, barred ? S.grilleGlass : panes.length || timber ? S.joinery : S.glass);
+    fill(inner, panes, -inset, .92, barred ? S.grilleGlass : panes.length || timber ? S.joinery : glassFinish);
     // Cut limestone voussoirs around a round-headed portal. Their narrow
     // joints follow the arch; the centre keystone projects past its neighbours.
     if (rise > .12 && !oval && style <= 1) {

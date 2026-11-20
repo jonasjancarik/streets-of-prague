@@ -252,6 +252,11 @@ point on clear plaster near the corner. The curved face, proportions and enamel
 border follow the examples in [IPR’s Pražský uličník](https://prazskyulicnik.az.iprpraha.cz/clanky/vyvoj-oznaceni-ulic-v-terenu).
 The map supplies the names, while individual sign positions are approximate.
 
+At street level on WebGPU, a glazed shopfront can show bookshelves, a bakery,
+flowers or ceramics. Look through the glass from the side to see the walls
+and floor behind the window frame. Adjacent bays share a display and some
+stay lit after dark. The displays are scenery imagined for the game.
+
 The fire engine shows its roof ladder and hose rack from above. Within 24 m on foot,
 you can see through the crew cab, read the rear pump gauges and follow a firefighter’s
 hose to the coupling beside the lockers. Two marked police cars share patrol and pursuit

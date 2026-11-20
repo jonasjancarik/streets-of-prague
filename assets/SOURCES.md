@@ -19,6 +19,7 @@ and the map data its credits in the README.
 
 ## From outside
 
+- **Shop displays** (`public/shop-displays.webp`): generated for the game with OpenAI ImageGen. The four shop back walls share one texture. The generation prompt is in `facades/shop-displays.txt`.
 - **Street façade plaster** (`public/street-plaster.webp`): [Plastered Wall, Amal Kumar / Poly Haven](https://polyhaven.com/a/plastered_wall), CC0.
   `facades/plaster.py` takes the 1K diffuse and OpenGL normal JPEGs. It preserves the
   fine grain while the building supplies the colour. The opening profiles and the
