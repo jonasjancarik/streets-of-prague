@@ -1,3 +1,4 @@
+import { lookAround, type Eyes } from './streetView.ts';
 import { Car, COURIER_BOXES } from './car.ts';
 import { courierLook } from './figures.ts';
 import { posts } from './posts.ts';
@@ -180,7 +181,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     // how long (seconds) since you last looked round: driving, the view swings back
     // behind the car once you let go. `third`: on foot, from a few metres behind you
     // instead of out of your eyes (driving, it's the same chase camera either way).
-    eyes: null as { yaw: number; pitch: number; still?: number; third?: boolean } | null,
+    eyes: null as Eyes | null,
 
     toLocal(w: Where): Point2 {
       if (typeof w === 'string') {
@@ -1199,15 +1200,9 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     drag = { id: e.pointerId, x: e.clientX, y: e.clientY, turn: e.button === 2 || e.shiftKey };
     try { g.canvas.setPointerCapture(e.pointerId); } catch { /* a synthetic event (tests) */ }
   });
-  // Yaw all the way round either way, pitch up to 60° up or down.
-  const look = (dx: number, dy: number) => {
-    kit.eyes!.yaw = ((kit.eyes!.yaw - dx + 540) % 360) - 180;
-    kit.eyes!.pitch = Math.max(-60, Math.min(60, kit.eyes!.pitch - dy));
-    kit.eyes!.still = 0;
-  };
   g.canvas.addEventListener('pointermove', (e) => {
     if (document.pointerLockElement === g.canvas) {
-      if (kit.eyes && !kit.cam) look(e.movementX * 0.12, e.movementY * 0.1);
+      if (kit.eyes && !kit.cam) lookAround(kit.eyes, e.movementX * 0.12, e.movementY * 0.1);
       return;
     }
     const cam = kit.cam;
@@ -1216,7 +1211,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     drag.x = e.clientX;
     drag.y = e.clientY;
     if (!cam && kit.eyes) {
-      look(dx * 0.25, dy * 0.2);
+      lookAround(kit.eyes, dx * 0.25, dy * 0.2);
       return;
     }
     if (!cam) return;

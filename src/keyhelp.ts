@@ -6,7 +6,7 @@ import { t, onLang } from './i18n.ts';
 // index.html).
 
 export type HelpMode = 'foot' | 'car' | 'drive' | 'tram' | 'funicular' | 'ferry' | 'heli';
-export interface HelpState { mode: HelpMode; gun: boolean; fire: boolean; two: boolean; beacon?: boolean }
+export interface HelpState { street?: boolean; mode: HelpMode; gun: boolean; fire: boolean; two: boolean; beacon?: boolean }
 
 // [label under the key, what it does in full]
 type Use = [string, string];
@@ -23,9 +23,10 @@ function keysFor(s: HelpState): { title: string; keys: Keys; note?: string } {
   switch (s.mode) {
     case 'foot': return {
       title: 'On foot',
+      note: s.street ? 'Click the street to look around with the mouse. Esc releases it.' : undefined,
       keys: {
         W: ['walk', 'Walk forwards and back'], S: ['back', 'Walk forwards and back'],
-        A: ['left', 'Turn'], D: ['right', 'Turn'],
+        A: ['left', s.street ? 'Step left' : 'Turn'], D: ['right', s.street ? 'Step right' : 'Turn'],
         Shift: ['run', 'Run'], Space: ['jump', 'Jump. Hold Space during a long fall to open your parachute, then steer with A or D'],
         E: ['get in', 'Get into the nearest car, onto a bike or motorbike, or onto a tram at a stop'],
         T: ['taxi', 'Get a taxi: wave one down or order one through an app'],
@@ -122,7 +123,7 @@ export function keyHelp(card: HTMLElement) {
   const draw = () => render(card, state);
   onLang(() => { if (last) draw(); });
   return (s: HelpState) => {
-    const sig = `${s.mode}|${s.gun}|${s.fire}|${s.two}|${!!s.beacon}`;
+    const sig = `${s.mode}|${s.gun}|${s.fire}|${s.two}|${!!s.beacon}|${!!s.street}`;
     if (sig === last) return;
     last = sig; state = s;
     draw();

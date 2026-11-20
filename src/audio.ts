@@ -1,7 +1,7 @@
 import { clamp } from './network.ts';
 import { BOGIES, frontOf } from './trams.ts';
-import { AMBIENCE, ambienceGains, ambienceMuffle, sirenGain, SIREN_RANGE, PASSING, passingFalloff, passingNote, passingLevels, ROTORS, rotorFalloff } from './soundmix.ts';
-import type { PassingKind } from './soundmix.ts';
+import { AMBIENCE, ambienceGains, ambienceMuffle, sirenGain, SIREN_RANGE, PASSING, passingFalloff, passingNote, passingLevels, ROTORS, rotorFalloff, sourcePan } from './soundmix.ts';
+import type { EarRight, PassingKind } from './soundmix.ts';
 import { Radio, radioOn, setRadioSaved } from './radio.ts';
 import type { Station } from './radio.ts';
 import type { Car } from './car.ts';
@@ -169,6 +169,7 @@ const NOISY: Bus[] = ['engine', 'tyres', 'traffic', 'trams', 'city', 'weather'];
 const ANC_CUT = 0.5, ANC_SHELF = -22; // volume left, and dB taken off the lows
 
 export class Sound {
+  right: EarRight | null = null; // the camera’s right at street level
   buses = {} as Record<Bus, GainNode>;
   volumes = Object.fromEntries(BUSES.map((b) => [b, 1])) as Record<Bus, number>;
   anc = false;
@@ -185,6 +186,9 @@ export class Sound {
   ambience: Ambience | null = null;
   radio: Radio | null = null;
   onRadioFail: (station: Station) => void = () => {};
+  private steps: AudioBuffer | null = null;
+  private stepRetry = 0;
+  private lastStep = -1;
   private strikes = -1;
   voices: TramVoice[] = [];
   private horns: Horn | null = null;
@@ -309,6 +313,29 @@ export class Sound {
     }).catch((e) => console.warn('The city sounds could not be loaded', e));
   }
 
+  warmFootfalls() {
+    const ctx = this.ctx;
+    if (!ctx || !this.on || this.steps || performance.now() < this.stepRetry) return;
+    this.stepRetry = Infinity;
+    void fetch(import.meta.env.BASE_URL + 'audio/footfalls.wav').then(async r => {
+      if (!r.ok) throw Error(String(r.status));
+      this.steps = await ctx.decodeAudioData(await r.arrayBuffer());
+    }).catch(() => { this.stepRetry = performance.now() + 60000; });
+  }
+
+  footfall(kind: 'step' | 'land', strength: number) {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running' || !this.on || !this.steps) return;
+    // Six distinct heel/toe pairs. Avoid the same one on successive contacts.
+    const slot = kind === 'land' ? 6 : (this.lastStep + 1 + Math.floor(Math.random() * 5)) % 6;
+    if (slot < 6) this.lastStep = slot;
+    const source = ctx.createBufferSource();
+    source.buffer = this.steps;
+    source.playbackRate.value = (kind === 'land' ? 0.82 : 0.94 + strength * 0.12) + Math.random() * 0.05;
+    source.connect(gain(ctx, kind === 'land' ? 0.38 : 0.14 + 0.14 * strength)).connect(this.buses.city);
+    source.start(ctx.currentTime, slot * 0.25, 0.25);
+  }
+
   // Your horn, for as long as it's held: a car's two notes, deeper on a lorry or a bus,
   // a thin beep on a motorbike. A bicycle has a bell instead, one ring at a press.
   horn(on: boolean, kind: HornKind = 'car') {
@@ -320,11 +347,11 @@ export class Sound {
 
   // Another driver's horn, d m away and dx of it to the east: a short toot, or a long one
   // (a cyclist rings the bell).
-  toot(d: number, dx: number, kind: HornKind = 'car', long = false) {
+  toot(d: number, dx: number, kind: HornKind = 'car', long = false, dy = 0) {
     const ctx = this.ctx, freqs = HORNS[kind];
     if (!ctx || ctx.state !== 'running' || !this.on || d > 120) return;
     const t = ctx.currentTime, len = long ? 0.9 : 0.32, pan = ctx.createStereoPanner(), g = gain(ctx, 0), lp = filter(ctx, 'lowpass', 2600);
-    pan.pan.value = clamp(dx / 45, -0.85, 0.85);
+    pan.pan.value = sourcePan(dx, dy, d, 45, this.right);
     if (!freqs.length) {
       g.gain.value = 25 / (25 + d);
       g.connect(pan).connect(this.buses.horns);
@@ -384,7 +411,7 @@ export class Sound {
     for (const v of this.sirens) if (v.key && !heard.some((h) => h.q.key === v.key)) v.release();
     for (const h of heard) {
       const v = this.sirens.find((x) => x.key === h.q.key) ?? this.sirens.find((x) => !x.key);
-      v?.update(h.q, h.d, s.x, s.y, s.car, aloft);
+      v?.update(h.q, h.d, s.x, s.y, s.car, this.right, aloft);
     }
 
     // The nearest cars, each keeping its voice while it's among them. Bikes make no sound
@@ -401,7 +428,7 @@ export class Sound {
     for (const v of this.passing) if (v.car && !cars.some((n) => n.car === v.car)) v.release();
     for (const n of cars) {
       const v = this.passing.find((x) => x.car === n.car) ?? this.passing.find((x) => !x.car);
-      v?.update(n.car, n.d, s.x, s.y, car);
+      v?.update(n.car, n.d, s.x, s.y, car, this.right);
     }
 
     // The nearest helicopters, the one you fly first.
@@ -411,35 +438,35 @@ export class Sound {
     for (const v of this.rotors) if (v.key && !rotors.some((h) => h.r.key === v.key)) v.release();
     for (const h of rotors) {
       const v = this.rotors.find((x) => x.key === h.r.key) ?? this.rotors.find((x) => !x.key);
-      v?.update(h.r, h.d, s.x, s.y, s.car);
+      v?.update(h.r, h.d, s.x, s.y, s.car, this.right);
     }
 
     // The nearest trams, each keeping its voice while it's among them.
-    const near: { v: TramVehicle; d: number; dx: number }[] = [];
+    const near: { v: TramVehicle; d: number; pan: number }[] = [];
     for (const v of s.trams) {
-      let d = Infinity, dx = 0;
+      let d = Infinity, dx = 0, dy = 0;
       for (const p of v.parts) {
         const e = Math.hypot(p.x - s.x, p.y - s.y);
-        if (e < d) { d = e; dx = p.x - s.x; }
+        if (e < d) { d = e; dx = p.x - s.x; dy = p.y - s.y; }
       }
-      if (d < TRAM_RANGE) near.push({ v, d, dx });
+      if (d < TRAM_RANGE) near.push({ v, d, pan: sourcePan(dx, dy, d, 45, this.right) });
     }
     near.sort((a, b) => a.d - b.d);
     near.length = Math.min(near.length, TRAM_VOICES);
     for (const voice of this.voices) if (voice.v && !near.some((n) => n.v === voice.v)) voice.release();
     for (const n of near) {
       const voice = this.voices.find((x) => x.v === n.v) ?? this.voices.find((x) => !x.v);
-      voice?.update(dt, n.v, n.d, n.dx);
+      voice?.update(dt, n.v, n.d, n.pan);
     }
   }
 
   // A gunshot d m away, dx of it to the east: a crack with a thump under it, and its
   // echo off the houses a moment later.
-  shot(d: number, dx: number) {
+  shot(d: number, dx: number, dy = 0) {
     const ctx = this.ctx;
     if (!ctx || ctx.state !== 'running' || !this.on) return;
     const t = ctx.currentTime, loud = 20 / (20 + d), pan = ctx.createStereoPanner();
-    pan.pan.value = clamp(dx / 45, -0.85, 0.85);
+    pan.pan.value = sourcePan(dx, dy, d, 45, this.right);
     pan.connect(this.buses.bangs);
     for (const [at, level, top] of [[0, 1, 6000 - Math.min(d, 200) * 22], [0.07 + Math.random() * 0.1, 0.25, 1400]]) {
       const src = loop(ctx, this.noise, 0.9 + Math.random() * 0.3), lp = filter(ctx, 'lowpass', top), g = gain(ctx, 0);
@@ -460,11 +487,11 @@ export class Sound {
   }
 
   // A car door shutting d m away, dx of it to the east: a dull thud and the latch catching.
-  doorShut(d: number, dx: number) {
+  doorShut(d: number, dx: number, dy = 0) {
     const ctx = this.ctx;
     if (!ctx || ctx.state !== 'running' || !this.on || d > 80) return;
     const t = ctx.currentTime, loud = 10 / (10 + d), pan = ctx.createStereoPanner();
-    pan.pan.value = clamp(dx / 30, -0.85, 0.85);
+    pan.pan.value = sourcePan(dx, dy, d, 30, this.right);
     pan.connect(this.buses.bangs);
     const thump = ctx.createOscillator(), tg = gain(ctx, 0);
     thump.frequency.setValueAtTime(170, t);
@@ -486,11 +513,11 @@ export class Sound {
 
   // A car blowing up d m away, dx of it to the east: a deep bang, and a roar that
   // rumbles on for a second or two.
-  boom(d: number, dx: number) {
+  boom(d: number, dx: number, dy = 0) {
     const ctx = this.ctx;
     if (!ctx || ctx.state !== 'running' || !this.on) return;
     const t = ctx.currentTime, loud = 40 / (40 + d), pan = ctx.createStereoPanner();
-    pan.pan.value = clamp(dx / 45, -0.85, 0.85);
+    pan.pan.value = sourcePan(dx, dy, d, 45, this.right);
     pan.connect(this.buses.bangs);
     const src = loop(ctx, this.noise, 0.6), lp = filter(ctx, 'lowpass', 2400 - Math.min(d, 300) * 6), g = gain(ctx, 0);
     lp.frequency.setTargetAtTime(160, t + 0.05, 0.4);
@@ -523,12 +550,11 @@ export class Sound {
   }
 }
 
-// Near to far: loud to quiet, and to the side it's on (the view looks down on the map,
-// so east is to the right).
-function place(gain: GainNode, pan: StereoPannerNode, d: number, dx: number, t: number) {
+// Ease the tram’s level and stereo position as it passes.
+function place(gain: GainNode, pan: StereoPannerNode, d: number, stereo: number, t: number) {
   const g = (15 / (15 + d)) * clamp(1 - d / TRAM_RANGE, 0, 1);
   gain.gain.setTargetAtTime(g, t, 0.1);
-  pan.pan.setTargetAtTime(clamp(dx / 45, -0.85, 0.85), t, 0.1);
+  pan.pan.setTargetAtTime(stereo, t, 0.1);
 }
 
 // What every engine shares, however its sound is made: the gears, and from them the revs.
@@ -769,7 +795,7 @@ class SirenVoice {
     this.top.start();
   }
 
-  update(q: Siren, d: number, lx: number, ly: number, me: Car | null, aloft = 0) {
+  update(q: Siren, d: number, lx: number, ly: number, me: Car | null, right: EarRight | null, aloft = 0) {
     const t = this.ctx.currentTime;
     if (this.key !== q.key) { this.key = q.key; this.last = t; this.phase = Math.random(); }
     this.phase = (this.phase + (t - this.last) * (q.kind === 'fire' ? 1 : q.kind === 'ambulance' ? 1.9 : 1.6)) % 1;
@@ -785,7 +811,7 @@ class SirenVoice {
     this.top.frequency.setTargetAtTime(f * 2, t, tc);
     this.tone.frequency.setTargetAtTime(clamp(3600 - d * 7, 800, 3600) * (1 - 0.6 * aloft), t, 0.1);
     this.out.gain.setTargetAtTime(sirenGain(q.kind, d) * (1 - 0.65 * aloft), t, 0.1);
-    this.pan.pan.setTargetAtTime(clamp(-dx / 45, -0.85, 0.85), t, 0.1);
+    this.pan.pan.setTargetAtTime(sourcePan(-dx, -dy, d, 45, right), t, 0.1);
   }
 
   release() {
@@ -822,7 +848,7 @@ class PassingVoice {
     hiss.start(0, i * 0.37);
   }
 
-  update(car: Car, d: number, lx: number, ly: number, me: Car | null) {
+  update(car: Car, d: number, lx: number, ly: number, me: Car | null, right: EarRight | null) {
     const t = this.ctx.currentTime, fresh = this.car !== car;
     this.car = car;
     const kind: PassingKind = car.variant?.id === 'electric' ? 'electric' : car.spec.heavy ? 'heavy' : car.spec.two === 'moto' ? 'moto' : 'car';
@@ -840,7 +866,7 @@ class PassingVoice {
     // A new car fades in rather than starting at full level.
     this.engine.gain.setTargetAtTime(engine * near, t, fresh ? 0.3 : 0.1);
     this.whoosh.gain.setTargetAtTime(whoosh * near, t, fresh ? 0.3 : 0.1);
-    this.pan.pan.setTargetAtTime(clamp(-dx / 25, -0.85, 0.85), t, 0.1);
+    this.pan.pan.setTargetAtTime(sourcePan(-dx, -dy, d, 25, right), t, 0.1);
   }
 
   release() {
@@ -892,7 +918,7 @@ class RotorVoice {
     this.whine.start();
   }
 
-  update(r: Rotor, d: number, lx: number, ly: number, me: Car | null) {
+  update(r: Rotor, d: number, lx: number, ly: number, me: Car | null, right: EarRight | null) {
     const t = this.ctx.currentTime, fresh = this.key !== r.key;
     this.key = r.key;
     const dx = lx - r.x, dy = ly - r.y, n = Math.max(Math.hypot(dx, dy), 1);
@@ -907,7 +933,7 @@ class RotorVoice {
     this.whineGain.gain.setTargetAtTime((r.mine ? 0.025 : 0.012 * dull * dull) * r.spin, t, 0.3);
     const level = ROTORS.level * r.spin ** 2 * (r.mine ? 1 : ROTORS.outside * rotorFalloff(d));
     this.out.gain.setTargetAtTime(level, t, fresh ? 0.5 : 0.15);
-    this.pan.pan.setTargetAtTime(r.mine ? 0 : clamp(-dx / 60, -0.8, 0.8), t, 0.15);
+    this.pan.pan.setTargetAtTime(r.mine ? 0 : sourcePan(-dx, -dy, d, 60, right, 0.8), t, 0.15);
     this.mine.gain.setTargetAtTime(r.mine ? 1 : 0, t, 0.3);
     this.other.gain.setTargetAtTime(r.mine ? 0 : 1, t, 0.3);
   }
@@ -1031,7 +1057,7 @@ class TramVoice {
     this.out.gain.setTargetAtTime(0, this.ctx.currentTime, 0.2);
   }
 
-  update(dt: number, v: TramVehicle, d: number, dx: number) {
+  update(dt: number, v: TramVehicle, d: number, stereo: number) {
     const t = this.ctx.currentTime, sound = this.sound;
     if (this.v !== v) {
       this.v = v;
@@ -1044,7 +1070,7 @@ class TramVoice {
       this.arrived = this.braking(v); // not halfway into pulling in
       this.clipT = 0;
     }
-    place(this.out, this.pan, d, dx, t);
+    place(this.out, this.pan, d, stereo, t);
     const speed = v.speed;
     const accel = dt > 0 ? (speed - this.lastSpeed) / dt : 0;
     this.lastSpeed = speed;

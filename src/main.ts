@@ -83,6 +83,7 @@ import { LaneAssist, turnOf, project } from './assist.ts';
 import { Sound, surfaceOf } from './audio.ts';
 import { roadNoise, ROAD_FAR } from './soundmix.ts';
 import type { Surface, HornKind, Rotor } from './audio.ts';
+import { eyesFor, initialView, WalkingGait, type Eyes, type PlayerView } from './streetView.ts';
 import { setupTouch } from './touch.ts';
 import { setupGamepad, padLabels, usingPad } from './gamepad.ts';
 import './credits.ts';
@@ -206,8 +207,8 @@ async function main() {
   translatePage();
   await benchPause.clear();
   // The pad works from the start screen on; what it does in the game is hooked up further down.
-  const padHooks = { settings: () => {}, menu: () => false, zoomBy: (_factor: number) => {} };
-  const pad = setupGamepad({ settings: () => padHooks.settings(), menu: () => padHooks.menu(), zoomBy: (f) => padHooks.zoomBy(f) });
+  const padHooks = { settings: () => {}, menu: () => false, eyes: (): Eyes | null => null, zoomBy: (_factor: number) => {} };
+  const pad = setupGamepad({ eyes: () => padHooks.eyes(), settings: () => padHooks.settings(), menu: () => padHooks.menu(), zoomBy: (f) => padHooks.zoomBy(f) });
   onLang(() => status(statusText));
   // Rolled now, so the start screen can say what the game will begin with.
   const clock = new Clock(params);
@@ -550,6 +551,9 @@ async function main() {
   let heightWanted = height; // where the camera is heading (zooming out, speeding up)
   const camPos = new THREE.Vector3(walker.x, 0, -walker.y);
   let camGround = ground(walker.x, walker.y, walker);
+  const gait = new WalkingGait();
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  let gaitActive = false;
   let eyeH = 0; // the first-person view's height (developer panel), smoothed over kerbs
   // The vehicle that view follows from behind, and the heading it looks along (lagging the vehicle's).
   let chased: { h: number } | null = null, chaseH = 0;
@@ -860,7 +864,7 @@ async function main() {
         const k = clamp(((p.x - from[0]) * dx + (p.y - from[1]) * dy) / len2, 0, 1);
         if (Math.hypot(from[0] + dx * k - p.x, from[1] + dy * k - p.y) < 0.8) crowd.knock(p, dx * 0.01, dy * 0.01, 2);
       }
-      sound.shot(Math.hypot(from[0] - px(), from[1] - py()), from[0] - px());
+      sound.shot(Math.hypot(from[0] - px(), from[1] - py()), from[0] - px(), from[1] - py());
       crowd.scare(from[0], from[1], 35);
       if (!hit) return;
       telemetry.did('shot by the police');
@@ -994,8 +998,8 @@ async function main() {
   let hornHeld = false, hornT = 0;
   const hornKind = (c: Car): HornKind => (c.two === 'bike' ? 'bike' : c.two === 'moto' ? 'moto' : c.spec.heavy ? 'heavy' : 'car');
   // Drivers held up by you toot at you.
-  Car.onShut = (c) => sound.doorShut(Math.hypot(c.x - px(), c.y - py()), c.x - px());
-  traffic.onHonk = (c, long) => sound.toot(Math.hypot(c.x - px(), c.y - py()), c.x - px(), hornKind(c), long);
+  Car.onShut = (c) => sound.doorShut(Math.hypot(c.x - px(), c.y - py()), c.x - px(), c.y - py());
+  traffic.onHonk = (c, long) => sound.toot(Math.hypot(c.x - px(), c.y - py()), c.x - px(), hornKind(c), long, c.y - py());
   const honk = (on: boolean) => {
     if (ride.driving) {
       if (on) { ride.drive!.ring(); hornT = 0; hornHeld = true; } else hornHeld = false;
@@ -1445,6 +1449,7 @@ async function main() {
     return true;
   };
   const sound = new Sound();
+  const earRight = new THREE.Vector3();
   benchPause.onChange((paused) => sound.hold(paused));
   // What the ground under a car is made of, for its tyres: the OSM surface of the street
   // it's on, or the pavement off the streets.
@@ -1599,7 +1604,16 @@ async function main() {
       return true;
     },
   };
-  const settingsPanel = setupSettings({ sound, graphics, weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k); } }, saves });
+  const cameraChoice = {
+    get: (): PlayerView => testkit?.cam || !testkit?.eyes ? 'overhead' : testkit.eyes.third ? 'third' : 'first',
+    set: (choice: PlayerView) => {
+      if (!testkit) return;
+      testkit.cam = null;
+      testkit.eyes = eyesFor(choice);
+      try { localStorage.setItem('playerView', choice); } catch { /* storage is optional */ }
+    },
+  };
+  const settingsPanel = setupSettings({ cameraChoice, sound, graphics, weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k); } }, saves });
   hideIdleCursor(renderer.domElement, () => settingsPanel.open || mapOpen());
 
   // ---- Input -------------------------------------------------------------
@@ -1792,10 +1806,11 @@ async function main() {
   window.addEventListener('pointermove', (e) => { if (aimAt && e.pointerType === 'mouse') aimAt = pointAt(e) ?? aimAt; }, { passive: true });
   window.addEventListener('pointerup', (e) => { if (e.button === 0) aimAt = null; });
   $('t-ticket').addEventListener('click', pressB);
-  const touch = setupTouch({ beacon: () => { if (inCar && !inCar.burnt && ['police', 'fire', 'ambulance'].includes(inCar.type)) switchBeacon(inCar); }, action: interact, backOnRoad, zoomBy, horn: honk, steal: stealTram, cannon: (on) => { cannonHeld = on; }, shoot: (on) => { fireHeld = on; if (on) pulled = true; }, doors: () => ride.doors(), jump: () => {
+  const streetEyes = () => testkit?.eyes && !testkit.cam && !settingsPanel.open && !mapOpen() && !metro.active ? testkit.eyes : null;
+  const touch = setupTouch({ eyes: streetEyes, beacon: () => { if (inCar && !inCar.burnt && ['police', 'fire', 'ambulance'].includes(inCar.type)) switchBeacon(inCar); }, action: interact, backOnRoad, zoomBy, horn: honk, steal: stealTram, cannon: (on) => { cannonHeld = on; }, shoot: (on) => { fireHeld = on; if (on) pulled = true; }, doors: () => ride.doors(), jump: () => {
     if (!inCar && !inHeli && !ride.on && !metro.active && !dialog.active && !boats.me && !funicular.me && !ferries.me && !passenger()) { input.jump = true; telemetry.did('jumped'); }
   }, force: params.has('touch') });
-  Object.assign(padHooks, { settings: () => settingsPanel.show(), menu: () => metro.active, zoomBy }); // (a conversation leaves the stick steering)
+  Object.assign(padHooks, { eyes: streetEyes, settings: () => settingsPanel.show(), menu: () => metro.active, zoomBy }); // (a conversation leaves the stick steering)
   window.addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
@@ -1859,7 +1874,7 @@ async function main() {
       const altitude = ground(x, y, c);
       for (const heli of choppers) heli.hit(120 * Math.max(0, 1 - Math.hypot(heli.x - x, heli.y - y, heli.z - altitude) / BLAST));
       const d = Math.hypot(x - px(), y - py());
-      sound.boom(d, x - px());
+      sound.boom(d, x - px(), y - py());
       hapticBlast(d);
       shake = Math.min(1.6, shake + (1.4 * 30) / (30 + d));
       if (c === inCar) hurt(MAX_HEALTH);
@@ -2117,6 +2132,10 @@ async function main() {
       if (walker.down > 0) getIn.cancel();
       else getIn.update(dt);
     }
+    const footView = !testkit?.cam && !!testkit?.eyes && !testkit.eyes.third && !scripted && !arrest.active &&
+      !inCar && !inHeli && !ride.on && !boats.me && !funicular.me && !ferries.me && !passenger() && walker.down <= 0;
+    if (!footView && gaitActive) gait.reset();
+    gaitActive = footView;
     if (inCar) {
       let steer = ctl.aim ? steerToward(inCar, ctl.aim.h, ctl.move) : ctl.turn;
       if (ctl.run) {
@@ -2135,7 +2154,12 @@ async function main() {
       const eyes = !testkit?.cam && testkit?.eyes;
       // And like any first-person game, the mouse turns and A/D step sideways.
       if (eyes && eyes.yaw && walker.down <= 0) { walker.h += THREE.MathUtils.degToRad(eyes.yaw); eyes.yaw = 0; }
+      const x = walker.x, y = walker.y;
       walker.update(dt, eyes ? { ...ctl, strafe: true } : ctl);
+      if (footView) {
+        const contact = gait.advance(dt, Math.hypot(walker.x - x, walker.y - y), walker.jumping || !!walker.flight);
+        if (contact) sound.footfall(contact, gait.strength);
+      }
     }
     // In the helicopter Space climbs and Shift comes down.
     const heliTurn = inHeli && ctl.aim ? clamp(turnOf(inHeli.h, ctl.aim.h) * 1.2, -1, 1) : ctl.turn;
@@ -2143,7 +2167,7 @@ async function main() {
       if (!c.update(dt, c === inHeli ? { move: ctl.move, turn: heliTurn, up: ctl.brake, down: ctl.run } : null)) continue;
       const distance = Math.hypot(c.x - px(), c.y - py(), c.z - (inHeli?.z ?? walker.flight?.height ?? ground(px(), py(), inCar || walker)));
       fires.fireball(c.x, c.y, c.z + 0.6);
-      sound.boom(distance, c.x - px());
+      sound.boom(distance, c.x - px(), c.y - py());
       hapticBlast(distance);
       shake = Math.max(shake, 1.4 * 30 / (30 + distance));
       if (c === inHeli) {
@@ -2794,6 +2818,15 @@ async function main() {
       jump: input.jump,
       aim: touch.aim || pad.aim,
     };
+    if (eyes && ctl.aim && !inCar && !inHeli && !walker.flight && !ride.on && !passenger() && !boats.me && !funicular.me && !ferries.me) {
+      // At eye height a stick points across the screen: up walks forward while
+      // the other hand looks. Vehicle steering keeps its own aim convention.
+      const { h, mag } = ctl.aim;
+      ctl.move = Math.sin(h) * mag;
+      ctl.turn = -Math.cos(h) * mag;
+      ctl.run ||= mag > 0.9;
+      ctl.aim = null;
+    }
     // On a tram, Shift speeds up the ride: the whole world runs faster, in steps short
     // enough for the physics.
     // At a tram stop, hold Space to wait: the same speed-up, until a tram is close.
@@ -2926,6 +2959,8 @@ async function main() {
     for (const c of choppers) if (c.spin > 0.01 && !c.wrecked) rotors.push({ key: c, x: c.x, y: c.y, z: c.z, vx: c.vx, vy: c.vy, spin: c.spin, mine: c === inHeli });
     for (const h of police.helis.list) if (!h.gone) rotors.push({ key: h, x: h.x, y: h.y, z: h.z, vx: h.vx, vy: h.vy, spin: 1, mine: false });
     const earZ = rotors.length ? (inHeli ? inHeli.z : walker.flight?.height ?? ground(px(), py(), inCar || walker)) : 0;
+    if (gaitActive) sound.warmFootfalls();
+    sound.right = eyes && !metro.active ? earRight.set(1, 0, 0).applyQuaternion(camera.quaternion) : null;
     sound.update(dt, { x: px(), y: py(), z: earZ, rotors, car: inCar, throttle: ctl.move, surface, trams: trams.list, quiet: metro.active, rain: weather.now.rain, wet: weather.now.wet, snow: weather.now.snow, strikes: weather.now.strikes, busy, road, hour: (clock.t % 86400) / 3600, season, aloft: inHeli ? clamp((inHeli.air - 5) / 40, 0, 1) : 0, traffic: traffic.agents, sirens: [
       ...police.chasing.map((p) => ({ key: p, kind: 'police' as const, x: p.car.x, y: p.car.y, vx: p.car.vx, vy: p.car.vy })),
       ...brigade.engines.filter((e) => e.phase === 'go' && !e.wrecked).map((e) => ({ key: e, kind: 'fire' as const, x: e.car.x, y: e.car.y, vx: e.car.vx, vy: e.car.vy })),
@@ -3033,9 +3068,12 @@ async function main() {
       } else {
         chased = null;
         const aim = me.h + yaw;
-        const ex = me.x + Math.cos(me.h) * 0.3, ey = me.y + Math.sin(me.h) * 0.3;
-        camera.position.set(ex, eyeH, -ey);
-        camera.lookAt(ex + Math.cos(aim) * Math.cos(pitch), eyeH + Math.sin(pitch), -(ey + Math.sin(aim) * Math.cos(pitch)));
+        const moving = gaitActive && !reduceMotion.matches;
+        const sway = moving ? gait.sway : 0, eye = eyeH + (moving ? gait.rise : 0);
+        const ex = me.x + Math.cos(me.h) * 0.3 - Math.sin(me.h) * sway;
+        const ey = me.y + Math.sin(me.h) * 0.3 + Math.cos(me.h) * sway;
+        camera.position.set(ex, eye, -ey);
+        camera.lookAt(ex + Math.cos(aim) * Math.cos(pitch), eye + Math.sin(pitch), -(ey + Math.sin(aim) * Math.cos(pitch)));
       }
       camera.up.set(0, 0, -1);
     } else {
@@ -3096,7 +3134,7 @@ async function main() {
     // Keep the player's ring visible through tree crowns in the overhead view.
     walker.ring.material.depthTest = fromStreet;
     // (Seen from just behind you, the ring is only in the way.)
-    walker.ring.visible = !(eyes && eyes.third);
+    walker.ring.visible = !eyes;
     // At street level you're a life-size person too, like everyone round you (rocketbox.ts).
     walker.fig.lifeSize = walker.fig.self = !!eyes && !underway;
     if (walker.mesh.visible) walker.drawFigure();
@@ -3139,6 +3177,11 @@ async function main() {
     if (name && name !== street) {
       street = name;
       $('street').textContent = name;
+    }
+    const streetFoot = !!eyes && !underway && !inCar && !inHeli && !ride.on && !passenger() && !boats.me && !funicular.me && !ferries.me;
+    if (shown.streetFoot !== +streetFoot) {
+      shown.streetFoot = +streetFoot;
+      document.body.classList.toggle('street-foot', streetFoot);
     }
     const carName = inCar ? (inCar.variant ? variantName(inCar.variant) : t(VEHICLE_NAMES[inCar.type] ?? inCar.type)) : '';
     if (carName !== carShown) {
@@ -3285,8 +3328,13 @@ async function main() {
     show('hint', padLabels(hint), 'html');
     $('help').dataset.mode = inHeli ? 'heli' : inCar ? 'car' : ride.driving ? 'drive' : ride.on ? 'tram' : funicular.me ? 'funicular' : ferries.me ? 'ferry' : 'foot';
     const emergency = !!inCar && !inCar.burnt && ['police', 'fire', 'ambulance'].includes(inCar.type);
-    drawHelp({ mode: $('help').dataset.mode as HelpMode, gun: gunOn(), fire: inCar?.type === 'fire', two: !!inCar?.two, beacon: emergency });
+    drawHelp({ street: streetFoot && !walker.flight, mode: $('help').dataset.mode as HelpMode, gun: gunOn(), fire: inCar?.type === 'fire', two: !!inCar?.two, beacon: emergency });
     $('help-pad').dataset.mode = $('help').dataset.mode;
+    const padLook = !!eyes && !underway;
+    if (shown.padLook !== +padLook) {
+      shown.padLook = +padLook;
+      $('help-pad').classList.toggle('look', padLook);
+    }
     ride.render();
     const label = ride.driving ? (ride.canLeave() ? 'Get off' : null) : ride.on ? (ride.atStop() ? 'Get off' : ride.stuck ? 'Get off here' : ride.dest === ride.upcoming()[0] ? 'Stop requested' : 'Request stop') : funicular.me ? (funicular.me.stop !== null ? 'Get off' : null) : ferries.me ? (ferries.me.stop !== null ? 'Get off' : null) : canBoard || cabin || ferryHere?.open || enterable?.two ? 'Get on' : inCar?.two ? 'Get off' : null;
     const cab = taxi.riding ? 'Get out' : taxi.near() ? 'Get in' : busRide.on ? 'Get off' : canBus ? 'Get on' : null;
@@ -3421,8 +3469,7 @@ async function main() {
     capture: () => new Promise((resolve) => { grabFull.push(resolve); setTimeout(() => resolve(null), 3000); }),
   });
   // ?fps starts in first person, as the developer panel's First person box does; ?tps in third person.
-  if (params.has('fps')) testkit.eyes = { yaw: 0, pitch: 0 };
-  if (params.has('tps')) testkit.eyes = { yaw: 0, pitch: 0, third: true };
+  testkit.eyes = eyesFor(initialView(params));
   dev.attach(testkit);
   // A fixed target altitude keeps before/after terrain views on the same camera.
   const shot = params.get('camera')?.split(',').map(Number);

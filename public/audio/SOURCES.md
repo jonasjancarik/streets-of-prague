@@ -31,3 +31,10 @@ its slow swell evened out, made into a loop; each crowd is six stretches of the 
 Town recordings played at once (so no words come through), its loud moments pulled
 back, its highs softened, with a short reverb, made into a loop; each engine clip is a
 stretch of its recording, evened out to a steady level and made into a loop.
+
+
+## Footsteps
+
+The six heel-and-toe pairs and the landing in `footfalls.wav` were cut from
+`walking.ogg` and `land.ogg` in [Kenney’s Starter Kit FPS](https://github.com/KenneyNL/Starter-Kit-FPS/tree/main/sounds).
+Kenney released the sounds under CC0. `assets/audio/footsteps.py` takes those two files in order and packs them into quarter-second slots.

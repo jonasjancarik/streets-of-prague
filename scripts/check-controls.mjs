@@ -70,7 +70,11 @@ const show = () => { document.hidden = false; document.dispatchEvent(new Event('
 
 const { setupTouch } = await import('../src/touch.ts');
 let horn = false, cannon = false, shooting = false, zooms = 0;
+let eyes = null;
+globalThis.innerWidth = 960;
+globalThis.innerHeight = 480;
 const touch = setupTouch({
+  eyes: () => eyes,
   action() {}, backOnRoad() {}, zoomBy() { zooms++; }, horn: on => { horn = on; },
   steal() {}, cannon: on => { cannon = on; }, shoot: on => { shooting = on; }, doors() {}, jump() {}, force: true,
 });
@@ -119,16 +123,34 @@ for (const suspend of [() => window.dispatchEvent(new Event('blur')), hide]) {
   assert.equal(touch.move, 0, 'an interrupted pedal needs a fresh press');
 }
 
+eyes = { yaw: 0, pitch: 0 };
+pointer('app', 'pointerdown', 9, 500, 120);
+pointer('app', 'pointermove', 9, 740, 100);
+assert.equal(eyes.yaw, -90);
+assert(eyes.pitch > 0, 'a swipe can look right and up while walking');
+pointer('app', 'lostpointercapture', 9);
+pointer('app', 'pointermove', 9, 900, 100);
+assert.equal(eyes.yaw, -90, 'lost look capture cannot rotate the camera');
+eyes = null;
+
 const { setupGamepad } = await import('../src/gamepad.ts');
 const keys = new Set();
 window.addEventListener('keydown', e => keys.add(e.code));
 window.addEventListener('keyup', e => keys.delete(e.code));
 const pad = { connected: true, mapping: 'standard', axes: [0, 0, 0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })) };
 pads = [pad];
-const state = setupGamepad({ settings() {}, menu: () => false, zoomBy() {} });
+const state = setupGamepad({ eyes: () => eyes, settings() {}, menu: () => false, zoomBy() { zooms++; } });
 let now = performance.now();
 const tick = () => { now += 16; frame(now); };
 const button = (index, pressed) => { pad.buttons[index] = { pressed, value: pressed ? 1 : 0 }; };
+eyes = { yaw: 0, pitch: 0 };
+pad.axes[2] = 1; pad.axes[3] = -0.8;
+tick();
+assert(eyes.yaw < 0 && eyes.pitch > 0 && !zooms, 'right stick alone wakes the pad and looks around');
+eyes = null;
+tick();
+assert.equal(zooms, 1, 'the overhead right stick still zooms');
+pad.axes[2] = pad.axes[3] = 0;
 button(3, true); button(7, true); pad.axes[0] = 1;
 tick();
 assert(keys.has('KeyQ'));

@@ -41,6 +41,10 @@
       #street { font: 22px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; }
       #speedo { display: flex; align-items: baseline; gap: 6px; margin-top: 4px; }
       #speed { font: 44px/1 'Bebas Neue', sans-serif; color: var(--ink); min-width: 2.2ch; }
+      body.street-foot #speedo, body.street-foot #tally, body.street-foot #hint:empty { display: none; }
+      body.street-foot #hud { min-width: 0; }
+      #help-pad .look-label, #help-pad.look .zoom-label { display: none; }
+      #help-pad.look .look-label { display: inline; }
       #speedo small { opacity: 0.7; }
       #radio { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
       #radio[hidden] { display: none; }
@@ -815,7 +819,7 @@
           <dt><kbd>X</kbd></dt><dd data-t>Get out after landing or jump out in flight</dd>
         </dl>
       </section>
-      <div class="foot"><kbd>Right stick</kbd> <span data-t>zoom</span> · <kbd>Menu</kbd> <span data-t>settings</span></div>
+      <div class="foot"><kbd>Right stick</kbd> <span class="zoom-label" data-t>zoom</span><span class="look-label" data-t>look around</span> · <kbd>Menu</kbd> <span data-t>settings</span></div>
     </div>
     <div id="touch" data-mode="foot">
       <div id="t-steer"><div id="t-stick"><div id="t-knob"></div></div></div>

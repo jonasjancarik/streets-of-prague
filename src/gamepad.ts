@@ -1,3 +1,5 @@
+import { lookAround, type Eyes } from './streetView.ts';
+
 // A game controller (Xbox, PlayStation, anything the browser maps to the standard
 // layout). The left stick points where you want to go on screen, like the touch
 // stick, and the triggers are the pedals. The buttons press the same keys as the
@@ -9,7 +11,7 @@
 //   left stick   walk, run (full push) or steer toward where it points (in a
 //                conversation too); in the metro it moves the choice
 //   right trigger / left trigger   gas / brake and reverse
-//   right stick  zoom (up and down)
+//   right stick  look around at street level, zoom from overhead
 //   A            Space: jump, handbrake, wait for a tram, confirm
 //   X            E: get in or out
 //   B            B: pay the ticket or fine; back, in the metro
@@ -63,7 +65,7 @@ const dead = (v: number) => (Math.abs(v) < DEAD ? 0 : Math.sign(v) * (Math.abs(v
 const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), a[href], textarea:not([disabled]), summary';
 const shown = (e: HTMLElement) => e.getClientRects().length > 0 && !e.closest('[hidden]');
 
-export function setupGamepad({ settings, menu, zoomBy }: { settings: () => void; menu: () => boolean; zoomBy: (factor: number) => void }): PadState {
+export function setupGamepad({ settings, menu, zoomBy, eyes }: { settings: () => void; menu: () => boolean; eyes: () => Eyes | null; zoomBy: (factor: number) => void }): PadState {
   const state: PadState = { active: false, move: 0, turn: 0, aim: null };
   const down = new Set<string>(); // keys the pad is holding
   const press = (code: string, on: boolean) => {
@@ -176,7 +178,7 @@ export function setupGamepad({ settings, menu, zoomBy }: { settings: () => void;
     p.buttons.forEach((b, i) => { if (b.pressed) pressed.add(i); });
     const push = Math.hypot(p.axes[0], p.axes[1]);
     // A pad that has been touched takes over: browsers say nothing of it before that.
-    if (pressed.size || push > 0.35) { state.active = true; use(true); }
+    if (pressed.size || push > 0.35 || Math.hypot(p.axes[2] ?? 0, p.axes[3] ?? 0) > 0.35) { state.active = true; use(true); }
     if (!state.active) return;
     const hit = (i: number) => pressed.has(i) && !held.has(i);
     const sx = dead(p.axes[0]), sy = dead(p.axes[1]);
@@ -228,9 +230,13 @@ export function setupGamepad({ settings, menu, zoomBy }: { settings: () => void;
     state.aim = mag > 0 ? { h: Math.atan2(-sy, sx), mag } : null;
     state.turn = -sx; // (where there is no aiming, a boat, say, it steers)
     state.move = latched.has(7) || latched.has(6) ? 0 : (p.buttons[7]?.value ?? 0) - (p.buttons[6]?.value ?? 0);
-    // The right stick zooms: up for closer.
-    const zy = dead(p.axes[3] ?? 0);
-    if (zy) zoomBy(Math.exp(zy * dt * 1.2));
+    const rx = dead(p.axes[2] ?? 0), ry = dead(p.axes[3] ?? 0);
+    if (rx || ry) {
+      const view = eyes();
+      // A gentle push adjusts a sightline. Full travel turns 180° in a second.
+      if (view) lookAround(view, rx * Math.abs(rx) * 180 * dt, ry * Math.abs(ry) * 110 * dt);
+      else if (ry) zoomBy(Math.exp(ry * dt * 1.2));
+    }
   };
   requestAnimationFrame(poll);
   return state;

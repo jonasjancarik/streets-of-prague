@@ -697,7 +697,10 @@ export class Walker {
     }
     // Like a first-person game: forward and sideways together no faster than either alone.
     let across = ctl.strafe && !ctl.aim ? turn * (ctl.run ? 5 : 3) : 0;
-    if (across && target) { const k = 1 / Math.SQRT2; target *= k; across *= k; }
+    if (across && target) {
+      const length = Math.hypot(move, turn);
+      if (length > 1) { target /= length; across /= length; }
+    }
     this.side += (across - this.side) * Math.min(1, dt * 10);
     if (Math.abs(this.side) < 0.01) this.side = 0;
     const jumping = a.name === 'jump' && !a.done;
