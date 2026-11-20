@@ -1210,7 +1210,8 @@ float cracks(vec2 p) {
   return 1. - smoothstep(.03, .09, min(a, min(b, c)));
 }`;
 const R = CAR_REFLECT, CS = CAR_STRIPS;
-const COAT_GLSL = /* glsl */ `
+export const VEHICLE_VIEW_UNIFORMS = { uSkyRef: SKY_REF, uStreetRef: STREET_REF, uSunDir: SUN_DIR, uSunLight: SUN_LIGHT, uStrips: STRIPS, uStripsOn: STRIPS_ON, uProbe: PROBE_MAP, uProbePrev: PROBE_PREV, uProbeMix: PROBE_MIX, uProbeAt: PROBE_AT, uProbeNear: PROBE_NEAR, uProbeK: PROBE_K };
+export const VEHICLE_VIEW_GLSL = /* glsl */ `
 uniform float uWet, uMirror, uStripsOn;
 uniform vec3 uSkyRef, uStreetRef, uSunDir, uSunLight;
 uniform sampler2D uStrips;
@@ -1246,6 +1247,8 @@ vec3 carStreet(vec3 r, float area, vec3 p) {
   }
   return c + uSunLight * pow(max(dot(r, uSunDir), 0.), ${R.sharp.toFixed(1)}) * ${R.glint.toFixed(3)};
 }
+`;
+const COAT_GLSL = /* glsl */ `${VEHICLE_VIEW_GLSL}
 vec3 carCoat(vec3 c, vec3 n, vec3 v, vec3 lamp, float area, vec3 p) {
   float glass = dot(c, vec3(.3, .59, .11)) < .04 && c.b > c.r * 1.25 ? ${CAR_GLOSS.glass.toFixed(2)} : 1.;
   float coat = mix(${CAR_GLOSS.dry.toFixed(2)}, 1., uWet) * glass * carTop(n);
@@ -1290,7 +1293,7 @@ vLit += 4. * mod(floor(paint.w / ${AREA_STEP}.), ${DENT_STEP / AREA_STEP}.);`)
     .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nvec4 dents = dentAt(zoneAt());\nobjectNormal = dentNormal(objectNormal, position, dents);\nobjectNormal.xz = swing(objectNormal.xz);')
     .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed = dented(transformed, dents);\ntransformed.xz = hinge.xy + swing(transformed.xz - hinge.xy);');
   sh.uniforms.uSnow = SNOW;
-  Object.assign(sh.uniforms, { uWet: WET, uSkyRef: SKY_REF, uStreetRef: STREET_REF, uSunDir: SUN_DIR, uSunLight: SUN_LIGHT, uMirror: CAR_MIRROR, uStrips: STRIPS, uStripsOn: STRIPS_ON, uProbe: PROBE_MAP, uProbePrev: PROBE_PREV, uProbeMix: PROBE_MIX, uProbeAt: PROBE_AT, uProbeNear: PROBE_NEAR, uProbeK: PROBE_K });
+  Object.assign(sh.uniforms, { uWet: WET, ...VEHICLE_VIEW_UNIFORMS, uMirror: CAR_MIRROR });
   sh.fragmentShader = sh.fragmentShader
     .replace('#include <common>', `#include <common>\nuniform float uSnow;\nvarying float vLit;\nvarying vec3 vCrack;\n${COAT_GLSL}\n${CRACKS_GLSL}`)
     .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>

@@ -114,6 +114,12 @@ export function passengerCabin(type: string, layout: number[]) {
 // The real driver meshes are a single baked seated pose of the same Rocketbox
 // people used on foot. Only occupied close cars draw one. Cars of the same
 // driver kind share their instance pages, including across different body types.
+let seatedSource: Promise<THREE.Object3D> | undefined;
+export function seatedPeople() {
+  return seatedSource ??= new GLTFLoader().loadAsync('car-drivers.glb').then(gltf => gltf.scene).catch(error => {
+    seatedSource = undefined; throw error;
+  });
+}
 type DriverKind = { geometry: THREE.BufferGeometry; height: number; pages: THREE.InstancedMesh[]; count: number };
 export class SeatedDrivers {
   private kinds: DriverKind[] = [];
@@ -128,7 +134,7 @@ export class SeatedDrivers {
   private async load() {
     this.loading = true;
     try {
-      const { scene: source } = await new GLTFLoader().loadAsync('car-drivers.glb');
+      const source = await seatedPeople();
       if (!this.prepare(source)) throw new Error('Car driver meshes missing');
     } catch (e) {
       this.retryAt = performance.now() + 60000;

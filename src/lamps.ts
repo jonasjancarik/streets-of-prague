@@ -274,7 +274,10 @@ function cast(segs: Seg[], px: number, py: number, dx: number, dy: number, max: 
 interface Street { hw: string; pts: [number, number][]; width?: number; tunnel?: boolean; bridge?: boolean }
 interface LampTile { cells: Set<number>; lamps: Set<number>; hung: Set<number> }
 interface BridgeSpot { x: number; y: number; nx: number; ny: number; tile: LampTile }
-interface LitTram { parts: { x: number; y: number; ang: number }[]; look: unknown; levels?: { gz?: number }[] }
+const tramLeft = new THREE.Vector3(), tramRight = new THREE.Vector3();
+interface LitTram { parts: { x: number; y: number; ang: number }[]; look: {
+  street?: { heading: number; lampOrigin(side: number, out: THREE.Vector3): boolean }
+} | null; levels?: { gz?: number }[] }
 // `broken`: which of its lamps are smashed (LAMP in car.ts: 1 and 2 the headlamps left and right, 4 and 8 the tail lamps).
 export interface LitCar { x: number; y: number; h: number; spec: Pick<CarSpec, 'L' | 'W' | 'H' | 'headlights'>; mode: string; two?: string; speed: number; broken?: number; braking?: boolean }
 
@@ -1219,17 +1222,23 @@ export class Lamps {
         add(p.x, p.y, v.levels?.[i]?.gz ?? this.height(p.x, p.y), 0, 1, 0, 6, 6, CABIN, 0.3);
       });
       const f = v.parts[v.parts.length - 1], b = v.parts[0], half = TRAM_SECTION / 2;
-      const fx0 = Math.cos(f.ang), fy = Math.sin(f.ang), bx = Math.cos(b.ang), by = Math.sin(b.ang);
+      const fit = v.look.street;
+      const fitted = fit?.lampOrigin(1, tramRight) && fit.lampOrigin(-1, tramLeft);
+      const angle = fitted && fit ? fit.heading : f.ang;
+      const fx0 = Math.cos(angle), fy = Math.sin(angle), bx = Math.cos(b.ang), by = Math.sin(b.ang);
       const z = v.levels?.[v.parts.length - 1]?.gz ?? this.height(f.x, f.y);
-      add(f.x + fx0 * half, f.y + fy * half, z, 1, fx0, fy, 28, 5, HEAD, 1.8, LAMP_SHADOWS.value > 2.5 ? 0.9 : 0);
+      const frontX = fitted ? (tramRight.x + tramLeft.x) / 2 : f.x + fx0 * half;
+      const frontY = fitted ? -(tramRight.z + tramLeft.z) / 2 : f.y + fy * half;
+      const lampHeight = fitted ? (tramRight.y + tramLeft.y) / 2 - z : .9;
+      add(frontX, frontY, z, 1, fx0, fy, 28, 5, HEAD, 1.8, LAMP_SHADOWS.value > 2.5 ? lampHeight : 0);
       add(b.x - bx * half, b.y - by * half, v.levels?.[0]?.gz ?? this.height(b.x, b.y), 0, 1, 0, 2.6, 2.6, TAIL, 0.5);
       for (const s of [-1, 1]) {
-        if (fx) {
-          const hx = f.x + fx0 * (half + 0.1) - fy * s * 0.9, hy = f.y + fy * (half + 0.1) + fx0 * s * 0.9;
-          fx.beam(hx, hy, z + 0.9, fx0, fy, 18, 2, HEAD, 1, undefined, this.reach(hx, hy, z + 0.9, fx0, fy, 18, -1));
-        }
+        const lens = s > 0 ? tramRight : tramLeft;
+        const hx = fitted ? lens.x : f.x + fx0 * (half + .1) - fy * s * .9;
+        const hy = fitted ? -lens.z : f.y + fy * (half + .1) + fx0 * s * .9, hz = fitted ? lens.y : z + .9;
+        if (fx) fx.beam(hx, hy, hz, fx0, fy, 18, 2, HEAD, 1, undefined, this.reach(hx, hy, hz, fx0, fy, 18, -1));
         if (g >= this.glows.instanceMatrix.count) break;
-        d.position.set(f.x + fx0 * (half + 0.1) - fy * s * 0.9, z + 0.9, -(f.y + fy * (half + 0.1) + fx0 * s * 0.9));
+        d.position.set(hx, hz, -hy);
         d.scale.set(1, 1, 1);
         d.updateMatrix();
         this.glows.setMatrixAt(g, d.matrix);

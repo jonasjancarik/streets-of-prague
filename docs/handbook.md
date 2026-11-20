@@ -1349,7 +1349,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   round a corner as the real one does. The bodies are built like the cars
   (`assets/trams/build.py` → `public/trams.glb`, `-- --preview DIR` renders them), from
   the real lengths and liveries. They run all over the city at once, so they come into
-  view on their own timetable; only the ones near the camera are drawn.
+  view on their own timetable; only the ones near the camera are drawn. On the pavement,
+  the destination reads across the cab and beside the first entrance. The T3's folding
+  doors and the modern sliding doors reveal the steps or level floor when boarding.
+  After dark the saloon lights pick out the seats and handrails through the glazing.
+  Close models are prepared one section at a time as a tram approaches.
 - **Tram tracks** are OSM's `railway=tram` ways, including those mapped on the same way
   as a street or a bus lane (`highway=busway` or `service` with `railway=tram`, as on
   Lidická and round Anděl: about 300 ways across Prague): `pipeline/osm_area.py` takes

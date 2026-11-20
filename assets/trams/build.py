@@ -26,6 +26,7 @@ usage: blender -b --factory-startup -P assets/trams/build.py
        blender -b --factory-startup -P assets/trams/build.py -- --preview DIR
        (renders the trams from above, as the game sees them, into DIR)
 """
+import json
 import math
 import sys
 from pathlib import Path
@@ -42,8 +43,9 @@ WIRE = 5.6  # m above the rails: the contact wire, where the pantographs reach (
 HEX = {
     "Red": "#c8161d", "Cream": "#efe5c8", "White": "#eeefeb", "Silver": "#b4b8bb", "Light": "#dcdedc",
     "Roof": "#8f9396", "Black": "#1d1c1b", "Dark": "#3a3d40", "Glass": "#1e2830", "Skirt": "#2b2a29",
-    "Bellows": "#252423", "Lamp": "#fff6d8", "Tail": "#b3161b", "Metal": "#5d6064", "Pan": "#d9a21b",
+    "Bogie": "#2b2a29", "Mirror": "#1d1c1b", "Bellows": "#252423", "Lamp": "#fff6d8", "Tail": "#b3161b", "Metal": "#5d6064", "Pan": "#d9a21b",
 }
+HEX.update({"Door_" + name: colour for name, colour in HEX.copy().items()})
 MATS = list(HEX)
 
 
@@ -107,8 +109,8 @@ class Livery:
             for a, b in self.doors:
                 if a < x < b and z < self.door_bands[-1][0]:
                     if self.frame and (x < a + 0.07 or x > b - 0.07) and z > self.door_bands[0][0]:
-                        return self.frame
-                    return self.band(self.door_bands, z)
+                        return "Door_" + self.frame
+                    return "Door_" + self.band(self.door_bands, z)
         if self.glass[0] < z < self.glass[1]:
             return "Glass" if any(a < x < b for a, b in self.windows) else self.pillar
         return self.band(self.bands, z)
@@ -178,12 +180,46 @@ class Shell:
         rounded the corners are, in plan), `rake(z)` (how far back the end is at height z:
         the windscreen leaning back, the roof rounding down) and `end(z)` (its colour)."""
         n, w = L / 2, W / 2
+        # Exact apertures and end profiles used to fit the optional street cabin.
+        def end_profile(end):
+            return [end["kind"], end["r"], getattr(end["rake"], "profile", [0, 0, 1, 1])]
+        self.layout = dict(width=W, roof=H, eave=zr, bottom=z0, tumble=tumble,
+                           glass=livery.glass, windows=livery.windows, doors=livery.doors,
+                           doorTop=livery.door_bands[-1][0] if livery.door_bands else 0, both=livery.both,
+                           ends=[end_profile(front), end_profile(back)], bogies=[], lamps=[], mirrors=[], joint=0)
         zt = livery.glass[0]
 
         def half_width(z):
             return w if z <= zt else w - tumble * min(1, (z - zt) / (zr - zt))
 
-        zs = sorted({z0, zr, zt} | {z for z in livery.zcuts() if z0 < z < zr})
+        # The nose's glass and body bands rarely start at the height of a side
+        # window. Include those changes in the shell rather than rounding them to
+        # the nearest side-panel seam.
+        cuts = {z0, zr, zt} | {z for z in livery.zcuts() if z0 < z < zr}
+        end_glass = []
+        for end in (front, back):
+            transitions = [z0]
+            previous = end["end"](z0)
+            for i in range(1, 97):
+                high = z0 + (zr - z0) * i / 96
+                current = end["end"](high)
+                if current != previous:
+                    lo, hi = high - (zr - z0) / 96, high
+                    for _ in range(17):
+                        mid = (lo + hi) / 2
+                        if end["end"](mid) == previous:
+                            lo = mid
+                        else:
+                            hi = mid
+                    transitions.append(round(hi, 5))
+                previous = current
+            transitions.append(zr)
+            cuts.update(transitions)
+            panes = [(a, b) for a, b in zip(transitions, transitions[1:]) if end["end"]((a+b)/2) == "Glass"]
+            end_glass.append([panes[0][0], panes[-1][1]] if panes else [])
+        zs = sorted(cuts)
+        self.layout["endGlass"] = end_glass
+        self.layout["levels"] = zs
         # The roof: from the edge of the side, round to the flat top.
         yr = half_width(zr)
         roofpts = [(yr - 0.04, zr + 0.1), (yr - 0.14, zr + (H - zr) * 0.62), (yr - 0.32, H - 0.02), (w * 0.55, H)]
@@ -238,19 +274,23 @@ class Shell:
         return rings
 
     def bogie(self, x, w, z0):
-        self.block((x, 0, (z0 + 0.06) / 2), (2.1, w * 2 - 0.35, z0 - 0.06), "Skirt")
+        self.layout["bogies"].append(x)
+        self.block((x, 0, (z0 + 0.06) / 2), (2.1, w * 2 - 0.35, z0 - 0.06), "Bogie")
 
     def bellows(self, x_end, gap, W, z0, H):
         """The folding gangway to the next section, filling the gap and a little over."""
+        self.layout["joint"] = gap
         self.block((x_end - gap / 2, 0, (z0 + 0.1 + H - 0.25) / 2), (gap + 0.3, W - 0.24, H - 0.35 - z0), "Bellows")
 
     def lamps(self, x, w, z, tail=False):
+        self.layout["lamps"].append([x, w, z, tail])
         for s in (1, -1):
             self.block((x, s * w, z), (0.08, 0.22, 0.14), "Tail" if tail else "Lamp")
 
     def mirrors(self, x, w, z):
+        self.layout["mirrors"].append([x, z])
         for s in (1, -1):
-            self.block((x, s * (w + 0.12), z), (0.12, 0.26, 0.34), "Black")
+            self.block((x, s * (w + 0.12), z), (0.12, 0.26, 0.34), "Mirror")
 
     def pantograph(self, x, z, flip=False):
         """A single-arm pantograph, raised to the contact wire (WIRE above the rails)."""
@@ -287,6 +327,7 @@ class Shell:
             if i not in used:
                 obj.active_material_index = i
                 bpy.ops.object.material_slot_remove()
+        obj["streetLayout"] = json.dumps(self.layout, separators=(",", ":"))
         for k, v in props.items():
             obj[k] = v
         return obj
@@ -303,6 +344,7 @@ def rake(z_from, depth, z_to, power=1.6):
         if z <= z_from:
             return 0.0
         return depth * min(1.0, (z - z_from) / (z_to - z_from)) ** power
+    f.profile = [z_from, depth, z_to, power]
     return f
 
 

@@ -110,7 +110,7 @@ const uProbeAt: N = (() => { const u = uniform(PROBE_AT.value.clone()).setGroup(
 const uProbeNear: N = (() => { const u = uniform(PROBE_NEAR.value.clone()).setGroup(renderGroup); u.onRenderUpdate(() => { u.value.copy(PROBE_NEAR.value); return u.value; }); return u; })();
 const stripNodes: N[] = [];
 onStrips((t) => { for (const n of stripNodes) n.value = t; });
-const carStreet = (r: N): N => {
+const carStreet = (r: N, neighbourhood: N = area): N => {
   const a = atan(r.z, r.x);
   const edge = float(R.edge).add(sin(a.mul(5)).mul(0.55).add(sin(a.mul(13).add(1.7)).mul(0.3)).add(sin(a.mul(31).add(0.4)).mul(0.15)).mul(R.ragged));
   const sky = uSkyRef.mul(mix(R.horizon, R.zenith, smoothstep(0.1, 0.9, r.y)));
@@ -119,7 +119,7 @@ const carStreet = (r: N): N => {
   const made = mix(ground, mix(walls, sky, smoothstep(edge.sub(0.015), edge.add(0.015), r.y)), above);
   // The strip of the car's kind of area, where the strips are in.
   const v: N = float(CS.stripHorizon).mul(r.y.div(max(length(r.xz), 0.001)).div(CS.stripTop).oneMinus());
-  const sample: N = texture(STRIPS.value, vec2(a.div(6.2832).add(0.5), float(1).sub(area.add(clamp(v, 0.01, 0.99)).div(CS.kinds))));
+  const sample: N = texture(STRIPS.value, vec2(a.div(6.2832).add(0.5), float(1).sub(neighbourhood.add(clamp(v, 0.01, 0.99)).div(CS.kinds))));
   stripNodes.push(sample);
   const street = sample.rgb.mul(luma(uStreetRef)).mul(CS.stripGain);
   const strip = select(v.greaterThan(1), ground, mix(mix(ground, sky, above), street, sample.a.mul(step(0, v))));
@@ -223,6 +223,21 @@ for (const name of [/^trams$/, /^funicular$/]) {
     lampLit(node);
   });
 }
+
+addPort(/^tram-glass$/, (node) => {
+  const graze = float(1).sub(dot(normalView, positionViewDirection).abs()).clamp(0, 1).pow(2);
+  node.opacityNode = graze.mul(0.43).add(0.23);
+  const ray = cameraWorldMatrix.mul(vec4(reflect(positionViewDirection.negate(), normalView), 0)).xyz;
+  glow(node, () => carStreet(ray, float(1)).mul(graze.mul(1.1).add(0.74)));
+});
+
+// Interior light falls on the fitted seats and handrails. Glass stays transparent;
+// only lamp lenses and ceiling fixtures receive the stronger light.
+addPort(/^street-tram$/, (node) => {
+  const amount = attribute('streetGlow','float');
+  glow(node, () => vertexColor().rgb.mul(amount.mul(uLampOn).add(max(0,amount.sub(1.5)).mul(.12))));
+  lampLit(node);
+});
 
 // Cabin windows lit, and the navigation lights (glow 2) in their own colour.
 addPort(/^boats$/, (node) => {
