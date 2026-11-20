@@ -52,6 +52,11 @@ export class VR {
   private xrTarget: unknown = null;
   private daydream = { x: 0, y: 0, touched: false, click: false, app: false, plus: false, minus: false };
   fps = 0;
+  loopMs = 0;
+  drawMs = 0;
+  private began = 0;
+  private loops: number[] = [];
+  private draws: number[] = [];
   private reports = 0;
   private gatt: string[] = [];
   private seen: Record<string, number> = {};
@@ -111,9 +116,17 @@ export class VR {
   // At the start of each frame: the frames others asked for, and this frame's controls.
   frame(now: number, dt: number, pad: { move: number; turn: number }) {
     if (!this.active) return;
-    // Frames per second in the headset, for checking (window.__vr.fps).
+    // Frames per second in the headset, and the main thread's share of each frame: the
+    // whole game loop and the drawing for both eyes (ms, medians over the last second),
+    // for checking (window.__vr, ?vrlog). A loop much shorter than the frame means the
+    // graphics chip is what holds it back.
     this.frames++;
-    if (now - this.since >= 1000) { this.fps = Math.round(this.frames * 1000 / (now - this.since)); this.frames = 0; this.since = now; }
+    this.began = performance.now();
+    if (now - this.since >= 1000) {
+      const med = (x: number[]) => (x.sort((a, b) => a - b)[x.length >> 1] ?? 0);
+      this.fps = Math.round(this.frames * 1000 / (now - this.since)); this.frames = 0; this.since = now;
+      this.loopMs = Math.round(med(this.loops)); this.drawMs = Math.round(med(this.draws)); this.loops = []; this.draws = [];
+    }
     this.xrTarget = this.renderer.getRenderTarget();
     const waiting = this.queue; this.queue = [];
     for (const cb of waiting) { try { cb(now); } catch (e) { console.error(e); } }
@@ -163,7 +176,10 @@ export class VR {
     rig.rotation.set(0, h - Math.PI / 2, 0);
     rig.updateMatrixWorld(true);
     rig.add(camera);
+    const t = performance.now();
     try { render(); } finally {
+      const end = performance.now();
+      this.draws.push(end - t); this.loops.push(end - this.began);
       rig.remove(camera);
       // The game reads the camera as it was drawn, in the city's own coordinates.
       camera.matrix.copy(camera.matrixWorld);
@@ -283,7 +299,7 @@ export function setupVR(params: URLSearchParams, renderer: THREE.WebGLRenderer, 
   if (log) setInterval(() => {
     const v = vr as unknown as Record<string, unknown>;
     navigator.sendBeacon(`http://localhost:${log}/`, JSON.stringify({
-      active: vr.active, fps: vr.fps, move: vr.move, side: vr.side, run: vr.run, reports: v.reports, raw: v.raw, gatt: v.gatt, seen: v.seen, daydream: v.daydream,
+      active: vr.active, fps: vr.fps, loopMs: vr.loopMs, drawMs: vr.drawMs, move: vr.move, side: vr.side, run: vr.run, reports: v.reports, raw: v.raw, gatt: v.gatt, seen: v.seen, daydream: v.daydream,
       pads: [...(navigator.getGamepads?.() ?? [])].filter(Boolean).map((p) => ({ id: p!.id, mapping: p!.mapping, axes: p!.axes.map((a) => +a.toFixed(2)), pressed: p!.buttons.flatMap((b, i) => (b.pressed ? [i] : [])) })),
     }));
   }, 500);
