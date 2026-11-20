@@ -3121,6 +3121,7 @@ async function main() {
       floodlightsAt(clock.t % 86400);
       lamps.update(camPos.x, -camPos.z, viewRadius() + 10, sky.dark, drawn, ground, now, trams.list, lightOpt);
     }
+    signals.street(fromStreet);
     signals.update(camPos.x, -camPos.z, viewRadius() + 10, now);
     streaks.update(camera, [lamps.glows, signals.flares, signals.glows], (x, y) => world.heightAt(x, y), viewRadius() + 10, time.value);
     weatherFx.tint.value.copy(sky.tint);

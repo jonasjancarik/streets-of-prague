@@ -29,7 +29,7 @@ const ORACLE = `(THREE, light, LAMP_ON, s) => {
   const COLOURS = [new THREE.Color('#22ff88'), new THREE.Color('#ffae00'), new THREE.Color('#ff2414')];
   const OFF = [new THREE.Color('#0c1a12'), new THREE.Color('#1c150a'), new THREE.Color('#1e0c0a')];
   const n = s.near.length, cars = s.cars, t = s.time();
-  const out = { glowM: new Float32Array(n * 16), glowC: new Float32Array(n * 3), beamC: new Float32Array(cars * 3), lampC: new Float32Array(cars * 9), walkC: new Float32Array((n - cars) * 6) };
+  const out = { glowM: new Float32Array(n * 16), glowC: new Float32Array(n * 3), beamC: new Float32Array(cars * 3), flareM: new Float32Array(cars * 16), lampC: new Float32Array(cars * 9), walkC: new Float32Array((n - cars) * 6) };
   const d = new THREE.Object3D(), m = new THREE.Matrix4(), c = new THREE.Color();
   s.near.forEach((h, i) => {
     if (h.walk) {
@@ -40,7 +40,7 @@ const ORACLE = `(THREE, light, LAMP_ON, s) => {
       d.position.setFromMatrixPosition(m);
       d.position.y += 0.2;
       d.rotation.set(0, 0, 0);
-      d.scale.setScalar(1.6);
+      d.scale.setScalar(s.flares ? 0.8 : 1.6);
       d.updateMatrix();
       d.matrix.toArray(out.glowM, i * 16);
       c.copy(COLOURS[go ? 0 : 2]).toArray(out.glowC, i * 3);
@@ -50,6 +50,16 @@ const ORACLE = `(THREE, light, LAMP_ON, s) => {
     const on = [show === RED || show === READY, show === AMBER || show === READY, show === GREEN];
     for (let k = 0; k < 3; k++) (on[k] ? COLOURS[2 - k] : OFF[2 - k]).toArray(out.lampC, (i * 3 + k) * 3);
     const k = on[2] ? 2 : on[1] ? 1 : 0;
+    if (s.flares) {
+      s.boxes.getMatrixAt(i,m);
+      const y = 2.85 - k * .3;
+      m.multiply(new THREE.Matrix4().makeScale(1.2,y-.05,2.2).setPosition(0,y,.5)).toArray(out.flareM,i*16);
+      COLOURS[2-k].toArray(out.beamC,i*3);
+      new THREE.Matrix4().makeScale(0,0,0).toArray(out.glowM,i*16);
+      // A zero-size road halo never reads its colour, even if a crossing used this slot before.
+      out.glowC.set(s.glows.instanceColor.array.subarray(i*3,i*3+3),i*3);
+      return;
+    }
     s.lamps.getMatrixAt(i * 3 + k, m);
     d.position.setFromMatrixPosition(m);
     d.position.y += 0.2;
@@ -74,7 +84,8 @@ if (url) {
     const THREE = await import(loadedModule('/node_modules/.vite/deps/three.js'));
     const oracle = (${ORACLE});
     const assert = (ok, message) => { if (!ok) throw new Error(message); };
-    const views = [[s.glows.instanceMatrix, 'glowM'], [s.glows.instanceColor, 'glowC'], [s.beams.instanceColor, 'beamC'], [s.lamps.instanceColor, 'lampC'], [s.walkLamps.instanceColor, 'walkC']];
+    const views = [[s.glows.instanceMatrix, 'glowM'], [s.glows.instanceColor, 'glowC'], [(s.flares || s.beams).instanceColor, 'beamC'], [s.lamps.instanceColor, 'lampC'], [s.walkLamps.instanceColor, 'walkC']];
+    if(s.flares) views.push([s.flares.instanceMatrix,'flareM']);
     const report = [];
     for (const [t, on] of [[d.clock.t, LAMP_ON.value], [d.clock.t + 7, 1], [d.clock.t + 31, 0]]) {
       d.clock.t = t; LAMP_ON.value = on;
@@ -133,7 +144,8 @@ const edge = (id, x, y) => ({ id, pts: [[x - 30, y], [x, y]], width: 6 });
 const dynamic = (s) => [
   ['glow matrices', s.glows.instanceMatrix, 'glowM', s.glows.count * 16],
   ['glow colours', s.glows.instanceColor, 'glowC', s.glows.count * 3],
-  ['beam colours', s.beams.instanceColor, 'beamC', s.beams.count * 3],
+  ['beam colours', (s.flares || s.beams).instanceColor, 'beamC', (s.flares || s.beams).count * 3],
+  ...(s.flares ? [['flare matrices',s.flares.instanceMatrix,'flareM',s.flares.count*16]] : []),
   ['lamp colours', s.lamps.instanceColor, 'lampC', s.lamps.count * 3],
   ['crossing lamp colours', s.walkLamps.instanceColor, 'walkC', s.walkLamps.count * 3],
 ];
@@ -165,7 +177,7 @@ function frame(s, gpu, view, draw = true) {
   const before = versions(s);
   s.update(view.x, view.y, view.r, view.now);
   const want = oracle(THREE, light, LAMP_ON, s);
-  assert.equal(s.glows.count, s.near.length); assert.equal(s.beams.count, s.cars);
+  assert.equal(s.glows.count, s.near.length); assert.equal((s.flares || s.beams).count, s.cars);
   assert.equal(s.lamps.count, s.cars * 3); assert.equal(s.walkLamps.count, (s.near.length - s.cars) * 2);
   for (const [name, attr, key, live] of dynamic(s)) {
     const a = attr.array, b = want[key];
@@ -188,7 +200,7 @@ function frame(s, gpu, view, draw = true) {
   for (let i = 0; i < 60; i++) frame(s, gpu, view);
   const deltas = versions(s).map((v, i) => v - start[i]);
   dynamic(s).forEach(([name, a], i) => assert.deepEqual(a.array, arrays[i], `${name} unchanged`));
-  assert.deepEqual(deltas, Array(5).fill(baseline ? 60 : 0), `version deltas over 60 unchanged frames (${deltas.join(', ')})`);
+  assert.deepEqual(deltas, Array(dynamic(s).length).fill(baseline ? 60 : 0), `version deltas over 60 unchanged frames (${deltas.join(', ')})`);
   console.log(`Two heads, 60 unchanged frames: version deltas ${dynamic(s).map(([name], i) => `${name} ${deltas[i]}`).join(', ')}.`);
 }
 
@@ -246,7 +258,7 @@ const crowdWalks = place(30, 2000, 200);
     const before = versions(s), was = LAMP_ON.value;
     LAMP_ON.value = on; frame(s, gpu, view);
     const moved = versions(s).map((v, i) => v - before[i]);
-    if (!baseline) assert.deepEqual(moved, [0, 0, on === was ? 0 : 1, 0, 0], 'brightness alone marks only the beams, once');
+    if (!baseline) assert.deepEqual(moved, s.flares ? Array(6).fill(0) : [0, 0, on === was ? 0 : 1, 0, 0], 'night brightness follows the flare uniform');
   }
 
   // Several updates before one render, the lights changing in different slots in each.

@@ -8,10 +8,11 @@
 import * as THREE from 'three';
 import { NodeMaterial } from 'three/webgpu';
 import {
-  Fn, If, abs, Discard, float, vec2, vec3, vec4, uv, attribute, uniform, renderGroup, instanceColor, positionGeometry, positionView, positionViewDirection, normalView, cameraViewMatrix,
+  Fn, If, abs, Discard, float, vec2, vec3, vec4, uv, texture, instanceIndex, attribute, uniform, renderGroup, instanceColor, positionGeometry, positionView, positionViewDirection, normalView, cameraViewMatrix,
   cameraProjectionMatrix, positionWorld, smoothstep, mix, min, max, clamp, dot, sqrt, pow, fract, sin, cos, length, select, sRGBTransferEOTF, toneMappingExposure,
 } from 'three/tsl';
 import { setGlows } from '../lamps.ts';
+import { pedestrianLens } from '../signalOptics.ts';
 import { setSignalGlow, setSignalFlare } from '../signals.ts';
 import { setBeamShade, setGlintShade, BEAM_ON } from '../lightfx.ts';
 import { setSprayDrawing } from '../spray.ts';
@@ -23,6 +24,11 @@ import { lampLit, uLampOn } from './lamps.ts';
 import { ungrade } from './grade.ts';
 import { OLD_GRADE } from '../grade.ts';
 import { type N, addPort, follow, followVec, followColor, uWet, uRain, vnoise, fbm2 } from './common.ts';
+
+addPort(/^pedestrian-lenses$/, node => {
+  const tile = instanceIndex.mod(2).toFloat().toVarying('vPedestrianTile');
+  node.colorNode = texture(pedestrianLens(), vec2(uv().x.add(tile).mul(.5),uv().y));
+});
 
 addPort(/^signal-(pole|head)$/, (node) => { lampLit(node); });
 

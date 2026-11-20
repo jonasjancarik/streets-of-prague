@@ -1,3 +1,4 @@
+import { signalOptics } from './signalOptics.ts';
 import { dataUrl } from './data.ts';
 import * as THREE from 'three';
 import { mirrored, mirroredGlow } from './mirror.ts';
@@ -64,6 +65,26 @@ export function light(sig: Signal, t: number) {
 }
 
 export class Signals {
+  private optics?: ReturnType<typeof signalOptics>;
+  private overview?: {head: THREE.BufferGeometry; walk: THREE.BufferGeometry; lamp: THREE.BufferGeometry; ped: THREE.BufferGeometry;
+    lampMaterial: THREE.Material | THREE.Material[]; pedMaterial: THREE.Material | THREE.Material[]};
+  private atStreet = false;
+  street(street: boolean) {
+    if (this.atStreet === street) return;
+    this.atStreet = street;
+    // These large cues lie over the junction for the overhead camera. At eye
+    // height the lens itself shows the phase and its hood screens the back.
+    this.glows.visible = this.flares.visible = !street;
+    this.overview ??= {head:this.boxes.geometry, walk:this.walkBoxes.geometry, lamp:this.lamps.geometry, ped:this.walkLamps.geometry,
+      lampMaterial:this.lamps.material, pedMaterial:this.walkLamps.material};
+    const close = this.optics ??= signalOptics(), far = this.overview;
+    this.boxes.geometry = street ? close.head : far.head;
+    this.walkBoxes.geometry = street ? close.walk : far.walk;
+    this.lamps.geometry = street ? close.lens : far.lamp;
+    this.walkLamps.geometry = street ? close.pedestrian : far.ped;
+    this.lamps.material = street ? close.lit : far.lampMaterial;
+    this.walkLamps.material = street ? close.pedestrians : far.pedMaterial;
+  }
   private byId = new Map<string, Signal>();
   private walkById = new Map<string, { sig: Signal; x: number; y: number; ang: number }[]>(); // the crossings' lights by the street they cross
   private heads: Head[] = [];
