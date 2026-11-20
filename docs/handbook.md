@@ -673,8 +673,11 @@ the same signal phase as the overhead light.
   the HUD aren't shown in the headset. On a Pixel 5 it runs at about 18–20 frames a
   second at Lowest and Medium alike, limited by the game's own update and the draw
   calls, not by pixels. That is too slow to be comfortable, and a faster phone is
-  needed for real play. From the driver's seat you see out through the car, because
-  the street car is modelled only from outside. Checks: `window.__vr` (`fps`, `headH`,
+  needed for real play. In a car you sit in the driver's seat; in a bus, lorry,
+  dustcart, fire engine or ambulance, up in the cab on the left behind the windscreen
+  (`VR_CAB` in `car.ts`). The windows of the vehicle you drive are left out, so their
+  tint and reflections don't fog the view; other vehicles keep theirs. Parts of the
+  street car are modelled only from outside, so you see out through them. Checks: `window.__vr` (`fps`, `headH`,
   `headPitch`).
 
   The Daydream controller hasn't worked yet (tried 20 Nov 2026 on a Pixel 11 Pro). Chrome

@@ -22,7 +22,7 @@ import type { BusDepartures } from './buses.ts';
 import { BusPilot } from './busPilot.ts';
 import type { BusPilotData } from './busPilot.ts';
 import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp, streetShare } from './network.ts';
-import { Car, TYPES, CarPool, VR_SEAT, collideBodies, contact, loadCars, ordinaryCarBodies, useKit, variantName } from './car.ts';
+import { Car, TYPES, CarPool, VR_CAB, VR_GLASS, VR_SEAT, collideBodies, contact, loadCars, ordinaryCarBodies, useKit, variantName } from './car.ts';
 import { CarOutline } from './carOutline.ts';
 import { RestingCars } from './restingCars.ts';
 import { loadKit, FIGURE_SIZE, SCALE, WARDROBE, PEOPLE_SHADOWS, CAST_LAYER } from './figures.ts';
@@ -2762,6 +2762,7 @@ async function main() {
       if (vr.active && testkit && (!testkit.eyes || testkit.eyes.third || testkit.eyes.yaw || testkit.eyes.pitch)) testkit.eyes = { yaw: 0, pitch: 0 };
       if (!vr.active && vrWas && testkit) testkit.eyes = null;
       vrWas = vr.active;
+    if (!vr.active) VR_GLASS.box.value.w = 0;
     }
     if (paused !== soundHeld) sound.hold((soundHeld = paused)); // and the sound with it
     graphics.frame(now - last, now, world.busy);
@@ -3380,12 +3381,22 @@ async function main() {
         }
         if (vehicle) vrSeatTurn += turn; else vr.yaw += turn;
         const draw = () => renderer.render(scene, camera);
+        // Inside the car you drive its windows are left out (car.ts), as they would be
+        // clear: their tint and reflections only fog the view in the headset.
+        VR_GLASS.box.value.w = inCar && !underway ? 1 : 0;
+        if (inCar) {
+          const { L, W, H } = inCar.spec;
+          VR_GLASS.at.value.set(inCar.x, eyeH + H / 2, -inCar.y, inCar.h);
+          VR_GLASS.box.value.set(L / 2 + 0.15, W / 2 + 0.15, H / 2 + 0.3, VR_GLASS.box.value.w);
+        }
         if (inCar && !underway && VR_SEAT.frame === VR_SEAT.frames) {
           const e = VR_SEAT.eye; // (the street model's own driver's seat: car.ts)
           vr.draw(e.x, -e.z, e.y, inCar.h + vrSeatTurn, draw);
         } else if (inCar && !underway) {
-          const { L, W, H } = inCar.spec, h = inCar.h, c = Math.cos(h), s = Math.sin(h);
-          const back = -0.1 * L, left = W * 0.21, seat = Math.min(H - 0.3, Math.max(1.1, H * 0.78));
+          // A bus, lorry or ambulance: up in its cab, on the left behind the windscreen.
+          const { L, W, H } = inCar.spec, h = inCar.h, c = Math.cos(h), s = Math.sin(h), cab = VR_CAB[inCar.type];
+          const back = cab ? L / 2 - cab[0] : -0.1 * L, left = cab ? W / 2 - 0.6 : W * 0.21;
+          const seat = cab ? cab[1] : Math.min(H - 0.3, Math.max(1.1, H * 0.78));
           vr.draw(inCar.x + c * back - s * left, inCar.y + s * back + c * left, eyeH + seat, h + vrSeatTurn, draw);
         } else if (eyes && !underway && !vehicle) vr.draw(walker.x, walker.y, eyeH, vr.yaw, draw);
         else vr.draw(camera.position.x, -camera.position.z, camera.position.y, vehicle ? vehicle.h + vrSeatTurn : vr.yaw, draw);
