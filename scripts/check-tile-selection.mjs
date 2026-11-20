@@ -11,6 +11,8 @@ import { registerHooks } from 'node:module';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 registerHooks({ load(url, context, next) {
+  if (url.endsWith('.json') && url.startsWith(new URL('../src/', import.meta.url).href))
+    return { format: 'json', shortCircuit: true, source: readFileSync(new URL(url), 'utf8') };
   if (!url.endsWith('.ts')) return next(url, context);
   return { format: 'module', shortCircuit: true, source: ts.transpileModule(
     readFileSync(new URL(url), 'utf8').replaceAll('import.meta.env', '({})'),
@@ -128,6 +130,7 @@ function world(oracle, { available = sparse(1), box, workers = 3 } = {}) {
   const log = [], makes = [], draws = [];
   const country = box === undefined ? null : Object.assign(Object.create(CountrysideTiles.prototype), { index, box });
   const w = Object.assign(Object.create(TileWorld.prototype), {
+    turns: [], reveal: [], jobs: [],
     T, ox: OX, oy: OY, index, available: new Set(available), availableRevision: 0, country,
     loaded: new Map(), byIndex: new Map(), sky: new Map(), photos: new Map(), pending: new Map(),
     builds: new Map(), retry: new Map(), jsons: new Map(), jsonRange: null, buildTimes: [], drawTimes: [],

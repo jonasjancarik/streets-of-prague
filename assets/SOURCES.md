@@ -19,6 +19,11 @@ and the map data its credits in the README.
 
 ## From outside
 
+- **Street façade plaster** (`public/street-plaster.webp`): [Plastered Wall, Amal Kumar / Poly Haven](https://polyhaven.com/a/plastered_wall), CC0.
+  `facades/plaster.py` takes the 1K diffuse and OpenGL normal JPEGs. It preserves the
+  fine grain while the building supplies the colour. The opening profiles and the
+  local ornament masks come from the game's existing façade sheets (`facades/openings.py`).
+
 - **People close up in first person** (`public/rocketbox/`): 14 avatars from the
   [Microsoft Rocketbox](https://github.com/microsoft/Microsoft-Rocketbox) library (MIT,
   © 2020 Microsoft) in CodePawl's [GLB repack](https://huggingface.co/datasets/codepawl/rocketbox-avatars-glb)

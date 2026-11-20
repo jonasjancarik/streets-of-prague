@@ -66,6 +66,7 @@ import { TramStops } from './tramstops.ts';
 import { Districts } from './districts.ts';
 import { kindAt, loadStrips, setCentre } from './reflections.ts';
 import { TileWorld } from './tiles.ts';
+import { facadeFinishes, loadFacadeFinishes } from './facadeFinishes.ts';
 import { loadFacadeAtlas } from './facades.ts';
 import { groundSamples, GROUND_DEPTH } from './surface.ts';
 import { CUTAWAY, DIG, WEATHER_DETAIL } from './shading.ts';
@@ -3102,6 +3103,9 @@ async function main() {
     if (walker.mesh.visible) walker.drawFigure();
     carOutline.update(fromStreet ? null : inCar, carPool);
     streetSurfaceView(fromStreet && !!DOME_NODE.value);
+    const streetWalls = fromStreet && !!DOME_NODE.value;
+    if (streetWalls && graphics.tier !== 'lowest') loadFacadeFinishes();
+    world.facades.update(streetWalls, camera.position.x, camera.position.y, camera.position.z, graphics.tier, !!facadeFinishes.masks);
     world.furnitureCamera(fromStreet);
     world.trees.street(fromStreet, free ? free.x : camera.position.x, free ? -free.y : camera.position.z);
     world.trees.canopy(true, fromStreet);

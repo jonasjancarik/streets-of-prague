@@ -468,7 +468,7 @@ export function configureRenderer(renderer: WebGPURenderer) {
   // few dozen variants in all.
   const nodes = (renderer as any)._nodes;
   const decided = new WeakSet<object>();
-  const sharedGraph = (m: THREE.Material) => !!m.userData?.flatten || /^(buildings-procedural|cut-)/.test(m.customProgramCacheKey?.() ?? '');
+  const sharedGraph = (m: THREE.Material) => !!m.userData?.flatten || /^(buildings-procedural|street-facade|cut-)/.test(m.customProgramCacheKey?.() ?? '');
   const hold = (ro: { material: THREE.Material }, state: { usedTimes: number } | undefined) => {
     if (!state || decided.has(state)) return;
     decided.add(state);

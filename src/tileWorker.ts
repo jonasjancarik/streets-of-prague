@@ -1,3 +1,4 @@
+import { buildStreetWall, packStreetWalls } from './map/streetFacade.ts';
 // Builds a tile off the main thread, which then only turns the arrays into meshes:
 //   roofs   OSM buildings extruded, with roofs on their straight skeletons
 //           (map/skeleton.ts) and their facade coordinates
@@ -133,7 +134,7 @@ function roofs({ buildings, size, origin, ground, bbox, water, stops }: WorkerJo
   }
   // The authored openings already have geometry and colour.
   for (const [start, end] of modeledFacades) facade.fill(0, start * 4, end * 4);
-  return appendTo({ ...arrays, facade }, joinDetails(detailArrays(sites, hAt), shelters), (x, y) => [(x + ox) / W, (y + oy) / H]);
+  return { ...appendTo({ ...arrays, facade }, joinDetails(detailArrays(sites, hAt), shelters), (x, y) => [(x + ox) / W, (y + oy) / H]), streetWalls: packStreetWalls(facade, lines) };
 }
 
 // Whether (x, y) is inside a polygon (outer ring, then holes).
@@ -269,7 +270,7 @@ function ipr({ buffer, box: [x0, y0], absolute, ground, bbox, hide, clutter, foo
     o++;
   }
   const result: BuildingArrays = { position: pos, color: col, normal: nrm, facade };
-  if (!m8) return result;
+  if (!m8) return { ...result, streetWalls: packStreetWalls(facade, lines) };
   const hAt = groundAt(ground);
   // In the order: the buildings, the things on flat roofs, the chimneys and roof windows,
   // then the roof clutter.
@@ -277,7 +278,7 @@ function ipr({ buffer, box: [x0, y0], absolute, ground, bbox, hide, clutter, foo
   const more = clutter ? roofClutter(pos, col, facade, own, material, lines, hAt) : null;
   const built = flat ? insertAt(result, flat, own * 3) : result;
   const extrasAt = own * 3 + (flat ? flat.position.length / 3 : 0);
-  return { ...appendTo(built, more), parts: { extras: extrasAt, clutter: extrasAt + (n - own) * 3 }, chimneys: smokingChimneys(pos, own, low) };
+  return { ...appendTo(built, more), streetWalls: packStreetWalls(facade, lines.filter(l => l.tris.every(t => t < own))), parts: { extras: extrasAt, clutter: extrasAt + (n - own) * 3 }, chimneys: smokingChimneys(pos, own, low) };
 }
 
 // Walkable/drivable cells: 0 free, 255 solid, 254 free but walled in (a closed
@@ -419,12 +420,12 @@ function land({ data, seeds, ground, bridges, box, structures }: WorkerJobs['lan
 function isRequest(value: unknown): value is WorkerRequest {
   if (typeof value !== 'object' || value === null) return false;
   const message = value as Record<string, unknown>;
-  return typeof message.id === 'number' && ['roofs', 'ipr', 'ground', 'land', 'sky'].includes(String(message.type))
+  return typeof message.id === 'number' && ['roofs', 'ipr', 'ground', 'land', 'sky', 'streetFacade'].includes(String(message.type))
     && typeof message.data === 'object' && message.data !== null;
 }
 
 function transferBuffers(arrays: BuildingArrays): ArrayBuffer[] {
-  const buffers = Object.values(arrays).filter((array) => array instanceof Float32Array).map((array) => array.buffer);
+  const buffers = Object.values(arrays).filter((array) => array instanceof Float32Array || array instanceof Uint32Array).map((array) => array.buffer);
   if (buffers.some((buffer) => !(buffer instanceof ArrayBuffer))) throw new Error('Building transfer requires ArrayBuffer storage');
   return buffers as ArrayBuffer[];
 }
@@ -439,6 +440,12 @@ worker.onmessage = async (event: MessageEvent<unknown>) => {
   const { id } = event.data;
   try {
     switch (event.data.type) {
+      case 'streetFacade': {
+        const d = event.data.data, ids = Uint32Array.from({ length: d.position.length / 9 }, (_, i) => i);
+        const result = buildStreetWall(d, d.sky, ids);
+        worker.postMessage({ id, result } satisfies WorkerResponse, result ? Object.values(result).map(a => a.buffer) : []);
+        break;
+      }
       case 'roofs': {
         const result = roofs(event.data.data);
         worker.postMessage({ id, result } satisfies WorkerResponse, transferBuffers(result));

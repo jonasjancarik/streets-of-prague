@@ -1,3 +1,4 @@
+import { StreetFacades } from './streetFacades.ts';
 import { roofLookup, ROOFTOP } from './roofSurface.ts';
 import { dataUrl } from './data.ts';
 import * as telemetry from './telemetry.ts';
@@ -494,6 +495,7 @@ export class TileWorld {
   index: MapIndex;
   scene: THREE.Scene;
   trees: TreePool;
+  facades: StreetFacades;
   private streetFurniture = false;
   furnitureCamera(street: boolean) {
     if (this.streetFurniture === street) return;
@@ -691,6 +693,7 @@ export class TileWorld {
     this.drawTimes = [];
     this.retry = new Map(); // key → when to try a tile that failed again
     this.workers = new TileWorkers();
+    this.facades = new StreetFacades(this.scene, this.workers);
     this.buildTimes = [];
     this.skyTotals = { coalesced: 0, cancelled: 0 };
     // Landmarks from IPR's photorealistic mesh, where the area has any (?osm: none).
@@ -1759,6 +1762,7 @@ export class TileWorld {
     this.trees.add(k, s.trees);
     if (this.street && !this.urgent) group.traverse((o) => { if (o !== group && o.visible && (o as THREE.Mesh).geometry) { o.visible = false; this.reveal.push(o); } });
     this.scene.add(group);
+    buildings.forEach((m, i) => this.facades.register(m, arraysOf[i].streetWalls, tile.box));
     this.joined++;
     tile.drawn = { group, surfaces, own, smoke };
     lap('meshes');
@@ -1787,6 +1791,7 @@ export class TileWorld {
       sky.texture = null;
     }
     for (const m of drawn.own) {
+      this.facades.drop(m);
       m.geometry.dispose();
       if (Array.isArray(m.material)) m.material.forEach((material) => material.dispose());
       else m.material.dispose();

@@ -106,6 +106,10 @@ def main():
                 mask.paste(Image.fromarray(ornament(cell)), at)
     atlas.save(OUT, quality=88)
     mask.convert("RGB").save(MASK, quality=80)
+    # Keep the geometry measurements and foreground masks in step with the
+    # exact crops that the game uses on its flat walls.
+    from openings import bake
+    bake()
     print(f"{OUT}: {len(sheets)} sheets, {atlas.size[0]} x {atlas.size[1]}, {OUT.stat().st_size // 1024} kB; mask {MASK.stat().st_size // 1024} kB")
 
 

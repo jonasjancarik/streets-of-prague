@@ -6,10 +6,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as THREE from 'three';
 import {
-  Fn, If, Discard, uniformArray, float, int, vec2, vec3, vec4, texture, attribute, vertexColor, positionWorld, normalWorld, diffuseColor,
-  materialColor, fract, floor, mod, dot, sin, cos, mix, smoothstep, step, length, abs, max, min, clamp, normalize, dFdx, dFdy, distance, select, cross, sqrt, cameraPosition, reflect, pow, uniform, renderGroup,
+  Fn, If, Discard, uniformArray, float, int, vec2, vec3, vec4, texture, attribute, vertexColor, positionWorld, normalWorld, normalWorldGeometry, transformNormalToView, diffuseColor,
+  materialColor, fract, floor, mod, dot, atan, sin, cos, mix, smoothstep, step, length, abs, max, min, clamp, normalize, dFdx, dFdy, distance, select, cross, sqrt, cameraPosition, reflect, pow, uniform, renderGroup,
 } from 'three/tsl';
-import { FACADE_ATLAS, FACADE_ON, BLANK, F_BAY as BAY_WIDTH, F_UP as UP, F_DOOR as DOOR, F_WALL as WALL, F_MOD as MOD, F_GROUND as GROUND, F_STOREY as STOREY, STOREY_FIT } from '../facades.ts';
+import { facadeFinishes } from '../facadeFinishes.ts';
+import { STRIPS, STRIPS_ON, onStrips, KINDS } from '../reflections.ts';
+import { FACADE_ATLAS, FACADE_ON, STREET_FACADE, F_SURFACE as S, BLANK, F_BAY as BAY_WIDTH, F_UP as UP, F_DOOR as DOOR, F_WALL as WALL, F_MOD as MOD, F_GROUND as GROUND, F_STOREY as STOREY, STOREY_FIT } from '../facades.ts';
 import { WINDOWS, ROOF_DETAIL, ROOF_CLUTTER, LANDMARK_ROOF as R, SUN_DIR, SUN_LIGHT } from '../shading.ts';
 import { lampLit } from './lamps.ts';
 import { EDGE, EDGE_STEP } from '../map/roofEdges.ts';
@@ -43,6 +45,7 @@ const rowRelief = (n: N, down: N, along: N, lip: number): N => {
 // How dark a tile's edge shadow is and how bright its lit edge, at most.
 const RELIEF = { shade: 0.42, light: 0.3 };
 const uSunLight: N = followColor(SUN_LIGHT);
+const uStreetFacade = follow(STREET_FACADE);
 const uFacadeOn = follow(FACADE_ON), uWindows = follow(WINDOWS), uRoofDetail = follow(ROOF_DETAIL), uRoofClutter = follow(ROOF_CLUTTER);
 
 // The atlas loads after the first frames: a one-layer stand-in keeps the binding's type.
@@ -365,7 +368,11 @@ function grime(c0: N, f: N, fWidth: N) {
 
 // The picture for a bay and storey, from the atlas's layer, with the wall's plaster
 // colour; the module in the middle of the bay, its plaster edge drawn on across the piers.
-function facadeModules(wall: N, f: N, bays: N, fdx: N, fdy: N) {
+const streetPick = (seed: N, column: N, salt: number) => {
+  const n = mod(seed.mul(97).add(column.mul(53)).add(salt * 181), 997);
+  return mod(n.mul(n.add(71)).add(241), 997).div(997);
+};
+function facadeModules(wall: N, f: N, bays: N, fdx: N, fdy: N, explicit?: N) {
   const style = floor(f.w).toInt(), seed = fract(f.w).mul(97), st = fStorey(f);
   const look = fLook(f).toVar();
   // (toVar: declared here, before the branches below. Left to TSL, `q` was worked out inside the
@@ -376,6 +383,22 @@ function facadeModules(wall: N, f: N, bays: N, fdx: N, fdy: N) {
   const bay: N = f.z.div(bays), mw: N = min(F_MOD.element(look), bay);
   const u: N = clamp(uv.x.sub(0.5).mul(bay).div(mw).add(0.5), 0.016, 0.984);
   const layer = int(0).toVar();
+
+  const chooseStreet = () => {
+    const seed = mod(floor(fract(f.w).mul(32768)), 997);
+    If(f.y.lessThan(st.x), () => {
+      const run = min(bays, 8), door = floor(streetPick(seed, float(0), 1).mul(run));
+      If(mod(cell.x, run).equal(door), () => {
+        const portal = F_DOOR.element(look.mul(3).add(floor(streetPick(seed, floor(cell.x.div(run)), 2).mul(3)).toInt()));
+        layer.assign(select(portal.equal(19), int(18), portal));
+      }).Else(() => { layer.assign(F_WALL.element(look.mul(4).add(floor(streetPick(seed, floor(cell.x.div(6)), 3).mul(4)).toInt()))); });
+    }).Else(() => {
+      const selectBy = select(look.equal(3).or(look.equal(10)), cell.x, cell.y.add(1));
+      layer.assign(F_UP.element(look.mul(6).add(floor(streetPick(seed, selectBy, 4).mul(6)).toInt())));
+    });
+  };
+  if (explicit) If(explicit.greaterThanEqual(0), () => { layer.assign(explicit.toInt()); }).Else(chooseStreet);
+  else If(uStreetFacade.greaterThan(.5), chooseStreet).Else(() => {
   If(f.y.lessThan(st.x), () => {
     const r = fHash(seed, cell.x);
     If(r.lessThan(0.18), () => { layer.assign(F_DOOR.element(look.mul(3).add(r.div(0.18).mul(3).toInt()))); })
@@ -385,7 +408,8 @@ function facadeModules(wall: N, f: N, bays: N, fdx: N, fdy: N) {
     const byColumn = look.equal(3).or(look.equal(10));
     layer.assign(F_UP.element(look.mul(6).add(fHash(seed, select(byColumn, cell.x.add(50), cell.y.add(7))).mul(6).toInt())));
   });
-  const k = vec2(float(1).div(mw), float(1).div(st.y));
+  });
+  const k = vec2(float(1).div(mw), float(1).div(select(uStreetFacade.greaterThan(.5).and(f.y.lessThan(st.x)), st.x, st.y)));
   const tm = atlas.sample(vec2(u, float(1).sub(uv.y))).depth(layer).grad(fdx.xy.mul(k), fdy.xy.mul(k));
   const t = tm.rgb;
   const plaster = mix(wall, mix(wall, vec3(0.85, 0.79, 0.67), 0.6), tm.a.mul(fTwoTone(f)));
@@ -598,6 +622,87 @@ addPort(/^buildings-procedural$/, (node) => {
   // Lower walls that look onto a narrow street or a courtyard get less of the sky's light, never less sun or lamplight.
   node.aoNode = buildingGraph.ambient;
   lampLit(node, positionWorld, true);
+});
+
+// These are actual return faces and recessed panels. Keep their original wall
+// coordinates for the atlas, and their own normals for sunlight and reflections.
+function plasterScan() {
+  const uv = attribute('facade', 'vec4').xy.add(vec2(.71, .83).mul(attribute('detail', 'vec4').w));
+  return texture(facadeFinishes.plaster!, uv.mul(.5));
+}
+function facadeMask(layer: N, u: N, v: N) {
+  const uv = vec2(mod(layer, 6).add(clamp(u, .016, .984)), floor(layer.div(6)).add(clamp(v, .009, .991))).div(vec2(6, 24));
+  return texture(facadeFinishes.masks!, uv);
+}
+const streetWallColor = Fn(() => {
+  const f: N = attribute('facade', 'vec4').toVar(), info: N = attribute('detail', 'vec4');
+  const kind = floor(info.z.add(.5)), layer = floor(info.x.add(.5));
+  const dx: N = dFdx(f).toVar(), dy: N = dFdy(f).toVar();
+  const base: N = vec3(materialColor).mul(vertexColor().rgb);
+  const wall: N = facadeModules(base, f, fBays(f), dx, dy, layer).toVar();
+  const stone = base.mul(.79).toVar();
+  // The pictures cover the opening and its surround. Let the scan continue
+  // across the masonry piers at its real two-metre scale instead of pulling
+  // a single column of the facade picture across a metre of plaster.
+  const bays = fBays(f), bay = f.z.div(bays), mw = min(F_MOD.element(fLook(f)), bay);
+  If(layer.greaterThanEqual(0).and(kind.equal(S.masonry)), () => {
+    const rawU = fract(f.x.div(bay)).sub(.5).mul(bay).div(mw).add(.5);
+    const st = fStorey(f), ground = f.y.lessThan(st.x);
+    const v = float(1).sub(fract(select(ground, clamp(f.y.div(st.x), 0, .999), f.y.sub(st.x).div(st.y))));
+    const local = facadeMask(layer, rawU, v).r.mul(float(1).sub(smoothstep(.47, .506, abs(rawU.sub(.5)))));
+    const seed = mod(floor(fract(f.w).mul(32768)), 997);
+    const datum = F_WALL.element(fLook(f).mul(4).add(floor(streetPick(seed, floor(f.x.div(bay).div(6)), 3).mul(4)).toInt()));
+    const row = facadeMask(select(ground, datum.toFloat(), layer), float(.5), v).g.mul(1.25).add(.25);
+    wall.assign(mix(stone.mul(row), wall, local));
+  });
+  If(kind.equal(S.infill), () => { wall.assign(stone); });
+  If(kind.equal(S.brass), () => { wall.assign(vec3(.131, .102, .064)); });
+  If(kind.equal(S.grilleGlass), () => { wall.assign(vec3(.022, .032, .040)); });
+  If(kind.equal(S.iron), () => { wall.assign(vec3(.031, .034, .033)); });
+  If(kind.greaterThanEqual(S.reveal).and(kind.lessThanEqual(S.plinth)), () => {
+    stone.assign(mix(stone, vec3(luma(stone)), select(kind.equal(S.plinth), .30, .10)));
+    const dressed=mix(stone,vec3(.67,.61,.50),fTwoTone(f).mul(.24));
+    wall.assign(select(kind.equal(S.dressedStone),dressed.mul(1.10),stone.mul(select(kind.equal(S.plinth),.76,1))));
+  });
+  If(uDirt.greaterThan(.5), () => { wall.assign(grime(wall, f, length(abs(dx.xy).add(abs(dy.xy))))); });
+  const masonry = kind.equal(S.masonry).or(kind.greaterThanEqual(S.reveal).and(kind.lessThanEqual(S.plinth)));
+  const grain = plasterScan().r.sub(.5);
+  wall.mulAssign(select(masonry, grain.mul(.52).add(1), float(1)));
+  const contact = select(kind.equal(S.reveal), clamp(info.w.mul(1.25).add(1), .60, 1), float(1));
+  wall.mulAssign(info.y.mul(contact).mul(mix(1, .84, uWet)));
+  return vec4(wall, 1);
+})();
+const reflectedStreet = texture(STRIPS.value);
+onStrips(t => { reflectedStreet.value = t; });
+const reflectStreetOn = follow(STRIPS_ON);
+const streetGlassLight = Fn(() => {
+  const result = vec3(0).toVar();
+  const kind = floor(attribute('detail', 'vec4').z.add(.5));
+  If(kind.equal(S.glass).or(kind.equal(S.grilleGlass)), () => {
+    const n = normalWorldGeometry, view = normalize(cameraPosition.sub(positionWorld)), ray = reflect(view.negate(), n);
+    const style = floor(attribute('facade', 'vec4').w);
+    const zone = select(style.equal(1), 0, select(style.equal(3), 2, select(style.equal(4), 3, 1)));
+    const height = float(.806).mul(float(1).sub(ray.y.div(max(length(ray.xz), .001)).div(.7)));
+    const street = reflectedStreet.sample(vec2(atan(ray.z, ray.x).div(2 * Math.PI).add(.5),
+      float(1).sub(zone.add(clamp(height, .01, .99)).div(KINDS.length)))).level(float(1.5));
+    const fresnel = pow(float(1).sub(abs(dot(view, n))), 4).mul(.48).add(.10);
+    result.assign(buildingGraph.glow.mul(.72).add(street.rgb.mul(street.a).mul(fresnel).mul(reflectStreetOn)
+      .mul(float(1).sub(smoothstep(.42, .77, ray.y))).mul(float(1).sub(uWindows.mul(.80)))));
+  });
+  return result;
+})();
+const streetWallNormal = Fn(() => {
+  const n: N = normalWorldGeometry.toVar(), kind = floor(attribute('detail', 'vec4').z.add(.5));
+  const stone = kind.equal(S.masonry).or(kind.greaterThanEqual(S.reveal).and(kind.lessThanEqual(S.plinth)));
+  const slope = plasterScan().gb.sub(.5).mul(select(stone, .41, 0));
+  const tangent = vec3(n.z, 0, n.x.negate());
+  return transformNormalToView(normalize(n.add(tangent.mul(slope.x)).add(tangent.cross(n).mul(slope.y))));
+})();
+addPort(/^street-facade$/, node => {
+  node.vertexColors = false; node.colorNode = streetWallColor; node.maskNode = cutMask;
+  node.emissiveNode = streetGlassLight;
+  node.normalNode = streetWallNormal;
+  node.aoNode = buildingGraph.ambient; lampLit(node, positionWorld, true);
 });
 
 // The same hole in the landmarks, trees and the ground's depth pass (cutAway in shading.ts).

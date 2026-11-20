@@ -6,6 +6,8 @@ import { registerHooks } from 'node:module';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 registerHooks({ load(url, context, next) {
+  if (url.endsWith('.json') && url.startsWith(new URL('../src/', import.meta.url).href))
+    return { format: 'json', shortCircuit: true, source: readFileSync(new URL(url), 'utf8') };
   if (!url.endsWith('.ts')) return next(url, context);
   return { format: 'module', shortCircuit: true, source: ts.transpileModule(
     readFileSync(new URL(url), 'utf8').replaceAll('import.meta.env', '({})'),
@@ -20,6 +22,7 @@ const { TileWorld } = await import('../src/tiles.ts');
 function fixture() {
   const jobs = [];
   const world = Object.assign(Object.create(TileWorld.prototype), {
+    turns: [], reveal: [],
     loaded: new Map(), byIndex: new Map(), sky: new Map(), photos: new Map(), pending: new Map(),
     builds: new Map(), retry: new Map(), jsons: new Map(), buildTimes: [],
     dressing: new Set(), inFlight: new Set(), drawTimes: [], last: { i: NaN },

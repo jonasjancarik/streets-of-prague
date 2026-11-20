@@ -765,6 +765,14 @@ record the measurements, merge decisions and pending landmark asset activation.
   style reference (the briefs are next to them in `assets/facades/`; the fifth, the
   tenements' windows and portals, after a neo-Renaissance house in Mělnická), and are
   cut and packed by `assets/facades/build_atlas.py`. Phones and tablets load them at half size.
+  At street level the WebGPU renderer fits recessed doors and windows, sash bars,
+  projecting sills and stone hoods to nearby ordinary buildings. The meshes follow
+  the mapped walls, including their sloping feet and existing passages. Opening
+  positions and ornament are inferred from the façade artwork. The plaster grain
+  covers two metres per repeat. The ground floor and first three upper floors get
+  physical depth. On High, up to eighteen nearby walls qualify within 34 m. Lowest
+  and the overhead camera use the original flat geometry. Photo landmarks keep
+  their authored models.
 - **Portraits and the loading screen.** Characters are half-length portraits drawn by
   an image model, ten to a sheet, and cut apart by `assets/portraits/cut.py` into
   `public/portraits/` (the sheets never line up, so the seams are found per row); faces

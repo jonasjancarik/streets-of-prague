@@ -16,6 +16,10 @@ export const BLANK = 5;
 
 export const FACADE_ATLAS: { value: THREE.DataArrayTexture | null } = { value: null };
 export const FACADE_ON = { value: 0 };
+export const STREET_FACADE = { value: 0 };
+// Surface codes carried by the optional street mesh. The back of a closed
+// timber door and the metal in front of cellar glass must never light as rooms.
+export const F_SURFACE = { masonry: 0, glass: 1, reveal: 2, dressedStone: 3, plinth: 4, joinery: 5, brass: 6, grilleGlass: 7, iron: 8, infill: 10 } as const;
 
 let loading = null;
 export function loadFacadeAtlas() {
