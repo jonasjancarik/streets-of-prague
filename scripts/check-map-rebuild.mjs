@@ -49,7 +49,7 @@ const gameFormat = Number(readFileSync(join(root, 'src/data.ts'), 'utf8').match(
 // drives, which maps built before those existed lack and the game does without).
 const LISTS = ['areas', 'lots', 'roads', 'buildings', 'walls', 'rails', 'passages', 'weirs', 'crossings', 'trees', 'drive', 'walk', 'sections'];
 const TILE_FILE = /^(-?\d+_-?\d+)\.([a-z0-9.]+)$/;
-const KINDS = ['json', 'height.bin.gz', 'ipr.bin.gz', 'levels.bin.gz'];
+const KINDS = ['json', 'height.bin.gz', 'ipr.bin.gz', 'levels.bin.gz', 'tin.bin.gz'];
 
 const problems = [];
 const fail = (area, message) => problems.push(`${area}: ${message}`);
@@ -182,6 +182,13 @@ function checkArea(area) {
         if (raw.length < 8 + triangles * 18) throw new Error(`${raw.length} bytes is too short for ${triangles} triangles`);
       });
     }
+  }
+  // The ground meshes (pipeline/tin_tiles.py): a listed one must be there; one that is
+  // there but not listed no longer fits its ground (layers.py says so), and the game
+  // draws the lattice on that tile.
+  for (const k of index.tin?.tiles ?? []) {
+    if (!listed.has(k)) broken.push(`${k}.tin.bin.gz: a ground mesh listed for a tile the map doesn't have`);
+    else if (!existsSync(join(tilesDir, `${k}.tin.bin.gz`))) broken.push(`${k}.tin.bin.gz: missing`);
   }
   if (broken.length) fail(area, `${broken.length} tile files are missing or unreadable:\n    ${broken.slice(0, 12).join('\n    ')}${broken.length > 12 ? '\n    …' : ''}`);
   const known = new Set(KINDS.flatMap((kind) => [kind, kind.replace(/\.gz$/, '')]));
