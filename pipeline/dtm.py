@@ -35,6 +35,9 @@ import build_cache
 CACHE = Path(__file__).parent / ".cache" / "dtm"
 PACKAGES = CACHE / "ZPS_OPL"
 PARSED = CACHE / "surfaces.pkl"
+# Surfaces the survey has wrong, left out (docs/hand-fixes.md): each names a kind and a
+# point inside the polygon, so it keeps working when the next month's map moves its edges.
+SKIP = Path(__file__).parent / "survey_skip.json"
 BOXES = CACHE / "boxes"  # streets(), land() and parking() of a box, kept until the map or this code changes
 LIST = "https://geoportalpraha.cz/api/get-dtm-download-metadata?code=02"
 FILE = "https://isdtmk.dtm-praha-sck.cz/api/istem/vydej/download/path/"
@@ -91,7 +94,8 @@ def _kept(name, bbox, transform, compute):
     if not packages or None in packages:
         return compute()
     # (The whole file, not the functions used: any change to this module starts afresh.)
-    source = build_cache.key([packages, build_cache.digest(Path(__file__).read_bytes()), build_cache.runtime_key()])
+    skip = build_cache.digest(SKIP.read_bytes()) if SKIP.exists() else None
+    source = build_cache.key([packages, build_cache.digest(Path(__file__).read_bytes()), skip, build_cache.runtime_key()])
     w, s, e, n = bbox
     # The frame, by where it puts the box's corners.
     frame = [[round(float(v), 3) for v in transform(x, y)] for x, y in ((w, s), (e, n))]
@@ -170,7 +174,7 @@ def _indexes():
     if _index is not None and _land_index is not None and _parking_index is not None and _walk_index is not None \
             and _raised_index is not None:
         return
-    kinds = surfaces() if any(PACKAGES.glob("*.zip")) else {}
+    kinds = _skipped(surfaces()) if any(PACKAGES.glob("*.zip")) else {}
     street = [kinds[k][1][kinds[k][0] == 0] for k in STREET_KINDS if k in kinds]
     geoms = np.concatenate(street) if street else np.array([], dtype=object)
     _index = (STRtree(geoms), geoms)
@@ -186,6 +190,26 @@ def _indexes():
     geoms = np.concatenate([g for _, g in groups]) if groups else np.array([], dtype=object)
     labels = np.concatenate([np.full(len(g), k, dtype=object) for k, g in groups]) if groups else np.array([], dtype=object)
     _walk_index = (STRtree(geoms), geoms, labels)
+
+
+def _skipped(kinds):
+    """kinds without the polygons survey_skip.json lists (each the one of its kind that
+    holds its point). Says so when a listed place has no such polygon any more: the
+    survey may have been put right, and the entry can go."""
+    places = json.loads(SKIP.read_text()) if SKIP.exists() else []
+    out = dict(kinds)
+    for place in places:
+        if place["kind"] not in out:
+            continue
+        levels, geoms = out[place["kind"]]
+        hit = STRtree(geoms).query(shapely.Point(place["at"]), predicate="within")
+        if not len(hit):
+            print(f"dtm: survey_skip.json: no {place['kind']} at {place['name']} any more; check it and drop the entry", flush=True)
+            continue
+        keep = np.ones(len(geoms), bool)
+        keep[hit] = False
+        out[place["kind"]] = (levels[keep], geoms[keep])
+    return out
 
 
 REACH_CELL = (0.001, 0.00065)  # degrees of longitude and latitude: about 70 m

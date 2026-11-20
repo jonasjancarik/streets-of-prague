@@ -41,6 +41,19 @@ with a reason. There are three:
   on short bridges off embankments 6 m high. The survey has the top of each embankment
   but no wall, and the ground under the bridges came out as a torn slope.
 
+## Survey surfaces left out
+
+[`pipeline/survey_skip.json`](../pipeline/survey_skip.json) lists surfaces of the
+technical map's survey that are wrong, so the map leaves them out and draws what OSM
+has there instead. Each names the surface's kind and a point inside it, and the build
+says when a listed point no longer lands in such a surface (the survey may have been
+put right, and the entry can go). There is one:
+
+- **Pražský okruh at Řepy, the cloverleaf by the Rudná exit.** The survey of 30
+  September 2026 has one 4.4 ha carriageway with straight edges over the motorway, its
+  ramps and the grass and trees between them, and the map drew it all as asphalt.
+  IPR's aerial photo shows the cloverleaf with grass inside.
+
 ## Ramps at U Bulhara
 
 [`pipeline/ramp_approaches.json`](../pipeline/ramp_approaches.json) joins the streets to

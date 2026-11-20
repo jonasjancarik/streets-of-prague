@@ -54,7 +54,7 @@ def key(value):
 PIPELINE = Path(__file__).resolve().parent
 OSM = {"build_tiles.py": (), "osm_area.py": (), "roofs.py": (), "sports.py": (),
        "layers.py": ("FORMAT", "chunk_tiles", "tile_box", "dumps", "write", "chunk_path")}
-SURVEY = {"dtm.py": (), "kerbs.py": (), "lanes.py": (), "worn_paths.py": ()}
+SURVEY = {"dtm.py": (), "survey_skip.json": (), "kerbs.py": (), "lanes.py": (), "worn_paths.py": ()}
 IPR_OUTPUT = {"layers.py": ("FORMAT", "tiles", "write_layer", "begin_layer", "write_bin", "remove_bin")}
 PROJECTION = ("krovak_to_local",)
 CODE = {
