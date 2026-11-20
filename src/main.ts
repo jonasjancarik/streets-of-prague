@@ -22,7 +22,7 @@ import type { BusDepartures } from './buses.ts';
 import { BusPilot } from './busPilot.ts';
 import type { BusPilotData } from './busPilot.ts';
 import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp, streetShare } from './network.ts';
-import { Car, TYPES, CarPool, collideBodies, contact, loadCars, ordinaryCarBodies, useKit, variantName } from './car.ts';
+import { Car, TYPES, CarPool, VR_SEAT, collideBodies, contact, loadCars, ordinaryCarBodies, useKit, variantName } from './car.ts';
 import { CarOutline } from './carOutline.ts';
 import { RestingCars } from './restingCars.ts';
 import { loadKit, FIGURE_SIZE, SCALE, WARDROBE, PEOPLE_SHADOWS, CAST_LAYER } from './figures.ts';
@@ -59,6 +59,7 @@ import { Beacons, ownBeacon } from './beacons.ts';
 import { Cannon, TANK, HOSE } from './cannon.ts';
 import { Graphics } from './graphics.ts';
 import { createGameRenderer, retryStart } from './renderer.ts';
+import { setupVR } from './vr.ts';
 import { StopBoard } from './board.ts';
 import { BusStops, BusRide, busStopZones } from './busstops.ts';
 import { Metro } from './metro.ts';
@@ -304,6 +305,12 @@ async function main() {
   scene.background = new THREE.Color(BACKDROP);
   const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 1, 6000);
   camera.up.set(0, 0, -1);
+  // VR in a phone headset, behind ?vr (vr.ts): the first-person view, turned by your head.
+  const vr = setupVR(params, renderer, camera, (code) => {
+    for (const type of ['keydown', 'keyup']) window.dispatchEvent(new KeyboardEvent(type, { code, bubbles: true, cancelable: true }));
+  });
+  // Where straight ahead is in a vehicle, turned from its nose, and which vehicle that is.
+  let vrSeat: { h: number } | null = null, vrSeatTurn = 0, vrWas = false;
 
   // The sun and the sky's light follow the clock (see Sky).
   const sky = new Sky(scene, renderer);
@@ -317,7 +324,7 @@ async function main() {
   // their own that only the sun's shadow camera sees, and only for the game's own view: for
   // any other (the cars' probe, the mirror) three.js gives it that camera's layers, as before.
   scene.onBeforeRender = (_renderer, _scene, by) => {
-    if (by !== sun.shadow.camera) sun.shadow.camera.layers.mask = by === camera ? 1 | (1 << CAST_LAYER) : 1;
+    if (by !== sun.shadow.camera) sun.shadow.camera.layers.mask = by === camera || (vr?.active && by === vr.xrCamera) ? 1 | (1 << CAST_LAYER) : 1;
   };
 
   // The street graphs grow as tiles load (each tile carries the edges that touch it).
@@ -2135,6 +2142,8 @@ async function main() {
       const eyes = !testkit?.cam && testkit?.eyes;
       // And like any first-person game, the mouse turns and A/D step sideways.
       if (eyes && eyes.yaw && walker.down <= 0) { walker.h += THREE.MathUtils.degToRad(eyes.yaw); eyes.yaw = 0; }
+      // In the headset you walk the way your head faces.
+      if (vr?.active && walker.down <= 0) walker.h = vr.headH;
       walker.update(dt, eyes ? { ...ctl, strafe: true } : ctl);
     }
     // In the helicopter Space climbs and Shift comes down.
@@ -2674,6 +2683,7 @@ async function main() {
     last = performance.now();
   }
   $('loading').classList.add('done');
+  vr?.ready();
   // The real weather, when the game began with it: asked for again now and then, and the
   // game's weather follows it over a few minutes, until the player picks one by hand.
   setInterval(() => {
@@ -2745,6 +2755,14 @@ async function main() {
     let dt = paused ? 0 : Math.min(0.05, (now - last) / 1000); // the settings and the map pause the game
     // (Filming, a frame's worth of the game's time and no more: see Testkit.frameDt.)
     if (testkit && testkit.frameDt !== undefined) { dt = testkit.frameDt; testkit.frameDt = 0; }
+    // In the headset it's always the view from your eyes, straight ahead the way you faced.
+    if (vr) {
+      vr.frame(now, dt, pad);
+      if (vr.active && !vrWas && testkit) { testkit.cam = null; vr.yaw = (inCar || inHeli || walker).h; }
+      if (vr.active && testkit && (!testkit.eyes || testkit.eyes.third || testkit.eyes.yaw || testkit.eyes.pitch)) testkit.eyes = { yaw: 0, pitch: 0 };
+      if (!vr.active && vrWas && testkit) testkit.eyes = null;
+      vrWas = vr.active;
+    }
     if (paused !== soundHeld) sound.hold((soundHeld = paused)); // and the sound with it
     graphics.frame(now - last, now, world.busy);
     telemetry.tick(now - last, dt, playingAs(), px(), py(), graphics.choice, graphics.tier);
@@ -2794,6 +2812,12 @@ async function main() {
       jump: input.jump,
       aim: touch.aim || pad.aim,
     };
+    // In the headset, forward is where you look, not up the map.
+    if (vr?.active) {
+      ctl.aim = null;
+      if (vr.move || vr.side) { ctl.move = vr.move; ctl.turn = vr.side; }
+      ctl.run ||= vr.run;
+    }
     // On a tram, Shift speeds up the ride: the whole world runs faster, in steps short
     // enough for the physics.
     // At a tram stop, hold Space to wait: the same speed-up, until a tram is close.
@@ -2902,6 +2926,7 @@ async function main() {
       for (const e of brigade.engines) see(e.car);
       for (const r of ambulances.rigs) see(r.car);
     }
+    VR_SEAT.car = vr?.active ? inCar : null; VR_SEAT.frames++;
     carPool.render(drawn, ground, dt, world.terrainRevision, fromStreet, camera.position);
     refuse.render(carPool);
     blinkers.update(dt, inCar, inCar ? satnav.signal(inCar.speed) : null, carPool);
@@ -3343,6 +3368,27 @@ async function main() {
     // (Ultra: the street round the middle of the view, for the cars to mirror.)
     lifeSize.frame(dt, !!eyes && !underway, camera);
     hitches.render(() => {
+      if (vr?.active) {
+        // Your eyes: on foot where you stand, in a car from the driver's seat (on the left),
+        // otherwise where the game's own camera is.
+        const vehicle = inCar || inHeli || null, turn = vr.takeTurn();
+        if (vehicle !== vrSeat) {
+          if (vrSeat && !vehicle) vr.yaw = vrSeat.h + vrSeatTurn;
+          vrSeat = vehicle; vrSeatTurn = 0;
+        }
+        if (vehicle) vrSeatTurn += turn; else vr.yaw += turn;
+        const draw = () => renderer.render(scene, camera);
+        if (inCar && !underway && VR_SEAT.frame === VR_SEAT.frames) {
+          const e = VR_SEAT.eye; // (the street model's own driver's seat: car.ts)
+          vr.draw(e.x, -e.z, e.y, inCar.h + vrSeatTurn, draw);
+        } else if (inCar && !underway) {
+          const { L, W, H } = inCar.spec, h = inCar.h, c = Math.cos(h), s = Math.sin(h);
+          const back = -0.1 * L, left = W * 0.21, seat = Math.min(H - 0.3, Math.max(1.1, H * 0.78));
+          vr.draw(inCar.x + c * back - s * left, inCar.y + s * back + c * left, eyeH + seat, h + vrSeatTurn, draw);
+        } else if (eyes && !underway && !vehicle) vr.draw(walker.x, walker.y, eyeH, vr.yaw, draw);
+        else vr.draw(camera.position.x, -camera.position.z, camera.position.y, vehicle ? vehicle.h + vrSeatTurn : vr.yaw, draw);
+        return;
+      }
       POST.night = sky.dark; POST.wet = weather.now.wet;
       const probed = renderProbe(renderer, scene, camPos.x, camGround, camPos.z, carPool.allMeshes());
       if (renderMirror(renderer, scene, camera, camGround, weather.now.wet) || probed) {

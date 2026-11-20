@@ -25,6 +25,10 @@ import { softShade } from './surface.ts';
 import { KINDS, STRIPS, STRIPS_ON } from './reflections.ts';
 import { PROBE_AT, PROBE_K, PROBE_MAP, PROBE_MIX, PROBE_NEAR, PROBE_PREV } from './probe.ts';
 
+// VR (vr.ts): the car you drive, and where your eyes are in it this frame (three.js world
+// coordinates; `frame` equals `frames` when the street model's seat placed them this frame).
+export const VR_SEAT = { car: null as Car | null, eye: new THREE.Vector3(), frame: -1, frames: 0 };
+
 export interface CarSpec {
   headlights?: { forward: number; across: number; height: number; glow: number; streetReach?: number };
   L: number; W: number; H: number; mass: number; accel: number; vmax: number;
@@ -2402,7 +2406,12 @@ export class CarPool {
           // carries ignition and speed to the dashboard without a ninth vertex buffer.
           const dial = k === STREET_SEDAN && occupied ? 2 + Math.min(1, Math.abs(speed) * 3.6 / 240) : 1;
           roll.setXYZW(slot, dial * Math.cos(travel.angle), dial * Math.sin(travel.angle), Math.sin(steer) + (k === STREET_SEDAN ? 2 * Math.round(twist / .0025) : 0), travel.plate);
-          if (occupied && fit.layout) this.drivers?.put(fit.layout, travel.plate, c.type === 'police' && c.mode !== 'player', d.matrix);
+          // In VR you sit in the driver's seat yourself: no driver there, and your eyes where theirs would be.
+          if (c === VR_SEAT.car && fit.layout) {
+            const l = fit.layout, pelvis = l[3] + 0.205;
+            VR_SEAT.eye.set(l[9] - 0.06, Math.min(pelvis + 0.74, l[5] - 0.1), -l[10]).applyMatrix4(d.matrix);
+            VR_SEAT.frame = VR_SEAT.frames;
+          } else if (occupied && fit.layout) this.drivers?.put(fit.layout, travel.plate, c.type === 'police' && c.mode !== 'player', d.matrix);
         }
         if (under && !c.two && shaded < UNDER.most) {
           under.setMatrixAt(shaded++, this.m.copy(d.matrix).multiply(this.life.makeScale(c.spec.L, 1, c.spec.W)));

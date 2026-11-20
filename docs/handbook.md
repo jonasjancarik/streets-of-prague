@@ -43,7 +43,8 @@ after four seconds; older replies cannot restore a pause after a newer reply cle
 it. If the local status endpoint is unavailable, the page carries on.
 `node scripts/check-bench-pause.mjs` checks polling and startup recovery offline.
 
-WebGPU is the default renderer; `?renderer=webgl` selects the legacy renderer.
+WebGPU is the default renderer; `?renderer=webgl` selects the legacy renderer, and so does
+`?vr` (three.js draws for a headset only through WebGL).
 WebGPU reuses the same building, landmark, cutaway and lamp-light shader graphs
 across equivalent meshes. Each mesh keeps its own material, textures and sky-view
 attribute, so unloading one tile does not change another tile's appearance.
@@ -649,6 +650,31 @@ the same signal phase as the overhead light.
   while you hold Space. Release Space to return to the player.
   "Helicopter next to me" parks one on the nearest open ground (flown like the one on
   Palackého náměstí, see Playing).
+- **VR** (`src/vr.ts`, a prototype behind `?vr`): play in a phone headset such as the
+  Daydream View or a Cardboard, in Chrome on Android. Tap **Play in VR**, then put the
+  phone in the headset. Chrome draws the lens correction and follows your head with the
+  phone's sensors. You see the street from your own eyes; in a car you sit in the driver's
+  seat. You walk the way your head faces, by one of three means:
+  - the Daydream controller, paired from **Connect Daydream controller** over Web
+    Bluetooth (not the old Daydream app): the touchpad walks or drives (top forward,
+    sides sideways or steering), clicking it is E (get in or out), the app button runs,
+    and the volume buttons turn you 30° at a time;
+  - a gamepad: the left stick walks or steers, and the right stick turns in 30° steps
+    (not yet tried in a headset);
+  - nothing in hand: look well down for a second to start walking, again to stop.
+
+  Chrome needs a secure address for VR: the beta and production sites, or `localhost`
+  (on a phone over USB, `adb reverse tcp:5191 tcp:5191`). The first time, Cardboard asks
+  for the camera so it can scan a viewer's QR code. The Daydream View has no code, so
+  decline the camera and skip the scan. If declining opens Chrome's app info instead,
+  go back and VR starts with the standard Cardboard lens settings.
+  `?vrscale=0.3…1` sets the headset's resolution (default 0.75). The page buttons and
+  the HUD aren't shown in the headset. On a Pixel 5 it runs at about 18–20 frames a
+  second at Lowest and Medium alike, limited by the game's own update and the draw
+  calls, not by pixels. That is too slow to be comfortable, and a faster phone is
+  needed for real play. From the driver's seat you see out through the car, because
+  the street car is modelled only from outside. Checks: `window.__vr` (`fps`, `headH`,
+  `headPitch`).
 
 ## How it works
 

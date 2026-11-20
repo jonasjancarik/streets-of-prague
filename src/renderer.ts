@@ -90,9 +90,11 @@ export async function createGameRenderer(params: URLSearchParams): Promise<THREE
   const retry = startRetry();
   if (retry) telemetry.error('start tried again', retry === 'low' ? 'with low graphics' : 'with WebGL');
   if (retry === 'webgl' && params.get('renderer') !== 'webgl') return createLegacy('WebGPU could not start the game on this device', false);
-  const asked = params.get('renderer') === 'webgl';
+  // VR (?vr, vr.ts) is drawn with WebGL: three.js draws for a headset only through WebGL, and
+  // the WebGPU renderer's own WebGL fallback leaves out people and breaks the trees.
+  const asked = params.get('renderer') === 'webgl' || params.has('vr');
   const legacy = (why: string) => createLegacy(why, asked);
-  if (asked) return legacy('it was asked for in the URL (?renderer=webgl)');
+  if (asked) return legacy(params.has('vr') ? 'VR asks for it (?vr)' : 'it was asked for in the URL (?renderer=webgl)');
   let why = '';
   let renderer: GPU | undefined;
   const watch = startupWatch();
