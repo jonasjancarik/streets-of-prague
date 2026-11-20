@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { SeatedDrivers, passengerCabin } from './passengerCabin.ts';
 import { buildStreetWheels } from './streetWheels.ts';
 import { registrationAtlas, registrationFaces } from './registrationPlates.ts';
 import { ambulanceStreet } from './ambulanceStreet.ts';
@@ -300,7 +301,7 @@ function carGeometry(type: string, box?: string): THREE.BufferGeometry {
 // Keep the original GLB body in the overhead view and at a distance. Only
 // assets that describe their wheel mounts can exchange the low-poly hubs.
 const STREET_CAR_REACH = 24; // m from the camera
-const closeBodies = new Map<string, { key: string; radius: number; wheelbase: number }>();
+const closeBodies = new Map<string, { key: string; radius: number; wheelbase: number; layout?: number[] }>();
 function prepareStreetCar(type: string, box?: string) {
   const mounts = bodies?.getObjectByName(type)?.userData.wheelMounts as number[] | undefined;
   if (mounts?.length !== 16) return;
@@ -309,7 +310,7 @@ function prepareStreetCar(type: string, box?: string) {
     const g = bodyGeometry(type, box, true);
     markZones(g);
     cache.set(street, g);
-    closeBodies.set(key, { key: street, radius: mounts[1], wheelbase: Math.abs(mounts[0] - mounts[8]) });
+    closeBodies.set(key, { key: street, radius: mounts[1], wheelbase: Math.abs(mounts[0] - mounts[8]), layout: bodies?.getObjectByName(type)?.userData.cabinLayout });
   }
   return street;
 }
@@ -365,13 +366,19 @@ function bodyGeometry(type: string, box?: string, closeCar = false): THREE.Buffe
     if (!node) throw new Error(`Missing ${name} in cars.glb`);
     return node;
   });
+  const glazing: THREE.BufferGeometry[] = [];
+  const layout = closeCar ? nodes[0].userData.cabinLayout as number[] | undefined : undefined;
   const trim = closeCar ? bodies.getObjectByName(type + '_street_trim') : undefined;
   if (trim) nodes.push(trim);
   for (const node of nodes) node.traverse((o) => {
     if (!(o instanceof THREE.Mesh)) return;
     const name = (Array.isArray(o.material) ? o.material[0] : o.material).name;
     if (closeCar && (name === 'Tyre' || name === 'WheelHub')) return;
+    if (layout && (name === 'SimpleSeat' || name === 'WindowInside' || name === 'WindowBacking' ||
+      name === 'DoorBacking' || (name === 'RearBacking' && type !== 'van'))) return;
     if (trim && node !== trim && (name === 'Lamp' || name === 'Tail' || name === 'Plate' || name === 'Bumper')) return;
+    if (closeCar && (name.startsWith('SimpleMirror') || name === 'SimpleWiper')) return;
+    if (!closeCar && (name.startsWith('Door') && name !== 'DoorBacking')) return;
     const g = new THREE.BufferGeometry();
     g.setIndex(o.geometry.index);
     g.setAttribute('position', o.geometry.attributes.position.clone());
@@ -392,18 +399,25 @@ function bodyGeometry(type: string, box?: string, closeCar = false): THREE.Buffe
       else doors.push({ n, side: at.z < 0 ? 1 : -1, front: at.x, back: g.boundingBox!.min.x, real: true });
     }
     g.setAttribute('hinge', new THREE.BufferAttribute(hinge, 3));
-    c.set(name === 'Paint' ? '#ffffff' : PART[name] || '#777777');
+    const paint = name === 'Paint' || name === 'DoorPaint' || name === 'SimpleMirrorPaint';
+    c.set(paint ? '#ffffff' : name === 'Window' && !layout ? PART.Glass : PART[name] || '#777777');
     const col = new Float32Array(g.attributes.position.count * 3);
     for (let i = 0; i < col.length; i += 3) col.set([c.r, c.g, c.b], i);
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    g.setAttribute('painted', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(name === 'Paint' ? 1 : 0), 1));
+    g.setAttribute('painted', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(paint ? 1 : 0), 1));
     if (name === 'Lamp' || name === 'Tail') markLamp(g, name === 'Lamp');
-    parts.push(g);
+    (layout && name === 'Window' ? glazing : parts).push(g);
     if (node === trim && name === 'Plate') parts.push(registrationFaces(g));
   });
   if (closeCar) parts.push(...buildStreetWheels(type, nodes[0].userData.wheelMounts));
   else DOORS.set(type, doors.sort((a, b) => a.n - b.n));
-  return mergeGeometries(parts);
+  if (layout) parts.push(...passengerCabin(type, layout));
+  if (!glazing.length) return mergeGeometries(parts);
+  const result = mergeGeometries(parts.concat(glazing));
+  const solid = parts.reduce((sum, g) => sum + g.index!.count, 0);
+  result.addGroup(0, solid, 0);
+  result.addGroup(solid, result.index!.count - solid, 1);
+  return result;
 }
 
 // A car's doors: 1 front left (the driver's), 2 front right, 3 and 4 behind them. `side`
@@ -1095,7 +1109,10 @@ function truckGeometry(type: string, S: CarSpec): THREE.BufferGeometry {
 // Car bodies from public/cars.glb (built in Blender by assets/cars/build.py): one per
 // type, each part a material named after it. Paint takes the car's colour; the rest:
 const PART: Record<string, string> = {
-  PanelGap: '#48505a', Bumper: '#1f2022', RubStrip: '#313638', LensBed: '#697478', Optic: '#c2cccf',
+  SimpleMirrorPaint: '#ffffff', SimpleMirrorTrim: '#1f2022', SimpleMirrorGlass: '#1e2830', SimpleWiper: '#1f2022',
+  DoorPaint: '#ffffff', DoorTrim: '#282d2e', DoorMirror: '#273a46', DoorSeam: '#303637', DoorBright: '#a0a6a5', GlassSeal: '#24292b',
+  Window: '#263844', WindowInside: '#1e2830', SimpleSeat: '#3a393b', WindowBacking: '#3a393b',
+  DoorBacking: '#3a393b', RearBacking: '#3a393b', PanelGap: '#48505a', Bumper: '#1f2022', RubStrip: '#313638', LensBed: '#697478', Optic: '#c2cccf',
   DarkChrome: '#666e71', RedLens: '#91232d', Indicator: '#dfa154', EUBlue: '#24528a',
   WheelHub: '#70757b', Glass: '#1e2830', Trim: '#1f2022', Tyre: '#161616', Metal: '#70757b', Lamp: '#fff6d8', Tail: '#b3161b',
   Plate: '#e3e5e0', Sign: '#fff4c2', Blue: '#1d4fa3', Yellow: '#d4e02b', Bar: '#1b1f2a', Seat: '#3a393b',
@@ -1349,9 +1366,11 @@ vec3 rollWheel(vec3 p) {
 }
 vec2 swing(vec2 p)`)
     .replace('vec4 dents = dentAt(zoneAt());', 'vec4 dents = dentAt(zoneAt()); if (hinge.z < 0.) objectNormal = rollWheel(objectNormal);')
-    .replace('transformed = dented(transformed, dents);', `vWheelCoat = 1.;
+    .replace('transformed = dented(transformed, dents);', `float brightness = dot(color.rgb,vec3(.3,.59,.11));
+bool glazed = brightness < .04 && color.b > color.r*1.25;
+vWheelCoat = (mod(painted,16.) == 0. && !glazed) ? mix(.08,1.,smoothstep(.035,.17,brightness)) : 1.;
 vPlateUV = vec2(-1.);
-if (hinge.z > 4.5) {
+if (hinge.z > 4.5 && hinge.z < 11.5) {
   float slot = hinge.z - 5.;
   float digit = slot == 1. ? 10. : mod(floor(roll.w / pow(10., min(5.,6.-slot))), 10.);
   vPlateUV = vec2((digit + .02 + .96 * hinge.x) / 16., .02 + .96*hinge.y);
@@ -1361,12 +1380,22 @@ if (hinge.z < 0.) {
   transformed = axle + rollWheel(transformed - axle);
   vWheelCoat = mix(.045,.45,smoothstep(.045,.24,dot(color.rgb,vec3(.3,.59,.11))));
 }
+if (hinge.z > 11.5) vWheelCoat = .065;
 transformed = dented(transformed, dents);`);
   sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vWheelCoat; varying vec2 vPlateUV; uniform sampler2D uRegistration;')
     .replace('#include <color_fragment>', '#include <color_fragment>\n if (vPlateUV.x >= 0.) diffuseColor.rgb *= texture2D(uRegistration, vPlateUV).rgb;')
     .replace('#include <specularmap_fragment>', '#include <specularmap_fragment>\n specularStrength *= vWheelCoat;')
     .replace('reflectedLight.directDiffuse += carCoat(', 'reflectedLight.directDiffuse += vWheelCoat * carCoat(');
 };
+const passengerGlass = material.clone();
+passengerGlass.transparent = true;
+passengerGlass.opacity = 0.57;
+passengerGlass.depthWrite = false;
+passengerGlass.side = THREE.DoubleSide;
+passengerGlass.forceSinglePass = true;
+passengerGlass.onBeforeCompile = material.onBeforeCompile;
+passengerGlass.customProgramCacheKey = material.customProgramCacheKey;
+const passengerMaterials = [streetWheelMaterial, passengerGlass];
 const depthMaterial = new THREE.MeshDepthMaterial();
 
 // Points round a car's outline for its collisions, the same for every car of a type
@@ -2009,8 +2038,8 @@ export class CarPool {
     const wheels = key.endsWith('|street-wheels');
     if (wheels) geometry.setAttribute('roll', new THREE.InstancedBufferAttribute(new Float32Array(CarPool.pageCapacity * 4), 4));
     const street = key === STREET_AMBULANCE;
-    if (street) for (const g of body.groups) geometry.addGroup(g.start, g.count, g.materialIndex);
-    const finish = wheels ? streetWheelMaterial : key === 'garbage' || key === 'garbage|burnt' ? dustcartMaterial : material;
+    if (street || wheels) for (const g of body.groups) geometry.addGroup(g.start, g.count, g.materialIndex);
+    const finish = wheels ? (body.groups.length ? passengerMaterials : streetWheelMaterial) : key === 'garbage' || key === 'garbage|burnt' ? dustcartMaterial : material;
     const mesh = mirrored(new THREE.InstancedMesh(geometry, street ? streetMaterials() : finish, CarPool.pageCapacity));
     mesh.userData.sharedMatrices = true; // (see configureRenderer in webgpu.ts)
     mesh.count = 0;
@@ -2028,8 +2057,12 @@ export class CarPool {
   }
 
   // Every page of every body (for the probe to leave out: probe.ts).
-  *allMeshes() { for (const pages of this.meshes.values()) yield* pages; }
+  *allMeshes() {
+    for (const pages of this.meshes.values()) yield* pages;
+    if (this.drivers) yield* this.drivers.meshes();
+  }
 
+  private drivers?: SeatedDrivers;
   private streetView = false;
   private closeCars = new Set<Car>();
   private wheelTravel = new WeakMap<Car, { x: number; y: number; angle: number; plate: number }>();
@@ -2060,14 +2093,17 @@ export class CarPool {
     return k;
   }
 
-  prepare(bodies: readonly CarBody[]) {
-    for (const { type, box, pages = 1 } of bodies) {
+  prepare(inventory: readonly CarBody[]) {
+    for (const { type, box, pages = 1 } of inventory) {
       const key = bodyKey(type, box);
       carGeometry(type, box);
       while ((this.meshes.get(key)?.length || 0) < pages) this.page(key);
       this.prepared.add(key);
       const close = prepareStreetCar(type, box);
-      if (close && !this.meshes.has(close)) { this.page(close); this.prepared.add(close); }
+      if (close && !this.meshes.has(close)) {
+        this.page(close); this.prepared.add(close);
+        this.drivers ??= new SeatedDrivers(this.scene);
+      }
       if (key === 'ambulance' && !this.meshes.has(STREET_AMBULANCE)) {
         this.page(STREET_AMBULANCE);
         this.prepared.add(STREET_AMBULANCE);
@@ -2080,7 +2116,7 @@ export class CarPool {
   async warm(compile: () => Promise<unknown>) {
     const saved: { mesh: THREE.InstancedMesh; count: number; visible: boolean; matrix: number[] }[] = [];
     try {
-      for (const pages of this.meshes.values()) for (const mesh of pages) {
+      for (const mesh of this.allMeshes()) {
         saved.push({ mesh, count: mesh.count, visible: mesh.visible, matrix: Array.from(mesh.instanceMatrix.array.slice(0, 16)) });
         mesh.setMatrixAt(0, this.m.identity());
         mesh.count = 1;
@@ -2113,6 +2149,7 @@ export class CarPool {
       else if (c.door) c.swing(dt);
     }
     this.closeCars.clear();
+    this.drivers?.begin();
     for (const list of this.groups.values()) list.length = 0;
     for (const c of cars) {
       let key = this.renderKey(c.key);
@@ -2174,7 +2211,9 @@ export class CarPool {
           travel.x = c.x; travel.y = c.y;
           const speed = c.forwardSpeed;
           const steer = Math.abs(speed) > 0.25 ? clamp(Math.atan(c.w * fit.wheelbase / speed), -0.55, 0.55) : 0;
+          const occupied = c.mode === 'player' || c.mode === 'traffic' || (c.mode === 'police' && c.crew);
           roll.setXYZW(slot, Math.cos(travel.angle), Math.sin(travel.angle), Math.sin(steer), travel.plate);
+          if (occupied && fit.layout) this.drivers?.put(fit.layout, travel.plate, c.type === 'police' && c.mode !== 'player', d.matrix);
         }
         if (under && !c.two && shaded < UNDER.most) {
           under.setMatrixAt(shaded++, this.m.copy(d.matrix).multiply(this.life.makeScale(c.spec.L, 1, c.spec.W)));
@@ -2221,6 +2260,7 @@ export class CarPool {
       this.under.visible = !!under && shaded > 0;
       if (under && (sum !== this.underSum || under.count !== shaded)) { under.count = shaded; this.underSum = sum; sendInstances(under); }
     }
+    this.drivers?.end();
     this.riders.commit(riders);
     for (let i = 0; i < this.boards.length; i++) this.boards[i].visible = i < nb;
   }

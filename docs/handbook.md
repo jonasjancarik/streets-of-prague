@@ -1284,11 +1284,13 @@ record the measurements, merge decisions and pending landmark asset activation.
   and the front pair turns into a bend. Distant cars and the overhead view use the
   simpler wheels. Up close, each body has light clusters fitted to its actual wings,
   brake and reversing lenses, unbadged grilles and matching fictional Czech plates at
-  the front and rear. The same individual lamps go dark when broken. The doors are objects of their own in the file
-  (`<type>_door1` to `4`, each with its origin on its hinge), and inside there is a
-  floor, walls and seats to see through an open one. In the game they are still part
-  of the body's one geometry: each vertex carries its hinge and door number, each car
-  how far its four doors are open, and the vertex shader turns the door (`Car.open`,
+  the front and rear. The same individual lamps go dark when broken. Tinted windows reveal
+  the dashboard, steering wheel and upholstered seats. The mirrors, latches and inner
+  armrests move with their doors (`<type>_door1` to `4`, each with its origin on the hinge).
+  Occupied cars draw a seated driver. The three static poses in `car-drivers.glb` load
+  on the first close view of an occupied car and share instance batches across models.
+  The doors stay in the body's instanced mesh. Each door vertex carries its hinge and number, and
+  each car supplies its four opening angles to the vertex shader (`Car.open`,
   `webgpu/vehicles.ts`). The bus is built from boxes in `src/car.ts`. Rebuild with
   `blender -b --factory-startup -P assets/cars/build.py`; `-- --preview DIR` renders
   them from above. During loading, `CarPool.prepare` creates one body per type

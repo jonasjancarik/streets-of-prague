@@ -16,8 +16,10 @@ car's own colour on Paint.
 
 Doors are objects of their own, children of the body: <type>_door1 (front left), 2 (front
 right), 3 and 4 (rear), each with its origin on its hinge line, so the game can swing
-them open (src/car.ts). Inside there's a floor, walls and seats, seen only through an
-open door.
+them open (src/car.ts). The separate window, lining and fitting materials let the street
+view show the passenger compartment with its glass in place. Optional seated drivers
+are exported separately to public/car-drivers.glb (node and basisu are needed to bake
+the donors from the shipped Rocketbox assets).
 
 usage: blender -b --factory-startup -P assets/cars/build.py
        blender -b --factory-startup -P assets/cars/build.py -- --preview DIR
@@ -35,6 +37,7 @@ HERE = Path(__file__).resolve().parent
 OUT = HERE.parent.parent / "public" / "cars.glb"
 sys.path.insert(0, str(HERE))
 from street_trim import build_trim
+from driver_mesh import build_driver
 
 # Only for the preview renders; the game picks its own colours.
 COLOURS = {
@@ -42,7 +45,13 @@ COLOURS = {
     "Tyre": (0.01, 0.01, 0.01), "Metal": (0.35, 0.37, 0.4), "Lamp": (0.95, 0.9, 0.7),
     "Tail": (0.5, 0.02, 0.02), "Plate": (0.85, 0.85, 0.82), "Sign": (0.95, 0.9, 0.55),
     "Blue": (0.02, 0.08, 0.4), "Yellow": (0.7, 0.75, 0.05), "Bar": (0.02, 0.02, 0.03),
-    "Seat": (0.07, 0.07, 0.075), "WheelHub": (0.35, 0.37, 0.4),
+    "Seat": (0.07, 0.07, 0.075), "SimpleSeat": (0.07, 0.07, 0.075),
+    "Window": (0.02, 0.03, 0.04), "WindowInside": (0.02, 0.03, 0.04),
+    "WindowBacking": (0.07, 0.07, 0.075), "RearBacking": (0.07, 0.07, 0.075),
+    "DoorBacking": (0.07, 0.07, 0.075),
+    "SimpleMirrorPaint": (.35,.05,.05), "SimpleMirrorTrim": (.02,.02,.02), "SimpleMirrorGlass": (.02,.03,.04),
+    "SimpleWiper": (.02,.02,.02), "DoorPaint": (.35,.05,.05), "DoorTrim": (.025,.026,.027),
+    "DoorMirror": (.10,.14,.16), "DoorSeam": (.025,.026,.026), "DoorBright": (.38,.40,.4), "GlassSeal": (.02,.022,.024), "WheelHub": (0.35, 0.37, 0.4),
     "Bumper": (0.02, 0.02, 0.02), "RubStrip": (0.018, 0.020, 0.021), "LensBed": (0.18, 0.20, 0.21),
     "Optic": (0.58, 0.65, 0.68), "PanelGap": (0.035, 0.038, 0.04), "DarkChrome": (0.12, 0.14, 0.14),
     "RedLens": (0.28, 0.012, 0.019), "Indicator": (0.61, 0.26, 0.06), "EUBlue": (0.02, 0.07, 0.18),
@@ -80,6 +89,7 @@ class Car:
         self.bm = bmesh.new()
         self.under = []  # faces that close the body for working out normals, then go
         self.door = self.bm.faces.layers.int.new("door")  # which door a face is part of (0: none)
+        self.door_mirrors = {}
         self.wheel_mounts = []  # centres and tyre sizes for the close street view
         self.inside = []  # the interior, added once the normals are worked out
         self.decals = []  # flat quads lying on the body (lettering), added then too
@@ -197,11 +207,11 @@ class Car:
             # The roof's middle line: the windscreen and the rear window take it on their top edge.
             for row, x in ((B, xb + bow_front), (T, xm_top), (C, xc - bow_back)):
                 row.append(self.v(x, 0, top + crown))
-            screen = self.face([A[0], A[1], B[1], B[2], B[0]], "Glass")
-            rear = self.face([D[1], D[0], C[0], C[2], C[1]], "Glass")
+            screen = self.face([A[0], A[1], B[1], B[2], B[0]], "Window")
+            rear = self.face([D[1], D[0], C[0], C[2], C[1]], "Window")
         else:
-            screen = self.face([A[0], A[1], B[1], B[0]], "Glass")
-            rear = self.face([D[1], D[0], C[0], C[1]], "Glass")
+            screen = self.face([A[0], A[1], B[1], B[0]], "Window")
+            rear = self.face([D[1], D[0], C[0], C[1]], "Window")
 
         def roof(*rows):
             for a, b in zip(rows, rows[1:]):
@@ -210,12 +220,12 @@ class Car:
                     self.face([a[2], a[1], b[1], b[2]], "Paint")
                 else:
                     self.face([a[0], a[1], b[1], b[0]], "Paint")
-        sides_front = [self.face([A[0], B[0], T[0], M[0]], "Glass"), self.face([A[1], M[1], T[1], B[1]], "Glass")]
+        sides_front = [self.face([A[0], B[0], T[0], M[0]], "Window"), self.face([A[1], M[1], T[1], B[1]], "Window")]
         for k, f in enumerate(sides_front):
             f[self.door] = 1 + k
         roof(B, T)
         if xq is None:
-            sides_back = [self.face([M[0], T[0], C[0], D[0]], "Glass"), self.face([M[1], D[1], C[1], T[1]], "Glass")]
+            sides_back = [self.face([M[0], T[0], C[0], D[0]], "Window"), self.face([M[1], D[1], C[1], T[1]], "Window")]
             behind = sides_back
             roof(T, C)
             floor = self.face([A[0], M[0], D[0], D[1], M[1], A[1]], "Paint")
@@ -224,8 +234,8 @@ class Car:
             P = [self.v(xq - 0.06, s * wr, top) for s in (1, -1)]
             if len(B) > 2:
                 P.append(self.v(xq - 0.06, 0, top + crown))
-            behind = [self.face([M[0], T[0], P[0], Q[0]], "Glass"), self.face([M[1], Q[1], P[1], T[1]], "Glass")]
-            sides_back = behind + [self.face([Q[0], P[0], C[0], D[0]], "Glass"), self.face([Q[1], D[1], C[1], P[1]], "Glass")]
+            behind = [self.face([M[0], T[0], P[0], Q[0]], "Window"), self.face([M[1], Q[1], P[1], T[1]], "Window")]
+            sides_back = behind + [self.face([Q[0], P[0], C[0], D[0]], "Window"), self.face([Q[1], D[1], C[1], P[1]], "Window")]
             roof(T, P, C)
             floor = self.face([A[0], M[0], Q[0], D[0], D[1], Q[1], M[1], A[1]], "Paint")
         if rear_doors:
@@ -250,21 +260,27 @@ class Car:
                 f.material_index = MATS.index("Paint")
                 f[self.door] = face[self.door]
 
+            gasket = bmesh.ops.inset_individual(self.bm, faces=[face], thickness=0.013, depth=-0.002)["faces"]
+            for f in gasket:
+                f.material_index = MATS.index("GlassSeal")
+                f[self.door] = face[self.door]
+
     def interior(self, x0, x1, w, floor, belt, top, xb, xc, wr, seats):
         """What shows through an open door: a floor and walls from x0 back to x1 up to
         the belt, the lining of the roof (from xb to xc, half width wr) and the seats:
         (x, y, width) of each."""
         self.inside.append((x0, x1, w, floor, belt, top, xb, xc, wr))
+        self.cabin_layout = [x0, x1, w, floor, belt, top, xb, xc, wr] + [v for seat in seats for v in seat]
         for x, y, width in seats:
-            self.block((x, y, floor + 0.13), (0.5, width, 0.26), "Seat")
-            self.block((x - 0.3, y, floor + 0.45), (0.14, width, 0.62), "Seat")
+            self.block((x, y, floor + 0.13), (0.5, width, 0.26), "SimpleSeat")
+            self.block((x - 0.3, y, floor + 0.45), (0.14, width, 0.62), "SimpleSeat")
 
     def line(self, x0, x1, w, floor, belt, top, xb, xc, wr):
         """The inside faces of the cabin, each facing the middle of it."""
         middle = Vector(((x0 + x1) / 2, 0, (floor + top) / 2))
 
-        def quad(*points):
-            f = self.face([self.v(*p) for p in points], "Seat")
+        def quad(*points, mat="Seat"):
+            f = self.face([self.v(*p) for p in points], mat)
             f.normal_update()
             if f.normal.dot(middle - f.calc_center_median()) < 0:
                 f.normal_flip()
@@ -273,9 +289,9 @@ class Car:
         hi = [(xb, wr), (xb, -wr), (xc, -wr), (xc, wr)]
         quad(*((x, y, floor) for x, y in lo))
         quad(*((x, y, top) for x, y in hi))
-        for (a, b), (c, d) in zip(zip(lo, lo[1:] + lo[:1]), zip(hi, hi[1:] + hi[:1])):
-            quad((*a, floor), (*b, floor), (*b, belt), (*a, belt))
-            quad((*a, belt), (*b, belt), (*d, top), (*c, top))
+        for i, ((a, b), (c, d)) in enumerate(zip(zip(lo, lo[1:] + lo[:1]), zip(hi, hi[1:] + hi[:1]))):
+            quad((*a, floor), (*b, floor), (*b, belt), (*a, belt), mat="DoorBacking" if i in (1, 3) else "Seat")
+            quad((*a, belt), (*b, belt), (*d, top), (*c, top), mat="RearBacking" if i == 2 else "WindowBacking")
 
     def text(self, word, x, px, top, mat):
         """A word lying on the bonnet, read from in front of the car: the tops of its
@@ -330,12 +346,13 @@ class Car:
         """What shows round a windscreen from above: the black scuttle between the bonnet
         and the glass (out to half width e), and the two wipers lying at the bottom of the
         glass, which runs from (xa, z0) up to (xb, top)."""
+        self.screen_layout = (xa, xb, z0, top, e)
         self.strip(xa + 0.085, xa + 0.005, [-e, -e / 2, 0, e / 2, e], "Trim", shape.top)
 
         def glass(x, y):
             return z0 + (xa - x) / (xa - xb) * (top - z0)
         for ya, yb in ((0.72 * e, 0.06), (-0.1, -0.76 * e)):
-            self.decal([(xa - 0.04, ya), (xa - 0.13, yb), (xa - 0.165, yb), (xa - 0.075, ya)], "Trim", glass, 0.03)
+            self.decal([(xa - 0.04, ya), (xa - 0.13, yb), (xa - 0.165, yb), (xa - 0.075, ya)], "SimpleWiper", glass, 0.03)
 
     def block(self, c, s, mat):
         (cx, cy, cz), (sx, sy, sz) = c, s
@@ -374,9 +391,10 @@ class Car:
             if not stalk:
                 self.block((x, s * (w - 0.02), z), (0.1, 0.22, 0.11), "Paint")
                 continue
-            self.block((x, s * w, z - 0.02), (0.06, 0.12, 0.05), "Trim")
-            self.block((x - 0.02, s * (w + 0.1), z), (0.11, 0.17, 0.11), "Paint")
-            self.block((x - 0.08, s * (w + 0.1), z), (0.012, 0.15, 0.09), "Glass")
+            self.door_mirrors[1 if s > 0 else 2] = (x, w, z)
+            self.block((x, s * w, z - 0.02), (0.06, 0.12, 0.05), "SimpleMirrorTrim")
+            self.block((x - 0.02, s * (w + 0.1), z), (0.11, 0.17, 0.11), "SimpleMirrorPaint")
+            self.block((x - 0.08, s * (w + 0.1), z), (0.012, 0.15, 0.09), "SimpleMirrorGlass")
 
     def lamps(self, front, back, w_front, w_back, z_front, z_back, plates=None):
         """plates: (x, height) of the number plates at the front and the back, if they
@@ -402,6 +420,8 @@ class Car:
                 f.normal_flip()
         doors = [self.hang(k) for k in sorted({f[self.door] for f in bm.faces} - {0})]
         obj = self.object(name, bm)
+        if self.inside:
+            obj["cabinLayout"] = self.cabin_layout
         if self.wheel_mounts:
             obj["wheelMounts"] = self.wheel_mounts
         for k, (door, hinge) in doors:
@@ -419,12 +439,16 @@ class Car:
         front = max(p.x for p in points)
         hinge = Vector((front, side * max(abs(p.y) for p in points if p.x > front - 0.02), 0))
         door = bmesh.new()
-        glass = MATS.index("Glass")
+        window = MATS.index("Window")
         for f in faces:
             skin = [door.verts.new(v.co - hinge) for v in f.verts]
             door.faces.new(skin).material_index = f.material_index
             lining = [door.verts.new(v.co - hinge - Vector((0, side * 0.035, 0))) for v in reversed(f.verts)]
-            door.faces.new(lining).material_index = glass if f.material_index == glass else MATS.index("Seat")
+            door.faces.new(lining).material_index = MATS.index("WindowInside") if f.material_index == window else MATS.index("Seat")
+        # Fit the smaller hardware after finding the hinge and lining the skin.
+        # A mirror on its arm must not change where the entire door pivots.
+        from door_fittings import fit_door
+        fit_door(door, faces, hinge, side, self.cabin_layout[4], self.door_mirrors.get(k), MATS)
         bmesh.ops.delete(self.bm, geom=faces, context="FACES")
         bmesh.ops.remove_doubles(door, verts=door.verts, dist=1e-5)
         return k, (door, hinge)
@@ -747,11 +771,24 @@ def build():
     ]
 
 
+def export_drivers():
+    """Optional close-camera asset, fetched only when an occupied car is nearby."""
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    for i, donor in enumerate(("male-adult-13", "female-adult-05")):
+        build_driver(donor, f"seated_driver_{i}", OUT.parent)
+    build_driver("male-adult-10", "seated_driver_police", OUT.parent, "police-male-adult-10.ktx2")
+    bpy.ops.export_scene.gltf(
+        filepath=str(OUT.with_name("car-drivers.glb")), export_format="GLB", export_normals=True,
+        export_texcoords=False, export_vertex_color="ACTIVE", export_active_vertex_color_when_no_material=True,
+        export_animations=False, export_extras=False, export_cameras=False, export_lights=False,
+    )
+
+
 def export():
     OUT.parent.mkdir(parents=True, exist_ok=True)
     bpy.ops.export_scene.gltf(
         filepath=str(OUT), export_format="GLB", export_texcoords=False, export_normals=True,
-        export_materials="EXPORT", export_extras=True, export_yup=True, export_animations=False, export_cameras=False,
+        export_materials="EXPORT", export_vertex_color="ACTIVE", export_active_vertex_color_when_no_material=True, export_extras=True, export_yup=True, export_animations=False, export_cameras=False,
         export_lights=False,
     )
     print("wrote", OUT, OUT.stat().st_size, "bytes")
@@ -828,5 +865,6 @@ if __name__ == "__main__":
     if argv[:1] == ["--preview"]:
         preview(argv[1])
     else:
+        export_drivers()
         build()
         export()

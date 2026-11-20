@@ -146,6 +146,23 @@ const checks = `(async () => {
       'wheels roll with travel and the front axle steers through the bend');
     assert(roll.getW(0) === registration && registration >= 100000 && registration <= 999999,
       'a moving car keeps its registration');
+    const panes = wheels.geometry.groups;
+    assert(panes.length === 2 && panes[0].count + panes[1].count === wheels.geometry.index.count &&
+      wheels.material[1].transparent && !wheels.material[1].depthWrite, 'street car has separate glazing');
+    const driversShown = () => [...pool.drivers.meshes()].reduce((n,m) => n+m.count, 0);
+    assert(driversShown() === 0 && !performance.getEntriesByType('resource').some(e => e.name.endsWith('/car-drivers.glb')),
+      'parked cars do not request the seated avatars');
+    saloon.mode = 'traffic';
+    const until = performance.now()+15000;
+    do {
+      pool.render([saloon,distant], null, 0, undefined, true, eye);
+      if (driversShown()) break;
+      await new Promise(requestAnimationFrame);
+    } while (performance.now()<until);
+    assert(driversShown() === 1 && page('sedan').count === 1, 'only the occupied near car draws a driver');
+    saloon.mode = 'loose';
+    pool.render([saloon,distant],null,0,undefined,true,eye);
+    assert(!driversShown(), 'driver leaves with the occupant');
     const placed = new THREE.Matrix4();
     assert(pool.matrixOf(saloon, placed) && Math.abs(placed.elements[12]-saloon.x) < .001, 'close body matrix available');
     pool.render([saloon,distant]);

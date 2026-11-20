@@ -152,8 +152,11 @@ addPort(/^cars(?:-service|-dustcart|-close)?$/, (node, legacy) => {
   const key = legacy.customProgramCacheKey();
   const serviceBody = key === 'cars-service';
   const closeCar = key === 'cars-close';
+  const colour = vertexColor().rgb, brightness = luma(colour);
+  const glazed = brightness.lessThan(.04).and(colour.b.greaterThan(colour.r.mul(1.25)));
+  const trimFinish = select(own.equal(0).and(glazed.not()), mix(.08,1,smoothstep(.035,.17,brightness)), float(1));
   const wheelFinish = closeCar ? select(hinge.z.lessThan(0),
-    mix(0.045, 0.45, smoothstep(0.045, 0.24, luma(vertexColor().rgb))), float(1)).toVarying('vWheelCoat') : undefined;
+    mix(.045,.45,smoothstep(.045,.24,brightness)), select(hinge.z.greaterThan(11.5),float(.065),trimFinish)).toVarying('vWheelCoat') : undefined;
   if (wheelFinish) node.specularNode = materialSpecular.mul(wheelFinish);
   const rollWheel = (p: N): N => {
     const roll: N = attribute('roll', 'vec4');
@@ -184,7 +187,7 @@ addPort(/^cars(?:-service|-dustcart|-close)?$/, (node, legacy) => {
     if (closeCar) {
       const slot = hinge.z.sub(5), roll = attribute('roll','vec4');
       const digit = select(slot.equal(1), float(10), mod(floor(roll.w.div(pow(10,clamp(float(6).sub(slot),0,5)))),10));
-      const atlasUV = select(hinge.z.greaterThan(4.5),vec2(digit.add(hinge.x.mul(.96)).add(.02).div(16),hinge.y.mul(.96).add(.02)),vec2(-1)).toVarying('vPlateUV');
+      const atlasUV = select(hinge.z.greaterThan(4.5).and(hinge.z.lessThan(11.5)),vec2(digit.add(hinge.x.mul(.96)).add(.02).div(16),hinge.y.mul(.96).add(.02)),vec2(-1)).toVarying('vPlateUV');
       If(atlasUV.x.greaterThanEqual(0), () => { diffuseColor.rgb.mulAssign(texture(registrationAtlas(),atlasUV).rgb); });
     }
     const crazed = mix(mix(diffuseColor.rgb, vec3(0.6), DS.milk), vec3(...DS.crack), cracks(crackAt.xy));

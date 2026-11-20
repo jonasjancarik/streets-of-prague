@@ -175,5 +175,26 @@ def build_trim(name, shape, source, front_z, rear_z, material, materials):
             panels.patch(mat,1,1,lambda u,v: (end*(shape.nb+offset),(2*u-1)*half,plate_z+(2*v-1)*high),Vector((end,0,0)))
         # Blue country strip on the reader's left. No manufacturer badges.
         panels.patch("EUBlue",1,1,lambda u,v:(end*(shape.nb+.045),-end*(.215+.038*u),plate_z-.05+.10*v),Vector((end,0,0)))
+    # Rubber blades sit on the lower windscreen. Sample the actual inset
+    # panes so the tips follow the bowed glass rather than hovering above it.
+    xa, xb, sill, header, half = source.screen_layout
+    panes = [[v.index for v in f.verts] for f in source.bm.faces if materials[f.material_index] == "Window"]
+    screen = BVHTree.FromPolygons(verts,panes)
+    def glass_height(x,y):
+        hit = screen.ray_cast(Vector((x,y,4)),Vector((0,0,-1)),5)[0]
+        return hit.z if hit is not None else sill + (xa - x) / (xa - xb) * (header - sill)
+    for start, end in ((.78*half,.035),(-.035,-.78*half)):
+        def on_glass(x,y,offset):
+            return (x,y,glass_height(x,y)+offset)
+        def blade(u,v):
+            return on_glass(xa-.095-.070*u+.012*v,start+(end-start)*u,.007)
+        panels.patch("RubStrip",12,1,blade,Vector((.6,0,1)))
+        # At its tip the arm meets the middle of the blade. Its pivot is on
+        # the scuttle, a little to the side, keeping both bars nearly parallel.
+        bx,by,_ = blade(.50,.50)
+        pivot_x,pivot_y = xa-.037, start
+        def arm(u,v):
+            return on_glass(pivot_x+(bx-pivot_x)*u+.009*(v-.5),pivot_y+(by-pivot_y)*u,.014)
+        panels.patch("RubStrip",10,1,arm,Vector((.6,0,1)))
     obj = panels.build(name+"_street_trim",material)
     obj["headlamp"] = head_mount
