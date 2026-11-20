@@ -279,7 +279,7 @@ interface LitTram { parts: { x: number; y: number; ang: number }[]; look: {
   street?: { heading: number; lampOrigin(side: number, out: THREE.Vector3): boolean }
 } | null; levels?: { gz?: number }[] }
 // `broken`: which of its lamps are smashed (LAMP in car.ts: 1 and 2 the headlamps left and right, 4 and 8 the tail lamps).
-export interface LitCar { x: number; y: number; h: number; spec: Pick<CarSpec, 'L' | 'W' | 'H' | 'headlights'>; mode: string; two?: string; speed: number; broken?: number; braking?: boolean }
+export interface LitCar { streetHeadlights?: CarSpec['headlights']; x: number; y: number; h: number; spec: Pick<CarSpec, 'L' | 'W' | 'H' | 'headlights'>; mode: string; two?: string; speed: number; broken?: number; braking?: boolean }
 
 // What gets in the lamps' way, as boxes: the cars, and with LAMP_SHADOWS at 3 the people,
 // the trams' sections and the posts. A texel each, two rows in a float
@@ -1164,7 +1164,7 @@ export class Lamps {
       if (c.mode === 'loose' && c.speed < 0.5) return; // parked: lights off
       const fx0 = Math.cos(c.h), fy = Math.sin(c.h), L = c.spec.L / 2, W = c.spec.W / 2;
       const z = this.carZ[ci], own = this.carIndex.get(c) ?? -1;
-      const mount = c.spec.headlights, headHeight = mount?.height ?? 0.75, headAcross = mount?.across ?? W - 0.3;
+      const mount = c.streetHeadlights ?? c.spec.headlights, headHeight = mount?.height ?? 0.75, headAcross = mount?.across ?? W - 0.3;
       const beamOrigin = mount?.forward ?? L, headForward = mount?.forward ?? L - 0.05;
       // A smashed lamp is dark: with one headlamp left the beam is narrower and to its side.
       const broken = c.two ? 0 : c.broken ?? 0, heads = broken & 3, brake = c.braking ? 2.4 : 1;

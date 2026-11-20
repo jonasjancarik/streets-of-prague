@@ -1296,6 +1296,13 @@ record the measurements, merge decisions and pending landmark asset activation.
   the front and rear. The same individual lamps go dark when broken. Tinted windows reveal
   the dashboard, steering wheel and upholstered seats. The mirrors, latches and inner
   armrests move with their doors (`<type>_door1` to `4`, each with its origin on the hinge).
+  The street sedan has a separate mesh (`assets/cars/sedan.py` → `public/sedan-street.glb`).
+  Approaching within 38 m in street view starts the download. Within 24 m the fitted
+  body takes over when ready. Its four doors use the original hinges. It has a recessed
+  sunroof, clear-coated paint, dark rear glazing, and separate lamp bowls below clear
+  covers. Each tyre sits on its own ground sample when the car straddles a kerb.
+  The brake calipers steer with the front hubs while the discs and wheels rotate.
+  The speedometer reads road speed and the centre display goes dark in a parked car.
   Occupied cars draw a seated driver. The three static poses in `car-drivers.glb` load
   on the first close view of an occupied car and share instance batches across models.
   The doors stay in the body's instanced mesh. Each door vertex carries its hinge and number, and

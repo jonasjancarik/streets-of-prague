@@ -1,9 +1,11 @@
 import * as THREE from 'three';
 import { SeatedDrivers, passengerCabin } from './passengerCabin.ts';
 import { buildStreetWheels } from './streetWheels.ts';
+import { sedanFinish, sedanInstruments, sedanWeave } from './sedanFinish.ts';
 import { registrationAtlas, registrationFaces } from './registrationPlates.ts';
 import { ambulanceStreet } from './ambulanceStreet.ts';
 import { mirrored } from './mirror.ts';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { clamp } from './network.ts';
@@ -301,7 +303,7 @@ function carGeometry(type: string, box?: string): THREE.BufferGeometry {
 // Keep the original GLB body in the overhead view and at a distance. Only
 // assets that describe their wheel mounts can exchange the low-poly hubs.
 const STREET_CAR_REACH = 24; // m from the camera
-const closeBodies = new Map<string, { key: string; radius: number; wheelbase: number; layout?: number[] }>();
+const closeBodies = new Map<string, { key: string; radius: number; wheelbase: number; front: number; rear: number; track: number; layout?: number[] }>();
 function prepareStreetCar(type: string, box?: string) {
   const mounts = bodies?.getObjectByName(type)?.userData.wheelMounts as number[] | undefined;
   if (mounts?.length !== 16) return;
@@ -310,9 +312,37 @@ function prepareStreetCar(type: string, box?: string) {
     const g = bodyGeometry(type, box, true);
     markZones(g);
     cache.set(street, g);
-    closeBodies.set(key, { key: street, radius: mounts[1], wheelbase: Math.abs(mounts[0] - mounts[8]), layout: bodies?.getObjectByName(type)?.userData.cabinLayout });
+    closeBodies.set(key, { key: street, radius: mounts[1], wheelbase: Math.abs(mounts[0] - mounts[8]), front: mounts[0], rear: mounts[8], track: 2 * Math.abs(mounts[2]), layout: bodies?.getObjectByName(type)?.userData.cabinLayout });
   }
   return street;
+}
+
+// The authored body is a separate GLB. The existing fitted sedan remains usable
+// while it arrives, including on a slow connection or during a retry.
+const STREET_SEDAN = 'sedan|coachwork|street-wheels';
+let sedanUrl = '', sedanLoading = false, sedanRetryAt = 0;
+let sedanHeadlights: CarSpec['headlights'];
+function requestStreetSedan() {
+  if (cache.has(STREET_SEDAN)) return;
+  if (sedanUrl && !sedanLoading && performance.now() >= sedanRetryAt) {
+    sedanLoading = true;
+    void new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(sedanUrl).then(({ scene }) => {
+      scene.updateMatrixWorld(true);
+      const shell = scene.getObjectByName('sedan_coachwork');
+      if (!shell) throw Error('Missing sedan coachwork');
+      const g = bodyGeometry('sedan', undefined, true, shell);
+      markZones(g);
+      const lens = shell.userData.headlamp;
+      if (Array.isArray(lens) && lens.length === 3 && lens.every(Number.isFinite)) {
+        const [forward, across, height] = lens;
+        sedanHeadlights = { forward, across, height, glow: .42, streetReach: STREET_CAR_REACH };
+      }
+      cache.set(STREET_SEDAN, g);
+    }).catch(error => {
+      sedanRetryAt = performance.now() + 60000;
+      console.warn('Could not load street sedan', error);
+    }).finally(() => { sedanLoading = false; });
+  }
 }
 
 const STREET_AMBULANCE = 'ambulance|street';
@@ -356,7 +386,7 @@ function markZones(g: THREE.BufferGeometry) {
 }
 
 // A car body from cars.glb.
-function bodyGeometry(type: string, box?: string, closeCar = false): THREE.BufferGeometry {
+function bodyGeometry(type: string, box?: string, closeCar = false, coachwork?: THREE.Object3D): THREE.BufferGeometry {
   if (!bodies) throw new Error('Car bodies are not loaded');
   const c = new THREE.Color();
   const parts: THREE.BufferGeometry[] = [];
@@ -367,8 +397,10 @@ function bodyGeometry(type: string, box?: string, closeCar = false): THREE.Buffe
     return node;
   });
   const glazing: THREE.BufferGeometry[] = [];
-  const layout = closeCar ? nodes[0].userData.cabinLayout as number[] | undefined : undefined;
-  const trim = closeCar ? bodies.getObjectByName(type + '_street_trim') : undefined;
+  const base = nodes[0];
+  const layout = closeCar ? base.userData.cabinLayout as number[] | undefined : undefined;
+  if (coachwork) nodes[0] = coachwork;
+  const trim = closeCar && !coachwork ? bodies.getObjectByName(type + '_street_trim') : undefined;
   if (trim) nodes.push(trim);
   for (const node of nodes) node.traverse((o) => {
     if (!(o instanceof THREE.Mesh)) return;
@@ -400,18 +432,39 @@ function bodyGeometry(type: string, box?: string, closeCar = false): THREE.Buffe
     }
     g.setAttribute('hinge', new THREE.BufferAttribute(hinge, 3));
     const paint = name === 'Paint' || name === 'DoorPaint' || name === 'SimpleMirrorPaint';
-    c.set(paint ? '#ffffff' : name === 'Window' && !layout ? PART.Glass : PART[name] || '#777777');
+    const authored = Array.isArray(o.material) ? o.material[0] : o.material;
+    c.set(paint ? '#ffffff' : name === 'Window' && !layout ? PART.Glass : PART[name] || (coachwork ? authored.color : '#777777'));
     const col = new Float32Array(g.attributes.position.count * 3);
-    for (let i = 0; i < col.length; i += 3) col.set([c.r, c.g, c.b], i);
+    const ao = coachwork && !['Window', 'RearWindow', 'LensCover', 'Lamp', 'Tail', 'GaugeFace', 'DisplayFace'].includes(name) && o.geometry.getAttribute('_cavity');
+    for (let i = 0; i < col.length; i += 3) {
+      const shade = ao ? ao.getX(i / 3) : 1;
+      col[i] = c.r * shade; col[i + 1] = c.g * shade; col[i + 2] = c.b * shade;
+    }
+    if (coachwork && (name === 'GaugeFace' || name === 'DisplayFace')) {
+      g.computeBoundingBox();
+      const { min, max } = g.boundingBox!, pos = g.attributes.position, gauge = name === 'GaugeFace';
+      for (let i = 0; i < pos.count; i++) {
+        const u = (pos.getZ(i) - min.z) / (max.z - min.z), v = (pos.getY(i) - min.y) / (max.y - min.y);
+        hinge.set([u, gauge ? (108 + 148 * v) / 256 : (.012 + .325 * v), gauge ? 14 : 15], i * 3);
+      }
+    }
+    if (coachwork && name === 'Cloth') {
+      const pos = g.attributes.position;
+      for (let i = 0; i < pos.count; i++) hinge.set([pos.getZ(i) / .39, (pos.getX(i) - pos.getY(i)) / .39, 16], i * 3);
+    }
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
     g.setAttribute('painted', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(paint ? 1 : 0), 1));
     if (name === 'Lamp' || name === 'Tail') markLamp(g, name === 'Lamp');
-    (layout && name === 'Window' ? glazing : parts).push(g);
-    if (node === trim && name === 'Plate') parts.push(registrationFaces(g));
+    if (coachwork) {
+      const tag = sedanFinish(name) / 16, attr = g.attributes.painted;
+      for (let i = 0; i < attr.count; i++) attr.setX(i, attr.getX(i) + tag);
+    }
+    (layout && (name === 'Window' || name === 'RearWindow' || name === 'LensCover') ? glazing : parts).push(g);
+    if ((node === trim || node === coachwork) && name === 'Plate') parts.push(registrationFaces(g));
   });
-  if (closeCar) parts.push(...buildStreetWheels(type, nodes[0].userData.wheelMounts));
+  if (closeCar) parts.push(...buildStreetWheels(coachwork ? 'sport-sedan' : type, base.userData.wheelMounts));
   else DOORS.set(type, doors.sort((a, b) => a.n - b.n));
-  if (layout) parts.push(...passengerCabin(type, layout));
+  if (layout && !coachwork) parts.push(...passengerCabin(type, layout));
   if (!glazing.length) return mergeGeometries(parts);
   const result = mergeGeometries(parts.concat(glazing));
   const solid = parts.reduce((sum, g) => sum + g.index!.count, 0);
@@ -1120,6 +1173,9 @@ const PART: Record<string, string> = {
 let bodies: THREE.Object3D | null = null;
 export async function loadCars(url = 'cars.glb') {
   const gltf = await new GLTFLoader().loadAsync(url);
+  if (typeof document !== 'undefined' && !/^(data|blob):/.test(url)) {
+    sedanUrl = new URL('sedan-street.glb', new URL(url, document.baseURI)).href;
+  }
   gltf.scene.updateMatrixWorld(true);
   bodies = gltf.scene;
   for (const [type, spec] of Object.entries(TYPES)) {
@@ -1280,7 +1336,7 @@ vec2 swing(vec2 p) {
 ${DENT_GLSL}`)
     // A lamp: dark when it's broken, glowing when it's on (the same in TSL: webgpu/vehicles.ts).
     .replace('#include <color_vertex>', `#include <color_vertex>
-float own = mod(painted, 16.), lamp = floor(own * .5 + .01);
+float own = mod(floor(painted), 16.), lamp = floor(own * .5 + .01);
 vColor.rgb *= mix(vec3(1.), paint.rgb, own - 2. * lamp);
 vCrack = vec3(position.xz, own < .5 && dot(vColor.rgb, vec3(.3, .59, .11)) < .04 && vColor.b > vColor.r * 1.25 ? crackedAt(zoneAt()) : 0.);
 vLit = 0.;
@@ -1363,7 +1419,7 @@ attribute vec4 roll;
 varying float vWheelCoat;
 varying vec2 vPlateUV;
 vec3 rollWheel(vec3 p) {
-  vec2 spun = vec2(roll.x*p.x-roll.y*p.y, roll.y*p.x+roll.x*p.y);
+  vec2 spun = hinge.z < -1. ? p.xy : vec2(roll.x*p.x-roll.y*p.y, roll.y*p.x+roll.x*p.y);
   float c = sqrt(max(0.,1.-roll.z*roll.z));
   return hinge.x > 0. ? vec3(c*spun.x+roll.z*p.z, spun.y, -roll.z*spun.x+c*p.z) : vec3(spun,p.z);
 }
@@ -1371,7 +1427,7 @@ vec2 swing(vec2 p)`)
     .replace('vec4 dents = dentAt(zoneAt());', 'vec4 dents = dentAt(zoneAt()); if (hinge.z < 0.) objectNormal = rollWheel(objectNormal);')
     .replace('transformed = dented(transformed, dents);', `float brightness = dot(color.rgb,vec3(.3,.59,.11));
 bool glazed = brightness < .04 && color.b > color.r*1.25;
-vWheelCoat = (mod(painted,16.) == 0. && !glazed) ? mix(.08,1.,smoothstep(.035,.17,brightness)) : 1.;
+vWheelCoat = (mod(floor(painted),16.) == 0. && !glazed) ? mix(.08,1.,smoothstep(.035,.17,brightness)) : 1.;
 vPlateUV = vec2(-1.);
 if (hinge.z > 4.5 && hinge.z < 11.5) {
   float slot = hinge.z - 5.;
@@ -1379,7 +1435,7 @@ if (hinge.z > 4.5 && hinge.z < 11.5) {
   vPlateUV = vec2((digit + .02 + .96 * hinge.x) / 16., .02 + .96*hinge.y);
 }
 if (hinge.z < 0.) {
-  vec3 axle = vec3(hinge.x, -hinge.z, hinge.y);
+  vec3 axle = vec3(hinge.x, -hinge.z - (hinge.z < -1. ? 2. : 0.), hinge.y);
   transformed = axle + rollWheel(transformed - axle);
   vWheelCoat = mix(.045,.45,smoothstep(.045,.24,dot(color.rgb,vec3(.3,.59,.11))));
 }
@@ -1399,6 +1455,65 @@ passengerGlass.forceSinglePass = true;
 passengerGlass.onBeforeCompile = material.onBeforeCompile;
 passengerGlass.customProgramCacheKey = material.customProgramCacheKey;
 const passengerMaterials = [streetWheelMaterial, passengerGlass];
+const coachGlass = passengerGlass.clone();
+coachGlass.customProgramCacheKey = () => 'cars-coachglass';
+coachGlass.onBeforeCompile = (sh, renderer) => {
+  material.onBeforeCompile(sh, renderer);
+  sh.vertexShader = sh.vertexShader.replace('varying float vLit;', 'varying float vLit; varying vec2 vGlassTint;')
+    .replace('#include <color_vertex>', '#include <color_vertex>\nvGlassTint=vec2(floor(fract(painted)*16.+.5), position.y);');
+  sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vGlassTint;')
+    .replace('#include <opaque_fragment>', `
+    float grazing = pow(1. - abs(dot(normal, normalize(vViewPosition))), 3.);
+    float cover = step(7.5,vGlassTint.x), rear = 1.-step(.4,abs(vGlassTint.x-7.));
+    diffuseColor.a = mix(.39+.15*smoothstep(1.22,1.41,vGlassTint.y)+.18*rear, .085, cover) + grazing * mix(.32,.26,cover);
+    #include <opaque_fragment>`);
+};
+const coachPaint = new THREE.MeshPhysicalMaterial({
+  vertexColors: true, roughness: .42, metalness: .30, clearcoat: .86, clearcoatRoughness: .18,
+  shadowSide: THREE.DoubleSide,
+});
+coachPaint.customProgramCacheKey = () => 'cars-coachwork';
+coachPaint.onBeforeCompile = (sh, renderer) => {
+  streetWheelMaterial.onBeforeCompile(sh, renderer);
+  sh.uniforms.uInstruments = { value: sedanInstruments() };
+  sh.uniforms.uWeave = { value: sedanWeave() };
+  sh.vertexShader = sh.vertexShader
+    .replace('varying float vWheelCoat;', 'varying float vWheelCoat; varying float vFinish; varying vec3 vDial; varying float vEngine;')
+    .replace('vec2 spun = hinge.z < -1. ? p.xy : vec2(roll.x*p.x-roll.y*p.y, roll.y*p.x+roll.x*p.y);',
+      'vec2 phase = normalize(roll.xy); vec2 spun = hinge.z < -1. ? p.xy : vec2(phase.x*p.x-phase.y*p.y,phase.y*p.x+phase.x*p.y);')
+    .replace('float c = sqrt(max(0.,1.-roll.z*roll.z));', 'float steer = roll.z-2.*floor((roll.z+1.)*.5); float c=sqrt(max(0.,1.-steer*steer));')
+    .replace('c*spun.x+roll.z*p.z, spun.y, -roll.z*spun.x+c*p.z', 'c*spun.x+steer*p.z, spun.y, -steer*spun.x+c*p.z')
+    .replace('transformed = axle + rollWheel(transformed - axle);', `transformed= axle + rollWheel(transformed - axle);
+      if(hinge.z > -1.) transformed.y=max(0.,transformed.y-.010*(1.-smoothstep(0.,.045,transformed.y)));
+      transformed.y+=sign(-hinge.x*hinge.y)*.0025*floor((roll.z+1.)*.5);`)
+    .replace('vPlateUV = vec2(-1.);', `vPlateUV = vec2(-1.);
+      vFinish = floor(fract(painted)*16.+.5);
+      if (hinge.z<0.) vFinish=brightness>.068?2.:4.;
+      vDial=vec3(hinge.xy,hinge.z); vEngine=length(roll.xy);`);
+  sh.fragmentShader = sh.fragmentShader
+    .replace('#include <common>', '#include <common>\nvarying float vFinish; varying vec3 vDial; varying float vEngine; uniform sampler2D uInstruments; uniform sampler2D uWeave;')
+    .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+      roughnessFactor=vFinish==1.?mix(.34,.23,uWet):vFinish==2.?.28:vFinish==3.?.91:vFinish==5.?.20:.68;`)
+    .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
+      metalnessFactor=vFinish==1.?.28:vFinish==2.?.72:.015;`)
+    .replace('#include <lights_physical_fragment>', `#include <lights_physical_fragment>
+      material.clearcoat=vFinish==1.?.86:vFinish==5.?.38:0.;`)
+    .replace('#include <color_fragment>', `#include <color_fragment>
+      if(vDial.z>13.5 && vDial.z<15.5){
+        vec3 art=texture2D(uInstruments,vDial.xy).rgb;
+        if(vDial.z<14.5){
+          vec2 p=vec2(vDial.x*512.-256.,(1.-vDial.y)*256.-78.);
+          float a=radians(136.+268.*clamp(vEngine-2.,0.,1.)); vec2 d=vec2(cos(a),sin(a));
+          float tip=1.-smoothstep(.7,2.,length(p-d*clamp(dot(p,d),3.,51.)));
+          art=mix(art,vec3(.71,.16,.063),tip);
+        }else art=mix(vec3(.014,.021,.025),art,step(1.5,vEngine));
+        diffuseColor.rgb*=art;
+      } else if(vDial.z>15.5 && vDial.z<16.5){
+        diffuseColor.rgb*=.35+1.32*texture2D(uWeave,vDial.xy).r;
+      }`)
+    .replace('reflectedLight.directDiffuse += vWheelCoat * carCoat(', 'reflectedLight.directDiffuse += (vFinish==3.?.018:vFinish==4.?.065:vFinish==6.?.085:vWheelCoat) * carCoat(');
+};
+const sedanMaterials = [coachPaint, coachGlass];
 const depthMaterial = new THREE.MeshDepthMaterial();
 
 // Points round a car's outline for its collisions, the same for every car of a type
@@ -1426,6 +1541,7 @@ export function randomType(r: () => number, use: 'weight' | 'traffic' = 'weight'
 }
 
 export class Car {
+  streetHeadlights?: CarSpec['headlights'];
   type: string;
   variant: Variant | null = null;
   spec: CarSpec;
@@ -1920,6 +2036,7 @@ const BOARD_AT = { bus: boardPlacement('bus'), minibus: boardPlacement('minibus'
 // the terrain's revision), where the car is and how it's turned, and how the tiles
 // track it (TileWorld.track). The same again means the same matrix.
 interface Placing {
+  wheelTwist?: number;
   m: number[]; height: unknown; terrain: number;
   x: number; y: number; h: number; lean: number; L: number; W: number;
   level?: number; gz?: number; hint?: RoadHint; grounded?: boolean; roadLevel?: number; tx?: number; ty?: number; e?: unknown;
@@ -1953,7 +2070,7 @@ export class CarPool {
   scene: THREE.Scene;
   // 128 cars (8 KiB of matrices); overflow retains the original page.
   static readonly pageCapacity = 128;
-  meshes: Map<string, THREE.InstancedMesh<THREE.BufferGeometry, THREE.MeshPhongMaterial | THREE.MeshPhongMaterial[]>[]>;
+  meshes: Map<string, THREE.InstancedMesh<THREE.BufferGeometry, THREE.Material | THREE.Material[]>[]>;
   prepared = new Set<string>();
   overflowPages = 0;
   latePages = 0;
@@ -2042,7 +2159,7 @@ export class CarPool {
     if (wheels) geometry.setAttribute('roll', new THREE.InstancedBufferAttribute(new Float32Array(CarPool.pageCapacity * 4), 4));
     const street = key === STREET_AMBULANCE;
     if (street || wheels) for (const g of body.groups) geometry.addGroup(g.start, g.count, g.materialIndex);
-    const finish = wheels ? (body.groups.length ? passengerMaterials : streetWheelMaterial) : key === 'garbage' || key === 'garbage|burnt' ? dustcartMaterial : material;
+    const finish = key === STREET_SEDAN ? sedanMaterials : wheels ? (body.groups.length ? passengerMaterials : streetWheelMaterial) : key === 'garbage' || key === 'garbage|burnt' ? dustcartMaterial : material;
     const mesh = mirrored(new THREE.InstancedMesh(geometry, street ? streetMaterials() : finish, CarPool.pageCapacity));
     mesh.userData.sharedMatrices = true; // (see configureRenderer in webgpu.ts)
     mesh.count = 0;
@@ -2067,7 +2184,7 @@ export class CarPool {
 
   private drivers?: SeatedDrivers;
   private streetView = false;
-  private closeCars = new Set<Car>();
+  private closeCars = new Map<Car, string>();
   private wheelTravel = new WeakMap<Car, { x: number; y: number; angle: number; plate: number }>();
   private renderKey(key: string) {
     if (this.streetView) {
@@ -2079,7 +2196,7 @@ export class CarPool {
 
   // Where the last render put `c` (on the ground, tilted with it), into `out`; false if it wasn't drawn.
   matrixOf(c: Car, out: THREE.Matrix4) {
-    const key = this.closeCars.has(c) ? closeBodies.get(c.key)?.key ?? c.key : this.renderKey(c.key);
+    const key = this.closeCars.get(c) ?? this.renderKey(c.key);
     const i = this.groups.get(key)?.indexOf(c) ?? -1;
     const page = i < 0 ? undefined : this.meshes.get(key)?.[Math.floor(i / CarPool.pageCapacity)];
     if (!page) return false;
@@ -2156,10 +2273,17 @@ export class CarPool {
     for (const list of this.groups.values()) list.length = 0;
     for (const c of cars) {
       let key = this.renderKey(c.key);
-      if (streetView && eye && (c.x - eye.x) ** 2 + (c.y + eye.z) ** 2 < STREET_CAR_REACH ** 2) {
-        const close = closeBodies.get(c.key);
-        if (close) { key = close.key; this.closeCars.add(c); }
+      if (streetView && eye) {
+        const distance2 = (c.x - eye.x) ** 2 + (c.y + eye.z) ** 2;
+        // Start decoding a little before the model can enter the close view.
+        if (c.key === 'sedan' && distance2 < 38 ** 2) requestStreetSedan();
+        const close = distance2 < STREET_CAR_REACH ** 2 ? closeBodies.get(c.key) : undefined;
+        if (close) {
+          key = c.key === 'sedan' && cache.has(STREET_SEDAN) ? STREET_SEDAN : close.key;
+          this.closeCars.set(c, key);
+        }
       }
+      if (c.type === 'sedan') c.streetHeadlights = key === STREET_SEDAN ? sedanHeadlights : undefined;
       if (!this.groups.has(key)) this.groups.set(key, []);
       this.groups.get(key)!.push(c);
     }
@@ -2178,14 +2302,31 @@ export class CarPool {
         const slot = i % CarPool.pageCapacity;
         const keep = height && terrain !== undefined && !c.two && c.mode === 'loose';
         const was = keep ? this.placings.get(c) : undefined;
-        if (was && placed(was, c, height!, terrain!)) d.matrix.fromArray(was.m);
+        const axleFit = k === STREET_SEDAN && !c.tipped ? closeBodies.get(c.key) : undefined;
+        let twist = 0;
+        if (was && (was.wheelTwist !== undefined) === !!axleFit && placed(was, c, height!, terrain!)) {
+          d.matrix.fromArray(was.m); twist = was.wheelTwist ?? 0;
+        }
         else {
           if (height) {
             const fx = Math.cos(c.h), fy = Math.sin(c.h), L = c.spec.L / 2, W = c.spec.W / 2;
-            const hf = height(c.x + fx * L, c.y + fy * L, c), hb = height(c.x - fx * L, c.y - fy * L, c);
-            const hl = height(c.x - fy * W, c.y + fx * W, c), hr = height(c.x + fy * W, c.y - fx * W, c);
-            d.position.set(c.x, (hf + hb + hl + hr) / 4, -c.y);
-            d.rotation.set(Math.atan2(hl - hr, 2 * W) - c.lean, c.h, Math.atan2(hf - hb, 2 * L), 'YZX');
+            if (axleFit) {
+              // Fit the chassis plane to the actual tyre contacts. Four heights
+              // leave a single diagonal residual: opposing wheels take it up
+              // in the suspension when one tyre is on a cobble or a kerb.
+              const {front,rear,track,wheelbase}=axleFit, half=track/2;
+              const wheel=(x:number,left:number)=>height(c.x+fx*x-fy*left,c.y+fy*x+fx*left,c);
+              const fl=wheel(front,half),fr=wheel(front,-half),rl=wheel(rear,half),rr=wheel(rear,-half);
+              const frontZ=(fl+fr)/2,rearZ=(rl+rr)/2;
+              d.position.set(c.x,rearZ+(frontZ-rearZ)*(-rear/wheelbase),-c.y);
+              d.rotation.set(Math.atan2((fl+rl-fr-rr)/2,track)-c.lean,c.h,Math.atan2(frontZ-rearZ,wheelbase),'YZX');
+              twist=clamp((fl-fr-rl+rr)/4,-.10,.10);
+            } else {
+              const hf = height(c.x + fx * L, c.y + fy * L, c), hb = height(c.x - fx * L, c.y - fy * L, c);
+              const hl = height(c.x - fy * W, c.y + fx * W, c), hr = height(c.x + fy * W, c.y - fx * W, c);
+              d.position.set(c.x, (hf + hb + hl + hr) / 4, -c.y);
+              d.rotation.set(Math.atan2(hl - hr, 2 * W) - c.lean, c.h, Math.atan2(hf - hb, 2 * L), 'YZX');
+            }
           } else {
             d.position.set(c.x, 0, -c.y);
             d.rotation.set(-c.lean, c.h, 0, 'YZX');
@@ -2195,7 +2336,7 @@ export class CarPool {
           // Noted after the ground was sampled, which tracks the car (level, gz, …).
           if (keep) {
             const p = place(was, c, height!, terrain!, d.matrix);
-            if (p) this.placings.set(c, p); else this.placings.delete(c);
+            if (p) { p.wheelTwist = axleFit ? twist : undefined; this.placings.set(c, p); } else this.placings.delete(c);
           }
         }
         // A bike or motorbike shrinks with its rider in first person (FIGURE_SIZE).
@@ -2215,7 +2356,10 @@ export class CarPool {
           const speed = c.forwardSpeed;
           const steer = Math.abs(speed) > 0.25 ? clamp(Math.atan(c.w * fit.wheelbase / speed), -0.55, 0.55) : 0;
           const occupied = c.mode === 'player' || c.mode === 'traffic' || (c.mode === 'police' && c.crew);
-          roll.setXYZW(slot, Math.cos(travel.angle), Math.sin(travel.angle), Math.sin(steer), travel.plate);
+          // Direction retains the rotation; its length on the coachwork page
+          // carries ignition and speed to the dashboard without a ninth vertex buffer.
+          const dial = k === STREET_SEDAN && occupied ? 2 + Math.min(1, Math.abs(speed) * 3.6 / 240) : 1;
+          roll.setXYZW(slot, dial * Math.cos(travel.angle), dial * Math.sin(travel.angle), Math.sin(steer) + (k === STREET_SEDAN ? 2 * Math.round(twist / .0025) : 0), travel.plate);
           if (occupied && fit.layout) this.drivers?.put(fit.layout, travel.plate, c.type === 'police' && c.mode !== 'player', d.matrix);
         }
         if (under && !c.two && shaded < UNDER.most) {

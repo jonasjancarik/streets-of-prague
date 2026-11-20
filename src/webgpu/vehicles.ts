@@ -6,12 +6,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Fn, If, float, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, cameraWorldMatrix, diffuseColor, renderGroup, positionLocal, positionWorld, positionViewDirection, normalLocal, positionGeometry, materialColor, materialSpecular, normalize, dot, smoothstep, mix, select, sin, min, cos, max, floor, mod, exp2, reflect, atan, pow, uniform, texture, cubeTexture, length, clamp, step, distance } from 'three/tsl';
 import { LAMP_GLOW, CAR_GLOSS, DUSTCART_COAT, CAR_MIRROR, CAR_REFLECT as R, CAR_STRIPS as CS, AREA_STEP, DENT_STEP, DENT_SHAPE as DS } from '../car.ts';
+import { sedanInstruments, sedanWeave } from '../sedanFinish.ts';
 import { registrationAtlas } from '../registrationPlates.ts';
 import { STRIPS, STRIPS_ON, onStrips } from '../reflections.ts';
 import { PROBE_AT, PROBE_K, PROBE_MAP, PROBE_MIX, PROBE_NEAR, PROBE_PREV, onProbe } from '../probe.ts';
 import { SKY_REF, STREET_REF, SUN_DIR, SUN_LIGHT } from '../shading.ts';
 import { lampLit, lampLight, uLampOn } from './lamps.ts';
 import { shareInstances } from './trees.ts';
+import { skyAt } from './dome.ts';
 import { type N, addPort, uSnow, uWet, follow, followColor } from './common.ts';
 
 const luma = (c: N) => dot(c, vec3(0.3, 0.59, 0.11));
@@ -40,7 +42,7 @@ const swing = (p: N, close = false): N => {
 // vertex is part of is packed into `painted`, and the car's lamps into `paint.w` (see
 // LAMP in car.ts): -1 here for a smashed one, 0 off, or how bright.
 const painted: N = attribute('painted', 'float'), paint: N = attribute('paint', 'vec4');
-const own: N = mod(painted, 16), lampAt: N = floor(own.mul(0.5).add(0.01));
+const own: N = mod(floor(painted), 16), lampAt: N = floor(own.mul(0.5).add(0.01));
 // (Which lamp, if any, in a varying of its own: `painted` also holds where the vertex is.)
 const lamp: N = lampAt.toVarying('vLamp');
 const tail: N = mod(floor(paint.w.div(32)), 4);
@@ -146,23 +148,34 @@ const carCoat = (c: N): N => {
   return mix(tint, mirrored, uMirror).add(lamp.mul(coat.mul(CAR_GLOSS.lamps).add(rim.mul(CAR_GLOSS.rimLamps))));
 };
 
-addPort(/^cars(?:-service|-dustcart|-close)?$/, (node, legacy) => {
+addPort(/^cars(?:-service|-dustcart|-close|-coachglass|-coachwork)?$/, (node, legacy) => {
   // On the detailed ambulance, dark rubber and interior trim have a satin
   // finish. Vinyl is printed onto white vertices and retains the paint gloss.
   const key = legacy.customProgramCacheKey();
   const serviceBody = key === 'cars-service';
-  const closeCar = key === 'cars-close';
+  const hero = key === 'cars-coachwork';
+  const closeCar = key === 'cars-close' || hero;
   const colour = vertexColor().rgb, brightness = luma(colour);
   const glazed = brightness.lessThan(.04).and(colour.b.greaterThan(colour.r.mul(1.25)));
   const trimFinish = select(own.equal(0).and(glazed.not()), mix(.08,1,smoothstep(.035,.17,brightness)), float(1));
   const wheelFinish = closeCar ? select(hinge.z.lessThan(0),
     mix(.045,.45,smoothstep(.045,.24,brightness)), select(hinge.z.greaterThan(11.5),float(.065),trimFinish)).toVarying('vWheelCoat') : undefined;
-  if (wheelFinish) node.specularNode = materialSpecular.mul(wheelFinish);
+  const code = hero ? select(hinge.z.lessThan(0), select(brightness.greaterThan(.068), 2, 4), painted.fract().mul(16).round()).toVarying('vFinish') : undefined;
+  if (code) {
+    const enamel = code.equal(1), metal = code.equal(2), fabric = code.equal(3), optic = code.equal(5);
+    node.roughnessNode = select(enamel, mix(.34, .23, uWet), select(metal, .28, select(fabric, .91, select(optic, .20, .68))));
+    node.metalnessNode = select(enamel, .28, select(metal, .72, .015));
+    node.clearcoatNode = select(enamel, .86, select(optic, .38, 0));
+    node.clearcoatRoughnessNode = mix(.18, .12, uWet);
+  } else if (wheelFinish) node.specularNode = materialSpecular.mul(wheelFinish);
   const rollWheel = (p: N): N => {
     const roll: N = attribute('roll', 'vec4');
-    const x = roll.x.mul(p.x).sub(roll.y.mul(p.y)), y = roll.y.mul(p.x).add(roll.x.mul(p.y));
-    const c: N = max(float(1).sub(roll.z.mul(roll.z)), 0).sqrt();
-    return select(hinge.x.greaterThan(0), vec3(c.mul(x).add(roll.z.mul(p.z)), y, c.mul(p.z).sub(roll.z.mul(x))), vec3(x,y,p.z));
+    const phase = hero ? normalize(roll.xy) : roll.xy;
+    const fixed = hinge.z.lessThan(-1);
+    const x = select(fixed, p.x, phase.x.mul(p.x).sub(phase.y.mul(p.y))), y = select(fixed, p.y, phase.y.mul(p.x).add(phase.x.mul(p.y)));
+    const steer: N = hero ? roll.z.sub(floor(roll.z.add(1).mul(.5)).mul(2)) : roll.z;
+    const c: N = max(float(1).sub(steer.mul(steer)), 0).sqrt();
+    return select(hinge.x.greaterThan(0), vec3(c.mul(x).add(steer.mul(p.z)), y, c.mul(p.z).sub(steer.mul(x))), vec3(x,y,p.z));
   };
   const proto = Object.getPrototypeOf(node);
   // (Before the instance's own transform goes on, in setupPosition.)
@@ -170,8 +183,15 @@ addPort(/^cars(?:-service|-dustcart|-close)?$/, (node, legacy) => {
     shareInstances(builder);
     let pos: N = positionLocal, nrm: N = normalLocal;
     if (closeCar) {
-      const axle = vec3(hinge.x, hinge.z.negate(), hinge.y), wheel = hinge.z.lessThan(0);
-      pos = select(wheel, axle.add(rollWheel(pos.sub(axle))), pos);
+      const axle = vec3(hinge.x, hinge.z.negate().sub(select(hinge.z.lessThan(-1), 2, 0)), hinge.y), wheel = hinge.z.lessThan(0);
+      let spun: N = axle.add(rollWheel(pos.sub(axle)));
+      if (hero) {
+        const twist = floor(attribute('roll','vec4').z.add(1).mul(.5)).mul(.0025).mul(hinge.x.mul(hinge.y).negate().sign());
+        const contact = max(0, spun.y.sub(float(1).sub(smoothstep(0,.045,spun.y)).mul(.010)));
+        const wheelHeight: N = select(hinge.z.greaterThan(-1), contact, spun.y).add(twist);
+        spun = vec3(spun.x, wheelHeight, spun.z);
+      }
+      pos = select(wheel, spun, pos);
       nrm = select(wheel, rollWheel(nrm), nrm);
     }
     const d = dentAt(), bent = dented(pos, d), normal = dentNormal(nrm, positionGeometry, d);
@@ -190,6 +210,21 @@ addPort(/^cars(?:-service|-dustcart|-close)?$/, (node, legacy) => {
       const atlasUV = select(hinge.z.greaterThan(4.5).and(hinge.z.lessThan(11.5)),vec2(digit.add(hinge.x.mul(.96)).add(.02).div(16),hinge.y.mul(.96).add(.02)),vec2(-1)).toVarying('vPlateUV');
       If(atlasUV.x.greaterThanEqual(0), () => { diffuseColor.rgb.mulAssign(texture(registrationAtlas(),atlasUV).rgb); });
     }
+    if (hero) {
+      const dial = hinge.toVarying('vDial'), engine = length(attribute('roll', 'vec4').xy).toVarying('vEngine');
+      If(dial.z.greaterThan(13.5).and(dial.z.lessThan(15.5)), () => {
+        const art = texture(sedanInstruments(), dial.xy).rgb.toVar();
+        If(dial.z.lessThan(14.5), () => {
+          const p = vec2(dial.x.mul(512).sub(256), float(1).sub(dial.y).mul(256).sub(78));
+          const angle = clamp(engine.sub(2), 0, 1).mul(268).add(136).mul(Math.PI / 180), d = vec2(cos(angle), sin(angle));
+          const needle = float(1).sub(smoothstep(.7, 2, length(p.sub(d.mul(clamp(dot(p, d), 3, 51))))));
+          art.assign(mix(art, vec3(.71, .16, .063), needle));
+        }).Else(() => { art.assign(mix(vec3(.014, .021, .025), art, step(1.5, engine))); });
+        diffuseColor.rgb.mulAssign(art);
+      }).ElseIf(dial.z.greaterThan(15.5).and(dial.z.lessThan(16.5)), () => {
+        diffuseColor.rgb.mulAssign(texture(sedanWeave(), dial.xy).r.mul(1.32).add(.35));
+      });
+    }
     const crazed = mix(mix(diffuseColor.rgb, vec3(0.6), DS.milk), vec3(...DS.crack), cracks(crackAt.xy));
     diffuseColor.rgb.assign(mix(diffuseColor.rgb, crazed, crackAt.z));
     diffuseColor.rgb.assign(select(shine.lessThan(-0.5), vec3(0.05, 0.05, 0.055), diffuseColor.rgb));
@@ -197,9 +232,30 @@ addPort(/^cars(?:-service|-dustcart|-close)?$/, (node, legacy) => {
     const cover = smoothstep(0.75, 0.95, up).mul(smoothstep(0.1, 0.6, uSnow)).mul(0.6);
     diffuseColor.assign(vec4(mix(diffuseColor.rgb, vec3(0.8, 0.82, 0.86), cover), diffuseColor.a));
     diffuseColor.rgb.mulAssign(mix(1, CAR_GLOSS.darker, uWet.mul(carTop())));
+    if (key === 'cars-coachglass') {
+      const grazing = float(1).sub(dot(normalView, positionViewDirection).abs()).pow(3);
+      const tint = painted.fract().mul(16).round().toVarying('vGlassFinish');
+      const cover = step(7.5, tint), rear = tint.equal(7);
+      const base = float(.39).add(smoothstep(1.22, 1.41, positionGeometry.y).mul(.15)).add(select(rear, .18, 0));
+      diffuseColor.a.assign(mix(base, .085, cover).add(grazing.mul(mix(.32, .26, cover))));
+    }
   };
   glow(node, () => Fn(() => {
-    const coat = carCoat(diffuseColor.rgb);
+    const coat = carCoat(diffuseColor.rgb).toVar();
+    if (hero || key === 'cars-coachglass') {
+      // Beyond the reflected skyline, the lacquer and glass see the same moving
+      // cloud field as the street. On Ultra the nearby live probe takes priority.
+      const ray = cameraWorldMatrix.mul(vec4(reflect(positionViewDirection.negate(), normalView), 0)).xyz;
+      const skyWeight: N = smoothstep(.26, .67, ray.y).mul(uMirror).mul(float(1).sub(step(.5, uProbeAt.w)));
+      const surface: N = code ? code.equal(1) : float(1).greaterThan(0);
+      If(surface.and(skyWeight.greaterThan(.01)), () => {
+        const rim = float(1).sub(dot(normalView, positionViewDirection).abs()).clamp(0, 1).pow(4);
+        const reflectance = hero ? rim.mul(.60).add(.075) : rim.mul(.52).add(.36);
+        const atmosphere = skyAt(ray, positionWorld.xz).rgb.min(vec3(4));
+        coat.assign(mix(coat, atmosphere.mul(reflectance), skyWeight));
+      });
+    }
+    if (wheelFinish && code) return coat.mul(select(code.equal(3), .018, select(code.equal(4), .065, select(code.equal(6), .085, wheelFinish))));
     if (wheelFinish) return coat.mul(wheelFinish);
     if (key === 'cars-dustcart') {
       const cabGlass = luma(tinted).lessThan(0.04).and(tinted.b.greaterThan(tinted.r.mul(1.25)));

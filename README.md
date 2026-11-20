@@ -85,7 +85,7 @@ The game credits the map's sources in the corner of the screen (**Credits** open
 list, with the licences), and the build writes the full licence texts of the bundled
 libraries to `dist/licenses.txt`.
 
-- Street asphalt by Sergej Majboroda and Jenelle van Heerden, CC0 via [Poly Haven](https://polyhaven.com/a/asphalt_04).
+- Street asphalt by Sergej Majboroda and Jenelle van Heerden, CC0 via [Poly Haven](https://polyhaven.com/a/asphalt_04). Seat fabric by Rob Tuytel, CC0 via [Poly Haven](https://polyhaven.com/a/fabric_pattern_05).
 - Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), ODbL.
 - The countryside past the map's edge: OpenStreetMap data as vector tiles in
   [Protomaps](https://protomaps.com/)' basemap layout (ODbL), and ground heights from

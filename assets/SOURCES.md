@@ -8,6 +8,10 @@ and the map data its credits in the README.
 - `cars/build.py`, `trams/build.py`, `figures/build.py` build the cars, trams, people
   and bikes (`public/cars.glb`, `public/trams.glb`, `public/figures.glb`) in Blender
   from code. No outside models are used.
+- The street sedan (`cars/sedan.py`, `sedan_surfaces.py`, `sedan_fascia.py`, `sedan_cabin.py`)
+  is original unbadged coachwork. Rebuild with Blender 5.2 using
+  `blender -b --factory-startup --python-exit-code 1 -P assets/cars/sedan.py`.
+  Exterior proportion and lighting reference: [Škoda's Superb design study](https://www.skoda-storyboard.com/en/press-releases/skoda-auto-releases-exterior-sketches-of-the-fourth-generation-superb/).
 - `pipeline/skyline.py` draws the skylines on the loading screen
   (`public/skylines/`) from IPR Praha's 3D buildings and terrain (CC BY).
 - The pictures and videos on the homepage (`site/media/`) are filmed in the game
@@ -25,6 +29,9 @@ and the map data its credits in the README.
   `public/car-drivers.glb` are the male-adult-13, female-adult-05 and uniformed
   male-adult-10 avatars baked in the game’s seated entry pose. Their vertex colours
   sample the corresponding diffuse textures (`cars/pose_driver.mjs`, `cars/driver_mesh.py`).
+
+- **Seat weave** (`public/sedan-upholstery.webp`): [Fabric Pattern 05 by Rob Tuytel, Poly Haven](https://polyhaven.com/a/fabric_pattern_05), CC0.
+  Run `assets/cars/seat_weave.py` on the colour-01 1K JPEG to produce the neutral fabric tile.
 
 ## Made with image generation
 

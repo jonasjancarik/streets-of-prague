@@ -136,6 +136,8 @@ const checks = `(async () => {
     assert(reserved.uuid === reservedUuid && reserved.instanceMatrix === reservedBuffer && reserved.count === 0 && !reserved.visible, 'reserved page retained and reset');
     const saloon = new Car('sedan', () => .3, 3, 0), distant = new Car('sedan', () => .3, 60, 0);
     const eye = { x: 0, z: 0 };
+    const heroKey = 'sedan|coachwork|street-wheels';
+    assert(!page(heroKey), 'overhead preparation creates no hero sedan page');
     const wheels = page('sedan|street-wheels');
     pool.render([saloon, distant], null, 0, undefined, true, eye);
     assert(wheels.count === 1 && page('sedan').count === 1, 'only nearby street cars use the fitted wheels');
@@ -163,6 +165,38 @@ const checks = `(async () => {
     saloon.mode = 'loose';
     pool.render([saloon,distant],null,0,undefined,true,eye);
     assert(!driversShown(), 'driver leaves with the occupant');
+    const heroDeadline = performance.now() + 15000;
+    while (!page(heroKey)?.count && performance.now() < heroDeadline) {
+      await new Promise(requestAnimationFrame);
+      pool.render([saloon,distant],null,0,undefined,true,eye);
+    }
+    const hero = page(heroKey);
+    assert(hero?.count === 1 && wheels.count === 0 && page('sedan').count === 1, 'loaded coachwork replaces only the close sedan');
+    assert(hero.geometry.groups.length === 2 && hero.material[0].isMeshPhysicalMaterial &&
+      hero.material[1].transparent && !hero.material[1].depthWrite, 'baked coachwork and clear panes use two draws');
+    const heroRoll = hero.geometry.getAttribute('roll'), hinges = hero.geometry.getAttribute('hinge');
+    assert(heroRoll.getW(0) === registration, 'model swap preserves registration');
+    assert(saloon.streetHeadlights?.forward > 2 && saloon.streetHeadlights?.height > .6 &&
+      !distant.streetHeadlights,'near beams are fitted to the exported projector');
+    const tags = new Set(Array.from({length:hinges.count},(_,i)=>hinges.getZ(i)));
+    assert([1,2,3,4,14,15,16].every(tag=>tags.has(tag)) && [...tags].some(tag=>tag < -2), 'four hinged doors, instruments, cloth, and steering calipers');
+    saloon.mode='traffic';saloon.vx=12;
+    pool.render([saloon],null,0,undefined,true,eye);
+    assert(Math.abs(Math.hypot(heroRoll.getX(0),heroRoll.getY(0)) - (2+12*3.6/240))<.001, 'speedometer receives road speed');
+    saloon.mode='loose';pool.render([saloon],null,0,undefined,true,eye);
+    let samples = 0;
+    const kerb = (x,y) => { samples++; return x>saloon.x && y>saloon.y ? .10 : 0; };
+    pool.render([saloon],kerb,0,1,true,eye);
+    const stance = new THREE.Matrix4();
+    pool.matrixOf(saloon,stance);
+    const twist = Math.floor((heroRoll.getZ(0)+1)/2)*.0025;
+    for (const x of [1.48,-1.50]) for(const z of [-.765,.765]){
+      const tyre = new THREE.Vector3(x,Math.sign(-x*z)*twist,z).applyMatrix4(stance);
+      const pavement = x>0 && z<0 ? .10 : 0;
+      assert(Math.abs(tyre.y-pavement)<.002,'individual tyre stays on the kerb or carriageway');
+    }
+    pool.render([saloon],kerb,0,1,true,eye);
+    assert(samples===4,'a parked hero reuses its four contact samples');
     const placed = new THREE.Matrix4();
     assert(pool.matrixOf(saloon, placed) && Math.abs(placed.elements[12]-saloon.x) < .001, 'close body matrix available');
     pool.render([saloon,distant]);

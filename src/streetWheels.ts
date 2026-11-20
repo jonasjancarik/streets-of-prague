@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
-type Rim = 'steel' | 'alloy' | 'split';
+type Rim = 'steel' | 'alloy' | 'split' | 'touring';
 const templates = new Map<Rim, THREE.BufferGeometry>();
 
 function wheel(rim: Rim) {
@@ -16,7 +16,7 @@ function wheel(rim: Rim) {
     g.setAttribute('color', new THREE.BufferAttribute(rgb, 3));
     parts.push(g);
   };
-  const turn = (colour: string, profile: [number, number][], n = 32) =>
+  const turn = (colour: string, profile: [number, number][], n = rim === 'touring' ? 64 : 32) =>
     part(new THREE.LatheGeometry(profile.map(([r, z]) => new THREE.Vector2(r, z)), n).rotateX(Math.PI / 2), colour);
   // Inner and outer sidewalls roll into a gently crowned tread. Two
   // circumferential grooves remain visible when the front wheels turn out.
@@ -30,7 +30,45 @@ function wheel(rim: Rim) {
   // Rotor behind the open spokes, with a darker unswept hat in the middle.
   disc('#505355', 0.527, 0.115);
   disc('#383c3d', 0.32, 0.12);
-  if (rim === 'steel') {
+  if (rim === 'touring') {
+    // A machined face on a darker casting. Each of the five arms forks near
+    // the bolt circle. The flanks continue down into the barrel.
+    turn('#b5babc', [[.67, .437], [.674, .467], [.656, .478], [.635, .468], [.62, .415]]);
+    turn('#565b5e', [[.57, .11], [.57, .15], [.33, .15], [.30, .12]], 48);
+    for (const r of [.35, .402, .46, .53]) turn('#868888', [[r, .149], [r + .006, .152], [r + .012, .149]], 48);
+    for (let i = 0; i < 5; i++) for (const side of [-1, 1]) {
+      const angle = i * Math.PI * 2 / 5, pos: number[] = [], indices: number[] = [], rgb: number[] = [];
+      // Radius, sweep, half width, and outward offset of the cut face.
+      const stations = [[.19, .013, .064, .336], [.32, .021, .043, .377], [.41, .071, .028, .402], [.54, .137, .024, .434], [.655, .188, .043, .446]];
+      for (const [r, bend, w, z] of stations) {
+        for (const [across, depth, tone] of [[-1, -.084, .27], [-.76, -.010, .54], [-.52, .002, .82], [.63, .002, .84], [1, -.022, .45], [.96, -.086, .24]]) {
+          const a = angle + .11 * r, off = side * bend + across * w;
+          pos.push(Math.cos(a) * r - Math.sin(a) * off, Math.sin(a) * r + Math.cos(a) * off, z + depth);
+          rgb.push(tone * .85, tone * .89, tone * .91);
+        }
+      }
+      for (let j = 0; j < stations.length - 1; j++) for (let k = 0; k < 5; k++) {
+        const v = j * 6 + k; indices.push(v, v + 6, v + 7, v, v + 7, v + 1);
+      }
+      const g = new THREE.BufferGeometry(); g.setIndex(indices);
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('color', new THREE.Float32BufferAttribute(rgb, 3)); g.computeVertexNormals(); parts.push(g);
+    }
+    // Tread shoulders, mould lines and valve. Actual gaps remain between spokes.
+    turn('#333434', [[.748, .480], [.756, .486], [.766, .484]]);
+    turn('#303131', [[.893, .445], [.903, .449], [.912, .437]]);
+    const marks: number[] = [], triangles: number[] = [];
+    for (let i = 0; i < 56; i++) for (const side of [-1, 1]) {
+      const a = i * Math.PI * 2 / 56, first = marks.length / 3;
+      for (const [da, r, z] of [[0, .992, .272], [.010, .992, .272], [.041, .951, .403], [.030, .951, .403]]) {
+        marks.push(Math.cos(a + side * da) * r, Math.sin(a + side * da) * r, side * z);
+      }
+      triangles.push(first, first + 1, first + 2, first, first + 2, first + 3);
+    }
+    const grooves = new THREE.BufferGeometry(); grooves.setIndex(triangles);
+    grooves.setAttribute('position', new THREE.Float32BufferAttribute(marks, 3)); grooves.computeVertexNormals(); part(grooves, '#191b1c');
+    part(new THREE.CylinderGeometry(.015, .026, .066, 8).rotateX(Math.PI / 2).translate(.47, -.38, .423), '#292d30');
+  } else if (rim === 'steel') {
     // Form each sector of the pressed dish round an oval ventilation hole.
     const count = 10, delta = Math.PI / count;
     for (let i = 0; i < count; i++) {
@@ -112,7 +150,7 @@ function wheelWell(x: number, radius: number, z: number, width: number) {
 }
 
 export function buildStreetWheels(type: string, mounts: readonly number[]) {
-  const rim: Rim = type === 'van' || type === 'hatch' ? 'steel' : type === 'suv' || type === 'estate' ? 'split' : 'alloy';
+  const rim: Rim = type === 'sport-sedan' ? 'touring' : type === 'van' || type === 'hatch' ? 'steel' : type === 'suv' || type === 'estate' ? 'split' : 'alloy';
   let original = templates.get(rim);
   if (!original) { original = wheel(rim); templates.set(rim, original); }
   const wheels: THREE.BufferGeometry[] = [];
@@ -128,6 +166,17 @@ export function buildStreetWheels(type: string, mounts: readonly number[]) {
     g.setAttribute('hinge', new THREE.BufferAttribute(hinge, 3));
     g.setAttribute('painted', new THREE.BufferAttribute(new Float32Array(n), 1));
     wheels.push(g, wheelWell(x, radius, z, width));
+    if (rim === 'touring') {
+      // The caliper follows steering but stays put as the disc turns.
+      const caliper = new THREE.CapsuleGeometry(1, 2, 3, 8).scale(radius * .082, radius * .105, width * .075);
+      caliper.deleteAttribute('uv');
+      caliper.rotateZ(.26).translate(x - radius * .43, radius * 1.10, z + Math.sign(z) * width * .22);
+      const n = caliper.attributes.position.count, pivots = new Float32Array(n * 3), rgb = new Float32Array(n * 3);
+      const coat = new THREE.Color('#62625c');
+      for (let k = 0; k < n; k++) { pivots.set([x, z, -radius - 2], k * 3); coat.toArray(rgb, k * 3); }
+      caliper.setAttribute('color', new THREE.BufferAttribute(rgb, 3)); caliper.setAttribute('hinge', new THREE.BufferAttribute(pivots, 3));
+      caliper.setAttribute('painted', new THREE.BufferAttribute(new Float32Array(n), 1)); wheels.push(caliper);
+    }
   }
   return wheels;
 }
