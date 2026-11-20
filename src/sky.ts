@@ -74,10 +74,10 @@ export const DOME = {
 // The sky's colours as seen (display colours), clear and clouded over, by day and at night;
 // `low`: what a low sun turns the clear ones towards.
 const DOME_LOOK = {
-  zenith: { day: '#3f76c6', dayGrey: '#8f979f', night: '#070b17', nightGrey: '#232021', low: '#4c6aa6' },
-  horizon: { day: '#b9d1e8', dayGrey: '#b4b9bf', night: '#1b2132', nightGrey: '#2c2a2b', low: '#ecc19a' },
-  lit: { day: '#fbfaf6', dayGrey: '#c9ced3', night: '#1c2029', nightGrey: '#3b3533', low: '#f6cfa6' },
-  base: { day: '#b7c0cb', dayGrey: '#8d9399', night: '#11141b', nightGrey: '#2a2625', low: '#8f8798' },
+  zenith: { day: '#5783b9', dayGrey: '#8f979f', night: '#070b17', nightGrey: '#232021', low: '#4c6aa6' },
+  horizon: { day: '#c1d2df', dayGrey: '#b4b9bf', night: '#1b2132', nightGrey: '#2c2a2b', low: '#ecc19a' },
+  lit: { day: '#e9edef', dayGrey: '#c9ced3', night: '#1c2029', nightGrey: '#3b3533', low: '#efcaab' },
+  base: { day: '#95a3b5', dayGrey: '#8d9399', night: '#11141b', nightGrey: '#2a2625', low: '#8f8798' },
 };
 const MOON = new THREE.Color('#e3e9f4');
 // The sky's node, once the WebGPU side has made it (webgpu.ts): main.ts sets it as the scene's

@@ -611,9 +611,11 @@ diagrams from either approach along the pavement.
   From the street there is a sky (`src/webgpu/dome.ts`, the scene's background while the
   horizon can be in view; the free camera gets it tilted past 25°): blue overhead paling to
   the horizon, the sun where it really stands or the moon, stars on a clear night, and
-  clouds. The fair-weather clouds are the ones whose shadows drift over the ground: each
-  pixel's ray is followed to a layer 1100 m up and the shadows' pattern read where that
-  cloud's shadow falls. `Sky.update` works out the colours (`DOME` in `src/sky.ts`), and the
+  clouds. The fair-weather banks form over the same moving pattern that shades the
+  ground. Seen from a bridge they have broad bases and sunlit sides. The sky and its
+  water reflection read four neighbouring views from `cloud-bank.webp`, loaded the
+  first time the camera sees the sky. `assets/sky/clouds.py` bakes these views through
+  a 230 m-deep volume. `Sky.update` works out the colours (`DOME` in `src/sky.ts`), and the
   haze takes the horizon's colour, so the far end of a street fades into the sky. The
   broadleaf trees within about 150 m are drawn as a second model made to be stood under
   (`src/map/streetTree.ts`, `src/webgpu/streetTrees.ts`): a trunk with bark, boughs that

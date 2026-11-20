@@ -9,6 +9,7 @@ import { renderMirror } from './mirror.ts';
 import { renderProbe } from './probe.ts';
 import { POST, drawPost } from './post.ts';
 import { setupPhoto } from './photo.ts';
+import { wantCloudBank } from './cloudBank.ts';
 import { DOME_NODE } from './sky.ts';
 import { Streaks } from './streaks.ts';
 import proj4 from 'proj4';
@@ -3073,7 +3074,9 @@ async function main() {
       (scene.background as THREE.Color).copy(sky.haze);
     } else (scene.background as THREE.Color).set(BACKDROP);
     // (The sky itself, where the renderer can draw it: webgpu/dome.ts. The free camera sees it once it is tilted towards the horizon.)
-    const horizon = eyes || (free && free.tilt > 25) ? DOME_NODE.value : null;
+    const seeSky = !!eyes || !!(free && free.tilt > 25);
+    const horizon = seeSky ? DOME_NODE.value : null;
+    if (horizon) wantCloudBank();
     if ((scene as { backgroundNode?: unknown }).backgroundNode !== horizon) (scene as { backgroundNode?: unknown }).backgroundNode = horizon;
     const nearPlane = eyes ? 0.2 : 1;
     // A wider view at street level (38° from above, which would feel like a telephoto lens).

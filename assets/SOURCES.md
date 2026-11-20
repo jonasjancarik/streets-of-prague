@@ -38,6 +38,9 @@ up and packed by the scripts beside them. The prompts are kept with the sources.
 - **Character portraits** (`portraits/sheetN.webp` → `public/portraits/`): generated
   with ChatGPT; faces that came out too alike were redone one by one with Codex
   (`portraits/faces/`). `portraits/cut.py` cuts them out.
+- **Fair-weather clouds** (`sky/clouds.py` → `public/cloud-bank.webp`): an original
+  procedural volume built from the game's cloud-shadow field. The atlas records the
+  light passing through it at twelve compass headings and seven elevations.
 - **Street furniture surfaces** (`furniture/build.py` → `public/furniture-surfaces.webp`):
   authored timber grain, cast aggregate and public telephone lettering, with the leaf
   spray from `trees/leaf.webp` reused on small courtyard shrubs.

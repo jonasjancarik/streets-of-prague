@@ -10,13 +10,17 @@
 // The colours come from Sky (../sky.ts, DOME), worked out for the time and the weather.
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Fn, float, vec2, vec3, vec4, texture, positionWorldDirection, cameraPosition, normalize, dot, mix, max, pow, smoothstep, floor, fract, length, step } from 'three/tsl';
-import { CLOUD, CLOUD_MAP, CLOUD_SPAN, CLOUD_EDGE } from '../clouds.ts';
+import { Fn, If, float, vec2, vec3, vec4, texture, positionWorldDirection, cameraPosition, normalize, dot, mix, max, min, clamp, atan, mod, pow, smoothstep, floor, fract, length, step } from 'three/tsl';
+import { CLOUD, CLOUD_MAP, CLOUD_SPAN } from '../clouds.ts';
+import { BANK, CLOUD_BANK, BANK_READY, onCloudBank } from '../cloudBank.ts';
 import { DOME } from '../sky.ts';
-import { type N, followColor, followVec, fbm, fbm2, hash12 } from './common.ts';
+import { type N, follow, followColor, followVec, fbm2, hash12 } from './common.ts';
 
 const LAYER = 1100; // m: how high the clouds' undersides are
 const map = texture(CLOUD_MAP.value);
+const bank = texture(CLOUD_BANK.value);
+onCloudBank(t => { bank.value = t; });
+const bankReady: N = follow(BANK_READY);
 const uCloud: N = followVec(CLOUD as any);
 const uZenith: N = followColor(DOME.zenith), uHorizon: N = followColor(DOME.horizon);
 const uLit: N = followColor(DOME.cloudLit), uBase: N = followColor(DOME.cloudBase);
@@ -32,33 +36,49 @@ export const skyAt = (direction: N, over: N): N => Fn(() => {
   // The glow round the sun: wide and faint, and brighter close to it; warmer and stronger low down.
   sky.addAssign(uGlow.mul(pow(mu, 6).mul(0.5).add(pow(mu, 48).mul(1.2))).mul(float(1).sub(up.mul(0.5))));
 
-  // Where the ray meets the cloud layer, and the shadows' pattern for the cloud there.
-  const reach: N = float(LAYER).div(max(d.y, 0.02));
-  const at: N = over.add(d.xz.mul(reach)).toVar();
-  const shadowAt: N = at.sub(uShade.xz.div(max(uShade.y, 0.2)).mul(LAYER));
-  const rank: N = map.sample(shadowAt.div(CLOUD_SPAN).add(uCloud.xy)).level(float(0)).r;
-  const drift: N = uCloud.xy.mul(CLOUD_SPAN);
-  const rough: N = fbm(at.add(drift).div(380)).sub(0.47).toVar();
-  // (A finer ragged edge on top of the broad shape, as a cumulus has.)
-  const fine: N = fbm2(at.add(drift).div(75)).sub(0.5);
-  const puff: N = rank.add(rough.mul(0.34)).add(fine.mul(0.1)).toVar();
-  // (Only the thicker part of what casts a shadow shows as cloud: the thin rim of each is haze.)
-  const fair: N = smoothstep(CLOUD_EDGE[0] + 0.06, CLOUD_EDGE[1] + 0.12, puff).mul(uAir.x);
-  // How much cloud lies between here and the sun (the same pattern a little way towards
-  // it): the side of a cloud turned from the sun is in its own shade.
-  const sunward: N = map.sample(shadowAt.add(uShade.xz.mul(170)).div(CLOUD_SPAN).add(uCloud.xy)).level(float(0)).r.add(rough.mul(0.34));
-  const ownShade: N = smoothstep(CLOUD_EDGE[0] + 0.02, CLOUD_EDGE[1] + 0.25, sunward).mul(uAir.x);
-  // The clouded sky: a broad sheet that closes as the weather does.
-  const sheet: N = fbm2(at.add(drift.mul(0.6)).div(1900)).mul(0.7).add(rough.mul(0.25)).add(0.15).toVar();
-  const from: N = mix(1.05, -0.12, uAir.y);
-  const grey: N = smoothstep(from, from.add(0.4), sheet);
-  const cover: N = max(fair, grey).toVar();
-  // From below a thick cloud is grey in the middle and bright where it thins out at its edge.
-  const thick: N = max(max(smoothstep(CLOUD_EDGE[1] + 0.08, CLOUD_EDGE[1] + 0.45, puff).mul(uAir.x).mul(0.5), ownShade.mul(0.85)), smoothstep(from.add(0.25), from.add(0.8), sheet)).mul(mix(0.75, 1, uAir.y));
-  const cloud: N = mix(uLit, uBase, thick).add(uGlow.mul(pow(mu, 10)).mul(float(1).sub(thick)).mul(0.6));
-  // Far clouds sink into the haze.
-  const near: N = smoothstep(0.03, 0.36, d.y);
-  sky.assign(mix(sky, mix(uHorizon, cloud, near.mul(0.75).add(0.25)), cover.mul(near)));
+  // Each texel integrates a ray from the flatter condensation base to the
+  // billowing top. Interpolate four nearby views; a low ray gets the whole side
+  // of the cloud without drawing it as a stack of horizontal sheets.
+  const elevation: N = max(d.y, 0.04);
+  const along: N = d.xz.div(elevation).div(CLOUD_SPAN).toVar();
+  const origin: N = over.sub(uShade.xz.mul(BANK.shadowHeight).div(max(uShade.y, 0.20))).div(CLOUD_SPAN).add(uCloud.xy).toVar();
+  const coverFair: N = float(0).toVar(), lit: N = float(.48).toVar();
+  // The cloudy-weather deck is continuous above the fair-weather banks.
+  const deckAt: N = over.add(d.xz.mul(float(1800).div(elevation))).add(uCloud.xy.mul(CLOUD_SPAN * .6));
+  const deckNoise: N = fbm2(deckAt.div(1900)).mul(.67).add(fbm2(deckAt.div(580)).mul(.23)).add(.08).toVar();
+  const deckFrom: N = mix(1.06, -.19, uAir.y);
+  const deck: N = smoothstep(deckFrom, deckFrom.add(.39), deckNoise).toVar();
+  const deckShade: N = smoothstep(deckFrom.add(.13), deckFrom.add(.77), deckNoise);
+  const deckColor: N = mix(uLit, uBase, deckShade.mul(.72).add(.13));
+  const distanceHaze: N = smoothstep(.025, .32, d.y);
+  sky.assign(mix(sky, mix(uHorizon, deckColor, distanceHaze.mul(.60).add(.40)), deck.mul(distanceHaze)));
+  If(uAir.x.greaterThan(.005).and(d.y.greaterThan(.02)), () => {
+    If(bankReady.greaterThan(.5), () => {
+      const tile = BANK.size + 2 * BANK.border;
+      const point = fract(origin.add(along.mul(BANK.shadowHeight))).mul(BANK.size / tile).add(BANK.border / tile).toVar();
+      const az = fract(atan(d.z, d.x).div(2 * Math.PI)).mul(BANK.azimuths).toVar();
+      const el = clamp(d.y.sub(.10).div(.15), 0, BANK.elevations - 1).toVar();
+      const lo = floor(el), hi = min(BANK.elevations - 1, lo.add(1)), left = floor(az), right = mod(left.add(1), BANK.azimuths);
+      const read = (x: N, y: N) => bank.sample(point.add(vec2(x, y)).div(vec2(BANK.azimuths, BANK.elevations))).level(float(0));
+      const sample = mix(mix(read(left, lo), read(right, lo), fract(az)), mix(read(left, hi), read(right, hi), fract(az)), fract(el)).toVar();
+      // Wisps finer than the baked grid. Fade them at the horizon, where several
+      // metres project to less than a pixel; the main contour comes from the volume.
+      const atCloud = origin.add(along.mul(BANK.shadowHeight)).toVar();
+      const details = map.sample(atCloud.mul(4.7).add(vec2(.17, .29))).level(float(0)).r.sub(.5)
+        .add(map.sample(atCloud.mul(13.2)).level(float(0)).r.sub(.5).mul(.32)).mul(distanceHaze);
+      coverFair.assign(clamp(sample.r.add(details.mul(sample.r).mul(float(1).sub(sample.r)).mul(1.5)), 0, 1));
+      const facing = dot(sample.ba.sub(.5).div(.74), uShade.xz);
+      lit.assign(clamp(sample.g.add(facing).div(max(.012, sample.r)).add(details.mul(.09)), 0, 1));
+    }).Else(() => {
+      const rank: N = map.sample(origin.add(along.mul(LAYER))).level(float(0)).r;
+      const density: N = smoothstep(.62, .84, rank);
+      coverFair.assign(density); lit.assign(.45);
+    });
+  });
+  const fair: N = coverFair.mul(uAir.x).toVar();
+  const cloud: N = mix(uBase, uLit, lit.mul(.86).add(.07)).add(uGlow.mul(pow(mu, 12)).mul(.21));
+  sky.assign(mix(sky, mix(uHorizon, cloud, distanceHaze.mul(.70).add(.30)), fair.mul(distanceHaze)));
+  const cover: N = max(fair, deck);
 
   // The sun's or the moon's disc, where no cloud is in front.
   const edge: N = uSun.w;
