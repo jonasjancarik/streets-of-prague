@@ -45,7 +45,7 @@ import { byLevel, bridgeApproaches } from './roadLevels.ts';
 import type { RoadHint } from './roadLevels.ts';
 import { fenceMeshes } from './map/fences.ts';
 import { shedMesh } from './map/sheds.ts';
-import { furnitureMeshes, disposeFurniture } from './furniture.ts';
+import { furnitureMeshes, furnitureView, disposeFurniture } from './furniture.ts';
 import { placeBridge, clipDecks, bridgeMesh, inPedestal, NO_BRIDGE, type Bridge } from './statues.ts';
 import { chimneySmoke, dropChimneySmoke } from './chimneySmoke.ts';
 import { furnitureSurvey } from './furnitureSurvey.ts';
@@ -494,6 +494,13 @@ export class TileWorld {
   index: MapIndex;
   scene: THREE.Scene;
   trees: TreePool;
+  private streetFurniture = false;
+  furnitureCamera(street: boolean) {
+    if (this.streetFurniture === street) return;
+    this.streetFurniture = street;
+    for (const tile of this.loaded.values()) furnitureView(tile.furniture, street);
+  }
+
   time: { value: number };
   night: boolean;
   // Where nobody parks besides what the map says: the kerb at a bus stop (src/busstops.ts).
@@ -1538,7 +1545,7 @@ export class TileWorld {
     const walls = wallMesh(land.walls);
     const fenceRows = fenceMeshes(land.fences);
     const sheds = shedMesh(land.sheds);
-    const furniture = furnitureMeshes(land.furniture);
+    const furniture = furnitureMeshes(land.furniture, this.streetFurniture);
     const statues = this.statueFixtures(onLevels, t.box);
     const fenceSections = fences.sections(k, land.fences.sections, fenceRows);
     // The overhead wires over the tram tracks, at the height of the bridge deck a track

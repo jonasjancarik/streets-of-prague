@@ -38,6 +38,9 @@ up and packed by the scripts beside them. The prompts are kept with the sources.
 - **Character portraits** (`portraits/sheetN.webp` → `public/portraits/`): generated
   with ChatGPT; faces that came out too alike were redone one by one with Codex
   (`portraits/faces/`). `portraits/cut.py` cuts them out.
+- **Street furniture surfaces** (`furniture/build.py` → `public/furniture-surfaces.webp`):
+  authored timber grain, cast aggregate and public telephone lettering, with the leaf
+  spray from `trees/leaf.webp` reused on small courtyard shrubs.
 - **Leaves, twigs, needles and bark** (`trees/leaf.webp`, `trees/twig.webp`,
   `trees/needle.webp`, `trees/bark.webp` → `public/street-trees.webp` and
   `public/bark.webp`): a spray of a broadleaf branch in leaf, the same bare in winter, a

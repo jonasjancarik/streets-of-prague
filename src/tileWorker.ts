@@ -15,7 +15,7 @@ import { fenceArrays } from './map/fences.ts';
 import { shedArrays, shedCorners } from './map/sheds.ts';
 import { treeInstances } from './map/vegetation.ts';
 import { furnitureInstances, furnitureMatrices, FURNITURE_SIZE } from './map/furniture.ts';
-import { standingMarks } from './map/utility.ts';
+import { fitPhoneBox, standingMarks } from './map/utility.ts';
 import { onPolygons } from './map/geo.ts';
 import { Geo, Grid, fillPolys, strokeLines } from './map/geo.ts';
 import { styleFor, facadeCoords, paintWalls, mansardCoords, finishWalls, WALL_CODES, BLANK } from './facades.ts';
@@ -390,7 +390,16 @@ function land({ data, seeds, ground, bridges, box, structures }: WorkerJobs['lan
   if (ground && data.furnitureEnabled && data.utility?.length) {
     // (Not one the game's carriageway covers: its streets are not always as wide as the real ones.)
     const onRoad = onPolygons([...(data.roads.road || []), ...(data.roads.sett || []), ...(data.roads.dirt || [])]);
-    for (const p of standingMarks(data.utility, data.walk.map((e) => e.pts))) if (!onRoad(p.x, p.y)) furniture.spots.push({ ...p, z: hAt(p.x, p.y) });
+    // A walkable archway is cut out of the collision raster, but it still belongs
+    // to the building. Keep the whole cabinet out of its frontage and passage.
+    let inBuilding: ReturnType<typeof onPolygons> | undefined;
+    const clear = (x: number, y: number) => grid.at(x, y) === 0 && !onRoad(x, y)
+      && !(inBuilding ??= onPolygons(data.furnitureBuildings.map(b => b.rings)))(x, y);
+    for (const p of standingMarks(data.utility, data.walk.map((e) => e.pts))) {
+      if (onRoad(p.x, p.y)) continue;
+      const spot = p.kind === 4 ? fitPhoneBox(p, clear) : p;
+      if (spot) furniture.spots.push({ ...spot, kind: p.kind, z: hAt(spot.x, spot.y) });
+    }
     furniture.matrices = furnitureMatrices(furniture.spots);
   }
   // The same solid-cell convention as tree trunks, stamped before parking.

@@ -40,9 +40,13 @@ cover of an underground hydrant. `src/ground.ts` draws kinds 0, 1 and 4 as one f
 mesh per tile (`src/map/utility.ts`, `coverGeometry`): one more ground layer in a tile
 that has any, however many covers. Hydrants and phone boxes are two more kinds of
 the instanced furniture (`src/furniture.ts`, placed by `standingMarks` in the land
-worker): one instanced mesh per kind in a tile that has any, solid like the benches.
+worker). Their bodies are solid like the benches. At street level an extra instanced
+mesh carries the clear panes of all the phone boxes in the tile.
 One the game's carriageway covers is left out (the game's streets are not always as
-wide as the real ones), and so is a surveyed signal pole there.
+wide as the real ones), and so is a surveyed signal pole there. A phone box opens
+onto clear pavement. If a façade blocks its footprint, the worker first turns the
+box, then tries up to a metre towards the pavement. It skips a box that still has
+no accessible site.
 
 The layer's `signals` are the traffic lights' poles. `build_signals.py`, run after
 this step, gives each junction light the nearest pole within 9 m of where the game

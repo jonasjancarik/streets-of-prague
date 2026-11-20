@@ -81,3 +81,24 @@ export function standingMarks(marks: UtilityMark[], lines: Point2[][]) {
   }
   return out;
 }
+
+// A survey point can fall just inside the simplified frontage. Try turning a kiosk
+// at that point first; at most a metre of setback may be needed to fit its cabinet.
+export function fitPhoneBox(mark: { x: number; y: number; angle: number }, clear: (x: number, y: number) => boolean) {
+  for (const offset of [0, 0.5, 1]) {
+    for (const turn of [0, Math.PI, Math.PI / 2, -Math.PI / 2]) {
+      const angle = mark.angle + turn, c = Math.cos(angle), s = Math.sin(angle);
+      const x = mark.x + offset * s, y = mark.y - offset * c;
+      // Across and along its sides, including half a step through the open front.
+      let fits = true;
+      for (const across of [-0.46, 0, 0.46]) {
+        for (const front of [-0.46, 0, 0.46, 0.86]) {
+          if (!clear(x + across * c + front * s, y + across * s - front * c)) { fits = false; break; }
+        }
+        if (!fits) break;
+      }
+      if (fits) return { x, y, angle };
+    }
+  }
+  return null;
+}

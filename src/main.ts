@@ -3097,6 +3097,7 @@ async function main() {
     walker.fig.lifeSize = walker.fig.self = !!eyes && !underway;
     if (walker.mesh.visible) walker.drawFigure();
     carOutline.update(fromStreet ? null : inCar, carPool);
+    world.furnitureCamera(fromStreet);
     world.trees.street(fromStreet, free ? free.x : camera.position.x, free ? -free.y : camera.position.z);
     world.trees.canopy(true, fromStreet);
     sun.position.copy(sun.target.position).add(sky.offset);
