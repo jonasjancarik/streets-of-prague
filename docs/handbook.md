@@ -659,8 +659,9 @@ the same signal phase as the overhead light.
     Bluetooth (not the old Daydream app): the touchpad walks or drives (top forward,
     sides sideways or steering), clicking it is E (get in or out), the app button runs,
     and the volume buttons turn you 30° at a time (not working yet, see below);
-  - a gamepad: the left stick walks or steers, and the right stick turns in 30° steps
-    (not yet tried in a headset);
+  - a gamepad (an Xbox controller works): the left stick walks forward, back and
+    sideways relative to where you look (or steers in a car), and the right stick turns
+    you smoothly, up to 90° a second;
   - nothing in hand: look well down for a second to start walking, again to stop.
 
   Chrome needs a secure address for VR: the beta and production sites, or `localhost`

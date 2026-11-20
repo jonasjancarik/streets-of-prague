@@ -6,7 +6,7 @@ import * as THREE from 'three';
 // "rig" each frame, where your eyes are and which way is straight ahead, and the head turns
 // round it. Drawn with the WebGL renderer (renderer.ts): three.js has no WebXR for WebGPU.
 //
-// Moving: a gamepad's left stick (right stick turns in steps), the Daydream controller over
+// Moving: a gamepad's left stick (the right stick turns), the Daydream controller over
 // Web Bluetooth (its touchpad walks, click is E, the app button runs, volume turns), or with
 // neither, look straight down for a moment to start or stop walking the way you look.
 
@@ -22,6 +22,7 @@ type BluetoothDevice = EventTarget & {
 type Bluetoothish = { requestDevice(o: object): Promise<BluetoothDevice> };
 
 const SNAP = THREE.MathUtils.degToRad(30);
+const TURN = THREE.MathUtils.degToRad(90); // a gamepad's right stick, pushed all the way (per second)
 const DAYDREAM_SERVICE = 0xfe55;
 const DAYDREAM_DATA = '00000001-1000-1000-8000-00805f9b34fb';
 
@@ -57,7 +58,6 @@ export class VR {
   private raw: number[] = [];
   private frames = 0;
   private since = 0;
-  private padSnap = false;
   private bar = document.createElement('div');
   private ddClick = false; private ddPlus = false; private ddMinus = false;
 
@@ -124,9 +124,8 @@ export class VR {
       if (!p || p.mapping !== 'standard') continue;
       const dead = (v = 0) => (Math.abs(v) < 0.2 ? 0 : v);
       move = move || -dead(p.axes[1]); side = side || -dead(p.axes[0]);
-      const sx = dead(p.axes[2]);
-      if (sx && !this.padSnap) this.turned -= Math.sign(sx) * SNAP;
-      this.padSnap = Math.abs(p.axes[2] ?? 0) > 0.5;
+      // (Smoothly, faster the further it's pushed: steps felt like the view jumping aside.)
+      this.turned -= dead(p.axes[2]) * TURN * dt;
     }
     // The Daydream controller's touchpad: the top half walks forward, the sides step sideways.
     const d = this.daydream;
