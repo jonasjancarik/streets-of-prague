@@ -662,7 +662,7 @@ record the measurements, merge decisions and pending landmark asset activation.
   The general pavement is asphalt grey; slab squares are lighter, and park paths stay
   warm. Squares use their own OSM `surface` tag where one exists. Otherwise, a clear
   majority of mapped pedestrian and service ways crossing the square can supply its
-  surface; Old Town Square takes the setts mapped on the ways through it. Walking
+  surface; Old Town Square takes the setts mapped on the ways through it. At street level on WebGPU the setts use a 2.5 m scan, including the worn stone faces and recessed joints. Walking
   routes add no ribbon over a square of the same material; cobbled
   footways use setts, and island/link routes leave the pavement clear while keeping
   real path sections through lawns. A named

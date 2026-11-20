@@ -37,7 +37,7 @@ import './webgpu/underground.ts';
 import { CloudSunNode } from './webgpu/clouds.ts';
 import { gradeCurve } from './webgpu/grade.ts';
 import { makePost } from './webgpu/post.ts';
-import { ASPHALT_SCAN, STREET_SURFACE, onAsphaltScan } from './streetSurface.ts';
+import { asphalt, setts } from './streetSurface.ts';
 import { dome } from './webgpu/dome.ts';
 import { DOME_NODE, DOME } from './sky.ts';
 import { OLD_GRADE } from './grade.ts';
@@ -55,9 +55,11 @@ const hedgeColour = vec4(materialColor.rgb.mul(followColor(HEDGE_SEASON)).mul(he
 addPort(/^hedge-season$/, (node) => { node.colorNode = hedgeColour; });
 // The cars' probe of the street (probe.ts) needs WebGPU's kind of cube target.
 setProbeTargets(() => new CubeRenderTarget(PROBE_SIZE, PROBE_OPTIONS) as never);
-const surfaceDetail: N = follow(STREET_SURFACE);
-const scan = texture(ASPHALT_SCAN.value);
-onAsphaltScan(t => { scan.value = t; });
+const surfaceDetail: N = follow(asphalt.active);
+const scan = texture(asphalt.map);
+asphalt.onLoad = t => { scan.value = t; };
+const settDetail = follow(setts.active), settScan = texture(setts.map);
+setts.onLoad = t => { settScan.value = t; };
 // The scan covers four metres. Hardware mipmaps take the aggregate back to its
 // mean at distance; anisotropic filtering preserves it at the player's feet.
 const aggregate = (p: N) => scan.sample(p.div(4));
@@ -108,16 +110,27 @@ function pAsphalt(c0: N, p: N) {
   });
   return c;
 }
+// Four laying directions, as on the procedural paving. Rotate the scanned normal
+// back into the street's axes before lighting it, including on a sloping road.
+function settAxes(p: N) {
+  const way = floor(hash12(floor(p.div(52).add(vec2(0.31, 0.57))).add(2.9)).mul(4)).mul(Math.PI / 4);
+  return vec2(cos(way), sin(way));
+}
+function settPoint(p: N, axes: N) {
+  return vec2(p.x.mul(axes.x).sub(p.y.mul(axes.y)), p.x.mul(axes.y).add(p.y.mul(axes.x)));
+}
 function pSetts(c: N, p: N, sx: number, sy: number) {
   const d = detail(p, sx), s = c.mul(0.85).toVar();
-  If(d.greaterThan(0), () => {
-    // The rows run one of four ways, the same over a field some 50 m across: setts are laid
-    // along each street and in fields on a square, never all one way across a town.
-    const way = floor(hash12(floor(p.div(52).add(vec2(0.31, 0.57))).add(2.9)).mul(4)).mul(0.7854);
-    const q = vec2(p.x.mul(cos(way)).sub(p.y.mul(sin(way))), p.x.mul(sin(way)).add(p.y.mul(cos(way))));
-    const b = blocks(q, sx, sy);
-    const stone = c.mul(b.y.mul(0.4).add(0.8)).mul(vnoise(p.mul(9)).mul(0.16).add(0.92));
-    s.assign(mix(s, mix(c.mul(0.5), stone, smoothstep(0.004, 0.02, b.x)), d));
+  const q = settPoint(p, settAxes(p));
+  If(settDetail.greaterThan(0.5), () => {
+    const value = settScan.sample(q.div(2.5)).r;
+    s.assign(c.mul(value.sub(0.5).mul(1.72).add(0.9)));
+  }).Else(() => {
+    If(d.greaterThan(0), () => {
+      const b = blocks(q, sx, sy);
+      const stone = c.mul(b.y.mul(0.4).add(0.8)).mul(vnoise(p.mul(9)).mul(0.16).add(0.92));
+      s.assign(mix(s, mix(c.mul(0.5), stone, smoothstep(0.004, 0.02, b.x)), d));
+    });
   });
   // Where feet and wheels have polished the stones they are lighter, in patches a few metres
   // across: the lighter parts of the broad variation, lifted a little more (no noise read of its own).
@@ -401,6 +414,15 @@ function groundGraph(id: number, time: { value: number }, { relief, deck, photo,
       If(surfaceDetail.greaterThan(.5),()=>{
         const xy=aggregate(wp).gb.sub(.5).mul(.48).mul(float(1).sub(uWet.mul(.65)));
         n.assign(normalize(n.add(vec3(xy.x,0,xy.y.negate()).mul(abs(n.y)))));
+      });
+      return transformNormalToView(n);
+    })() : id === 2 ? Fn(() => {
+      const n = normalWorldGeometry.toVar();
+      If(settDetail.greaterThan(0.5), () => {
+        const axes = settAxes(wp), uv = settPoint(wp, axes).div(2.5);
+        const xy = settScan.sample(uv).gb.sub(0.5).mul(1.5);
+        const world = vec2(dot(xy, axes), xy.y.mul(axes.x).sub(xy.x.mul(axes.y)));
+        n.assign(normalize(n.add(vec3(world.x, 0, world.y.negate()).mul(abs(n.y)))));
       });
       return transformNormalToView(n);
     })() : null,

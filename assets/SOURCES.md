@@ -50,6 +50,7 @@ up and packed by the scripts beside them. The prompts are kept with the sources.
 - **Character portraits** (`portraits/sheetN.webp` → `public/portraits/`): generated
   with ChatGPT; faces that came out too alike were redone one by one with Codex
   (`portraits/faces/`). `portraits/cut.py` cuts them out.
+- **Street-level setts** (`ground/setts.py` → `public/street-setts.webp`): [Cobblestone Pavement by Charlotte Baglioni, Poly Haven](https://polyhaven.com/a/cobblestone_pavement), CC0. The 2.5 m scan supplies stone reflectance, joint shading and normals.
 - **Close asphalt** (`ground/asphalt.py` → `public/street-asphalt.webp`):
   [Asphalt 04, Poly Haven](https://polyhaven.com/a/asphalt_04), photographed by
   Sergej Majboroda and processed by Jenelle van Heerden, CC0. The script takes
