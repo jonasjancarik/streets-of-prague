@@ -43,7 +43,7 @@ from lxml import etree
 from pyproj import Transformer
 import shapely
 from shapely.geometry import LineString, Polygon, box
-from shapely.ops import unary_union
+from shapely.ops import substring, unary_union
 
 import layers
 import build_cache
@@ -57,6 +57,14 @@ from ipr_buildings import CACHE, krovak_to_local, search, sheet_names
 
 STEP = 4.0  # roughly: the step used divides the tile evenly (grid_step)
 NEAR_DECK, OFF_DECK = 0.5, 1.5  # m between a bridge and the ground under or beside it: one with it, nothing to do with it
+# m: under a bridge, the ground is kept at least this far below the deck where the LiDAR
+# has the ground lower still (see under_decks).
+DECK_DEPTH = 1.0
+# m: ... except along a street or path on the ground for END_ALONG from where it comes
+# onto a bridge, kerb to kerb and 2 m more but at least END_SIDE either side of its
+# middle and END_BACK back over the bridge: the lattice points round the bridge's end
+# give the street its height there (see deck_ends).
+END_ALONG, END_SIDE, END_BACK = 40.0, 6.0, 3.0
 GML = "http://www.opengis.net/gml"
 
 
@@ -117,6 +125,110 @@ def pull_to_bridges(tiles, labels, found, N):
             arr[near] += (apart * pull)[near]
             changed += int(near.sum())
     return changed
+
+
+def deck_ends(ways, ground_edges, aloft=None):
+    """Where streets and paths on the ground come onto the map's bridges: the ground
+    way's first END_ALONG metres from a bridge way's end, kerb to kerb and 2 m more (at
+    least END_SIDE either side), cut square END_BACK behind the bridge's end (the
+    lattice point the street's height there comes from may be under the deck). OSM ends a bridge a
+    few metres to tens of metres short of where its deck meets the ground, and the
+    street on the ground runs on under the deck's outline at the deck's height; the
+    LiDAR has the space under the deck's last span there (Karlův most over Kampa,
+    Hlávkův most on Štvanice). Little behind the bridge's end: at Řepy OSM's motorway
+    bridge is no longer than the slip road under it is wide, and a disc of 6 m round
+    each end kept the ground at the deck's height over the slip road, as half-round
+    walls standing through the deck. And only where the street's end is over open
+    space: `aloft` (local x, y → true where the lattice is more than DECK_DEPTH over the
+    LiDAR's bare ground). At Řepy the motorway comes off its bridge on its embankment,
+    and its band, 9 m either side, still reached over the slip road's verge. Returns
+    (that strip or None, the point of every end where a ground way meets a bridge,
+    over open space or not: under_decks keeps the lattice cell round each, whose
+    corners give the street its height there, unless a wall is beside it; without them
+    17 ends on firm ground got joins 1–2 m deep, Barrandovský most's and Jižní
+    spojka's among them).
+    `ground_edges`: the tiles' drive and walk edges not on a bridge."""
+    ends = {}  # (a bridge way's end node, as text) -> its point
+    for w in ways:
+        if w["kind"] == "bridge" and len(w["pts"]) > 1 and w.get("nodes"):
+            ends[str(w["nodes"][0])] = w["pts"][0]
+            ends[str(w["nodes"][-1])] = w["pts"][-1]
+    met = []  # (the ground way from the bridge's end on, its width)
+    for e in ground_edges:
+        line = LineString(e["pts"])
+        for node, along in ((str(e.get("u")), line), (str(e.get("v")), line.reverse())):
+            if node in ends:
+                met.append((along, e.get("width", 4)))
+    points = [along.coords[0] for along, _ in met]
+    if met and aloft is not None:
+        up = aloft(np.array([a.coords[0][0] for a, _ in met]), np.array([a.coords[0][1] for a, _ in met]))
+        met = [m for m, u in zip(met, up) if u]
+    keep = []
+    for along, width in met:
+        part = list(substring(along, 0, END_ALONG).coords)
+        (x0, y0), (x1, y1) = part[0], part[1]
+        run = math.hypot(x1 - x0, y1 - y0) or 1.0
+        back = (x0 - (x1 - x0) / run * END_BACK, y0 - (y1 - y0) / run * END_BACK)
+        keep.append(LineString([back] + part).buffer(max(width / 2 + 2, END_SIDE), cap_style="flat"))
+    return (shapely.union_all(keep) if keep else None), points
+
+
+def under_decks(tiles, labels, terraces, found, ground_at, N, T, step, gx0, gy0, keep=None, ends=()):
+    """Open space under a bridge: where the LiDAR's bare ground (`ground_at`, local x, y
+    → heights) is more than DECK_DEPTH below a bridge's deck, the lattice has it no
+    higher than the LiDAR. The terrain model carries some overpasses as ground, and
+    pull_to_bridges brings what is near a deck onto it: under the D0 at Řepy the ground
+    beside the slip road below lay at the deck's height, its retaining walls' tops showed
+    through the deck along the slip road's curve and the ground's paving between the
+    carriageways. Plain ground and the terraces that take their heights from the lattice
+    (a wall's top) only: a pad has its own height. Not in `keep` either, nor at the
+    corners of the lattice cell round each of `ends` (deck_ends: where a street on the
+    ground comes onto the bridge; without them the ground sank by up to 6 m at 98
+    bridges' ends). Returns the points lowered."""
+    lowered = 0
+    by_tile = {}  # (tile) -> the bridge ends whose lattice cell touches it (deck_ends)
+    for px, py in ends:
+        for i in {math.floor((px - gx0) / T), math.floor((px - gx0 - step) / T)}:
+            for j in {math.floor((py - gy0) / T), math.floor((py - gy0 - step) / T)}:
+                by_tile.setdefault((i, j), []).append((px, py))
+    flat = {}  # (tile) -> labels whose terrace has a height of its own
+    for key, listed in terraces.items():
+        flat[key] = {t["label"] for t in listed if t.get("h") is not None}
+    for (i, j), levels in found.items():
+        arr = tiles.get((i, j))
+        if arr is None:
+            continue
+        deck = np.full(arr.shape, np.nan, dtype=np.float64)
+        xs, ys = np.meshgrid(gx0 + i * T + np.arange(N + 1) * step, gy0 + j * T + np.arange(N + 1) * step)
+        for _, kind, h, polys in levels:
+            if kind != "bridge":
+                continue
+            outline = shapely.union_all([Polygon(p[0], p[1:]) for p in polys])
+            inside = shapely.contains_xy(outline, xs, ys) & np.isfinite(h)
+            deck[inside] = np.fmin(deck[inside], h[inside])  # (the lowest deck over a point)
+        under = np.isfinite(deck)
+        lab = labels.get((i, j))
+        if lab is not None:
+            under &= (lab == 0) | ((lab >= 2) & ~np.isin(lab, list(flat.get((i, j), ()))))
+        if keep is not None and under.any():
+            under &= ~shapely.contains_xy(keep, xs, ys)
+        for px, py in by_tile.get((i, j), ()):
+            a, b = math.floor((px - gx0 - i * T) / step), math.floor((py - gy0 - j * T) / step)
+            # Not by a wall: a wall's top comes from the ground beside it, and at Řepy the
+            # cell kept round the motorway's ends stood the slip road's walls up to the
+            # deck again, in half circles through it.
+            if lab is not None and (lab[max(b - 1, 0):max(b + 3, 0), max(a - 1, 0):max(a + 3, 0)] >= 2).any():
+                continue
+            under[max(b, 0):max(b + 2, 0), max(a, 0):max(a + 2, 0)] = False
+        if not under.any():
+            continue
+        scan = np.full(arr.shape, np.nan, dtype=np.float64)
+        scan[under] = ground_at(xs[under], ys[under])
+        with np.errstate(invalid="ignore"):
+            low = under & (scan < deck - DECK_DEPTH) & (scan < arr)
+        arr[low] = scan[low]
+        lowered += int(low.sum())
+    return lowered
 
 
 CATALOGUE = "catalogue_ter.json"
@@ -517,6 +629,7 @@ def main() -> None:
     # step divides the tile, so tile (i, j) starts at lattice point (i * N, j * N).
     tiles, boxes, outlines, roads, ways, water, by_water, driven = {}, {}, [], [], [], [], [], []
     weirs, streets, street_edges, tile_water, kerbs = [], {}, {}, {}, {}
+    ground_edges = {}  # the drive and walk edges not on a bridge (deck_ends)
     for i, j, t in layers.tiles(area, meta):
         tiles[(i, j)] = np.full((N + 1, N + 1), np.nan, dtype=np.float32)
         boxes[(i, j)] = box(*t["box"])
@@ -530,6 +643,9 @@ def main() -> None:
                 streets[e["id"]] = (LineString(e["pts"]), half)
                 kerbs[e["id"]] = tuple(e.get("kerb") or (e["width"] / 2, e["width"] / 2))
                 street_edges[e["id"]] = e
+        for e in (t.get("drive") or []) + (t.get("walk") or []):
+            if not e.get("bridge") and len(e["pts"]) > 1:
+                ground_edges.setdefault(e["id"], e)
         if t["areas"].get("water"):
             for kind in ("road", "sett", "path", "dirt"):
                 here = [Polygon(r[0], r[1:]).buffer(0) for r in t["roads"].get(kind, [])]
@@ -665,6 +781,12 @@ def main() -> None:
         print(f"  {lifted} flat terraces under the street before bridges drawn from past their wall")
         met = pull_to_bridges(tiles, labels, found, N)
         print(f"  ground brought to the bridges' ends at {met} points")
+        if options.get("survey_scan"):
+            scan_at = ipr_lidar.sampler(options["survey_scan"], local)[0]
+            lattice_at = sampler(tiles, N, T, step, gx0, gy0, labels)
+            keep, ends = deck_ends(ways, ground_edges.values(), lambda xs, ys: lattice_at(xs, ys) - scan_at(xs, ys) > DECK_DEPTH)
+            opened = under_decks(tiles, labels, terraces, found, scan_at, N, T, step, gx0, gy0, keep, ends)
+            print(f"  ground lowered to the LiDAR's under bridges at {opened} points")
     timings.lap("bridges_tunnels")
     # Trial: the steps as lines with the ground's height either side (step_lines.py), read
     # from the scan where it's the ground, else from the lattice's own side.

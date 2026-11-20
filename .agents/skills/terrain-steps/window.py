@@ -119,6 +119,7 @@ def main():
     # As ipr_terrain.main from here on, for the window's tiles.
     tiles, boxes, outlines, roads, ways, water, by_water, driven = {}, {}, [], [], [], [], [], []
     weirs, streets, street_edges, tile_water, kerbs = [], {}, {}, {}, {}
+    ground_edges = {}
     for ci, cj in chunks:
         parts = {layer: layers.read_chunk(area, layer, ci, cj)["tiles"] for layer in layers.CHUNKED}
         for i, j in layers.chunk_tiles(meta, ci, cj):
@@ -140,6 +141,9 @@ def main():
                     streets[ed["id"]] = (LineString(ed["pts"]), half)
                     kerbs[ed["id"]] = tuple(ed.get("kerb") or (ed["width"] / 2, ed["width"] / 2))
                     street_edges[ed["id"]] = ed
+            for ed in (t.get("drive") or []) + (t.get("walk") or []):
+                if not ed.get("bridge") and len(ed["pts"]) > 1:
+                    ground_edges.setdefault(ed["id"], ed)
             if t["areas"].get("water"):
                 for kind in ("road", "sett", "path", "dirt"):
                     here = [Polygon(r[0], r[1:]).buffer(0) for r in t["roads"].get(kind, [])]
@@ -240,6 +244,13 @@ def main():
                     labels.setdefault((i, j), np.zeros((N + 1, N + 1), dtype=np.uint8))[on] = label
                     ids.setdefault((i, j), {})[label] = -1 - n_pad
         ipr_terrain.pull_to_bridges(tiles, labels, found, N)
+        if args.survey_scan:
+            scan_at = ipr_lidar.sampler(ipr_lidar.CACHE, local)[0]
+            lattice_at = ipr_terrain.sampler(tiles, N, T, step, gx0, gy0, labels)
+            aloft = lambda xs, ys: lattice_at(xs, ys) - scan_at(xs, ys) > ipr_terrain.DECK_DEPTH
+            keep, ends = ipr_terrain.deck_ends(ways, ground_edges.values(), aloft)
+            opened = ipr_terrain.under_decks(tiles, labels, terraces, found, scan_at, N, T, step, gx0, gy0, keep, ends)
+            print(f"  ground lowered to the LiDAR's under bridges at {opened} points")
 
     if args.npz:
         i0, j0 = min(i for i, _ in tiles), min(j for _, j in tiles)

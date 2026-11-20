@@ -331,6 +331,26 @@ steeper than VALLEY anywhere, which took steps over 1 m from 71 to 38.
   terrain model's slope beside the street is steep enough; it stops where another
   street's middle crosses it, not where any lane touches it (a street's ways are cut at
   every junction, and its own next way touched every wall).
+- The terrain model carries some overpasses as ground, and `pull_to_bridges` brings
+  ground within 1.5 m of a deck onto it. Under the D0 over its slip road at Řepy the
+  ground beside the slip road lay at the deck's height: the tops of the walls along the
+  slip road showed through the deck in the slip road's curve. Where the LiDAR's bare
+  ground under a bridge is more than `DECK_DEPTH` (1 m) below the deck, the ground now
+  goes down to the LiDAR (`under_decks` in `ipr_terrain.py`, with `--survey-scan`
+  only): plain ground and walls' tops, not pads. Not where a street on the ground comes
+  onto the bridge over open space either (`deck_ends`): OSM ends bridges short of their
+  abutments, the street runs on under the deck's outline at the deck's height, and the
+  LiDAR has the space under the last span there. Without that, 98 bridge ends got joins
+  1–7 m deep (Karlův most over Kampa, Hlávkův most on Štvanice). The kept strip runs
+  3 m back over the bridge (the lattice point the street's height comes from may be
+  under the deck), and only where the street's end is more than 1 m over the LiDAR.
+  Every end, over open space or not, also keeps the lattice cell it lies in (17 ends on
+  firm ground had joins 1–2 m deep without it, Barrandovský most's among them), except
+  beside a wall. At Řepy, where OSM's motorway bridge is no longer than the slip road
+  under it is wide, both a disc of 6 m round each end and the cell alone stood the slip
+  road's walls up to the deck again, as half circles through it: a wall's top comes from
+  the ground beside it. Measure the joins (`check-bridge-decks.mjs --against`) and look
+  at Řepy (50.07395, 14.28882, from the west) after any change to it.
 - A street crossing over a tunnel isn't in it: Modřanská's points over a footway's
   tunnel at Zlíchov took the footway's floor (`_crossing` in `dtm_heights.py`). Rašínovo nábřeží by Palackého
   most and Komořanská by most Závodu míru were the two-level survey under a bridge (see
