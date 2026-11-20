@@ -68,12 +68,13 @@ frame-time checks before release. Rebuild outputs keyed by street IDs, including
     uv run build_parking.py praha
     uv run build_tiles.py praha --resume --no-assemble
     uv run ipr_buildings.py praha --resume --no-assemble
-    uv run ipr_terrain.py praha --resume --no-assemble
+    uv run ipr_terrain.py praha --survey-scan --tin --step-lines --resume --no-assemble   # praha's options (index.json terrainOptions)
     uv run --group cover ground_cover.py build praha --no-assemble   # every area has this layer
     uv run --group cover young_woods.py build praha --no-assemble    # praha only
     uv run layers.py praha                                           # praha: not --strict yet (below)
     uv run --group cover tree_sizes.py build praha --no-assemble     # praha only
     uv run layers.py praha --strict
+    uv run tin_tiles.py praha --stale    # praha: the ground meshes whose ground changed
     uv run build_signals.py praha
     uv run build_power.py praha      # optional, from the cached OSM extract and built terrain
 
@@ -83,6 +84,20 @@ stages also check their build options, so a run with flags such as `--no-survey`
 or `--mesh-colours off` can only be reused with the same settings. Missing,
 damaged or interrupted output is rebuilt. The previous completion records miss
 once after upgrading. Omit `--resume` to rebuild the requested layers.
+
+The terrain options must be the map's own: without `--survey-scan` the terrain loses
+the 2023 LiDAR and `road-fit.json`, without `--tin` and `--step-lines` the walls the
+ground mesh is made from. `index.json`'s `terrainOptions` says which the map has.
+
+The ground mesh (`tiles/*.tin.bin.gz`, `pipeline/tin_tiles.py`) is made after
+assembly, from the assembled tiles. Each mesh's inputs are recorded in
+`pipeline/.cache/tin/<area>/inputs.json` (`pipeline/tin_record.py`): the tile's and its
+neighbours' heights, terraces, step lines, water, paved ground, bridges, tunnels and
+where the streets run. Assembly lists under `tin` in `index.json` only the meshes whose
+inputs are still the same, and says how many no longer are; the game draws the lattice
+on those tiles. `tin_tiles.py <area> --stale` makes just those again (some minutes for a
+few hundred tiles), plain `tin_tiles.py <area>` all of them (needed after changing the
+mesh's own code, which the record doesn't follow).
 
 Then `centrum` and `ujezd` the same way (without the young woods and tree size steps
 they don't have, and with `layers.py --strict` straight away). `tree_sizes.py` measures
@@ -101,6 +116,7 @@ one. Seen on 18 October; the strict assemble after the tree sizes is the check.
 | `young_woods.py build` | ground layer, terrain layer, `.cache/cover/dsm_ipr` | `.cache/layers/<area>/young.json` |
 | `tree_sizes.py build` | the assembled `tiles/*.json`, the terrain layer, `.cache/cover/` (IPR's surface model, ČÚZK's DMP 1G, the summer photo at 1 m and 0.25 m and the colour-infrared one at 1 m: fetched for tiles that have none) | `.cache/layers/<area>/treesize.json` (each tree's height, crown, outline and colour; what grows where, on a 2 m grid); final assembly writes the tiles |
 | `layers.py --strict` | every layer, and checks the binary files against the layers' records | `tiles/*.json`, `index.json`, `names.json`, `leaving.json` (the streets that run on past the map's edge, for the countryside made in the browser); removes files of tiles that are gone |
+| `tin_tiles.py --stale` | the assembled `tiles/*.json` and `*.height.bin.gz`, `.cache/ipr_lidar/`, `.cache/tin/<area>/inputs.json` | `tiles/*.tin.bin.gz` of the stale tiles, the record, `tin` in `index.json` |
 | `build_signals.py` | streets layer, `.cache/osm/` | `signals.json` |
 
 `--strict` stops before writing anything if a chunk is incomplete, a layer was made

@@ -82,6 +82,7 @@ from scipy.ndimage import distance_transform_edt, gaussian_filter, label, map_co
 from scipy.spatial import cKDTree
 
 import build_cache
+import tin_record
 import dtm_heights
 import ipr_lidar
 import ipr_terrain
@@ -651,6 +652,8 @@ def main():
     ap.add_argument("--data", type=Path, default=OUT)
     ap.add_argument("--no-lidar", action="store_true", help="paved ground from the city pass, not the 2023 LiDAR")
     ap.add_argument("--tiles", help="i_j,… (default all)")
+    ap.add_argument("--stale", action="store_true",
+                    help="only the tiles whose mesh no longer fits their ground or that have none (layers.py says how many)")
     ap.add_argument("--tol", type=float, default=TOL)
     ap.add_argument("--loose", type=float, default=LOOSE)
     ap.add_argument("--keep-target", action="store_true", help="reuse the last tin-target.mjs output")
@@ -667,6 +670,19 @@ def main():
     work.mkdir(parents=True, exist_ok=True)
     target = work / "target"
     jobs = max(1, a.jobs)
+    settings = dict(format=tin.FORMAT, tol=a.tol, loose=a.loose, lidar=not a.no_lidar)
+    if a.stale:
+        record = tin_record.read(work)
+        if record["settings"] != settings:
+            record = {"settings": settings, "tiles": {}}
+        _, stale = tin_record.fresh(folder / "tiles", index["terrain"], record)
+        meshed = {p.name[: -len(".tin.bin.gz")] for p in (folder / "tiles").glob("*.tin.bin.gz")}
+        bare = {p.name[: -len(".height.bin.gz")] for p in (folder / "tiles").glob("*.height.bin.gz")} - meshed
+        todo = sorted({*stale, *bare}, key=lambda kk: tuple(map(int, kk.split("_"))))
+        print(f"{len(stale)} meshes no longer fit and {len(bare)} tiles have none", flush=True)
+        if not todo:
+            return
+        a.tiles = ",".join(todo)
     t0 = time.time()
     if not (a.keep_target and target.exists()):
         for old in (target, work / a.map):
@@ -712,8 +728,16 @@ def main():
             print(json.dumps(row), flush=True)
     rows.sort(key=lambda r: tuple(map(int, r["k"].split("_"))))
     total["wall"] = time.time() - t1
-    done = sorted(p.name[: -len(".tin.bin.gz")] for p in tiles_dir.glob("*.tin.bin.gz"))
-    index["tin"] = dict(format=tin.FORMAT, tol=a.tol, loose=a.loose, lidar=not a.no_lidar, tiles=done)
+    # What each new mesh was made from (tin_record.py), and the meshes that still fit listed.
+    record = tin_record.read(work)
+    if record["settings"] != settings:
+        record = {"settings": settings, "tiles": {}}
+    record["tiles"].update(tin_record.inputs(tiles_dir, index["terrain"], [r["k"] for r in rows]))
+    tin_record.write(work, record)
+    done, stale = tin_record.fresh(tiles_dir, index["terrain"], record)
+    if stale:
+        print(f"{len(stale)} tiles keep a mesh that no longer fits, left out: run tin_tiles.py {a.map} --stale")
+    index["tin"] = dict(**settings, tiles=done)
     out_index = folder / "index.json"
     if out_index.is_symlink():
         out_index.unlink()  # (a window's map links the built map's: its own copy, not that one)

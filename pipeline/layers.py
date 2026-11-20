@@ -43,6 +43,7 @@ from pathlib import Path
 
 from osm_area import OUT
 import build_cache
+import tin_record
 
 CACHE = Path(__file__).parent / ".cache" / "layers"
 # The format of the files the game reads. Raise it, together with DATA_FORMAT in
@@ -464,6 +465,9 @@ def put_together(area: str, strict=False) -> dict:
         from chunk_cache import check_complete
         check_complete(area, meta)
     ipr, terrain = (build_cache.read_json(folder(area) / f"{name}.json") for name in ("ipr", "terrain"))
+    # The ground meshes tin_tiles.py made (tin_record.py): listed again while they fit.
+    tin_rec = tin_record.read(tin_record.default_work(area)) if terrain else {"settings": {}, "tiles": {}}
+    tin_parts = {}
     cover = read_layer(area, "cover")
     if cover and not (cover.get("tile") == meta["tile"] and cover.get("processing") == cover_processing()
                       and build_cache.sources_current(cover.get("sources", {}))):
@@ -616,7 +620,10 @@ def put_together(area: str, strict=False) -> dict:
         # (Trial: its steps as lines with the ground's height either side, step_lines.py.)
         if terrain and terrain.get("steplines", {}).get(k):
             t["stepLines"] = terrain["steplines"][k]
-        written += write(out_dir / "tiles" / f"{k}.json", dumps(t))
+        text = dumps(t)
+        written += write(out_dir / "tiles" / f"{k}.json", text)
+        if tin_rec["tiles"]:  # (what its ground mesh is made from, as the file has it)
+            tin_parts[k] = tin_record.own(json.loads(text), tin_record.heights(out_dir / "tiles", k))
         leaving(t, meta, outward)
         # Whether it has IPR's buildings, so the game can fetch them with the rest.
         listed.append([i, j, sum(b["own"] for b in t["buildings"]), *([int(bool(got))] if ipr else [])])
@@ -640,6 +647,13 @@ def put_together(area: str, strict=False) -> dict:
         # measured (a directory by its last part only: the index is public).
         index["terrainOptions"] = {k: Path(v).name if isinstance(v, str) else v
                                    for k, v in (terrain.get("options") or {}).items() if v not in (False, None)}
+    if tin_rec["tiles"]:
+        ok, stale = tin_record.fresh(out_dir / "tiles", terrain["index"], tin_rec, tin_parts)
+        if ok:
+            index["tin"] = {**tin_rec["settings"], "tiles": ok}
+        if stale:
+            print(f"{len(stale)} tiles' ground meshes no longer fit their ground, so the lattice is drawn there "
+                  f"({len(ok)} still fit): run tin_tiles.py {area} --stale")
     keys = {f"{i}_{j}" for i, j, *_ in listed}
     for name, layer in (("ipr_buildings", ipr), ("ipr_terrain", terrain)):
         if layer and keys - set(layer["made_for"]):
