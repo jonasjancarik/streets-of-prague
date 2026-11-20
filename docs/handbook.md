@@ -658,7 +658,7 @@ the same signal phase as the overhead light.
   - the Daydream controller, paired from **Connect Daydream controller** over Web
     Bluetooth (not the old Daydream app): the touchpad walks or drives (top forward,
     sides sideways or steering), clicking it is E (get in or out), the app button runs,
-    and the volume buttons turn you 30° at a time;
+    and the volume buttons turn you 30° at a time (not working yet, see below);
   - a gamepad: the left stick walks or steers, and the right stick turns in 30° steps
     (not yet tried in a headset);
   - nothing in hand: look well down for a second to start walking, again to stop.
@@ -675,6 +675,24 @@ the same signal phase as the overhead light.
   needed for real play. From the driver's seat you see out through the car, because
   the street car is modelled only from outside. Checks: `window.__vr` (`fps`, `headH`,
   `headPitch`).
+
+  The Daydream controller hasn't worked yet (tried 20 Nov 2026 on a Pixel 11 Pro). Chrome
+  pairs with it and finds its data characteristic (service `fe55`, characteristic `0001`,
+  notify), and starting notifications succeeds, yet no report ever arrives, whatever you
+  press. Its other characteristics are `0002` (write) and `0003` (read), and reading
+  `0003` fails with "GATT operation failed for unknown reason". The likely cause: a
+  controller once set up with the Daydream app wants an encrypted, bonded link, and keeps
+  its data from anything else. Write-ups from 2016–2017 got data simply by turning on
+  notifications for `0001`. Not tried yet: forgetting it in Android's Bluetooth settings,
+  then Google's reset (on USB power, hold App and Home together for up to 3 s), then
+  pairing again from the game.
+
+  For a phone whose Chrome can't be inspected remotely (Chrome allows that only with USB
+  debugging on, not over wireless debugging alone), `?vrlog=<port>` sends the controls'
+  state twice a second to `http://localhost:<port>/`: VR on or off, frame rate, movement,
+  the Daydream controller's report count, raw bytes and characteristics, and every
+  gamepad's axes and pressed buttons. Run any small listener that prints POST bodies, and
+  pass the port through with `adb reverse tcp:<port> tcp:<port>`.
 
 ## How it works
 

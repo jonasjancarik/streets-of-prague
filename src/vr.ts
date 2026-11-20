@@ -51,6 +51,10 @@ export class VR {
   private xrTarget: unknown = null;
   private daydream = { x: 0, y: 0, touched: false, click: false, app: false, plus: false, minus: false };
   fps = 0;
+  private reports = 0;
+  private gatt: string[] = [];
+  private seen: Record<string, number> = {};
+  private raw: number[] = [];
   private frames = 0;
   private since = 0;
   private padSnap = false;
@@ -182,6 +186,25 @@ export class VR {
       const device = await bt.requestDevice({ filters: [{ name: 'Daydream controller' }], optionalServices: [DAYDREAM_SERVICE] });
       status('Connecting…');
       const server = await device.gatt.connect();
+      // (For ?vrlog: every service and characteristic the controller offers.)
+      try {
+        const all = await (server as unknown as { getPrimaryServices(): Promise<{ uuid: string; getCharacteristics(): Promise<{ uuid: string; properties: Record<string, boolean> }[]> }[]> }).getPrimaryServices();
+        this.gatt = [];
+        for (const sv of all) {
+          const cs = await sv.getCharacteristics().catch(() => []);
+          const props = (p: Record<string, boolean>) => ['read', 'write', 'writeWithoutResponse', 'notify', 'indicate'].filter((k) => p[k]).join(',');
+          this.gatt.push(`${sv.uuid}: ${cs.map((c) => `${c.uuid.slice(4, 8)} [${props(c.properties)}]`).join('; ')}`);
+          // Listen to every characteristic that can notify, and read those that can be read.
+          for (const c of cs as unknown as (Characteristic & { uuid: string; properties: Record<string, boolean>; readValue(): Promise<DataView> })[]) {
+            const tag = c.uuid.slice(4, 8);
+            if (c.properties.notify || c.properties.indicate) {
+              c.addEventListener('characteristicvaluechanged', () => { this.seen[tag] = (this.seen[tag] ?? 0) + 1; this.read(c.value); });
+              c.startNotifications().then(() => this.gatt.push(`${tag} notifying`), (e) => this.gatt.push(`${tag} notify failed: ${e}`));
+            }
+            if (c.properties.read) c.readValue().then((v) => this.gatt.push(`${tag} read ${Array.from(new Uint8Array(v.buffer)).join(' ')}`), (e) => this.gatt.push(`${tag} read failed: ${e}`));
+          }
+        }
+      } catch (e) { this.gatt = [`services: ${e}`]; }
       const data = await (await server.getPrimaryService(DAYDREAM_SERVICE)).getCharacteristic(DAYDREAM_DATA);
       data.addEventListener('characteristicvaluechanged', () => this.read(data.value));
       await data.startNotifications();
@@ -199,6 +222,9 @@ export class VR {
   // One report from the controller (the layout as worked out in three.js's old
   // DaydreamController example): buttons in byte 18, the touchpad across bytes 16–18.
   private read(v: DataView) {
+    this.reports++;
+    this.raw = Array.from(new Uint8Array(v.buffer, v.byteOffset, v.byteLength));
+    if (v.byteLength < 19) return;
     const b = v.getUint8(18);
     const x = ((v.getUint8(16) & 0x1f) << 3 | (v.getUint8(17) & 0xe0) >> 5) / 255;
     const y = ((v.getUint8(17) & 0x1f) << 3 | (v.getUint8(18) & 0xe0) >> 5) / 255;
@@ -252,6 +278,16 @@ export function setupVR(params: URLSearchParams, renderer: THREE.WebGLRenderer, 
   if (!params.has('vr')) return null;
   const scale = THREE.MathUtils.clamp(Number(params.get('vrscale')) || 0.75, 0.3, 1);
   const vr = new VR(renderer, camera, key, scale);
+  // ?vrlog=<port>: the controls' state, twice a second, to a listener on the computer (for
+  // a phone whose Chrome can't be inspected remotely; `adb reverse` the port).
+  const log = Number(params.get('vrlog'));
+  if (log) setInterval(() => {
+    const v = vr as unknown as Record<string, unknown>;
+    navigator.sendBeacon(`http://localhost:${log}/`, JSON.stringify({
+      active: vr.active, fps: vr.fps, move: vr.move, side: vr.side, run: vr.run, reports: v.reports, raw: v.raw, gatt: v.gatt, seen: v.seen, daydream: v.daydream,
+      pads: [...(navigator.getGamepads?.() ?? [])].filter(Boolean).map((p) => ({ id: p!.id, mapping: p!.mapping, axes: p!.axes.map((a) => +a.toFixed(2)), pressed: p!.buttons.flatMap((b, i) => (b.pressed ? [i] : [])) })),
+    }));
+  }, 500);
   (window as { __vr?: VR }).__vr = vr; // (for checks from the console or scripts)
   return vr;
 }
