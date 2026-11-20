@@ -346,6 +346,7 @@ async function main() {
   // on there: the ground, or a bridge deck (see TileWorld.track).
   const ground = (x: number, y: number, who?: Tracked | null) => (who ? world.groundFor(who, x, y) : world.heightAt(x, y));
   const mistGround = (x: number, z: number) => world.terrainAt(x, -z);
+  const rainSurface = (x: number, z: number) => Math.max(world.rooftopAt(x, -z), world.below(x, -z, Infinity).h);
   const mistWater = (x: number, z: number) => world.waterAt(x, -z) ? world.terrainAt(x, -z, true) : null;
   let crowd: Crowd | null = null;
   // The deck of a bridge at a point, or within a few metres of it (a lamp on the parapet is just off it).
@@ -3111,8 +3112,10 @@ async function main() {
     // In first person the horizon shows: a sky behind the city, and haze on the far
     // streets so the edge of what's loaded fades out.
     if (eyes) {
-      sky.fog.near = Math.min(sky.fog.near, 120);
-      sky.fog.far = Math.min(sky.fog.far, EYES_REACH);
+      const w = weather.now;
+      const haze = Math.max(w.rain * .60, w.storm * .76, w.snow * .85, w.mist * .92);
+      sky.fog.near = Math.min(sky.fog.near, 120 - 105 * haze);
+      sky.fog.far = Math.min(sky.fog.far, EYES_REACH - 305 * haze);
       (scene.background as THREE.Color).copy(sky.haze);
     } else (scene.background as THREE.Color).set(BACKDROP);
     // (The sky itself, where the renderer can draw it: webgpu/dome.ts. The free camera sees it once it is tilted towards the horizon.)
@@ -3171,7 +3174,7 @@ async function main() {
     streaks.update(camera, [lamps.glows, signals.flares, signals.glows], (x, y) => world.heightAt(x, y), viewRadius() + 10, time.value);
     weatherFx.tint.value.copy(sky.tint);
     weatherFx.fog.value.copy(sky.haze);
-    weatherFx.update(weather.now, time.value, camPos.x, -camPos.z, camGround, height, viewRadius(), renderer.getPixelRatio(), mistGround, mistWater);
+    weatherFx.update(weather.now, time.value, camPos.x, -camPos.z, camGround, height, viewRadius(), renderer.getPixelRatio(), mistGround, mistWater, eyes && !underway ? camera.position : undefined, world.terrainRevision + world.joined, rainSurface);
     updateChimneySmoke(WEATHER_DETAIL.value > 0 ? Math.max(season.cold, weather.now.cover) : 0, time.value, weatherFx.wind, weatherFx.tint.value, renderer.domElement.height);
 
     // ---- HUD -------------------------------------------------------------

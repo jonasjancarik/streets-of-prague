@@ -844,6 +844,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   water-surface height in the real WebGPU renderer.
   The fog of
   rain and snow is measured from the camera so the ground is hazier than the roofs. The
+  street-level camera sees shorter rain streaks and smaller flakes around eye height.
+  The weather fades the far end of the street sooner in a storm or snowfall. A local
+  height map stops precipitation under the ground, roofs and bridge decks. It samples
+  a 72 m square in strips and follows the camera as you walk. The
   ground gets wet in the rain (darker paving, puddles mirroring the sky and the lamps,
   rings where the drops hit) and dries over several minutes; snow settles on the
   ground, the roofs, the cars and the tree tops, and melts slower still. Under snow,
