@@ -18,9 +18,9 @@ const DIM_AMBER = new THREE.Color('#3a2408');
 type Lamp = [number, number, number];
 const BARS: Record<string, { lamps: Lamp[]; rate: number; amber?: boolean }> = {
   // The blue ends of the bar above the cabin.
-  police: { lamps: [[0, -0.6, 0.15], [0, -0.42, 0.15], [0, 0.42, 0.15], [0, 0.6, 0.15]], rate: 1.4 },
+  police: { lamps: [[0, -0.64, 0.163], [0, -0.42, 0.163], [0, 0.42, 0.163], [0, 0.64, 0.163]], rate: 1.4 },
   // A bar across the cab roof, and one at the back of the body.
-  fire: { lamps: [[3.7, -0.62, 0.2], [3.7, -0.38, 0.2], [3.7, 0.38, 0.2], [3.7, 0.62, 0.2], [-3.8, -0.8, 0.15], [-3.8, 0.8, 0.15]], rate: 1.2 },
+  fire: { lamps: [[3.7, -0.62, 0.158], [3.7, -0.38, 0.158], [3.7, 0.38, 0.158], [3.7, 0.62, 0.158], [-3.8, -0.8, 0.16], [-3.8, 0.8, 0.16]], rate: 1.2 },
   // A bar across the cab roof, and two at the back.
   ambulance: { lamps: [[1.275, -0.68, 0.01], [1.275, -0.40, 0.01], [1.275, 0.40, 0.01], [1.275, 0.68, 0.01], [-2.8, -0.8, 0.04], [-2.8, 0.8, 0.04]], rate: 1.6 },
   // A dustcart at work: amber, two on the cab (low, in front of the body) and two on the
@@ -61,15 +61,21 @@ export class Beacons {
       const base = height(c.x, c.y, c);
       // (The same flashes as the light they throw on the street: lamps.ts.)
       const [left, right] = strobe(time, bar.rate);
-      bar.lamps.forEach(([ahead, across, up], i) => {
+      bar.lamps.forEach(([ahead, across, up]) => {
         if (n >= LAMPS) return;
         const f = (c.type === 'police' ? mid : 0) + ahead, off = across * S.W / 2;
         d.position.set(c.x + fx * f - fy * off, base + S.H + up, -(c.y + fy * f + fx * off));
         d.rotation.set(0, c.h, 0);
-        d.scale.setScalar(bar.amber ? 0.55 : 1);
+        // On a fitted housing the lens itself shows between flashes. The lit
+        // insert reaches both faces of the bar and follows its shallow profile.
+        const on = (across < 0 ? right : left) > 0.5;
+        if (c.type === 'police' || c.type === 'fire') {
+          if (!on) return;
+          d.scale.set(c.type === 'police' ? 1.25 : 1.34, c.type === 'police' ? .41 : .58, .69);
+        } else d.scale.setScalar(bar.amber ? 0.55 : 1);
         d.updateMatrix();
         this.lamps.setMatrixAt(n, d.matrix);
-        this.lamps.setColorAt(n, (across < 0 ? right : left) > 0.5 ? (bar.amber ? AMBER : BLUE) : bar.amber ? DIM_AMBER : DIM);
+        this.lamps.setColorAt(n, on ? (bar.amber ? AMBER : BLUE) : bar.amber ? DIM_AMBER : DIM);
         n++;
       });
     }

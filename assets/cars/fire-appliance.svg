@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="512" viewBox="0 0 1024 512">
+  <!-- Rectangles are sampled by fireEngineStreet.ts. The lower right corner is plain white. -->
+  <defs>
+    <linearGradient id="slat" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop stop-color="#636968"/><stop offset=".12" stop-color="#d2d4ce"/>
+      <stop offset=".31" stop-color="#c1c4be"/><stop offset=".85" stop-color="#b2b7b3"/>
+      <stop offset=".91" stop-color="#919693"/><stop offset="1" stop-color="#686f70"/>
+    </linearGradient>
+    <pattern id="shutter" width="512" height="9" patternUnits="userSpaceOnUse">
+      <rect width="512" height="9" fill="url(#slat)"/>
+    </pattern>
+    <pattern id="tread" width="18" height="12" patternUnits="userSpaceOnUse">
+      <rect width="18" height="12" fill="#9ba2a0"/>
+      <path d="m1 6 5-4m4 4 5 4" fill="none" stroke="#c4c9c4" stroke-width="1.7"/>
+      <path d="m2 7 5-4m4 4 5 4" fill="none" stroke="#757c79"/>
+    </pattern>
+    <pattern id="warning" width="110" height="120" patternUnits="userSpaceOnUse" patternTransform="skewX(-35)">
+      <rect width="110" height="120" fill="#bf322d"/><rect width="55" height="120" fill="#e6e16b"/>
+    </pattern>
+    <g id="dial">
+      <circle r="22" fill="#161d20"/><circle r="19" fill="#a2aaa9"/>
+      <circle r="16.5" fill="#ededda"/><circle r="13" fill="none" stroke="#465051" stroke-width="2.5" stroke-dasharray="1 3"/>
+      <path d="M-3 3 10-10" stroke="#a12c23" stroke-width="2"/><circle r="2" fill="#252e30"/>
+    </g>
+  </defs>
+  <rect width="1024" height="512" fill="white"/>
+  <rect width="512" height="256" fill="url(#shutter)"/>
+  <rect x="512" width="512" height="86" fill="#efefe7"/>
+  <text x="768" y="68" text-anchor="middle" font-family="Arial, sans-serif" font-size="77" font-weight="bold" fill="#b91e2a">HASIČI</text>
+  <rect x="512" y="88" width="512" height="76" fill="#efefe7"/>
+  <text x="768" y="145" text-anchor="middle" font-family="Arial, sans-serif" font-size="54" font-weight="bold" fill="#a5222c">HASIČI  PRAHA</text>
+  <g fill="url(#warning)"><rect x="512" y="168" width="256" height="88"/><rect x="512" y="168" width="256" height="88" transform="translate(1536) scale(-1 1)"/></g>
+  <rect y="256" width="512" height="256" fill="url(#tread)"/>
+  <rect x="512" y="259" width="318" height="124" rx="7" fill="#525d60"/>
+  <g fill="none" stroke="#929d9b"><rect x="518" y="265" width="306" height="111" rx="3"/></g>
+  <g fill="#252f31"><rect x="531" y="284" width="58" height="72" rx="3"/><rect x="718" y="280" width="87" height="40" rx="3"/></g>
+  <g fill="#aacaac" font-family="monospace"><text x="725" y="303" font-size="18">08.4</text></g>
+  <g fill="#a6c277"><circle cx="543" cy="303" r="5"/><circle cx="560" cy="303" r="5"/></g>
+  <g fill="#bd914a"><circle cx="578" cy="303" r="5"/><circle cx="543" cy="321" r="5"/></g>
+  <use href="#dial" x="624" y="315"/><use href="#dial" x="675" y="315"/>
+  <g fill="#cfd3cc" font-family="Arial,sans-serif" font-size="8"><text x="595" y="354">VSTUP</text><text x="663" y="354">VÝSTUP</text></g>
+  <g fill="#191f1f"><circle cx="734" cy="341" r="9"/><circle cx="763" cy="341" r="9"/><circle cx="792" cy="341" r="9"/></g>
+  <rect x="512" y="390" width="280" height="62" rx="5" fill="#ecece4" stroke="#444e51" stroke-width="3"/>
+  <rect x="515" y="393" width="28" height="56" fill="#295491"/>
+  <text x="518" y="435" fill="white" font-size="14" font-family="Arial,sans-serif">CZ</text>
+  <text x="551" y="438" fill="#262b2c" font-size="47" font-family="Arial,sans-serif" font-weight="bold">8A4 2617</text>
+</svg>

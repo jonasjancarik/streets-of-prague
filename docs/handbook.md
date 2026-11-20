@@ -243,6 +243,12 @@ livery, lamp positions and damage. Check the same subject from above and on foot
 `?fps`, walking around it to catch details that look convincing from only one angle.
 For working lights, check the same spot again after dark.
 
+The fire engine shows its roof ladder and hose rack from above. Within 24 m on foot,
+you can see through the crew cab, read the rear pump gauges and follow a firefighter’s
+hose to the coupling beside the lockers. Two marked police cars share patrol and pursuit
+duties. The silver response estate has yellow wing markings and roof rails. The white
+municipal saloon carries a navy stripe with “Městská policie” on the front doors.
+
 A tram or bus stop keeps its blue pictogram visible from above. On foot the same spot
 has an upright red frame. You can read the stop name, line numbers and printed route
 diagrams from either approach along the pavement. At metro entrances a four-sided

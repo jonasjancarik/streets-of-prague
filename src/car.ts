@@ -3,6 +3,7 @@ import { SeatedDrivers, passengerCabin } from './passengerCabin.ts';
 import { buildStreetWheels } from './streetWheels.ts';
 import { sedanFinish, sedanInstruments, sedanWeave } from './sedanFinish.ts';
 import { registrationAtlas, registrationFaces } from './registrationPlates.ts';
+import { fireEngineStreet } from './fireEngineStreet.ts';
 import { ambulanceStreet } from './ambulanceStreet.ts';
 import { mirrored } from './mirror.ts';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
@@ -76,7 +77,7 @@ export const TYPES: Record<string, CarSpec> = {
   // The small buses of the centre's lines (194, 207): the same build, 7.5 m long.
   minibus: { L: 7.5, W: 2.2, H: 2.8, mass: 5500, accel: 3.4, vmax: 24, grip: 7.5, turn: 1.7, weight: 0, color: '#c8102e', heavy: true, drive: 'rwd', radius: 6.5, response: 5, brake: 9, fade: 0.3, drag: 0.4, reverse: 0.2, tough: 4.5, weather: 1.15 },
   // A fire engine: src/brigade.ts sends these to burning cars. Never parked or in traffic.
-  fire: { L: 8.5, W: 2.5, H: 3.2, mass: 14000, accel: 2.4, vmax: 25, grip: 7, turn: 1.3, weight: 0, traffic: 0, color: '#c4161c', heavy: true, wheelbase: 5, drive: 'rwd', radius: 8.5, response: 4, brake: 8, fade: 0.3, drag: 0.4, reverse: 0.2, tough: 6, weather: 1.15 },
+  fire: { L: 8.5, W: 2.5, H: 3.2, headlights: { forward: 4.32, across: .75, height: .71, glow: .38 }, mass: 14000, accel: 2.4, vmax: 25, grip: 7, turn: 1.3, weight: 0, traffic: 0, color: '#c4161c', heavy: true, wheelbase: 5, drive: 'rwd', radius: 8.5, response: 4, brake: 8, fade: 0.3, drag: 0.4, reverse: 0.2, tough: 6, weather: 1.15 },
   // An ambulance: src/ambulance.ts sends these to people lying hurt. Never parked or in traffic.
   ambulance: { L: 6, W: 2.1, H: 2.7, headlights: { forward: 2.96, across: 0.74, height: 1.085, glow: 0.42 }, mass: 3200, accel: 5.5, vmax: 30, grip: 8, turn: 1.8, weight: 0, traffic: 0, color: '#e6dc24', wheelbase: 3.6, drive: 'rwd', radius: 6, response: 6, brake: 11, tough: 4.5, drag: 0.5, weather: 1.1 },
   // A dustcart: src/refuse.ts keeps one or two on their rounds in the centre. Never parked or in the ordinary mix.
@@ -209,6 +210,7 @@ export interface CarBody { type: string; box?: string; pages?: number }
 const bodyKey = (type: string, box?: string) => box ? `${type}|box:${box}` : type;
 // The frame on the nose of some police cars (a body of its own, like a courier's box).
 export const RAM = 'ram';
+const CITY_PATROL = 'police_city', CITY_WHITE = '#e9ebe7';
 
 // A car's lamps, as bits of `Car.broken`: the headlamps left and right, then the tail
 // lamps. The shader darkens a broken one and lights the ones that are on. WebGPU allows a
@@ -282,7 +284,7 @@ function carGeometry(type: string, box?: string): THREE.BufferGeometry {
   const k = bodyKey(type, box);
   const known = cache.get(k);
   if (known) return known;
-  const S = TYPES[type];
+  const S = TYPES[type === CITY_PATROL ? 'police' : type];
   if (S.two) {
     if (!kit) throw new Error('Figures kit is not loaded');
     const geometry = box ? mergeGeometries([kit.vehicles[S.two](), boxGeometry(S.two, box)]) : kit.vehicles[S.two]();
@@ -345,6 +347,16 @@ function requestStreetSedan() {
   }
 }
 
+const STREET_FIRE = 'fire|street';
+function prepareStreetFire() {
+  if (cache.has(STREET_FIRE)) return;
+  const builder = boxBuilder(TYPES.fire.color, 'fire');
+  fireEngineStreet(builder);
+  const body = builder.done();
+  markZones(body);
+  cache.set(STREET_FIRE, body);
+}
+
 const STREET_AMBULANCE = 'ambulance|street';
 function streetAmbulanceBody() {
   let body = cache.get(STREET_AMBULANCE);
@@ -391,7 +403,8 @@ function bodyGeometry(type: string, box?: string, closeCar = false, coachwork?: 
   const c = new THREE.Color();
   const parts: THREE.BufferGeometry[] = [];
   const doors: Door[] = [], at = new THREE.Vector3();
-  const nodes = [type, ...(box ? [`${type}_${box}`] : [])].map((name) => {
+  const accessoryBody = type === CITY_PATROL ? 'police' : type;
+  const nodes = [type, ...(box ? [`${accessoryBody}_${box}`] : [])].map((name) => {
     const node = bodies!.getObjectByName(name);
     if (!node) throw new Error(`Missing ${name} in cars.glb`);
     return node;
@@ -496,16 +509,16 @@ function doorsOf(type: string) {
 // white pillars, three doors on the right, and the line board over the windscreen.
 // (Forward is +x, right +z, the ground y = 0, as for the car bodies.)
 const HEADLAMP = '#fff6d8', TAIL_LAMP = '#b3161b'; // (a box in one of these is a lamp)
-function boxBuilder(paintColour?: string, streetAmbulance = false) {
+function boxBuilder(paintColour?: string, serviceAtlas?: 'ambulance' | 'fire') {
   const parts: THREE.BufferGeometry[] = [], windows: THREE.BufferGeometry[] = [];
   const c = new THREE.Color();
   const add = (g: THREE.BufferGeometry, colour: string, x: number, y: number, z: number) => {
-    if (streetAmbulance && !g.userData.printed) {
+    if (serviceAtlas && !g.userData.printed) {
       // An unprinted part samples the blank margin of the service livery.
       const uv = new Float32Array(g.attributes.position.count * 2);
       for (let i = 0; i < uv.length; i += 2) { uv[i] = 0.99; uv[i + 1] = 0.03; }
       g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-    } else if (!streetAmbulance) g.deleteAttribute('uv');
+    } else if (!serviceAtlas) g.deleteAttribute('uv');
     g.translate(x, y, z);
     c.set(colour === paintColour ? '#ffffff' : colour);
     const col = new Float32Array(g.attributes.position.count * 3);
@@ -513,7 +526,12 @@ function boxBuilder(paintColour?: string, streetAmbulance = false) {
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
     g.setAttribute('painted', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(colour === paintColour ? 1 : 0), 1));
     if (colour === HEADLAMP || colour === TAIL_LAMP) markLamp(g, colour === HEADLAMP);
-    (g.userData.cabWindow ? windows : parts).push(g.index ? g.toNonIndexed() : g);
+    const target = g.userData.cabWindow ? windows : parts;
+    if (serviceAtlas === 'fire') {
+      // Keep the curved wheel, lens and tube vertices shared between triangles.
+      if (!g.index) g.setIndex(Array.from({ length: g.attributes.position.count }, (_, i) => i));
+      target.push(g);
+    } else target.push(g.index ? g.toNonIndexed() : g);
   };
   const box = (colour: string, x0: number, x1: number, y0: number, y1: number, w: number, z = 0) =>
     add(new THREE.BoxGeometry(x1 - x0, y1 - y0, w), colour, (x0 + x1) / 2, (y0 + y1) / 2, z);
@@ -573,9 +591,9 @@ function boxBuilder(paintColour?: string, streetAmbulance = false) {
   const done = () => {
     if (!windows.length) return mergeGeometries(parts);
     const body = mergeGeometries(parts.concat(windows));
-    const opaqueCount = parts.reduce((sum, g) => sum + g.attributes.position.count, 0);
+    const opaqueCount = parts.reduce((sum, g) => sum + (g.index?.count ?? g.attributes.position.count), 0);
     body.addGroup(0, opaqueCount, 0);
-    body.addGroup(opaqueCount, body.attributes.position.count - opaqueCount, 1);
+    body.addGroup(opaqueCount, (body.index?.count ?? body.attributes.position.count) - opaqueCount, 1);
     return body;
   };
   return { add, box, rounded, panel, wheel, roadWheel, done };
@@ -713,6 +731,7 @@ function fireGeometry(S: CarSpec): THREE.BufferGeometry {
     // The roof's rail, and a post at the back for a blue lamp (beacons.ts).
     box('#c9cdd0', -L + 0.05, cx - 0.05, top, top + 0.22, 0.06, side * (W / 2 - 0.06));
     box(dark, -3.9, -3.7, top, 3.28, 0.3, side * 1.0);
+    box('#285891', -3.95, -3.65, 3.28, 3.395, .31, side);
     box('#1d4fa3', L - 0.72, L - 0.38, cabTop + 0.1, cabTop + 0.27, 0.75, side * 0.62); // the bar's blue lenses
   }
   // On the roof: the deck, the ladder on the right, two suction hoses on the left, a
@@ -760,7 +779,7 @@ function fireGeometry(S: CarSpec): THREE.BufferGeometry {
 // Prague's yellow box ambulance. The short bonnet and inclined screen distinguish
 // the van cab from its full-height patient compartment in both camera views.
 function ambulanceGeometry(S: CarSpec, street = false): THREE.BufferGeometry {
-  const { add, box, panel, rounded, roadWheel, done } = boxBuilder(undefined, street);
+  const { add, box, panel, rounded, roadWheel, done } = boxBuilder(undefined, street ? 'ambulance' : undefined);
   const L = S.L / 2, W = S.W, cab = 0.77, roof = S.H;
   const yellow = '#e6dc24', red = '#df3829', blue = '#15569b', trim = '#303438', glass = '#273841';
   const frontAxle = 1.82, rearAxle = -1.78;
@@ -1168,6 +1187,7 @@ const PART: Record<string, string> = {
   DoorBacking: '#3a393b', RearBacking: '#3a393b', PanelGap: '#48505a', Bumper: '#1f2022', RubStrip: '#313638', LensBed: '#697478', Optic: '#c2cccf',
   DarkChrome: '#666e71', RedLens: '#91232d', Indicator: '#dfa154', EUBlue: '#24528a',
   WheelHub: '#70757b', Glass: '#1e2830', Trim: '#1f2022', Tyre: '#161616', Metal: '#70757b', Lamp: '#fff6d8', Tail: '#b3161b',
+  PatrolNavy: '#234574', PatrolWhite: '#e9ebe7', BeaconLens: '#365d91', BeaconLED: '#a8c1c9',
   Plate: '#e3e5e0', Sign: '#fff4c2', Blue: '#1d4fa3', Yellow: '#d4e02b', Bar: '#1b1f2a', Seat: '#3a393b',
 };
 let bodies: THREE.Object3D | null = null;
@@ -1381,12 +1401,13 @@ dustcartMaterial.onBeforeCompile = (sh, renderer) => {
      reflectedLight.directDiffuse += finish * carCoat(`);
 };
 // The window pass shares the car shader (including dents, cracks and reflections)
-// and instance transforms with the opaque body. Only a street ambulance uses it.
-let ambulanceMaterials: THREE.MeshPhongMaterial[] | undefined;
-function streetMaterials() {
-  if (!ambulanceMaterials) {
+// and instance transforms with the opaque service body.
+const serviceMaterials = new Map<string, THREE.MeshPhongMaterial[]>();
+function streetMaterials(atlas: string) {
+  let materials = serviceMaterials.get(atlas);
+  if (!materials) {
     const body = material.clone(), glass = material.clone();
-    body.map = new THREE.TextureLoader().load(import.meta.env.BASE_URL + 'ambulance-livery.webp');
+    body.map = new THREE.TextureLoader().load(import.meta.env.BASE_URL + atlas);
     body.map.colorSpace = THREE.SRGBColorSpace;
     body.map.anisotropy = 4;
     glass.transparent = true;
@@ -1403,9 +1424,10 @@ function streetMaterials() {
       sh.fragmentShader = sh.fragmentShader.replace('reflectedLight.directDiffuse += carCoat(',
         'reflectedLight.directDiffuse += mix(.035, 1., smoothstep(.035, .22, dot(vColor.rgb, vec3(.3,.59,.11)))) * carCoat(');
     };
-    ambulanceMaterials = [body, glass];
+    materials = [body, glass];
+    serviceMaterials.set(atlas, materials);
   }
-  return ambulanceMaterials;
+  return materials;
 }
 // roll.xy rotates the wheels, roll.z steers the front pair, and roll.w
 // supplies a stable registration number in the same instanced body draw.
@@ -1619,12 +1641,16 @@ export class Car {
     this.spec = TYPES[type];
     const paints = TWO_PAINT[type] || PAINT;
     // Keep the colour pick before refitting, even for a fixed or explicit colour.
-    const pick = paints[Math.floor(r() * paints.length)], paint = colour || this.spec.color || pick;
+    const paintRoll = r();
+    const pick = paints[Math.floor(paintRoll * paints.length)], paint = colour || this.spec.color || pick;
     this.refit(r);
     this.mass = this.spec.mass;
     this.paint = this.spec.color || paint;
-    this.key = bodyKey(type, box);
-    carGeometry(type, box);
+    // Police liveries come as a set with their body. The saved paint identifies
+    // the set on reload, including the silver estates in older saves.
+    if (type === 'police' && (colour ? colour === CITY_WHITE : paintRoll >= .65)) this.paint = CITY_WHITE;
+    this.key = bodyKey(this.bodyType, box);
+    carGeometry(this.bodyType, box);
     this.courier = box;
     this.x = x;
     this.y = y;
@@ -1650,7 +1676,8 @@ export class Car {
   get driven() { return this.mode === 'player' || this.mode === 'police' || this.mode === 'fire'; }
   get forwardSpeed() { return this.vx * Math.cos(this.h) + this.vy * Math.sin(this.h); }
 
-  get doors() { return doorsOf(this.type); }
+  private get bodyType() { return this.type === 'police' && this.paint === CITY_WHITE ? CITY_PATROL : this.type; }
+  get doors() { return doorsOf(this.bodyType); }
 
   // Called as a door swings shut (the game plays the slam).
   static onShut?: (car: Car) => void;
@@ -1695,8 +1722,8 @@ export class Car {
     if (this.ram || this.burnt) return;
     this.ram = true;
     this.broken &= ~(LAMP.headLeft | LAMP.headRight);
-    this.key = bodyKey(this.type, RAM);
-    carGeometry(this.type, RAM);
+    this.key = bodyKey(this.bodyType, RAM);
+    carGeometry(this.bodyType, RAM);
   }
 
   // Something hit the car at (x, y) at `force` m/s: a lamp the blow lands on is smashed.
@@ -1950,8 +1977,8 @@ export class Car {
   // Both views draw the same wreck, including when the camera changes afterwards.
   burn() {
     const fit = this.courier ?? (this.ram ? RAM : undefined);
-    const k = `${this.type}${this.ram ? '|ram' : ''}|burnt`;
-    charBody(k, carGeometry(this.type, fit), this.paint);
+    const k = `${this.bodyType}${this.ram ? '|ram' : ''}|burnt`;
+    charBody(k, carGeometry(this.bodyType, fit), this.paint);
     this.key = k;
     this.burnt = true;
     this.braking = false;
@@ -2157,10 +2184,11 @@ export class CarPool {
     geometry.setAttribute('doors', new THREE.InstancedBufferAttribute(new Float32Array(CarPool.pageCapacity * 4), 4));
     const wheels = key.endsWith('|street-wheels');
     if (wheels) geometry.setAttribute('roll', new THREE.InstancedBufferAttribute(new Float32Array(CarPool.pageCapacity * 4), 4));
-    const street = key === STREET_AMBULANCE;
+    const street = key === STREET_AMBULANCE || key === STREET_FIRE;
     if (street || wheels) for (const g of body.groups) geometry.addGroup(g.start, g.count, g.materialIndex);
     const finish = key === STREET_SEDAN ? sedanMaterials : wheels ? (body.groups.length ? passengerMaterials : streetWheelMaterial) : key === 'garbage' || key === 'garbage|burnt' ? dustcartMaterial : material;
-    const mesh = mirrored(new THREE.InstancedMesh(geometry, street ? streetMaterials() : finish, CarPool.pageCapacity));
+    const materials = street ? streetMaterials(key === STREET_FIRE ? 'fire-appliance.webp' : 'ambulance-livery.webp') : finish;
+    const mesh = mirrored(new THREE.InstancedMesh(geometry, materials, CarPool.pageCapacity));
     mesh.userData.sharedMatrices = true; // (see configureRenderer in webgpu.ts)
     mesh.count = 0;
     mesh.visible = false;
@@ -2215,19 +2243,29 @@ export class CarPool {
 
   prepare(inventory: readonly CarBody[]) {
     for (const { type, box, pages = 1 } of inventory) {
-      const key = bodyKey(type, box);
-      carGeometry(type, box);
-      while ((this.meshes.get(key)?.length || 0) < pages) this.page(key);
-      this.prepared.add(key);
-      const close = prepareStreetCar(type, box);
-      if (close && !this.meshes.has(close)) {
-        this.page(close); this.prepared.add(close);
-        this.drivers ??= new SeatedDrivers(this.scene);
-      }
-      if (key === 'ambulance' && !this.meshes.has(STREET_AMBULANCE)) {
-        this.page(STREET_AMBULANCE);
-        this.prepared.add(STREET_AMBULANCE);
-      }
+      this.prepareBody(type, box, pages);
+      if (type === 'police') this.prepareBody(CITY_PATROL, box, pages);
+    }
+  }
+
+  private prepareBody(type: string, box: string | undefined, pages: number) {
+    const key = bodyKey(type, box);
+    carGeometry(type, box);
+    while ((this.meshes.get(key)?.length || 0) < pages) this.page(key);
+    this.prepared.add(key);
+    const close = prepareStreetCar(type, box);
+    if (close && !this.meshes.has(close)) {
+      this.page(close); this.prepared.add(close);
+      this.drivers ??= new SeatedDrivers(this.scene);
+    }
+    if (key === 'fire' && !this.meshes.has(STREET_FIRE)) {
+      prepareStreetFire();
+      this.page(STREET_FIRE);
+      this.prepared.add(STREET_FIRE);
+    }
+    if (key === 'ambulance' && !this.meshes.has(STREET_AMBULANCE)) {
+      this.page(STREET_AMBULANCE);
+      this.prepared.add(STREET_AMBULANCE);
     }
   }
 
@@ -2278,7 +2316,11 @@ export class CarPool {
         // Start decoding a little before the model can enter the close view.
         if (c.key === 'sedan' && distance2 < 38 ** 2) requestStreetSedan();
         const close = distance2 < STREET_CAR_REACH ** 2 ? closeBodies.get(c.key) : undefined;
-        if (close) {
+        if (c.key === 'fire' && distance2 < STREET_CAR_REACH ** 2) {
+          prepareStreetFire();
+          key = STREET_FIRE;
+          this.closeCars.set(c, key);
+        } else if (close) {
           key = c.key === 'sedan' && cache.has(STREET_SEDAN) ? STREET_SEDAN : close.key;
           this.closeCars.set(c, key);
         }

@@ -228,6 +228,27 @@ const checks = `(async () => {
       }
     }
     pool.render([]);
+    const tender = new Car('fire', () => .2);
+    for (const [street, distance, detail] of [[true, 8, true], [true, 40, false], [false, 8, false]]) {
+      pool.render([tender], null, 0, undefined, street, {x:distance, z:0});
+      assert(page('fire|street').visible === detail && page('fire').visible !== detail, 'fire engine detail by view and distance');
+      assert(pool.matrixOf(tender, matrix), 'fire engine transform available in either view');
+    }
+    assert(page('fire|street').geometry.groups.length === 2, 'one opaque body and one glazed cab');
+    for (const roll of [.2, .85]) {
+      const patrol = new Car('police', () => roll);
+      const body = roll < .65 ? 'police' : 'police_city';
+      assert(patrol.key === body && patrol.doors.length === 4 && patrol.doors.every(d => d.real), 'marked body with hinged doors');
+      const saved = new Car('police', () => 1-roll, 0,0,0,patrol.paint);
+      assert(saved.key === body, 'saved patrol keeps its body and paint');
+      patrol.armour();
+      pool.render([patrol],null,0,undefined,true,{x:0,z:0});
+      assert(page(body+'|box:ram|street-wheels').count === 1 && patrol.ram, 'close marked patrol retains ram');
+      patrol.burn();
+      pool.render([patrol]);
+      assert(page(body+'|ram|burnt').count === 1, 'charred patrol retains correct silhouette');
+    }
+    pool.render([]);
     report.push('render: prepared page retained; new builder states ' + fresh + '; ' + (r.backend?.isWebGPUBackend ? 'WebGPU' : 'WebGL'));
   }
   if (${!!baseline} && r.backend?.isWebGPUBackend) {

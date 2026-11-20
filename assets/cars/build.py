@@ -45,6 +45,8 @@ COLOURS = {
     "Tyre": (0.01, 0.01, 0.01), "Metal": (0.35, 0.37, 0.4), "Lamp": (0.95, 0.9, 0.7),
     "Tail": (0.5, 0.02, 0.02), "Plate": (0.85, 0.85, 0.82), "Sign": (0.95, 0.9, 0.55),
     "Blue": (0.02, 0.08, 0.4), "Yellow": (0.7, 0.75, 0.05), "Bar": (0.02, 0.02, 0.03),
+    "PatrolNavy": (.018,.060,.17), "PatrolWhite": (.85,.87,.85),
+    "BeaconLens": (.038,.11,.29), "BeaconLED": (.4,.57,.62),
     "Seat": (0.07, 0.07, 0.075), "SimpleSeat": (0.07, 0.07, 0.075),
     "Window": (0.02, 0.03, 0.04), "WindowInside": (0.02, 0.03, 0.04),
     "WindowBacking": (0.07, 0.07, 0.075), "RearBacking": (0.07, 0.07, 0.075),
@@ -293,26 +295,6 @@ class Car:
             quad((*a, floor), (*b, floor), (*b, belt), (*a, belt), mat="DoorBacking" if i in (1, 3) else "Seat")
             quad((*a, belt), (*b, belt), (*d, top), (*c, top), mat="RearBacking" if i == 2 else "WindowBacking")
 
-    def text(self, word, x, px, top, mat):
-        """A word lying on the bonnet, read from in front of the car: the tops of its
-        letters at x, each pixel px across, `top(x, y)` the height of the bonnet there."""
-        pitch = 6 * px
-        y0 = -(len(word) * pitch - px) / 2
-        for i, ch in enumerate(word):
-            for r, row in enumerate(GLYPHS[ch]):
-                c = 0
-                while c < 5:
-                    if row[c] != "1":
-                        c += 1
-                        continue
-                    e = c
-                    while e < 5 and row[e] == "1":
-                        e += 1
-                    xa, xb = x + r * px, x + (r + 1) * px
-                    ya, yb = y0 + i * pitch + c * px, y0 + i * pitch + e * px
-                    self.decal([(xa, ya), (xb, ya), (xb, yb), (xa, yb)], mat, top)
-                    c = e
-
     def bumper(self, outline, z0, z1, out=0.04):
         """A black bumper standing `out` proud of the body round `outline` (x, y points
         along the body's edge, from one side round the end to the other), from z0 up to z1."""
@@ -550,6 +532,59 @@ class Shape:
 # Lengths, widths and heights as in src/car.ts TYPES.
 
 
+def patrol_bar(c, x, roof, width):
+    """Cast feet, rubber seal, a bevelled blue lens and individual optic modules."""
+    for side in (-1, 1):
+        c.block((x, side * width * .26, roof + .041), (.19, .11, .078), "Trim")
+    rings = []
+    for z, length, span in [(.066,.25,.76), (.083,.32,.82), (.102,.32,.82),
+                            (.17,.30,.81), (.185,.245,.76)]:
+        a, b = length / 2, span * width / 2
+        rings.append([c.v(x + u, v, roof + z) for u, v in [
+            (-a,-b+.09),(-a+.055,-b),(a-.055,-b),(a,-b+.09),
+            (a,b-.09),(a-.055,b),(-a+.055,b),(-a,b-.09)]])
+    for low, high, mat in zip(rings, rings[1:], ("Bar","Trim","BeaconLens","Metal")):
+        for i in range(8):
+            j = (i + 1) % 8
+            c.face([low[i],low[j],high[j],high[i]], mat)
+    c.face(rings[0], "Trim")
+    c.face(rings[-1], "BeaconLens")
+    c.block((x, 0, roof+.186), (.232,.48,.008), "Metal")
+    for face in (-1,1):
+        c.block((x + face * .155, 0, roof + .133), (.011,.45,.052), "Metal")
+        for side in (-1,1):
+            for i in range(5):
+                c.block((x + face*.156, side*(.31+i*.073), roof+.135),
+                        (.012,.046,.033),"BeaconLED")
+
+
+def patrol_word(parent, word, width, ink, project):
+    """Triangulate printed vinyl and fit it to the bonnet or the hinged door skin."""
+    curve = bpy.data.curves.new("Patrol lettering", "FONT")
+    curve.body, curve.align_x, curve.resolution_u = word, "CENTER", 3
+    for path in ("/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+                 "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"):
+        if Path(path).exists():
+            curve.font = bpy.data.fonts.load(path, check_existing=True)
+            break
+    obj = bpy.data.objects.new("Letter outlines", curve)
+    bpy.context.collection.objects.link(obj)
+    bpy.context.view_layer.update()
+    src = bpy.data.meshes.new_from_object(obj.evaluated_get(bpy.context.evaluated_depsgraph_get()))
+    scale = width / (max(v.co.x for v in src.vertices) - min(v.co.x for v in src.vertices))
+    pts = [project(v.co.x * scale, v.co.y * scale) - parent.location for v in src.vertices]
+    src.calc_loop_triangles()
+    mesh = bpy.data.meshes.new("Patrol vinyl")
+    mesh.from_pydata(pts, [], [list(t.vertices) for t in src.loop_triangles])
+    mesh.materials.append(material(ink))
+    mark = bpy.data.objects.new(parent.name + "_vinyl", mesh)
+    bpy.context.collection.objects.link(mark)
+    mark.parent = parent
+    bpy.data.objects.remove(obj, do_unlink=True)
+    bpy.data.curves.remove(curve)
+    bpy.data.meshes.remove(src)
+
+
 def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, r=0.31, lift=0.0, word=None,
            sunroof=0.0, fin=True):
     """A car: `rear` is 'hatch', 'sedan' or 'estate'; `bar` is where along the roof the
@@ -601,6 +636,10 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, 
     shape.bulge = bulge
 
     def livery(x, mat):
+        if name == "police_city":
+            if mat == "PatrolWhite" and abs(x) < n - .35:
+                return "PatrolNavy" if int((x+n)/.16) % 2 else "PatrolWhite"
+            return mat
         if mat != "Blue" or xq < x < xa:
             return mat
         return "Paint" if x > n - 0.3 or x < -n + 0.25 else "Yellow" if int((x + n) / 0.19) % 2 else "Blue"
@@ -608,8 +647,12 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, 
     c.body(stations, wheels, r, stripe=stripe, doors=[(xa, xm, 1), (xm, xq, 3)], cabin=(xa, back),
            livery=livery if word else None, crown=bulge)
     shape.bumpers(c, (0.3 + lift, 0.52 + lift), (0.32 + lift, 0.56 + lift))
-    if word:
-        c.text(word, n - 1.17, 0.038, shape.top, "Blue")
+    city = name == "police_city"
+    if city:
+        # Paired tapered shoulder stripes frame the white bonnet field.
+        for side in (-1, 1):
+            c.decal([(n-.37,side*.50),(n-.38,side*.61),(xa+.14,side*.79),
+                     (xa+.075,side*.57)], "PatrolNavy", shape.top, .004)
     roof = H - 0.035
     c.cabin(belt, xa, xb, xm, xc, xd, w - 0.11, w * 0.74, roof, xm_top=(xb + xc) / 2 + 0.05,
             xq=xq if xq - 0.06 > xc + 0.3 else None, edge=lambda x: half(x) - LID, crown=0.035, bow=0.05)
@@ -635,16 +678,23 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, 
     if sign:
         c.block((mid, 0, H + 0.1), (0.24, 0.62, 0.2), "Sign")
     if bar is not None:
-        # A long low bar nearly as wide as the roof: blue lenses at the ends, clear between.
-        c.block((bar, 0, H + 0.035), (0.36, W * 0.8, 0.07), "Bar")
-        c.block((bar, 0, H + 0.095), (0.3, W * 0.26, 0.05), "Metal")
-        for s in (1, -1):
-            c.block((bar, s * W * 0.265, H + 0.1), (0.32, W * 0.25, 0.06), "Blue")
+        patrol_bar(c, bar, H, W)
     if rails:
         for s in (1, -1):
             c.block(((xb + xc) / 2, s * (w * 0.74 - 0.05), roof + 0.02), (xb - xc - 0.1, 0.05, 0.05), "Trim")
     build_trim(name, shape, c, 0.64 + lift, boot - 0.12, material, MATS)
-    return c.finish(name)
+    body = c.finish(name)
+    if word:
+        patrol_word(body, word, .92, "PatrolNavy",
+                    lambda u, v: Vector((n-.72-v, u, shape.top(n-.72-v, u)+.006)))
+        for k, side in [(1,1),(2,-1)]:
+            door = bpy.data.objects[f"{name}_door{k}"]
+            def skin(u, v):
+                x = (xa+xm)/2 - side*u
+                return Vector((x,side*(shape.half(x)+.003),.61+v))
+            patrol_word(door, "MĚSTSKÁ POLICIE" if city else word, .99 if city else .83,
+                        "PatrolWhite", skin)
+    return body
 
 
 def van(name="van", L=5.2, W=2.0, H=2.3):
@@ -730,17 +780,6 @@ def pickup(name="pickup", L=5.9, W=2.03, H=1.95):
 
 POLICE_STRIPE = [(0.55, "Blue"), (0.77, "Paint")]
 
-# The letters on the police car's bonnet, 5 × 7 pixels each.
-GLYPHS = {
-    "P": ["11110", "10001", "10001", "11110", "10000", "10000", "10000"],
-    "O": ["01110", "10001", "10001", "10001", "10001", "10001", "01110"],
-    "L": ["10000", "10000", "10000", "10000", "10000", "10000", "11111"],
-    "I": ["01110", "00100", "00100", "00100", "00100", "00100", "01110"],
-    "C": ["01110", "10001", "10000", "10000", "10000", "10001", "01110"],
-    "E": ["11111", "10000", "10000", "11110", "10000", "10000", "11111"],
-}
-
-
 def ram(name, L, W):
     """The black tube frame some police cars carry on the nose, for pushing a car they're
     chasing off the road: a part of its own, which src/car.ts puts on the body."""
@@ -768,6 +807,9 @@ def build():
         saloon("taxi", 4.6, 1.82, 1.45, "sedan", sign=True),
         saloon("police", 4.7, 1.84, 1.5, "estate", stripe=POLICE_STRIPE, bar=-0.25, rails=True, word="POLICIE", fin=False),
         ram("police_ram", 4.7, 1.84),
+        saloon("police_city", 4.7, 1.84, 1.5, "sedan",
+               stripe=[(.52,"PatrolNavy"),(.71,"PatrolWhite"),(.775,"Paint")],
+               bar=-.25, word="POLICIE"),
     ]
 
 
