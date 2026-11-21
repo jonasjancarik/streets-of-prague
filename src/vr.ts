@@ -1,6 +1,8 @@
 import * as THREE from 'three';
+import { t } from './i18n.ts';
+import { initialView } from './streetView.ts';
 
-// VR on a phone in a headset (a Daydream View, a Cardboard), behind ?vr: the game's own
+// VR on a phone in a headset (a Daydream View, a Cardboard), the VR camera view (or ?vr): the game's own
 // first-person view, drawn once per eye by the browser's WebXR (Chrome on Android draws the
 // lenses' correction and follows the head with the phone's sensors). The game places a
 // "rig" each frame, where your eyes are and which way is straight ahead, and the head turns
@@ -64,6 +66,9 @@ export class VR {
   private frames = 0;
   private since = 0;
   private bar = document.createElement('div');
+  private session: XRSessionish | null = null;
+  private started = false; // the game has begun (the buttons wait for it)
+  private offered = true; // VR is the chosen view: the buttons show outside the headset
   private ddClick = false; private ddPlus = false; private ddMinus = false;
 
   constructor(
@@ -71,6 +76,8 @@ export class VR {
     private camera: THREE.PerspectiveCamera,
     private key: (code: string) => void,
     private scale: number,
+    // Back to the game without VR, from the button beside Play in VR.
+    private without: () => void,
   ) {
     renderer.xr.enabled = true;
     renderer.xr.setReferenceSpaceType('local');
@@ -87,14 +94,19 @@ export class VR {
     this.buttons();
   }
 
-  // The game has begun: the buttons show.
-  ready() { this.bar.hidden = false; }
+  // The game has begun: the buttons show (while VR is the chosen view).
+  ready() { this.started = true; this.bar.hidden = !this.offered; }
+  offer(on: boolean) { this.offered = on; this.bar.hidden = !(on && this.started); }
+
+  // Out of the headset (another camera view was picked).
+  exit() { void this.session?.end().catch(() => {}); }
 
   // Into the headset (the browser asks for this from a tap).
   async enter() {
     const xr = (navigator as { xr?: XRish }).xr;
     if (!xr) return;
-    const session = await xr.requestSession('immersive-vr', { optionalFeatures: ['local'] });
+    if (this.active) return;
+    const session = this.session = await xr.requestSession('immersive-vr', { optionalFeatures: ['local'] });
     session.addEventListener('end', () => this.leave());
     await this.renderer.xr.setSession(session as unknown as XRSession);
     this.active = true;
@@ -107,6 +119,7 @@ export class VR {
 
   private leave() {
     this.active = false;
+    this.session = null;
     document.body.classList.remove('in-vr');
     window.requestAnimationFrame = this.nativeRAF;
     const waiting = this.queue; this.queue = [];
@@ -266,18 +279,22 @@ export class VR {
     bar.hidden = true;
     const go = document.createElement('button');
     go.className = 'main';
-    go.textContent = 'Play in VR';
+    go.textContent = t('Play in VR');
+    const plain = document.createElement('button');
+    plain.textContent = t('Play without VR');
+    plain.onclick = () => this.without();
     const note = document.createElement('p');
     const xr = (navigator as { xr?: XRish }).xr;
-    const says = (s: string) => { note.textContent = s; };
-    if (!xr) { go.disabled = true; says(isSecureContext ? 'This browser has no VR. Try Chrome on Android.' : 'VR needs a secure (https) address.'); }
+    const says = (s: string) => { note.textContent = t(s); };
+    if (!xr) { go.disabled = true; says(isSecureContext ? 'This browser can’t show VR. Try Chrome on an Android phone.' : 'VR needs a secure (https) address.'); }
     else void xr.isSessionSupported('immersive-vr').then((ok) => {
       go.disabled = !ok;
-      says(ok ? 'Tap Play in VR, then put the phone in the headset.' : 'This phone or browser can\'t show VR.');
-    }, () => says('This phone or browser can\'t show VR.'));
-    go.onclick = () => { void this.enter().catch((e) => { console.warn('VR', e); says('VR couldn\'t start. Try again.'); }); };
-    bar.append(go);
-    if ((navigator as { bluetooth?: unknown }).bluetooth) {
+      says(ok ? 'Tap Play in VR, then put the phone in the headset.' : 'This phone or browser can’t show VR.');
+    }, () => says('This phone or browser can’t show VR.'));
+    go.onclick = () => { void this.enter().catch((e) => { console.warn('VR', e); says('VR couldn’t start. Try again.'); }); };
+    bar.append(go, plain);
+    // (The Daydream controller doesn't work yet: docs/handbook.md. ?daydream offers it.)
+    if ((navigator as { bluetooth?: unknown }).bluetooth && new URLSearchParams(location.search).has('daydream')) {
       const pad = document.createElement('button');
       pad.textContent = 'Connect Daydream controller';
       pad.onclick = () => { void this.pair((s) => { pad.textContent = s; }); };
@@ -288,11 +305,12 @@ export class VR {
   }
 }
 
-// The VR mode, where it is asked for (?vr; ?vrscale=0.5…1 sets how sharp, less for speed).
-export function setupVR(params: URLSearchParams, renderer: THREE.WebGLRenderer, camera: THREE.PerspectiveCamera, key: (code: string) => void) {
-  if (!params.has('vr')) return null;
+// The VR mode, when the page was opened for it (the VR camera view, or ?vr; ?vrscale=0.5…1
+// sets how sharp, less for speed).
+export function setupVR(params: URLSearchParams, renderer: THREE.WebGLRenderer, camera: THREE.PerspectiveCamera, key: (code: string) => void, without: () => void) {
+  if (initialView(params) !== 'vr') return null;
   const scale = THREE.MathUtils.clamp(Number(params.get('vrscale')) || 0.75, 0.3, 1);
-  const vr = new VR(renderer, camera, key, scale);
+  const vr = new VR(renderer, camera, key, scale, without);
   // ?vrlog=<port>: the controls' state, twice a second, to a listener on the computer (for
   // a phone whose Chrome can't be inspected remotely; `adb reverse` the port).
   const log = Number(params.get('vrlog'));

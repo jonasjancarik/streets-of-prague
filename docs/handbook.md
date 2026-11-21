@@ -45,7 +45,7 @@ it. If the local status endpoint is unavailable, the page carries on.
 `node scripts/check-bench-pause.mjs` checks polling and startup recovery offline.
 
 WebGPU is the default renderer; `?renderer=webgl` selects the legacy renderer, and so does
-`?vr` (three.js draws for a headset only through WebGL).
+`?vr` or the VR camera view (three.js draws for a headset only through WebGL).
 WebGPU reuses the same building, landmark, cutaway and lamp-light shader graphs
 across equivalent meshes. Each mesh keeps its own material, textures and sky-view
 attribute, so unloading one tile does not change another tile's appearance.
@@ -702,13 +702,21 @@ the same signal phase as the overhead light.
   while you hold Space. Release Space to return to the player.
   "Helicopter next to me" parks one on the nearest open ground (flown like the one on
   Palackého náměstí, see Playing).
-- **VR** (`src/vr.ts`, a prototype behind `?vr`): play in a phone headset such as the
-  Daydream View or a Cardboard, in Chrome on Android. Tap **Play in VR**, then put the
-  phone in the headset. Chrome draws the lens correction and follows your head with the
+- **VR** (`src/vr.ts`, an early version): play in a phone headset such as the
+  Daydream View or a Cardboard, in Chrome on Android. Where the phone can show VR, the
+  start screen has **Play in VR** and the settings' **Camera view** has a **VR** choice
+  beside Overhead, First person and Third person (none of these show where it can't). VR
+  is drawn with WebGL, which only a fresh start can switch to, so picking it reloads the
+  page; the game is saved as the page goes, and the start screen then offers **Start in
+  VR** or **Continue in VR**, with **Play without VR** beside it. The choice is remembered
+  (`playerView` in local storage, as for the other views); `?vr` asks for it from the URL.
+  Out of the headset (Chrome's back button) the game shows **Play in VR** and **Play
+  without VR** over the street. Picking another view leaves VR without a reload; the page
+  stays on WebGL until its next start. Put the phone in the headset once VR has started. Chrome draws the lens correction and follows your head with the
   phone's sensors. You see the street from your own eyes; in a car you sit in the driver's
   seat. You walk the way your head faces, by one of three means:
-  - the Daydream controller, paired from **Connect Daydream controller** over Web
-    Bluetooth (not the old Daydream app): the touchpad walks or drives (top forward,
+  - the Daydream controller, paired from **Connect Daydream controller** (shown only
+    with `?daydream`) over Web Bluetooth (not the old Daydream app): the touchpad walks or drives (top forward,
     sides sideways or steering), clicking it is E (get in or out), the app button runs,
     and the volume buttons turn you 30° at a time (not working yet, see below);
   - a gamepad (an Xbox controller works): the left stick walks forward, back and

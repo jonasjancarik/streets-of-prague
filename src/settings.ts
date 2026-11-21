@@ -1,4 +1,4 @@
-import { firstPersonOptions, setFirstPersonOptions, type FirstPersonOptions, type PlayerView } from './streetView.ts';
+import { firstPersonOptions, setFirstPersonOptions, vrSupported, type FirstPersonOptions, type PlayerView } from './streetView.ts';
 import { LANGS, getLang, onLang, setLang, t } from './i18n.ts';
 import type { Lang } from './i18n.ts';
 import type { Graphics, Choice, Reflections } from './graphics.ts';
@@ -218,11 +218,19 @@ export function setupSettings({ sound, graphics, weather, saves, cameraChoice }:
     { id: 'overhead', label: () => t('Overhead') },
     { id: 'first', label: () => t('First person') },
     { id: 'third', label: () => t('Third person') },
+    { id: 'vr', label: () => t('VR') },
   ], cameraChoice.get, cameraChoice.set);
+  // VR only where the phone can show it (Chrome on Android, in a Cardboard-style headset).
+  const vrChip = viewRow.querySelectorAll('button')[3] as HTMLButtonElement;
+  vrChip.hidden = true;
+  void vrSupported().then((ok) => { vrChip.hidden = !ok && cameraChoice.get() !== 'vr'; });
   const lookNote = el('p', 'settings-note', viewRow);
   const updateLookNote = () => {
-    lookNote.hidden = cameraChoice.get() === 'overhead';
-    lookNote.textContent = t('Click the street and move the mouse to look around, swipe on a touchscreen, or use the right stick.');
+    const view = cameraChoice.get();
+    lookNote.hidden = view === 'overhead';
+    lookNote.textContent = view === 'vr'
+      ? t('Put the phone in a VR headset. You walk the way you look: steer with a gamepad, or look straight down for a moment to start or stop walking.')
+      : t('Click the street and move the mouse to look around, swipe on a touchscreen, or use the right stick.');
   };
   refresh.push(updateLookNote);
   const walkSettings = el('details', 'settings-radio', viewRow);

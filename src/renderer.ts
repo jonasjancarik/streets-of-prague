@@ -3,6 +3,7 @@ import type { WebGPURenderer as GPU } from 'three/webgpu';
 import * as telemetry from './telemetry.ts';
 import { isSoftware, reportTrouble, whyWebGL } from './graphicswarning.ts';
 import { gpuMemoryReport, trackGpuMemory } from './gpumemory.ts';
+import { initialView } from './streetView.ts';
 
 // A browser/driver can leave requestAdapter or requestDevice pending indefinitely.
 // Finish startup with the legacy renderer instead of leaving the map loading forever.
@@ -92,9 +93,10 @@ export async function createGameRenderer(params: URLSearchParams): Promise<THREE
   if (retry === 'webgl' && params.get('renderer') !== 'webgl') return createLegacy('WebGPU could not start the game on this device', false);
   // VR (?vr, vr.ts) is drawn with WebGL: three.js draws for a headset only through WebGL, and
   // the WebGPU renderer's own WebGL fallback leaves out people and breaks the trees.
-  const asked = params.get('renderer') === 'webgl' || params.has('vr');
+  const vr = initialView(params) === 'vr';
+  const asked = params.get('renderer') === 'webgl' || vr;
   const legacy = (why: string) => createLegacy(why, asked);
-  if (asked) return legacy(params.has('vr') ? 'VR asks for it (?vr)' : 'it was asked for in the URL (?renderer=webgl)');
+  if (asked) return legacy(vr ? 'VR asks for it (?vr or the VR camera view)' : 'it was asked for in the URL (?renderer=webgl)');
   let why = '';
   let renderer: GPU | undefined;
   const watch = startupWatch();

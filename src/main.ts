@@ -88,7 +88,7 @@ import type { Surface, HornKind, Rotor } from './audio.ts';
 import { tunnelFinishesView } from './tunnelFinish.ts';
 import { StreetIronwork } from './streetIronwork.ts';
 import { StreetPlates } from './streetPlates.ts';
-import { eyesFor, firstPersonOptions, initialView, WalkingGait, type Eyes, type PlayerView } from './streetView.ts';
+import { eyesFor, firstPersonOptions, initialView, savePlayerView, vrSupported, WalkingGait, type Eyes, type PlayerView } from './streetView.ts';
 import { setupTouch } from './touch.ts';
 import { setupGamepad, padLabels, usingPad } from './gamepad.ts';
 import './credits.ts';
@@ -236,6 +236,7 @@ async function main() {
     hourSource: clock.linkedTime ? 'link' : 'default',
   };
   const start = params.has('go') ? null : startScreen($('loading'), { now: Clock.nowLabel(), linkedStart, season: season.day, dateLinked, timeLinked: clock.linkedTime, weather: weather.kind, weatherFixed: weather.fixed,
+    vr: { mode: initialView(params) === 'vr', supported: vrSupported(), pick: () => { savePlayerView('vr'); location.reload(); } },
     sound: savedSound !== 'off', saved: saved && (() => describe(saved)), savedLook: saved ? { clock: saved.clock, weather: saved.weather.fixed ? saved.weather.kind : automaticWeather(saved.weather.kind), season: saved.season } : undefined, lost: !saved && !params.has('go') && unreadable('auto', AREA) });
   // The weather in Prague now, for the start screen (the URL's ?weather wins).
   if (start && !params.has('weather')) void liveWeather().then((k) => { if (k) start.live(k); });
@@ -313,10 +314,13 @@ async function main() {
   scene.background = new THREE.Color(BACKDROP);
   const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 1, 6000);
   camera.up.set(0, 0, -1);
-  // VR in a phone headset, behind ?vr (vr.ts): the first-person view, turned by your head.
+  // VR in a phone headset (vr.ts), when the page was opened for it (the VR camera view, or
+  // ?vr): the first-person view, turned by your head. It stays the chosen view (with Play in
+  // VR on screen outside the headset) until another is picked.
   const vr = setupVR(params, renderer, camera, (code) => {
     for (const type of ['keydown', 'keyup']) window.dispatchEvent(new KeyboardEvent(type, { code, bubbles: true, cancelable: true }));
-  });
+  }, () => cameraChoice.set('overhead'));
+  let vrView = !!vr;
   // Where straight ahead is in a vehicle, turned from its nose, and which vehicle that is.
   let vrSeat: { h: number } | null = null, vrSeatTurn = 0, vrWas = false;
 
@@ -1637,12 +1641,20 @@ async function main() {
     },
   };
   const cameraChoice = {
-    get: (): PlayerView => testkit?.cam || !testkit?.eyes ? 'overhead' : testkit.eyes.third ? 'third' : 'first',
+    get: (): PlayerView => vrView ? 'vr' : testkit?.cam || !testkit?.eyes ? 'overhead' : testkit.eyes.third ? 'third' : 'first',
     set: (choice: PlayerView) => {
       if (!testkit) return;
+      savePlayerView(choice);
+      // VR needs the page drawn with WebGL, which only a fresh start gives (the game is
+      // saved as the page goes and picked up again from the start screen).
+      if (choice === 'vr' && !vr) { location.reload(); return; }
+      if (choice === 'vr' && vr) void vr.enter().catch((e) => console.warn('VR', e));
+      // (Leaving VR keeps WebGL until the next start: no reload needed.)
+      if (choice !== 'vr' && vrView) vr?.exit();
+      vrView = choice === 'vr';
+      vr?.offer(vrView);
       testkit.cam = null;
       testkit.eyes = eyesFor(choice);
-      try { localStorage.setItem('playerView', choice); } catch { /* storage is optional */ }
     },
   };
   const settingsPanel = setupSettings({ cameraChoice, sound, graphics, weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k); } }, saves });
@@ -2729,6 +2741,9 @@ async function main() {
   if (start) {
     status('');
     const choice = await start.ready();
+    // Into the headset while the tap still counts (the browser asks for one).
+    if (vr && choice.vr) void vr.enter().catch((e) => console.warn('VR', e));
+    else if (vr) { vrView = false; vr.offer(false); savePlayerView('overhead'); }
     if (choice.resume && saved) {
       startSources = { ...startSources, weatherSource: 'save', hourSource: 'save' };
       if (saved.season) startSources.monthSource = 'save';
@@ -3612,7 +3627,7 @@ async function main() {
     capture: () => new Promise((resolve) => { grabFull.push(resolve); setTimeout(() => resolve(null), 3000); }),
   });
   // ?fps starts in first person, as the developer panel's First person box does; ?tps in third person.
-  testkit.eyes = eyesFor(initialView(params));
+  testkit.eyes = eyesFor(vr ? 'overhead' : initialView(params)); // (VR: from above until the headset goes on)
   dev.attach(testkit);
   // A fixed target altitude keeps before/after terrain views on the same camera.
   const shot = params.get('camera')?.split(',').map(Number);

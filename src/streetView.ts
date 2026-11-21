@@ -1,6 +1,8 @@
 // Street cameras share the same look direction across mouse, touch and controller.
 export interface Eyes { yaw: number; pitch: number; still?: number; third?: boolean; onFoot?: boolean }
-export type PlayerView = 'overhead' | 'first' | 'third';
+// 'vr': through a phone in a headset (vr.ts). The page is then drawn with WebGL, which only
+// a page load can switch to (renderer.ts), so choosing it, or leaving it for good, reloads.
+export type PlayerView = 'overhead' | 'first' | 'third' | 'vr';
 
 export interface FirstPersonOptions { fov: number; sensitivity: number; motion: 'device' | 'steady' | 'gentle' }
 export const firstPersonOptions: FirstPersonOptions = { fov: 55, sensitivity: 100, motion: 'device' };
@@ -24,13 +26,25 @@ export function lookAround(eyes: Eyes, right: number, down: number) {
 }
 
 export function initialView(params: URLSearchParams): PlayerView {
+  if (params.has('vr')) return 'vr';
   if (params.has('tps')) return 'third';
   if (params.has('fps')) return 'first';
   try {
     const view = localStorage.getItem('playerView');
-    if (view === 'first' || view === 'third') return view;
+    if (view === 'first' || view === 'third' || view === 'vr') return view;
   } catch { /* storage is optional */ }
   return 'overhead';
+}
+
+export function savePlayerView(view: PlayerView) {
+  try { localStorage.setItem('playerView', view); } catch { /* storage is optional */ }
+}
+
+// Whether this phone and browser can show VR (Chrome on Android can, through Cardboard).
+let vrAnswer: Promise<boolean> | null = null;
+export function vrSupported(): Promise<boolean> {
+  const xr = (navigator as { xr?: { isSessionSupported(mode: string): Promise<boolean> } }).xr;
+  return vrAnswer ??= xr ? xr.isSessionSupported('immersive-vr').catch(() => false) : Promise.resolve(false);
 }
 
 export function eyesFor(view: PlayerView): Eyes | null {
