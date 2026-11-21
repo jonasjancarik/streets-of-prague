@@ -15,14 +15,26 @@ export default {
       });
       return skyward.intersectObjects(roofs, false)[0]?.distance;
     };
+    async function walkTo(x: number, y: number) {
+      // Steer to each bend by its position. A passer-by can slow the walker
+      // down without changing where the lane turns towards the open street.
+      for (let i = 0; i < 120; i++) {
+        const dx = x - g.walker.x, dy = y - g.walker.y;
+        if (Math.hypot(dx, dy) < .45) return;
+        g.walker.h = Math.atan2(dy, dx);
+        await t.wait(.12, { move: 1 });
+      }
+      throw Error('Could not reach the bend in Divadelní: ' + JSON.stringify(t.where()));
+    }
     try {
       await t.go([50.08108, 14.41381], { heading: 350 });
       t.eyes = { yaw: 0, pitch: 0 };
+      t.empty();
       t.time('14:00');
       t.weather('clear');
-      await t.wait(3.5, { move: 1 });
+      await walkTo(-3709, 2397.2);
       t.check('the approach is open to the sky', g.walker.level === -1 && ceiling() === undefined, t.where());
-      await t.wait(4.5, { move: 1 });
+      await walkTo(-3711.7, 2412.2);
       await t.frames(3);
       const headroom = ceiling();
       t.check('the lined ceiling faces the walker', headroom !== undefined && headroom > 1 && headroom < 4, headroom);
@@ -30,11 +42,9 @@ export default {
       await t.frames(3);
       t.check('the overhead cutaway shows the road', ceiling() === undefined);
       t.eyes = { yaw: 0, pitch: 0 };
-      g.walker.h = (90 - 355) * Math.PI / 180;
-      await t.wait(7, { move: 1 });
+      await walkTo(-3714, 2438.2);
       // Beyond the soffit, the lane bends round the corner of the building.
-      g.walker.h = (90 - 18) * Math.PI / 180;
-      await t.wait(4, { move: 1 });
+      await walkTo(-3709.6, 2451.9);
       t.check(
         'the far exit returns to the open street',
         g.walker.level === 0 && g.walker.y > 2448 && ceiling() === undefined,
