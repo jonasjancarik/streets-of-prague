@@ -55,24 +55,27 @@ export default {
       t.exit();
     }
 
-    // Stairs across a step: you walk down them.
-    await t.go(start);
-    const stairs = t.stepCrossing({ hw: 'steps', r: 300, back: 5 });
-    // (Not every neighbourhood has them: without any, there is nothing to walk down.)
-    t.check(stairs ? 'stairs across a step' : 'no stairs across a step near here: not tried', true);
-    if (stairs) {
+    // Dvořákovo nábřeží has a mapped flight through the parapet down to the quay.
+    await t.go([50.092320, 14.417807]);
+    const stairs = t.stepCrossing({ hw: 'steps', r: 25, back: 5 });
+    if (t.check('mapped stairs across a quay step', !!stairs) && stairs) {
       await t.go(stairs.from, { heading: stairs.heading });
+      const top = t.groundHere();
       await t.wait(8, { move: 1 });
-      t.check('the walker went down the stairs', t.pastEdge(stairs) > 2, `${t.pastEdge(stairs)} m past the edge`);
+      t.check('the walker went down the stairs', t.pastEdge(stairs) > 2 && t.groundHere() < top - 1,
+        `${t.pastEdge(stairs)} m beyond the edge, descending from ${top} to ${t.groundHere()} m`);
     }
 
-    // A street across a step (a ramp): you drive down it.
-    await t.go(start);
-    const ramp = t.stepCrossing({ hw: 'drive', r: 300, back: 10 });
+    // The southern approach to Čechův most crosses a surveyed terrace edge.
+    // Kampa supplies retaining walls and stairs, but its search area no longer
+    // contains a car street that crosses a qualifying drop on the current map.
+    await t.go([50.093713, 14.416618]);
+    const ramp = t.stepCrossing({ hw: 'drive', r: 40, back: 10 });
     if (t.check('a street across a step', !!ramp) && ramp) {
       await t.go(ramp.from, { heading: ramp.heading });
       await t.drive('hatch');
       await t.go(ramp.from, { heading: ramp.heading });
+      t.check('the car starts before the open crossing', t.pastEdge(ramp) < -5, t.pastEdge(ramp));
       t.push(30, ramp.heading);
       await t.wait(3, { move: 0.5 });
       t.check('the car drove across', t.pastEdge(ramp) > 3, `${t.pastEdge(ramp)} m past the edge`);
