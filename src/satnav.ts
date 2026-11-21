@@ -210,6 +210,7 @@ export class Satnav {
   private faded = 0; // the furthest vertex pair whose alpha was last set below 1
   private driving = false;
   private walking = false;
+  private walkJob = false;
   private footWay: WalkingWay | null = null;
   private walkSearch: ReturnType<typeof walkingSearch> | null = null;
   private toPin = 0;
@@ -272,7 +273,8 @@ export class Satnav {
   }
 
   // Once a frame: `car`, what you're driving (null on foot); `job`, where the job wants you.
-  update(dt: number, car: Driver | null, me: { x: number; y: number; level?: number }, job: { x: number; y: number } | null, onFoot = false) {
+  update(dt: number, car: Driver | null, me: { x: number; y: number; level?: number }, job: { x: number; y: number } | null, onFoot = false, walkJob = false) {
+    this.walkJob = walkJob;
     const moved = job && this.job ? Math.hypot(job.x - this.job.x, job.y - this.job.y) > 5 : job !== this.job;
     if (moved) { this.job = job; this.quiet = false; this.here = false; }
     if (this.goal) this.pin.show(this.goal.x, this.goal.y); else this.pin.hide();
@@ -297,7 +299,7 @@ export class Satnav {
       return;
     }
     if (to?.job && this.here && Math.hypot(to.x - me.x, to.y - me.y) > arrive * 2.5) this.here = false; // drove off again
-    if (!to || (!car && !walking) || (to.job && (this.here || walking))) { this.drop(); return; }
+    if (!to || (!car && !walking) || (to.job && (this.here || (walking && !walkJob)))) { this.drop(); return; }
     if (walking) {
       this.walkTo(dt, me, to);
       return;
@@ -401,7 +403,7 @@ export class Satnav {
   // The card in the HUD, as HTML ('' when there's nothing to say).
   card() {
     const to = this.target;
-    if (!to || (to.job && (this.here || !this.driving))) return '';
+    if (!to || (to.job && (this.here || (!this.driving && !(this.walking && this.walkJob))))) return '';
     const name = to.name ? `<div class="nav-to">${esc(to.name)}</div>` : '';
     const head = (arrow: string, text: string, d = '') => `<div class="nav-turn"><i>${arrow}</i><span>${text}</span>${d ? `<b>${d}</b>` : ''}</div>`;
     if (this.walking && !this.footWay) return head(ARROWS.end, t('Walk toward the marker')) + name;

@@ -1,5 +1,5 @@
-import { apart, bringCar, dropOff, goTo, lose, pass, pickUp, putOut, serve, takeCar, wreck } from './missions.ts';
-import type { MissionDef } from './missions.ts';
+import { apart, bringCar, dropOff, goTo, handParcel, lose, pass, pickUp, putOut, serve, takeCar, wreck } from './missions.ts';
+import type { MissionDef, Plan } from './missions.ts';
 
 // The odd jobs: repeatable work made up from the map, each picking its places when it
 // is offered. Everything about a job is here as data (who offers it, what they say,
@@ -78,8 +78,18 @@ export const JOBS: MissionDef[] = [
     ],
     faction: 'couriers', rep: 4,
     unprompted: 420,
-    plan: (w, pick) => {
+    plan: (w, pick): Plan | null => {
       const r = RATES.courier, me = w.me();
+      const walk = w.courierWalk();
+      if (walk) {
+        const pay = tens(r.base + walk.distance / 1000 * r.perKm);
+        return {
+          offer: 'A parcel for someone a short walk away. Meet the sender at {from}.',
+          brief: ['The green arrow marks the sender. Once you have the parcel, follow it to the recipient.'],
+          vars: { from: walk.sender.name }, pay, bonus: tens(pay * r.bonus),
+          steps: [handParcel(walk.sender, true, 120), handParcel(walk.recipient, false, 90 + Math.ceil(walk.distance / 1.4))],
+        };
+      }
       const a = pick.spot(me, 120, 500), b = a && pick.spot(a, 350, 1200, [a.name]);
       if (!a || !b) return null;
       const d = apart(a, b), limit = allow(d, r.speed, r.slack), pay = tens(r.base + (d * STREETS / 1000) * r.perKm);

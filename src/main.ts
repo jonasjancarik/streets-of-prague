@@ -126,6 +126,8 @@ import { haptic, hapticCrash, hapticBlast } from './haptics.ts';
 import { tunnelHole } from './tunnelView.ts';
 import { hideIdleCursor } from './cursor.ts';
 import { setupTestkit, PLACES } from './testkit.ts';
+import { courierWalk } from './footCourier.ts';
+import type { Footpaths } from './walkingDirections.ts';
 import { Missions } from './missions.ts';
 import type { Spot } from './missions.ts';
 import { JOBS, SIGHTS } from './jobs.ts';
@@ -1322,7 +1324,7 @@ async function main() {
     takeSeat(best);
   };
   // Not while you're being arrested (or still coming round): your hands are up or cuffed.
-  const interact = () => { if (!arrest.active && frozen <= 0) enterOrExit(false); };
+  const interact = () => { if (!arrest.active && frozen <= 0 && !missions.exchange()) enterOrExit(false); };
 
   // Keep a knocked-down bike on its side until someone picks it up.
   const tipBike = (c: Car, dx: number, dy: number) => {
@@ -1650,7 +1652,21 @@ async function main() {
   const inMap = (lon: number, lat: number) => lon > w0 && lon < e0 && lat > s0 && lat < n0;
   const spotAt = (name: string, lon: number, lat: number): Spot => { const [x, y] = dev.toLocal(lon, lat); return { name, x, y }; };
   const hospitals = HOSPITALS.flatMap(([lon, lat], i) => (inMap(lon, lat) ? [spotAt(HOSPITAL_NAMES[i], lon, lat)] : []));
+  const footpaths: Footpaths = { graph: walk, near: walkNear, accessible: (a, b, level) => world.walkAccess(a, b, level) };
+  const onFootForHandoff = () => !inCar && !inHeli && !ride.on && !passenger() && !metro.active && !boats.me && !funicular.me && !ferries.me &&
+    !walker.flight && !walker.onRoof && !walker.level && walker.down <= 0 && walker.z + walker.perch < 1 && inspector.phase !== 'decide' && !getIn.active && !dialog.active && !arrest.active && wastedT <= 0;
   const missions = new Missions({
+    courierWalk: () => (testkit ? cameraChoice.get() : initialView(params)) === 'first' && onFootForHandoff()
+      ? courierWalk(footpaths, walker, (x, y) => names.at(x, y, 35), seeded) : null,
+    canReachContact: s => {
+      if (!onFootForHandoff()) return false;
+      // In first person the action belongs to the person in front of you.
+      const dx = s.x - walker.x, dy = s.y - walker.y;
+      if (cameraChoice.get() === 'first' && Math.hypot(dx, dy) > .55 &&
+          dx * Math.cos(walker.h) + dy * Math.sin(walker.h) < .35 * Math.hypot(dx, dy)) return false;
+      return world.walkAccess([walker.x, walker.y], [s.x, s.y], 0);
+    },
+    parcel: on => bags.carryParcel(on),
     me: () => inCar || inHeli || walker,
     car: () => inCar,
     tram: () => (ride.driving && ride.passengers ? { doors: ride.passengers.doors, at: ride.atName, next: ride.next, on: ride.passengers.on, off: ride.passengers.off } : null),
@@ -1683,7 +1699,7 @@ async function main() {
   const marker = new Marker(scene, camera, $('mark'), (x, y) => ground(x, y));
   // Directions: to a spot picked on the map, or else to the job's (src/satnav.ts).
   const satnav = new Satnav(scene, drive, (x, y, r) => edgesNear(x, y, r), (x, y, level) => world.surfaceAt(x, y, level),
-    new Marker(scene, camera, $('navmark'), (x, y) => ground(x, y), '#6cc4ff'), (text) => showBanner(text), { graph: walk, near: walkNear, accessible: (a, b, level) => world.walkAccess(a, b, level) });
+    new Marker(scene, camera, $('navmark'), (x, y) => ground(x, y), '#6cc4ff'), (text) => showBanner(text), footpaths);
   assist.prefer = (e) => satnav.next(e);
   const blinkers = new Blinkers(scene); // the indicators before the directions' turns
   // The map of where to drive; the game waits while it's up.
@@ -3383,6 +3399,8 @@ async function main() {
     if (inspector.phase === 'decide') hint = touch.active ? t('Ticket inspection! Pay the fine ({fine}) or get off and run · {secs} s', { fine: kc(FINE), secs: Math.ceil(inspector.left) }) : t('Ticket inspection! <b>B</b> pay the fine ({fine}) · <b>E</b> get off and run · {secs} s', { fine: kc(FINE), secs: Math.ceil(inspector.left) });
     taxi.render(touch.active, usingPad());
     busRide.render();
+    const handoff = missions.handoffLabel();
+    if (handoff && !touch.active) hint = `<b>E</b> ${t(handoff)}`;
     show('hint', padLabels(hint), 'html');
     $('help').dataset.mode = inHeli ? 'heli' : inCar ? 'car' : ride.driving ? 'drive' : ride.on ? 'tram' : funicular.me ? 'funicular' : ferries.me ? 'ferry' : 'foot';
     const emergency = !!inCar && !inCar.burnt && ['police', 'fire', 'ambulance'].includes(inCar.type);
@@ -3404,7 +3422,7 @@ async function main() {
     }
     const stealLabel = busRide.on ? 'Take over the bus' : 'Take over the tram', stealBtn = $('t-steal');
     if (stealBtn.dataset.t !== stealLabel) { stealBtn.dataset.t = stealLabel; stealBtn.textContent = t(stealLabel); }
-    touch.update({ car: inCar || inHeli, engine: inCar?.type === 'fire', beacon: emergency, driving: ride.driving, tram: (ride.on && !ride.driving) || passenger() || (!!funicular.me || !!ferries.me), steal: (ride.on && !ride.driving) || busRide.on, wait: !!board.shown || taxi.state === 'coming', label: inHeli?.canBailOut ? 'Jump out' : cab || label || (station ? 'Metro' : null), canEnter: !!cab || canEnter || !!canBoard || !!station || !!cabin || !!ferryHere?.open || funicular.me?.stop != null || ferries.me?.stop != null, limit: assisted ? assist.limit : null });
+    touch.update({ car: inCar || inHeli, engine: inCar?.type === 'fire', beacon: emergency, driving: ride.driving, tram: (ride.on && !ride.driving) || passenger() || (!!funicular.me || !!ferries.me), steal: (ride.on && !ride.driving) || busRide.on, wait: !!board.shown || taxi.state === 'coming', label: inHeli?.canBailOut ? 'Jump out' : handoff || cab || label || (station ? 'Metro' : null), canEnter: !!handoff || !!cab || canEnter || !!canBoard || !!station || !!cabin || !!ferryHere?.open || funicular.me?.stop != null || ferries.me?.stop != null, limit: assisted ? assist.limit : null });
     show('tally', `${tn(stats.wrecked, '{n} car wrecked|{n} cars wrecked')}${stats.busted ? ` · ${t('busted {n}×', { n: stats.busted })}` : ''}${stats.wasted ? ` · ${t('wasted {n}×', { n: stats.wasted })}` : ''}`);
     // Wanted stars: they blink while the police have lost sight of you.
     const stars = police.stars, wanted = $('wanted');
@@ -3433,9 +3451,9 @@ async function main() {
     show('job', jobCard, 'html');
     if (shown.jobOn !== (jobCard ? 1 : 0)) { shown.jobOn = jobCard ? 1 : 0; $('job').hidden = !jobCard; }
     const wanted_ = metro.active ? null : missions.target();
-    if (wanted_) marker.show(wanted_.x, wanted_.y); else marker.hide();
+    if (wanted_) marker.show(wanted_.x, wanted_.y, !!missions.handoff); else marker.hide();
     marker.update(dt, { x: px(), y: py() });
-    satnav.update(dt, inCar, { x: px(), y: py(), level: walker.level }, wanted_, !!eyes && !!eyes.onFoot && !walker.flight && !walker.onRoof);
+    satnav.update(dt, inCar, { x: px(), y: py(), level: walker.level }, wanted_, !!eyes && !!eyes.onFoot && !walker.flight && !walker.onRoof, !!missions.handoff);
     const navCard = metro.active ? '' : satnav.card();
     show('nav', navCard, 'html');
     if (shown.navOn !== (navCard ? 1 : 0)) { shown.navOn = navCard ? 1 : 0; $('nav').hidden = !navCard; }

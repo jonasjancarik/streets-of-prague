@@ -12,6 +12,7 @@ export class Marker {
   private pillar: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
   private arrow: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
   private clock = 0;
+  private contact = false;
   private at: { x: number; y: number } | null = null;
   private v = new THREE.Vector3();
   private shown = '';
@@ -29,7 +30,7 @@ export class Marker {
     el.hidden = true;
   }
 
-  show(x: number, y: number) { this.at = { x, y }; }
+  show(x: number, y: number, contact = false) { this.at = { x, y }; this.contact = contact; }
   hide() { this.at = null; }
   get place() { return this.at; }
 
@@ -44,8 +45,14 @@ export class Marker {
     this.clock += dt;
     const h = this.height(at.x, at.y);
     this.group.position.set(at.x, h, -at.y);
-    this.arrow.position.y = 3.6 + Math.sin(this.clock * 3) * 0.3;
-    this.pillar.material.opacity = 0.26 + Math.sin(this.clock * 4) * 0.06;
+    // As you approach a handoff the landmark gives way to a small pointer
+    // just above the waiting person's head, keeping their face visible.
+    const d = Math.hypot(at.x - from.x, at.y - from.y);
+    const distant = this.contact ? Math.min(1, Math.max(0, (d - 5) / 18)) : 1;
+    this.arrow.scale.setScalar(.13 + .87 * distant);
+    this.arrow.position.y = 2.12 + 1.48 * distant + Math.sin(this.clock * 3) * (.08 + .22 * distant);
+    this.pillar.visible = distant > 0;
+    this.pillar.material.opacity = (0.26 + Math.sin(this.clock * 4) * 0.06) * distant;
     // On the screen, or which way off it.
     const v = this.v.set(at.x, h + 2, -at.y).project(this.camera);
     const behind = v.z > 1;
@@ -61,8 +68,7 @@ export class Marker {
     const left = Math.round(Math.max(EDGE, Math.min(w - EDGE, (sx * 0.5 + 0.5) * w)));
     const top = Math.round(Math.max(EDGE + 30, Math.min(hh - EDGE - 30, (-sy * 0.5 + 0.5) * hh)));
     const turn = Math.round((Math.atan2(sx * w, sy * hh) * 180) / Math.PI);
-    const d = Math.hypot(at.x - from.x, at.y - from.y);
-    const far = d < 1000 ? `${Math.round(d / 10) * 10} m` : `${(d / 1000).toFixed(1)} km`;
+    const far = this.contact && d < 20 ? `${Math.ceil(d)} m` : d < 1000 ? `${Math.round(d / 10) * 10} m` : `${(d / 1000).toFixed(1)} km`;
     const face = `${left}|${top}|${turn}|${far}`;
     if (face === this.shown) return;
     this.shown = face;

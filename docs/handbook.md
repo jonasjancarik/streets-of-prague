@@ -429,6 +429,10 @@ the same signal phase as the overhead light.
   three made-up factions think of you (`src/factions.ts`; the Regulars' later jobs wait
   for their good opinion). `?mission=courier` (or `taxi`, `ambulance`, `tram`, `fire`,
   `tour`, `fetch`, `wreck`, `getaway`) starts one at once.
+  Ask Fofr for work on foot in first person for a neighbourhood delivery. Follow the
+  walking directions to the marked sender and press E to take the parcel. Deliver
+  it to the recipient under the arrow with E (on touch, use the parcel button). Where
+  the local footpaths are too short for a delivery, Fofr offers its cross-town run.
 - **Taxis**: on foot near a street, press T (on touch, "Taxi") and pick how to get one
   (`src/taxi.ts`): wave down a free taxi that is passing by, or order one through Zipp or Hopla, two
   made-up ride-hailing apps that cost less and whose drivers speed, tailgate and push
