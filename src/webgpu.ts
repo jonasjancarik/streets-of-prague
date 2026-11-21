@@ -131,7 +131,8 @@ function pAsphalt(c0: N, p: N) {
   // what traffic leaves along the lanes is now laid on the street itself, ground.ts streetWear.)
   c.mulAssign(float(1).sub(smoothstep(0.6, 0.85, vnoise(p.mul(vec2(0.9, 0.25)).add(23))).mul(0.06)));
   If(dc.greaterThan(0), () => {
-    const crack = float(1).sub(smoothstep(0, 0.025, abs(vnoise(p.mul(0.7)).sub(0.5))));
+    // (Broken into stretches: whole, the noise's contours close into loops that read as scribbles from the pavement.)
+    const crack = float(1).sub(smoothstep(0, 0.016, abs(vnoise(p.mul(0.7)).sub(0.5)))).mul(smoothstep(0.42, 0.6, vnoise(p.mul(0.31).add(9))));
     c.mulAssign(float(1).sub(crack.mul(0.3).mul(dc).mul(smoothstep(0.55, 0.7, vnoise(p.mul(0.06).add(2))))));
   });
   return c;

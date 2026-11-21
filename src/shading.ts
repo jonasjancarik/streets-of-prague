@@ -166,7 +166,8 @@ vec3 pAsphalt(vec3 c, vec2 p) {
   if (d > 0.) c += (vnoise(p * 16.) - .5) * .07 * d;                   // aggregate
   c *= 1. - .14 * smoothstep(.6, .85, vnoise(p * vec2(.9, .25) + 23.)); // oil and tyre marks
   if (dc > 0.) {
-    float crack = 1. - smoothstep(.0, .025, abs(vnoise(p * .7) - .5));
+    // (Broken into stretches: whole, the noise's contours close into loops that read as scribbles from the pavement.)
+    float crack = (1. - smoothstep(.0, .016, abs(vnoise(p * .7) - .5))) * smoothstep(.42, .6, vnoise(p * .31 + 9.));
     c *= 1. - .3 * crack * dc * smoothstep(.55, .7, vnoise(p * .06 + 2.));
   }
   return c;
