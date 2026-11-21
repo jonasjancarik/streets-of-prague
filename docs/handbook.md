@@ -1476,7 +1476,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   tram stays on its drawn track and the lines still share their points at the switches.
   The network, switches, bridges and tunnels stay OSM's. Where the survey has no axis
   (about 2% of Prague's track nodes, mostly the newest lines), OSM's position is kept.
-  `uv run di_tracks.py` reports how far the tracks moved.
+  The railways and Petřín's funicular move the same way onto their own surveyed axes
+  (a node only ever goes to an axis of its own kind): about three in four railway nodes
+  in Prague, median 0.12 m, with the rest in yards and depots the survey leaves out,
+  and the funicular by up to 0.5 m. Hlavní nádraží's tracks (`station_tracks.py`) move
+  with them. `uv run di_tracks.py` reports how far each kind moved.
 - **Overhead wires** (`src/wires.ts`) are built with each tile over its tram tracks: a
   contact wire 5.6 m above every track, where the pantographs reach, and every 30 m or so
   a span wire across the tracks, anchored to a building front when one is within 11 m

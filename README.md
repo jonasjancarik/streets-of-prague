@@ -103,7 +103,7 @@ libraries to `dist/licenses.txt`.
   podklad © [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model/3D-mesh), CC BY.
 - Carriageways and parking bays: Digitální technická mapa kraje, datový podklad ©
   [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/28A24EB4-5EE8-436E-B0BB-357025258211), CC BY.
-- Where the tram tracks lie: the surveyed track axes of Digitální technická mapa kraje
+- Where the tram, railway and funicular tracks lie: the surveyed track axes of Digitální technická mapa kraje
   (transport infrastructure, DI), datový podklad © [IPR Praha](https://geoportalpraha.cz/), CC BY.
 - Paid-parking sections and occupancy: [TSK Praha](https://zps.tsk-praha.cz/).
 - Street lamps, manhole covers, storm drains and traffic-light poles: the surface marks

@@ -1,18 +1,20 @@
-"""The tram tracks where they really are: OpenStreetMap's tracks moved onto the surveyed
-track axes of the digital technical map.
+"""The tracks where they really are: OpenStreetMap's tram, railway and funicular tracks
+moved onto the surveyed track axes of the digital technical map.
 
     uv run di_tracks.py      # download what's new, match, and report how far tracks moved
 
 OSM's tram tracks are traced by hand from aerial photos and are typically 0.3 m off,
 in places 2-3 m, enough to run a track into a kerb or onto a stop's island. The DTM's
 transport infrastructure set (DI, "dopravní infrastruktura", JVF) has every track's
-centre line surveyed ("osa koleje tramvajové dráhy", position accuracy class 3). It
+centre line surveyed ("osa koleje tramvajové dráhy", position accuracy class 3), and
+the same for the railways ("osa koleje železniční tratě") and Petřín's funicular
+("osa koleje pozemní lanové dráhy"). It
 isn't in set 2 or 3 that dtm.py reads: the set is downloaded on its own, one zip per
 district (all 57, about 31 MB), into pipeline/.cache/dtm/DI/.
 
 The network, the switches, bridges and tunnels and which way a line goes all stay
-OSM's: only the position of each OSM node on a tram track changes, to the nearest
-point of the surveyed axis that runs the same way and belongs to that track. moved()
+OSM's: only the position of each OSM node on a track changes, to the nearest point of
+a surveyed axis of the same kind that runs the same way and belongs to that track. moved()
 gives the moves keyed by the node's WGS84 coordinates, so osm_area (the rails drawn in
 the tiles) and build_lines (the lines the trams run along) move the very same nodes the
 same way, and the lines keep sharing their points. Where DI has no axis near a track,
@@ -30,6 +32,7 @@ import json
 import math
 import pickle
 import re
+import subprocess
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -44,7 +47,11 @@ LIST = "https://geoportalpraha.cz/api/get-dtm-download-metadata?code=07"
 FILE = "https://isdtmk.dtm-praha-sck.cz/api/istem/vydej/download/path/"
 AXES = CACHE / "axes.pkl"
 MOVES = CACHE / "moves.pkl"
-TAG = "objtyp:OsaKolejeTramvajoveDrahy"
+SOURCE = Path(__file__).parent / ".cache" / "osm" / "di_tracks.osm.pbf"  # OSM's tracks, cut from the extract
+# The DI object type of each kind of track, by OSM's railway=… value. A node on tracks of
+# two kinds (where a siding meets a tram track) goes by the last.
+TAGS = {"rail": "OsaKolejeZeleznicniTrate", "funicular": "OsaKolejePozemniLanoveDrahy",
+        "tram": "OsaKolejeTramvajoveDrahy"}
 
 REACH = 3.2      # m: farthest an OSM node is moved (a track's neighbour is ~3 m away)
 TURN = math.radians(25)  # an axis at more than this to the OSM track is another track
@@ -89,25 +96,26 @@ def local():
 
 
 def axes(paths):
-    """Every surveyed tram track axis in the zips, as [n, 2] arrays in S-JTSK (EPSG:5514).
-    Only the one object type is read, with a regular expression rather than a full XML
+    """Every surveyed track axis in the zips, {kind: [[n, 2] arrays in S-JTSK (EPSG:5514)]}.
+    Only those object types are read, with regular expressions rather than a full XML
     parse (Praha 1's file alone is 13 MB of XML)."""
-    stamp = [(p.name, p.stat().st_size) for p in paths]
+    stamp = [[(p.name, p.stat().st_size) for p in paths], sorted(TAGS)]
     if AXES.exists():
         cached = pickle.loads(AXES.read_bytes())
         if cached["stamp"] == stamp:
             return cached["axes"]
-    out = []
+    out = {kind: [] for kind in TAGS}
     for path in paths:
         with zipfile.ZipFile(path) as z:
             text = z.read(next(n for n in z.namelist() if n.endswith(".xml"))).decode("utf-8")
-        a, b = text.find(f"<{TAG}>"), text.find(f"</{TAG}>")
-        if a < 0:
-            continue
-        for pos in re.findall(r"<gml:posList>([^<]+)<", text[a:b]):
-            xy = np.array(pos.split(), float).reshape(-1, 3)[:, :2]
-            if len(xy) > 1:
-                out.append(xy)
+        for kind, tag in TAGS.items():
+            a, b = text.find(f"<objtyp:{tag}>"), text.find(f"</objtyp:{tag}>")
+            if a < 0:
+                continue
+            for pos in re.findall(r"<gml:posList>([^<]+)<", text[a:b]):
+                xy = np.array(pos.split(), float).reshape(-1, 3)[:, :2]
+                if len(xy) > 1:
+                    out[kind].append(xy)
     AXES.write_bytes(pickle.dumps({"stamp": stamp, "axes": out}))
     return out
 
@@ -179,11 +187,34 @@ def match(nodes, ways, lines):
     return moved
 
 
+def osm_tracks(pbf):
+    """OSM's tram, railway and funicular tracks from the local extract, via osmium's OPL:
+    ({node id: (lon, lat)}, {way id: ({"railway": kind}, node ids)})."""
+    SOURCE.parent.mkdir(parents=True, exist_ok=True)
+    if not SOURCE.exists() or SOURCE.stat().st_mtime < pbf.stat().st_mtime:
+        subprocess.run(["osmium", "tags-filter", "--overwrite", "-o", str(SOURCE), str(pbf),
+                        "w/railway=" + ",".join(TAGS)], check=True)
+    opl = subprocess.run(["osmium", "cat", "-f", "opl,add_metadata=false", str(SOURCE)],
+                         check=True, capture_output=True, text=True).stdout
+    nodes, ways = {}, {}
+    for line in opl.splitlines():
+        head, *fields = line.split(" ")
+        f = {x[0]: x[1:] for x in fields if x}
+        if head[0] == "n":
+            nodes[int(head[1:])] = (float(f["x"]), float(f["y"]))
+        elif head[0] == "w":
+            rw = re.search(r"(?:^|,)railway=([^,]*)", f.get("T", ""))
+            ways[int(head[1:])] = ({"railway": rw.group(1) if rw else None},
+                                   [int(n[1:]) for n in f.get("N", "").split(",") if n])
+    return nodes, ways
+
+
 def moved(nodes=None, ways=None):
-    """{key(lon, lat): (lon, lat)}: where each OSM tram node goes. Without arguments, from
-    the local OSM extract's tram tracks (build_lines.load_pbf), cached until the extract
-    or the DI files change; {} without either, so OSM's tracks are used as they are.
-    `nodes`: {id: (lon, lat, ...)}, `ways`: {id: (tags, node ids)}, as load_pbf gives."""
+    """{key(lon, lat): (lon, lat)}: where each OSM track node goes. Without arguments, from
+    the local OSM extract's tracks (osm_tracks), cached until the extract, the DI files
+    or this code change; {} without either, so OSM's tracks are used as they are.
+    `nodes`: {id: (lon, lat, ...)}, `ways`: {id: (tags, node ids)}, as build_lines.load_pbf
+    and load_overpass give."""
     paths = local()
     if not paths:
         return {}
@@ -200,21 +231,22 @@ def moved(nodes=None, ways=None):
             if cached["stamp"] == stamp:
                 _memo.update(cached)
                 return cached["moves"]
-        nodes, ways, _ = build_lines.load_pbf(None)
+        nodes, ways = osm_tracks(build_lines.PBF)
     else:
         stamp = None
-    tram = [nds for tags, nds in ways.values() if tags.get("railway") == "tram"]
-    used = {n for nds in tram for n in nds if n in nodes}
-    ids = list(used)
-    lon = np.array([nodes[n][0] for n in ids])
-    lat = np.array([nodes[n][1] for n in ids])
-    x, y = TO_JTSK.transform(lon, lat)
-    got = match(dict(zip(ids, zip(x, y))), tram, axes(paths))
+    surveyed = axes(paths)
     out = {}
-    if got:
-        gid = list(got)
-        glon, glat = TO_WGS.transform(*np.array([got[n] for n in gid]).T)
-        out = {key(*nodes[n][:2]): (float(a), float(b)) for n, a, b in zip(gid, glon, glat)}
+    for kind in TAGS:
+        tracks = [nds for tags, nds in ways.values() if tags.get("railway") == kind]
+        ids = list({n for nds in tracks for n in nds if n in nodes})
+        if not ids or not surveyed[kind]:
+            continue
+        x, y = TO_JTSK.transform(np.array([nodes[n][0] for n in ids]), np.array([nodes[n][1] for n in ids]))
+        got = match(dict(zip(ids, zip(x, y))), tracks, surveyed[kind])
+        if got:
+            gid = list(got)
+            glon, glat = TO_WGS.transform(*np.array([got[n] for n in gid]).T)
+            out |= {key(*nodes[n][:2]): (float(a), float(b)) for n, a, b in zip(gid, glon, glat)}
     if stamp is not None:
         MOVES.write_bytes(pickle.dumps({"stamp": stamp, "moves": out}))
         _memo.update(stamp=stamp, moves=out)
@@ -236,16 +268,15 @@ def move_lines(geoms, moves):
 if __name__ == "__main__":
     import build_lines
     download()
-    nodes, ways, _ = build_lines.load_pbf(None)
     moves = moved()
-    tram = {n for tags, nds in ways.values() if tags.get("railway") == "tram" for n in nds if n in nodes}
-    shift = []
-    for n in tram:
-        m = moves.get(key(*nodes[n][:2]))
-        if m:
-            a = TO_JTSK.transform(*nodes[n][:2])
-            b = TO_JTSK.transform(*m)
-            shift.append(math.dist(a, b))
-    shift = np.array(shift)
-    print(f"{len(shift)} of {len(tram)} OSM tram nodes moved onto a surveyed axis; "
-          f"by median {np.median(shift):.2f} m, 95% {np.percentile(shift, 95):.2f} m, max {shift.max():.2f} m")
+    nodes, ways = osm_tracks(build_lines.PBF)
+    pw, ps, pe, pn = 14.2244, 49.9419, 14.7068, 50.1774  # osm_area.AREAS["praha"]
+    for kind in TAGS:
+        ids = {n for tags, nds in ways.values() if tags["railway"] == kind for n in nds
+               if n in nodes and pw < nodes[n][0] < pe and ps < nodes[n][1] < pn}
+        shift = np.array([math.dist(TO_JTSK.transform(*nodes[n]), TO_JTSK.transform(*moves[key(*nodes[n])]))
+                          for n in ids if key(*nodes[n]) in moves])
+        if len(shift):
+            print(f"{kind}: {len(shift)} of {len(ids)} OSM nodes in Prague moved onto a surveyed axis; "
+                  f"median {np.median(shift):.2f} m, 90% {np.percentile(shift, 90):.2f} m, "
+                  f"{np.sum(shift > 2)} by more than 2 m")
