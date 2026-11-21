@@ -1,5 +1,21 @@
 {
   "after": "v0.13.0",
-  "en": [],
-  "cs": []
+  "en": [
+    "Play in VR with a phone headset: pick VR on the start screen or in settings",
+    "Walk the city at eye height: shop windows, street name plates, benches, kiosks, cobbles and passages you can walk through",
+    "Detailed trams, cars, ambulances, fire engines and dustcarts up close, with working lights and number plates",
+    "Turn on the siren and traffic moves aside to let you through",
+    "Jump out of a helicopter, steer your fall and open the parachute with a second press",
+    "Deliver parcels on foot in first person",
+    "Drive through vaulted gateways under buildings, and hear the cars around you"
+  ],
+  "cs": [
+    "Hrajte ve VR s brýlemi pro mobil: zvolte VR na úvodní obrazovce nebo v nastavení",
+    "Projděte se městem ve výšce očí: výlohy, cedule s názvy ulic, lavičky, stánky, dlažba a pasáže, kterými se dá projít",
+    "Tramvaje, auta, sanitky, hasiči a popelářské vozy jsou zblízka podrobné, se svítícími světly a SPZ",
+    "Zapněte sirénu a auta vám uhnou z cesty",
+    "Vyskočte z vrtulníku, řiďte volný pád a druhým stiskem otevřete padák",
+    "Doručujte balíky pěšky z pohledu první osoby",
+    "Projeďte klenutými průjezdy pod domy a poslouchejte auta kolem sebe"
+  ]
 }
