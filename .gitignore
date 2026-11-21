@@ -30,3 +30,4 @@ screenshots/
 .claude/launch.json
 .claude/settings.local.json
 .claude/worktrees/
+.codex-attachments/
