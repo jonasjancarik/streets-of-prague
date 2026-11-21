@@ -83,6 +83,7 @@ import { LaneAssist, turnOf, project } from './assist.ts';
 import { Sound, surfaceOf } from './audio.ts';
 import { roadNoise, ROAD_FAR } from './soundmix.ts';
 import type { Surface, HornKind, Rotor } from './audio.ts';
+import { StreetIronwork } from './streetIronwork.ts';
 import { StreetPlates } from './streetPlates.ts';
 import { eyesFor, initialView, WalkingGait, type Eyes, type PlayerView } from './streetView.ts';
 import { setupTouch } from './touch.ts';
@@ -339,6 +340,7 @@ async function main() {
   if (params.get('mist') === 'volume') MIST_MODE.value = 'volume';
   const weatherFx = new WeatherFx(scene);
   const world = new TileWorld({ area: AREA, index, scene, drive, walk, time, night: params.has('night') || clock.night, osmBuildings: params.has('osm'), ortho: params.has('ortho'), countryside: anywhere || params.get('countryside') === 'live' ? 'live' : params.has('countryside') });
+  const ironwork = new StreetIronwork(scene, world);
   // Past the city's parts, the town or village from the countryside's map.
   if (world.country) districts.elsewhere = (x, y) => world.country!.placeAt(x, y);
   const grid = world.grid;
@@ -3165,6 +3167,7 @@ async function main() {
     world.facades.update(streetWalls, camera.position.x, camera.position.y, camera.position.z, graphics.tier, !!facadeFinishes.masks);
     world.furnitureCamera(fromStreet);
     world.passageCamera(fromStreet, camera.position.x, -camera.position.z);
+    ironwork.update(fromStreet, camera.position, graphics.tier, weather.now.wet);
     world.trees.street(fromStreet, free ? free.x : camera.position.x, free ? -free.y : camera.position.z);
     world.trees.canopy(true, fromStreet);
     sun.position.copy(sun.target.position).add(sky.offset);

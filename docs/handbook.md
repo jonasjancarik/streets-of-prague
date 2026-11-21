@@ -270,6 +270,12 @@ display cases are inferred scenery. Nearby interiors are built by an optional
 tile-worker job and released on returning overhead. See
 `scenarios/covered-passage.ts` and `scripts/check-passage-openings.mjs`.
 
+Look down on Seminářská to see the cast lids and storm drains at their survey
+positions. Nearby manholes have worn raised patterns and lifting slots, drain
+grates have a recessed bed between the bars, and small hydrant covers carry an
+H. The casting design is inferred. The close models follow the slope and
+reuse four instance batches. Overhead and on Lowest, the ground marks remain.
+
 The fire engine shows its roof ladder and hose rack from above. Within 24 m on foot,
 you can see through the crew cab, read the rear pump gauges and follow a firefighter’s
 hose to the coupling beside the lockers. Two marked police cars share patrol and pursuit

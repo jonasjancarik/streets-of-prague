@@ -625,6 +625,8 @@ addPort(/^buildings-procedural$/, (node) => {
   lampLit(node, positionWorld, true);
 });
 
+addPort(/^street-ironwork$/, node => lampLit(node));
+
 const passageMap = texture(passageAtlas.value).onRenderUpdate(() => { passageMap.value = passageAtlas.value; });
 addPort(/^passage-lining$/, node => {
   node.vertexColors = false;
