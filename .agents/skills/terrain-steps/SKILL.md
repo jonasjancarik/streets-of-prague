@@ -55,7 +55,16 @@ worktree with its own copies of the data (APFS clones: `public/data/praha_now`,
        node scripts/scene.mjs run repy-bridge-ride --fresh --map /tmp/w
 
    (`--fresh`, or a `serve --map /tmp/w` of its own: a running server keeps the map it
-   was started with.) Only the window's middle counts. `t.follow`'s `kink` is the
+   was started with.) Only the window's middle counts. The game draws the ground from
+   the tiles' meshes (`*.tin.bin.gz`), and `window.py` doesn't make them: it keeps the
+   city build's where the lattice is unchanged, so two windows can differ by the city
+   builds they came after rather than by the rule (a "fix" for Řepy's south-west end in
+   November 2026 was the mesh, and the rule made it worse). Build the middle tiles'
+   meshes for each window, about 3 minutes:
+
+       uv run tin_tiles.py praha --data /tmp/w --tiles 17_57,18_57,…,19_59 --work /tmp/w-tin
+
+   or delete the window's `*.tin.bin.gz` to compare the lattices alone. `t.follow`'s `kink` is the
    drive's measure of a step or a dip. Don't put a copy of the map under `public/`:
    51,000 new files there stalled the shared dev server for many minutes.
 2. **Then `praha`**: 17–35 minutes. Don't edit anything in `pipeline/` while it
