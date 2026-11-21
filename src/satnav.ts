@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { Heap } from './police.ts';
+import { walkingSearch, type WalkingWay, type Footpaths } from './walkingDirections.ts';
+import { Heap } from './pathfinding.ts';
 import { Polyline, junctionCurve, junctionTrim } from './network.ts';
 import { project, turnOf } from './assist.ts';
 import { levelOnLane } from './roadLevels.ts';
@@ -189,8 +190,8 @@ function chevrons() {
 }
 
 const far = (d: number) => (d < 1000 ? `${Math.max(10, Math.round(d / 10) * 10)} m` : `${(d / 1000).toFixed(1)} km`);
-const ARROWS: Record<TurnKind | 'on' | 'end', string> = { left: '↰', right: '↱', 'keep-left': '↖', 'keep-right': '↗', back: '↶', on: '↑', end: '◎' };
-const SAY: Record<TurnKind, string> = { left: 'Turn left', right: 'Turn right', 'keep-left': 'Keep left', 'keep-right': 'Keep right', back: 'Turn round' };
+const ARROWS: Record<TurnKind | 'on' | 'end' | 'stairs', string> = { stairs: '↥', left: '↰', right: '↱', 'keep-left': '↖', 'keep-right': '↗', back: '↶', on: '↑', end: '◎' };
+const SAY: Record<TurnKind | 'stairs', string> = { stairs: 'Take the stairs', left: 'Turn left', right: 'Turn right', 'keep-left': 'Keep left', 'keep-right': 'Keep right', back: 'Turn round' };
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&${({ '&': 'amp', '<': 'lt', '>': 'gt', '"': 'quot' } as Record<string, string>)[c]};`);
 
 export class Satnav {
@@ -208,10 +209,15 @@ export class Satnav {
   private mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
   private faded = 0; // the furthest vertex pair whose alpha was last set below 1
   private driving = false;
+  private walking = false;
+  private walkJob = false;
+  private footWay: WalkingWay | null = null;
+  private walkSearch: ReturnType<typeof walkingSearch> | null = null;
+  private toPin = 0;
   private here = false; // at the job's spot: the job takes over
 
   constructor(scene: THREE.Scene, private g: DriveGraph, private near: (x: number, y: number, r: number) => DriveEdge[],
-    private height: (x: number, y: number, level: number) => number, private pin: Marker, private say: (text: string) => void) {
+    private height: (x: number, y: number, level: number) => number, private pin: Marker, private say: (text: string) => void, private footpaths?: Footpaths) {
     this.mesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({
       map: chevrons(), color: PICKED, vertexColors: true, transparent: true, opacity: 0.85, depthWrite: false, fog: false,
       polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
@@ -244,8 +250,8 @@ export class Satnav {
 
   // The way for the minimap, from where you are on it, while it's shown.
   drawn(): { pts: Point2[]; cum: number[]; from: number; colour: string } | null {
-    const w = this.way;
-    return w && this.mesh.visible ? { pts: w.line.pts, cum: w.line.cum, from: this.s, colour: this.target?.job ? JOB : PICKED } : null;
+    const w = this.footWay ?? this.way;
+    return w && (this.walking || this.mesh.visible) ? { pts: w.line.pts, cum: w.line.cum, from: this.s, colour: this.target?.job ? JOB : PICKED } : null;
   }
 
   // Which way to indicate: from a few seconds before the next turn until you're through
@@ -260,13 +266,15 @@ export class Satnav {
   }
 
   private drop() {
+    this.walkSearch = this.footWay = null;
     this.way = this.planned = null;
     this.s = this.off = this.wait = 0;
     this.mesh.visible = false;
   }
 
   // Once a frame: `car`, what you're driving (null on foot); `job`, where the job wants you.
-  update(dt: number, car: Driver | null, me: { x: number; y: number }, job: { x: number; y: number } | null) {
+  update(dt: number, car: Driver | null, me: { x: number; y: number; level?: number }, job: { x: number; y: number } | null, onFoot = false, walkJob: false | 'approach' | 'exchange' = false) {
+    this.walkJob = !!walkJob;
     const moved = job && this.job ? Math.hypot(job.x - this.job.x, job.y - this.job.y) > 5 : job !== this.job;
     if (moved) { this.job = job; this.quiet = false; this.here = false; }
     if (this.goal) this.pin.show(this.goal.x, this.goal.y); else this.pin.hide();
@@ -274,15 +282,33 @@ export class Satnav {
     const arrows = this.mesh.material.map!;
     arrows.offset.x = (arrows.offset.x - dt * 0.9) % 1; // the arrows creep along the way
     const to = this.target;
+    const walking = onFoot && !car && !!this.footpaths;
+    if (walking !== this.walking) this.drop();
+    this.walking = walking;
     this.driving = !!car;
-    if (to && Math.hypot(to.x - me.x, to.y - me.y) < ARRIVE) {
-      if (!to.job) { this.say(t('You have arrived')); this.goal = null; }
+    const arrive = walking ? 7 : ARRIVE;
+    this.toPin = to ? Math.hypot(to.x - me.x, to.y - me.y) : 0;
+    const wFoot = this.footWay, end = wFoot?.line.pts.at(-1);
+    const atPathEnd = !!wFoot?.nearestPath && !!end && Math.hypot(me.x - end[0], me.y - end[1]) < 2.5 && wFoot.line.length - this.s < 5;
+    // A parcel is exchanged with a person. Keep guiding the approach around
+    // walls and corners until that person is actually within reach.
+    const contact = walking && to?.job && walkJob;
+    if (contact) this.here = contact === 'exchange';
+    const arrived = contact ? this.here : !walking ? this.toPin < arrive : atPathEnd ||
+      this.toPin < arrive && (this.toPin < 2.5 || !!wFoot?.reached && wFoot.line.length - this.s < 12);
+    if (to && arrived) {
+      if (!to.job) { this.say(t(atPathEnd ? 'You reached the nearest footpath' : 'You have arrived')); this.goal = null; }
       else this.here = true;
       this.drop();
       return;
     }
-    if (to?.job && this.here && Math.hypot(to.x - me.x, to.y - me.y) > ARRIVE * 2.5) this.here = false; // drove off again
-    if (!to || !car || (to.job && this.here)) { this.drop(); return; }
+    if (to?.job && this.here && Math.hypot(to.x - me.x, to.y - me.y) > arrive * 2.5) this.here = false; // drove off again
+    if (!to || (!car && !walking) || (to.job && (this.here || (walking && !walkJob)))) { this.drop(); return; }
+    if (walking) {
+      this.walkTo(dt, me, to);
+      return;
+    }
+    if (!car) return;
     this.mesh.material.color.set(to.job ? JOB : PICKED);
     const w = this.way;
     if (w) {
@@ -298,6 +324,29 @@ export class Satnav {
       || (!w.reached && (left < 40 || (this.g.count !== this.learnt && (left < 300 || this.age > 3))));
     if (stale && this.wait <= 0) this.plan(car, to);
     this.place();
+  }
+
+  private walkTo(dt: number, me: { x: number; y: number; level?: number }, to: Goal) {
+    const paths = this.footpaths!, way = this.footWay;
+    if (way) {
+      const p = project(way.line, me.x, me.y, this.s - 12, this.s + 32);
+      if (p.d <= 7) { this.s = p.s; this.off = 0; } else this.off += dt;
+    }
+    this.wait -= dt;
+    const stale = !way || this.off > .8 || !this.planned || Math.hypot(to.x - this.planned.x, to.y - this.planned.y) > 2
+      || (!way.reached && paths.graph.count !== this.learnt);
+    if (!this.walkSearch) {
+      if (this.wait > 0 || !stale) return;
+      this.planned = { x: to.x, y: to.y };
+      this.learnt = paths.graph.count;
+      this.walkSearch = walkingSearch(paths, { x: me.x, y: me.y, level: me.level }, this.planned);
+    }
+    const result = this.walkSearch.next();
+    if (!result.done) return;
+    this.walkSearch = null;
+    this.footWay = result.value;
+    this.s = this.off = 0;
+    this.wait = this.footWay ? 1.5 : 3;
   }
 
   private plan(car: Driver, to: { x: number; y: number }) {
@@ -358,27 +407,29 @@ export class Satnav {
   // The card in the HUD, as HTML ('' when there's nothing to say).
   card() {
     const to = this.target;
-    if (!to || (to.job && (this.here || !this.driving))) return '';
+    if (!to || (to.job && (this.here || (!this.driving && !(this.walking && this.walkJob))))) return '';
     const name = to.name ? `<div class="nav-to">${esc(to.name)}</div>` : '';
     const head = (arrow: string, text: string, d = '') => `<div class="nav-turn"><i>${arrow}</i><span>${text}</span>${d ? `<b>${d}</b>` : ''}</div>`;
-    if (!this.driving) return head(ARROWS.end, t('Get in a car to see the way')) + name;
-    const w = this.way;
+    if (this.walking && !this.footWay) return head(ARROWS.end, t('Walk toward the marker')) + name;
+    if (!this.driving && !this.walking) return head(ARROWS.end, t('Get in a car to see the way')) + name;
+    const w = this.footWay ?? this.way;
     if (!w) return head(ARROWS.end, t('Drive onto a street to see the way')) + name;
     const next = w.turns.find((turn) => turn.at > this.s - 2);
     const rest = w.reached ? w.line.length - this.s : null;
     const total = rest !== null ? `<div class="nav-left">${t('{distance} to go', { distance: far(rest) })}</div>` : '';
     if (next) return head(ARROWS[next.kind], t(SAY[next.kind]), far(next.at - this.s)) + (next.onto ? `<div class="nav-onto">${esc(next.onto)}</div>` : '') + name + total;
+    if (this.walking && rest !== null && rest < 4 && this.toPin > 7) return head(ARROWS.end, t('Walk toward the marker'), far(this.toPin)) + name;
     if (rest !== null) return head(ARROWS.end, t('Destination ahead'), far(rest)) + name;
     return head(ARROWS.on, t('Keep going')) + name;
   }
 
   // For the test API.
   probe() {
-    const w = this.way, to = this.target;
+    const w = this.footWay ?? this.way, to = this.target;
     return {
       to: to ? { x: Math.round(to.x), y: Math.round(to.y), name: to.name, job: to.job } : null,
-      shown: this.mesh.visible, reached: w?.reached ?? false, length: w ? Math.round(w.line.length) : 0, along: Math.round(this.s),
-      streets: w ? w.edges.length : 0, turns: w ? w.turns.map((x) => ({ at: Math.round(x.at), kind: x.kind, onto: x.onto })) : [],
+      shown: this.mesh.visible || !!this.footWay, walking: this.walking, reached: w?.reached ?? false, length: w ? Math.round(w.line.length) : 0, along: Math.round(this.s),
+      streets: this.footWay?.streets ?? this.way?.edges.length ?? 0, turns: w ? w.turns.map((x) => ({ at: Math.round(x.at), kind: x.kind, onto: x.onto })) : [],
     };
   }
 }

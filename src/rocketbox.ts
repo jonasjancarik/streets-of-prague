@@ -84,6 +84,8 @@ export class LifeSize {
   group = new THREE.Group();
   enabled = true;
   private kinds: Kind[] = [];
+  // An avatar keeps its catalogue identity as individual models finish loading.
+  private baseKinds: (number | undefined)[] = [];
   private uniforms = new Map<string, number | null>();
   private uniformLoader?: KTX2Loader;
   private pendingUniforms = 0;
@@ -124,7 +126,7 @@ export class LifeSize {
       const [byName, figureActions] = await Promise.all(['clips', 'actions'].map(async (file) =>
         readClips(await (await fetch(`rocketbox/${file}.bin`)).arrayBuffer())));
       this.figureActions = figureActions;
-      this.kinds = await Promise.all(AVATARS.map(async ([name, sex]) => {
+      const loads = AVATARS.map(async ([name, sex], avatar) => {
         const g = await loader.loadAsync(`rocketbox/${name}.glb`);
         g.scene.traverse((o) => {
           if (!(o instanceof THREE.SkinnedMesh)) return;
@@ -149,10 +151,16 @@ export class LifeSize {
           for (let i = 0; i < position.values.length; i++) position.values[i] *= hips;
           kind.clips[name] = new THREE.AnimationClip(name, clip.duration, [position, ...clip.tracks.slice(1)]);
         }
-        return kind;
-      }));
-      this.spare = this.kinds.map(() => []);
-      this.state = 'ready';
+        this.baseKinds[avatar] = this.kinds.push(kind) - 1;
+        this.spare.push([]);
+      });
+      // Keep the shared decoder alive until the last request settles, even if
+      // one model fails. Each ready character can already be drawn meanwhile.
+      const results = await Promise.allSettled(loads);
+      results.forEach((result, i) => {
+        if (result.status === 'rejected') console.warn('Avatar could not load', AVATARS[i][0], result.reason);
+      });
+      this.state = this.kinds.length ? 'ready' : 'failed';
     } catch (e) {
       console.warn('Life-size people could not load', e);
       this.state = 'failed';
@@ -166,14 +174,15 @@ export class LifeSize {
   private uniformKind(role: UniformRole, id: number) {
     const donors = UNIFORM_AVATARS[role], name = donors[id % donors.length], key = role + '-' + name;
     if (!this.uniforms.has(key)) {
+      const base = this.baseKinds[AVATARS.findIndex(([avatar]) => avatar === name)];
+      if (base === undefined) return null;
       this.uniforms.set(key, null);
-      void this.loadUniform(key, name, role);
+      void this.loadUniform(key, this.kinds[base], role);
     }
     return this.uniforms.get(key);
   }
 
-  private async loadUniform(key: string, name: string, role: UniformRole) {
-    const base = this.kinds[AVATARS.findIndex(([avatar]) => avatar === name)];
+  private async loadUniform(key: string, base: Kind, role: UniformRole) {
     let body: THREE.MeshStandardMaterial | undefined;
     base.template.traverse((o) => {
       if (o instanceof THREE.SkinnedMesh && o.material instanceof THREE.MeshStandardMaterial && o.material.name.endsWith('_body')) body = o.material;
@@ -233,6 +242,7 @@ export class LifeSize {
     this.umbrellas.geometry.dispose();
     (this.umbrellas.material as THREE.Material).dispose();
     this.kinds = [];
+    this.baseKinds = [];
     this.live.clear();
     this.spare = [];
   }
@@ -253,7 +263,7 @@ export class LifeSize {
       // (Not someone the camera is inside; you, though, always: see Figures.self.)
       if (!fig.self && (d > this.reach || d < 1)) return false;
       const role = typeof fig.lifeSize === 'string' ? fig.lifeSize : undefined;
-      const kind = role ? this.uniformKind(role, id) : (gid * 7919 + id * 104729) % AVATARS.length;
+      const kind = role ? this.uniformKind(role, id) : this.baseKinds[(gid * 7919 + id * 104729) % AVATARS.length];
       if (kind == null) return false;
       if (!fig.self && this.live.size >= MOST - (role ? 0 : this.reserved)) {
         if (role) this.waitingCrew++;
@@ -367,7 +377,7 @@ export class LifeSize {
   frame(dt: number, eyes: boolean, camera: THREE.Camera) {
     eyes &&= this.enabled;
     if (eyes && this.state === 'idle') void this.load();
-    this.on = eyes && this.state === 'ready';
+    this.on = eyes && this.kinds.length > 0;
     this.cam.copy(camera.position);
     // In a crowd there are more people near than avatars: the reach draws in to the
     // nearest MOST of them (those beyond it are let go) and widens again as the crowd thins.

@@ -1,3 +1,5 @@
+import type { CourierWalk } from './footCourier.ts';
+import { courierLook } from './figures.ts';
 import { Car } from './car.ts';
 import { BURNING } from './fire.ts';
 import { posts } from './posts.ts';
@@ -58,6 +60,9 @@ export interface MissionWorld {
   stars: () => number;
   // The police come after you with at least this many stars.
   wanted: (stars: number) => void;
+  courierWalk: () => CourierWalk | null;
+  canReachContact: (spot: Spot) => boolean;
+  parcel: (carried: boolean) => void;
   places: () => Spot[];
   // Sights a tourist wants to see (jobs.ts SIGHTS, those on the map).
   sights: () => Spot[];
@@ -91,13 +96,14 @@ export interface Step {
   goal: Text | ((w: MissionWorld, run: Run) => Text);
   at?: (w: MissionWorld, run: Run) => { x: number; y: number } | null;
   limit?: number;
+  handoff?: { label: string; near: (w: MissionWorld) => boolean; take: (w: MissionWorld) => void };
   begin?: (run: Run, w: MissionWorld) => void;
   tick: (run: Run, w: MissionWorld, dt: number) => Outcome;
   // The mission is over, or has moved on: take away what this step put in the world.
   end?: (run: Run, w: MissionWorld) => void;
 }
 
-export interface Plan { steps: Step[]; pay: number; bonus?: number; vars?: Record<string, string | number> }
+export interface Plan { offer?: string; brief?: string[]; steps: Step[]; pay: number; bonus?: number; vars?: Record<string, string | number> }
 
 export interface Contact { who: string; name: string }
 
@@ -173,6 +179,42 @@ export function goTo(spot: Spot, o: { goal: Text; limit?: number; r?: number; ca
       return true;
     },
     end: (_run, w) => { if (o.carry) w.carry(null); },
+  };
+}
+
+// The sender and recipient stay with their marker until the player uses the
+// ordinary interaction control. Passing through the marker never exchanges a parcel.
+export function handParcel(spot: Spot, pickup: boolean, limit: number): Step {
+  let person: Pedestrian | null = null, exchanged = false;
+  const release = (w: MissionWorld) => {
+    if (person && person.state === 'flee') person.t = 0;
+    person = null;
+  };
+  return {
+    goal: [pickup ? 'Meet the sender at {name}' : 'Meet the recipient at {name}', { name: spot.name }],
+    at: () => spot, limit,
+    handoff: {
+      label: pickup ? 'Take parcel' : 'Hand over parcel',
+      near: w => !!person && !exchanged && person.state !== 'down' && far(w.me(), spot) < 2.8 && w.canReachContact(spot),
+      take: w => { exchanged = true; w.parcel(pickup); release(w); },
+    },
+    tick: (_run, w) => {
+      if (exchanged) return true;
+      const me = w.me(), distance = far(me, spot);
+      if (distance > 75) { release(w); return false; }
+      if (!w.loaded(spot.x, spot.y)) return false;
+      const crowd = w.crowd();
+      if (!person || crowd.people[person.i] !== person) {
+        person = crowd.spawnAt(spot.x, spot.y, courierLook(w.rng, pickup ? '#df921e' : '#31858c'));
+      }
+      if (person.state === 'down') return ['The handoff was interrupted'];
+      person.x = spot.x; person.y = spot.y;
+      person.state = 'flee'; person.t = 1;
+      person.vx = person.vy = 0;
+      person.h = Math.atan2(me.y - spot.y, me.x - spot.x);
+      return false;
+    },
+    end: (_run, w) => { release(w); if (pickup && exchanged) w.parcel(false); },
   };
 }
 
@@ -476,8 +518,9 @@ export class Missions {
     if (!plan) return false;
     this.stop();
     const steps = [...plan.steps];
-    if (brief && def.brief && !this.progress.done[def.id]) {
-      steps.unshift(talk(def.brief.map((text) => ({ who: def.from.who, name: t(def.from.name), text: t(text, plan.vars) })), [def.title]));
+    const briefing = plan.brief ?? def.brief;
+    if (brief && briefing && !this.progress.done[def.id]) {
+      steps.unshift(talk(briefing.map((text) => ({ who: def.from.who, name: t(def.from.name), text: t(text, plan.vars) })), [def.title]));
     }
     this.run = { def, steps, i: 0, pay: plan.pay, bonus: plan.bonus ?? 0, left: null, limit: 0, spare: [], away: 0, cargo: null, owned: new Set(), mark: null };
     this.state = 'on';
@@ -624,6 +667,20 @@ export class Missions {
     this.begin();
   }
 
+  get handoff() { return this.run?.steps[this.run.i]?.handoff; }
+
+  handoffLabel() {
+    const h = this.handoff;
+    return h?.near(this.w) ? h.label : null;
+  }
+
+  exchange() {
+    const h = this.handoff;
+    if (!h?.near(this.w)) return false;
+    h.take(this.w);
+    return true;
+  }
+
   // Where the marker goes.
   target() {
     const run = this.run;
@@ -644,7 +701,7 @@ export class Missions {
     if (this.state === 'offer') {
       const { def, plan, left } = this.offered!;
       return `<div class="job-from">${esc(t(def.from.name))} · ${t('job offer')}</div>`
-        + `<div class="job-text">${esc(t(def.offer, plan.vars))}</div>`
+        + `<div class="job-text">${esc(say([plan.offer ?? def.offer, plan.vars]))}</div>`
         + `<div class="job-meta">${t('Pay: about {pay}', { pay: kc(plan.pay + (plan.bonus ?? 0) / 2) })}</div>`
         + `<div class="job-keys">${key(t('take the job'))} · ${touch ? `<span class="job-no">${t('Tap here: {what}', { what: t('another one') })}</span>` : padLabels(`<b>K</b> ${t('another one')}`)} · ${Math.ceil(left)} s</div>`;
     }
@@ -654,7 +711,7 @@ export class Missions {
     const at = this.target(), d = at ? far(at, this.w.me()) : 0;
     const meta = [
       run.left !== null ? `<span class="${run.left < 20 ? 'late' : ''}">${mmss(run.left)}</span>` : '',
-      at ? (d < 1000 ? `${Math.round(d / 10) * 10} m` : `${(d / 1000).toFixed(1)} km`) : '',
+      at ? (this.handoff && d < 20 ? `${Math.ceil(d)} m` : d < 1000 ? `${Math.round(d / 10) * 10} m` : `${(d / 1000).toFixed(1)} km`) : '',
       kc(run.pay),
     ].filter(Boolean).join(' · ');
     const out = run.away > 1 ? `<div class="job-note">${esc(t(run.cargo ? 'Get back in the car: {secs} s' : 'Get back in: {secs} s', { secs: Math.ceil(GRACE - run.away) }))}</div>` : '';

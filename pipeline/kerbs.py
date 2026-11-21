@@ -12,6 +12,7 @@ pavement belonging to some other street or a path across a square.
 import numpy as np
 import shapely
 from shapely import STRtree
+from shapely.ops import substring
 
 # How far cars reach into the street from the kerb, by how they stand.
 PARKING_DEPTH = {"parallel": 2.0, "diagonal": 5.0, "perpendicular": 5.0}
@@ -239,3 +240,99 @@ def _per_line(idx, values, n_lines, share):
         hit = v[~np.isnan(v)]
         if counts[k] and len(hit) >= max(1, share * counts[k]):
             yield k, float(np.median(hit))
+
+
+ALIGNED = 0.9  # |cos| between a bridge and the street on the ground it carries on from
+END_PIECE = 25.0  # m of a street before a bridge whose kerbs the bridge takes
+TAPER_STEP = 2.0  # m between the points of a deck's carriageway drawn wider at one end
+
+
+def bridge_ends(lines, kerbs, ests, bridges, borrow):
+    """The kerbs of each bridge's carriageway at its two ends, from the street on the
+    ground it carries on from there: {line: ((left, right) at its start or None, (left,
+    right) at its end or None)}, sides as seen along the bridge's own line.
+
+    The survey's carriageways stop where a deck begins (the deck's own are on a level
+    of their own, and some are missing), so a bridge is mostly as wide as its lanes
+    say, and the street on the ground is as wide as the survey has it. On the D0 over
+    its slip road at Řepy the deck's carriageways were 10.75 m against the ground's
+    17 m, and the deck between them showed in wedges at both ends. The street's kerbs
+    are measured over its last END_PIECE metres, not its whole length: one carriageway
+    there had 10.5 m to its right kerb on the survey 100 m back, and 7 m by the bridge.
+    `kerbs`: the Kerbs; `ests`: what each line's tags say; `bridges`: whether each is a
+    bridge; `borrow`: which bridges may take their kerbs from the ground
+    (those whose own share on the survey is under what counts as surveyed)."""
+    starts, ends = {}, {}
+    for k, line in enumerate(lines):
+        if bridges[k] or line.length < 1:
+            continue
+        a, b = line.coords[0], line.coords[-1]
+        starts.setdefault((round(a[0], 1), round(a[1], 1)), []).append(k)
+        ends.setdefault((round(b[0], 1), round(b[1], 1)), []).append(k)
+
+    def heading(line, at_start):
+        pts = np.asarray(line.coords)
+        d = pts[1] - pts[0] if at_start else pts[-1] - pts[-2]
+        n = np.linalg.norm(d)
+        return d / n if n else d
+
+    # Each bridge end's best-aligned street on the ground: (bridge, its start?) ->
+    # (street, the street's start?, the same way as the bridge?).
+    found = {}
+    for k, line in enumerate(lines):
+        if not (bridges[k] and borrow[k]) or line.length < 1 or len(line.coords) < 2:
+            continue
+        for at_start in (True, False):
+            p = line.coords[0] if at_start else line.coords[-1]
+            key = (round(p[0], 1), round(p[1], 1))
+            mine = heading(line, at_start)
+            best = None
+            for n, starting in [*((n, True) for n in starts.get(key, ())), *((n, False) for n in ends.get(key, ()))]:
+                cos = float(np.dot(mine, heading(lines[n], starting)))
+                if abs(cos) < ALIGNED or (best and abs(cos) <= best[0]):
+                    continue
+                # Both headings are the way the line runs at that end: the street runs
+                # the same way as the bridge if they point the same way.
+                best = (abs(cos), n, starting, cos > 0)
+            if best:
+                found[k, at_start] = best[1:]
+    if not found:
+        return {}
+    # The street's last metres before the bridge: on the survey where they're on it,
+    # what its tags say where they aren't. Not the street's kerbs over its whole length:
+    # where the survey stops short of the bridge, those come from far off.
+    pieces = []
+    for n, starting, _ in found.values():
+        L = lines[n].length
+        pieces.append(substring(lines[n], 0, END_PIECE) if starting else substring(lines[n], max(0, L - END_PIECE), L))
+    near = kerbs(pieces, [ests[n] for n, _, _ in found.values()])
+    out = {}
+    for ((k, at_start), (n, starting, same)), piece in zip(found.items(), near):
+        left, right = piece
+        got = out.setdefault(k, [None, None])
+        got[0 if at_start else 1] = (left, right) if same else (right, left)
+    return {k: tuple(v) for k, v in out.items()}
+
+
+def narrowest(own, ends):
+    """One (left, right) for a bridge's edge in the street network from its two ends'
+    (bridge_ends; its own where an end has none): the narrower of them on each side,
+    so its lane lines and its traffic stay on the carriageway all along it."""
+    a, b = ends[0] or own, ends[1] or own
+    return tuple(round(min(a[s], b[s]), 2) for s in (0, 1))
+
+
+def tapered(line, own, ends):
+    """A bridge's carriageway from kerb to kerb, each side going over from its kerb at
+    the start to its kerb at the end (bridge_ends; its own where an end has none)."""
+    a, b = ends[0] or own, ends[1] or own
+    L = line.length
+    ds = np.linspace(0, L, max(2, int(np.ceil(L / TAPER_STEP)) + 1))
+    pts = shapely.get_coordinates(shapely.line_interpolate_point(line, ds))
+    tang = np.gradient(pts, axis=0)
+    tang /= np.maximum(np.linalg.norm(tang, axis=1, keepdims=True), 1e-9)
+    normal = np.stack([-tang[:, 1], tang[:, 0]], axis=1)
+    f = (ds / L)[:, None] if L else np.zeros((len(ds), 1))
+    left = pts + normal * (a[0] + (b[0] - a[0]) * f)
+    right = pts - normal * (a[1] + (b[1] - a[1]) * f)
+    return shapely.make_valid(shapely.Polygon(np.vstack([left, right[::-1]])))

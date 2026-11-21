@@ -142,6 +142,11 @@ in compass degrees (0 north, 90 east), speeds in km/h.
 - `t.orderTaxi()` orders an app taxi on foot, `t.taxi()` says how it stands (`state`,
   `near`, `to`), `t.boardTaxi()` gets in, `t.taxiTo(n)` picks the n-th place of its list.
   `t.boardTram(seconds)` waits for a tram to stop near you and gets on it (scenario `takeover-button`).
+  `t.takeTram()` takes over the nearest tram. `t.takeTram(minKmh)` selects one
+  already moving at that speed on a clear stretch of loaded track and returns false
+  if none qualifies. `t.tramRunClear()` checks the track ahead of the tram you drive.
+- `t.navLine()` returns the polyline shown on the minimap, its cumulative
+  distances and the player's progress along it. It returns null without a route.
   `t.probe()` also gives `traffic` and `people` (how many are about) and `place` (the
   last title shown for the part of town or the village).
 - `t.wait(seconds, controls)`: runs the world in 1/60 s steps with
@@ -172,7 +177,7 @@ in compass degrees (0 north, 90 east), speeds in km/h.
   trailer project (`trailer/`) turns them into video.
 - `t.check(name, pass, detail)` records a result in a scenario.
 - `t.paused`, `t.speed`, `t.unhurt`, `t.snapshot()`, `t.run(name)` are what the
-  developer panel uses.
+  developer panel uses. Each scenario restores the previous `t.unhurt` setting on exit.
 
 Missing something? Add it to `src/testkit.ts` (and the `Game` interface, wired in at
 the end of `main()` in `src/main.ts`) rather than reaching into `__drive` from a

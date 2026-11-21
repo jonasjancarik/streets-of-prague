@@ -1,3 +1,6 @@
+import { bridgeWalk, withBridgeWalk } from './map/bridgeWalk.ts';
+import { footSurfaces, type Footing } from './map/footing.ts';
+import { liningMesh, passageView } from './passageMaterial.ts';
 import { StreetFacades } from './streetFacades.ts';
 import { roofLookup, ROOFTOP } from './roofSurface.ts';
 import { dataUrl } from './data.ts';
@@ -9,9 +12,9 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { Geo, Grid, rng, hash, clipLine } from './map/geo.ts';
 import { wallMesh } from './map/buildings.ts';
 import { TreePool } from './trees.ts';
-import { groundStairs, stairLandings } from './map/stairs.ts';
+import { bridgeStairRails, groundStairs, stairLandings } from './map/stairs.ts';
 import { powerMesh, readPowerGrid, type PowerGrid } from './map/powerGrid.ts';
-import { Surfaces } from './surface.ts';
+import { Surfaces, tunnelDepthMesh } from './surface.ts';
 import { buildTin, decodeTin, tinGrid, tinNearSteps, tinSampler, TIN_FORMAT, type TinFile, type TinMesh } from './tin.ts';
 import { shadeBuildings, shadeLandmark, cutAway, broad, ROOF_CLUTTER, roadRasterEnabled } from './shading.ts';
 import { loadFacadeAtlas } from './facades.ts';
@@ -28,7 +31,7 @@ import type { StepLine, Terrace } from './terrain.ts';
 import { SKY_STEP, SKY_MARGIN } from './map/skyView.ts';
 import type { Shadower } from './map/skyView.ts';
 import type { Point2, Bounds, Polygons } from './map/geo.ts';
-import { DriveGraph } from './network.ts';
+import { DriveGraph, segDist } from './network.ts';
 import type { DriveEdge, WalkEdge, WalkGraph } from './network.ts';
 import type { Car } from './car.ts';
 import type { Landmark, TileJSON, MapIndex, TilePassage, BuildingArrays, HeightGrid, LevelInput, LandResult, TreeTrunk, WorkerJobs, WorkerResults } from './contracts.ts';
@@ -92,6 +95,7 @@ interface Tile {
   drawMs: Record<string, number>; drawAfter: number;
   // The ground's triangles (the plain ground and the walls at its steps), when drawn.
   roofSurfaces?: ((x: number, y: number) => number)[];
+  footing?: ReturnType<typeof footSurfaces>;
   groundTriangles?: { ground: number; walls: number };
   // The walls, fences and wires: made with the tile (cars knock the fences and poles
   // down wherever they are) and put in the scene with the rest.
@@ -361,6 +365,7 @@ function depthOnlyGround(hm: Float32Array, [x0, y0]: Bounds, n: number, step: nu
   g.setIndex(idx);
   const mesh = new THREE.Mesh(g, cutAway(new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide }), 'depth-ground'));
   mesh.renderOrder = -800;
+  tunnelDepthMesh(mesh);
   return mesh;
 }
 
@@ -486,6 +491,8 @@ function inPassage(passages: TilePassage[], x: number, y: number, pad = 0) {
   return false;
 }
 
+interface PassageRoom { cancel: () => void; mesh?: THREE.Mesh; retryAt?: number }
+
 export class TileWorld {
   osmBuildings: boolean;
   // Prototype (ground_cover.py): `ortho`, the painted
@@ -501,6 +508,60 @@ export class TileWorld {
     if (this.streetFurniture === street) return;
     this.streetFurniture = street;
     for (const tile of this.loaded.values()) furnitureView(tile.furniture, street);
+  }
+
+  private passageRooms = new Map<Tile, PassageRoom>();
+  private nextPassageRetry = Infinity;
+  private lastPassage = new THREE.Vector3(Infinity, Infinity, -1);
+  private dropPassage(tile: Tile) {
+    const room = this.passageRooms.get(tile);
+    if (!room) return;
+    this.passageRooms.delete(tile); room.cancel();
+    if (room.mesh) {
+      room.mesh.removeFromParent();
+      room.mesh.traverse(o => { if (o instanceof THREE.Mesh) { o.dispose(); o.geometry.dispose(); } });
+      room.mesh.clear();
+    }
+  }
+
+  // Only the nearest passage tiles need their interior. Required map jobs keep
+  // priority, and a late worker reply cannot bring back a room left behind.
+  passageCamera(street: boolean, x: number, y: number) {
+    if (!street && !this.passageRooms.size && this.lastPassage.z < 0) return;
+    const now = performance.now();
+    if (street && this.lastPassage.z === this.joined && now < this.nextPassageRetry && Math.hypot(this.lastPassage.x - x, this.lastPassage.y - y) < 5) return;
+    this.lastPassage.set(x, y, street ? this.joined : -1);
+    const want = new Set<Tile>(), here = street ? this.tileAt(x, y) : undefined;
+    if (here) for (let i = here.i - 1; i <= here.i + 1; i++) for (let j = here.j - 1; j <= here.j + 1; j++) {
+      const tile = this.byIndex.get(i * 65536 + j);
+      if (!tile?.drawn || !tile.passages.length) continue;
+      const near = tile.passages.some(p => p.pts.some((a, k) => k > 0 && segDist(x, y, p.pts[k - 1], a) < 65));
+      if (near) want.add(tile);
+    }
+    this.nextPassageRetry = Infinity;
+    for (const [tile, room] of this.passageRooms) {
+      if (!want.has(tile) || (room.retryAt && room.retryAt <= now)) this.dropPassage(tile);
+      else if (room.retryAt) this.nextPassageRetry = Math.min(this.nextPassageRetry, room.retryAt);
+    }
+    passageView(want.size > 0);
+    for (const tile of want) if (!this.passageRooms.has(tile)) {
+      const job = this.workers.submit('passage', () => ({
+        paths: tile.passages, houses: tile.source.t.buildings.filter(b => !(b.minh >= RAISED) && b.h >= 3.25),
+        landmarks: tile.source.hide, box: tile.box, ground: tile.source.ground,
+      }), [], 'optional');
+      const room: PassageRoom = { cancel: job.cancel };
+      this.passageRooms.set(tile, room);
+      void job.promise.then(data => {
+        if (!data || this.passageRooms.get(tile) !== room) return;
+        room.mesh = liningMesh(data); room.mesh.matrixAutoUpdate = false;
+        this.scene.add(room.mesh); room.mesh.updateMatrixWorld(true);
+      }).catch(error => {
+        if (this.passageRooms.get(tile) !== room) return;
+        console.warn('Could not draw passage interior', error);
+        room.retryAt = performance.now() + 10000;
+        this.nextPassageRetry = Math.min(this.nextPassageRetry, room.retryAt);
+      });
+    }
   }
 
   time: { value: number };
@@ -737,6 +798,30 @@ export class TileWorld {
   onRoad(x: number, y: number) {
     const t = this.tileAt(x, y);
     return !!t && t.roads.some((rings) => inPoly(x, y, rings));
+  }
+
+  // The short off-network approach to a picked walking destination, checked
+  // only while planning a route. Test at the actual level, including fences and
+  // the walker's shoulder clearance, so the line never finishes through a wall.
+  walkAccess([ax, ay]: Point2, [bx, by]: Point2, level: number) {
+    const dx = bx - ax, dy = by - ay, distance = Math.hypot(dx, dy);
+    const steps = Math.max(1, Math.ceil(distance / .4));
+    const nx = -.25 * dy / (distance || 1), ny = .25 * dx / (distance || 1);
+    let previous = this.surfaceAt(ax, ay, level);
+    for (let i = 1; i <= steps; i++) {
+      const x = ax + dx * i / steps, y = ay + dy * i / steps, z = this.levelAt(x, y, level);
+      if (!Number.isFinite(z) || Math.abs(z - previous) > .75 || this.cellAt(x, y, level, z) ||
+          this.cellAt(x + nx, y + ny, level, z) || this.cellAt(x - nx, y - ny, level, z) || fences.blocks(x, y, .15, 0)) return false;
+      previous = z;
+    }
+    return true;
+  }
+
+  footSurface(x: number, y: number, level = 0): Footing {
+    const tile = this.tileAt(x,y);
+    if (!tile || level || this.passageAt(x,y)) return 'hard';
+    tile.footing ??= footSurfaces(withPatches(tile.source.t), tile.source.t.roads);
+    return tile.footing(x,y);
   }
 
   // Whether a point is on open water: true or false, null where nothing is loaded.
@@ -1458,9 +1543,11 @@ export class TileWorld {
     const fits = lower ? [...lower, ...(trial ?? [])] : trial;
     const surfaces = fits;
     if (shade && surfaces) shade.sample = withRoadSurfaces(shade.sample, surfaces, this.ref, terraceAt(t.terraces));
+    const underpass = shade && t.structures?.some(s => s.kind === 'bridge') ? bridgeWalk(t.walk) : undefined;
+    if (shade && underpass) shade.sample = withBridgeWalk(shade.sample, underpass, this.ref);
     const hAt = shade ? shade.sample : () => 0;
     const ground = shade && terrain ? { hm: shade.hm, box: t.box, n: terrain.n, step: terrain.step, labels: shade.labels,
-      terraces: t.terraces, stepLines: this.stepLines ? t.stepLines : undefined, unit: terrain.unit, ref: this.ref, ...(roadProfile ? { roadProfile } : {}), ...(surfaces ? { roadSurfaces: surfaces } : {}), ...(tin ? { tin } : {}) } : null;
+      terraces: t.terraces, ...(underpass ? { underpass } : {}), stepLines: this.stepLines ? t.stepLines : undefined, unit: terrain.unit, ref: this.ref, ...(roadProfile ? { roadProfile } : {}), ...(surfaces ? { roadSurfaces: surfaces } : {}), ...(tin ? { tin } : {}) } : null;
     // Bridges above the ground and tunnels below it, each level with its own heights.
     // (Charles Bridge's cutwaters come off its deck.)
     const structures = clipDecks(t.structures || [], this.charles.piers, t.box);
@@ -1480,7 +1567,7 @@ export class TileWorld {
       .map((b) => ({ ...b, base: Math.min(...b.rings[0].map(([x, y]) => hAt(x, y))), street: streetOf(b.rings[0], edges) }));
     // (An edge that changes level along itself is painted stretch by stretch.)
     const clipped = edges.flatMap((e) => byLevel(e).flatMap((part) => clipLine(part.pts, t.box).map((pts) => (
-      { pts, u: e.u, v: e.v, hw: e.hw, lanes: e.lanes, oneway: e.oneway, width: e.width, surface: e.surface, bridge: e.bridge, tunnel: e.tunnel, maxspeed: e.maxspeed, named: !!e.name, name: e.bridge ? e.name ?? undefined : undefined, level: part.level, kerb: e.kerb, park: e.park }))));
+      { pts, u: e.u, v: e.v, hw: e.hw, lanes: e.lanes, oneway: e.oneway, width: e.width, surface: e.surface, bridge: e.bridge, tunnel: e.tunnel, maxspeed: e.maxspeed, named: !!e.name, name: e.bridge ? e.name ?? undefined : undefined, level: part.level, kerb: e.kerb, park: e.park, deck: e.deck }))));
     // Paid-parking colour of each parking area's bay lines.
     const parkingZones = (t.areas.parking || []).map((rs) => {
       const r = rs[0], cx = r.reduce((a, p) => a + p[0], 0) / r.length, cy = r.reduce((a, p) => a + p[1], 0) / r.length;
@@ -1593,9 +1680,10 @@ export class TileWorld {
     lap('parking');
     if (sliced) { ms.parkingWait = ms.parking - Math.round(busy); ms.parking = Math.round(busy); }
     for (const c of cars) c.level = 0; // (nobody parks on a bridge or in a tunnel)
+    const handrails = underpass ? bridgeStairRails(underpass, this.ref) : null;
     const tile: Tile = {
       k, i: t.i, j: t.j, box: t.box, passages: t.passages || [], raised: t.buildings.filter((b) => !grounded(b)).map((b) => b.rings), grid, trunkCells: land.trunkCells, levels: onLevels, cars, ms,
-      source, shown: false, dressing: null, drawn: null, drawMs: {}, drawAfter: 0, fixtures: [walls, fenceRows.fence, fenceRows.hedge, fenceRows.rail, ...(sheds ? [sheds] : []), ...wires, ...statues],
+      source, shown: false, dressing: null, drawn: null, drawMs: {}, drawAfter: 0, fixtures: [walls, ...(handrails ? [handrails] : []), fenceRows.fence, fenceRows.hedge, fenceRows.rail, ...(sheds ? [sheds] : []), ...wires, ...statues],
       roads, crossers, poles, fences: fenceSections, furniture, relief: shade, sample: shade?.sample,
       water: (t.areas.water || []).map((rings) => {
         const xs = rings[0].map((p) => p[0]), ys = rings[0].map((p) => p[1]);
@@ -1645,8 +1733,8 @@ export class TileWorld {
           stairs: groundStairs(t.walk).map(({ pts, width }) => ({ pts, width })) },
         paint: TILE_LOOK.roadPaint, rasterRoads: !this.ortho && !!s.ground && roadRasterEnabled(), box: s.bounds, edges: s.clipped, buildings: s.standing, parkingZones: s.parkingZones, ground: s.ground, levels: s.levels,
       }),
-      buffer ? w.run('ipr', { buffer, box: t.box, absolute: this.index.iprRef != null, ground: s.ground, bbox: this.index.bbox_wgs84, hide: s.hide, clutter: ROOF_CLUTTER.value > 0.5, footprints: s.footprints }, [buffer]) : null,
-      !s.withIpr || s.extrude.length ? w.run('roofs', { buildings: s.extrude, size: s.size, origin: s.origin, ground: s.ground, bbox: this.index.bbox_wgs84, water: t.areas?.water ?? [], stops: stopLines(t) }) : null,
+      buffer ? w.run('ipr', { buffer, box: t.box, absolute: this.index.iprRef != null, passages: t.passages, ground: s.ground, bbox: this.index.bbox_wgs84, hide: s.hide, clutter: ROOF_CLUTTER.value > 0.5, footprints: s.footprints }, [buffer]) : null,
+      !s.withIpr || s.extrude.length ? w.run('roofs', { buildings: s.extrude, size: s.size, origin: s.origin, ground: s.ground, bbox: this.index.bbox_wgs84, water: t.areas?.water ?? [], passages: t.passages, stops: stopLines(t) }) : null,
     ]);
   }
 
@@ -1770,6 +1858,7 @@ export class TileWorld {
 
   // Take a tile's meshes away again; the tile stays loaded.
   undress(tile: Tile) {
+    this.dropPassage(tile);
     tile.shown = false;
     const drawn = tile.drawn;
     if (!drawn) return;
@@ -1792,12 +1881,13 @@ export class TileWorld {
     }
     for (const m of drawn.own) {
       this.facades.drop(m);
+      m.dispose();
       m.geometry.dispose();
       if (Array.isArray(m.material)) m.material.forEach((material) => material.dispose());
       else m.material.dispose();
     }
     // What stays with the tile gives up its copy on the graphics card until it's drawn again.
-    for (const m of tile.fixtures) m.geometry.dispose();
+    for (const m of tile.fixtures) { m.dispose(); m.geometry.dispose(); }
     tile.relief?.texture.dispose();
   }
 

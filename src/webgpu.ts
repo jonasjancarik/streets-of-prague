@@ -37,11 +37,11 @@ import './webgpu/underground.ts';
 import { CloudSunNode } from './webgpu/clouds.ts';
 import { gradeCurve } from './webgpu/grade.ts';
 import { makePost } from './webgpu/post.ts';
-import { ASPHALT_SCAN, STREET_SURFACE, onAsphaltScan } from './streetSurface.ts';
+import { asphalt, setts } from './streetSurface.ts';
 import { dome } from './webgpu/dome.ts';
 import { DOME_NODE, DOME } from './sky.ts';
 import { OLD_GRADE } from './grade.ts';
-import { mosaicStones, pavedStones } from './webgpu/mosaic.ts';
+import { pavementStones, pavementNormal } from './webgpu/mosaic.ts';
 import { uWater, ripples, waves, waveNormal, waterShine, flatMirror } from './webgpu/water.ts';
 
 // PATTERNS_GLSL.
@@ -55,9 +55,11 @@ const hedgeColour = vec4(materialColor.rgb.mul(followColor(HEDGE_SEASON)).mul(he
 addPort(/^hedge-season$/, (node) => { node.colorNode = hedgeColour; });
 // The cars' probe of the street (probe.ts) needs WebGPU's kind of cube target.
 setProbeTargets(() => new CubeRenderTarget(PROBE_SIZE, PROBE_OPTIONS) as never);
-const surfaceDetail: N = follow(STREET_SURFACE);
-const scan = texture(ASPHALT_SCAN.value);
-onAsphaltScan(t => { scan.value = t; });
+const surfaceDetail: N = follow(asphalt.active);
+const scan = texture(asphalt.map);
+asphalt.onLoad = t => { scan.value = t; };
+const settDetail = follow(setts.active), settScan = texture(setts.map);
+setts.onLoad = t => { settScan.value = t; };
 // The scan covers four metres. Hardware mipmaps take the aggregate back to its
 // mean at distance; anisotropic filtering preserves it at the player's feet.
 const aggregate = (p: N) => scan.sample(p.div(4));
@@ -89,6 +91,25 @@ function tramConcrete(c: N,p: N) {
   });
   return grit(concrete.mul(float(1).sub(joint.mul(.48))),p);
 }
+function graniteKerb(c: N, p: N) {
+  const aa = max(.0015, fwidth(trackCoord).mul(.62));
+  const stone = c.toVar();
+  If(surfaceDetail.greaterThan(.5), () => {
+    // A course of cut granite with three different block lengths. The quartz
+    // and dark grains are finer than the stone, and the worn edge catches light.
+    const q = mod(trackCoord.add(vnoise(p.mul(23)).mul(.006)), 3.12);
+    const edge = min(min(q, float(3.12).sub(q)), min(abs(q.sub(1.08)), abs(q.sub(2.02))));
+    const joint = float(1).sub(smoothstep(float(.007).sub(aa), float(.007).add(aa), edge));
+    const arris = float(1).sub(smoothstep(.009, .022, edge)).sub(joint);
+    const id = floor(trackCoord.div(3.12)).mul(3).add(step(1.08, q)).add(step(2.02, q));
+    const bed = vnoise(vec2(id, 17.3)).mul(.19).add(.89);
+    const grit = aggregate(p.mul(2.25)).r.sub(.5);
+    const mineral = vec3(grit.mul(1.25).add(1), grit.mul(1.12).add(1), grit.add(1));
+    const fade = float(1).sub(smoothstep(.025, .15, aa));
+    stone.assign(c.mul(bed).mul(mineral).mul(float(1).add(arris.mul(.12).sub(joint.mul(.48)).mul(fade))));
+  }).Else(() => { stone.assign(grit(pConcrete(c, p), p)); });
+  return stone;
+}
 function pAsphalt(c0: N, p: N) {
   const c = c0.mul(fbm(p.mul(0.3)).mul(0.18).add(0.9)).toVar();
   c.mulAssign(mix(1, 0.9, smoothstep(0.62, 0.66, fbm(p.mul(0.07).add(3)))));
@@ -108,16 +129,27 @@ function pAsphalt(c0: N, p: N) {
   });
   return c;
 }
+// Four laying directions, as on the procedural paving. Rotate the scanned normal
+// back into the street's axes before lighting it, including on a sloping road.
+function settAxes(p: N) {
+  const way = floor(hash12(floor(p.div(52).add(vec2(0.31, 0.57))).add(2.9)).mul(4)).mul(Math.PI / 4);
+  return vec2(cos(way), sin(way));
+}
+function settPoint(p: N, axes: N) {
+  return vec2(p.x.mul(axes.x).sub(p.y.mul(axes.y)), p.x.mul(axes.y).add(p.y.mul(axes.x)));
+}
 function pSetts(c: N, p: N, sx: number, sy: number) {
   const d = detail(p, sx), s = c.mul(0.85).toVar();
-  If(d.greaterThan(0), () => {
-    // The rows run one of four ways, the same over a field some 50 m across: setts are laid
-    // along each street and in fields on a square, never all one way across a town.
-    const way = floor(hash12(floor(p.div(52).add(vec2(0.31, 0.57))).add(2.9)).mul(4)).mul(0.7854);
-    const q = vec2(p.x.mul(cos(way)).sub(p.y.mul(sin(way))), p.x.mul(sin(way)).add(p.y.mul(cos(way))));
-    const b = blocks(q, sx, sy);
-    const stone = c.mul(b.y.mul(0.4).add(0.8)).mul(vnoise(p.mul(9)).mul(0.16).add(0.92));
-    s.assign(mix(s, mix(c.mul(0.5), stone, smoothstep(0.004, 0.02, b.x)), d));
+  const q = settPoint(p, settAxes(p));
+  If(settDetail.greaterThan(0.5), () => {
+    const value = settScan.sample(q.div(2.5)).r;
+    s.assign(c.mul(value.sub(0.5).mul(1.72).add(0.9)));
+  }).Else(() => {
+    If(d.greaterThan(0), () => {
+      const b = blocks(q, sx, sy);
+      const stone = c.mul(b.y.mul(0.4).add(0.8)).mul(vnoise(p.mul(9)).mul(0.16).add(0.92));
+      s.assign(mix(s, mix(c.mul(0.5), stone, smoothstep(0.004, 0.02, b.x)), d));
+    });
   });
   // Where feet and wheels have polished the stones they are lighter, in patches a few metres
   // across: the lighter parts of the broad variation, lifted a little more (no noise read of its own).
@@ -125,9 +157,9 @@ function pSetts(c: N, p: N, sx: number, sy: number) {
   return s.mul(broad.mul(0.12).add(0.94)).mul(smoothstep(0.5, 0.68, broad).mul(0.1).add(0.97));
 }
 // (The stones are a texture: webgpu/mosaic.ts.)
-const pMosaic = (c: N, p: N) => c.mul(mosaicStones(p)).mul(fbm(p.mul(0.25)).mul(0.1).add(0.95));
+const pMosaic = (c: N, p: N) => c.mul(pavementStones(p, false)).mul(fbm(p.mul(0.25)).mul(0.1).add(0.95));
 // (A surveyed pavement: the same stones in Prague's patterns, webgpu/mosaic.ts.)
-const pPaved = (c: N, p: N) => c.mul(pavedStones(p)).mul(fbm(p.mul(0.25)).mul(0.1).add(0.95));
+const pPaved = (c: N, p: N) => c.mul(pavementStones(p, true)).mul(fbm(p.mul(0.25)).mul(0.1).add(0.95));
 function pSlabs(c: N, p: N) {
   const d = detail(p, 0.4), s = c.mul(0.95).toVar();
   If(d.greaterThan(0), () => {
@@ -228,6 +260,7 @@ function pattern(id: number, c: N, p: N, time: N, seasonal: boolean): N {
     }
     case 18: return railProfile(c);
     case 19: return tramConcrete(c,p);
+    case 20: return graniteKerb(c,p);
     case 2: return grit(pSetts(c, p, 0.17, 0.14), p);
     case 3: return grit(pMosaic(c, p), p);
     case 16: return grit(pPaved(c, p), p);
@@ -250,7 +283,7 @@ function pattern(id: number, c: N, p: N, time: N, seasonal: boolean): N {
 // WEATHER_GLSL: the colour, and in .a how much of a mirror the ground is there (shine).
 function weathered(id: number, c0: N, p: N, time: N) {
   if (id === 10 || id === 17) return vec4(c0, select(uWater.greaterThan(0.5), 0, 0.35));
-  const paved = id <= 4 || id === 9 || id === 16 || id === 18 || id === 19, road = id === 1 || id === 2;
+  const paved = id <= 4 || id === 9 || id === 16 || id === 18 || id === 19 || id === 20, road = id === 1 || id === 2;
   const c = vec3(c0).toVar(), shine = float(0).toVar();
   // (Derivatives outside the branches.)
   const ripple = paved ? detail(p, 0.12) : float(0);
@@ -403,7 +436,16 @@ function groundGraph(id: number, time: { value: number }, { relief, deck, photo,
         n.assign(normalize(n.add(vec3(xy.x,0,xy.y.negate()).mul(abs(n.y)))));
       });
       return transformNormalToView(n);
-    })() : null,
+    })() : id === 2 ? Fn(() => {
+      const n = normalWorldGeometry.toVar();
+      If(settDetail.greaterThan(0.5), () => {
+        const axes = settAxes(wp), uv = settPoint(wp, axes).div(2.5);
+        const xy = settScan.sample(uv).gb.sub(0.5).mul(1.5);
+        const world = vec2(dot(xy, axes), xy.y.mul(axes.x).sub(xy.x.mul(axes.y)));
+        n.assign(normalize(n.add(vec3(world.x, 0, world.y.negate()).mul(abs(n.y)))));
+      });
+      return transformNormalToView(n);
+    })() : id === 3 || id === 16 ? pavementNormal(wp) : null,
   };
   byKey.set(key, graph);
   return graph;

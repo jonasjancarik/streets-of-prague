@@ -6,7 +6,7 @@ import type { Scenario } from '../src/testkit.ts';
 export default {
   title: 'Walking into an underpass: open sky at its mouth, the hole only under the deck',
   async run(t) {
-    await t.go([50.08108, 14.41381], { heading: 0 }); // Divadelní, south of the underpass
+    await t.go([50.08108, 14.41381], { heading: 350 }); // Divadelní bends west of north. Due north walks into its east wall.
     t.time('14:00');
     t.weather('clear');
     const g = (globalThis as unknown as { __drive: any }).__drive; // eslint-disable-line @typescript-eslint/no-explicit-any

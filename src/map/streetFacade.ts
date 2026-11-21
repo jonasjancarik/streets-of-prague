@@ -49,6 +49,9 @@ function outline(l: number, b: number, r: number, t: number, rise: number, oval:
   for (let j = 0; j <= 10; j++) { const a = j * Math.PI / 10; p.push([(l + r) / 2 + Math.cos(a) * (r - l) / 2, t - rise + Math.sin(a) * rise]); }
   return p;
 }
+// Shopfronts identified in the source artwork (assets/facades/sheet*.txt).
+// Only their inset glass panes see merchandise; doors, shutters and flats keep their own finish.
+const SHOPFRONTS = new Set([6, 20, 30, 58, 66, 71, 80, 81, 91, 95, 102, 115, 119, 128, 139]);
 function cellShape(layer: number, bay: number, storey: number, moduleWidth: number, upper: boolean, style: number) {
   const tris: Triangle[] = [], holes: V2[][] = [], regions = openings[layer] || [];
   const pt = (p: V2, d: number): Point => [p[0], p[1], d];
@@ -88,6 +91,7 @@ const j = (i + 1) % outer.length;
     ring(bead, lip, bevel, projection, 1);
     const inner = outline(l + .014, b + .010, r - .014, t - .014, rise, oval);
     ring(lip, inner, projection, () => -inset, .75, S.reveal);
+    const glassFinish = !upper && SHOPFRONTS.has(layer) ? S.display : S.glass;
     const panes: V2[][] = [];
     for (let k = 0; k < lights.length; k += 4) {
       const [lx, ty, rx, by] = lights.slice(k, k + 4), x = (q: number) => (bay - moduleWidth) / 2 + moduleWidth * q / 256;
@@ -97,7 +101,7 @@ const j = (i + 1) % outer.length;
       if (panes.some(p => glass[0][0] < p[2][0] && glass[2][0] > p[0][0] && glass[0][1] < p[2][1] && glass[2][1] > p[0][1])) continue;
       panes.push(glass);
       ring(glass, glass, () => -inset, () => -inset - .038, .80);
-      fill(glass, [], -inset - .038, .94, S.glass);
+      fill(glass, [], -inset - .038, .94, glassFinish);
     }
     const timber = [8, 9, 18, 19, 34, 42, 44, 45, 56, 57, 67, 69, 79, 82, 90, 93, 105, 114, 117, 130, 138, 141, 143].includes(layer);
     const barred = [10, 21, 22, 54, 55, 68, 92, 116, 140].includes(layer) && !panes.length;
@@ -119,7 +123,7 @@ const j = (i + 1) % outer.length;
         ring(rail, rail, () => -.032, () => -.016, 1, S.iron); fill(rail, [], -.016, 1, S.iron);
       }
     }
-    fill(inner, panes, -inset, .92, barred ? S.grilleGlass : panes.length || timber ? S.joinery : S.glass);
+    fill(inner, panes, -inset, .92, barred ? S.grilleGlass : panes.length || timber ? S.joinery : glassFinish);
     // Cut limestone voussoirs around a round-headed portal. Their narrow
     // joints follow the arch; the centre keystone projects past its neighbours.
     if (rise > .12 && !oval && style <= 1) {
@@ -191,6 +195,7 @@ const j = (i + 1) % outer.length;
 
 export interface FacadeGeometry {
   position: Float32Array; normal: Float32Array; color: Float32Array; facade: Float32Array; sky: Float32Array; detail: Float32Array;
+  plateMounts: Float32Array; // a clear patch of plaster near either end, in world coordinates
 }
 const cross = (ax: number, ay: number, bx: number, by: number) => ax * by - ay * bx;
 function clip(poly: Point[], a: V2, b: V2, sign: number) {
@@ -302,5 +307,37 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
     }
   }
   if (!modeled || !pos.length) return null;
-  return { position: new Float32Array(pos), normal: new Float32Array(norm), color: new Float32Array(col), facade: new Float32Array(fac), sky: new Float32Array(shade), detail: new Float32Array(detail) };
+  // Find room for an 80 × 40 cm enamel plate. Keep the whole tablet clear of
+  // door surrounds, sills, the storey cornice and holes in the source wall.
+  const mounts: number[] = [];
+  function mount(u: number, h: number) {
+    const left = u - .44, right = u + .44, low = h - .24, high = h + .24;
+    if (left < 0 || right > width || high > ground - .30) return false;
+    for (let j = Math.floor(left / bay); j <= Math.min(bays - 1, Math.floor(right / bay)); j++) {
+      const start = j * bay + (bay - mw) / 2, layer = streetModule(w, j, 0, bays);
+      if (openings[layer].some(([x0, y0, x1, y1]) =>
+        right > start + x0 / 256 * mw - .23 && left < start + x1 / 256 * mw + .23 &&
+        high > (1 - y1 / 512) * ground - .15 && low < (1 - y0 / 512) * ground + .24)) return false;
+    }
+    if (![left, right].every(x => onWall(x, low) && onWall(x, high))) return false;
+    for (const tri of triangles) {
+      const k = tri * 12, x = f[k], y = f[k + 1];
+      const ux = f[k + 4] - x, uy = f[k + 5] - y, vx = f[k + 8] - x, vy = f[k + 9] - y;
+      const det = cross(ux, uy, vx, vy);
+      if (Math.abs(det) < 1e-6) continue;
+      const a = cross(u - x, h - y, vx, vy) / det, b = cross(ux, uy, u - x, h - y) / det;
+      if (a < -1e-5 || b < -1e-5 || a + b > 1.00001) continue;
+      const i = tri * 9;
+      for (let j = i; j < i + 3; j++) mounts.push(p[j] + a * (p[j + 3] - p[j]) + b * (p[j + 6] - p[j]));
+      return true;
+    }
+    return false;
+  }
+  if (width >= 4) for (const end of [0, 1]) {
+    for (const inset of [.58, .95, 1.45, 2.05]) {
+      if (inset >= width / 2) break;
+      if ([2.75, 3.1, 2.4, 3.55].some(h => mount(end ? width - inset : inset, h))) break;
+    }
+  }
+  return { plateMounts: Float32Array.from(mounts), position: new Float32Array(pos), normal: new Float32Array(norm), color: new Float32Array(col), facade: new Float32Array(fac), sky: new Float32Array(shade), detail: new Float32Array(detail) };
 }

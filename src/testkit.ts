@@ -1,3 +1,5 @@
+import type { TramVehicle } from './trams.ts';
+import { lookAround, type Eyes } from './streetView.ts';
 import { Car, COURIER_BOXES } from './car.ts';
 import { courierLook } from './figures.ts';
 import { posts } from './posts.ts';
@@ -130,7 +132,8 @@ interface Game {
   // Trams: the ride you're on (ride.ts) and every tram running.
   tram: {
     ride: { on: boolean; driving: boolean; v: { speed: number } | null; atName: string | null; next: { stop: { name: string }; dist: number } | null; passengers: { doors: boolean; on: number; off: number } | null; board: (v: never) => void; steal: () => boolean; rolling: { v: { speed: number } }[]; doors: () => void };
-    list: () => { parts: { x: number; y: number }[]; look?: unknown; line: { ref: string } }[];
+    list: () => TramVehicle[];
+    clearRun: (tram: TramVehicle) => boolean;
   };
 }
 
@@ -180,7 +183,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     // how long (seconds) since you last looked round: driving, the view swings back
     // behind the car once you let go. `third`: on foot, from a few metres behind you
     // instead of out of your eyes (driving, it's the same chase camera either way).
-    eyes: null as { yaw: number; pitch: number; still?: number; third?: boolean } | null,
+    eyes: null as Eyes | null,
 
     toLocal(w: Where): Point2 {
       if (typeof w === 'string') {
@@ -506,6 +509,8 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     // loaded, its length and how far along it you are (m), its streets and its turns, and
     // which way your indicators flash (blinkers.ts).
     nav() { return { ...g.satnav.probe(), signal: g.satnav.signal(g.car()?.speed ?? 0) }; },
+    // The polyline currently shown on the minimap, in local map metres.
+    navLine() { return g.satnav.drawn(); },
     // Directions to (lat, lon), as if picked on the map; with nothing, they stop.
     navTo(lat?: number, lon?: number) {
       if (lat === undefined || lon === undefined) { g.satnav.pick(null); return kit.nav(); }
@@ -561,13 +566,17 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     // What a saved game of an older format becomes (null: can't be opened).
     upgradeSave(old: unknown) { return upgrade(old); },
     // Onto the nearest tram and into its cab, as F does once you ride one.
-    takeTram() {
+    takeTram(minKmh = 0) {
       const m = g.me(), ride = g.tram.ride;
-      const v = g.tram.list().slice().sort((a, b) => Math.hypot(a.parts[1].x - m.x, a.parts[1].y - m.y) - Math.hypot(b.parts[1].x - m.x, b.parts[1].y - m.y))[0];
+      const ordered = g.tram.list().filter(v => minKmh <= 0 || v.speed * 3.6 >= minKmh)
+        .sort((a, b) => Math.hypot(a.parts[1].x - m.x, a.parts[1].y - m.y) - Math.hypot(b.parts[1].x - m.x, b.parts[1].y - m.y));
+      const v = minKmh > 0 ? ordered.find(g.tram.clearRun) : ordered[0];
+      if (!v && minKmh > 0) return false;
       if (!v) throw new Error('No tram running near here');
       if (g.mode() !== 'foot') g.enterOrExit();
       ride.board(v as never);
       if (!ride.steal()) throw new Error('Could not take the tram over');
+      return true;
     },
     // The tram you drive: its speed (km/h), the stop its front is at, the next one ahead and whether the doors are open.
     tram() {
@@ -575,6 +584,8 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       return r.driving && r.v ? { speed: round(r.v.speed * 3.6), at: r.atName, next: r.next ? { name: r.next.stop.name, dist: Math.round(r.next.dist) } : null, doors: !!r.passengers?.doors, on: r.passengers?.on ?? 0, off: r.passengers?.off ?? 0 } : null;
     },
     tramDoors() { g.tram.ride.doors(); },
+    // Room to observe a coasting tram after the driver steps out.
+    tramRunClear() { const v = g.tram.ride.v; return !!v && g.tram.clearRun(v as TramVehicle); },
     // The tram you stepped out of while it moved: its speed (km/h), until it stands.
     rolling() { return { speed: round(Math.max(0, ...g.tram.ride.rolling.map((d) => d.v.speed)) * 3.6), n: g.tram.ride.rolling.length }; },
     // How many trams each line has out, across the city.
@@ -1154,7 +1165,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       if (!load) throw new Error(`No scenario called ${name}; there are ${names.join(', ')}`);
       const s = (await load()).default;
       kit.checks = [];
-      const t0 = performance.now();
+      const t0 = performance.now(), priorUnhurt = kit.unhurt;
       let error: string | undefined;
       // Each scenario starts unwanted, with no police about and no arrest under way, and
       // can't be arrested unless it asks to be: what the one before left must not reach in.
@@ -1177,6 +1188,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       } finally {
         calm();
         kit.unarrested = false;
+        kit.unhurt = priorUnhurt;
         kit.quiet = false;
       }
       const checks = kit.checks;
@@ -1199,15 +1211,9 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     drag = { id: e.pointerId, x: e.clientX, y: e.clientY, turn: e.button === 2 || e.shiftKey };
     try { g.canvas.setPointerCapture(e.pointerId); } catch { /* a synthetic event (tests) */ }
   });
-  // Yaw all the way round either way, pitch up to 60° up or down.
-  const look = (dx: number, dy: number) => {
-    kit.eyes!.yaw = ((kit.eyes!.yaw - dx + 540) % 360) - 180;
-    kit.eyes!.pitch = Math.max(-60, Math.min(60, kit.eyes!.pitch - dy));
-    kit.eyes!.still = 0;
-  };
   g.canvas.addEventListener('pointermove', (e) => {
     if (document.pointerLockElement === g.canvas) {
-      if (kit.eyes && !kit.cam) look(e.movementX * 0.12, e.movementY * 0.1);
+      if (kit.eyes && !kit.cam) lookAround(kit.eyes, e.movementX * 0.12, e.movementY * 0.1);
       return;
     }
     const cam = kit.cam;
@@ -1216,7 +1222,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     drag.x = e.clientX;
     drag.y = e.clientY;
     if (!cam && kit.eyes) {
-      look(dx * 0.25, dy * 0.2);
+      lookAround(kit.eyes, dx * 0.25, dy * 0.2);
       return;
     }
     if (!cam) return;

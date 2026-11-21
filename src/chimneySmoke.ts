@@ -111,6 +111,7 @@ export function chimneySmoke(at: Float32Array, scene: THREE.Scene): THREE.Object
 // A tile's smoke, when the tile's meshes go.
 export function dropChimneySmoke(o: THREE.Object3D) {
   live.delete(o);
+  o.dispose();
   (o as THREE.Mesh).geometry.dispose();
 }
 

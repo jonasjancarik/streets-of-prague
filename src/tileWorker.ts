@@ -1,3 +1,6 @@
+import { withBridgeWalk } from './map/bridgeWalk.ts';
+import { openPassages } from './map/passageOpenings.ts';
+import { passageLining } from './map/passageLining.ts';
 import { buildStreetWall, packStreetWalls } from './map/streetFacade.ts';
 // Builds a tile off the main thread, which then only turns the arrays into meshes:
 //   roofs   OSM buildings extruded, with roofs on their straight skeletons
@@ -87,7 +90,8 @@ function groundAt(g: HeightGrid | null) {
   const base = heightSampler(g.hm, g.box, g.n, g.step, g.labels, terraceAt(g.terraces), flatTerraces(g.terraces, ref), stepLineIndex(g.stepLines, ref, lineReach(g.step), g.unit));
   const own = g.tin ? tinSampler(g.tin, ref, base).sample : base;
   const profiled = withRoadProfile(withRamps(own, g.ramps, ref), g.roadProfile, ref);
-  return withRoadSurfaces(profiled, g.roadSurfaces, ref, g.roadSurfaces ? terraceAt(g.terraces) : null);
+  const road = withRoadSurfaces(profiled, g.roadSurfaces, ref, g.roadSurfaces ? terraceAt(g.terraces) : null);
+  return withBridgeWalk(road, g.underpass, ref);
 }
 
 function roofs({ buildings, size, origin, ground, bbox, water, stops }: WorkerJobs['roofs']): BuildingArrays {
@@ -420,7 +424,7 @@ function land({ data, seeds, ground, bridges, box, structures }: WorkerJobs['lan
 function isRequest(value: unknown): value is WorkerRequest {
   if (typeof value !== 'object' || value === null) return false;
   const message = value as Record<string, unknown>;
-  return typeof message.id === 'number' && ['roofs', 'ipr', 'ground', 'land', 'sky', 'streetFacade'].includes(String(message.type))
+  return typeof message.id === 'number' && ['roofs', 'ipr', 'ground', 'land', 'sky', 'streetFacade', 'passage'].includes(String(message.type))
     && typeof message.data === 'object' && message.data !== null;
 }
 
@@ -440,6 +444,12 @@ worker.onmessage = async (event: MessageEvent<unknown>) => {
   const { id } = event.data;
   try {
     switch (event.data.type) {
+      case 'passage': {
+        const { paths, houses, box, ground, landmarks } = event.data.data;
+        const result = passageLining(paths, houses, box, groundAt(ground), landmarks);
+        worker.postMessage({id, result} satisfies WorkerResponse, result ? Object.values(result).map(a => a.buffer) : []);
+        break;
+      }
       case 'streetFacade': {
         const d = event.data.data, ids = Uint32Array.from({ length: d.position.length / 9 }, (_, i) => i);
         const result = buildStreetWall(d, d.sky, ids);
@@ -447,12 +457,16 @@ worker.onmessage = async (event: MessageEvent<unknown>) => {
         break;
       }
       case 'roofs': {
-        const result = roofs(event.data.data);
+        const d = event.data.data;
+        const arrays = roofs(d);
+        const result = d.passages?.length ? openPassages(arrays, d.passages, groundAt(d.ground)) : arrays;
         worker.postMessage({ id, result } satisfies WorkerResponse, transferBuffers(result));
         break;
       }
       case 'ipr': {
-        const result = ipr(event.data.data);
+        const d = event.data.data;
+        const arrays = ipr(d);
+        const result = d.passages?.length ? openPassages(arrays, d.passages, groundAt(d.ground)) : arrays;
         worker.postMessage({ id, result } satisfies WorkerResponse, transferBuffers(result));
         break;
       }
@@ -461,7 +475,7 @@ worker.onmessage = async (event: MessageEvent<unknown>) => {
         const started = performance.now();
         const result = groundLayers(d, {
           ...opts, height: ground ? groundAt(ground) : null, roadProfile: ground?.roadProfile, fine: ground?.tin ? 2 : undefined,
-          roadSurfaceBoxes: ground?.roadSurfaces?.map((p) => p.box),
+          roadSurfaceBoxes: ground?.underpass ? [...(ground.roadSurfaces?.map(p=>p.box) ?? []), ground.underpass.box] : ground?.roadSurfaces?.map((p) => p.box),
           steps: ground?.labels ? ground.terraces ?? [] : null,
           levels: levels ? levels.map((l) => ({ level: l.level, kind: l.kind, polys: l.polys, height: groundAt(l.heights) })) : null,
         });

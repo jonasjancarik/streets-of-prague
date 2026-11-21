@@ -37,7 +37,7 @@ import type { Pedestrian } from './people.ts';
 import { GetIn } from './getin.ts';
 import { Arrest } from './arrest.ts';
 import { BUILT_UP_BUSY, loadFootfall } from './footfall.ts';
-import { Trams, loadTrams, pushOutOfTram } from './trams.ts';
+import { Trams, frontOf, loadTrams, pushOutOfTram } from './trams.ts';
 import { TramRide, FAST } from './ride.ts';
 import { TrackNet } from './tracks.ts';
 import { Passengers } from './passengers.ts';
@@ -69,7 +69,7 @@ import { kindAt, loadStrips, setCentre } from './reflections.ts';
 import { TileWorld } from './tiles.ts';
 import { facadeFinishes, loadFacadeFinishes } from './facadeFinishes.ts';
 import { loadFacadeAtlas } from './facades.ts';
-import { groundSamples, GROUND_DEPTH } from './surface.ts';
+import { groundSamples, groundDepthView, tunnelEarthView } from './surface.ts';
 import { CUTAWAY, DIG, WEATHER_DETAIL } from './shading.ts';
 import { setupDev, watchTransitWhileWaiting } from './dev.ts';
 import { setupSettings } from './settings.ts';
@@ -81,9 +81,14 @@ import { startScreen } from './startscreen.ts';
 import { liveWeather } from './liveweather.ts';
 import { Season, parseDay } from './season.ts';
 import { LaneAssist, turnOf, project } from './assist.ts';
+import { snowFooting } from './map/footing.ts';
 import { Sound, surfaceOf } from './audio.ts';
 import { roadNoise, ROAD_FAR } from './soundmix.ts';
 import type { Surface, HornKind, Rotor } from './audio.ts';
+import { tunnelFinishesView } from './tunnelFinish.ts';
+import { StreetIronwork } from './streetIronwork.ts';
+import { StreetPlates } from './streetPlates.ts';
+import { eyesFor, firstPersonOptions, initialView, WalkingGait, type Eyes, type PlayerView } from './streetView.ts';
 import { setupTouch } from './touch.ts';
 import { setupGamepad, padLabels, usingPad } from './gamepad.ts';
 import './credits.ts';
@@ -122,6 +127,8 @@ import { haptic, hapticCrash, hapticBlast } from './haptics.ts';
 import { tunnelHole } from './tunnelView.ts';
 import { hideIdleCursor } from './cursor.ts';
 import { setupTestkit, PLACES } from './testkit.ts';
+import { courierWalk } from './footCourier.ts';
+import type { Footpaths } from './walkingDirections.ts';
 import { Missions } from './missions.ts';
 import type { Spot } from './missions.ts';
 import { JOBS, SIGHTS } from './jobs.ts';
@@ -207,8 +214,8 @@ async function main() {
   translatePage();
   await benchPause.clear();
   // The pad works from the start screen on; what it does in the game is hooked up further down.
-  const padHooks = { settings: () => {}, menu: () => false, zoomBy: (_factor: number) => {} };
-  const pad = setupGamepad({ settings: () => padHooks.settings(), menu: () => padHooks.menu(), zoomBy: (f) => padHooks.zoomBy(f) });
+  const padHooks = { settings: () => {}, menu: () => false, eyes: (): Eyes | null => null, zoomBy: (_factor: number) => {} };
+  const pad = setupGamepad({ eyes: () => padHooks.eyes(), settings: () => padHooks.settings(), menu: () => padHooks.menu(), zoomBy: (f) => padHooks.zoomBy(f) });
   onLang(() => status(statusText));
   // Rolled now, so the start screen can say what the game will begin with.
   const clock = new Clock(params);
@@ -284,6 +291,7 @@ async function main() {
   // date: it is for ?renderer=webgl and for browsers with no WebGPU.)
   status('Preparing graphics…');
   const renderer = await createGameRenderer(params);
+  if (renderer instanceof THREE.WebGLRenderer) (await import('./streetFacadeGL.ts')).configureStreetFacadeGL();
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -344,6 +352,7 @@ async function main() {
   if (params.get('mist') === 'volume') MIST_MODE.value = 'volume';
   const weatherFx = new WeatherFx(scene);
   const world = new TileWorld({ area: AREA, index, scene, drive, walk, time, night: params.has('night') || clock.night, osmBuildings: params.has('osm'), ortho: params.has('ortho'), countryside: anywhere || params.get('countryside') === 'live' ? 'live' : params.has('countryside') });
+  const ironwork = new StreetIronwork(scene, world);
   // Past the city's parts, the town or village from the countryside's map.
   if (world.country) districts.elsewhere = (x, y) => world.country!.placeAt(x, y);
   const grid = world.grid;
@@ -351,6 +360,7 @@ async function main() {
   // on there: the ground, or a bridge deck (see TileWorld.track).
   const ground = (x: number, y: number, who?: Tracked | null) => (who ? world.groundFor(who, x, y) : world.heightAt(x, y));
   const mistGround = (x: number, z: number) => world.terrainAt(x, -z);
+  const rainSurface = (x: number, z: number) => Math.max(world.rooftopAt(x, -z), world.below(x, -z, Infinity).h);
   const mistWater = (x: number, z: number) => world.waterAt(x, -z) ? world.terrainAt(x, -z, true) : null;
   let crowd: Crowd | null = null;
   // The deck of a bridge at a point, or within a few metres of it (a lamp on the parapet is just off it).
@@ -557,6 +567,10 @@ async function main() {
   let heightWanted = height; // where the camera is heading (zooming out, speeding up)
   const camPos = new THREE.Vector3(walker.x, 0, -walker.y);
   let camGround = ground(walker.x, walker.y, walker);
+  const gait = new WalkingGait();
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  let gaitActive = false;
+  let eyeAhead = .30; // metres in front of the player; comes in close to a wall
   let eyeH = 0; // the first-person view's height (developer panel), smoothed over kerbs
   // The vehicle that view follows from behind, and the heading it looks along (lagging the vehicle's).
   let chased: { h: number } | null = null, chaseH = 0;
@@ -867,7 +881,7 @@ async function main() {
         const k = clamp(((p.x - from[0]) * dx + (p.y - from[1]) * dy) / len2, 0, 1);
         if (Math.hypot(from[0] + dx * k - p.x, from[1] + dy * k - p.y) < 0.8) crowd.knock(p, dx * 0.01, dy * 0.01, 2);
       }
-      sound.shot(Math.hypot(from[0] - px(), from[1] - py()), from[0] - px());
+      sound.shot(Math.hypot(from[0] - px(), from[1] - py()), from[0] - px(), from[1] - py());
       crowd.scare(from[0], from[1], 35);
       if (!hit) return;
       telemetry.did('shot by the police');
@@ -1001,8 +1015,8 @@ async function main() {
   let hornHeld = false, hornT = 0;
   const hornKind = (c: Car): HornKind => (c.two === 'bike' ? 'bike' : c.two === 'moto' ? 'moto' : c.spec.heavy ? 'heavy' : 'car');
   // Drivers held up by you toot at you.
-  Car.onShut = (c) => sound.doorShut(Math.hypot(c.x - px(), c.y - py()), c.x - px());
-  traffic.onHonk = (c, long) => sound.toot(Math.hypot(c.x - px(), c.y - py()), c.x - px(), hornKind(c), long);
+  Car.onShut = (c) => sound.doorShut(Math.hypot(c.x - px(), c.y - py()), c.x - px(), c.y - py());
+  traffic.onHonk = (c, long) => sound.toot(Math.hypot(c.x - px(), c.y - py()), c.x - px(), hornKind(c), long, c.y - py());
   const honk = (on: boolean) => {
     if (ride.driving) {
       if (on) { ride.drive!.ring(); hornT = 0; hornHeld = true; } else hornHeld = false;
@@ -1317,7 +1331,7 @@ async function main() {
     takeSeat(best);
   };
   // Not while you're being arrested (or still coming round): your hands are up or cuffed.
-  const interact = () => { if (!arrest.active && frozen <= 0) enterOrExit(false); };
+  const interact = () => { if (!arrest.active && frozen <= 0 && !missions.exchange()) enterOrExit(false); };
 
   // Keep a knocked-down bike on its side until someone picks it up.
   const tipBike = (c: Car, dx: number, dy: number) => {
@@ -1452,6 +1466,20 @@ async function main() {
     return true;
   };
   const sound = new Sound();
+  const earRight = new THREE.Vector3();
+  const roomSample = { x: Infinity, y: Infinity, revision: -1, amount: 0, altitude: Infinity };
+  const passageSound = () => {
+    const { x, y } = walker, head = walker.mesh.position.y + 1.75;
+    if (world.joined === roomSample.revision && Math.abs(head-roomSample.altitude) < .6 &&
+        Math.hypot(x-roomSample.x, y-roomSample.y) < .65) return roomSample.amount;
+    Object.assign(roomSample, { x, y, altitude: head, revision: world.joined, amount: 0 });
+    if (world.passageAt(x,y) && world.rooftopAt(x,y) > head+.25) {
+      let enclosed = 0;
+      for (const [dx,dy] of [[3,0],[-3,0],[0,3],[0,-3]]) if (world.rooftopAt(x+dx,y+dy) > head+.25) enclosed++;
+      roomSample.amount = .5 + enclosed * .125;
+    }
+    return roomSample.amount;
+  };
   benchPause.onChange((paused) => sound.hold(paused));
   // What the ground under a car is made of, for its tyres: the OSM surface of the street
   // it's on, or the pavement off the streets.
@@ -1470,6 +1498,8 @@ async function main() {
     season: { day: () => season.day, set: (day) => season.set(day), label: () => season.label() },
     weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k, true); }, label: () => weather.name },
     reach: () => world.country?.box ?? null });
+  world.facades.plates = new StreetPlates(names, (x, y) => districts.at(x, y)?.name ?? null,
+    (x, y) => world.terrainAt(x, y), dev.toLonLat);
   const helipads = HELIPADS.flatMap(({ at: [lat, lon], roof }) => {
     const pos = dev.toLocal(lon, lat);
     return pos ? [{ pos, roof, waiting: null as Chopper | null, served: false }] : [];
@@ -1606,7 +1636,16 @@ async function main() {
       return true;
     },
   };
-  const settingsPanel = setupSettings({ sound, graphics, weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k); } }, saves });
+  const cameraChoice = {
+    get: (): PlayerView => testkit?.cam || !testkit?.eyes ? 'overhead' : testkit.eyes.third ? 'third' : 'first',
+    set: (choice: PlayerView) => {
+      if (!testkit) return;
+      testkit.cam = null;
+      testkit.eyes = eyesFor(choice);
+      try { localStorage.setItem('playerView', choice); } catch { /* storage is optional */ }
+    },
+  };
+  const settingsPanel = setupSettings({ cameraChoice, sound, graphics, weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k); } }, saves });
   hideIdleCursor(renderer.domElement, () => settingsPanel.open || mapOpen());
 
   // ---- Input -------------------------------------------------------------
@@ -1620,7 +1659,21 @@ async function main() {
   const inMap = (lon: number, lat: number) => lon > w0 && lon < e0 && lat > s0 && lat < n0;
   const spotAt = (name: string, lon: number, lat: number): Spot => { const [x, y] = dev.toLocal(lon, lat); return { name, x, y }; };
   const hospitals = HOSPITALS.flatMap(([lon, lat], i) => (inMap(lon, lat) ? [spotAt(HOSPITAL_NAMES[i], lon, lat)] : []));
+  const footpaths: Footpaths = { graph: walk, near: walkNear, accessible: (a, b, level) => world.walkAccess(a, b, level) };
+  const onFootForHandoff = () => !inCar && !inHeli && !ride.on && !passenger() && !metro.active && !boats.me && !funicular.me && !ferries.me &&
+    !walker.flight && !walker.onRoof && !walker.level && walker.down <= 0 && walker.z + walker.perch < 1 && inspector.phase !== 'decide' && !getIn.active && !dialog.active && !arrest.active && wastedT <= 0;
   const missions = new Missions({
+    courierWalk: () => (testkit ? cameraChoice.get() : initialView(params)) === 'first' && onFootForHandoff()
+      ? courierWalk(footpaths, walker, (x, y) => names.at(x, y, 35), seeded) : null,
+    canReachContact: s => {
+      if (!onFootForHandoff()) return false;
+      // In first person the action belongs to the person in front of you.
+      const dx = s.x - walker.x, dy = s.y - walker.y;
+      if (cameraChoice.get() === 'first' && Math.hypot(dx, dy) > .55 &&
+          dx * Math.cos(walker.h) + dy * Math.sin(walker.h) < .35 * Math.hypot(dx, dy)) return false;
+      return world.walkAccess([walker.x, walker.y], [s.x, s.y], 0);
+    },
+    parcel: on => bags.carryParcel(on),
     me: () => inCar || inHeli || walker,
     car: () => inCar,
     tram: () => (ride.driving && ride.passengers ? { doors: ride.passengers.doors, at: ride.atName, next: ride.next, on: ride.passengers.on, off: ride.passengers.off } : null),
@@ -1653,7 +1706,7 @@ async function main() {
   const marker = new Marker(scene, camera, $('mark'), (x, y) => ground(x, y));
   // Directions: to a spot picked on the map, or else to the job's (src/satnav.ts).
   const satnav = new Satnav(scene, drive, (x, y, r) => edgesNear(x, y, r), (x, y, level) => world.surfaceAt(x, y, level),
-    new Marker(scene, camera, $('navmark'), (x, y) => ground(x, y), '#6cc4ff'), (text) => showBanner(text));
+    new Marker(scene, camera, $('navmark'), (x, y) => ground(x, y), '#6cc4ff'), (text) => showBanner(text), footpaths);
   assist.prefer = (e) => satnav.next(e);
   const blinkers = new Blinkers(scene); // the indicators before the directions' turns
   // The map of where to drive; the game waits while it's up.
@@ -1662,8 +1715,10 @@ async function main() {
     releaseInput();
     telemetry.did('opened the map');
     const goal = satnav.goal, at = goal ? dev.toLonLat(goal.x, goal.y) : null;
+    const walking = !!streetEyes()?.onFoot;
     const spot = await pickSpot(document.body, {
-      title: t('Where do you want to drive?'), go: t('Drive here'), hint: t('Click or tap a street where you want to go.'),
+      title: t(walking ? 'Where do you want to walk?' : 'Where do you want to drive?'), go: t(walking ? 'Walk here' : 'Drive here'),
+      hint: t(walking ? 'Click or tap where you want to walk.' : 'Click or tap a street where you want to go.'),
       current: goal && at ? { lon: at[0], lat: at[1], name: goal.name } : null,
       here: dev.toLonLat(px(), py()), stop: satnav.target ? t('Stop navigating') : null,
     });
@@ -1671,7 +1726,7 @@ async function main() {
     else if (spot) {
       const [x, y] = dev.toLocal(spot.lon, spot.lat);
       satnav.pick({ x, y, name: spot.name });
-      telemetry.did('picked a place to drive to');
+      telemetry.did(walking ? 'picked a place to walk to' : 'picked a place to drive to');
     }
   };
   const mapButton = document.createElement('button');
@@ -1736,6 +1791,10 @@ async function main() {
       telemetry.did('changed the radio station');
       showBanner(station ? station.name : t('Radio off'));
     }
+    if (e.code === 'KeyV' && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey && testkit && !testkit.cam && testkit.where().mode === 'foot') {
+      const view = cameraChoice.get();
+      cameraChoice.set(view === 'overhead' ? 'first' : view === 'first' ? 'third' : 'overhead');
+    }
     if (e.code === 'KeyG' && !e.repeat) { graphics.cycle(); showBanner(graphics.label()); telemetry.setting('Graphics', graphics.choice); }
     if (e.code === 'KeyP' && !e.repeat) { weather.cycle(); showBanner(weather.label()); telemetry.setting('Weather', weather.kind); }
     if (e.code === 'KeyH' && !e.repeat) foldHelp(!$('help').classList.contains('folded'));
@@ -1799,10 +1858,11 @@ async function main() {
   window.addEventListener('pointermove', (e) => { if (aimAt && e.pointerType === 'mouse') aimAt = pointAt(e) ?? aimAt; }, { passive: true });
   window.addEventListener('pointerup', (e) => { if (e.button === 0) aimAt = null; });
   $('t-ticket').addEventListener('click', pressB);
-  const touch = setupTouch({ beacon: () => { if (inCar && !inCar.burnt && ['police', 'fire', 'ambulance'].includes(inCar.type)) switchBeacon(inCar); }, action: interact, backOnRoad, zoomBy, horn: honk, steal: stealTram, cannon: (on) => { cannonHeld = on; }, shoot: (on) => { fireHeld = on; if (on) pulled = true; }, doors: () => ride.doors(), jump: () => {
+  const streetEyes = () => testkit?.eyes && !testkit.cam && !settingsPanel.open && !mapOpen() && !metro.active ? testkit.eyes : null;
+  const touch = setupTouch({ eyes: streetEyes, beacon: () => { if (inCar && !inCar.burnt && ['police', 'fire', 'ambulance'].includes(inCar.type)) switchBeacon(inCar); }, action: interact, backOnRoad, zoomBy, horn: honk, steal: stealTram, cannon: (on) => { cannonHeld = on; }, shoot: (on) => { fireHeld = on; if (on) pulled = true; }, doors: () => ride.doors(), jump: () => {
     if (!inCar && !inHeli && !ride.on && !metro.active && !dialog.active && !boats.me && !funicular.me && !ferries.me && !passenger()) { input.jump = true; telemetry.did('jumped'); }
   }, force: params.has('touch') });
-  Object.assign(padHooks, { settings: () => settingsPanel.show(), menu: () => metro.active, zoomBy }); // (a conversation leaves the stick steering)
+  Object.assign(padHooks, { eyes: streetEyes, settings: () => settingsPanel.show(), menu: () => metro.active, zoomBy }); // (a conversation leaves the stick steering)
   window.addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
@@ -1866,7 +1926,7 @@ async function main() {
       const altitude = ground(x, y, c);
       for (const heli of choppers) heli.hit(120 * Math.max(0, 1 - Math.hypot(heli.x - x, heli.y - y, heli.z - altitude) / BLAST));
       const d = Math.hypot(x - px(), y - py());
-      sound.boom(d, x - px());
+      sound.boom(d, x - px(), y - py());
       hapticBlast(d);
       shake = Math.min(1.6, shake + (1.4 * 30) / (30 + d));
       if (c === inCar) hurt(MAX_HEALTH);
@@ -2124,6 +2184,10 @@ async function main() {
       if (walker.down > 0) getIn.cancel();
       else getIn.update(dt);
     }
+    const footView = !testkit?.cam && !!testkit?.eyes && !testkit.eyes.third && !scripted && !arrest.active &&
+      !inCar && !inHeli && !ride.on && !boats.me && !funicular.me && !ferries.me && !passenger() && walker.down <= 0;
+    if (!footView && gaitActive) gait.reset();
+    gaitActive = footView;
     if (inCar) {
       let steer = ctl.aim ? steerToward(inCar, ctl.aim.h, ctl.move) : ctl.turn;
       if (ctl.run) {
@@ -2144,7 +2208,17 @@ async function main() {
       if (eyes && eyes.yaw && walker.down <= 0) { walker.h += THREE.MathUtils.degToRad(eyes.yaw); eyes.yaw = 0; }
       // In the headset you walk the way your head faces.
       if (vr?.active && walker.down <= 0) walker.h = vr.headH;
+      const x = walker.x, y = walker.y;
       walker.update(dt, eyes ? { ...ctl, strafe: true } : ctl);
+      if (footView) {
+        const contact = gait.advance(dt, Math.hypot(walker.x - x, walker.y - y), walker.jumping || !!walker.flight);
+        if (contact && sound.on) {
+          const footing = walker.perch > .25 ? 'hard' : world.footSurface(walker.x, walker.y, walker.level);
+          const snow = weather.now.cover;
+          const exposed = snow > .48 && rainSurface(walker.x, -walker.y) < walker.mesh.position.y + 1;
+          sound.footfall(contact, gait.strength, exposed ? snowFooting(footing, snow, weather.now.cleared) : footing);
+        }
+      }
     }
     // In the helicopter Space climbs and Shift comes down.
     const heliTurn = inHeli && ctl.aim ? clamp(turnOf(inHeli.h, ctl.aim.h) * 1.2, -1, 1) : ctl.turn;
@@ -2152,7 +2226,7 @@ async function main() {
       if (!c.update(dt, c === inHeli ? { move: ctl.move, turn: heliTurn, up: ctl.brake, down: ctl.run } : null)) continue;
       const distance = Math.hypot(c.x - px(), c.y - py(), c.z - (inHeli?.z ?? walker.flight?.height ?? ground(px(), py(), inCar || walker)));
       fires.fireball(c.x, c.y, c.z + 0.6);
-      sound.boom(distance, c.x - px());
+      sound.boom(distance, c.x - px(), c.y - py());
       hapticBlast(distance);
       shake = Math.max(shake, 1.4 * 30 / (30 + distance));
       if (c === inHeli) {
@@ -2264,7 +2338,8 @@ async function main() {
     if (inCar) threats.push(inCar);
     for (const c of movers) if (c.speed > 5) threats.push(c);
     for (const c of cops) if (c.speed > 5) threats.push(c);
-    crowd.update(dt, threats, carsOnly, (x, y) => !offscreen(x, y));
+    crowd.update(dt, threats, carsOnly, (x, y) => !offscreen(x, y),
+      gaitActive && !walker.flight && walker.z < .5 && walker.perch < .4 ? walker : undefined);
     bags.update(dt, px(), py());
     missions.update(dt);
     shootStep(dt);
@@ -2819,6 +2894,15 @@ async function main() {
       if (vr.move || vr.side) { ctl.move = vr.move; ctl.turn = vr.side; }
       ctl.run ||= vr.run;
     }
+    if (eyes && ctl.aim && !inCar && !inHeli && !walker.flight && !ride.on && !passenger() && !boats.me && !funicular.me && !ferries.me) {
+      // At eye height a stick points across the screen: up walks forward while
+      // the other hand looks. Vehicle steering keeps its own aim convention.
+      const { h, mag } = ctl.aim;
+      ctl.move = Math.sin(h) * mag;
+      ctl.turn = -Math.cos(h) * mag;
+      ctl.run ||= mag > 0.9;
+      ctl.aim = null;
+    }
     // On a tram, Shift speeds up the ride: the whole world runs faster, in steps short
     // enough for the physics.
     // At a tram stop, hold Space to wait: the same speed-up, until a tram is close.
@@ -2889,7 +2973,7 @@ async function main() {
     tramStops.sync(camPos.x, -camPos.z, viewRadius() + 60, ground, fromStreet);
     busStops.sync(camPos.x, -camPos.z, viewRadius() + 60, ground, fromStreet);
     crowd.umbrellas.wet = weather.now.rain;
-    crowd.render(ground, (x, y) => !offscreen(x, y));
+    crowd.render(ground, (x, y) => !offscreen(x, y), eyes && weather.now.rain > .01 ? weatherFx.sheltered : undefined);
     birds.update(dt, Object.assign(birdsView, { x: camPos.x, y: -camPos.z, radius: viewRadius(), height: eyes ? 1000 : height, dark: sky.dark, rain: weather.now.rain, snow: weather.now.snow }));
     terraces.update(dt, Object.assign(terraceView, { x: camPos.x, y: -camPos.z, radius: viewRadius(), day: season.day }));
     police.render(ground, time.value);
@@ -2952,7 +3036,9 @@ async function main() {
     for (const c of choppers) if (c.spin > 0.01 && !c.wrecked) rotors.push({ key: c, x: c.x, y: c.y, z: c.z, vx: c.vx, vy: c.vy, spin: c.spin, mine: c === inHeli });
     for (const h of police.helis.list) if (!h.gone) rotors.push({ key: h, x: h.x, y: h.y, z: h.z, vx: h.vx, vy: h.vy, spin: 1, mine: false });
     const earZ = rotors.length ? (inHeli ? inHeli.z : walker.flight?.height ?? ground(px(), py(), inCar || walker)) : 0;
-    sound.update(dt, { x: px(), y: py(), z: earZ, rotors, car: inCar, throttle: ctl.move, surface, trams: trams.list, quiet: metro.active, rain: weather.now.rain, wet: weather.now.wet, snow: weather.now.snow, strikes: weather.now.strikes, busy, road, hour: (clock.t % 86400) / 3600, season, aloft: inHeli ? clamp((inHeli.air - 5) / 40, 0, 1) : 0, traffic: traffic.agents, sirens: [
+    if (gaitActive) sound.warmFootfalls();
+    sound.right = eyes && !metro.active ? earRight.set(1, 0, 0).applyQuaternion(camera.quaternion) : null;
+    sound.update(dt, { x: px(), y: py(), z: earZ, shelter: eyes && !eyes.third && gaitActive && !walker.flight ? passageSound() : 0, rotors, car: inCar, throttle: ctl.move, surface, trams: trams.list, quiet: metro.active, rain: weather.now.rain, wet: weather.now.wet, snow: weather.now.snow, strikes: weather.now.strikes, busy, road, hour: (clock.t % 86400) / 3600, season, aloft: inHeli ? clamp((inHeli.air - 5) / 40, 0, 1) : 0, traffic: traffic.agents, sirens: [
       ...police.chasing.map((p) => ({ key: p, kind: 'police' as const, x: p.car.x, y: p.car.y, vx: p.car.vx, vy: p.car.vy })),
       ...brigade.engines.filter((e) => e.phase === 'go' && !e.wrecked).map((e) => ({ key: e, kind: 'fire' as const, x: e.car.x, y: e.car.y, vx: e.car.vx, vy: e.car.vy })),
       ...ambulances.rigs.filter((r) => r.phase === 'go' && !r.wrecked).map((r) => ({ key: r, kind: 'ambulance' as const, x: r.car.x, y: r.car.y, vx: r.car.vx, vy: r.car.vy })),
@@ -2996,6 +3082,12 @@ async function main() {
       : body === walker && (walker.flight || walker.onRoof) ? walker.mesh.position.y
       : deep ? Math.max(world.terrainAt(px(), py()), body.gz ?? 0) : ground(camPos.x, -camPos.z, body);
     camGround += (below - camGround) * Math.min(1, dt * 3);
+    const streetFoot = !!eyes && !underway && !inCar && !inHeli && !ride.on && !passenger() && !boats.me && !funicular.me && !ferries.me;
+    if (eyes) {
+      eyes.onFoot = streetFoot && !eyes.third;
+      if (!eyes.onFoot) eyes.pitch = clamp(eyes.pitch, -60, 60);
+    }
+    let closeWall = false;
     const free = testkit?.cam;
     if (free) {
       // The developer panel's free camera: tilted back from the spot it looks at.
@@ -3059,9 +3151,24 @@ async function main() {
       } else {
         chased = null;
         const aim = me.h + yaw;
-        const ex = me.x + Math.cos(me.h) * 0.3, ey = me.y + Math.sin(me.h) * 0.3;
-        camera.position.set(ex, eyeH, -ey);
-        camera.lookAt(ex + Math.cos(aim) * Math.cos(pitch), eyeH + Math.sin(pitch), -(ey + Math.sin(aim) * Math.cos(pitch)));
+        const moving = gaitActive && (firstPersonOptions.motion === 'gentle' ||
+          (firstPersonOptions.motion === 'device' && !reduceMotion.matches));
+        const sway = moving ? gait.sway : 0, eye = eyeH + (moving ? gait.rise : 0);
+        const fx = Math.cos(me.h), fy = Math.sin(me.h);
+        if (streetFoot && !walker.flight && !walker.onRoof && walker.perch < .4) {
+          // A wall can stop the body yet lie inside the camera's 20 cm near
+          // plane, especially with a wide lens looking obliquely into a corner.
+          const x = me.x + fx * .64, y = me.y + fy * .64, z = walker.gz ?? 0, level = walker.level ?? 0;
+          const side = Math.min(.32, .13 * camera.aspect);
+          closeWall = !!(world.cellAt(x, y, level, z) || world.cellAt(x - fy * side, y + fx * side, level, z) ||
+            world.cellAt(x + fy * side, y - fx * side, level, z));
+        }
+        if (closeWall) eyeAhead = .16;
+        else eyeAhead += (.30 - eyeAhead) * (1 - Math.exp(-14 * dt));
+        const ex = me.x + fx * eyeAhead - fy * sway;
+        const ey = me.y + fy * eyeAhead + fx * sway;
+        camera.position.set(ex, eye, -ey);
+        camera.lookAt(ex + Math.cos(aim) * Math.cos(pitch), eye + Math.sin(pitch), -(ey + Math.sin(aim) * Math.cos(pitch)));
       }
       camera.up.set(0, 0, -1);
     } else {
@@ -3088,7 +3195,7 @@ async function main() {
     const [hx, hy] = underway ? [underway.x, underway.y] : [px(), py()];
     // (Not in first person: from inside a passage its own vault is what you should see.)
     CUTAWAY.value.set(hx, (underway ? underway.floor : ground(px(), py(), body)) + 2.5, -hy, cutR > 0.3 && !(eyes && !underway) ? cutR : 0);
-    DIG.value.set(hx, -hy, (deep || underway) && cutR > 0.3 ? cutR : 0, 0);
+    DIG.value.set(hx, -hy, (underway || (deep && !eyes)) && cutR > 0.3 ? cutR : 0, 0);
 
     sun.target.position.set(camPos.x, camGround, camPos.z);
     sky.street = !!eyes;
@@ -3096,8 +3203,10 @@ async function main() {
     // In first person the horizon shows: a sky behind the city, and haze on the far
     // streets so the edge of what's loaded fades out.
     if (eyes) {
-      sky.fog.near = Math.min(sky.fog.near, 120);
-      sky.fog.far = Math.min(sky.fog.far, EYES_REACH);
+      const w = weather.now;
+      const haze = Math.max(w.rain * .60, w.storm * .76, w.snow * .85, w.mist * .92);
+      sky.fog.near = Math.min(sky.fog.near, 120 - 105 * haze);
+      sky.fog.far = Math.min(sky.fog.far, EYES_REACH - 305 * haze);
       (scene.background as THREE.Color).copy(sky.haze);
     } else (scene.background as THREE.Color).set(BACKDROP);
     // (The sky itself, where the renderer can draw it: webgpu/dome.ts. The free camera sees it once it is tilted towards the horizon.)
@@ -3105,24 +3214,25 @@ async function main() {
     const horizon = seeSky ? DOME_NODE.value : null;
     if (horizon) wantCloudBank();
     if ((scene as { backgroundNode?: unknown }).backgroundNode !== horizon) (scene as { backgroundNode?: unknown }).backgroundNode = horizon;
-    const nearPlane = eyes ? 0.2 : 1;
+    const nearPlane = closeWall ? .055 : eyes ? .2 : 1;
     // A wider view at street level (38° from above, which would feel like a telephoto lens).
-    const fov = eyes ? 55 : 38;
+    const fov = eyes ? eyes.onFoot ? firstPersonOptions.fov : 55 : 38;
     if (camera.fov !== fov) { camera.fov = fov; camera.updateProjectionMatrix(); }
     // Down at street level, people (and their bikes) are life size: from above they're drawn bigger to read.
     FIGURE_SIZE.value = eyes ? 1 : SCALE;
     // Out of first person, the mouse it took to look round with is let go.
-    if (!eyes && document.pointerLockElement === renderer.domElement) document.exitPointerLock();
+    if ((!eyes || paused || metro.active) && document.pointerLockElement === renderer.domElement) document.exitPointerLock();
     if (camera.near !== nearPlane) { camera.near = nearPlane; camera.updateProjectionMatrix(); }
     // From street level the ground hides what's behind it (see GROUND_DEPTH).
-    GROUND_DEPTH.visible = !!eyes || (POST.ao && POST.on);
+    groundDepthView(!!eyes || (POST.ao && POST.on));
+    tunnelEarthView(!!eyes && !!body && (body.level ?? 0) < 0);
     // …and the trees near you are the ones made to be stood under (map/streetTree.ts).
     // (The free camera too, once it is tilted well off straight down.)
     PEOPLE_SHADOWS.street = fromStreet; // (people cast their own shapes there)
     // Keep the player's ring visible through tree crowns in the overhead view.
     walker.ring.material.depthTest = fromStreet;
     // (Seen from just behind you, the ring is only in the way.)
-    walker.ring.visible = !(eyes && eyes.third) && !vr?.active;
+    walker.ring.visible = !eyes && !vr?.active;
     // At street level you're a life-size person too, like everyone round you (rocketbox.ts).
     // (Not in the headset, where your eyes are inside your own head.)
     walker.fig.lifeSize = walker.fig.self = !!eyes && !underway && !vr?.active;
@@ -3130,10 +3240,13 @@ async function main() {
     else if (walker.mesh.visible) walker.drawFigure();
     carOutline.update(fromStreet ? null : inCar, carPool);
     streetSurfaceView(fromStreet && !!DOME_NODE.value);
-    const streetWalls = fromStreet && !!DOME_NODE.value;
+    const streetWalls = fromStreet;
     if (streetWalls && graphics.tier !== 'lowest') loadFacadeFinishes();
     world.facades.update(streetWalls, camera.position.x, camera.position.y, camera.position.z, graphics.tier, !!facadeFinishes.masks);
+    tunnelFinishesView(!!eyes && !underway);
     world.furnitureCamera(fromStreet);
+    world.passageCamera(fromStreet, camera.position.x, -camera.position.z);
+    ironwork.update(fromStreet, camera.position, graphics.tier, weather.now.wet);
     world.trees.street(fromStreet, free ? free.x : camera.position.x, free ? -free.y : camera.position.z);
     world.trees.canopy(true, fromStreet);
     sun.position.copy(sun.target.position).add(sky.offset);
@@ -3158,7 +3271,7 @@ async function main() {
     streaks.update(camera, [lamps.glows, signals.flares, signals.glows], (x, y) => world.heightAt(x, y), viewRadius() + 10, time.value);
     weatherFx.tint.value.copy(sky.tint);
     weatherFx.fog.value.copy(sky.haze);
-    weatherFx.update(weather.now, time.value, camPos.x, -camPos.z, camGround, height, viewRadius(), renderer.getPixelRatio(), mistGround, mistWater);
+    weatherFx.update(weather.now, time.value, camPos.x, -camPos.z, camGround, height, viewRadius(), renderer.getPixelRatio(), mistGround, mistWater, eyes && !underway ? camera.position : undefined, world.terrainRevision + world.joined, rainSurface);
     updateChimneySmoke(WEATHER_DETAIL.value > 0 ? Math.max(season.cold, weather.now.cover) : 0, time.value, weatherFx.wind, weatherFx.tint.value, renderer.domElement.height);
 
     // ---- HUD -------------------------------------------------------------
@@ -3167,6 +3280,10 @@ async function main() {
     if (name && name !== street) {
       street = name;
       $('street').textContent = name;
+    }
+    if (shown.streetFoot !== +streetFoot) {
+      shown.streetFoot = +streetFoot;
+      document.body.classList.toggle('street-foot', streetFoot);
     }
     const carName = inCar ? (inCar.variant ? variantName(inCar.variant) : t(VEHICLE_NAMES[inCar.type] ?? inCar.type)) : '';
     if (carName !== carShown) {
@@ -3310,11 +3427,18 @@ async function main() {
     if (inspector.phase === 'decide') hint = touch.active ? t('Ticket inspection! Pay the fine ({fine}) or get off and run · {secs} s', { fine: kc(FINE), secs: Math.ceil(inspector.left) }) : t('Ticket inspection! <b>B</b> pay the fine ({fine}) · <b>E</b> get off and run · {secs} s', { fine: kc(FINE), secs: Math.ceil(inspector.left) });
     taxi.render(touch.active, usingPad());
     busRide.render();
+    const handoff = missions.handoffLabel();
+    if (handoff && !touch.active) hint = `<b>E</b> ${t(handoff)}`;
     show('hint', padLabels(hint), 'html');
     $('help').dataset.mode = inHeli ? 'heli' : inCar ? 'car' : ride.driving ? 'drive' : ride.on ? 'tram' : funicular.me ? 'funicular' : ferries.me ? 'ferry' : 'foot';
     const emergency = !!inCar && !inCar.burnt && ['police', 'fire', 'ambulance'].includes(inCar.type);
-    drawHelp({ mode: $('help').dataset.mode as HelpMode, gun: gunOn(), fire: inCar?.type === 'fire', two: !!inCar?.two, beacon: emergency });
+    drawHelp({ street: streetFoot && !walker.flight, mode: $('help').dataset.mode as HelpMode, gun: gunOn(), fire: inCar?.type === 'fire', two: !!inCar?.two, beacon: emergency });
     $('help-pad').dataset.mode = $('help').dataset.mode;
+    const padLook = !!eyes && !underway;
+    if (shown.padLook !== +padLook) {
+      shown.padLook = +padLook;
+      $('help-pad').classList.toggle('look', padLook);
+    }
     ride.render();
     const label = ride.driving ? (ride.canLeave() ? 'Get off' : null) : ride.on ? (ride.atStop() ? 'Get off' : ride.stuck ? 'Get off here' : ride.dest === ride.upcoming()[0] ? 'Stop requested' : 'Request stop') : funicular.me ? (funicular.me.stop !== null ? 'Get off' : null) : ferries.me ? (ferries.me.stop !== null ? 'Get off' : null) : canBoard || cabin || ferryHere?.open || enterable?.two ? 'Get on' : inCar?.two ? 'Get off' : null;
     const cab = taxi.riding ? 'Get out' : taxi.near() ? 'Get in' : busRide.on ? 'Get off' : canBus ? 'Get on' : null;
@@ -3326,7 +3450,7 @@ async function main() {
     }
     const stealLabel = busRide.on ? 'Take over the bus' : 'Take over the tram', stealBtn = $('t-steal');
     if (stealBtn.dataset.t !== stealLabel) { stealBtn.dataset.t = stealLabel; stealBtn.textContent = t(stealLabel); }
-    touch.update({ car: inCar || inHeli, engine: inCar?.type === 'fire', beacon: emergency, driving: ride.driving, tram: (ride.on && !ride.driving) || passenger() || (!!funicular.me || !!ferries.me), steal: (ride.on && !ride.driving) || busRide.on, wait: !!board.shown || taxi.state === 'coming', label: inHeli?.canBailOut ? 'Jump out' : cab || label || (station ? 'Metro' : null), canEnter: !!cab || canEnter || !!canBoard || !!station || !!cabin || !!ferryHere?.open || funicular.me?.stop != null || ferries.me?.stop != null, limit: assisted ? assist.limit : null });
+    touch.update({ car: inCar || inHeli, engine: inCar?.type === 'fire', beacon: emergency, driving: ride.driving, tram: (ride.on && !ride.driving) || passenger() || (!!funicular.me || !!ferries.me), steal: (ride.on && !ride.driving) || busRide.on, wait: !!board.shown || taxi.state === 'coming', label: inHeli?.canBailOut ? 'Jump out' : handoff || cab || label || (station ? 'Metro' : null), canEnter: !!handoff || !!cab || canEnter || !!canBoard || !!station || !!cabin || !!ferryHere?.open || funicular.me?.stop != null || ferries.me?.stop != null, limit: assisted ? assist.limit : null });
     show('tally', `${tn(stats.wrecked, '{n} car wrecked|{n} cars wrecked')}${stats.busted ? ` · ${t('busted {n}×', { n: stats.busted })}` : ''}${stats.wasted ? ` · ${t('wasted {n}×', { n: stats.wasted })}` : ''}`);
     // Wanted stars: they blink while the police have lost sight of you.
     const stars = police.stars, wanted = $('wanted');
@@ -3355,9 +3479,10 @@ async function main() {
     show('job', jobCard, 'html');
     if (shown.jobOn !== (jobCard ? 1 : 0)) { shown.jobOn = jobCard ? 1 : 0; $('job').hidden = !jobCard; }
     const wanted_ = metro.active ? null : missions.target();
-    if (wanted_) marker.show(wanted_.x, wanted_.y); else marker.hide();
+    if (wanted_) marker.show(wanted_.x, wanted_.y, !!missions.handoff); else marker.hide();
     marker.update(dt, { x: px(), y: py() });
-    satnav.update(dt, inCar, { x: px(), y: py() }, wanted_);
+    satnav.update(dt, inCar, { x: px(), y: py(), level: walker.level }, wanted_, !!eyes && !!eyes.onFoot && !walker.flight && !walker.onRoof,
+      handoff ? 'exchange' : missions.handoff ? 'approach' : false);
     const navCard = metro.active ? '' : satnav.card();
     show('nav', navCard, 'html');
     if (shown.navOn !== (navCard ? 1 : 0)) { shown.navOn = navCard ? 1 : 0; $('nav').hidden = !navCard; }
@@ -3448,7 +3573,14 @@ async function main() {
     streets: drive, countryside: () => !!world.country?.box, place: () => $('district').textContent || null, taxi,
     builtMap: (x, y) => !pastMap(x, y) && world.available.has(world.keyAt(x, y)),
     grid, boats, ferries, pid, inspector, wallet, police, health, clock, fires, brigade, ambulances, refuse, hurtNearest, switchBeacon, traffic, crowd, rng: seeded, bags,
-    missions, satnav, standing: repute, cannon: (on) => { cannonHeld = on; }, tram: { ride, list: () => trams.list },
+    missions, satnav, standing: repute, cannon: (on) => { cannonHeld = on; }, tram: { ride, list: () => trams.list, clearRun: (vehicle) => {
+      const mid = vehicle.parts[1];
+      if (!world.tileAt(mid.x, mid.y)?.drawn) return false;
+      const waiting = vehicle.waitFor;
+      const gap = trams.gapToTram(vehicle, frontOf(vehicle), 8 + 2 * vehicle.speed);
+      vehicle.waitFor = waiting;
+      return gap === Infinity;
+    } },
     shoot: (h) => (canShoot() ? shoot(h) : null),
     carsNear: (x, y, r) => [...carsNear(x, y, r)],
     recovering: () => wastedT > 0,
@@ -3480,8 +3612,7 @@ async function main() {
     capture: () => new Promise((resolve) => { grabFull.push(resolve); setTimeout(() => resolve(null), 3000); }),
   });
   // ?fps starts in first person, as the developer panel's First person box does; ?tps in third person.
-  if (params.has('fps')) testkit.eyes = { yaw: 0, pitch: 0 };
-  if (params.has('tps')) testkit.eyes = { yaw: 0, pitch: 0, third: true };
+  testkit.eyes = eyesFor(initialView(params));
   dev.attach(testkit);
   // A fixed target altitude keeps before/after terrain views on the same camera.
   const shot = params.get('camera')?.split(',').map(Number);

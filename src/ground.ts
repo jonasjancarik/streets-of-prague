@@ -1,3 +1,5 @@
+import { splitTunnelEarth, tunnelPrisms, TunnelIndex } from './map/tunnelEarth.ts';
+import { tunnelInterior } from './map/tunnelInterior.ts';
 import * as THREE from 'three';
 import { onPolygons, signedArea } from './map/geo.ts';
 import { WATER } from './terrain.ts';
@@ -45,6 +47,7 @@ export interface GroundRoadEdge {
   level?: number; // on a bridge or in a tunnel: its level, where the map says (see groundLayers)
   kerb?: [number | null, number | null]; // the kerbs' distance from the centre line, [right, left]
   park?: [string | null, string | null]; // how OSM says cars park on the [right, left]
+  deck?: [number, number, number, number][]; // on a bridge: [x, y, right kerb, left kerb] at its two ends (deckSides)
 }
 // side: at a step in the ground, which side's height (terrain.ts, heightSampler).
 type HeightAt = (x: number, y: number, side?: number | boolean) => number;
@@ -179,34 +182,33 @@ function strips(lines: Point2[][], w: number, dash: Point2 | null = null, hold =
   return { ...g, hold: out };
 }
 
-// Coordinates across a single grooved rail or along its concrete bed. Carry
-// them through the same terrain refinement as shade, then name the attribute
-// for the surface shader. Positive offsets lie to the right of the track.
-function tramRibbon(lines: Point2[][], rails: boolean): GroundGeometry {
+// The across-track coordinate profiles the rail head; distance along a strip
+// places joints across a tram bed or kerb. Both follow bends and the same
+// terrain cuts as the rest of the street.
+function surfaceRibbon(lines: Point2[][], bands: readonly (readonly [number, number])[], across: boolean): GroundGeometry {
   const pos: number[] = [], idx: number[] = [], coord: number[] = [];
   for (const pts of lines) {
     if (pts.length < 2) continue;
-    for (const sign of rails ? [-1, 1] : [1]) {
-      const inside = offsetLine(pts, rails ? sign * .648 : -1.25);
-      const outside = offsetLine(pts, rails ? sign * .792 : 1.25);
+    for (const [from, to] of bands) {
+      const inside = offsetLine(pts, from), outside = offsetLine(pts, to);
       const dx = pts[1][0] - pts[0][0], dy = pts[1][1] - pts[0][1];
-      const first = Math.hypot(dx, dy) || 1;
-      let along = (pts[0][0] * dx + pts[0][1] * dy) / first;
+      let along = (pts[0][0] * dx + pts[0][1] * dy) / (Math.hypot(dx, dy) || 1);
       for (let j = 0; j < pts.length; j++) {
         if (j) along += Math.hypot(pts[j][0] - pts[j - 1][0], pts[j][1] - pts[j - 1][1]);
         const i = pos.length / 3;
         pos.push(inside[j][0], 0, -inside[j][1], outside[j][0], 0, -outside[j][1]);
-        coord.push(rails ? 0 : along, rails ? 1 : along);
-        if (j) {
-          if (sign > 0) idx.push(i - 2, i - 1, i, i - 1, i + 1, i);
-          else idx.push(i - 2, i, i - 1, i - 1, i, i + 1);
-        }
+        coord.push(across ? 0 : along, across ? 1 : along);
+        if (j && to > from) idx.push(i - 2, i - 1, i, i - 1, i + 1, i);
+        else if (j) idx.push(i - 2, i, i - 1, i - 1, i, i + 1);
       }
     }
   }
   const { alpha, ...g } = finish(pos, idx, coord);
   return alpha ? { ...g, trackCoord: alpha } : g;
 }
+const tramRibbon = (lines: Point2[][], rails: boolean) =>
+  surfaceRibbon(lines, rails ? [[-.648, -.792], [.648, .792]] : [[-1.25, 1.25]], rails);
+const kerbRibbon = (lines: Point2[][], width: number) => surfaceRibbon(lines, [[-width / 2, width / 2]], false);
 
 // A soft band just outside each ring, fading from `alpha` at the ring to 0.
 function skirts(ringsList: Polygons, width: number, outside: boolean, skip: (a: Point2, b: Point2) => boolean = () => false): GroundGeometry {
@@ -563,6 +565,7 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
     });
   }
   const upper: GroundLayer[] = [];
+  const bores: ReturnType<typeof tunnelPrisms> = [];
   const railway = new Map<number, Point2[][]>();
   for (const track of d.station?.bridgeTracks ?? d.bridgeTracks ?? []) {
     const lines = railway.get(track.level);
@@ -581,10 +584,15 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
         upper.push(...deckLayers(l.polys, tramsOn.get(k) || [], paintOn.get(k) || [], l.level, railway.get(l.level), !!d.station));
       } else {
         groundHeight = H;
+        bores.push(...tunnelPrisms(l.polys, H));
         upper.push(...tunnelLayers(l.polys, box, masks[k], H, T, paintOn.get(k) || [], l.level));
       }
     });
   } finally { groundHeight = null; }
+  if (bores.length) {
+    const index = new TunnelIndex(bores);
+    for (const layer of lower) layer.outsideTunnel = splitTunnelEarth(layer.geometry, index);
+  }
   return { layers: [...lower, ...upper], masks };
 }
 
@@ -803,9 +811,12 @@ function deckLayers(polys: Polygons, trams: Point2[][], edges: GroundRoadEdge[],
   const streets = edges.filter((e) => e.pts.length > 1);
   if (streets.length) {
     add(polygons(polys), COLORS.path, 'mosaic');
-    const ways = streets.map((e) => ({ pts: e.pts, half: carriageway(e, trams) / 2 }));
-    for (const w of ways) add(strips([w.pts], w.half * 2), COLORS.bridge, 'asphalt');
-    add(strips(ways.flatMap((w) => [offsetLine(w.pts, w.half), offsetLine(w.pts, -w.half)]), 0.25), COLORS.kerb, 'concrete');
+    const sides = streets.map((e) => deckSides(e, trams));
+    streets.forEach((e, k) => add(ribbon(e.pts, sides[k]), COLORS.bridge, 'asphalt'));
+    // The kerbs, but not where they'd lie on another street's carriageway: a slip road
+    // drawn over the motorway it joins (at Řepy) put its kerbs across the lanes.
+    add(kerbRibbon(streets.flatMap((e, k) => [offsetBy(e.pts, sides[k].map((s) => s[0])), offsetBy(e.pts, sides[k].map((s) => -s[1]))]
+      .flatMap((line) => offOtherRoads(line, e, streets))), 0.25), COLORS.kerb, 'graniteKerb');
   } else if (railway.length) add(polygons(polys), COLORS.ballast, 'gravel', true);
   else add(polygons(polys), COLORS.bridge, 'asphalt');
   add(tramRibbon(trams, false), COLORS.trackbed, 'tramBed');
@@ -840,6 +851,40 @@ function railwayLayers(lines: Point2[][], add: (g: GroundGeometry, color: string
   add(strips(lines.flatMap(pts => [offsetLine(pts, 0.72), offsetLine(pts, -0.72)]), 0.16), '#c4beb1');
 }
 
+// How far a street on a bridge reaches to its [right, left] kerb at each point of its
+// line. Where the pipeline gives its kerbs at its two ends (`deck`: as wide as the street
+// on the ground it carries on from there), it goes over from one end's to the other's,
+// so it meets that street with no deck showing between (the D0 at Řepy was 10.75 m wide
+// on its bridge and 14 m on the ground). Otherwise half its carriageway each side.
+function deckSides(e: GroundRoadEdge, trams: Point2[][]): [number, number][] {
+  const half = carriageway(e, trams) / 2;
+  if (!e.deck || half > e.width / 2) return e.pts.map(() => [half, half]);
+  const [[ax, ay, ar, al], [bx, by, br, bl]] = e.deck;
+  const dx = bx - ax, dy = by - ay, d2 = dx * dx + dy * dy || 1;
+  return e.pts.map(([x, y]) => {
+    const t = Math.min(1, Math.max(0, ((x - ax) * dx + (y - ay) * dy) / d2));
+    return [ar + (br - ar) * t, al + (bl - al) * t];
+  });
+}
+
+// A line `d[i]` to the right of each point of `pts` (to the left where negative).
+function offsetBy(pts: Point2[], d: number[]): Point2[] {
+  return pts.map((p, i) => {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    return [p[0] + ((b[1] - a[1]) / len) * d[i], p[1] - ((b[0] - a[0]) / len) * d[i]];
+  });
+}
+
+// A strip along `pts` out to `sides[i]` = [right, left] at each point.
+function ribbon(pts: Point2[], sides: [number, number][]): GroundGeometry {
+  const r = offsetBy(pts, sides.map((s) => s[0])), l = offsetBy(pts, sides.map((s) => -s[1]));
+  const pos: number[] = [], idx: number[] = [];
+  for (let i = 0; i < pts.length; i++) pos.push(r[i][0], 0, -r[i][1], l[i][0], 0, -l[i][1]);
+  for (let i = 0; i < pts.length - 1; i++) idx.push(2 * i, 2 * i + 1, 2 * i + 3, 2 * i, 2 * i + 3, 2 * i + 2);
+  return finish(pos, idx);
+}
+
 // How wide a street on a bridge is from kerb to kerb: as the map has it, or wider where
 // tram tracks run along it, to take them and a lane beside them (the map's width leaves
 // the tracks out: 7 m on most Legií, kerb to kerb 10 m).
@@ -863,7 +908,12 @@ function tunnelLayers(polys: Polygons, box: Bounds, mask: LevelMask, H: HeightAt
   const add = (order: number, geometry: GroundGeometry, color: string, pattern = 'flat') => {
     if (geometry.index.length) out.push({ order, geometry, color, pattern, blend: null, tunnel: true, level });
   };
-  add(-700, polygons(polys), COLORS.tunnel, 'asphalt');
+  const floor = polygons(polys);
+  add(-700, floor, COLORS.tunnel, 'asphalt');
+  const shell = tunnelInterior(polys, floor, edges.map(e => e.pts), box, T, H);
+  for (const [geometry, finish] of [[shell.roof, 'soffit'], [shell.walls, 'wall']] as const) {
+    if (geometry.index.length) out.push({ order: -695, geometry, tunnel: true, level, tunnelFinish: finish });
+  }
   const q = quads();
   openSides(polys, box, mask, H, T, (a, b, ha, hb, ox, oy) => {
     q.quad([b[0], hb, -b[1]], [a[0], ha, -a[1]], [a[0], ha + TUNNEL_H, -a[1]], [b[0], hb + TUNNEL_H, -b[1]], [-ox, 0, oy]);
@@ -1071,7 +1121,7 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     const kerb = kerbs();
     const worn = joinShading([...(kerb ? [skirtParts(kerb.edged, GUTTER_WIDTH, false, kerb.plain, GUTTER_PEAK)] : []), ...(paintRoads ? [streetWear(edges, box)] : [])]);
     shade(finish(worn.pos, worn.idx, worn.alpha), WEAR_SHADE);
-    if (kerb) add(strips(kerb.lines, KERB_WIDTH), COLORS.granite, 'concrete');
+    if (kerb) add(kerbRibbon(kerb.lines, KERB_WIDTH), COLORS.granite, 'graniteKerb');
     // Where the trams have a bed of their own beside the street: ballast under the tracks.
     add(polygons(R.trambed || []), COLORS.ballast, 'gravel');
     // Bay lines as Prague paints them: a solid blue line in residents' zones, white

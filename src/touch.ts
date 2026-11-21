@@ -1,3 +1,4 @@
+import { lookAround, type Eyes } from './streetView.ts';
 import { clamp } from './network.ts';
 import { onLang, t } from './i18n.ts';
 import { turnOf } from './assist.ts';
@@ -60,8 +61,8 @@ export function stickOnly(car: Car, aim: { h: number; mag: number }) {
 const capture = (el: HTMLElement, e: PointerEvent) => { try { el.setPointerCapture(e.pointerId); } catch { /* not a live pointer */ } };
 const dead = (v: number) => (Math.abs(v) < DEAD ? 0 : Math.sign(v) * (Math.abs(v) - DEAD) / (1 - DEAD));
 
-export function setupTouch({ action, backOnRoad, zoomBy, horn, steal, cannon, shoot, doors, jump, force, beacon }: {
-  action: () => void; backOnRoad: () => void; zoomBy: (factor: number) => void;
+export function setupTouch({ action, backOnRoad, zoomBy, eyes, horn, steal, cannon, shoot, doors, jump, force, beacon }: {
+  action: () => void; backOnRoad: () => void; eyes: () => Eyes | null; zoomBy: (factor: number) => void;
   horn: (on: boolean) => void; steal: () => void; cannon: (on: boolean) => void; shoot: (on: boolean) => void; doors: () => void; jump: () => void; force: boolean; beacon: () => void;
 }): TouchState {
   const $ = (id: string): HTMLElement => {
@@ -240,23 +241,42 @@ export function setupTouch({ action, backOnRoad, zoomBy, horn, steal, cannon, sh
   // ---- Pinch to zoom -----------------------------------------------------
   const app = $('app'), fingers = new Map<number, { x: number; y: number }>();
   let spread = 0;
+  let look: { id: number; x: number; y: number; view: Eyes } | null = null;
   const span = () => { const [a, b] = fingers.values(); return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0; };
   app.addEventListener('pointerdown', (e) => {
     if (e.pointerType !== 'touch') return;
+    const view = eyes();
+    if (view) {
+      if (!look) {
+        look = { id: e.pointerId, x: e.clientX, y: e.clientY, view };
+        capture(app, e);
+      }
+      return;
+    }
     fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (fingers.size === 2) spread = span();
   });
   app.addEventListener('pointermove', (e) => {
-    if (!fingers.has(e.pointerId)) return;
+    if (look?.id === e.pointerId) {
+      if (eyes() !== look.view) { look = null; return; }
+      // A swipe over half the shorter side turns a quarter turn on any screen.
+      const scale = 180 / Math.max(240, Math.min(innerWidth, innerHeight));
+      lookAround(look.view, (e.clientX - look.x) * scale, (e.clientY - look.y) * scale);
+      look.x = e.clientX;
+      look.y = e.clientY;
+      return;
+    }
+    if (!fingers.has(e.pointerId) || eyes()) return;
     fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (fingers.size !== 2) return;
     const s = span();
     if (spread > 0 && s > 0) zoomBy(spread / s);
     spread = s;
   });
-  const lift = (e: PointerEvent) => { fingers.delete(e.pointerId); spread = fingers.size === 2 ? span() : 0; };
+  const lift = (e: PointerEvent) => { if (look?.id === e.pointerId) look = null; fingers.delete(e.pointerId); spread = fingers.size === 2 ? span() : 0; };
   app.addEventListener('pointerup', lift);
   app.addEventListener('pointercancel', lift);
+  app.addEventListener('lostpointercapture', lift);
 
   // Switching apps can swallow the pointer-up event. Nothing should stay held
   // when the player returns, including a pinch begun before the switch.
@@ -273,6 +293,7 @@ export function setupTouch({ action, backOnRoad, zoomBy, horn, steal, cannon, sh
     hornUp();
     cannonUp();
     shootUp();
+    look = null;
     fingers.clear();
     spread = 0;
   };

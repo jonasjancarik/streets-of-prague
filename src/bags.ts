@@ -27,6 +27,7 @@ export class Bags {
   list: Bag[] = [];
   // The one the player carries (its colour), drawn on their back.
   carried: string | null = null;
+  private parcel = false;
   back: THREE.Mesh;
 
   constructor(scene: THREE.Scene, height: (x: number, y: number) => number) {
@@ -69,6 +70,16 @@ export class Bags {
 
   carry(colour: string | null) {
     this.carried = colour;
+    this.showBack();
+  }
+
+  carryParcel(on: boolean) {
+    this.parcel = on;
+    this.showBack();
+  }
+
+  private showBack() {
+    const colour = this.parcel ? '#f2a51a' : this.carried;
     this.back.visible = !!colour;
     if (colour) this.back.geometry = shape(onBack, 'foot', colour);
   }

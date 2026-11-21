@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { NodeMaterial } from 'three/webgpu';
 import {
-  Fn, float, vec2, vec3, vec4, attribute, positionGeometry, positionWorld, cameraProjectionMatrix, cameraViewMatrix, screenSize,
+  Fn, If, texture, dot, clamp, cameraPosition, distance, float, vec2, vec3, vec4, attribute, positionGeometry, positionWorld, cameraProjectionMatrix, cameraViewMatrix, screenSize,
   sRGBTransferEOTF, toneMappingExposure, fract, ceil, log, pow, sin, cos, exp, normalize, step, smoothstep, length, max, min, select,
 } from 'three/tsl';
 import { setFx, DROP_SPREAD, type FxParts } from '../weather.ts';
@@ -45,7 +45,20 @@ const linear = (d: N): N => Fn(() => {
 function build(f: FxParts) {
   const uCentre: N = followVec(f.shared.uCentre as any), uBox: N = followVec(f.shared.uBox as any), uWind: N = followVec(f.shared.uWind as any);
   const uTime = follow(f.shared.uTime), uTint: N = followVec(f.tint as any), uFog: N = followVec(f.fog as any);
-  const uScale = follow(f.scale);
+  const uScale = follow(f.scale), street = follow(f.street);
+  const cover = texture(f.cover.texture), box: N = followVec(f.cover.box);
+  const exposureAt = Fn(([p]: N[]) => {
+    const a = float(1).toVar();
+    If(street.greaterThan(.5), () => {
+      a.assign(smoothstep(.45, 1.8, distance(p, cameraPosition)));
+      const uv = p.xz.sub(box.xy).div(box.z);
+      If(box.w.greaterThan(.5).and(min(uv.x, uv.y).greaterThanEqual(0)).and(max(uv.x, uv.y).lessThan(1)), () => {
+        const top = dot(cover.sample(uv).level(float(0)).rg, vec2(65280, 255)).div(16).sub(1024);
+        a.mulAssign(smoothstep(-.08, .22, p.y.sub(top)));
+      });
+    });
+    return a;
+  });
   const uOn = { rain: follow(f.rainOn), snow: follow(f.snowOn), mist: follow(f.mistOn) };
 
   // Where a drop is: in a square of its own size over the view, staying put in the world (WRAP_GLSL).
@@ -70,9 +83,9 @@ function build(f: FxParts) {
   {
     const tail = attribute('tail', 'float');
     const head = dropAt(seed, float(FALL), 0);
-    const p = head.sub(normalize(vec3(uWind.x, -FALL, uWind.y)).mul(tail).mul(seed.w.mul(0.6).add(0.9)));
+    const p = head.sub(normalize(vec3(uWind.x, -FALL, uWind.y)).mul(tail).mul(select(street.greaterThan(.5), seed.w.mul(.14).add(.15), seed.w.mul(0.6).add(0.9))));
     const lit = Fn(() => exp(lampLight(vec3(p.x, uCentre.y, p.z)).mul(-2.5)).oneMinus())();
-    const a = step(seed.w, uOn.rain).mul(tail.mul(-0.7).add(1)).mul(max(lit.r, lit.g).mul(0.6).add(0.35));
+    const a = step(seed.w, uOn.rain).mul(exposureAt(p)).mul(tail.mul(-0.7).add(1)).mul(max(lit.r, lit.g).mul(0.6).add(0.35));
     const out = vec4(linear(uTint.add(lit)), a).toVarying('vRain');
     rainMaterial.vertexNode = cameraProjectionMatrix.mul(cameraViewMatrix).mul(vec4(p, 1));
     rainMaterial.fragmentNode = out;
@@ -84,13 +97,15 @@ function build(f: FxParts) {
     const p = dropAt(seed, seed.w.mul(0.6).add(0.7).mul(FLAKE_FALL), 0.8);
     const lit = Fn(() => exp(lampLight(vec3(p.x, uCentre.y, p.z)).mul(-1.5)).oneMinus())();
     const mv = cameraViewMatrix.mul(vec4(p, 1));
-    const size = max(float(1.5), uScale.mul(seed.w.mul(0.1).add(0.12)).div(mv.z.negate()));
+    const size = select(street.greaterThan(.5),
+      clamp(uScale.mul(seed.w.mul(.024).add(.017)).div(max(.1, mv.z.negate())), 1, uScale.mul(.007)),
+      max(float(1.5), uScale.mul(seed.w.mul(.1).add(.12)).div(mv.z.negate())));
     const clip = cameraProjectionMatrix.mul(mv);
     const corner = positionGeometry.xy;
     snowMaterial.vertexNode = vec4(clip.xy.add(corner.mul(size).div(screenSize).mul(clip.w)), clip.z, clip.w);
     const vCorner = corner.toVarying('vCorner');
     const colour = min(max(uTint.mul(1.3), vec3(0.32, 0.34, 0.38)).add(lit), vec3(1));
-    const rgba = vec4(linear(colour), step(seed.w, uOn.snow).mul(0.9)).toVarying('vSnow');
+    const rgba = vec4(linear(colour), step(seed.w, uOn.snow).mul(exposureAt(p)).mul(0.9)).toVarying('vSnow');
     snowMaterial.fragmentNode = Fn(() => vec4(rgba.rgb, rgba.a.mul(float(1).sub(smoothstep(0.3, 1, length(vCorner))))))();
     snowMaterial.side = THREE.DoubleSide;
   }

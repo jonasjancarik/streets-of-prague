@@ -151,3 +151,18 @@ export const ROTORS = { voices: 2, range: 450, near: 30, level: 0.24, outside: 2
 export function rotorFalloff(d: number) {
   return (ROTORS.near / (ROTORS.near + d)) * clamp(1 - d / ROTORS.range, 0, 1);
 }
+
+// In a street view the ears turn with the camera. A source straight ahead or
+// overhead stays centred. The near radius softens a pass through the listener.
+export interface EarRight { x: number; z: number }
+export function sourcePan(dx: number, dy: number, distance: number, width: number, right: EarRight | null, limit = 0.85) {
+  const pos = right ? (right.x * dx - right.z * dy) / Math.max(3, distance) * limit : dx / width;
+  return clamp(pos, -limit, limit);
+}
+
+// A covered passage cuts the direct hiss and the sharp hits on the pavement.
+// Levels are ratios of the same sounds on the open street, before the user's mixer.
+export const PASSAGE_SOUND = {
+  rainHiss: .42, rainPatter: .20, wind: .34, city: .68, cityCutoff: 2300,
+  reflections: [[.031, .21, -.3], [.074, .13, .3]] as const,
+};

@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { buildStreetWall, packStreetWalls, streetModule } from '../src/map/streetFacade.ts';
-import { FACADE_ON } from '../src/facades.ts';
+import { FACADE_ON, F_SURFACE } from '../src/facades.ts';
 import { StreetFacades } from '../src/streetFacades.ts';
 
 const p = [], f = [], colors = [], labels = [];
@@ -57,7 +57,23 @@ manager.update(false, 4, 1, 4); assert.equal(cancelled, 1);
 ready(result); await tick(); assert.equal(scene.children.length, 1); assert.equal(geom.index, null);
 manager.update(true, 4, 1, 4); ready(result); await tick();
 assert.equal(scene.children.length, 2); assert.equal(geom.index.array[1], 0);
+const fitted = scene.children.find(o => o.name === 'Street façade');
+let disposedObject = false;
+fitted.addEventListener('dispose', () => { disposedObject = true; });
 manager.update(false, 4, 1, 4); assert.equal(scene.children.length, 1);
+assert.ok(disposedObject, 'retiring the fitted wall releases its renderer object as well as its vertex buffers');
 for (let i = 0; i < geom.index.count; i++)assert.equal(geom.index.array[i], i, 'original triangle restored');
 manager.update(true, 4, 1, 4); manager.drop(base); ready(result); await tick(); assert.equal(scene.children.length, 1);
 console.log('Verified recessed geometry, stone profiles, passage clipping, camera swaps and late worker results.', count / 3, 'triangles in the test wall.');
+
+// An Art Nouveau shopfront has glass above its sill and solid joinery round
+// the panes. The display finish cannot leak into the doors or the flats above.
+const shopFacade = buffers.facade.slice();
+for (let i = 3; i < shopFacade.length; i += 4) shopFacade[i] = (53 + .25) / 32768;
+const shopWall = buildStreetWall({ ...buffers, facade: shopFacade }, sky, tris);
+const shopPanes = [];
+for (let i = 0; i < shopWall.detail.length; i += 4) {
+  if (shopWall.detail[i + 2] === F_SURFACE.display) shopPanes.push([shopWall.facade[i + 1], shopWall.detail[i]]);
+}
+assert(shopPanes.length > 0 && shopPanes.every(([h, layer]) => h < 4.4 && (layer === 66 || layer === 71)));
+console.log('Ground-floor display panes stay within the authored shop windows.');

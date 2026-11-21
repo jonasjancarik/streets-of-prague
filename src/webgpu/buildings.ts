@@ -7,9 +7,10 @@
 import * as THREE from 'three';
 import {
   Fn, If, Discard, uniformArray, float, int, vec2, vec3, vec4, texture, attribute, vertexColor, positionWorld, normalWorld, normalWorldGeometry, transformNormalToView, diffuseColor,
-  materialColor, fract, floor, mod, dot, atan, sin, cos, mix, smoothstep, step, length, abs, max, min, clamp, normalize, dFdx, dFdy, distance, select, cross, sqrt, cameraPosition, reflect, pow, uniform, renderGroup,
+  materialColor, fract, floor, mod, dot, atan, sin, cos, mix, smoothstep, step, length, abs, max, min, clamp, normalize, dFdx, dFdy, distance, select, cross, sqrt, cameraPosition, reflect, pow, uniform, renderGroup, uv,
 } from 'three/tsl';
-import { facadeFinishes } from '../facadeFinishes.ts';
+import { passageAtlas } from '../passageMaterial.ts';
+import { facadeFinishes, shopReady } from '../facadeFinishes.ts';
 import { STRIPS, STRIPS_ON, onStrips, KINDS } from '../reflections.ts';
 import { FACADE_ATLAS, FACADE_ON, STREET_FACADE, F_SURFACE as S, BLANK, F_BAY as BAY_WIDTH, F_UP as UP, F_DOOR as DOOR, F_WALL as WALL, F_MOD as MOD, F_GROUND as GROUND, F_STOREY as STOREY, STOREY_FIT } from '../facades.ts';
 import { WINDOWS, ROOF_DETAIL, ROOF_CLUTTER, LANDMARK_ROOF as R, SUN_DIR, SUN_LIGHT } from '../shading.ts';
@@ -624,6 +625,20 @@ addPort(/^buildings-procedural$/, (node) => {
   lampLit(node, positionWorld, true);
 });
 
+addPort(/^street-ironwork$/, node => lampLit(node));
+
+const passageMap = texture(passageAtlas.value).onRenderUpdate(() => { passageMap.value = passageAtlas.value; });
+addPort(/^passage-lining$/, node => {
+  node.vertexColors = false;
+  const tile = attribute('finish', 'float'), st = uv();
+  const at = clamp(fract(st), .003, .997).add(vec2(mod(tile, 2), float(1).sub(floor(tile.mul(.5))))).mul(.5);
+  const surface = passageMap.sample(at).grad(dFdx(st).mul(.5), dFdy(st).mul(.5)).rgb;
+  const slot = tile.sub(5);
+  const stockUV = clamp(st, .005, .995).add(vec2(mod(slot, 2), float(1).sub(floor(slot.mul(.5))))).mul(.5);
+  const stock = shopAtlas.sample(stockUV).rgb;
+  node.colorNode = vec4(vertexColor().rgb.mul(select(tile.lessThan(3.5), surface, select(tile.greaterThan(4.5), stock, vec3(1)))), 1);
+});
+
 // These are actual return faces and recessed panels. Keep their original wall
 // coordinates for the atlas, and their own normals for sunlight and reflections.
 function plasterScan() {
@@ -633,6 +648,42 @@ function plasterScan() {
 function facadeMask(layer: N, u: N, v: N) {
   const uv = vec2(mod(layer, 6).add(clamp(u, .016, .984)), floor(layer.div(6)).add(clamp(v, .009, .991))).div(vec2(6, 24));
   return texture(facadeFinishes.masks!, uv);
+}
+const uShopReady = follow(shopReady);
+const shopStandIn = new THREE.DataTexture(new Uint8Array([64, 52, 41, 255]), 1, 1);
+shopStandIn.colorSpace = THREE.SRGBColorSpace;
+shopStandIn.magFilter = THREE.LinearFilter; shopStandIn.minFilter = THREE.LinearMipmapLinearFilter;
+shopStandIn.generateMipmaps = true; shopStandIn.needsUpdate = true;
+const shopAtlas = texture(shopStandIn).onRenderUpdate(() => { shopAtlas.value = facadeFinishes.shops ?? shopStandIn; });
+
+// A shallow display bay behind the real mullions. Trace to the first surface
+// inside it. All panes in a bay look into the same room as the player walks by.
+function shopInterior(f: N, eye: N, normal: N) {
+  // Two neighbouring bays share one stockroom: the next window reveals the
+  // other half of the shelves. The wall between them stays opaque.
+  const width: N = f.z.div(fBays(f)).mul(2), height = fStorey(f).x;
+  const column = floor(f.x.div(width)), seed = floor(fract(f.w).mul(32768));
+  const design = floor(streetPick(seed, column, 9).mul(4));
+  const depth = float(1.05);
+  const fromLeft: N = width.mul(float(1).sub(fract(f.x.div(width))));
+  const face = vec2(fromLeft, f.y);
+  const ray = vec3(dot(eye, vec3(normal.z, 0, normal.x.negate())), eye.y, max(.001, dot(eye, normal).negate()));
+  const tx = select(ray.x.greaterThan(0), width.sub(face.x), face.x).div(max(.001, abs(ray.x)));
+  const ty = select(ray.y.greaterThan(0), height.sub(face.y), face.y).div(max(.001, abs(ray.y)));
+  const tz = depth.div(ray.z), travel = max(0, min(tz, min(tx, ty)));
+  const hit = vec3(face, 0).add(ray.mul(travel));
+  const u = clamp(hit.x.div(width), .012, .988), v = clamp(hit.y.div(height), .012, .988);
+  const uv = vec2(mod(design, 2).add(u), float(1).sub(floor(design.div(2))).add(v)).mul(.5);
+  const lod = clamp(distance(cameraPosition, positionWorld).div(4).max(1).log2(), 0, 5);
+  const stock = shopAtlas.sample(uv).level(lod).rgb;
+  const trim = mix(vec3(.155, .115, .078), vec3(.30, .265, .213), smoothstep(.12, .16, v));
+  const flat = select(ray.y.greaterThan(0), vec3(.39, .35, .28), vec3(.125, .081, .055));
+  const lining = select(tx.lessThan(ty), trim, flat).mul(mix(1, .62, hit.z.div(depth)));
+  const rear = step(tz, min(tx, ty).add(.0001));
+  // After dark some displays stay lit, while the other shops close for the night.
+  const open = step(.33, streetPick(seed, column, 10));
+  const night = smoothstep(.01, .09, uWindows);
+  return mix(lining, stock, rear).mul(mix(.68, mix(.07, .6, open), night));
 }
 const streetWallColor = Fn(() => {
   const f: N = attribute('facade', 'vec4').toVar(), info: N = attribute('detail', 'vec4');
@@ -657,6 +708,7 @@ const streetWallColor = Fn(() => {
   });
   If(kind.equal(S.infill), () => { wall.assign(stone); });
   If(kind.equal(S.brass), () => { wall.assign(vec3(.131, .102, .064)); });
+  If(kind.equal(S.display).and(uShopReady.greaterThan(.5)), () => { wall.assign(vec3(.010, .014, .016)); });
   If(kind.equal(S.grilleGlass), () => { wall.assign(vec3(.022, .032, .040)); });
   If(kind.equal(S.iron), () => { wall.assign(vec3(.031, .034, .033)); });
   If(kind.greaterThanEqual(S.reveal).and(kind.lessThanEqual(S.plinth)), () => {
@@ -678,7 +730,7 @@ const reflectStreetOn = follow(STRIPS_ON);
 const streetGlassLight = Fn(() => {
   const result = vec3(0).toVar();
   const kind = floor(attribute('detail', 'vec4').z.add(.5));
-  If(kind.equal(S.glass).or(kind.equal(S.grilleGlass)), () => {
+  If(kind.equal(S.glass).or(kind.equal(S.grilleGlass)).or(kind.equal(S.display)), () => {
     const n = normalWorldGeometry, view = normalize(cameraPosition.sub(positionWorld)), ray = reflect(view.negate(), n);
     const style = floor(attribute('facade', 'vec4').w);
     const zone = select(style.equal(1), 0, select(style.equal(3), 2, select(style.equal(4), 3, 1)));
@@ -686,8 +738,14 @@ const streetGlassLight = Fn(() => {
     const street = reflectedStreet.sample(vec2(atan(ray.z, ray.x).div(2 * Math.PI).add(.5),
       float(1).sub(zone.add(clamp(height, .01, .99)).div(KINDS.length)))).level(float(1.5));
     const fresnel = pow(float(1).sub(abs(dot(view, n))), 4).mul(.48).add(.10);
-    result.assign(buildingGraph.glow.mul(.72).add(street.rgb.mul(street.a).mul(fresnel).mul(reflectStreetOn)
-      .mul(float(1).sub(smoothstep(.42, .77, ray.y))).mul(float(1).sub(uWindows.mul(.80)))));
+    const reflection = street.rgb.mul(street.a).mul(fresnel).mul(reflectStreetOn)
+      .mul(float(1).sub(smoothstep(.42, .77, ray.y))).mul(float(1).sub(uWindows.mul(.80)));
+    If(kind.equal(S.display).and(uShopReady.greaterThan(.5)), () => {
+      const stock = shopInterior(attribute('facade', 'vec4'), view.negate(), n);
+      const sky = mix(uHorizon, uZenith, smoothstep(0, 1, ray.y))
+        .mul(smoothstep(.01, .40, ray.y)).mul(fresnel).mul(attribute('sky', 'float'));
+      result.assign(stock.mul(float(1).sub(fresnel)).add(reflection).add(sky));
+    }).Else(() => { result.assign(buildingGraph.glow.mul(.72).add(reflection)); });
   });
   return result;
 })();

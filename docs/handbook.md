@@ -29,6 +29,7 @@ with given controls, read back the numbers (`t.probe()`), look from anywhere wit
 `node scripts/scene.mjs serve` keeps headless Chrome open with the game loaded; then
 `run <name…|all>`, `eval "<js with t>"` and `shot` take a second or two each, and follow
 the dev server's reloads. Without a server each command loads the game itself.
+Scenario runs restore the previous player damage setting when they finish, including after a failed check.
 Screenshots go to `$TMPDIR/scene`. The same scenarios run in the developer panel
 ("Run and watch" plays one in real time), and "Copy this situation" there copies where
 you are, the time, weather, money, stars, car and camera as the start of a new scenario.
@@ -246,6 +247,37 @@ Check emergency lights in full daylight as well as after dark. At the peak of a 
 the LED face looks nearly white and the colour shows around its edges. On the
 ambulance, the red and blue flashes are visible on both the roof and the grille.
 
+Near a junction of named streets, look up for Prague’s red enamel street plates.
+The name follows the street parallel to the wall. The smaller line gives the
+cadastral area and the Prague 1–10 borough from RÚIAN. The game infers a mounting
+point on clear plaster near the corner. The curved face, proportions and enamel
+border follow the examples in [IPR’s Pražský uličník](https://prazskyulicnik.az.iprpraha.cz/clanky/vyvoj-oznaceni-ulic-v-terenu).
+The map supplies the names, while individual sign positions are approximate.
+
+At street level on WebGPU and WebGL, a glazed shopfront can show bookshelves, a bakery,
+flowers or ceramics. Look through the glass from the side to see the walls
+and floor behind the window frame. Adjacent bays share a display and some
+stay lit after dark. The displays are scenery imagined for the game.
+
+Mapped foot passages continue through the ground floors of buildings. At U Nováků
+on Vodičkova you can walk off the pavement, past the display cases, and back
+out again. The openings follow the same route and width as the walking grid.
+Listen at the threshold. Rain on the pavement gets quieter inside, the city's
+high frequencies soften and your footsteps pick up two short wall reflections.
+Nearby walkers put away their umbrellas under cover. On foot in first person,
+people step aside as you approach or wait in a narrow doorway until you clear it.
+Where passages meet, the corridor walls stop at the junction. The ceiling and floor
+follow the terrain and end at the building footprint. The fixtures, finishes and
+display cases are inferred scenery. Nearby interiors are built by an optional
+tile-worker job and released on returning overhead. See
+`scenarios/covered-passage.ts` and `scripts/check-passage-openings.mjs`.
+
+Look down on Seminářská to see the cast lids and storm drains at their survey
+positions. Nearby manholes have worn raised patterns and lifting slots, drain
+grates have a recessed bed between the bars, and small hydrant covers carry an
+H. The casting design is inferred. The close models follow the slope and
+reuse four instance batches. Overhead and on Lowest, the ground marks remain.
+
 The fire engine shows its roof ladder and hose rack from above. Within 24 m on foot,
 you can see through the crew cab, read the rear pump gauges and follow a firefighter’s
 hose to the coupling beside the lockers. Two marked police cars share patrol and pursuit
@@ -296,6 +328,13 @@ the same signal phase as the overhead light.
   sooner, the job's too until its next stop. On foot the card only says where you're
   headed. `node scripts/check-satnav.mjs` checks the routing offline on the real map;
   in the test API, `t.nav()` reads the way shown and `t.navTo(lat, lon)` picks a spot.
+- **Walking directions.** In first person, open the map with N, choose a spot and
+  select **Walk here**. The minimap traces a route along the pedestrian network,
+  including paths, passages and stairs. The directions card shows the next turn.
+  A pin behind a wall leads to the nearest footpath. For a distant destination
+  the route extends as the streets ahead load. Getting
+  into a car switches the same pin to driving directions. Getting out resumes the walk.
+
 - **Indicators** (`src/blinkers.ts`): with directions on, your car's indicators flash
   amber on their own from about 4 s (at least 35 m) before each turn until you're
   through it, to the left for turning round. Glows over the car's corners, as its own
@@ -391,6 +430,10 @@ the same signal phase as the overhead light.
   three made-up factions think of you (`src/factions.ts`; the Regulars' later jobs wait
   for their good opinion). `?mission=courier` (or `taxi`, `ambulance`, `tram`, `fire`,
   `tour`, `fetch`, `wreck`, `getaway`) starts one at once.
+  Ask Fofr for work on foot in first person for a neighbourhood delivery. Follow the
+  walking directions right up to the marked sender. Face them and press E to take the parcel. Deliver
+  it to the recipient under the arrow with E (on touch, use the parcel button). Where
+  the local footpaths are too short for a delivery, Fofr offers its cross-town run.
 - **Taxis**: on foot near a street, press T (on touch, "Taxi") and pick how to get one
   (`src/taxi.ts`): wave down a free taxi that is passing by, or order one through Zipp or Hopla, two
   made-up ride-hailing apps that cost less and whose drivers speed, tailgate and push
@@ -606,13 +649,22 @@ the same signal phase as the overhead light.
   up for a more angled view and down to look straight down. The Rotation and Tilt
   sliders let you set either angle separately. Straight down resets both angles
   to a north-up view. Searching or picking a spot on the map moves the camera. First person looks out at eye height (1.75 m) the
-  way you face, with a wider 55° view, and you keep playing; people and their bikes are
+  way you face, with a wider 55° view. Settings → Camera view offers Overhead, First person and Third person and remembers your choice. V cycles through those views on foot. First-person controls in Settings let you adjust the field of view, look sensitivity and walking camera movement. You can look down to see your feet or up to see the roofline. The camera URL options take precedence for that visit. At street level, people and their bikes are
   drawn life size there rather than 1.35× (`FIGURE_SIZE`). In a car or the helicopter it
   follows from behind and above like a driving game's chase camera, the car in the lower
   third, swinging round after it as it turns. A click takes the mouse to look round with
   (Esc lets go); right-drag or Shift-drag looks round too. On foot it plays like a
   first-person game: the mouse turns you, W/S walk the way you look and A/D step sideways (`t.eyes = { yaw, pitch }` in
-  scripts). It loads 400 m round
+  scripts). The left stick walks forward, back or sideways relative to the view. On a
+  controller the right stick looks around. On a touchscreen, drag the street with your
+  free thumb. In first person each footfall follows the distance you actually cover.
+  Stone, grass, gravel and settled snow have different footfalls. A paved path across a
+  lawn sounds like pavement, even while the grass on either side crunches under snow.
+  The
+  view rises slightly between steps and settles on landing. As you approach a wall,
+  the camera draws closer to your body so you can look into a shop window at arm’s length. The walking camera follows the system’s reduced-motion
+  setting unless you choose Gentle movement or Keep steady. Nearby traffic, bells and sirens move across the stereo
+  field as you turn. It loads 400 m round
   you, where the haze closes in, and draws only the tiles you look towards (ones already
   drawn stay when you turn); a tile coming into view shows a few meshes a frame, and only
   one tile joins the scene a frame anywhere, so none stalls the game (`View` in
@@ -710,7 +762,7 @@ record the measurements, merge decisions and pending landmark asset activation.
   The general pavement is asphalt grey; slab squares are lighter, and park paths stay
   warm. Squares use their own OSM `surface` tag where one exists. Otherwise, a clear
   majority of mapped pedestrian and service ways crossing the square can supply its
-  surface; Old Town Square takes the setts mapped on the ways through it. Walking
+  surface; Old Town Square takes the setts mapped on the ways through it. At street level on WebGPU the setts use a 2.5 m scan, including the worn stone faces and recessed joints. Walking
   routes add no ribbon over a square of the same material; cobbled
   footways use setts, and island/link routes leave the pavement clear while keeping
   real path sections through lawns. A named
@@ -776,9 +828,12 @@ record the measurements, merge decisions and pending landmark asset activation.
   oil down each lane, heavier where cars wait before a junction, and now and then a patch of
   newer asphalt laid along the street. Lanes, widths and junctions are the map's; which spot
   has a patch is made up, the same each time. Surveyed pavements are Prague's mosaic in one of
-  three layouts, by stretches of some 44 m (`pavedStones` in `src/webgpu/mosaic.ts`):
+  three layouts, by stretches of some 44 m (`pavementStones` in `src/webgpu/mosaic.ts`):
   scattered stones, a chessboard on the diagonal, or a diagonal lattice of dark lines; which
-  stretch has which is not surveyed. Grass has lusher and thinner clumps, blades close up,
+  stretch has which is not surveyed. At street level the WebGPU view uses six-centimetre
+  cubes with chipped edges, mineral flecks and shallow joints, following the scale of
+  the city's cut limestone mosaic. Cut granite blocks follow the bends of the kerb,
+  with narrow joints across it. Grass has lusher and thinner clumps, blades close up,
   and daisies and dandelions while the trees are in blossom. Tile rows and metal seams are
   lit and shaded by where the sun stands (`rowRelief`), and roof windows and metal roofs
   flash the sun where they lean half-way between it and the camera. Every car has a soft
@@ -875,6 +930,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   water-surface height in the real WebGPU renderer.
   The fog of
   rain and snow is measured from the camera so the ground is hazier than the roofs. The
+  street-level camera sees shorter rain streaks and smaller flakes around eye height.
+  The weather fades the far end of the street sooner in a storm or snowfall. A local
+  height map stops precipitation under the ground, roofs and bridge decks. It samples
+  a 72 m square in strips and follows the camera as you walk. The
   ground gets wet in the rain (darker paving, puddles mirroring the sky and the lamps,
   rings where the drops hit) and dries over several minutes; snow settles on the
   ground, the roofs, the cars and the tree tops, and melts slower still. Under snow,
@@ -938,7 +997,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   job, about 0.1 s). Its ground, buildings, trees and sky view are made only when the
   tile comes within 100 m of the edge of the view (`dress`, `drawBeyond` in
   `TileWorld`, about half a second of worker time) and taken away again 40 m further
-  out (`undress`), while the tile itself stays loaded. On foot that is about 6 of the
+  out (`undress`), while the tile itself stays loaded. When a mesh retires, both its
+  render object and its geometry are disposed. WebGPU otherwise retains the mesh and
+  vertex arrays in its render-object registry even after releasing the GPU buffers.
+  Shared materials remain available to the next tile. On foot that is about 6 of the
   14 loaded tiles. Zooming out, the tiles are drawn for the height the camera is
   heading for; the developer panel's free camera draws everything loaded.
   `src/tileWorkers.ts` dispatches one job per worker and gives required tile jobs
@@ -1152,7 +1214,14 @@ record the measurements, merge decisions and pending landmark asset activation.
   A bridge with a street on it is paved as pavement from parapet to parapet, with the
   carriageway laid over it between granite kerbs. The carriageway is as wide as the
   street, or wide enough for its tram tracks with a lane either side (on most Legií
-  OSM's 7 m leaves the tracks out). Bridges in `BALUSTRADES` (`src/ground.ts`; most
+  OSM's 7 m leaves the tracks out). Where the survey has no deck for a bridge, each end
+  is as wide as the street on the ground it carries on from, measured over that
+  street's last 25 m, and the carriageway goes over from one end's width to the
+  other's (`bridge_ends` in `pipeline/kerbs.py`, the edges' `deck`): on the D0 at Řepy
+  the bridges were 10.75 m wide against 14 m on the ground, with the deck showing in
+  wedges between. The lanes keep to the narrower end, and a kerb that would lie on
+  another street's carriageway (a slip road drawn over the motorway it joins) is left
+  out. Bridges in `BALUSTRADES` (`src/ground.ts`; most
   Legií so far) get a stone balustrade instead of the plain parapet: a rail on balusters
   between pillars, each with a stone ball on top.
   Charles Bridge's deck is a straight band. OSM's outline of it takes in the piers'
@@ -1180,6 +1249,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   round you shown as bare earth. Everything else under the ground stays hidden
   (`track` and `view` in `src/tiles.ts`, the meshes in `src/ground.ts`). The car
   network keeps the tunnels and the magistrála, so traffic drives through them.
+  At street level, a road tunnel has a lit concrete ceiling and tiled walls. The
+  mapped tunnel way sets the ends of the roof, leaving the approaches open to daylight.
+  The floor follows the map. Its headroom and finishes are inferred. From inside,
+  the renderer omits just the pieces of the terrain mesh that enter the lane
+  (`src/map/tunnelInterior.ts`, `src/map/tunnelEarth.ts`).
   A road can change levels partway along an edge. Traffic, buses and the developer
   tool that puts a car back on the road use the level at that point along the lane.
   A named deck or tunnel is used where the loaded tile has its surface and height.
@@ -1297,6 +1371,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   passers-by nearest you (within 30 m, less in a crowd) are drawn as avatars from the
   Microsoft Rocketbox library instead, walking, jogging, running and standing with that
   library's motion-captured clips; their feet keep pace with how fast they actually move.
+  Each person switches to their detailed model when it finishes loading. If one model
+  is missing or slow, other people can still appear, including uniformed crews whose
+  base model and outfit are ready.
   Standing, each takes turns with a few ways of waiting (`STANDING`: shifting their weight,
   looking round, texting or calling on a phone, with a phone in the hand). In the rain
   anyone with their umbrella up holds it in the left hand, with Rocketbox's umbrella clip
@@ -1408,7 +1485,7 @@ record the measurements, merge decisions and pending landmark asset activation.
   gap is widest and leave service out of sight. When the clock jumps (the time picked
   on the start screen, a night in the cells or in hospital, the dev panel's time
   slider) every line is laid out afresh for the new hour, keeping only a tram you're on,
-  driving or waiting for; the `tram-clock-jump` scenario checks it. The departure boards count down from where the trams really are, so a
+  driving or waiting for; the `tram-clock-jump` scenario checks it. When a driver jumps off, the tram keeps coasting alongside the player even while the camera catches up. The departure boards count down from where the trams really are, so a
   tram held up in traffic shows up late there too. Each tram counts the seconds it has
   stood for something in the way and makes them up by cutting its stops short (to 8
   seconds at the least). They stop at
@@ -1971,7 +2048,12 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   lines out. `?nostepedges` turns the edges off.
   Straight outdoor stairways with a usable ground profile get concrete treads
   and visible nosings from their mapped walk edges (`src/map/stairs.ts`).
-  Walking still follows the smooth ground profile beneath the treads.
+  Walking follows the smooth profile beneath the treads. At the south end of
+  Štefánikův most, the lower sidewalk joins two flights of stairs beneath the road.
+  The DTM ZPS transport edges run from 187.0 to 186.7 m Bpv. The walker and the rendered
+  terrain use those landings. The two mapped stairways have a handrail along the
+  bridge side, and the carriageway keeps its own bridge level
+  (`src/map/bridgeWalk.ts`).
   Where the rules make a place worse than the
   terrain model alone (seen in the game), list it in `pipeline/terrain_keep.json` (a box
   in degrees and why) and it stays as the terrain model has it. A wall the survey doesn't

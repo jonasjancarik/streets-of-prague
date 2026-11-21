@@ -5,8 +5,9 @@
 // a pixel.
 
 import * as THREE from 'three';
-import { texture, floor, vec2, select } from 'three/tsl';
-import { type N, hash12 } from './common.ts';
+import { Fn, If, texture, floor, vec2, vec3, select, normalize, abs, normalWorldGeometry, transformNormalToView } from 'three/tsl';
+import { pavement, pavementRelief, pavementReady } from '../streetSurface.ts';
+import { type N, follow, hash12 } from './common.ts';
 
 const CELLS = 22; // stones across a repeat
 const REPEAT = 2; // metres
@@ -80,14 +81,31 @@ function stonesTexture() {
 }
 const stones = texture(stonesTexture());
 
-// The stones' factor at p (metres, x east, y north): scattered, as a path's are.
-export const mosaicStones = (p: N) => stones.sample(p.div(REPEAT)).r.mul(SCALE);
-
-// A surveyed pavement's: one of the three layouts, the same for a stretch some PLOT metres
-// long (in the old streets the pattern changes from house to house), a little under half of
-// them scattered, a third chessboard, the rest lattice.
-const PLOT = 44;
-export const pavedStones = (p: N) => {
-  const s: N = stones.sample(p.div(REPEAT)), pick: N = hash12(floor(p.div(PLOT).add(vec2(0.37, 0.71))).add(9.1));
-  return select(pick.lessThan(0.45), s.r, select(pick.lessThan(0.78), s.g, s.b)).mul(SCALE);
-};
+// Keep the larger marks in the map view. At street level the cuts, mineral
+// specks and worn arrises are baked at the scale of 32 six-centimetre stones.
+const close = texture(pavement.map), relief = texture(pavementRelief.map);
+pavement.onLoad = t => { close.value = t; };
+pavementRelief.onLoad = t => { relief.value = t; };
+const ready = follow(pavementReady), repeat = 1.92;
+function layout(p: N, sample: N, surveyed: boolean) {
+  if (!surveyed) return sample.r;
+  const pick = hash12(floor(p.div(44).add(vec2(.37, .71))).add(9.1));
+  return select(pick.lessThan(.45), sample.r, select(pick.lessThan(.78), sample.g, sample.b));
+}
+export function pavementStones(p: N, surveyed: boolean) {
+  const out = vec3(1).toVar();
+  If(ready.greaterThan(.5), () => {
+    const uv = p.div(repeat), stone = layout(p, close.sample(uv), surveyed).mul(1.6);
+    const warm = relief.sample(uv).b.sub(.5);
+    out.assign(vec3(warm.mul(.23).add(1), warm.mul(.025).add(1), warm.mul(-.19).add(1)).mul(stone));
+  }).Else(() => { out.assign(vec3(layout(p, stones.sample(p.div(REPEAT)), surveyed).mul(SCALE))); });
+  return out;
+}
+export const pavementNormal = (p: N) => Fn(() => {
+  const n = normalWorldGeometry.toVar();
+  If(ready.greaterThan(.5), () => {
+    const xy = relief.sample(p.div(repeat)).rg.sub(.5).mul(1.6);
+    n.assign(normalize(n.add(vec3(xy.x, 0, xy.y.negate()).mul(abs(n.y)))));
+  });
+  return transformNormalToView(n);
+})();

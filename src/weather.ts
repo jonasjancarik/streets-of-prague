@@ -1,3 +1,4 @@
+import { PrecipitationCover } from './precipitationCover.ts';
 import * as THREE from 'three';
 import { WET, SNOW, STREET_SNOW, RAIN, BARE, SEASON, NOISE, NOISE_GLSL, WEATHER_DETAIL } from './shading.ts';
 import { LAMP_GLSL, LAMP_MAP, LAMP_BOX, LAMP_ON } from './lamps.ts';
@@ -259,10 +260,23 @@ vec3 dropAt(vec4 seed, float fall, float sway) {
 }
 `;
 
+const STREET_DROPS_GLSL = /* glsl */ `
+uniform float uStreet; uniform sampler2D uCover; uniform vec4 uCoverBox;
+float exposureAt(vec3 p) {
+  if (uStreet < .5) return 1.;
+  vec2 uv = (p.xz-uCoverBox.xy)/uCoverBox.z;
+  float a = smoothstep(.45, 1.8, distance(p, cameraPosition));
+  if (uCoverBox.w < .5 || any(lessThan(uv,vec2(0.))) || any(greaterThanEqual(uv,vec2(1.)))) return a;
+  vec2 rg = texture2D(uCover,uv).rg;
+  return a * smoothstep(-.08,.22,p.y - (dot(rg,vec2(65280.,255.)) / 16. - 1024.));
+}
+`;
+
 // What the WebGPU trial's own version (webgpu/weather.ts) gets to build the three from: it
 // returns the objects to draw (its snow is a sprite for each flake: points there are 1 px).
 export interface FxParts {
   shared: { uCentre: { value: THREE.Vector3 }; uBox: { value: THREE.Vector2 }; uTime: { value: number }; uWind: { value: THREE.Vector2 } };
+  street: { value: number }; cover: PrecipitationCover;
   rainOn: { value: number }; snowOn: { value: number }; mistOn: { value: number };
   scale: { value: number }; // the snow's size in pixels at a distance of 1 m
   tint: { value: THREE.Color }; fog: { value: THREE.Color };
@@ -322,6 +336,9 @@ export class WeatherFx {
     uTime: { value: 0 }, uWind: { value: new THREE.Vector2(1.5, 0.6) },
     uLampMap: LAMP_MAP, uLampBox: LAMP_BOX, uLampOn: LAMP_ON,
   };
+  private street = { value: 0 };
+  private cover = new PrecipitationCover();
+  readonly sheltered = (x: number, y: number, head: number) => this.cover.sheltered(x, -y, head);
   private rainOn = { value: 0 };
   private snowOn = { value: 0 };
   private mistOn = { value: 0 };
@@ -361,23 +378,25 @@ export class WeatherFx {
     sg.setAttribute('seed', new THREE.BufferAttribute(flakes, 4));
     const mistGeometry = this.mistGeometry = mistSheets();
     const by = fxBy?.({
-      shared: this.shared, rainOn: this.rainOn, snowOn: this.snowOn, mistOn: this.mistOn, scale: this.snowScale,
+      shared: this.shared, street: this.street, cover: this.cover, rainOn: this.rainOn, snowOn: this.snowOn, mistOn: this.mistOn, scale: this.snowScale,
       tint: this.tint, fog: this.fog, rain: rg, snowSeeds: flakes, mist: mistGeometry,
       mistA: this.mistA, mistB: this.mistB, mistC: this.mistC,
     });
+    const streetUniforms = { uStreet: this.street, uCoverBox: this.cover.box, uCover: { value: this.cover.texture } };
     this.rain = by ? by.rain : new THREE.LineSegments(rg, new THREE.ShaderMaterial({
-      uniforms: { ...this.shared, uOn: this.rainOn, uTint: this.tint },
+      uniforms: { ...this.shared, ...streetUniforms, uOn: this.rainOn, uTint: this.tint },
       vertexShader: /* glsl */ `
         attribute vec4 seed; attribute float tail;
         ${WRAP_GLSL}
+        ${STREET_DROPS_GLSL}
         ${LAMP_GLSL}
         uniform float uOn;
         varying vec3 vLit; varying float vA;
         void main() {
           vec3 p = dropAt(seed, ${FALL.toFixed(1)}, 0.);
-          p -= normalize(vec3(uWind.x, -${FALL.toFixed(1)}, uWind.y)) * tail * (.9 + seed.w * .6);
+          p -= normalize(vec3(uWind.x, -${FALL.toFixed(1)}, uWind.y)) * tail * mix(.9 + seed.w * .6, .15 + seed.w * .14, uStreet);
           vLit = 1. - exp(-lampLight(vec3(p.x, uCentre.y, p.z)) * 2.5);  // lit by the lamps below
-          vA = step(seed.w, uOn) * (1. - tail * .7);
+          vA = step(seed.w, uOn) * (1. - tail * .7) * exposureAt(p);
           gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.);
         }`,
       fragmentShader: /* glsl */ `
@@ -388,19 +407,20 @@ export class WeatherFx {
       transparent: true, depthWrite: false,
     }));
     this.snow = by ? by.snow : new THREE.Points(sg, new THREE.ShaderMaterial({
-      uniforms: { ...this.shared, uOn: this.snowOn, uTint: this.tint, uScale: this.snowScale },
+      uniforms: { ...this.shared, ...streetUniforms, uOn: this.snowOn, uTint: this.tint, uScale: this.snowScale },
       vertexShader: /* glsl */ `
         attribute vec4 seed;
         ${WRAP_GLSL}
+        ${STREET_DROPS_GLSL}
         ${LAMP_GLSL}
         uniform float uOn; uniform float uScale;
         varying vec3 vLit; varying float vA;
         void main() {
           vec3 p = dropAt(seed, ${FLAKE_FALL.toFixed(1)} * (.7 + seed.w * .6), .8);
           vLit = 1. - exp(-lampLight(vec3(p.x, uCentre.y, p.z)) * 1.5);
-          vA = step(seed.w, uOn);
+          vA = step(seed.w, uOn) * exposureAt(p);
           vec4 mv = viewMatrix * vec4(p, 1.);
-          gl_PointSize = max(1.5, uScale * (.12 + .1 * seed.w) / -mv.z);
+          gl_PointSize = uStreet > .5 ? clamp(uScale * (.017 + .024 * seed.w) / max(.1, -mv.z), 1., uScale * .007) : max(1.5, uScale * (.12 + .1 * seed.w) / -mv.z);
           gl_Position = projectionMatrix * mv;
         }`,
       fragmentShader: /* glsl */ `
@@ -451,18 +471,33 @@ export class WeatherFx {
   // `x, y`: where the camera looks; `ground` the ground's height there; `height` the
   // camera's above it; `r` how far the view reaches.
   update(w: Conditions, t: number, x: number, y: number, ground: number, height: number, r: number, dpr: number,
-    mistGround: (x: number, z: number) => number, mistWater: (x: number, z: number) => number | null) {
+    mistGround: (x: number, z: number) => number, mistWater: (x: number, z: number) => number | null,
+    eye?: THREE.Vector3, coverRevision = 0, topAt?: (x: number, z: number) => number) {
     const s = this.shared;
     s.uTime.value = t;
     s.uCentre.value.set(x, ground - 2, -y);
     // Up to 15 m under the camera; the box wide enough to fill the view at the top.
     s.uBox.value.set(2 * r + 20, Math.max(10, Math.min(45, height - 15)));
+    const street = eye !== undefined;
+    if (+street !== this.street.value) {
+      this.street.value = +street;
+      (this.rain as THREE.LineSegments).geometry.setDrawRange(0, 2 * (street ? 3500 : RAIN_DROPS));
+      const snow = (this.snow as THREE.Mesh).geometry;
+      if (snow instanceof THREE.InstancedBufferGeometry) snow.instanceCount = street ? 2500 : FLAKES;
+      else snow.setDrawRange(0, street ? 2500 : FLAKES);
+    }
+    if (eye && (w.rain > .01 || w.snow > .01)) {
+      s.uCentre.value.set(eye.x, eye.y - 4, eye.z);
+      s.uBox.value.set(42, 18);
+      if (topAt) this.cover.update(eye.x, eye.z, coverRevision, topAt);
+    }
     this.rainOn.value = w.rain;
     s.uWind.value.set(1.5 + 5 * w.storm, 0.6 + 2 * w.storm);
     this.snowOn.value = w.snow;
     this.mistOn.value = Math.min(1, w.mist) * MIST.most;
-    this.rain.visible = w.rain > 0.01;
-    this.snow.visible = w.snow > 0.01;
+    const exposed = !eye || this.cover.box.value.w > 0;
+    this.rain.visible = exposed && w.rain > 0.01;
+    this.snow.visible = exposed && w.snow > 0.01;
     // The Lowest tier draws no mist banks or volumes: the haze over the whole view (Sky) is its mist.
     const banks = WEATHER_DETAIL.value > 0 ? w.mist : 0;
     this.mist.visible = banks > 0.01 && (MIST_MODE.value === 'sheets' || !this.localMist.mesh);
