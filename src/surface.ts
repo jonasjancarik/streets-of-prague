@@ -142,7 +142,15 @@ export class Surfaces {
   }
 
   dispose() {
-    this.group.traverse((o) => { if (o instanceof THREE.Mesh) { o.geometry.dispose(); if (o.material !== GROUND_DEPTH && o.material !== TUNNEL_TOP_DEPTH && !isTunnelFinish(o.material)) o.material.dispose(); } });
+    this.group.traverse(o => {
+      if (!(o instanceof THREE.Mesh)) return;
+      // WebGPU keeps per-object draws on shared depth, lighting and shadow
+      // materials. Freeing the vertex buffers alone leaves the mesh reachable.
+      o.dispose();
+      o.geometry.dispose();
+      if (o.material !== GROUND_DEPTH && o.material !== TUNNEL_TOP_DEPTH && !isTunnelFinish(o.material)) o.material.dispose();
+    });
+    this.group.clear();
     for (const m of this.masks) m.dispose();
   }
 }

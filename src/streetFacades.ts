@@ -81,7 +81,7 @@ export class StreetFacades {
   private remove(w: Wall) {
     if (!w.mesh) return;
     this.plates?.remove(w.mesh);
-    mask(w, false); this.scene.remove(w.mesh); w.mesh.geometry.dispose(); w.mesh = undefined; this.live.delete(w);
+    mask(w, false); this.scene.remove(w.mesh); w.mesh.dispose(); w.mesh.geometry.dispose(); w.mesh = undefined; this.live.delete(w);
   }
   update(street: boolean, x: number, y: number, z: number, tier: Tier = 'high', finishesReady = true) {
     const [reach, limit] = budgets[tier], keep = reach + 8;

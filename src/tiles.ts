@@ -519,7 +519,8 @@ export class TileWorld {
     this.passageRooms.delete(tile); room.cancel();
     if (room.mesh) {
       room.mesh.removeFromParent();
-      room.mesh.traverse(o => { if (o instanceof THREE.Mesh) o.geometry.dispose(); });
+      room.mesh.traverse(o => { if (o instanceof THREE.Mesh) { o.dispose(); o.geometry.dispose(); } });
+      room.mesh.clear();
     }
   }
 
@@ -1880,12 +1881,13 @@ export class TileWorld {
     }
     for (const m of drawn.own) {
       this.facades.drop(m);
+      m.dispose();
       m.geometry.dispose();
       if (Array.isArray(m.material)) m.material.forEach((material) => material.dispose());
       else m.material.dispose();
     }
     // What stays with the tile gives up its copy on the graphics card until it's drawn again.
-    for (const m of tile.fixtures) m.geometry.dispose();
+    for (const m of tile.fixtures) { m.dispose(); m.geometry.dispose(); }
     tile.relief?.texture.dispose();
   }
 

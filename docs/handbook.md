@@ -945,7 +945,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   job, about 0.1 s). Its ground, buildings, trees and sky view are made only when the
   tile comes within 100 m of the edge of the view (`dress`, `drawBeyond` in
   `TileWorld`, about half a second of worker time) and taken away again 40 m further
-  out (`undress`), while the tile itself stays loaded. On foot that is about 6 of the
+  out (`undress`), while the tile itself stays loaded. When a mesh retires, both its
+  render object and its geometry are disposed. WebGPU otherwise retains the mesh and
+  vertex arrays in its render-object registry even after releasing the GPU buffers.
+  Shared materials remain available to the next tile. On foot that is about 6 of the
   14 loaded tiles. Zooming out, the tiles are drawn for the height the camera is
   heading for; the developer panel's free camera draws everything loaded.
   `src/tileWorkers.ts` dispatches one job per worker and gives required tile jobs

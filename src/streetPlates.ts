@@ -127,6 +127,7 @@ export class StreetPlates {
     if (prior?.offer === best) return;
     if (prior) {
       prior.mesh.removeFromParent();
+      prior.mesh.dispose();
       prior.mesh.material.map?.dispose(); prior.mesh.material.dispose(); this.visible.delete(key);
     }
     if (!best) return;
