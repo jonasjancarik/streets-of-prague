@@ -143,7 +143,8 @@ in compass degrees (0 north, 90 east), speeds in km/h.
   `near`, `to`), `t.boardTaxi()` gets in, `t.taxiTo(n)` picks the n-th place of its list.
   `t.boardTram(seconds)` waits for a tram to stop near you and gets on it (scenario `takeover-button`).
   `t.takeTram()` takes over the nearest tram. `t.takeTram(minKmh)` selects one
-  already moving at that speed and returns false if none qualifies.
+  already moving at that speed on a clear stretch of loaded track and returns false
+  if none qualifies. `t.tramRunClear()` checks the track ahead of the tram you drive.
 - `t.navLine()` returns the polyline shown on the minimap, its cumulative
   distances and the player's progress along it. It returns null without a route.
   `t.probe()` also gives `traffic` and `people` (how many are about) and `place` (the

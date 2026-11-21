@@ -37,7 +37,7 @@ import type { Pedestrian } from './people.ts';
 import { GetIn } from './getin.ts';
 import { Arrest } from './arrest.ts';
 import { BUILT_UP_BUSY, loadFootfall } from './footfall.ts';
-import { Trams, loadTrams, pushOutOfTram } from './trams.ts';
+import { Trams, frontOf, loadTrams, pushOutOfTram } from './trams.ts';
 import { TramRide, FAST } from './ride.ts';
 import { TrackNet } from './tracks.ts';
 import { Passengers } from './passengers.ts';
@@ -3495,7 +3495,14 @@ async function main() {
     streets: drive, countryside: () => !!world.country?.box, place: () => $('district').textContent || null, taxi,
     builtMap: (x, y) => !pastMap(x, y) && world.available.has(world.keyAt(x, y)),
     grid, boats, ferries, pid, inspector, wallet, police, health, clock, fires, brigade, ambulances, refuse, hurtNearest, switchBeacon, traffic, crowd, rng: seeded, bags,
-    missions, satnav, standing: repute, cannon: (on) => { cannonHeld = on; }, tram: { ride, list: () => trams.list },
+    missions, satnav, standing: repute, cannon: (on) => { cannonHeld = on; }, tram: { ride, list: () => trams.list, clearRun: (vehicle) => {
+      const mid = vehicle.parts[1];
+      if (!world.tileAt(mid.x, mid.y)?.drawn) return false;
+      const waiting = vehicle.waitFor;
+      const gap = trams.gapToTram(vehicle, frontOf(vehicle), 8 + 2 * vehicle.speed);
+      vehicle.waitFor = waiting;
+      return gap === Infinity;
+    } },
     shoot: (h) => (canShoot() ? shoot(h) : null),
     carsNear: (x, y, r) => [...carsNear(x, y, r)],
     recovering: () => wastedT > 0,

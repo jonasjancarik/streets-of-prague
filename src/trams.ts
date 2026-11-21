@@ -399,7 +399,7 @@ export class Trams {
   // Bring each line's number of trams towards its timetable, one tram per line at a
   // time: a new one in the middle of the widest gap, and the one whose leaving opens
   // the smallest gap taken out, both only where nobody's looking.
-  manage(seen: (x: number, y: number) => boolean, x: number, y: number) {
+  manage(seen: (x: number, y: number) => boolean, x = Infinity, y = Infinity) {
     // A tram someone left standing goes once nobody's looking at it.
     for (const v of [...this.list]) {
       const p = v.parts[1];

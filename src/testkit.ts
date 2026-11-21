@@ -1,3 +1,4 @@
+import type { TramVehicle } from './trams.ts';
 import { lookAround, type Eyes } from './streetView.ts';
 import { Car, COURIER_BOXES } from './car.ts';
 import { courierLook } from './figures.ts';
@@ -131,7 +132,8 @@ interface Game {
   // Trams: the ride you're on (ride.ts) and every tram running.
   tram: {
     ride: { on: boolean; driving: boolean; v: { speed: number } | null; atName: string | null; next: { stop: { name: string }; dist: number } | null; passengers: { doors: boolean; on: number; off: number } | null; board: (v: never) => void; steal: () => boolean; rolling: { v: { speed: number } }[]; doors: () => void };
-    list: () => { parts: { x: number; y: number }[]; speed: number; look?: unknown; line: { ref: string } }[];
+    list: () => TramVehicle[];
+    clearRun: (tram: TramVehicle) => boolean;
   };
 }
 
@@ -566,7 +568,9 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     // Onto the nearest tram and into its cab, as F does once you ride one.
     takeTram(minKmh = 0) {
       const m = g.me(), ride = g.tram.ride;
-      const v = g.tram.list().filter(v => minKmh <= 0 || v.speed * 3.6 >= minKmh).sort((a, b) => Math.hypot(a.parts[1].x - m.x, a.parts[1].y - m.y) - Math.hypot(b.parts[1].x - m.x, b.parts[1].y - m.y))[0];
+      const ordered = g.tram.list().filter(v => minKmh <= 0 || v.speed * 3.6 >= minKmh)
+        .sort((a, b) => Math.hypot(a.parts[1].x - m.x, a.parts[1].y - m.y) - Math.hypot(b.parts[1].x - m.x, b.parts[1].y - m.y));
+      const v = minKmh > 0 ? ordered.find(g.tram.clearRun) : ordered[0];
       if (!v && minKmh > 0) return false;
       if (!v) throw new Error('No tram running near here');
       if (g.mode() !== 'foot') g.enterOrExit();
@@ -580,6 +584,8 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       return r.driving && r.v ? { speed: round(r.v.speed * 3.6), at: r.atName, next: r.next ? { name: r.next.stop.name, dist: Math.round(r.next.dist) } : null, doors: !!r.passengers?.doors, on: r.passengers?.on ?? 0, off: r.passengers?.off ?? 0 } : null;
     },
     tramDoors() { g.tram.ride.doors(); },
+    // Room to observe a coasting tram after the driver steps out.
+    tramRunClear() { const v = g.tram.ride.v; return !!v && g.tram.clearRun(v as TramVehicle); },
     // The tram you stepped out of while it moved: its speed (km/h), until it stands.
     rolling() { return { speed: round(Math.max(0, ...g.tram.ride.rolling.map((d) => d.v.speed)) * 3.6), n: g.tram.ride.rolling.length }; },
     // How many trams each line has out, across the city.

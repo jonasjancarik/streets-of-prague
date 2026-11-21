@@ -13,7 +13,12 @@ export default {
     let aboard = t.takeTram(22);
     for (let i = 0; !aboard && i < 30; i++) { await t.wait(1); aboard = t.takeTram(22); }
     if (!t.check('a moving tram is available', aboard)) return;
+    // Bring the camera and its tiles to the tram. Pick a clear stretch of the
+    // driven route as well: an abandoned tram should stop for another tram.
     await t.wait(.15, { move: 1 });
+    await t.frames(40);
+    for (let i = 0; i < 100 && (!t.tramRunClear() || (t.tram()?.speed ?? 0) < 22); i++) await t.wait(.25, { move: 1 });
+    if (!t.check('clear track for the coasting test', t.tramRunClear())) return;
     const before = t.tram()?.speed ?? 0;
     const health = t.probe().health;
     t.check('the tram is moving fast enough to hurt on exit', before > 14.4, before);
