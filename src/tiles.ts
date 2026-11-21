@@ -1,6 +1,7 @@
 import { bridgeWalk, withBridgeWalk } from './map/bridgeWalk.ts';
 import { footSurfaces, type Footing } from './map/footing.ts';
 import { liningMesh, passageView } from './passageMaterial.ts';
+import { reachPassages, type OpenPassage } from './map/passageOpenings.ts';
 import { StreetFacades } from './streetFacades.ts';
 import { roofLookup, ROOFTOP } from './roofSurface.ts';
 import { dataUrl } from './data.ts';
@@ -97,6 +98,8 @@ interface Tile {
   roofSurfaces?: ((x: number, y: number) => number)[];
   footing?: ReturnType<typeof footSurfaces>;
   groundTriangles?: { ground: number; walls: number };
+  // Where its buildings' walls cross the passages (BuildingArrays.facades), once drawn.
+  facades?: Float32Array;
   // The walls, fences and wires: made with the tile (cars knock the fences and poles
   // down wherever they are) and put in the scene with the rest.
   fixtures: THREE.Mesh[];
@@ -478,6 +481,18 @@ function patios(t: TileJSON): Polygons {
   return out;
 }
 
+// The passages a tile's buildings open for and line, carried on to the façades
+// (map/passageOpenings.ts), worked out once per tile.
+const openings = new WeakMap<TileJSON, OpenPassage[]>();
+function tileOpenings(t: TileJSON) {
+  let out = openings.get(t);
+  if (!out) {
+    out = t.passages?.length ? reachPassages(t.passages, t.buildings.filter((b) => !(b.minh >= RAISED) && b.h >= 3.25), t.box) : [];
+    openings.set(t, out);
+  }
+  return out;
+}
+
 function inPassage(passages: TilePassage[], x: number, y: number, pad = 0) {
   for (const p of passages) {
     const r = p.w / 2 + pad;
@@ -524,6 +539,17 @@ export class TileWorld {
     }
   }
 
+  // The façades crossing passages in a tile and round it (a house and the passage
+  // through it may be in different tiles).
+  private facadesNear(tile: Tile) {
+    const out: number[] = [];
+    for (let i = tile.i - 1; i <= tile.i + 1; i++) for (let j = tile.j - 1; j <= tile.j + 1; j++) {
+      const f = this.byIndex.get(i * 65536 + j)?.facades;
+      if (f) for (const v of f) out.push(v);
+    }
+    return Float32Array.from(out);
+  }
+
   // Only the nearest passage tiles need their interior. Required map jobs keep
   // priority, and a late worker reply cannot bring back a room left behind.
   passageCamera(street: boolean, x: number, y: number) {
@@ -546,8 +572,8 @@ export class TileWorld {
     passageView(want.size > 0);
     for (const tile of want) if (!this.passageRooms.has(tile)) {
       const job = this.workers.submit('passage', () => ({
-        paths: tile.passages, houses: tile.source.t.buildings.filter(b => !(b.minh >= RAISED) && b.h >= 3.25),
-        landmarks: tile.source.hide, box: tile.box, ground: tile.source.ground,
+        paths: tileOpenings(tile.source.t), houses: tile.source.t.buildings.filter(b => !(b.minh >= RAISED) && b.h >= 3.25),
+        landmarks: tile.source.hide, box: tile.box, ground: tile.source.ground, facades: this.facadesNear(tile),
       }), [], 'optional');
       const room: PassageRoom = { cancel: job.cancel };
       this.passageRooms.set(tile, room);
@@ -1733,8 +1759,8 @@ export class TileWorld {
           stairs: groundStairs(t.walk).map(({ pts, width }) => ({ pts, width })) },
         paint: TILE_LOOK.roadPaint, rasterRoads: !this.ortho && !!s.ground && roadRasterEnabled(), box: s.bounds, edges: s.clipped, buildings: s.standing, parkingZones: s.parkingZones, ground: s.ground, levels: s.levels,
       }),
-      buffer ? w.run('ipr', { buffer, box: t.box, absolute: this.index.iprRef != null, passages: t.passages, ground: s.ground, bbox: this.index.bbox_wgs84, hide: s.hide, clutter: ROOF_CLUTTER.value > 0.5, footprints: s.footprints }, [buffer]) : null,
-      !s.withIpr || s.extrude.length ? w.run('roofs', { buildings: s.extrude, size: s.size, origin: s.origin, ground: s.ground, bbox: this.index.bbox_wgs84, water: t.areas?.water ?? [], passages: t.passages, stops: stopLines(t) }) : null,
+      buffer ? w.run('ipr', { buffer, box: t.box, absolute: this.index.iprRef != null, passages: tileOpenings(t), ground: s.ground, bbox: this.index.bbox_wgs84, hide: s.hide, clutter: ROOF_CLUTTER.value > 0.5, footprints: s.footprints }, [buffer]) : null,
+      !s.withIpr || s.extrude.length ? w.run('roofs', { buildings: s.extrude, size: s.size, origin: s.origin, ground: s.ground, bbox: this.index.bbox_wgs84, water: t.areas?.water ?? [], passages: tileOpenings(t), stops: stopLines(t) }) : null,
     ]);
   }
 
@@ -1782,6 +1808,15 @@ export class TileWorld {
     lap('workers');
     if (groundMs !== undefined) ms.ground = Math.round(groundMs);
     tile.groundTriangles = triangles;
+    const crossings = [iprArrays?.facades, roofArrays?.facades].filter((f): f is Float32Array => !!f?.length);
+    tile.facades = crossings.length > 1 ? Float32Array.from([...crossings[0], ...crossings[1]]) : crossings[0];
+    if (iprArrays) delete iprArrays.facades;
+    if (roofArrays) delete roofArrays.facades;
+    // Linings drawn round here before these façades were known are drawn again.
+    if (tile.facades) {
+      for (const [other] of this.passageRooms) if (Math.abs(other.i - tile.i) <= 1 && Math.abs(other.j - tile.j) <= 1) this.dropPassage(other);
+      this.lastPassage.z = -2;
+    }
     // How much sky the ground and the walls see: the ground's texture, and a value for each wall vertex.
     const arraysOf = [iprArrays, roofArrays].filter((arrays): arrays is BuildingArrays => arrays !== null);
     const skyBox = [x0, y0, x0 + Math.ceil(Math.max(x1 - x0, y1 - y0) / SKY_STEP) * SKY_STEP, y0 + Math.ceil(Math.max(x1 - x0, y1 - y0) / SKY_STEP) * SKY_STEP];

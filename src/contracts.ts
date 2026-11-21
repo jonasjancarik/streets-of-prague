@@ -129,6 +129,9 @@ export interface BuildingArrays {
   parts?: { extras: number; clutter: number };
   // IPR's buildings: the tops of the chimneys that smoke in the cold (x, height, z each).
   chimneys?: Float32Array;
+  // Where the walls cross the passages through them (x, y and the wall's normal in plan
+  // for each, map/passageOpenings.ts), for the passages' linings to end there.
+  facades?: Float32Array;
 }
 
 export interface TreeTrunk { x: number; y: number; radius: number }
@@ -145,7 +148,7 @@ export interface LandResult {
 }
 
 export interface WorkerJobs {
-  passage: { paths: TilePassage[]; houses: { rings: Point2[][] }[]; landmarks: Point2[][][]; box: Bounds; ground: HeightGrid | null };
+  passage: { paths: TilePassage[]; houses: { rings: Point2[][] }[]; landmarks: Point2[][][]; box: Bounds; ground: HeightGrid | null; facades?: Float32Array };
   streetFacade: Pick<BuildingArrays, 'position' | 'color' | 'facade'> & { sky: Float32Array };
   // water: the tile's water polygons, so what stands on them is built as a boat (map/buildings.ts).
   roofs: { buildings: TileBuilding[]; size: Point2; origin: Point2; ground: HeightGrid | null; bbox: Bounds; water: Point2[][][]; passages?: TilePassage[]; stops?: StopLine[] };

@@ -445,8 +445,8 @@ worker.onmessage = async (event: MessageEvent<unknown>) => {
   try {
     switch (event.data.type) {
       case 'passage': {
-        const { paths, houses, box, ground, landmarks } = event.data.data;
-        const result = passageLining(paths, houses, box, groundAt(ground), landmarks);
+        const { paths, houses, box, ground, landmarks, facades } = event.data.data;
+        const result = passageLining(paths, houses, box, groundAt(ground), landmarks, facades);
         worker.postMessage({id, result} satisfies WorkerResponse, result ? Object.values(result).map(a => a.buffer) : []);
         break;
       }

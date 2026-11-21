@@ -267,10 +267,29 @@ high frequencies soften and your footsteps pick up two short wall reflections.
 Nearby walkers put away their umbrellas under cover. On foot in first person,
 people step aside as you approach or wait in a narrow doorway until you clear it.
 Where passages meet, the corridor walls stop at the junction. The ceiling and floor
-follow the terrain and end at the building footprint. The fixtures, finishes and
+follow the terrain and end at the building's wall. The fixtures, finishes and
 display cases are inferred scenery. Nearby interiors are built by an optional
-tile-worker job and released on returning overhead. See
-`scenarios/covered-passage.ts` and `scripts/check-passage-openings.mjs`.
+tile-worker job and released on returning overhead.
+
+Streets mapped through a building (`tunnel=building_passage`, a průjezd) get an
+arched opening and a vault over plastered walls on a stone plinth, with a stone
+surround at each end and a lantern under the crown. Drive or walk under the two
+arches at the end of Smetanovo nábřeží by Křižovnické náměstí, or through the
+gateway from Letenská into Josefská. A pavement mapped beside the road under the
+same arch widens that arch, but the vault stays inside the houses the road runs
+through, so it doesn't spill onto a neighbour's pavement where OSM's outlines overlap
+the street. Two roads either side of a pillar stay two arches.
+Tram tracks alone don't open a building, because where they really pass through
+one a road is mapped with them. The vault's shape and the finishes are inferred.
+
+A mapped passage often stops short of the façade, and a tile's copy of it stops at
+the tile's edge. Its loose ends are carried on until they leave the building (up to
+8 m, or 25 m from a tile's edge), so both ends open. Cutting the opening also
+records where IPR's walls cross the passage, and the lining ends there rather than
+at OSM's outline, which can be metres out where upper floors overhang the street
+(`src/map/passageOpenings.ts`, `src/map/passageLining.ts`). See
+`scenarios/covered-passage.ts`, `scenarios/josefska-gateway.ts` and
+`scripts/check-passage-openings.mjs`.
 
 Look down on Seminářská to see the cast lids and storm drains at their survey
 positions. Nearby manholes have worn raised patterns and lifting slots, drain

@@ -11,7 +11,8 @@ neutral.needsUpdate = true;
 export const passageAtlas: { value: THREE.Texture } = { value: neutral };
 // The stone surrounds stand on the street side of the opening and take the
 // same sun and shadow as the façade. The lighting inside comes from its fittings.
-const surround = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+// A little of the passage's own light on them, so they don't go black at night.
+const surround = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, emissive: new THREE.Color(.022, .019, .015) });
 const lining = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, map: neutral });
 lining.visible = false;
 lining.customProgramCacheKey = () => 'passage-lining';
