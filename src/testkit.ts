@@ -769,7 +769,10 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     // Drives your car along a line of [lat, lon] points at about this speed, steering as
     // the touch stick does. Says whether it got to the end, how long it took, the biggest
     // change in the ground's height under the car from one sixth of a second to the next
-    // (`jump`, metres) and how far it strayed from the line (`strayed`, metres).
+    // (`jump`, metres) and how far it strayed from the line (`strayed`, metres). `kink`
+    // is how the car rides: the sharpest change in the height of the surface it drives on
+    // (its own level, the deck on a bridge) over three samples a sixth of a second apart
+    // (metres; a steady climb is 0), and `kinkAt` where it was, [lat, lon].
     async follow(line: Point2[], kmh = 40) {
       const c = g.car();
       if (!c) throw new Error('Not in a car');
@@ -779,6 +782,8 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       const was = kit.paused;
       kit.paused = true;
       let next = 1, jump = 0, strayed = 0, seconds = 0, last = g.ground(c.x, c.y);
+      let kink = 0, kinkAt: Point2 | null = null;
+      const rode: { z: number; x: number; y: number }[] = [];
       try {
         for (const limit = (length / (kmh / 3.6)) * 3 + 20; next < pts.length && seconds < limit; seconds += 1 / 6) {
           // The point to steer for: the first one still more than a few car lengths ahead.
@@ -789,6 +794,11 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
           const now = g.ground(c.x, c.y);
           jump = Math.max(jump, Math.abs(now - last));
           last = now;
+          rode.push({ z: c.gz ?? now, x: c.x, y: c.y });
+          if (rode.length >= 3) {
+            const [a, b, d] = rode.slice(-3), k = Math.abs(d.z - 2 * b.z + a.z);
+            if (k > kink) { kink = k; const [lon, lat] = g.toLonLat(b.x, b.y); kinkAt = [round(lat, 5), round(lon, 5)]; }
+          }
           let off = Infinity;
           for (let i = Math.max(0, next - 3); i < Math.min(pts.length - 1, next + 1); i++) off = Math.min(off, segDist(c.x, c.y, pts[i], pts[i + 1]));
           strayed = Math.max(strayed, off);
@@ -799,7 +809,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       } finally {
         kit.paused = was;
       }
-      return { arrived: next >= pts.length, seconds: round(seconds), jump: round(jump, 2), strayed: round(strayed) };
+      return { arrived: next >= pts.length, seconds: round(seconds), jump: round(jump, 2), strayed: round(strayed), kink: round(kink, 2), kinkAt };
     },
 
     // Your car (or c) going at this speed along the heading.

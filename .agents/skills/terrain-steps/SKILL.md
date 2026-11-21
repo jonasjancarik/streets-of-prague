@@ -46,6 +46,18 @@ worktree with its own copies of the data (APFS clones: `public/data/praha_now`,
    To try a rule while a `praha` build runs, copy `pipeline/*.py` and its JSON files to a
    scratch folder with `.cache` and `.venv` linked in, and the two scripts beside it as
    `.agents/skills/terrain-steps/`: `window.py` finds the pipeline next to itself.
+
+   **Drive it in the game** without a city build: the scene runner's `--map` takes the
+   window's map folder, and its browser gets those files from there and the rest of the
+   map from the dev server. A window and a scenario's drive take a couple of minutes:
+
+       uv run python ../.agents/skills/terrain-steps/window.py praha 50.07395 14.28882 --survey-scan --data /tmp/w
+       node scripts/scene.mjs run repy-bridge-ride --fresh --map /tmp/w
+
+   (`--fresh`, or a `serve --map /tmp/w` of its own: a running server keeps the map it
+   was started with.) Only the window's middle counts. `t.follow`'s `kink` is the
+   drive's measure of a step or a dip. Don't put a copy of the map under `public/`:
+   51,000 new files there stalled the shared dev server for many minutes.
 2. **Then `praha`**: 17–35 minutes. Don't edit anything in `pipeline/` while it
    runs: the build checks its own code at the end and refuses its output if a file
    changed. Write the next change somewhere else meanwhile.
@@ -351,6 +363,35 @@ steeper than VALLEY anywhere, which took steps over 1 m from 71 to 38.
   road's walls up to the deck again, as half circles through it: a wall's top comes from
   the ground beside it. Measure the joins (`check-bridge-decks.mjs --against`) and look
   at Řepy (50.07395, 14.28882, from the west) after any change to it.
+- A pad reaches out to where the ground comes within `STEP` (1 m) of the street, not
+  only past the steepest rise (`abutment`). The D0's north-east end at Řepy comes off
+  its bridge 6 m over a slope that reaches it 9 m on; the steepest 2 m were the first,
+  the pad stopped there, and the carriageway dipped 3 m into the slope just past the
+  deck. Screenshots hid it; driving over the bridge showed it at once: the scenario
+  `repy-bridge-ride` follows each carriageway at 80 km/h and checks `kink`, the
+  sharpest change of grade under the car.
+- A dual carriageway's two bridges each get their own pad at an end, and the ground
+  between the pads kept its own height: in front of the D0's twin decks at Řepy it lay
+  4 m under them, a pit with the pads' walls round it. Pads within `TWIN_GAP` (8 m) of
+  each other, within `TWIN_LEVEL` (0.25 m) in height and running alongside are now one
+  terrace at their mean height over the convex hull of the pads (`twin_pads` in
+  `structures.py`): under the decks no more than `TWIN_UNDER` (2 m) past the shortest
+  lip, not on streets passing under nor on each pad's own carriageway beyond its outer
+  end, and only where the ground between them lies `TWIN_PIT` (1 m) or more under them
+  somewhere. `window.py --set TWIN_GAP=-1` builds without it. What the other versions
+  did (Jižní spojka at 50.0377, 14.4581, Patočkova at 50.0876, 14.3806, Palackého most):
+  - the hull reaching as far as the longest lip stood 5 m over the valley under Jižní
+    spojka's decks, which begin along a skewed abutment; without the lips at all, a
+    point under the deck's edge at Řepy stayed down and broke the wall round it into
+    see-through shards;
+  - past the shorter pad the join lay on that carriageway, a 0.35 m step across it;
+    cutting every carriageway out of the join instead left slivers and holes in the
+    terrace's outline (a 0.96 m bump);
+  - at 0.5 m the mean took a slip road at Patočkova 0.24 m off its deck; each pad
+    keeping its own height, with the half of the ground nearer to it, left a seam of low
+    walls down the median at Řepy, see-through in places;
+  - joining where there was no pit only moved small pads a few centimetres, and
+    Hořejší nábřeží at Palackého most leant 12 → 15 %.
 - A street crossing over a tunnel isn't in it: Modřanská's points over a footway's
   tunnel at Zlíchov took the footway's floor (`_crossing` in `dtm_heights.py`). Rašínovo nábřeží by Palackého
   most and Komořanská by most Závodu míru were the two-level survey under a bridge (see

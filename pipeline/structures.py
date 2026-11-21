@@ -838,8 +838,17 @@ def abutment(ground, at, ahead, here):
         return here, 0.0
     # (The terrain's ramp may run on past the step: the street's height is the highest
     # out to half as far again.)
-    more = np.asarray(at)[None, :] + d[None, :] * np.linspace(ABUTMENT, 1.5 * ABUTMENT, 5)[:, None]
-    return float(np.nanmax(np.r_[hs, ground(more[:, 0], more[:, 1])])), float(far[int(np.argmax(rise)) + 2])
+    beyond = np.linspace(ABUTMENT, 1.5 * ABUTMENT, 5)
+    more = np.asarray(at)[None, :] + d[None, :] * beyond[:, None]
+    profile = np.r_[hs, ground(more[:, 0], more[:, 1])]
+    height = float(np.nanmax(profile))
+    # Out to where the ground comes within STEP of it, not just past the steepest rise:
+    # the D0's north-east end at Řepy comes off its bridge 6 m over a slope that reaches
+    # its height 9 m on, and the steepest 2 m were the first, so the street dipped 3 m
+    # into the slope 3 to 7 m past the deck's end.
+    up = np.nonzero(profile >= height - STEP)[0]
+    reach = float(np.r_[far, beyond][up[0]]) if len(up) else 1.5 * ABUTMENT
+    return height, max(float(far[int(np.argmax(rise)) + 2]), reach)
 
 
 def ipr_ends(w, decks, ground, at_ends, streets=None):
@@ -1217,6 +1226,13 @@ PORTAL = 12.0  # m a tunnel reaches out of its portal, at the portal's height
 PAD_INTO = 2.0  # m under a bridge's first metres that the street's pad before it reaches (see pads)
 PAD_CLEAR = 4.0  # m that reach keeps off the other streets' kerbs: a lattice cell
 PAD_UNDER = 2.5  # m below a bridge's end that a street passes under it (see pads)
+# Two carriageways' pads at one end of a bridge this close and about this level take
+# the ground between them in too, at their mean height (see twin_pads). At 0.5 m a slip
+# road beside Patočkova came off its bridge 0.24 m low; at Řepy they are 0.05 m apart.
+TWIN_GAP, TWIN_LEVEL, TWIN_PARALLEL = 8.0, 0.25, 0.9
+TWIN_PIT = 1.0  # m the ground between them lies under them at the deepest, for them to join
+TWIN_UNDER = 2.0  # m the join reaches under the decks past the shortest of their lips
+FAR = 1000.0  # m: as good as a half-plane (twin_pads)
 
 
 def pads(ways, streets=(), clear=None, ground=None):
@@ -1284,7 +1300,99 @@ def pads(ways, streets=(), clear=None, ground=None):
                     pad = pad.difference(clear_of(through))
         parts = [p for p in (pad, lip) if p is not None and not p.is_empty]
         if parts:
-            out.append((unary_union(parts), height))
+            tip = (b[0] - ux * into, b[1] - uy * into)  # the lip's end under the deck
+            out.append((unary_union(parts), height, (ux, uy), pad if pad is not None and not pad.is_empty else None, on, tip))
+    keep_off = None
+    if tree is not None:
+        keep_off = lambda area, height: unary_union([  # noqa: E731
+            streets[k][0].buffer(streets[k][1] + clear) for k in tree.query(area.buffer(clear))
+            if not any(abs(h - height) < 1.0 for h in runs_on.get(k, ()))])
+    # The carriageways running on from the ends, as wide as they are (not `clear` beyond)
+    runs = None if tree is None else lambda area, height: unary_union([  # noqa: E731
+        streets[k][0].buffer(streets[k][1]) for k in tree.query(area)
+        if any(abs(h - height) < 1.0 for h in runs_on.get(k, ()))])
+    return twin_pads(out, keep_off, runs, ground)
+
+
+def pit(area, height, ground, step=2.0):
+    """Whether the ground in `area` lies TWIN_PIT or more under `height` anywhere, on a
+    `step` m grid (or at a point inside it, if it's too small for one)."""
+    if area.is_empty:
+        return False
+    x0, y0, x1, y1 = area.bounds
+    xs, ys = np.meshgrid(np.arange(x0, x1, step) + step / 2, np.arange(y0, y1, step) + step / 2)
+    xs, ys = xs.ravel(), ys.ravel()
+    inside = shapely.contains_xy(area, xs, ys)
+    xs, ys = (xs[inside], ys[inside]) if inside.any() else ([area.representative_point().x], [area.representative_point().y])
+    h = np.asarray(ground(list(xs), list(ys)), float)
+    return bool(np.any(height - h[np.isfinite(h)] >= TWIN_PIT))
+
+
+def twin_pads(pads, keep_off=None, runs=None, ground=None):
+    """[(polygon, height)] from pads() [(polygon, height, direction out of the bridge, part
+    on the ground, where that part ends, where its lip under the deck ends)], with the
+    pads of two carriageways at one end of a bridge joined over the ground between them,
+    at their mean height: pads within TWIN_GAP of each other, within TWIN_LEVEL in height
+    and running alongside. Between them the ground kept its own height, and in front of
+    the D0's twin bridges at Řepy it sank into a pit with the pads' walls round it. Each
+    pad keeping its own height and taking the half nearer to it left a seam of walls a
+    few centimetres high down the middle, see-through in places.
+    Under the decks no further than TWIN_UNDER past the shortest lip: along a skewed
+    abutment (Jižní spojka at 50.0377, 14.4581) the space between the lips is under the
+    decks, and the join stood 5 m over the valley below. Without the lips at all, a
+    lattice point under the deck's edge at Řepy stayed down between them, and the wall
+    round it broke into see-through shards. Not on a pad's own carriageway (`runs(area,
+    height)`, the streets running on from the ends) beyond its outer end, where it lay
+    over the shorter pad's carriageway, a 0.35 m step across it. Nor over the streets
+    `keep_off(area, height)` gives, those passing under the end. And only where the
+    ground between them, by `ground(xs, ys)`, lies TWIN_PIT or more under them somewhere:
+    elsewhere joining only moved small pads a few centimetres and tilted the street
+    beside them (Hořejší nábřeží at Palackého most leant 12 → 15 %)."""
+    joined = list(range(len(pads)))  # each pad's group, by its lowest member
+    find = lambda k: k if joined[k] == k else find(joined[k])  # noqa: E731
+    tree = STRtree([p[0] for p in pads]) if pads else None
+    for i, (a, ha, ua, *_) in enumerate(pads):
+        for j in tree.query(a.buffer(TWIN_GAP)):
+            b, hb, ub, *_ = pads[j]
+            if j <= i or abs(ha - hb) > TWIN_LEVEL or abs(ua[0] * ub[0] + ua[1] * ub[1]) < TWIN_PARALLEL:
+                continue
+            if a.distance(b) <= TWIN_GAP:
+                joined[max(find(i), find(j))] = min(find(i), find(j))
+    groups = defaultdict(list)
+    for k in range(len(pads)):
+        groups[find(k)].append(k)
+    out = []
+    for members in groups.values():
+        polys, heights = [pads[k][0] for k in members], [pads[k][1] for k in members]
+        if len(members) == 1:
+            out.append((polys[0], heights[0]))
+            continue
+        height = float(np.mean(heights))
+        grounds = [k for k in members if pads[k][3] is not None]
+        if len(grounds) < 2:
+            out.extend(zip(polys, heights))
+            continue
+        between = unary_union(polys).convex_hull
+        for k in members:  # no further under the decks than the shortest lip, and TWIN_UNDER on
+            (ux, uy), (tx, ty) = pads[k][2], pads[k][5]
+            tx, ty = tx - ux * TWIN_UNDER, ty - uy * TWIN_UNDER
+            between = between.intersection(Polygon([
+                (tx - uy * FAR, ty + ux * FAR), (tx + uy * FAR, ty - ux * FAR),
+                (tx + uy * FAR + ux * FAR, ty - ux * FAR + uy * FAR), (tx - uy * FAR + ux * FAR, ty + ux * FAR + uy * FAR)]))
+        for k in grounds if runs is not None else ():
+            # The carriageway through the pad's outer end, on the side away from the bridge
+            (ux, uy), (ox, oy) = pads[k][2], pads[k][4]
+            road = runs(shapely.points(ox, oy).buffer(1.0), height)
+            if not road.is_empty:
+                between = between.difference(road.intersection(Polygon([
+                    (ox - uy * FAR, oy + ux * FAR), (ox + uy * FAR, oy - ux * FAR),
+                    (ox + uy * FAR + ux * FAR, oy - ux * FAR + uy * FAR), (ox - uy * FAR + ux * FAR, oy + ux * FAR + uy * FAR)])))
+        if keep_off is not None:
+            between = between.difference(keep_off(between, height))
+        if ground is not None and not pit(between.difference(unary_union(polys)), height, ground):
+            out.extend(zip(polys, heights))
+            continue
+        out.append((unary_union([*polys, between]), height))
     return out
 
 

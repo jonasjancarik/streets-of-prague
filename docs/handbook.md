@@ -1946,6 +1946,13 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   up to the bridge's outline (without that, its last metres before a bridge over a
   cutting kept the cutting's heights and sagged).
   `ipr_terrain.py --no-level` builds without it, to compare.
+  The street's last metres before a bridge are flat at the bridge's height out to where
+  the ground comes within a metre of it (`abutment` in `pipeline/structures.py`).
+  Where a dual carriageway's two bridges end side by side, the flat ground before them
+  (`pads` in `pipeline/structures.py`) also takes in the strip between the carriageways,
+  at their mean height, where it lies a metre or more lower and not under the decks
+  (`twin_pads`): in front of the D0's bridges at Řepy that strip had sunk into a pit
+  with walls round it.
   The [Italská profile pilot](road-profile-pilot.md) tries a separate, survey-fitted
   road surface with `?roadprofiles` and a generated file for the current map build.
   A short underpass that IPR's terrain model shows as an open cutting (it leaves the

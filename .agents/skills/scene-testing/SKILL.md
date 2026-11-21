@@ -125,8 +125,11 @@ in compass degrees (0 north, 90 east), speeds in km/h.
 - `t.route(from, to)`: the shortest way by car through the streets loaded now (those
   within some 700 m of you): `{ length, line }`, the line as `[lat, lon]` points, or null
   where the streets don't join up. `t.follow(line, kmh)` drives your car along such a
-  line and reports `{ arrived, seconds, jump, strayed }` (`jump`: the biggest change in
-  the ground's height from one sixth of a second to the next). `t.countryside()`:
+  line and reports `{ arrived, seconds, jump, strayed, kink, kinkAt }` (`jump`: the
+  biggest change in the ground's height from one sixth of a second to the next; `kink`:
+  how the car rides, the sharpest change of grade in the surface it drives on, its own
+  level, over three samples a sixth of a second apart, in metres, and `kinkAt` where).
+  `repy-bridge-ride` drives the D0 over its Řepy bridges with it. `t.countryside()`:
   whether the game was opened with `?countryside` (`--extra "&countryside"`); the
   scenarios `countryside-edge`, `-traffic`, `-taxi` and `-police` need it and skip
   themselves without.

@@ -12,7 +12,9 @@
 // $TMPDIR/scene)] [--place staromak] [--time 14:00] [--weather clear] [--graphics high]
 // [--date 10-20 (or spring, summer, autumn, winter; today's date otherwise)]
 // [--extra "&area=centrum" (more of the game's URL parameters)] [--size 1920x1080 (the
-// window; t.film saves footage frame by frame at that size)] [--jpeg (screenshots as JPEG)].
+// window; t.film saves footage frame by frame at that size)] [--jpeg (screenshots as JPEG)]
+// [--map <folder> (the game's files it holds, data/praha_now/… as <folder>/praha_now/…,
+// come from there: a few tiles built on their own)].
 // With a server running (serve), each command takes a second or two instead of the
 // 30–60 s of loading the map; without one, it opens a browser just for the command.
 // --fresh always opens a new browser so URL options apply.
@@ -74,6 +76,14 @@ async function openGame({ show = false } = {}) {
   const [width, height] = String(args.size || '1280x800').split('x').map(Number);
   const ctx = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1 });
   const page = await ctx.newPage();
+  // --map <folder>: a map folder of a few tiles (the terrain-steps skill's window.py
+  // --data) answers for the files it has, the dev server's map for the rest.
+  if (args.map) {
+    const own = new Set(readdirSync(args.map, { recursive: true }).map(String));
+    const file = (url) => decodeURIComponent(new URL(url).pathname).split('/data/')[1];
+    await page.route((url) => own.has(file(url)), (route) => route.fulfill({ path: join(args.map, file(route.request().url())) }));
+    console.error(`Map files from ${args.map}: ${own.size}`);
+  }
   let errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text().slice(0, 500)); });
