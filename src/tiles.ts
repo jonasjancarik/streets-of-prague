@@ -799,6 +799,23 @@ export class TileWorld {
     return !!t && t.roads.some((rings) => inPoly(x, y, rings));
   }
 
+  // The short off-network approach to a picked walking destination, checked
+  // only while planning a route. Test at the actual level, including fences and
+  // the walker's shoulder clearance, so the line never finishes through a wall.
+  walkAccess([ax, ay]: Point2, [bx, by]: Point2, level: number) {
+    const dx = bx - ax, dy = by - ay, distance = Math.hypot(dx, dy);
+    const steps = Math.max(1, Math.ceil(distance / .4));
+    const nx = -.25 * dy / (distance || 1), ny = .25 * dx / (distance || 1);
+    let previous = this.surfaceAt(ax, ay, level);
+    for (let i = 1; i <= steps; i++) {
+      const x = ax + dx * i / steps, y = ay + dy * i / steps, z = this.levelAt(x, y, level);
+      if (!Number.isFinite(z) || Math.abs(z - previous) > .75 || this.cellAt(x, y, level, z) ||
+          this.cellAt(x + nx, y + ny, level, z) || this.cellAt(x - nx, y - ny, level, z) || fences.blocks(x, y, .15, 0)) return false;
+      previous = z;
+    }
+    return true;
+  }
+
   footSurface(x: number, y: number, level = 0): Footing {
     const tile = this.tileAt(x,y);
     if (!tile || level || this.passageAt(x,y)) return 'hard';

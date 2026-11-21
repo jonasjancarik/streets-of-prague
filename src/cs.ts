@@ -123,6 +123,11 @@ export const CS: Record<string, string> = {
   'The game is set in Prague. Pick a spot inside the red line.': 'Hra se odehrává v Praze. Vyberte místo uvnitř červené čáry.',
   'A spot in Prague': 'Místo v Praze',
   // Directions (satnav.ts) and the map of where to drive
+  'Where do you want to walk?': 'Kam chceš dojít?',
+  'Walk here': 'Dojít sem',
+  'Walk toward the marker': 'Jdi směrem ke značce',
+  'You reached the nearest footpath': 'Jsi na nejbližší pěší cestě k cíli',
+  'Take the stairs': 'Po schodech',
   'Where do you want to drive?': 'Kam chceš jet?',
   'Drive here': 'Jet sem',
   'Click or tap a street where you want to go.': 'Klikni nebo ťukni na ulici, kam chceš jet.',

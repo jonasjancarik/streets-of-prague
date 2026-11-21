@@ -1681,7 +1681,7 @@ async function main() {
   const marker = new Marker(scene, camera, $('mark'), (x, y) => ground(x, y));
   // Directions: to a spot picked on the map, or else to the job's (src/satnav.ts).
   const satnav = new Satnav(scene, drive, (x, y, r) => edgesNear(x, y, r), (x, y, level) => world.surfaceAt(x, y, level),
-    new Marker(scene, camera, $('navmark'), (x, y) => ground(x, y), '#6cc4ff'), (text) => showBanner(text));
+    new Marker(scene, camera, $('navmark'), (x, y) => ground(x, y), '#6cc4ff'), (text) => showBanner(text), { graph: walk, near: walkNear, accessible: (a, b, level) => world.walkAccess(a, b, level) });
   assist.prefer = (e) => satnav.next(e);
   const blinkers = new Blinkers(scene); // the indicators before the directions' turns
   // The map of where to drive; the game waits while it's up.
@@ -1690,8 +1690,9 @@ async function main() {
     releaseInput();
     telemetry.did('opened the map');
     const goal = satnav.goal, at = goal ? dev.toLonLat(goal.x, goal.y) : null;
+    const walking = !!streetEyes()?.onFoot;
     const spot = await pickSpot(document.body, {
-      title: t('Where do you want to drive?'), go: t('Drive here'), hint: t('Click or tap a street where you want to go.'),
+      title: t(walking ? 'Where do you want to walk?' : 'Where do you want to drive?'), go: t(walking ? 'Walk here' : 'Drive here'), hint: t('Click or tap a street where you want to go.'),
       current: goal && at ? { lon: at[0], lat: at[1], name: goal.name } : null,
       here: dev.toLonLat(px(), py()), stop: satnav.target ? t('Stop navigating') : null,
     });
@@ -1699,7 +1700,7 @@ async function main() {
     else if (spot) {
       const [x, y] = dev.toLocal(spot.lon, spot.lat);
       satnav.pick({ x, y, name: spot.name });
-      telemetry.did('picked a place to drive to');
+      telemetry.did(walking ? 'picked a place to walk to' : 'picked a place to drive to');
     }
   };
   const mapButton = document.createElement('button');
@@ -3419,7 +3420,7 @@ async function main() {
     const wanted_ = metro.active ? null : missions.target();
     if (wanted_) marker.show(wanted_.x, wanted_.y); else marker.hide();
     marker.update(dt, { x: px(), y: py() });
-    satnav.update(dt, inCar, { x: px(), y: py() }, wanted_);
+    satnav.update(dt, inCar, { x: px(), y: py(), level: walker.level }, wanted_, !!eyes && !!eyes.onFoot && !walker.flight && !walker.onRoof);
     const navCard = metro.active ? '' : satnav.card();
     show('nav', navCard, 'html');
     if (shown.navOn !== (navCard ? 1 : 0)) { shown.navOn = navCard ? 1 : 0; $('nav').hidden = !navCard; }

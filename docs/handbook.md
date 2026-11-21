@@ -326,6 +326,13 @@ the same signal phase as the overhead light.
   sooner, the job's too until its next stop. On foot the card only says where you're
   headed. `node scripts/check-satnav.mjs` checks the routing offline on the real map;
   in the test API, `t.nav()` reads the way shown and `t.navTo(lat, lon)` picks a spot.
+- **Walking directions.** In first person, open the map with N, choose a spot and
+  select **Walk here**. The minimap traces a route along the pedestrian network,
+  including paths, passages and stairs. The directions card shows the next turn.
+  A pin behind a wall leads to the nearest footpath. For a distant destination
+  the route extends as the streets ahead load. Getting
+  into a car switches the same pin to driving directions. Getting out resumes the walk.
+
 - **Indicators** (`src/blinkers.ts`): with directions on, your car's indicators flash
   amber on their own from about 4 s (at least 35 m) before each turn until you're
   through it, to the left for turning round. Glows over the car's corners, as its own

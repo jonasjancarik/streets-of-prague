@@ -507,6 +507,8 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     // loaded, its length and how far along it you are (m), its streets and its turns, and
     // which way your indicators flash (blinkers.ts).
     nav() { return { ...g.satnav.probe(), signal: g.satnav.signal(g.car()?.speed ?? 0) }; },
+    // The polyline currently shown on the minimap, in local map metres.
+    navLine() { return g.satnav.drawn(); },
     // Directions to (lat, lon), as if picked on the map; with nothing, they stop.
     navTo(lat?: number, lon?: number) {
       if (lat === undefined || lon === undefined) { g.satnav.pick(null); return kit.nav(); }

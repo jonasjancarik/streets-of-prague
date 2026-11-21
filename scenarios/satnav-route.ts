@@ -28,15 +28,21 @@ export default {
     t.check('first right into Spálená', way.turns[0]?.kind === 'right' && way.turns[0]?.onto === 'Spálená', way.turns);
     const card = document.getElementById('nav');
     t.check('the card names the turn', !!card && !card.hidden && card.innerText.includes('Spálená'), card?.innerText);
-    await t.wait(6, { move: 1, run: true });
-    await t.frames(3);
-    const on = t.nav();
+    // The full route may first load quite close to Spálená. Observe the approach
+    // while the car moves, so the six-second lane-assist check cannot skip the turn.
+    let near: ReturnType<typeof t.nav> | undefined, on = way;
+    let earlySignal = false;
+    for (let i = 0; i < 120; i++) {
+      const now = t.nav(), gap = now.turns[0]?.at - now.along;
+      if (gap >= 100 && now.signal) earlySignal = true;
+      if (!near && gap > 0 && gap <= 35 && now.signal === 'right') near = now;
+      if (i === 24) on = now;
+      if (i >= 24 && (near || gap <= 0)) break;
+      await t.wait(.25, { move: 1, run: true });
+    }
     t.check('lane assist keeps to the way', on.along > way.along + 40 && on.length === way.length, `${way.along} → ${on.along} m along a ${on.length} m way`);
-    // Coming up to the turn, the right indicator flashes; not long before.
-    t.check('no indicator 100 m before', on.signal === null || on.turns[0].at - on.along < 60, on);
-    let near = t.nav();
-    for (let i = 0; i < 120 && near.turns[0].at - near.along > 25; i++) { await t.wait(0.25, { move: 1, run: true }); near = t.nav(); }
-    t.check('the right indicator before Spálená', near.signal === 'right', `${Math.round(near.turns[0].at - near.along)} m before: ${near.signal}`);
+    t.check('no early indicator on the approach', !earlySignal);
+    t.check('the right indicator before Spálená', !!near, near ? `${near.turns[0].at - near.along} m before` : t.nav());
     await t.shot('satnav-route');
     t.navTo();
     await t.frames(3);
