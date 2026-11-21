@@ -70,7 +70,7 @@ import { TileWorld } from './tiles.ts';
 import { facadeFinishes, loadFacadeFinishes } from './facadeFinishes.ts';
 import { loadFacadeAtlas } from './facades.ts';
 import { groundSamples, groundDepthView, tunnelEarthView } from './surface.ts';
-import { CUTAWAY, DIG, WEATHER_DETAIL } from './shading.ts';
+import { CUTAWAY, DIG, WEATHER_DETAIL, TREE_SWAY } from './shading.ts';
 import { setupDev, watchTransitWhileWaiting } from './dev.ts';
 import { setupSettings } from './settings.ts';
 import { setScreenshot } from './feedback.ts';
@@ -3292,6 +3292,8 @@ async function main() {
     weatherFx.tint.value.copy(sky.tint);
     weatherFx.fog.value.copy(sky.haze);
     weatherFx.update(weather.now, time.value, camPos.x, -camPos.z, camGround, height, viewRadius(), renderer.getPixelRatio(), mistGround, mistWater, eyes && !underway ? camera.position : undefined, world.terrainRevision + world.joined, rainSurface);
+    // The trees seen from the street sway with the same wind.
+    { const wind = weatherFx.wind, blow = Math.hypot(wind.x, wind.y) || 1; TREE_SWAY.value.set(time.value, 0.3 + 0.7 * weather.now.storm, wind.x / blow, wind.y / blow); }
     updateChimneySmoke(WEATHER_DETAIL.value > 0 ? Math.max(season.cold, weather.now.cover) : 0, time.value, weatherFx.wind, weatherFx.tint.value, renderer.domElement.height);
 
     // ---- HUD -------------------------------------------------------------

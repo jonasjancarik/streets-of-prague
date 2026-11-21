@@ -654,6 +654,9 @@ export const BARE = { value: 0 };
 // The time of year for the trees (season.ts, set by weather.ts): how far the leaves have
 // turned, how much the fruit trees are in flower, and how fresh the new leaves are.
 export const SEASON = { value: new THREE.Vector4(0, 0, 0, 0) };
+// The wind in the trees seen from the street (webgpu/streetTrees.ts): the clock in seconds,
+// how hard it blows (about 0.3 on a calm day, 1 in a storm) and which way (x, z).
+export const TREE_SWAY = { value: new THREE.Vector4(0, 0.3, 1, 0) };
 export const SKY_REF = { value: new THREE.Color(0, 0, 0) };
 // What a car's paint mirrors low down, where a real street has its buildings and trees:
 // in the same light as SKY_REF, darker (sky.ts).

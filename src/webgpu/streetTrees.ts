@@ -8,9 +8,9 @@ import * as THREE from 'three';
 import { MeshLambertNodeMaterial } from 'three/webgpu';
 import {
   Fn, If, Discard, float, vec2, vec3, vec4, attribute, texture, uv, positionGeometry, positionLocal, positionWorld, normalViewGeometry, diffuseColor,
-  floor, fract, dot, mix, smoothstep, step, length, min, clamp, normalize, select, cameraViewMatrix,
+  floor, fract, dot, mix, smoothstep, step, length, min, clamp, normalize, select, cameraViewMatrix, sin,
 } from 'three/tsl';
-import { BARE, SEASON } from '../shading.ts';
+import { BARE, SEASON, TREE_SWAY } from '../shading.ts';
 import { STEM } from '../map/vegetation.ts';
 import { CROWN_FOOT, TREE_FROM, CANOPY, BOUGH } from '../map/streetTree.ts';
 import { setStreetTreeMaterial } from '../trees.ts';
@@ -18,7 +18,7 @@ import { lampLit } from './lamps.ts';
 import { instanceMatrix, shareInstances, outlineAt, crownBase } from './trees.ts';
 import { type N, follow, followVec, uWet, uSnow } from './common.ts';
 
-const uBare = follow(BARE), uSeason = followVec(SEASON);
+const uBare = follow(BARE), uSeason = followVec(SEASON), uSway: N = followVec(TREE_SWAY);
 const part: N = attribute('part', 'vec4'), yearly: N = attribute('yearly', 'float');
 
 // The pictures arrive after the first frames: plain stand-ins keep the bindings' types.
@@ -79,7 +79,16 @@ const shaped = (): N => {
   const p: N = positionGeometry.mul(folded()), wide: N = mix(1, outlineAt(positionGeometry), smoothstep(0.15, 0.5, length(positionGeometry.xz)));
   const tree: N = part.y.greaterThan(-1.5); // (the street tree itself: not a spray laid over a crown, a shrub's or a conifer's bough)
   const y: N = select(part.y.greaterThanEqual(0), mix(stem.negate().sub(STEM.under), fitted(float(CROWN_FOOT)), part.y), select(tree, fitted(p.y), p.y));
-  return vec3(p.x.mul(wide), y, p.z.mul(wide));
+  // The wind: boughs and sprays lean with it and swing back, more the further out from the
+  // trunk they are, in gusts that cross the street from tree to tree; each spray of leaves
+  // also flutters on its own. (The trunk stands still: it is at the middle.)
+  const at: N = instanceMatrix().mul(vec4(0, 0, 0, 1)).xz;
+  const gust: N = uSway.x.mul(0.9).sub(dot(at, uSway.zw).mul(0.11));
+  const swing: N = sin(gust).add(sin(gust.mul(2.3).add(part.z.mul(6.28))).mul(0.5)).add(0.4);
+  const reach: N = min(length(p.xz), 6).mul(tree.select(1, 0.5));
+  const lean: N = swing.mul(reach).mul(uSway.y).mul(0.035);
+  const flutter: N = sin(uSway.x.mul(3.7).add(part.z.mul(53))).mul(uSway.y).mul(0.025).mul(float(1).sub(part.x)).mul(step(0.3, reach));
+  return vec3(p.x.mul(wide).add(uSway.z.mul(lean)), y.add(flutter), p.z.mul(wide).add(uSway.w.mul(lean)));
 };
 
 function material() {
