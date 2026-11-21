@@ -58,7 +58,11 @@ const hedgeNear = detail(hedgeAt, 0.05);
 const hedgeLeaf = vnoise(hedgeAt.mul(31)).mul(0.6).add(vnoise(hedgeAt.mul(vec2(83, 71)).add(9)).mul(0.4)).sub(0.5);
 const hedgeGap = smoothstep(0.6, 0.8, vnoise(hedgeAt.mul(12).add(3)));
 const hedgeClose = float(1).add(hedgeLeaf.mul(1.1).mul(hedgeNear)).mul(float(1).sub(hedgeGap.mul(0.5).mul(hedgeNear)));
-const hedgeColour = vec4(materialColor.rgb.mul(followColor(HEDGE_SEASON)).mul(hedgeShade).mul(hedgeClose), 1);
+// Along a hedge some stretches are denser and darker, some lighter, and the newest growth
+// near the top is a yellower green (at any distance: this is what stops it reading as one flat band).
+const hedgePatch = vnoise(hedgeAt.mul(0.55).add(21)).mul(0.3).add(0.86);
+const hedgeGrowth = mix(vec3(1), vec3(1.16, 1.12, 0.72), smoothstep(0.55, 1, hedgeV).mul(vnoise(hedgeAt.mul(1.7).add(5))).mul(0.7));
+const hedgeColour = vec4(materialColor.rgb.mul(followColor(HEDGE_SEASON)).mul(hedgeShade).mul(hedgeClose).mul(hedgePatch).mul(hedgeGrowth), 1);
 addPort(/^hedge-season$/, (node) => { node.colorNode = hedgeColour; });
 // The cars' probe of the street (probe.ts) needs WebGPU's kind of cube target.
 setProbeTargets(() => new CubeRenderTarget(PROBE_SIZE, PROBE_OPTIONS) as never);
