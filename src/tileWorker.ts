@@ -22,7 +22,7 @@ import { furnitureInstances, furnitureMatrices, FURNITURE_SIZE } from './map/fur
 import { fitPhoneBox, standingMarks } from './map/utility.ts';
 import { onPolygons } from './map/geo.ts';
 import { Geo, Grid, fillPolys, strokeLines } from './map/geo.ts';
-import { styleFor, facadeCoords, paintWalls, mansardCoords, finishWalls, WALL_CODES, BLANK } from './facades.ts';
+import { styleFor, facadeCoords, paintWalls, mansardCoords, finishWalls, splitWindowRows, WALL_CODES, BLANK } from './facades.ts';
 import type { WallLine } from './facades.ts';
 import { roofClutter, smokingChimneys } from './map/roofClutter.ts';
 import { roofEdges } from './map/roofEdges.ts';
@@ -199,18 +199,19 @@ function ipr({ buffer, box: [x0, y0], absolute, ground, bbox, hide, clutter, foo
   const m8 = buffer.byteLength >= colAt + all * 4 ? new Uint8Array(buffer, colAt + all * 3, all) : null;
   // Chimneys and roof windows go after everything else, in the order they came, so they
   // can be counted and left out as one run of triangles (BuildingArrays.parts).
-  const kept: number[] = [], extras: number[] = [];
+  let kept: number[] = [];
+  const extras: number[] = [];
   for (let t = 0; t < all; t++) {
     const x = x0 + (p16[t * 9] + p16[t * 9 + 3] + p16[t * 9 + 6]) / 300, y = y0 + (p16[t * 9 + 2] + p16[t * 9 + 5] + p16[t * 9 + 8]) / 300;
     if (hide.some((rings) => inPolygon(x, y, rings))) continue;
     const m = m8 ? m8[t] & 15 : 0;
     (m === ROOF_WINDOW || m === CHIMNEY ? extras : kept).push(t);
   }
-  const own = kept.length;
+  let own = kept.length;
   for (const t of extras) kept.push(t);
   const low = (o: number) => (m8 ? m8[kept[o]] & 15 : 0);
-  const n = kept.length;
-  const pos = new Float32Array(n * 9), col = new Float32Array(n * 9);
+  let n = kept.length;
+  let pos = new Float32Array(n * 9), col = new Float32Array(n * 9);
   const c = new THREE.Color();
   for (let o = 0; o < n; o++) {
     const t = kept[o];
@@ -231,7 +232,8 @@ function ipr({ buffer, box: [x0, y0], absolute, ground, bbox, hide, clutter, foo
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.computeVertexNormals();
   const lines: WallLine[] = [];
-  const facade = facadeCoords(pos, groundAt(ground), styleAt(bbox), lines, footprints);
+  let normals = g.attributes.normal.array as Float32Array;
+  let facade = facadeCoords(pos, groundAt(ground), styleAt(bbox), lines, footprints);
   const code = (o: number) => (m8 ? m8[kept[o]] >> 4 : 0);
   if (m8) for (let o = 0; o < n; o++) {
     const style = WALL_CODES[code(o)]?.[0];
@@ -243,6 +245,15 @@ function ipr({ buffer, box: [x0, y0], absolute, ground, bbox, hide, clutter, foo
   }
   const base = (o: number): [number, number, number] => { const t = kept[o] * 3; return [c8[t], c8[t + 1], c8[t + 2]]; };
   finishWalls(pos, facade, lines, base, code);
+  // Walls whose bays hold different numbers of window rows are cut between those bays
+  // (facades.ts); the pieces stand where their triangle stood and answer to its number.
+  const cut = splitWindowRows([{ array: pos, size: 3 }, { array: col, size: 3 }, { array: g.attributes.normal.array as Float32Array, size: 3 }, { array: facade, size: 4 }], facade, lines);
+  if (cut) {
+    [pos, col, normals, facade] = cut.arrays;
+    kept = Array.from(cut.parent, (o) => kept[o]);
+    own = cut.parent.findIndex((o) => o >= own); if (own < 0) own = cut.parent.length;
+    n = kept.length;
+  }
   paintWalls(pos, col, facade, base,
     m8 ? (o) => low(o) === MEASURED_WALL || low(o) === CHIMNEY : undefined);
   if (m8) for (let o = 0; o < n; o++) {
@@ -250,7 +261,7 @@ function ipr({ buffer, box: [x0, y0], absolute, ground, bbox, hide, clutter, foo
     if (m && m <= ROOF_WINDOW) for (let v = 0; v < 3; v++) facade[(o * 3 + v) * 4 + 3] = m; // roofs only
   }
   // The level tops of pitched roofs are sheet metal, whatever the photos made of them.
-  const nrm = g.attributes.normal.array as Float32Array;
+  const nrm = normals;
   const crowns = m8 ? crownRoofs(pos, facade, nrm, own) : new Set<number>();
   const material = (o: number) => (crowns.has(o) ? METAL : low(o));
   mansardCoords(pos, facade, lines);
