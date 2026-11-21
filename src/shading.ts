@@ -760,10 +760,10 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
     sh.uniforms.uWindows = WINDOWS;
     lampLit(sh, 'vWorld');
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec4 facade;\nattribute float sky;\nvarying float vSky;\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec4 vFacade;')
-      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\n  vWN = normalize(mat3(modelMatrix) * objectNormal);\n  vFacade = facade;\n  vSky = sky;');
+      .replace('#include <common>', '#include <common>\nattribute vec4 facade;\nattribute float sky;\nvarying float vSky;\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec4 vFacade;\nvarying float vRows;')
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\n  vWN = normalize(mat3(modelMatrix) * objectNormal);\n  vFacade = vec4(facade.xy, mod(facade.z, 1024.), facade.w);\n  vRows = floor(facade.z / 1024.);\n  vSky = sky;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying float vSky;\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec4 vFacade;\nuniform vec4 uCut;\nuniform float uDirt;\nuniform float uRoofDetail;\nuniform float uRoofClutter;\nuniform float uWet;\nuniform float uSnow;\nuniform float uWindows;\n${NOISE_GLSL}\n${BUILDING_GLSL}\n${FACADE_GLSL}`)
+      .replace('#include <common>', `#include <common>\nvarying float vSky;\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec4 vFacade;\nvarying float vRows;\nuniform vec4 uCut;\nuniform float uDirt;\nuniform float uRoofDetail;\nuniform float uRoofClutter;\nuniform float uWet;\nuniform float uSnow;\nuniform float uWindows;\n${NOISE_GLSL}\n${BUILDING_GLSL}\n${FACADE_GLSL}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
   if (vWorld.y > uCut.y && distance(vWorld.xz, uCut.xz) < uCut.w) discard;
   vec3 bn = normalize(vWN);

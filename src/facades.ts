@@ -180,6 +180,50 @@ export function finishWalls(p: Float32Array, facade: Float32Array, lines: WallLi
     }
     const fraction = (Math.floor((w - whole) * 32) * 1024 + fit * 32 + (STUCCO.has(look) ? two * 16 : 0) + look + 0.5) / 32768;
     for (const t of l.tris) for (let o = t * 12 + 3; o < t * 12 + 12; o += 4) facade[o] = Math.floor(facade[o]) + fraction;
+    if (whole < BLANK) windowRows(facade, l.tris, style, STOREY_FIT[0] + fit * STOREY_FIT[1] / 31);
+  }
+}
+
+// How many rows of windows fit on each part of a wall, counted from the ground floor up.
+// The shaders lay a grid of bays and floors over the wall's plane, and a wall is rarely a
+// rectangle: under a gable (a štít), a sloping parapet or a step in the roofline the grid
+// ran on and the outline cut windows in half, or put them in the gable's point. For every
+// bay the wall's top is measured across the width of its window, and a row counts if all
+// but its plaster top is under it. Each triangle then carries the fewest rows of the bays
+// it reaches into, plus one, as ROWS_STEP a row on top of the wall's length (the facade
+// attribute's z; 0: no limit, as on roofs and on walls from before this). Above its rows a
+// wall is bare plaster (fBays in the shaders).
+export const ROWS_STEP = 1024;
+const ROW_SHOWN = 0.86; // the share of a floor's height its window and surround reach to
+export const wallLength = (z: number) => z % ROWS_STEP;
+function windowRows(facade: Float32Array, tris: number[], style: number, fit: number) {
+  const length = facade[tris[0] * 12 + 2], bays = baysOf(style, length);
+  if (bays < 1 || length >= ROWS_STEP) return;
+  const ground = F_GROUND[style], storey = F_STOREY[style] * fit, bay = length / bays;
+  // The wall's top over a point along it: the highest any of its triangles reaches there.
+  const topAt = (x: number) => {
+    let top = -Infinity;
+    for (const t of tris) {
+      const o = t * 12;
+      for (let i = 0; i < 3; i++) {
+        const ax = facade[o + i * 4], ay = facade[o + i * 4 + 1], bx = facade[o + ((i + 1) % 3) * 4], by = facade[o + ((i + 1) % 3) * 4 + 1];
+        if ((ax - x) * (bx - x) > 0 || ax === bx) continue;
+        top = Math.max(top, ay + (by - ay) * (x - ax) / (bx - ax));
+      }
+    }
+    return top;
+  };
+  const rows = new Int32Array(bays);
+  for (let j = 0; j < bays; j++) {
+    let top = Infinity;
+    for (const k of [0.14, 0.32, 0.5, 0.68, 0.86]) top = Math.min(top, topAt((j + k) * bay));
+    rows[j] = top < ground * ROW_SHOWN ? 0 : 1 + Math.max(0, Math.floor((top - ground) / storey + (1 - ROW_SHOWN)));
+  }
+  for (const t of tris) {
+    const o = t * 12, lo = Math.min(facade[o], facade[o + 4], facade[o + 8]), hi = Math.max(facade[o], facade[o + 4], facade[o + 8]);
+    let fewest = 62;
+    for (let j = Math.max(0, Math.floor((lo + 0.05) / bay)); j <= Math.min(bays - 1, Math.floor((hi - 0.05) / bay)); j++) fewest = Math.min(fewest, rows[j]);
+    for (let z = o + 2; z < o + 12; z += 4) facade[z] = length + ROWS_STEP * (fewest + 1);
   }
 }
 
@@ -526,16 +570,21 @@ const float F_MOD[${LOOKS}] = ${glslArray('float', F_MOD)};
 const float F_GROUND[5] = ${glslArray('float', F_GROUND)};
 const float F_STOREY[5] = ${glslArray('float', F_STOREY)};
 float fHash(float a, float b) { return fract(sin(a * 127.1 + b * 311.7) * 43758.5453); }
-// How many window bays across a wall: none on a party wall or one too short for a window.
-float fBays(vec4 f) {
-  int style = int(floor(f.w));
-  return style >= ${BLANK} ? 0. : floor(f.z / F_BAY[style] + .5);
-}
 // The wall's ground floor and its other floors, m, and its building's look (finishWalls).
 vec2 fStorey(vec4 f) {
   int style = min(int(floor(f.w)), 4);
   float fit = mod(floor(fract(f.w) * 1024.), 32.);
   return vec2(F_GROUND[style], F_STOREY[style] * (${STOREY_FIT[0].toFixed(2)} + fit * ${(STOREY_FIT[1] / 31).toFixed(6)}));
+}
+// How many window bays across a wall: none on a party wall, one too short for a window, or
+// above the rows of windows that fit under this part of the wall's top (windowRows; the
+// shader that includes this declares vRows, the facade attribute's z over ROWS_STEP).
+float fBays(vec4 f) {
+  int style = int(floor(f.w));
+  if (style >= ${BLANK}) return 0.;
+  vec2 st = fStorey(f);
+  float row = f.y < st.x ? 0. : 1. + floor((f.y - st.x) / st.y);
+  return vRows > .5 && row > vRows - 1.5 ? 0. : floor(f.z / F_BAY[style] + .5);
 }
 int fLook(vec4 f) { return min(int(mod(floor(fract(f.w) * 32768.), 16.)), ${LOOKS - 1}); }
 float fTwoTone(vec4 f) { return mod(floor(fract(f.w) * 2048.), 2.); }

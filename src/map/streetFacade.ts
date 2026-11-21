@@ -1,7 +1,7 @@
 // Cut architectural profiles into existing wall triangles in the wall's own
 // metre coordinates. Clipping retains gables, sloping pavements and passages.
 import * as THREE from 'three';
-import { baysOf, BLANK, F_SURFACE as S, F_GROUND, F_STOREY, STOREY_FIT, F_UP, F_DOOR, F_WALL, F_MOD } from '../facades.ts';
+import { baysOf, wallLength, BLANK, F_SURFACE as S, F_GROUND, F_STOREY, STOREY_FIT, F_UP, F_DOOR, F_WALL, F_MOD } from '../facades.ts';
 import openings from './facadeOpenings.json' with {type: 'json'};
 import caps from './facadeCaps.json' with {type: 'json'};
 import type { BuildingArrays } from '../contracts.ts';
@@ -34,8 +34,8 @@ export function streetModule(w: number, bay: number, floor: number, bays: number
 export function packStreetWalls(f: Float32Array, lines: { tris: number[] }[]) {
   const out: number[] = [];
   for (const { tris } of lines) {
-    const o = tris[0] * 12, width = f[o + 2];
-    if (width < 2 || width > 100 || Math.floor(f[o + 3]) >= BLANK || !tris.every(t => f[t * 12 + 2] === width && f[t * 12 + 3] === f[o + 3])) continue;
+    const o = tris[0] * 12, width = wallLength(f[o + 2]);
+    if (width < 2 || width > 100 || Math.floor(f[o + 3]) >= BLANK || !tris.every(t => wallLength(f[t * 12 + 2]) === width && f[t * 12 + 3] === f[o + 3])) continue;
     out.push(tris.length); for (const t of tris) out.push(t);
   }
   return new Uint32Array(out);
@@ -211,7 +211,7 @@ function clip(poly: Point[], a: V2, b: V2, sign: number) {
 }
 
 export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color' | 'facade'>, sky: Float32Array, triangles: Uint32Array): FacadeGeometry | null {
-  const { position: p, color: c, facade: f } = arrays, first = triangles[0] * 12, w = f[first + 3], width = f[first + 2], style = Math.floor(w), bays = baysOf(style, width);
+  const { position: p, color: c, facade: f } = arrays, first = triangles[0] * 12, w = f[first + 3], width = wallLength(f[first + 2]), style = Math.floor(w), bays = baysOf(style, width);
   if (!bays || style >= BLANK || width < 2) return null;
   const look = Math.min(F_MOD.length - 1, Math.floor((w - style) * 32768) % 16), bay = width / bays, mw = Math.min(bay, F_MOD[look]);
   const ground = F_GROUND[style], storey = F_STOREY[style] * (STOREY_FIT[0] + (Math.floor((w - style) * 1024) % 32) * STOREY_FIT[1] / 31);
@@ -268,7 +268,7 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
         for (const t of q) {
           pos.push(t.world.x, t.world.y, t.world.z); norm.push(normal.x, normal.y, normal.z);
           for (let j = 0; j < 3; j++)col.push(c[o + j] + t.u * (c[o + 3 + j] - c[o + j]) + t.v * (c[o + 6 + j] - c[o + j]));
-          fac.push(t.x, t.y, width, w); shade.push(sky[vertex] + t.u * (sky[vertex + 1] - sky[vertex]) + t.v * (sky[vertex + 2] - sky[vertex]));
+          fac.push(t.x, t.y, f[k + 2], w); shade.push(sky[vertex] + t.u * (sky[vertex + 1] - sky[vertex]) + t.v * (sky[vertex + 2] - sky[vertex]));
           detail.push(layer, ao, kind, t.depth);
         }
       }

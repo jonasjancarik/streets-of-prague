@@ -12,7 +12,7 @@ import {
 import { passageAtlas } from '../passageMaterial.ts';
 import { facadeFinishes, shopReady } from '../facadeFinishes.ts';
 import { STRIPS, STRIPS_ON, onStrips, KINDS } from '../reflections.ts';
-import { FACADE_ATLAS, FACADE_ON, STREET_FACADE, F_SURFACE as S, BLANK, F_BAY as BAY_WIDTH, F_UP as UP, F_DOOR as DOOR, F_WALL as WALL, F_MOD as MOD, F_GROUND as GROUND, F_STOREY as STOREY, STOREY_FIT } from '../facades.ts';
+import { FACADE_ATLAS, FACADE_ON, STREET_FACADE, F_SURFACE as S, BLANK, F_BAY as BAY_WIDTH, F_UP as UP, F_DOOR as DOOR, F_WALL as WALL, F_MOD as MOD, F_GROUND as GROUND, F_STOREY as STOREY, STOREY_FIT, ROWS_STEP } from '../facades.ts';
 import { WINDOWS, ROOF_DETAIL, ROOF_CLUTTER, LANDMARK_ROOF as R, SUN_DIR, SUN_LIGHT } from '../shading.ts';
 import { lampLit } from './lamps.ts';
 import { EDGE, EDGE_STEP } from '../map/roofEdges.ts';
@@ -68,10 +68,18 @@ const floats = (v: number[]): N => uniformArray(v, 'float');
 const F_BAY = floats(BAY_WIDTH);
 const F_MOD = floats(MOD);
 const F_GROUND = floats(GROUND), F_STOREY = floats(STOREY);
-// Window bays across a wall: none on a party wall or one too short for a window.
+// The facade attribute as the shaders take it, z being the wall's length alone; what rides
+// on top of the length is how many rows of windows fit there, plus one (windowRows in facades.ts).
+const facadeRaw: N = attribute('facade', 'vec4');
+const facadeAttr = (): N => vec4(facadeRaw.xy, mod(facadeRaw.z, ROWS_STEP), facadeRaw.w);
+const facadeRows: N = floor(facadeRaw.z.div(ROWS_STEP));
+// Window bays across a wall: none on a party wall, one too short for a window, or above
+// the rows of windows that fit under this part of the wall's top.
 const fBays = (f: N) => {
-  const style = floor(f.w);
-  return select(style.greaterThanEqual(BLANK), float(0), floor(f.z.div(F_BAY.element(min(style, 4).toInt())).add(0.5)));
+  const style = floor(f.w), st = fStorey(f);
+  const row = select(f.y.lessThan(st.x), float(0), floor(f.y.sub(st.x).div(st.y)).add(1));
+  const none = style.greaterThanEqual(BLANK).or(facadeRows.greaterThan(0.5).and(row.greaterThan(facadeRows.sub(1.5))));
+  return select(none, float(0), floor(f.z.div(F_BAY.element(min(style, 4).toInt())).add(0.5)));
 };
 
 const fHash = (a: N, b: N) => fract(sin(a.mul(127.1).add(b.mul(311.7))).mul(43758.5453));
@@ -422,9 +430,9 @@ const buildingColor = Fn(() => {
   const w = positionWorld.toVar();
   If(w.y.greaterThan(uCut.y).and(distance(w.xz, uCut.xz).lessThan(uCut.w)), () => { Discard(); });
   const bn = normalWorld.normalize().toVar();
-  const f = attribute('facade', 'vec4').toVar();
+  const f: N = facadeAttr().toVar();
   // Derivatives are taken here, outside the branches below (WGSL wants that).
-  const fdx = dFdx(f).toVar(), fdy = dFdy(f).toVar();
+  const fdx: N = dFdx(f).toVar(), fdy: N = dFdy(f).toVar();
   const bwp = vec2(w.x, w.z.negate()).toVar();
   const wpWidth = length(abs(dFdx(bwp)).add(abs(dFdy(bwp)))).toVar();
   const fWidth = length(abs(fdx.xy).add(abs(fdy.xy))).toVar();
@@ -533,7 +541,7 @@ const room = (at: N, size: N, along: N, ray: N, n: N, pick: N): N => {
 // the time; shop windows at street level the same.
 const windowGlow = Fn(() => {
   const g = vec3(0).toVar();
-  const bn = normalWorld.normalize().toVar(), f = attribute('facade', 'vec4').toVar();
+  const bn = normalWorld.normalize().toVar(), f = facadeAttr().toVar();
   const bays = fBays(f).toVar();
   // Which way along the wall its `x` grows, in the world, and the ray from the eye, for the
   // rooms behind lit windows. (Derivatives must be taken outside branches that differ from
@@ -642,7 +650,7 @@ addPort(/^passage-lining$/, node => {
 // These are actual return faces and recessed panels. Keep their original wall
 // coordinates for the atlas, and their own normals for sunlight and reflections.
 function plasterScan() {
-  const uv = attribute('facade', 'vec4').xy.add(vec2(.71, .83).mul(attribute('detail', 'vec4').w));
+  const uv = facadeAttr().xy.add(vec2(.71, .83).mul(attribute('detail', 'vec4').w));
   return texture(facadeFinishes.plaster!, uv.mul(.5));
 }
 function facadeMask(layer: N, u: N, v: N) {
@@ -686,7 +694,7 @@ function shopInterior(f: N, eye: N, normal: N) {
   return mix(lining, stock, rear).mul(mix(.68, mix(.07, .6, open), night));
 }
 const streetWallColor = Fn(() => {
-  const f: N = attribute('facade', 'vec4').toVar(), info: N = attribute('detail', 'vec4');
+  const f: N = facadeAttr().toVar(), info: N = attribute('detail', 'vec4');
   const kind = floor(info.z.add(.5)), layer = floor(info.x.add(.5));
   const dx: N = dFdx(f).toVar(), dy: N = dFdy(f).toVar();
   const base: N = vec3(materialColor).mul(vertexColor().rgb);
@@ -732,7 +740,7 @@ const streetGlassLight = Fn(() => {
   const kind = floor(attribute('detail', 'vec4').z.add(.5));
   If(kind.equal(S.glass).or(kind.equal(S.grilleGlass)).or(kind.equal(S.display)), () => {
     const n = normalWorldGeometry, view = normalize(cameraPosition.sub(positionWorld)), ray = reflect(view.negate(), n);
-    const style = floor(attribute('facade', 'vec4').w);
+    const style = floor(facadeAttr().w);
     const zone = select(style.equal(1), 0, select(style.equal(3), 2, select(style.equal(4), 3, 1)));
     const height = float(.806).mul(float(1).sub(ray.y.div(max(length(ray.xz), .001)).div(.7)));
     const street = reflectedStreet.sample(vec2(atan(ray.z, ray.x).div(2 * Math.PI).add(.5),
@@ -741,7 +749,7 @@ const streetGlassLight = Fn(() => {
     const reflection = street.rgb.mul(street.a).mul(fresnel).mul(reflectStreetOn)
       .mul(float(1).sub(smoothstep(.42, .77, ray.y))).mul(float(1).sub(uWindows.mul(.80)));
     If(kind.equal(S.display).and(uShopReady.greaterThan(.5)), () => {
-      const stock = shopInterior(attribute('facade', 'vec4'), view.negate(), n);
+      const stock = shopInterior(facadeAttr(), view.negate(), n);
       const sky = mix(uHorizon, uZenith, smoothstep(0, 1, ray.y))
         .mul(smoothstep(.01, .40, ray.y)).mul(fresnel).mul(attribute('sky', 'float'));
       result.assign(stock.mul(float(1).sub(fresnel)).add(reflection).add(sky));
