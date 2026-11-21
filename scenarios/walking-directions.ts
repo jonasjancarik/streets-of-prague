@@ -1,3 +1,4 @@
+import type { PerspectiveCamera } from 'three';
 import type { Scenario } from '../src/testkit.ts';
 import type { Walker } from '../src/people.ts';
 import { t as translate } from '../src/i18n.ts';
@@ -5,7 +6,7 @@ import { t as translate } from '../src/i18n.ts';
 export default {
   title: 'Follow walking directions from Vodičkova and switch between walking and driving',
   async run(t) {
-    const { walker } = window.__drive as { walker: Walker };
+    const { walker, camera } = window.__drive as { walker: Walker; camera: PerspectiveCamera };
     const saved = t.eyes;
     const card = document.getElementById('nav')!;
     try {
@@ -44,6 +45,13 @@ export default {
       await t.enter(c);
       await t.frames(4);
       t.check('getting into the car changes to driving directions for the same pin', !t.nav().walking && !!t.nav().to);
+      const behind = -(camera.position.x - c.x) * Math.cos(c.h) + (camera.position.z + c.y) * Math.sin(c.h);
+      t.check(
+        'FPS driving follows behind and above the car',
+        behind > c.spec.L / 2 + 3 &&
+          camera.position.y > (c.gz ?? 0) + c.spec.H && camera.fov === 55,
+        { behind, fov: camera.fov },
+      );
       t.exit();
       await t.frames(4);
       t.check('getting out restores walking directions', t.nav().walking && !!t.nav().to);

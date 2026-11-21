@@ -560,6 +560,7 @@ async function main() {
   const gait = new WalkingGait();
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
   let gaitActive = false;
+  let eyeAhead = .30; // metres in front of the player; comes in close to a wall
   let eyeH = 0; // the first-person view's height (developer panel), smoothed over kerbs
   // The vehicle that view follows from behind, and the heading it looks along (lagging the vehicle's).
   let chased: { h: number } | null = null, chaseH = 0;
@@ -3042,6 +3043,7 @@ async function main() {
       eyes.onFoot = streetFoot && !eyes.third;
       if (!eyes.onFoot) eyes.pitch = clamp(eyes.pitch, -60, 60);
     }
+    let closeWall = false;
     const free = testkit?.cam;
     if (free) {
       // The developer panel's free camera: tilted back from the spot it looks at.
@@ -3108,8 +3110,19 @@ async function main() {
         const moving = gaitActive && (firstPersonOptions.motion === 'gentle' ||
           (firstPersonOptions.motion === 'device' && !reduceMotion.matches));
         const sway = moving ? gait.sway : 0, eye = eyeH + (moving ? gait.rise : 0);
-        const ex = me.x + Math.cos(me.h) * 0.3 - Math.sin(me.h) * sway;
-        const ey = me.y + Math.sin(me.h) * 0.3 + Math.cos(me.h) * sway;
+        const fx = Math.cos(me.h), fy = Math.sin(me.h);
+        if (streetFoot && !walker.flight && !walker.onRoof && walker.perch < .4) {
+          // A wall can stop the body yet lie inside the camera's 20 cm near
+          // plane, especially with a wide lens looking obliquely into a corner.
+          const x = me.x + fx * .64, y = me.y + fy * .64, z = walker.gz ?? 0, level = walker.level ?? 0;
+          const side = Math.min(.32, .13 * camera.aspect);
+          closeWall = !!(world.cellAt(x, y, level, z) || world.cellAt(x - fy * side, y + fx * side, level, z) ||
+            world.cellAt(x + fy * side, y - fx * side, level, z));
+        }
+        if (closeWall) eyeAhead = .16;
+        else eyeAhead += (.30 - eyeAhead) * (1 - Math.exp(-14 * dt));
+        const ex = me.x + fx * eyeAhead - fy * sway;
+        const ey = me.y + fy * eyeAhead + fx * sway;
         camera.position.set(ex, eye, -ey);
         camera.lookAt(ex + Math.cos(aim) * Math.cos(pitch), eye + Math.sin(pitch), -(ey + Math.sin(aim) * Math.cos(pitch)));
       }
@@ -3157,7 +3170,7 @@ async function main() {
     const horizon = seeSky ? DOME_NODE.value : null;
     if (horizon) wantCloudBank();
     if ((scene as { backgroundNode?: unknown }).backgroundNode !== horizon) (scene as { backgroundNode?: unknown }).backgroundNode = horizon;
-    const nearPlane = eyes ? 0.2 : 1;
+    const nearPlane = closeWall ? .055 : eyes ? .2 : 1;
     // A wider view at street level (38° from above, which would feel like a telephoto lens).
     const fov = eyes ? eyes.onFoot ? firstPersonOptions.fov : 55 : 38;
     if (camera.fov !== fov) { camera.fov = fov; camera.updateProjectionMatrix(); }

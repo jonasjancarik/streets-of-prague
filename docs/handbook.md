@@ -655,7 +655,8 @@ the same signal phase as the overhead light.
   Stone, grass, gravel and settled snow have different footfalls. A paved path across a
   lawn sounds like pavement, even while the grass on either side crunches under snow.
   The
-  view rises slightly between steps and settles on landing. The walking camera follows the system’s reduced-motion
+  view rises slightly between steps and settles on landing. As you approach a wall,
+  the camera draws closer to your body so you can look into a shop window at arm’s length. The walking camera follows the system’s reduced-motion
   setting unless you choose Gentle movement or Keep steady. Nearby traffic, bells and sirens move across the stereo
   field as you turn. It loads 400 m round
   you, where the haze closes in, and draws only the tiles you look towards (ones already
