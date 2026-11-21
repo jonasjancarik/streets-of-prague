@@ -22,6 +22,7 @@ const { TileWorld } = await import('../src/tiles.ts');
 function fixture() {
   const jobs = [];
   const world = Object.assign(Object.create(TileWorld.prototype), {
+    passageRooms: new Map(),
     turns: [], reveal: [],
     loaded: new Map(), byIndex: new Map(), sky: new Map(), photos: new Map(), pending: new Map(),
     builds: new Map(), retry: new Map(), jsons: new Map(), buildTimes: [],

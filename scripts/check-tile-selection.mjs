@@ -132,7 +132,7 @@ function world(oracle, { available = sparse(1), box, workers = 3 } = {}) {
   const w = Object.assign(Object.create(TileWorld.prototype), {
     turns: [], reveal: [], jobs: [],
     T, ox: OX, oy: OY, index, available: new Set(available), availableRevision: 0, country,
-    loaded: new Map(), byIndex: new Map(), sky: new Map(), photos: new Map(), pending: new Map(),
+    loaded: new Map(), byIndex: new Map(), sky: new Map(), photos: new Map(), pending: new Map(), passageRooms: new Map(),
     builds: new Map(), retry: new Map(), jsons: new Map(), jsonRange: null, buildTimes: [], drawTimes: [],
     dressing: new Set(), inFlight: new Set(), building: 0, workers: { size: workers }, shown: new Set(),
     last: { i: NaN }, terrainRevision: 0, trimmed: 0, driveBy: new Map(), walkBy: new Map(), graphBeyond: 500,
