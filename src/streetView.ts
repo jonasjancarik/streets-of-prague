@@ -1,11 +1,25 @@
 // Street cameras share the same look direction across mouse, touch and controller.
-export interface Eyes { yaw: number; pitch: number; still?: number; third?: boolean }
+export interface Eyes { yaw: number; pitch: number; still?: number; third?: boolean; onFoot?: boolean }
 export type PlayerView = 'overhead' | 'first' | 'third';
 
+export interface FirstPersonOptions { fov: number; sensitivity: number; motion: 'device' | 'steady' | 'gentle' }
+export const firstPersonOptions: FirstPersonOptions = { fov: 55, sensitivity: 100, motion: 'device' };
+export function setFirstPersonOptions(pick: Partial<FirstPersonOptions>, save = true) {
+  if (typeof pick.fov === 'number' && Number.isFinite(pick.fov))
+    firstPersonOptions.fov = Math.round(Math.min(80, Math.max(45, pick.fov)));
+  if (typeof pick.sensitivity === 'number' && Number.isFinite(pick.sensitivity))
+    firstPersonOptions.sensitivity = Math.round(Math.min(200, Math.max(25, pick.sensitivity)));
+  if (pick.motion === 'device' || pick.motion === 'steady' || pick.motion === 'gentle') firstPersonOptions.motion = pick.motion;
+  if (save) try { localStorage.setItem('firstPersonOptions', JSON.stringify(firstPersonOptions)); } catch { /* optional */ }
+}
+try { setFirstPersonOptions(JSON.parse(localStorage.getItem('firstPersonOptions') || '{}') ?? {}, false); } catch { /* defaults */ }
+
 export function lookAround(eyes: Eyes, right: number, down: number) {
-  const turn = eyes.yaw - right;
+  const scale = eyes.onFoot ? firstPersonOptions.sensitivity / 100 : 1;
+  const turn = eyes.yaw - right * scale;
   eyes.yaw = turn - 360 * Math.floor((turn + 180) / 360);
-  eyes.pitch = Math.max(-60, Math.min(60, eyes.pitch - down));
+  const limit = eyes.onFoot ? 82 : 60;
+  eyes.pitch = Math.max(-limit, Math.min(limit, eyes.pitch - down * scale));
   eyes.still = 0;
 }
 

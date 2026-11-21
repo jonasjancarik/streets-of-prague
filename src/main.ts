@@ -85,7 +85,7 @@ import { roadNoise, ROAD_FAR } from './soundmix.ts';
 import type { Surface, HornKind, Rotor } from './audio.ts';
 import { StreetIronwork } from './streetIronwork.ts';
 import { StreetPlates } from './streetPlates.ts';
-import { eyesFor, initialView, WalkingGait, type Eyes, type PlayerView } from './streetView.ts';
+import { eyesFor, firstPersonOptions, initialView, WalkingGait, type Eyes, type PlayerView } from './streetView.ts';
 import { setupTouch } from './touch.ts';
 import { setupGamepad, padLabels, usingPad } from './gamepad.ts';
 import './credits.ts';
@@ -1762,6 +1762,10 @@ async function main() {
       telemetry.did('changed the radio station');
       showBanner(station ? station.name : t('Radio off'));
     }
+    if (e.code === 'KeyV' && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey && testkit && !testkit.cam && testkit.where().mode === 'foot') {
+      const view = cameraChoice.get();
+      cameraChoice.set(view === 'overhead' ? 'first' : view === 'first' ? 'third' : 'overhead');
+    }
     if (e.code === 'KeyG' && !e.repeat) { graphics.cycle(); showBanner(graphics.label()); telemetry.setting('Graphics', graphics.choice); }
     if (e.code === 'KeyP' && !e.repeat) { weather.cycle(); showBanner(weather.label()); telemetry.setting('Weather', weather.kind); }
     if (e.code === 'KeyH' && !e.repeat) foldHelp(!$('help').classList.contains('folded'));
@@ -3025,6 +3029,11 @@ async function main() {
       : body === walker && (walker.flight || walker.onRoof) ? walker.mesh.position.y
       : deep ? Math.max(world.terrainAt(px(), py()), body.gz ?? 0) : ground(camPos.x, -camPos.z, body);
     camGround += (below - camGround) * Math.min(1, dt * 3);
+    const streetFoot = !!eyes && !underway && !inCar && !inHeli && !ride.on && !passenger() && !boats.me && !funicular.me && !ferries.me;
+    if (eyes) {
+      eyes.onFoot = streetFoot && !eyes.third;
+      if (!eyes.onFoot) eyes.pitch = clamp(eyes.pitch, -60, 60);
+    }
     const free = testkit?.cam;
     if (free) {
       // The developer panel's free camera: tilted back from the spot it looks at.
@@ -3088,7 +3097,8 @@ async function main() {
       } else {
         chased = null;
         const aim = me.h + yaw;
-        const moving = gaitActive && !reduceMotion.matches;
+        const moving = gaitActive && (firstPersonOptions.motion === 'gentle' ||
+          (firstPersonOptions.motion === 'device' && !reduceMotion.matches));
         const sway = moving ? gait.sway : 0, eye = eyeH + (moving ? gait.rise : 0);
         const ex = me.x + Math.cos(me.h) * 0.3 - Math.sin(me.h) * sway;
         const ey = me.y + Math.sin(me.h) * 0.3 + Math.cos(me.h) * sway;
@@ -3141,12 +3151,12 @@ async function main() {
     if ((scene as { backgroundNode?: unknown }).backgroundNode !== horizon) (scene as { backgroundNode?: unknown }).backgroundNode = horizon;
     const nearPlane = eyes ? 0.2 : 1;
     // A wider view at street level (38° from above, which would feel like a telephoto lens).
-    const fov = eyes ? 55 : 38;
+    const fov = eyes ? eyes.onFoot ? firstPersonOptions.fov : 55 : 38;
     if (camera.fov !== fov) { camera.fov = fov; camera.updateProjectionMatrix(); }
     // Down at street level, people (and their bikes) are life size: from above they're drawn bigger to read.
     FIGURE_SIZE.value = eyes ? 1 : SCALE;
     // Out of first person, the mouse it took to look round with is let go.
-    if (!eyes && document.pointerLockElement === renderer.domElement) document.exitPointerLock();
+    if ((!eyes || paused || metro.active) && document.pointerLockElement === renderer.domElement) document.exitPointerLock();
     if (camera.near !== nearPlane) { camera.near = nearPlane; camera.updateProjectionMatrix(); }
     // From street level the ground hides what's behind it (see GROUND_DEPTH).
     GROUND_DEPTH.visible = !!eyes || (POST.ao && POST.on);
@@ -3202,7 +3212,6 @@ async function main() {
       street = name;
       $('street').textContent = name;
     }
-    const streetFoot = !!eyes && !underway && !inCar && !inHeli && !ride.on && !passenger() && !boats.me && !funicular.me && !ferries.me;
     if (shown.streetFoot !== +streetFoot) {
       shown.streetFoot = +streetFoot;
       document.body.classList.toggle('street-foot', streetFoot);

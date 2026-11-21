@@ -636,7 +636,7 @@ the same signal phase as the overhead light.
   up for a more angled view and down to look straight down. The Rotation and Tilt
   sliders let you set either angle separately. Straight down resets both angles
   to a north-up view. Searching or picking a spot on the map moves the camera. First person looks out at eye height (1.75 m) the
-  way you face, with a wider 55° view. Settings → Camera view offers Overhead, First person and Third person and remembers your choice. The camera URL options take precedence for that visit. At street level, people and their bikes are
+  way you face, with a wider 55° view. Settings → Camera view offers Overhead, First person and Third person and remembers your choice. V cycles through those views on foot. First-person controls in Settings let you adjust the field of view, look sensitivity and walking camera movement. You can look down to see your feet or up to see the roofline. The camera URL options take precedence for that visit. At street level, people and their bikes are
   drawn life size there rather than 1.35× (`FIGURE_SIZE`). In a car or the helicopter it
   follows from behind and above like a driving game's chase camera, the car in the lower
   third, swinging round after it as it turns. A click takes the mouse to look round with
@@ -645,8 +645,8 @@ the same signal phase as the overhead light.
   scripts). The left stick walks forward, back or sideways relative to the view. On a
   controller the right stick looks around. On a touchscreen, drag the street with your
   free thumb. In first person each footfall follows the distance you actually cover. The
-  view rises slightly between steps and settles on landing. The system’s reduced-motion
-  setting keeps the view steady. Nearby traffic, bells and sirens move across the stereo
+  view rises slightly between steps and settles on landing. The walking camera follows the system’s reduced-motion
+  setting unless you choose Gentle movement or Keep steady. Nearby traffic, bells and sirens move across the stereo
   field as you turn. It loads 400 m round
   you, where the haze closes in, and draws only the tiles you look towards (ones already
   drawn stay when you turn); a tile coming into view shows a few meshes a frame, and only

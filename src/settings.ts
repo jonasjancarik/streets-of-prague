@@ -1,4 +1,4 @@
-import type { PlayerView } from './streetView.ts';
+import { firstPersonOptions, setFirstPersonOptions, type FirstPersonOptions, type PlayerView } from './streetView.ts';
 import { LANGS, getLang, onLang, setLang, t } from './i18n.ts';
 import type { Lang } from './i18n.ts';
 import type { Graphics, Choice, Reflections } from './graphics.ts';
@@ -225,6 +225,36 @@ export function setupSettings({ sound, graphics, weather, saves, cameraChoice }:
     lookNote.textContent = t('Click the street and move the mouse to look around, swipe on a touchscreen, or use the right stick.');
   };
   refresh.push(updateLookNote);
+  const walkSettings = el('details', 'settings-radio', viewRow);
+  const walkSummary = el('summary', '', walkSettings);
+  relabel.push(() => { walkSummary.textContent = t('First-person controls'); });
+  refresh.push(() => { walkSettings.hidden = cameraChoice.get() !== 'first'; });
+  const ranges = [
+    ['fov', 'Field of view', 45, 80, 1, '°'],
+    ['sensitivity', 'Look sensitivity', 25, 200, 5, '%'],
+  ] as const;
+  for (const [key, label, low, high, step, unit] of ranges) {
+    const line = el('label', 'settings-mix', walkSettings);
+    const name = el('span', '', line), slider = el('input', '', line) as HTMLInputElement;
+    slider.type = 'range'; slider.min = String(low); slider.max = String(high); slider.step = String(step);
+    slider.dataset.camera = key;
+    const reading = el('span', 'settings-mix-pct', line);
+    relabel.push(() => { name.textContent = t(label); });
+    const read = () => { slider.value = String(firstPersonOptions[key]); reading.textContent = slider.value + unit; };
+    slider.oninput = () => { setFirstPersonOptions({ [key]: Number(slider.value) }); read(); };
+    refresh.push(read);
+  }
+  const motionLine = el('label', 'settings-radio-station', walkSettings);
+  const motionTitle = el('span', '', motionLine), motion = el('select', 'settings-chip', motionLine) as HTMLSelectElement;
+  motion.dataset.camera = 'motion';
+  const motions = [['device', 'Use device setting'], ['gentle', 'Gentle movement'], ['steady', 'Keep steady']] as const;
+  for (const [id,label] of motions) {
+    const option = new Option('',id); motion.add(option);
+    relabel.push(() => { option.textContent = t(label); });
+  }
+  relabel.push(() => { motionTitle.textContent = t('Walking camera'); });
+  motion.onchange = () => setFirstPersonOptions({ motion: motion.value as FirstPersonOptions['motion'] });
+  refresh.push(() => { motion.value = firstPersonOptions.motion; });
   row('Minimap', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (minimapOn() ? 'on' : 'off'), (id) => setMinimap(id === 'on'));
   row<TunnelView>('Tunnels', TUNNEL_VIEWS.map((v) => ({ id: v, label: () => t(TUNNEL_LABEL[v]) })), tunnelView, setTunnelView);
   row<Reflections>('Wet streets', [{ id: 'none', label: () => t('No reflections') }, { id: 'lights', label: () => t('Lights reflect') }, { id: 'mirror', label: () => t('Full mirror (demanding)') }], () => graphics.reflections, (id) => graphics.setReflections(id));

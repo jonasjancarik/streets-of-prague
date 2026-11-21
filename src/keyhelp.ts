@@ -29,6 +29,7 @@ function keysFor(s: HelpState): { title: string; keys: Keys; note?: string } {
         A: ['left', s.street ? 'Step left' : 'Turn'], D: ['right', s.street ? 'Step right' : 'Turn'],
         Shift: ['run', 'Run'], Space: ['jump', 'Jump. Hold Space during a long fall to open your parachute, then steer with A or D'],
         E: ['get in', 'Get into the nearest car, onto a bike or motorbike, or onto a tram at a stop'],
+        V: ['view', 'Switch between overhead, first-person and third-person views'],
         T: ['taxi', 'Get a taxi: wave one down or order one through an app'],
         J: ['jobs', 'Jobs: ask for work, take the job on offer, turn it down for another, or give one up'],
         N: ['map', 'Map: pick where to drive, and the way there shows on the road'],
