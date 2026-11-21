@@ -105,6 +105,8 @@ libraries to `dist/licenses.txt`.
   [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/28A24EB4-5EE8-436E-B0BB-357025258211), CC BY.
 - Where the tram, railway and funicular tracks lie: the surveyed track axes of Digitální technická mapa kraje
   (transport infrastructure, DI), datový podklad © [IPR Praha](https://geoportalpraha.cz/), CC BY.
+- Outdoor stairs: the stairway outlines and their surveyed edges in Digitální technická mapa kraje,
+  datový podklad © [IPR Praha](https://geoportalpraha.cz/), CC BY.
 - Paid-parking sections and occupancy: [TSK Praha](https://zps.tsk-praha.cz/).
 - Street lamps, manhole covers, storm drains and traffic-light poles: the surface marks
   of the archived utility map (DTMP_CUR_TMISZNAK_B), datový podklad ©

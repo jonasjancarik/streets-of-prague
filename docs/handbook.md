@@ -2014,6 +2014,17 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   lines out. `?nostepedges` turns the edges off.
   Straight outdoor stairways with a usable ground profile get concrete treads
   and visible nosings from their mapped walk edges (`src/map/stairs.ts`).
+  Where the technical map surveys a flight, it is drawn from the survey instead, and
+  flights OpenStreetMap lacks are drawn too (`pipeline/dtm_stairs.py`): the stairway
+  outline (ZPS polygons, Schodiště) gets heights from its surveyed edges (ZPS lines,
+  Hranice schodiště), a plane fitted to them gives the way it climbs, and the outline is
+  cut straight across into treads of about 16 cm risers, with the flat ends left as
+  landings. Flights that bend, branch or don't fit one plane are left out, as are sills
+  under 12 cm, and the mapped stairs stay where no surveyed flight covers them. The
+  game's terrain is smoother than the survey, so each flight is shifted to follow the
+  ground under it, averaged over a few treads so the risers stay even. The flights are
+  only drawn: walking still follows the ground. Ground tiles carry them as `flights`
+  (top height and outline of each tread, and the nosing lines).
   Walking follows the smooth profile beneath the treads. At the south end of
   Štefánikův most, the lower sidewalk joins two flights of stairs beneath the road.
   The DTM ZPS transport edges run from 187.0 to 186.7 m Bpv. The walker and the rendered

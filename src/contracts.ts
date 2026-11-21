@@ -7,6 +7,7 @@ import type { GroundResult, GroundRoadEdge, GroundTileData, LevelMask } from './
 import type { TreeSpot, CanopyCells } from './map/vegetation.ts';
 import type { FenceBuffers, FenceTile } from './map/fences.ts';
 import type { Shed, ShedBuffers } from './map/sheds.ts';
+import type { SurveyedStair } from './map/stairs.ts';
 import type { BuildingTile } from './map/buildings.ts';
 import type { StopLine } from './map/stopShelters.ts';
 import type { Footprint } from './facades.ts';
@@ -94,6 +95,7 @@ export interface TileJSON extends GroundTileData {
   plots?: { b: number; ring: Point2[]; gate?: [number, number, number]; strip?: 1 }[];
   patches?: { paving?: Polygons; bed?: Polygons; pool?: Polygons };
   sheds?: Shed[];
+  flights?: SurveyedStair[]; // the technical map's outdoor stairs, tread by tread (pipeline/dtm_stairs.py; not in older tiles)
   trees: TreeSpot[];
   shrubs?: Point2[]; // surveyed single shrubs (pipeline/ipr_greenery.py)
   canopy?: CanopyCells; // what grows where (pipeline/tree_sizes.py), for the trees made up
