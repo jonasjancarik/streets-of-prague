@@ -36,7 +36,8 @@ walls' outlines with straight tops, which the mesh keeps as breaklines). Per til
      city pass's own mistake and keeps the LiDAR (a pit 2 m deep in Národní). Divadelní,
      down its cutting to the car park, has its walls beside the street, not across it,
      but the dense model hasn't the cutting either, so the first rule gives it the city
-     pass's ground, as on the lattice. A patch is held the same way, face or not, where a
+     pass's ground, as on the lattice (which has the LiDAR's road down to the underpass
+     since November 2026: dtm_heights._scan_streets). A patch is held the same way, face or not, where a
      car street's middle has the city pass more than ALOFT m over the LiDAR away from
      tunnels (a deck the map calls ground; its patch out to ALOFT_REACH m, the slip roads
      coming down off it), and within LANDING m of where a bridge's way
@@ -421,7 +422,8 @@ def surface(t, targets, dense, scan_at, pads, kerbs, held_at=None):
         # face is the city pass's own mistake and takes the LiDAR: at Národní, inside Most
         # Legií's outline, a pit 2 m deep on a flat street. (Beside it Divadelní, down the
         # cutting to the car park under the theatre, has no face across it, but the dense
-        # model lacks the cutting too, so the first part takes the city pass there.)
+        # model lacks the cutting too, so the first part takes the city pass there: the
+        # LiDAR's road down to the underpass, since dtm_heights._scan_streets reaches it.)
         #
         # Three more seeds hold a patch the same way, faces or not:
         # - on a car street's middle, the city pass more than ALOFT over the LiDAR: a deck

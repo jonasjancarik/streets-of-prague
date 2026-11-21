@@ -78,6 +78,23 @@ class ScanStreets(unittest.TestCase):
         dtm_heights._scan_streets(grid, on, STREET, SIDES, _scan(lambda px, py: np.full(len(px), 14.0)), np.full(grid.shape, 3.0, dtype=np.float32), HERE(grid), x_of, y_of, STEP)
         assert (grid[on] == 20.0).all()
 
+    def test_unbroken_from_one_edge_of_a_street_into_the_next(self):
+        # Divadelní's last metres before its underpass under Národní: an edge of their own,
+        # all of it within SCAN_CLEAR of the tunnel, running on from an edge that's clear.
+        # The lattice there sloped up to Národní, 2 m over the road the scan has.
+        grid, x_of, y_of, x, y = _lattice()
+        on = np.abs(y) <= 6
+        grid[on] = np.where(x >= 0, 20.0, 18.0)[on]
+        streets = [(LineString([(-50, 0), (0, 0)]), 5.0), (LineString([(0, 0), (40, 0)]), 5.0)]
+        apart = np.where(x >= -4, 3.0, np.inf).astype(np.float32)
+        dtm_heights._scan_streets(grid, on, streets, SIDES * 2, _scan(lambda px, py: np.full(len(px), 18.0)), apart, HERE(grid), x_of, y_of, STEP)
+        assert np.abs(grid[on & (x >= 4) & (x <= 36)] - 18.0).max() < 0.05, grid[on & (x >= 4) & (x <= 36)]
+        # (Not joined, the second edge keeps what it had: see the test above.)
+        grid[on] = np.where(x >= 0, 20.0, 18.0)[on]
+        apart = np.full(grid.shape, 3.0, dtype=np.float32)
+        dtm_heights._scan_streets(grid, on, streets, SIDES * 2, _scan(lambda px, py: np.full(len(px), 18.0)), apart, HERE(grid), x_of, y_of, STEP)
+        assert (grid[on & (x >= 4) & (x <= 36)] == 20.0).all()
+
     def test_a_street_beside_another_a_storey_up_keeps_its_own_height(self):
         # Two carriageways side by side, the north one 4 m up: no shoulder of one on the
         # other, and no blending across the wall between them.

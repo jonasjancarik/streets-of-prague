@@ -97,7 +97,8 @@ import numpy as np
 import shapely
 from pyproj import Transformer
 from shapely.ops import substring
-from scipy import ndimage
+from scipy import ndimage, sparse
+from scipy.sparse import csgraph
 from scipy.spatial import cKDTree
 from shapely import STRtree
 
@@ -840,6 +841,19 @@ def _scan_streets(grid, on, streets, sides, scan_here, apart, sure, x_of, y_of, 
             broken[o:len(jump) + o] |= jump
     stretch = np.r_[0, np.cumsum(broken[:-1])]
     clear = np.bincount(stretch, weights=(weight >= 0.999) & ~unsure, minlength=stretch[-1] + 1) > 0
+    # And unbroken from one edge of the map's streets into the next, where they meet end to
+    # end: Divadelní's last 21 m before its underpass under Národní are an edge of their
+    # own, all of it within SCAN_CLEAR of the tunnel, and kept the lattice's slope up to
+    # Národní, 3 to 5 m over the street.
+    tips = np.r_[ends - np.asarray(counts) + 1, ends]
+    pairs = cKDTree(dense[tips]).query_pairs(0.05, output_type="ndarray")
+    if len(pairs):
+        a, b = tips[pairs[:, 0]], tips[pairs[:, 1]]
+        with np.errstate(invalid="ignore"):
+            run_on = (np.abs(middle[a] - middle[b]) <= SCAN_BREAK) & (gap[a] > 0) & (gap[b] > 0)
+        joined = sparse.coo_matrix((np.ones(int(run_on.sum())), (stretch[a[run_on]], stretch[b[run_on]])), shape=(len(clear), len(clear)))
+        _, group = csgraph.connected_components(joined, directed=False)
+        clear = np.bincount(group, weights=clear, minlength=group.max() + 1)[group] > 0
     reached = clear[stretch] & inside & np.isfinite(middle) & (gap > 0) if SCAN_BREAK > 0 else np.zeros(len(dense), dtype=bool)
     weight = np.where(reached, np.maximum(weight, np.where(unsure, weight, 1.0)), np.where(mixed, np.where(weight >= 0.999, weight, 0.0), weight))
     target = np.full(len(dense), np.nan)

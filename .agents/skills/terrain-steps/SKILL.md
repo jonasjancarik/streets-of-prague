@@ -254,7 +254,11 @@ steeper than VALLEY anywhere, which took steps over 1 m from 71 to 38.
   with a shoulder out to 4.5 m. The survey's kerbs alone made a street lean, twist and
   wave on the 4 m lattice, and at 5. května over Hvězdova the kerbs of the street in
   the cutting made a pit 4 m deep. Not under decks or in tunnels, and near them only on
-  stretches that run on unbroken from clear ground. In the city: leaning over 15 %
+  stretches that run on unbroken from clear ground, from one of the map's edges into
+  the next where they meet end to end (judged an edge at a time, Divadelní's last 21 m
+  before its underpass under Národní, an edge of its own within 6 m of the tunnel, kept
+  the lattice's slope up to Národní, a wedge 3 m high across the road; scenario
+  `divadelni-underpass-ride`). In the city: leaning over 15 %
   2,826 → 940 streets, bumps over 0.5 m 462 → 260, 99 % of carriageway within 0.3 m of
   the LiDAR (was 86.7 %).
 - A path down a bank is narrower than the lattice, so only a point here and there took
