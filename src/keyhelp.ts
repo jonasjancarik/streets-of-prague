@@ -32,7 +32,7 @@ function keysFor(s: HelpState): { title: string; keys: Keys; note?: string } {
         V: ['view', 'Switch between overhead, first-person and third-person views'],
         T: ['taxi', 'Get a taxi: wave one down or order one through an app'],
         J: ['jobs', 'Jobs: ask for work, take the job on offer, turn it down for another, or give one up'],
-        N: ['map', 'Map: pick where to drive, and the way there shows on the road'],
+        N: ['map', 'Open the map and choose a destination'],
         ...(s.gun ? { F: ['shoot', 'Shoot ahead, or where you click (hold it to keep shooting). Bullets never hit people'] as Use } : {}),
       },
     };

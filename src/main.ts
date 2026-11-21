@@ -1694,7 +1694,8 @@ async function main() {
     const goal = satnav.goal, at = goal ? dev.toLonLat(goal.x, goal.y) : null;
     const walking = !!streetEyes()?.onFoot;
     const spot = await pickSpot(document.body, {
-      title: t(walking ? 'Where do you want to walk?' : 'Where do you want to drive?'), go: t(walking ? 'Walk here' : 'Drive here'), hint: t('Click or tap a street where you want to go.'),
+      title: t(walking ? 'Where do you want to walk?' : 'Where do you want to drive?'), go: t(walking ? 'Walk here' : 'Drive here'),
+      hint: t(walking ? 'Click or tap where you want to walk.' : 'Click or tap a street where you want to go.'),
       current: goal && at ? { lon: at[0], lat: at[1], name: goal.name } : null,
       here: dev.toLonLat(px(), py()), stop: satnav.target ? t('Stop navigating') : null,
     });
