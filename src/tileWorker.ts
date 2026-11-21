@@ -1,3 +1,4 @@
+import { withBridgeWalk } from './map/bridgeWalk.ts';
 import { openPassages } from './map/passageOpenings.ts';
 import { passageLining } from './map/passageLining.ts';
 import { buildStreetWall, packStreetWalls } from './map/streetFacade.ts';
@@ -89,7 +90,8 @@ function groundAt(g: HeightGrid | null) {
   const base = heightSampler(g.hm, g.box, g.n, g.step, g.labels, terraceAt(g.terraces), flatTerraces(g.terraces, ref), stepLineIndex(g.stepLines, ref, lineReach(g.step), g.unit));
   const own = g.tin ? tinSampler(g.tin, ref, base).sample : base;
   const profiled = withRoadProfile(withRamps(own, g.ramps, ref), g.roadProfile, ref);
-  return withRoadSurfaces(profiled, g.roadSurfaces, ref, g.roadSurfaces ? terraceAt(g.terraces) : null);
+  const road = withRoadSurfaces(profiled, g.roadSurfaces, ref, g.roadSurfaces ? terraceAt(g.terraces) : null);
+  return withBridgeWalk(road, g.underpass, ref);
 }
 
 function roofs({ buildings, size, origin, ground, bbox, water, stops }: WorkerJobs['roofs']): BuildingArrays {
@@ -473,7 +475,7 @@ worker.onmessage = async (event: MessageEvent<unknown>) => {
         const started = performance.now();
         const result = groundLayers(d, {
           ...opts, height: ground ? groundAt(ground) : null, roadProfile: ground?.roadProfile, fine: ground?.tin ? 2 : undefined,
-          roadSurfaceBoxes: ground?.roadSurfaces?.map((p) => p.box),
+          roadSurfaceBoxes: ground?.underpass ? [...(ground.roadSurfaces?.map(p=>p.box) ?? []), ground.underpass.box] : ground?.roadSurfaces?.map((p) => p.box),
           steps: ground?.labels ? ground.terraces ?? [] : null,
           levels: levels ? levels.map((l) => ({ level: l.level, kind: l.kind, polys: l.polys, height: groundAt(l.heights) })) : null,
         });

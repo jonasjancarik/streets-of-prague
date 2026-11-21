@@ -1974,7 +1974,12 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   lines out. `?nostepedges` turns the edges off.
   Straight outdoor stairways with a usable ground profile get concrete treads
   and visible nosings from their mapped walk edges (`src/map/stairs.ts`).
-  Walking still follows the smooth ground profile beneath the treads.
+  Walking follows the smooth profile beneath the treads. At the south end of
+  Štefánikův most, the lower sidewalk joins two flights of stairs beneath the road.
+  The DTM ZPS transport edges run from 187.0 to 186.7 m Bpv. The walker and the rendered
+  terrain use those landings. The two mapped stairways have a handrail along the
+  bridge side, and the carriageway keeps its own bridge level
+  (`src/map/bridgeWalk.ts`).
   Where the rules make a place worse than the
   terrain model alone (seen in the game), list it in `pipeline/terrain_keep.json` (a box
   in degrees and why) and it stays as the terrain model has it. A wall the survey doesn't

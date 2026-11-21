@@ -1,3 +1,4 @@
+import { bridgeWalk, withBridgeWalk } from './map/bridgeWalk.ts';
 import { footSurfaces, type Footing } from './map/footing.ts';
 import { liningMesh, passageView } from './passageMaterial.ts';
 import { StreetFacades } from './streetFacades.ts';
@@ -11,7 +12,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { Geo, Grid, rng, hash, clipLine } from './map/geo.ts';
 import { wallMesh } from './map/buildings.ts';
 import { TreePool } from './trees.ts';
-import { groundStairs, stairLandings } from './map/stairs.ts';
+import { bridgeStairRails, groundStairs, stairLandings } from './map/stairs.ts';
 import { powerMesh, readPowerGrid, type PowerGrid } from './map/powerGrid.ts';
 import { Surfaces, tunnelDepthMesh } from './surface.ts';
 import { buildTin, decodeTin, tinGrid, tinNearSteps, tinSampler, TIN_FORMAT, type TinFile, type TinMesh } from './tin.ts';
@@ -1524,9 +1525,11 @@ export class TileWorld {
     const fits = lower ? [...lower, ...(trial ?? [])] : trial;
     const surfaces = fits;
     if (shade && surfaces) shade.sample = withRoadSurfaces(shade.sample, surfaces, this.ref, terraceAt(t.terraces));
+    const underpass = shade && t.structures?.some(s => s.kind === 'bridge') ? bridgeWalk(t.walk) : undefined;
+    if (shade && underpass) shade.sample = withBridgeWalk(shade.sample, underpass, this.ref);
     const hAt = shade ? shade.sample : () => 0;
     const ground = shade && terrain ? { hm: shade.hm, box: t.box, n: terrain.n, step: terrain.step, labels: shade.labels,
-      terraces: t.terraces, stepLines: this.stepLines ? t.stepLines : undefined, unit: terrain.unit, ref: this.ref, ...(roadProfile ? { roadProfile } : {}), ...(surfaces ? { roadSurfaces: surfaces } : {}), ...(tin ? { tin } : {}) } : null;
+      terraces: t.terraces, ...(underpass ? { underpass } : {}), stepLines: this.stepLines ? t.stepLines : undefined, unit: terrain.unit, ref: this.ref, ...(roadProfile ? { roadProfile } : {}), ...(surfaces ? { roadSurfaces: surfaces } : {}), ...(tin ? { tin } : {}) } : null;
     // Bridges above the ground and tunnels below it, each level with its own heights.
     // (Charles Bridge's cutwaters come off its deck.)
     const structures = clipDecks(t.structures || [], this.charles.piers, t.box);
@@ -1659,9 +1662,10 @@ export class TileWorld {
     lap('parking');
     if (sliced) { ms.parkingWait = ms.parking - Math.round(busy); ms.parking = Math.round(busy); }
     for (const c of cars) c.level = 0; // (nobody parks on a bridge or in a tunnel)
+    const handrails = underpass ? bridgeStairRails(underpass, this.ref) : null;
     const tile: Tile = {
       k, i: t.i, j: t.j, box: t.box, passages: t.passages || [], raised: t.buildings.filter((b) => !grounded(b)).map((b) => b.rings), grid, trunkCells: land.trunkCells, levels: onLevels, cars, ms,
-      source, shown: false, dressing: null, drawn: null, drawMs: {}, drawAfter: 0, fixtures: [walls, fenceRows.fence, fenceRows.hedge, fenceRows.rail, ...(sheds ? [sheds] : []), ...wires, ...statues],
+      source, shown: false, dressing: null, drawn: null, drawMs: {}, drawAfter: 0, fixtures: [walls, ...(handrails ? [handrails] : []), fenceRows.fence, fenceRows.hedge, fenceRows.rail, ...(sheds ? [sheds] : []), ...wires, ...statues],
       roads, crossers, poles, fences: fenceSections, furniture, relief: shade, sample: shade?.sample,
       water: (t.areas.water || []).map((rings) => {
         const xs = rings[0].map((p) => p[0]), ys = rings[0].map((p) => p[1]);

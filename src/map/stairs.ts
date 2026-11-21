@@ -1,3 +1,6 @@
+import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import type { BridgeWalk } from './bridgeWalk.ts';
 import type { Bounds, Point2 } from './geo.ts';
 import type { GroundLayer } from '../surface.ts';
 import type { RawStreetEdge } from '../network.ts';
@@ -77,4 +80,35 @@ export function stairGeometry(stairs: MappedStair[], box: Bounds, height: (x: nu
   const finish = ({ position, normal, index }: ReturnType<typeof mesh>) =>
     ({ position: new Float32Array(position), normal: new Float32Array(normal), index: new Uint32Array(index) });
   return { body: finish(body), edges: finish(edges) };
+}
+
+
+export function bridgeStairRails(fit: BridgeWalk, ref: number) {
+  const parts: THREE.BufferGeometry[] = [], up = new THREE.Vector3(0,1,0);
+  function tube(a: THREE.Vector3,b: THREE.Vector3,radius:number) {
+    const direction=b.clone().sub(a),length=direction.length();
+    if(length<.01)return;
+    const tube=new THREE.CylinderGeometry(radius,radius,length,8);
+    tube.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(up,direction.normalize()));
+    const mid=a.clone().lerp(b,.5);
+    parts.push(tube.translate(mid.x,mid.y,mid.z));
+  }
+  for(const s of fit.segments) {
+    if(!s.rail)continue;
+    const length=Math.sqrt(s.d2),across=s.rail*(s.half-.14);
+    const point=(t:number,rise:number)=>new THREE.Vector3(
+      s.x+s.dx*t-s.dy/length*across,s.z+s.dz*t-ref+rise,-s.y-s.dy*t-s.dx/length*across);
+    tube(point(0,.94),point(1,.94),.029);
+    const posts=Math.max(2,Math.ceil(length/1.55));
+    for(let i=0;i<=posts;i++){
+      const t=(.12+(length-.24)*i/posts)/length;
+      tube(point(t,-.03),point(t,.94),.022);
+    }
+  }
+  if(!parts.length)return null;
+  const geometry=mergeGeometries(parts)!;
+  for(const g of parts)g.dispose();
+  const mesh=new THREE.Mesh(geometry,new THREE.MeshLambertMaterial({color:'#586267'}));
+  mesh.name='Stair handrails';mesh.castShadow=mesh.receiveShadow=true;
+  return mesh;
 }
