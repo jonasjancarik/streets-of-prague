@@ -45,7 +45,7 @@ import shapely
 from shapely import STRtree
 from shapely.geometry import LineString, Polygon, box
 
-from kerbs import NO_PARKING, estimate
+from kerbs import NO_PARKING, bridge_ends, estimate, narrowest
 import build_cache
 import chunk_cache
 import dtm
@@ -212,7 +212,19 @@ def graph_edges(bbox, tf, network, directed, source=None, kerbs=None, core=None,
         for (i, _, _), w in zip(sized, lanes.apply(setting, kerbs, lines, [e["hw"] for e in ests], ests, [not e["guessed"] for e in ests])):
             if w:
                 out[i]["width"] = w
-        for (i, _, _), (left, right) in zip(sized, kerbs(lines, ests)):
+        measured = kerbs(lines, ests)
+        # A bridge the survey has no deck for is drawn as wide as the street it carries
+        # on from at each end; its lanes keep to the narrower end.
+        decks = [out[i]["bridge"] for i, _, _ in sized]
+        shares = kerbs.surveyed(lines)
+        ends = bridge_ends(lines, kerbs, ests, decks, [d and s < 0.5 for d, s in zip(decks, shares)])
+        for k, pair in ends.items():
+            # Its kerbs at each end, [x, y, right, left], for the game to draw its
+            # carriageway going over from one to the other (ground.ts, deckLayers).
+            pts = out[sized[k][0]]["pts"]
+            out[sized[k][0]]["deck"] = [[*p, *(round(v, 2) for v in (end or measured[k])[::-1])] for p, end in zip((pts[0], pts[-1]), pair)]
+            measured[k] = narrowest(measured[k], pair)
+        for (i, _, _), (left, right) in zip(sized, measured):
             out[i]["kerb"] = [right, left]
     return out
 

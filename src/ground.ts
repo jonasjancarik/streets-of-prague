@@ -47,6 +47,7 @@ export interface GroundRoadEdge {
   level?: number; // on a bridge or in a tunnel: its level, where the map says (see groundLayers)
   kerb?: [number | null, number | null]; // the kerbs' distance from the centre line, [right, left]
   park?: [string | null, string | null]; // how OSM says cars park on the [right, left]
+  deck?: [number, number, number, number][]; // on a bridge: [x, y, right kerb, left kerb] at its two ends (deckSides)
 }
 // side: at a step in the ground, which side's height (terrain.ts, heightSampler).
 type HeightAt = (x: number, y: number, side?: number | boolean) => number;
@@ -810,9 +811,12 @@ function deckLayers(polys: Polygons, trams: Point2[][], edges: GroundRoadEdge[],
   const streets = edges.filter((e) => e.pts.length > 1);
   if (streets.length) {
     add(polygons(polys), COLORS.path, 'mosaic');
-    const ways = streets.map((e) => ({ pts: e.pts, half: carriageway(e, trams) / 2 }));
-    for (const w of ways) add(strips([w.pts], w.half * 2), COLORS.bridge, 'asphalt');
-    add(kerbRibbon(ways.flatMap((w) => [offsetLine(w.pts, w.half), offsetLine(w.pts, -w.half)]), 0.25), COLORS.kerb, 'graniteKerb');
+    const sides = streets.map((e) => deckSides(e, trams));
+    streets.forEach((e, k) => add(ribbon(e.pts, sides[k]), COLORS.bridge, 'asphalt'));
+    // The kerbs, but not where they'd lie on another street's carriageway: a slip road
+    // drawn over the motorway it joins (at Řepy) put its kerbs across the lanes.
+    add(kerbRibbon(streets.flatMap((e, k) => [offsetBy(e.pts, sides[k].map((s) => s[0])), offsetBy(e.pts, sides[k].map((s) => -s[1]))]
+      .flatMap((line) => offOtherRoads(line, e, streets))), 0.25), COLORS.kerb, 'graniteKerb');
   } else if (railway.length) add(polygons(polys), COLORS.ballast, 'gravel', true);
   else add(polygons(polys), COLORS.bridge, 'asphalt');
   add(tramRibbon(trams, false), COLORS.trackbed, 'tramBed');
@@ -845,6 +849,40 @@ function railwayLayers(lines: Point2[][], add: (g: GroundGeometry, color: string
   add(strips(lines, 3.2), '#5d5750', 'gravel');
   add(strips(sleepers, 0.26), '#8b8175');
   add(strips(lines.flatMap(pts => [offsetLine(pts, 0.72), offsetLine(pts, -0.72)]), 0.16), '#c4beb1');
+}
+
+// How far a street on a bridge reaches to its [right, left] kerb at each point of its
+// line. Where the pipeline gives its kerbs at its two ends (`deck`: as wide as the street
+// on the ground it carries on from there), it goes over from one end's to the other's,
+// so it meets that street with no deck showing between (the D0 at Řepy was 10.75 m wide
+// on its bridge and 14 m on the ground). Otherwise half its carriageway each side.
+function deckSides(e: GroundRoadEdge, trams: Point2[][]): [number, number][] {
+  const half = carriageway(e, trams) / 2;
+  if (!e.deck || half > e.width / 2) return e.pts.map(() => [half, half]);
+  const [[ax, ay, ar, al], [bx, by, br, bl]] = e.deck;
+  const dx = bx - ax, dy = by - ay, d2 = dx * dx + dy * dy || 1;
+  return e.pts.map(([x, y]) => {
+    const t = Math.min(1, Math.max(0, ((x - ax) * dx + (y - ay) * dy) / d2));
+    return [ar + (br - ar) * t, al + (bl - al) * t];
+  });
+}
+
+// A line `d[i]` to the right of each point of `pts` (to the left where negative).
+function offsetBy(pts: Point2[], d: number[]): Point2[] {
+  return pts.map((p, i) => {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    return [p[0] + ((b[1] - a[1]) / len) * d[i], p[1] - ((b[0] - a[0]) / len) * d[i]];
+  });
+}
+
+// A strip along `pts` out to `sides[i]` = [right, left] at each point.
+function ribbon(pts: Point2[], sides: [number, number][]): GroundGeometry {
+  const r = offsetBy(pts, sides.map((s) => s[0])), l = offsetBy(pts, sides.map((s) => -s[1]));
+  const pos: number[] = [], idx: number[] = [];
+  for (let i = 0; i < pts.length; i++) pos.push(r[i][0], 0, -r[i][1], l[i][0], 0, -l[i][1]);
+  for (let i = 0; i < pts.length - 1; i++) idx.push(2 * i, 2 * i + 1, 2 * i + 3, 2 * i, 2 * i + 3, 2 * i + 2);
+  return finish(pos, idx);
 }
 
 // How wide a street on a bridge is from kerb to kerb: as the map has it, or wider where

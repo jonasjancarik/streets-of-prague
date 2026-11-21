@@ -32,7 +32,7 @@ import sports
 import verges
 import worn_paths
 from build_cache import Timings
-from kerbs import Kerbs, estimate
+from kerbs import Kerbs, bridge_ends, estimate, tapered
 
 AREAS = {
     # west, south, east, north (WGS84)
@@ -511,14 +511,21 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     lines = [w[0] for w in car_ways]
     measured = kerbs(lines, [w[1] for w in car_ways])
     shares = kerbs.surveyed(lines)
+    # A bridge the survey has no deck for is as wide as the street it carries on from
+    # (only where it's drawn: shoulders, guard rails and verges leave bridges out).
+    decks = [w[2] == "bridge" for w in car_ways]
+    ends = bridge_ends(lines, kerbs, [w[1] for w in car_ways], decks, [d and s < SURVEYED for d, s in zip(decks, shares)])
     timer.lap("kerb_measure")
     surveyed, sett_near = [], []  # (centre line, cobbled?) of streets drawn from the survey
     overhead = []  # the carriageways of car ways not in a tunnel, which hide what lies under them
-    for (ls, est, cls, street), (left, right), share in zip(car_ways, measured, shares):
+    for k, ((ls, est, cls, street), (left, right), share) in enumerate(zip(car_ways, measured, shares)):
         # Each side out to its kerb, and round ends so streets join up at crossroads.
         # (The pieces are merged with all the others below, so not one by one here.)
-        pieces = [ls.buffer(left, single_sided=True), ls.buffer(-right, single_sided=True),
-                  ls.buffer(min(left, right), cap_style="round", join_style="round")]
+        # A bridge as wide as the street on the ground is, at each end, goes over from
+        # one to the other along its length, with square ends that meet that street.
+        pieces = [tapered(ls, (left, right), ends[k])] if k in ends else [
+            ls.buffer(left, single_sided=True), ls.buffer(-right, single_sided=True),
+            ls.buffer(min(left, right), cap_style="round", join_style="round")]
         drivable.extend(pieces)
         if not est["tunnel"]:
             overhead.extend(pieces)

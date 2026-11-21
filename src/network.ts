@@ -25,6 +25,9 @@ export interface RawStreetEdge {
   surface?: string;
   park?: [ParkingOrientation | null, ParkingOrientation | null];
   kerb?: [number | null, number | null];
+  // On a bridge as wide as the streets it carries on from: [x, y, right kerb, left kerb]
+  // at its two ends (pipeline/kerbs.py, bridge_ends; ground.ts draws it). Mostly absent.
+  deck?: [number, number, number, number][];
 }
 
 export type ParkingOrientation = 'parallel' | 'diagonal' | 'perpendicular' | 'no';

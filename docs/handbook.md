@@ -1162,7 +1162,14 @@ record the measurements, merge decisions and pending landmark asset activation.
   A bridge with a street on it is paved as pavement from parapet to parapet, with the
   carriageway laid over it between granite kerbs. The carriageway is as wide as the
   street, or wide enough for its tram tracks with a lane either side (on most Legií
-  OSM's 7 m leaves the tracks out). Bridges in `BALUSTRADES` (`src/ground.ts`; most
+  OSM's 7 m leaves the tracks out). Where the survey has no deck for a bridge, each end
+  is as wide as the street on the ground it carries on from, measured over that
+  street's last 25 m, and the carriageway goes over from one end's width to the
+  other's (`bridge_ends` in `pipeline/kerbs.py`, the edges' `deck`): on the D0 at Řepy
+  the bridges were 10.75 m wide against 14 m on the ground, with the deck showing in
+  wedges between. The lanes keep to the narrower end, and a kerb that would lie on
+  another street's carriageway (a slip road drawn over the motorway it joins) is left
+  out. Bridges in `BALUSTRADES` (`src/ground.ts`; most
   Legií so far) get a stone balustrade instead of the plain parapet: a rail on balusters
   between pillars, each with a stone ball on top.
   Charles Bridge's deck is a straight band. OSM's outline of it takes in the piers'
