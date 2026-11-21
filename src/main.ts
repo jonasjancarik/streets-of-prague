@@ -2321,6 +2321,8 @@ async function main() {
     for (const f of funiBodies) for (const [x, y] of f.circles) hash.add(obstacle(x, y, f.gz, f.line.spec.w / 2, f.vx, f.vy, 'tram'));
 
     traffic.emergency = [...police.chasing, ...brigade.engines.filter((e) => e.phase === 'go' && !e.wrecked), ...ambulances.rigs.filter((r) => r.phase === 'go' && !r.wrecked)].map((e) => e.car);
+    // Yours too, with the siren on.
+    if (ownBeacon(inCar) === 'siren') traffic.emergency.push(inCar!);
     traffic.update(dt, obstacles, clock.t);
     // In view or not, each car keeps track of whether it's on a bridge or under it.
     for (const a of traffic.agents) world.track(a.car);

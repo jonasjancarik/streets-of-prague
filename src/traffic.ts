@@ -44,6 +44,9 @@ export interface TrafficAgent {
   // Fed up with you standing in its way: for this long (s) it goes round you as it
   // would round a parked car, where there's room (and so does the car behind it).
   around?: number;
+  // How long it has heard a siren near (s), and how long this driver takes to notice one.
+  heard?: number;
+  notice?: number;
 }
 
 // How busy the main roads are at each hour (0 = free-flowing, 1 = the slowest hour of
@@ -81,6 +84,8 @@ const SWERVE = 3.2, PASS = 0.35;
 // of the passing one. Less than the room parked cars leave a lane (parkingClearance),
 // or the widest cars would stop for every car parked at the least distance.
 const TOUCH = 0.1;
+// How near a siren has to be for drivers to react to it (m).
+const HEAR = 90;
 // The largest radius of a standing car's circles that the box round the lane rules out
 // (Car.r is half a car's width and 2 cm; anything larger is measured as before).
 const BOX_R = 1.5;
@@ -173,7 +178,7 @@ export class Traffic {
   signals: Signals | null = null;
   // Emergency vehicles with their sirens on (main.ts sets them each frame): cars in front
   // of one move over to let it by.
-  emergency: { x: number; y: number; h: number }[] = [];
+  emergency: { x: number; y: number; h: number; vx: number; vy: number; gz?: number }[] = [];
   // A driver sounding the horn at you; `long` after a few short ones.
   onHonk?: (car: Car, long: boolean) => void;
   private kerbAgents: TrafficAgent[] = [];
@@ -542,20 +547,63 @@ export class Traffic {
       let want = clamp(0, lo, hi);
       const room = lo <= hi && want >= -left && want <= right;
       if (!room || a.kerb || (want < a.off - 0.05 && a.off > -0.3 && oncoming)) want = a.kerb ? 0 : a.off;
-      // An emergency vehicle close behind on the same street: move over to the right as far
-      // as the lane and the parked cars allow, slowly, and stay there till it has passed.
-      // (One standing at a red light stays put.)
-      let giving = false;
+      // Emergency vehicles with the siren going, yours included. A driver takes a moment
+      // to notice one, then: with it coming up behind, moves over (right, or left on a
+      // one-way street when it is coming up on the right) and slows, and stops by the
+      // side once it's close; with it coming the other way, keeps right and slows, and
+      // stops if it's in this car's lane; with it about to cross in front, waits. Where
+      // there's no room to move over, it drives on to where there is.
+      let behind = Infinity, facing = Infinity, inLane = false, crossing = Infinity, toLeft = false, nearSiren = false;
       for (const q of this.emergency) {
-        const dx = c.x - q.x, dy = c.y - q.y, ahead = dx * fx + dy * fy;
-        if (ahead < 1 || ahead > 45 || Math.abs(dx * fy - dy * fx) > 5 || Math.cos(q.h - c.h) < 0.6) continue;
-        giving = true;
-        break;
+        if (q === c || (q.gz !== undefined && c.gz !== undefined && Math.abs(q.gz - c.gz) > 3)) continue;
+        const dx = c.x - q.x, dy = c.y - q.y;
+        if (dx * dx + dy * dy > HEAR * HEAR) continue;
+        nearSiren = true;
+        // (One standing still, at an accident say, is just driven round, slowly.)
+        const qx = Math.cos(q.h), qy = Math.sin(q.h), cos = qx * fx + qy * fy, qv = Math.hypot(q.vx, q.vy);
+        if (cos > 0.6) {
+          if (qv < 1.5) continue;
+          // How far ahead of it this car is, and how far to its right.
+          const along = dx * qx + dy * qy, lat = dx * qy - dy * qx;
+          if (along > 1 && along < 70 && Math.abs(lat) < 6) {
+            if (along < behind) { behind = along; toLeft = !!edge?.oneway && lat < -0.4; }
+          }
+        } else if (cos < -0.6) {
+          // How far in front of this car it is, and how far to this car's right.
+          const ahead = -(dx * fx + dy * fy), lat = -(dx * fy - dy * fx);
+          if (ahead > 0 && ahead < 60 && Math.abs(lat) < 7) {
+            facing = Math.min(facing, ahead);
+            if (Math.abs(lat) < W / 2 + 1.4 && qv > 1.5) inLane = true;
+          }
+        } else {
+          // Across this car's way: where it will be over the next few seconds.
+          for (let t = 0; t <= 4; t += 0.5) {
+            if (t > 0 && qv < 2) break;
+            const ex = q.x + q.vx * t - c.x, ey = q.y + q.vy * t - c.y;
+            const ahead = ex * fx + ey * fy, lat = ex * fy - ey * fx;
+            if (ahead > 0 && ahead < 28 && Math.abs(lat) < 4.5) { crossing = Math.min(crossing, ahead); break; }
+          }
+        }
       }
-      if (giving && room && !a.kerb && (a.speed > 1 || Math.abs(a.off) > 0.3)) {
-        want = clamp(right, lo, hi);
-        target = Math.min(target, 5);
+      if (nearSiren) a.heard = (a.heard ?? 0) + dt;
+      else if (a.heard) a.heard = Math.max(0, a.heard - dt * 0.5);
+      a.notice ??= 0.4 + this.r() * this.r() * 1.8;
+      const hearing = (a.heard ?? 0) >= a.notice;
+      if (hearing && behind < Infinity) {
+        if (room && !a.kerb) want = clamp(toLeft ? -left : right, lo, hi);
+        // Whether it would get by: the street to the other side of this car (on a
+        // street this car knows), against the width of a fire engine and a little room.
+        const by = !edge ? Infinity : toLeft ? edge.width / 2 - edge.laneOffset - want - W / 2 : edge.width / 2 + edge.laneOffset + want - W / 2;
+        if (room && !a.kerb && by > 2.8) {
+          const over = Math.abs(want - a.off) < 0.35;
+          target = Math.min(target, behind < 30 ? (over ? 0 : 1.5) : 5);
+        } else target = Math.min(target, 8);
       }
+      if (hearing && facing < Infinity) {
+        if (room && !a.kerb && !edge?.oneway) want = clamp(right, lo, hi);
+        target = Math.min(target, inLane && facing < 35 ? Math.sqrt(2 * 4 * Math.max(0, facing - L / 2 - 8)) : facing < 40 ? 3 : 7);
+      }
+      if (hearing && crossing < Infinity) target = Math.min(target, Math.sqrt(2 * 4 * Math.max(0, crossing - L / 2 - 4)));
       if (!room && still && stillGap < gap) { gap = stillGap; blocker = still; }
       if (blocker) target = Math.min(target, Math.max(0, a.reckless ? (gap - 0.8) * 1.3 : (gap - 1.5) * 0.9));
       // Round a car in the way it slows down, and edges up to it while it pulls out.
@@ -611,7 +659,7 @@ export class Traffic {
       // longer, until you move. Further back, later and less often, and not everyone.
       const front = blocker?.car?.mode === 'traffic' ? this.mergeAgents.get(blocker.car) : undefined;
       const first = blocker?.kind === 'player';
-      if (target < 0.3 && a.speed < 0.3 && (first || !!front?.wait) && !held) {
+      if (target < 0.3 && a.speed < 0.3 && (first || !!front?.wait) && !held && !hearing) {
         a.wait = (a.wait ?? 0) + dt;
         a.beep ??= first ? 3.5 : this.r() < 0.35 ? Infinity : 4.5 + this.r() * 5;
         if (a.wait >= a.beep) {

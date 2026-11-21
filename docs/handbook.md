@@ -559,6 +559,14 @@ the same signal phase as the overhead light.
   landing. In flight, press E to jump out, then press Space to open your parachute
   and steer with A/D. On a controller, press X then A. On touch, tap Jump out
   then tap Jump. You can bail out after engine failure too. If you splash down,
+  With the siren on, traffic gives way to you as it does to the game's own emergency
+  vehicles (`src/traffic.ts`). Each driver takes a moment to notice it. A car in front
+  moves over to the right, or to the left on a one-way street when you're coming up
+  on its right, slows down and stops by the side once you're close. On a street too
+  narrow to let you by, it drives on instead. Cars coming the other way keep right and
+  slow down, and stop if you're in their lane. Cars about to cross your path at a
+  junction wait. Nobody honks at you, and a siren car standing still is only driven
+  round slowly (scenario `siren-yield`).
   you return to dry land. Impacts, gunfire and nearby vehicle explosions damage the aircraft.
   At 100% damage the engine fails, and the helicopter explodes on impact. Once you
   fly away from a pad, another helicopter can appear there when the pad is out of
