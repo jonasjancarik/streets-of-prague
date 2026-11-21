@@ -273,8 +273,8 @@ export class Satnav {
   }
 
   // Once a frame: `car`, what you're driving (null on foot); `job`, where the job wants you.
-  update(dt: number, car: Driver | null, me: { x: number; y: number; level?: number }, job: { x: number; y: number } | null, onFoot = false, walkJob = false) {
-    this.walkJob = walkJob;
+  update(dt: number, car: Driver | null, me: { x: number; y: number; level?: number }, job: { x: number; y: number } | null, onFoot = false, walkJob: false | 'approach' | 'exchange' = false) {
+    this.walkJob = !!walkJob;
     const moved = job && this.job ? Math.hypot(job.x - this.job.x, job.y - this.job.y) > 5 : job !== this.job;
     if (moved) { this.job = job; this.quiet = false; this.here = false; }
     if (this.goal) this.pin.show(this.goal.x, this.goal.y); else this.pin.hide();
@@ -290,7 +290,11 @@ export class Satnav {
     this.toPin = to ? Math.hypot(to.x - me.x, to.y - me.y) : 0;
     const wFoot = this.footWay, end = wFoot?.line.pts.at(-1);
     const atPathEnd = !!wFoot?.nearestPath && !!end && Math.hypot(me.x - end[0], me.y - end[1]) < 2.5 && wFoot.line.length - this.s < 5;
-    const arrived = !walking ? this.toPin < arrive : atPathEnd ||
+    // A parcel is exchanged with a person. Keep guiding the approach around
+    // walls and corners until that person is actually within reach.
+    const contact = walking && to?.job && walkJob;
+    if (contact) this.here = contact === 'exchange';
+    const arrived = contact ? this.here : !walking ? this.toPin < arrive : atPathEnd ||
       this.toPin < arrive && (this.toPin < 2.5 || !!wFoot?.reached && wFoot.line.length - this.s < 12);
     if (to && arrived) {
       if (!to.job) { this.say(t(atPathEnd ? 'You reached the nearest footpath' : 'You have arrived')); this.goal = null; }

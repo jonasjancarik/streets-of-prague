@@ -3453,7 +3453,8 @@ async function main() {
     const wanted_ = metro.active ? null : missions.target();
     if (wanted_) marker.show(wanted_.x, wanted_.y, !!missions.handoff); else marker.hide();
     marker.update(dt, { x: px(), y: py() });
-    satnav.update(dt, inCar, { x: px(), y: py(), level: walker.level }, wanted_, !!eyes && !!eyes.onFoot && !walker.flight && !walker.onRoof, !!missions.handoff);
+    satnav.update(dt, inCar, { x: px(), y: py(), level: walker.level }, wanted_, !!eyes && !!eyes.onFoot && !walker.flight && !walker.onRoof,
+      handoff ? 'exchange' : missions.handoff ? 'approach' : false);
     const navCard = metro.active ? '' : satnav.card();
     show('nav', navCard, 'html');
     if (shown.navOn !== (navCard ? 1 : 0)) { shown.navOn = navCard ? 1 : 0; $('nav').hidden = !navCard; }

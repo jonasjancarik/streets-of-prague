@@ -1,6 +1,7 @@
 // Exercise the real pedestrian graph in both directions, at a multilevel crossing
 // and at the edge of the currently loaded city.
 import assert from 'node:assert/strict';
+import { courierWalk } from '../src/footCourier.ts';
 import { WalkGraph } from '../src/network.ts';
 import { walkingSearch } from '../src/walkingDirections.ts';
 function findWalkingWay(...args) {
@@ -50,3 +51,14 @@ assert.deepEqual(lawn.line.pts.at(-1), [40, 25]);
 const closed = findWalkingWay({ ...paths, accessible: (a, b) => b[1] !== 25 }, { x: 1, y: 0, level: 0 }, { x: 40, y: 25 });
 assert.deepEqual(closed.line.pts.at(-1), [40, 20]);
 assert.ok(closed.nearestPath);
+
+
+// The centre-to-kerb line fits alongside this wall, but a person standing
+// there would have no room for a handoff. Both contacts use the open side.
+const lane = new WalkGraph();
+lane.add([{ id: 'courier-lane', u: 'a', v: 'b', hw: 'footway', name: 'Lane', width: 4, pts: [[0, 0], [190, 0]] }]);
+const delivery = courierWalk({
+  graph: lane, near: () => lane.edges, accessible: (a, b) => Math.min(a[1], b[1]) >= -1.1,
+}, { x: 0, y: 0 }, () => null, () => .25);
+assert.ok(delivery && delivery.sender.y > 0 && delivery.recipient.y > 0, 'both people have standing room');
+console.log('Courier contacts have room to meet on the open side of a narrow footpath');

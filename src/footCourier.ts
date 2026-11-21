@@ -20,7 +20,11 @@ export function courierWalk(paths: Footpaths, me: { x: number; y: number }, stre
     const p = e.path.at(s), offset = e.side || Math.min(1, e.width / 4);
     for (const side of [1, -1]) {
       const x = p.x + side * Math.sin(p.ang) * offset, y = p.y - side * Math.cos(p.ang) * offset;
-      if (paths.accessible && !paths.accessible([p.x, p.y], [x, y], 0)) continue;
+      const clear = paths.accessible;
+      // Leave standing room around the person. A single line to the kerb can
+      // graze a shop wall and strand the handoff on its very edge.
+      if (clear && (!clear([p.x, p.y], [x, y], 0) ||
+          !clear([x - .7, y], [x + .7, y], 0) || !clear([x, y - .7], [x, y + .7], 0))) continue;
       return { x, y, name: e.name || street(x, y) || 'the marked footpath' };
     }
     return null;

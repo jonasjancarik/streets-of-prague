@@ -33,11 +33,12 @@ export default {
         const first = t.navLine();
         if (!t.check('walking directions lead to the handoff', !!first && !!t.nav().to?.job, t.nav())) return;
         // Aim along the minimap line and walk with the same controls as the player.
-        let walked = 0;
+        let walked = 0, lastMetres = false;
         for (let n = 0; n < 360 && !missions.handoffLabel(); n++) {
           const route = t.navLine(), end = Math.hypot(target.x - walker.x, target.y - walker.y);
           let aim = target;
-          if (route && end > 6) {
+          if (route && end < 6 && end > 3) lastMetres = true;
+          if (route && end > 3) {
             const path = new Polyline(route.pts), on = project(path, walker.x, walker.y);
             aim = path.at(on.s + (on.d > 2 ? .5 : 2));
           }
@@ -47,6 +48,7 @@ export default {
           walked += Math.hypot(walker.x - x, walker.y - y);
         }
         if (!t.check('walked into reach without automatically exchanging the parcel', missions.handoffLabel() === label && t.job().step === i + 1, { walked, job: t.job(), x: walker.x, y: walker.y })) return;
+        t.check('directions stay on through the last few metres', lastMetres);
         const towards = walker.h;
         walker.h += Math.PI;
         t.check('a contact behind you does not claim the action button', !missions.handoffLabel());

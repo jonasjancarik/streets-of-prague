@@ -701,7 +701,7 @@ export class Missions {
     if (this.state === 'offer') {
       const { def, plan, left } = this.offered!;
       return `<div class="job-from">${esc(t(def.from.name))} · ${t('job offer')}</div>`
-        + `<div class="job-text">${esc(t(plan.offer ?? def.offer, plan.vars))}</div>`
+        + `<div class="job-text">${esc(say([plan.offer ?? def.offer, plan.vars]))}</div>`
         + `<div class="job-meta">${t('Pay: about {pay}', { pay: kc(plan.pay + (plan.bonus ?? 0) / 2) })}</div>`
         + `<div class="job-keys">${key(t('take the job'))} · ${touch ? `<span class="job-no">${t('Tap here: {what}', { what: t('another one') })}</span>` : padLabels(`<b>K</b> ${t('another one')}`)} · ${Math.ceil(left)} s</div>`;
     }

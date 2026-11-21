@@ -430,7 +430,7 @@ the same signal phase as the overhead light.
   for their good opinion). `?mission=courier` (or `taxi`, `ambulance`, `tram`, `fire`,
   `tour`, `fetch`, `wreck`, `getaway`) starts one at once.
   Ask Fofr for work on foot in first person for a neighbourhood delivery. Follow the
-  walking directions to the marked sender and press E to take the parcel. Deliver
+  walking directions right up to the marked sender. Face them and press E to take the parcel. Deliver
   it to the recipient under the arrow with E (on touch, use the parcel button). Where
   the local footpaths are too short for a delivery, Fofr offers its cross-town run.
 - **Taxis**: on foot near a street, press T (on touch, "Taxi") and pick how to get one
