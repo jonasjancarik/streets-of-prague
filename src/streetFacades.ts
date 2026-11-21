@@ -11,6 +11,7 @@ interface Source { base: THREE.Mesh; groups: Uint32Array; box: readonly number[]
 interface Wall { src: Source; tris: Uint32Array; x0: number; x1: number; z0: number; z1: number; y0: number; y1: number; nx: number; nz: number; mesh?: THREE.Mesh; pending?: boolean; cancel?: () => void; empty?: boolean; retry?: number }
 const material = new THREE.MeshLambertMaterial({ vertexColors: true });
 material.customProgramCacheKey = () => 'street-facade';
+export { material as streetFacadeMaterial };
 
 function ranges(src: Source) {
   const walls: Wall[] = [], p = src.base.geometry.attributes.position, n = src.base.geometry.attributes.normal;

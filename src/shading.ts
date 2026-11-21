@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { FACADE_ATLAS, FACADE_ON, FACADE_GLSL } from './facades.ts';
+import { FACADE_ATLAS, FACADE_ON, STREET_FACADE, FACADE_GLSL } from './facades.ts';
 import { LAMP_ON, lampLit } from './lamps.ts';
 import { MIRROR, MIRROR_BRIGHT, MIRROR_K, MIRROR_MAP, MIRROR_MATRIX } from './mirror.ts';
 import { ROOF_TILES } from './map/roofPalette.ts';
@@ -750,6 +750,7 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
     sh.uniforms.uRoofClutter = ROOF_CLUTTER;
     sh.uniforms.uFacades = FACADE_ATLAS;
     sh.uniforms.uFacadeOn = FACADE_ON;
+    sh.uniforms.uStreetFacade = STREET_FACADE;
     sh.uniforms.uWet = WET;
     sh.uniforms.uSnow = SNOW;
     sh.uniforms.uWindows = WINDOWS;

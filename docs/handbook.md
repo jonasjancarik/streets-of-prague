@@ -252,7 +252,7 @@ point on clear plaster near the corner. The curved face, proportions and enamel
 border follow the examples in [IPR’s Pražský uličník](https://prazskyulicnik.az.iprpraha.cz/clanky/vyvoj-oznaceni-ulic-v-terenu).
 The map supplies the names, while individual sign positions are approximate.
 
-At street level on WebGPU, a glazed shopfront can show bookshelves, a bakery,
+At street level on WebGPU and WebGL, a glazed shopfront can show bookshelves, a bakery,
 flowers or ceramics. Look through the glass from the side to see the walls
 and floor behind the window frame. Adjacent bays share a display and some
 stay lit after dark. The displays are scenery imagined for the game.

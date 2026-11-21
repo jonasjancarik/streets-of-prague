@@ -4,6 +4,7 @@ export const facadeFinishes: { plaster?: THREE.Texture; masks?: THREE.Texture; s
 let loading = false, retryAt = 0;
 let shopRetry = 0;
 export const shopReady = { value: 0 };
+export const shopTexture: { value: THREE.Texture | null } = { value: null };
 
 // Publish the pair atomically. In particular the first WebGPU wall must bind
 // the finished masks, not compile its material against an undecoded image.
@@ -12,7 +13,7 @@ export function loadFacadeFinishes() {
     shopRetry = Infinity;
     new THREE.TextureLoader().load(import.meta.env.BASE_URL + 'shop-displays.webp', map => {
       map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = 4;
-      facadeFinishes.shops = map; shopReady.value = 1;
+      facadeFinishes.shops = shopTexture.value = map; shopReady.value = 1;
     }, undefined, () => { shopRetry = performance.now() + 60000; });
   }
   if (loading || facadeFinishes.masks || performance.now() < retryAt) return;

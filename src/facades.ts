@@ -517,6 +517,7 @@ const glslArray = (type: string, v: number[]) => `${type}[${v.length}](${v.map((
 export const FACADE_GLSL = /* glsl */ `
 uniform mediump sampler2DArray uFacades;
 uniform float uFacadeOn;
+uniform float uStreetFacade;
 const int F_UP[${LOOKS * 6}] = ${glslArray('int', F_UP)};
 const int F_DOOR[${LOOKS * 3}] = ${glslArray('int', F_DOOR)};
 const int F_WALL[${LOOKS * 4}] = ${glslArray('int', F_WALL)};
@@ -536,9 +537,28 @@ vec2 fStorey(vec4 f) {
   float fit = mod(floor(fract(f.w) * 1024.), 32.);
   return vec2(F_GROUND[style], F_STOREY[style] * (${STOREY_FIT[0].toFixed(2)} + fit * ${(STOREY_FIT[1] / 31).toFixed(6)}));
 }
-int fLook(vec4 f) { return int(mod(floor(fract(f.w) * 32768.), 16.)); }
+int fLook(vec4 f) { return min(int(mod(floor(fract(f.w) * 32768.), 16.)), ${LOOKS - 1}); }
 float fTwoTone(vec4 f) { return mod(floor(fract(f.w) * 2048.), 2.); }
-vec3 facadeModules(vec3 wall, vec4 f, vec4 fdx, vec4 fdy) {
+// Same integer choice as map/streetFacade.ts, so a detailed opening keeps
+// the shape and shop it had when seen from the far end of the street.
+float streetPick(float seed, float column, float salt) {
+  float n = mod(seed * 97. + column * 53. + salt * 181., 997.);
+  return mod(n * (n + 71.) + 241., 997.) / 997.;
+}
+int streetLayer(vec4 f, float bays, vec2 cell, bool ground) {
+  float seed = mod(floor(fract(f.w) * 32768.), 997.);
+  int look = fLook(f);
+  if (ground) {
+    float run = min(bays, 8.);
+    if (mod(cell.x, run) == floor(streetPick(seed, 0., 1.) * run)) {
+      int door = F_DOOR[look * 3 + int(streetPick(seed, floor(cell.x/run), 2.) * 3.)];
+      return door == 19 ? 18 : door;
+    }
+    return F_WALL[look*4 + int(streetPick(seed, floor(cell.x/6.), 3.)*4.)];
+  }
+  return F_UP[look*6 + int(streetPick(seed, look == 3 || look == 10 ? cell.x : cell.y+1., 4.)*6.)];
+}
+vec3 facadeModuleAt(vec3 wall, vec4 f, vec4 fdx, vec4 fdy, float explicitLayer) {
   float bays = fBays(f);
   // Bare plaster, as bright as the modules' plaster (drawn about .45 grey: × .8).
   if (bays < .5) return wall * (.77 + .06 * vnoise(f.xy * vec2(.9, .6)));
@@ -551,7 +571,9 @@ vec3 facadeModules(vec3 wall, vec4 f, vec4 fdx, vec4 fdy) {
   float bay = f.z / bays, mw = min(F_MOD[look], bay);
   float u = clamp((uv.x - .5) * bay / mw + .5, .016, .984);
   int layer;
-  if (f.y < st.x) {
+  if (explicitLayer >= 0.) layer = int(explicitLayer + .5);
+  else if (uStreetFacade > .5) layer = streetLayer(f, bays, cell, f.y < st.x);
+  else if (f.y < st.x) {
     float r = fHash(seed, cell.x);
     layer = r < .18 ? F_DOOR[look * 3 + int(r / .18 * 3.)] : F_WALL[look * 4 + int(fHash(cell.x, seed) * 4.)];
   } else layer = F_UP[look * 6 + int(fHash(seed, look == 3 || look == 10 ? cell.x + 50. : cell.y + 7.) * 6.)];
@@ -563,5 +585,8 @@ vec3 facadeModules(vec3 wall, vec4 f, vec4 fdx, vec4 fdy) {
   vec3 plaster = mix(wall, mix(wall, vec3(.85, .79, .67), .6), tm.a * fTwoTone(f));
   float hi = max(t.r, max(t.g, t.b)), sat = (hi - min(t.r, min(t.g, t.b))) / max(hi, 1e-3);
   return mix(t, t * plaster / .55, 1. - smoothstep(.08, .2, sat));
+}
+vec3 facadeModules(vec3 wall, vec4 f, vec4 fdx, vec4 fdy) {
+  return facadeModuleAt(wall, f, fdx, fdy, -1.);
 }
 `;

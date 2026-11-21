@@ -288,6 +288,7 @@ async function main() {
   // date: it is for ?renderer=webgl and for browsers with no WebGPU.)
   status('Preparing graphics…');
   const renderer = await createGameRenderer(params);
+  if (renderer instanceof THREE.WebGLRenderer) (await import('./streetFacadeGL.ts')).configureStreetFacadeGL();
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -3194,7 +3195,7 @@ async function main() {
     if (walker.mesh.visible) walker.drawFigure();
     carOutline.update(fromStreet ? null : inCar, carPool);
     streetSurfaceView(fromStreet && !!DOME_NODE.value);
-    const streetWalls = fromStreet && !!DOME_NODE.value;
+    const streetWalls = fromStreet;
     if (streetWalls && graphics.tier !== 'lowest') loadFacadeFinishes();
     world.facades.update(streetWalls, camera.position.x, camera.position.y, camera.position.z, graphics.tier, !!facadeFinishes.masks);
     tunnelFinishesView(!!eyes && !underway);
