@@ -1,3 +1,4 @@
+import { liningMesh, passageView } from './passageMaterial.ts';
 import { StreetFacades } from './streetFacades.ts';
 import { roofLookup, ROOFTOP } from './roofSurface.ts';
 import { dataUrl } from './data.ts';
@@ -28,7 +29,7 @@ import type { StepLine, Terrace } from './terrain.ts';
 import { SKY_STEP, SKY_MARGIN } from './map/skyView.ts';
 import type { Shadower } from './map/skyView.ts';
 import type { Point2, Bounds, Polygons } from './map/geo.ts';
-import { DriveGraph } from './network.ts';
+import { DriveGraph, segDist } from './network.ts';
 import type { DriveEdge, WalkEdge, WalkGraph } from './network.ts';
 import type { Car } from './car.ts';
 import type { Landmark, TileJSON, MapIndex, TilePassage, BuildingArrays, HeightGrid, LevelInput, LandResult, TreeTrunk, WorkerJobs, WorkerResults } from './contracts.ts';
@@ -486,6 +487,8 @@ function inPassage(passages: TilePassage[], x: number, y: number, pad = 0) {
   return false;
 }
 
+interface PassageRoom { cancel: () => void; mesh?: THREE.Mesh; retryAt?: number }
+
 export class TileWorld {
   osmBuildings: boolean;
   // Prototype (ground_cover.py): `ortho`, the painted
@@ -501,6 +504,59 @@ export class TileWorld {
     if (this.streetFurniture === street) return;
     this.streetFurniture = street;
     for (const tile of this.loaded.values()) furnitureView(tile.furniture, street);
+  }
+
+  private passageRooms = new Map<Tile, PassageRoom>();
+  private nextPassageRetry = Infinity;
+  private lastPassage = new THREE.Vector3(Infinity, Infinity, -1);
+  private dropPassage(tile: Tile) {
+    const room = this.passageRooms.get(tile);
+    if (!room) return;
+    this.passageRooms.delete(tile); room.cancel();
+    if (room.mesh) {
+      room.mesh.removeFromParent();
+      room.mesh.traverse(o => { if (o instanceof THREE.Mesh) o.geometry.dispose(); });
+    }
+  }
+
+  // Only the nearest passage tiles need their interior. Required map jobs keep
+  // priority, and a late worker reply cannot bring back a room left behind.
+  passageCamera(street: boolean, x: number, y: number) {
+    if (!street && !this.passageRooms.size && this.lastPassage.z < 0) return;
+    const now = performance.now();
+    if (street && this.lastPassage.z === this.joined && now < this.nextPassageRetry && Math.hypot(this.lastPassage.x - x, this.lastPassage.y - y) < 5) return;
+    this.lastPassage.set(x, y, street ? this.joined : -1);
+    const want = new Set<Tile>(), here = street ? this.tileAt(x, y) : undefined;
+    if (here) for (let i = here.i - 1; i <= here.i + 1; i++) for (let j = here.j - 1; j <= here.j + 1; j++) {
+      const tile = this.byIndex.get(i * 65536 + j);
+      if (!tile?.drawn || !tile.passages.length) continue;
+      const near = tile.passages.some(p => p.pts.some((a, k) => k > 0 && segDist(x, y, p.pts[k - 1], a) < 65));
+      if (near) want.add(tile);
+    }
+    this.nextPassageRetry = Infinity;
+    for (const [tile, room] of this.passageRooms) {
+      if (!want.has(tile) || (room.retryAt && room.retryAt <= now)) this.dropPassage(tile);
+      else if (room.retryAt) this.nextPassageRetry = Math.min(this.nextPassageRetry, room.retryAt);
+    }
+    passageView(want.size > 0);
+    for (const tile of want) if (!this.passageRooms.has(tile)) {
+      const job = this.workers.submit('passage', () => ({
+        paths: tile.passages, houses: tile.source.t.buildings.filter(b => !(b.minh >= RAISED) && b.h >= 3.25),
+        landmarks: tile.source.hide, box: tile.box, ground: tile.source.ground,
+      }), [], 'optional');
+      const room: PassageRoom = { cancel: job.cancel };
+      this.passageRooms.set(tile, room);
+      void job.promise.then(data => {
+        if (!data || this.passageRooms.get(tile) !== room) return;
+        room.mesh = liningMesh(data); room.mesh.matrixAutoUpdate = false;
+        this.scene.add(room.mesh); room.mesh.updateMatrixWorld(true);
+      }).catch(error => {
+        if (this.passageRooms.get(tile) !== room) return;
+        console.warn('Could not draw passage interior', error);
+        room.retryAt = performance.now() + 10000;
+        this.nextPassageRetry = Math.min(this.nextPassageRetry, room.retryAt);
+      });
+    }
   }
 
   time: { value: number };
@@ -1645,8 +1701,8 @@ export class TileWorld {
           stairs: groundStairs(t.walk).map(({ pts, width }) => ({ pts, width })) },
         paint: TILE_LOOK.roadPaint, rasterRoads: !this.ortho && !!s.ground && roadRasterEnabled(), box: s.bounds, edges: s.clipped, buildings: s.standing, parkingZones: s.parkingZones, ground: s.ground, levels: s.levels,
       }),
-      buffer ? w.run('ipr', { buffer, box: t.box, absolute: this.index.iprRef != null, ground: s.ground, bbox: this.index.bbox_wgs84, hide: s.hide, clutter: ROOF_CLUTTER.value > 0.5, footprints: s.footprints }, [buffer]) : null,
-      !s.withIpr || s.extrude.length ? w.run('roofs', { buildings: s.extrude, size: s.size, origin: s.origin, ground: s.ground, bbox: this.index.bbox_wgs84, water: t.areas?.water ?? [], stops: stopLines(t) }) : null,
+      buffer ? w.run('ipr', { buffer, box: t.box, absolute: this.index.iprRef != null, passages: t.passages, ground: s.ground, bbox: this.index.bbox_wgs84, hide: s.hide, clutter: ROOF_CLUTTER.value > 0.5, footprints: s.footprints }, [buffer]) : null,
+      !s.withIpr || s.extrude.length ? w.run('roofs', { buildings: s.extrude, size: s.size, origin: s.origin, ground: s.ground, bbox: this.index.bbox_wgs84, water: t.areas?.water ?? [], passages: t.passages, stops: stopLines(t) }) : null,
     ]);
   }
 
@@ -1770,6 +1826,7 @@ export class TileWorld {
 
   // Take a tile's meshes away again; the tile stays loaded.
   undress(tile: Tile) {
+    this.dropPassage(tile);
     tile.shown = false;
     const drawn = tile.drawn;
     if (!drawn) return;

@@ -7,8 +7,9 @@
 import * as THREE from 'three';
 import {
   Fn, If, Discard, uniformArray, float, int, vec2, vec3, vec4, texture, attribute, vertexColor, positionWorld, normalWorld, normalWorldGeometry, transformNormalToView, diffuseColor,
-  materialColor, fract, floor, mod, dot, atan, sin, cos, mix, smoothstep, step, length, abs, max, min, clamp, normalize, dFdx, dFdy, distance, select, cross, sqrt, cameraPosition, reflect, pow, uniform, renderGroup,
+  materialColor, fract, floor, mod, dot, atan, sin, cos, mix, smoothstep, step, length, abs, max, min, clamp, normalize, dFdx, dFdy, distance, select, cross, sqrt, cameraPosition, reflect, pow, uniform, renderGroup, uv,
 } from 'three/tsl';
+import { passageAtlas } from '../passageMaterial.ts';
 import { facadeFinishes, shopReady } from '../facadeFinishes.ts';
 import { STRIPS, STRIPS_ON, onStrips, KINDS } from '../reflections.ts';
 import { FACADE_ATLAS, FACADE_ON, STREET_FACADE, F_SURFACE as S, BLANK, F_BAY as BAY_WIDTH, F_UP as UP, F_DOOR as DOOR, F_WALL as WALL, F_MOD as MOD, F_GROUND as GROUND, F_STOREY as STOREY, STOREY_FIT } from '../facades.ts';
@@ -622,6 +623,18 @@ addPort(/^buildings-procedural$/, (node) => {
   // Lower walls that look onto a narrow street or a courtyard get less of the sky's light, never less sun or lamplight.
   node.aoNode = buildingGraph.ambient;
   lampLit(node, positionWorld, true);
+});
+
+const passageMap = texture(passageAtlas.value).onRenderUpdate(() => { passageMap.value = passageAtlas.value; });
+addPort(/^passage-lining$/, node => {
+  node.vertexColors = false;
+  const tile = attribute('finish', 'float'), st = uv();
+  const at = clamp(fract(st), .003, .997).add(vec2(mod(tile, 2), float(1).sub(floor(tile.mul(.5))))).mul(.5);
+  const surface = passageMap.sample(at).grad(dFdx(st).mul(.5), dFdy(st).mul(.5)).rgb;
+  const slot = tile.sub(5);
+  const stockUV = clamp(st, .005, .995).add(vec2(mod(slot, 2), float(1).sub(floor(slot.mul(.5))))).mul(.5);
+  const stock = shopAtlas.sample(stockUV).rgb;
+  node.colorNode = vec4(vertexColor().rgb.mul(select(tile.lessThan(3.5), surface, select(tile.greaterThan(4.5), stock, vec3(1)))), 1);
 });
 
 // These are actual return faces and recessed panels. Keep their original wall

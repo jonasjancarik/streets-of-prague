@@ -257,6 +257,15 @@ flowers or ceramics. Look through the glass from the side to see the walls
 and floor behind the window frame. Adjacent bays share a display and some
 stay lit after dark. The displays are scenery imagined for the game.
 
+Mapped foot passages continue through the ground floors of buildings. At U Nováků
+on Vodičkova you can walk off the pavement, past the display cases, and back
+out again. The openings follow the same route and width as the walking grid.
+Where passages meet, the corridor walls stop at the junction. The ceiling and floor
+follow the terrain and end at the building footprint. The fixtures, finishes and
+display cases are inferred scenery. Nearby interiors are built by an optional
+tile-worker job and released on returning overhead. See
+`scenarios/covered-passage.ts` and `scripts/check-passage-openings.mjs`.
+
 The fire engine shows its roof ladder and hose rack from above. Within 24 m on foot,
 you can see through the crew cab, read the rear pump gauges and follow a firefighter’s
 hose to the coupling beside the lockers. Two marked police cars share patrol and pursuit

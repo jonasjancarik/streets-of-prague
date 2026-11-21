@@ -1,3 +1,5 @@
+import { openPassages } from './map/passageOpenings.ts';
+import { passageLining } from './map/passageLining.ts';
 import { buildStreetWall, packStreetWalls } from './map/streetFacade.ts';
 // Builds a tile off the main thread, which then only turns the arrays into meshes:
 //   roofs   OSM buildings extruded, with roofs on their straight skeletons
@@ -420,7 +422,7 @@ function land({ data, seeds, ground, bridges, box, structures }: WorkerJobs['lan
 function isRequest(value: unknown): value is WorkerRequest {
   if (typeof value !== 'object' || value === null) return false;
   const message = value as Record<string, unknown>;
-  return typeof message.id === 'number' && ['roofs', 'ipr', 'ground', 'land', 'sky', 'streetFacade'].includes(String(message.type))
+  return typeof message.id === 'number' && ['roofs', 'ipr', 'ground', 'land', 'sky', 'streetFacade', 'passage'].includes(String(message.type))
     && typeof message.data === 'object' && message.data !== null;
 }
 
@@ -440,6 +442,12 @@ worker.onmessage = async (event: MessageEvent<unknown>) => {
   const { id } = event.data;
   try {
     switch (event.data.type) {
+      case 'passage': {
+        const { paths, houses, box, ground, landmarks } = event.data.data;
+        const result = passageLining(paths, houses, box, groundAt(ground), landmarks);
+        worker.postMessage({id, result} satisfies WorkerResponse, result ? Object.values(result).map(a => a.buffer) : []);
+        break;
+      }
       case 'streetFacade': {
         const d = event.data.data, ids = Uint32Array.from({ length: d.position.length / 9 }, (_, i) => i);
         const result = buildStreetWall(d, d.sky, ids);
@@ -447,12 +455,16 @@ worker.onmessage = async (event: MessageEvent<unknown>) => {
         break;
       }
       case 'roofs': {
-        const result = roofs(event.data.data);
+        const d = event.data.data;
+        const arrays = roofs(d);
+        const result = d.passages?.length ? openPassages(arrays, d.passages, groundAt(d.ground)) : arrays;
         worker.postMessage({ id, result } satisfies WorkerResponse, transferBuffers(result));
         break;
       }
       case 'ipr': {
-        const result = ipr(event.data.data);
+        const d = event.data.data;
+        const arrays = ipr(d);
+        const result = d.passages?.length ? openPassages(arrays, d.passages, groundAt(d.ground)) : arrays;
         worker.postMessage({ id, result } satisfies WorkerResponse, transferBuffers(result));
         break;
       }

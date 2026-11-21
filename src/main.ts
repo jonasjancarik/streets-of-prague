@@ -3150,6 +3150,7 @@ async function main() {
     if (streetWalls && graphics.tier !== 'lowest') loadFacadeFinishes();
     world.facades.update(streetWalls, camera.position.x, camera.position.y, camera.position.z, graphics.tier, !!facadeFinishes.masks);
     world.furnitureCamera(fromStreet);
+    world.passageCamera(fromStreet, camera.position.x, -camera.position.z);
     world.trees.street(fromStreet, free ? free.x : camera.position.x, free ? -free.y : camera.position.z);
     world.trees.canopy(true, fromStreet);
     sun.position.copy(sun.target.position).add(sky.offset);
