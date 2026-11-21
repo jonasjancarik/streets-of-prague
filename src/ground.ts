@@ -179,34 +179,33 @@ function strips(lines: Point2[][], w: number, dash: Point2 | null = null, hold =
   return { ...g, hold: out };
 }
 
-// Coordinates across a single grooved rail or along its concrete bed. Carry
-// them through the same terrain refinement as shade, then name the attribute
-// for the surface shader. Positive offsets lie to the right of the track.
-function tramRibbon(lines: Point2[][], rails: boolean): GroundGeometry {
+// The across-track coordinate profiles the rail head; distance along a strip
+// places joints across a tram bed or kerb. Both follow bends and the same
+// terrain cuts as the rest of the street.
+function surfaceRibbon(lines: Point2[][], bands: readonly (readonly [number, number])[], across: boolean): GroundGeometry {
   const pos: number[] = [], idx: number[] = [], coord: number[] = [];
   for (const pts of lines) {
     if (pts.length < 2) continue;
-    for (const sign of rails ? [-1, 1] : [1]) {
-      const inside = offsetLine(pts, rails ? sign * .648 : -1.25);
-      const outside = offsetLine(pts, rails ? sign * .792 : 1.25);
+    for (const [from, to] of bands) {
+      const inside = offsetLine(pts, from), outside = offsetLine(pts, to);
       const dx = pts[1][0] - pts[0][0], dy = pts[1][1] - pts[0][1];
-      const first = Math.hypot(dx, dy) || 1;
-      let along = (pts[0][0] * dx + pts[0][1] * dy) / first;
+      let along = (pts[0][0] * dx + pts[0][1] * dy) / (Math.hypot(dx, dy) || 1);
       for (let j = 0; j < pts.length; j++) {
         if (j) along += Math.hypot(pts[j][0] - pts[j - 1][0], pts[j][1] - pts[j - 1][1]);
         const i = pos.length / 3;
         pos.push(inside[j][0], 0, -inside[j][1], outside[j][0], 0, -outside[j][1]);
-        coord.push(rails ? 0 : along, rails ? 1 : along);
-        if (j) {
-          if (sign > 0) idx.push(i - 2, i - 1, i, i - 1, i + 1, i);
-          else idx.push(i - 2, i, i - 1, i - 1, i, i + 1);
-        }
+        coord.push(across ? 0 : along, across ? 1 : along);
+        if (j && to > from) idx.push(i - 2, i - 1, i, i - 1, i + 1, i);
+        else if (j) idx.push(i - 2, i, i - 1, i - 1, i, i + 1);
       }
     }
   }
   const { alpha, ...g } = finish(pos, idx, coord);
   return alpha ? { ...g, trackCoord: alpha } : g;
 }
+const tramRibbon = (lines: Point2[][], rails: boolean) =>
+  surfaceRibbon(lines, rails ? [[-.648, -.792], [.648, .792]] : [[-1.25, 1.25]], rails);
+const kerbRibbon = (lines: Point2[][], width: number) => surfaceRibbon(lines, [[-width / 2, width / 2]], false);
 
 // A soft band just outside each ring, fading from `alpha` at the ring to 0.
 function skirts(ringsList: Polygons, width: number, outside: boolean, skip: (a: Point2, b: Point2) => boolean = () => false): GroundGeometry {
@@ -805,7 +804,7 @@ function deckLayers(polys: Polygons, trams: Point2[][], edges: GroundRoadEdge[],
     add(polygons(polys), COLORS.path, 'mosaic');
     const ways = streets.map((e) => ({ pts: e.pts, half: carriageway(e, trams) / 2 }));
     for (const w of ways) add(strips([w.pts], w.half * 2), COLORS.bridge, 'asphalt');
-    add(strips(ways.flatMap((w) => [offsetLine(w.pts, w.half), offsetLine(w.pts, -w.half)]), 0.25), COLORS.kerb, 'concrete');
+    add(kerbRibbon(ways.flatMap((w) => [offsetLine(w.pts, w.half), offsetLine(w.pts, -w.half)]), 0.25), COLORS.kerb, 'graniteKerb');
   } else if (railway.length) add(polygons(polys), COLORS.ballast, 'gravel', true);
   else add(polygons(polys), COLORS.bridge, 'asphalt');
   add(tramRibbon(trams, false), COLORS.trackbed, 'tramBed');
@@ -1071,7 +1070,7 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     const kerb = kerbs();
     const worn = joinShading([...(kerb ? [skirtParts(kerb.edged, GUTTER_WIDTH, false, kerb.plain, GUTTER_PEAK)] : []), ...(paintRoads ? [streetWear(edges, box)] : [])]);
     shade(finish(worn.pos, worn.idx, worn.alpha), WEAR_SHADE);
-    if (kerb) add(strips(kerb.lines, KERB_WIDTH), COLORS.granite, 'concrete');
+    if (kerb) add(kerbRibbon(kerb.lines, KERB_WIDTH), COLORS.granite, 'graniteKerb');
     // Where the trams have a bed of their own beside the street: ballast under the tracks.
     add(polygons(R.trambed || []), COLORS.ballast, 'gravel');
     // Bay lines as Prague paints them: a solid blue line in residents' zones, white

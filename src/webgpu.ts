@@ -41,7 +41,7 @@ import { asphalt, setts } from './streetSurface.ts';
 import { dome } from './webgpu/dome.ts';
 import { DOME_NODE, DOME } from './sky.ts';
 import { OLD_GRADE } from './grade.ts';
-import { mosaicStones, pavedStones } from './webgpu/mosaic.ts';
+import { pavementStones, pavementNormal } from './webgpu/mosaic.ts';
 import { uWater, ripples, waves, waveNormal, waterShine, flatMirror } from './webgpu/water.ts';
 
 // PATTERNS_GLSL.
@@ -91,6 +91,25 @@ function tramConcrete(c: N,p: N) {
   });
   return grit(concrete.mul(float(1).sub(joint.mul(.48))),p);
 }
+function graniteKerb(c: N, p: N) {
+  const aa = max(.0015, fwidth(trackCoord).mul(.62));
+  const stone = c.toVar();
+  If(surfaceDetail.greaterThan(.5), () => {
+    // A course of cut granite with three different block lengths. The quartz
+    // and dark grains are finer than the stone, and the worn edge catches light.
+    const q = mod(trackCoord.add(vnoise(p.mul(23)).mul(.006)), 3.12);
+    const edge = min(min(q, float(3.12).sub(q)), min(abs(q.sub(1.08)), abs(q.sub(2.02))));
+    const joint = float(1).sub(smoothstep(float(.007).sub(aa), float(.007).add(aa), edge));
+    const arris = float(1).sub(smoothstep(.009, .022, edge)).sub(joint);
+    const id = floor(trackCoord.div(3.12)).mul(3).add(step(1.08, q)).add(step(2.02, q));
+    const bed = vnoise(vec2(id, 17.3)).mul(.19).add(.89);
+    const grit = aggregate(p.mul(2.25)).r.sub(.5);
+    const mineral = vec3(grit.mul(1.25).add(1), grit.mul(1.12).add(1), grit.add(1));
+    const fade = float(1).sub(smoothstep(.025, .15, aa));
+    stone.assign(c.mul(bed).mul(mineral).mul(float(1).add(arris.mul(.12).sub(joint.mul(.48)).mul(fade))));
+  }).Else(() => { stone.assign(grit(pConcrete(c, p), p)); });
+  return stone;
+}
 function pAsphalt(c0: N, p: N) {
   const c = c0.mul(fbm(p.mul(0.3)).mul(0.18).add(0.9)).toVar();
   c.mulAssign(mix(1, 0.9, smoothstep(0.62, 0.66, fbm(p.mul(0.07).add(3)))));
@@ -138,9 +157,9 @@ function pSetts(c: N, p: N, sx: number, sy: number) {
   return s.mul(broad.mul(0.12).add(0.94)).mul(smoothstep(0.5, 0.68, broad).mul(0.1).add(0.97));
 }
 // (The stones are a texture: webgpu/mosaic.ts.)
-const pMosaic = (c: N, p: N) => c.mul(mosaicStones(p)).mul(fbm(p.mul(0.25)).mul(0.1).add(0.95));
+const pMosaic = (c: N, p: N) => c.mul(pavementStones(p, false)).mul(fbm(p.mul(0.25)).mul(0.1).add(0.95));
 // (A surveyed pavement: the same stones in Prague's patterns, webgpu/mosaic.ts.)
-const pPaved = (c: N, p: N) => c.mul(pavedStones(p)).mul(fbm(p.mul(0.25)).mul(0.1).add(0.95));
+const pPaved = (c: N, p: N) => c.mul(pavementStones(p, true)).mul(fbm(p.mul(0.25)).mul(0.1).add(0.95));
 function pSlabs(c: N, p: N) {
   const d = detail(p, 0.4), s = c.mul(0.95).toVar();
   If(d.greaterThan(0), () => {
@@ -241,6 +260,7 @@ function pattern(id: number, c: N, p: N, time: N, seasonal: boolean): N {
     }
     case 18: return railProfile(c);
     case 19: return tramConcrete(c,p);
+    case 20: return graniteKerb(c,p);
     case 2: return grit(pSetts(c, p, 0.17, 0.14), p);
     case 3: return grit(pMosaic(c, p), p);
     case 16: return grit(pPaved(c, p), p);
@@ -263,7 +283,7 @@ function pattern(id: number, c: N, p: N, time: N, seasonal: boolean): N {
 // WEATHER_GLSL: the colour, and in .a how much of a mirror the ground is there (shine).
 function weathered(id: number, c0: N, p: N, time: N) {
   if (id === 10 || id === 17) return vec4(c0, select(uWater.greaterThan(0.5), 0, 0.35));
-  const paved = id <= 4 || id === 9 || id === 16 || id === 18 || id === 19, road = id === 1 || id === 2;
+  const paved = id <= 4 || id === 9 || id === 16 || id === 18 || id === 19 || id === 20, road = id === 1 || id === 2;
   const c = vec3(c0).toVar(), shine = float(0).toVar();
   // (Derivatives outside the branches.)
   const ripple = paved ? detail(p, 0.12) : float(0);
@@ -425,7 +445,7 @@ function groundGraph(id: number, time: { value: number }, { relief, deck, photo,
         n.assign(normalize(n.add(vec3(world.x, 0, world.y.negate()).mul(abs(n.y)))));
       });
       return transformNormalToView(n);
-    })() : null,
+    })() : id === 3 || id === 16 ? pavementNormal(wp) : null,
   };
   byKey.set(key, graph);
   return graph;

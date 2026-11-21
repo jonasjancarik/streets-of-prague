@@ -764,9 +764,12 @@ record the measurements, merge decisions and pending landmark asset activation.
   oil down each lane, heavier where cars wait before a junction, and now and then a patch of
   newer asphalt laid along the street. Lanes, widths and junctions are the map's; which spot
   has a patch is made up, the same each time. Surveyed pavements are Prague's mosaic in one of
-  three layouts, by stretches of some 44 m (`pavedStones` in `src/webgpu/mosaic.ts`):
+  three layouts, by stretches of some 44 m (`pavementStones` in `src/webgpu/mosaic.ts`):
   scattered stones, a chessboard on the diagonal, or a diagonal lattice of dark lines; which
-  stretch has which is not surveyed. Grass has lusher and thinner clumps, blades close up,
+  stretch has which is not surveyed. At street level the WebGPU view uses six-centimetre
+  cubes with chipped edges, mineral flecks and shallow joints, following the scale of
+  the city's cut limestone mosaic. Cut granite blocks follow the bends of the kerb,
+  with narrow joints across it. Grass has lusher and thinner clumps, blades close up,
   and daisies and dandelions while the trees are in blossom. Tile rows and metal seams are
   lit and shaded by where the sun stands (`rowRelief`), and roof windows and metal roofs
   flash the sun where they lean half-way between it and the camera. Every car has a soft

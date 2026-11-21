@@ -53,6 +53,7 @@ up and packed by the scripts beside them. The prompts are kept with the sources.
   with ChatGPT; faces that came out too alike were redone one by one with Codex
   (`portraits/faces/`). `portraits/cut.py` cuts them out.
 - **Street-level setts** (`ground/setts.py` → `public/street-setts.webp`): [Cobblestone Pavement by Charlotte Baglioni, Poly Haven](https://polyhaven.com/a/cobblestone_pavement), CC0. The 2.5 m scan supplies stone reflectance, joint shading and normals.
+- **Pavement mosaic** (`ground/pavement.py` → `public/street-mosaic.webp` and `public/street-mosaic-relief.webp`): original procedural limestone cubes at the six-centimetre size described in the city’s [public-space guide](https://praha.eu/documents/42395/71960/mhmp_verejne_prostranstvi_2022_08_19_web.pdf/4ead22ca-2a90-4314-0a5a-639093405d73). The layout on each stretch is inferred.
 - **Street ironwork** (`ground/ironwork.py` → `public/ironwork.webp` and `public/ironwork-normal.webp`): original procedural cast-iron relief. The rings, lifting slots and gate motif take their cues from the [Prague water company’s manhole reference drawings](https://zakazky.pvs.cz/document_audit_8706/smlouva-o-dilo_p8b-mestske-standardy-kanal_cast_b_vykres-pdf).
 - **Close asphalt** (`ground/asphalt.py` → `public/street-asphalt.webp`):
   [Asphalt 04, Poly Haven](https://polyhaven.com/a/asphalt_04), photographed by

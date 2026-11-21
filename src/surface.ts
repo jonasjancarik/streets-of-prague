@@ -183,13 +183,14 @@ function surfaceMaterial(l: GroundLayer, time: { value: number }, relief: Surfac
 // while the game loads, to have all their shaders compiled up front (compiling one the
 // first time a tile has, say, water would hold up that frame).
 export function groundSamples(time: { value: number }) {
-  const plane = () => {
+  const plane = (pattern?: string) => {
     const position = new Float32Array([0, 0, 0, 1, 0, 0, 0, 0, -1]);
-    return { position, normal: new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0]), alpha: new Float32Array(3), index: new Uint32Array([0, 1, 2]) };
+    return { position, ...(['groovedRail', 'tramBed', 'graniteKerb'].includes(pattern ?? '') ? { trackCoord: new Float32Array(3) } : {}),
+      normal: new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0]), alpha: new Float32Array(3), index: new Uint32Array([0, 1, 2]) };
   };
   const texture = new THREE.DataTexture(new Uint16Array([THREE.DataUtils.toHalfFloat(1)]), 1, 1, THREE.RedFormat, THREE.HalfFloatType);
   const relief = { texture, box: [0, 0, 1, 1] };
-  const layers: GroundLayer[] = Object.keys(PATTERN).map((pattern, order) => ({ order, geometry: plane(), color: '#ffffff', pattern, blend: null }));
+  const layers: GroundLayer[] = Object.keys(PATTERN).map((pattern, order) => ({ order, geometry: plane(pattern), color: '#ffffff', pattern, blend: null }));
   layers.push({ order: layers.length, geometry: plane(), shade: 0.5 });
   if (roadRasterEnabled()) {
     const raster: RoadRaster = { box: [0, 1, 1, 0], w: 1, h: 1, cells: new Uint8Array([255]) };
@@ -197,7 +198,7 @@ export function groundSamples(time: { value: number }) {
   }
   // And the bridge decks' kinds.
   const decks: GroundLayer[] = [
-    ...Object.keys(PATTERN).map((pattern, order) => ({ order, geometry: plane(), color: '#ffffff', pattern, blend: null, deck: true, level: 1 })),
+    ...Object.keys(PATTERN).map((pattern, order) => ({ order, geometry: plane(pattern), color: '#ffffff', pattern, blend: null, deck: true, level: 1 })),
     { order: 0, geometry: plane(), color: '#ffffff', pattern: 'concrete', blend: null, slab: true, level: 1 },
   ];
   const mask = { texture: new THREE.DataTexture(new Uint8Array([255]), 1, 1, THREE.RedFormat, THREE.UnsignedByteType), box: [0, 1, 1, 0] };
