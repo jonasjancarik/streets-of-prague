@@ -644,7 +644,10 @@ the same signal phase as the overhead light.
   first-person game: the mouse turns you, W/S walk the way you look and A/D step sideways (`t.eyes = { yaw, pitch }` in
   scripts). The left stick walks forward, back or sideways relative to the view. On a
   controller the right stick looks around. On a touchscreen, drag the street with your
-  free thumb. In first person each footfall follows the distance you actually cover. The
+  free thumb. In first person each footfall follows the distance you actually cover.
+  Stone, grass, gravel and settled snow have different footfalls. A paved path across a
+  lawn sounds like pavement, even while the grass on either side crunches under snow.
+  The
   view rises slightly between steps and settles on landing. The walking camera follows the system’s reduced-motion
   setting unless you choose Gentle movement or Keep steady. Nearby traffic, bells and sirens move across the stereo
   field as you turn. It loads 400 m round

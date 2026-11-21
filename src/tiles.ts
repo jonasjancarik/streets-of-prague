@@ -1,3 +1,4 @@
+import { footSurfaces, type Footing } from './map/footing.ts';
 import { liningMesh, passageView } from './passageMaterial.ts';
 import { StreetFacades } from './streetFacades.ts';
 import { roofLookup, ROOFTOP } from './roofSurface.ts';
@@ -93,6 +94,7 @@ interface Tile {
   drawMs: Record<string, number>; drawAfter: number;
   // The ground's triangles (the plain ground and the walls at its steps), when drawn.
   roofSurfaces?: ((x: number, y: number) => number)[];
+  footing?: ReturnType<typeof footSurfaces>;
   groundTriangles?: { ground: number; walls: number };
   // The walls, fences and wires: made with the tile (cars knock the fences and poles
   // down wherever they are) and put in the scene with the rest.
@@ -794,6 +796,13 @@ export class TileWorld {
   onRoad(x: number, y: number) {
     const t = this.tileAt(x, y);
     return !!t && t.roads.some((rings) => inPoly(x, y, rings));
+  }
+
+  footSurface(x: number, y: number, level = 0): Footing {
+    const tile = this.tileAt(x,y);
+    if (!tile || level || this.passageAt(x,y)) return 'hard';
+    tile.footing ??= footSurfaces(withPatches(tile.source.t), tile.source.t.roads);
+    return tile.footing(x,y);
   }
 
   // Whether a point is on open water: true or false, null where nothing is loaded.

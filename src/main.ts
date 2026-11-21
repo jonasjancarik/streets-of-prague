@@ -80,6 +80,7 @@ import { startScreen } from './startscreen.ts';
 import { liveWeather } from './liveweather.ts';
 import { Season, parseDay } from './season.ts';
 import { LaneAssist, turnOf, project } from './assist.ts';
+import { snowFooting } from './map/footing.ts';
 import { Sound, surfaceOf } from './audio.ts';
 import { roadNoise, ROAD_FAR } from './soundmix.ts';
 import type { Surface, HornKind, Rotor } from './audio.ts';
@@ -2182,7 +2183,12 @@ async function main() {
       walker.update(dt, eyes ? { ...ctl, strafe: true } : ctl);
       if (footView) {
         const contact = gait.advance(dt, Math.hypot(walker.x - x, walker.y - y), walker.jumping || !!walker.flight);
-        if (contact) sound.footfall(contact, gait.strength);
+        if (contact && sound.on) {
+          const footing = walker.perch > .25 ? 'hard' : world.footSurface(walker.x, walker.y, walker.level);
+          const snow = weather.now.cover;
+          const exposed = snow > .48 && rainSurface(walker.x, -walker.y) < walker.mesh.position.y + 1;
+          sound.footfall(contact, gait.strength, exposed ? snowFooting(footing, snow, weather.now.cleared) : footing);
+        }
       }
     }
     // In the helicopter Space climbs and Shift comes down.

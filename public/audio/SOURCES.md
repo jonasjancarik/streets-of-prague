@@ -37,4 +37,7 @@ stretch of its recording, evened out to a steady level and made into a loop.
 
 The six heel-and-toe pairs and the landing in `footfalls.wav` were cut from
 `walking.ogg` and `land.ogg` in [Kenney’s Starter Kit FPS](https://github.com/KenneyNL/Starter-Kit-FPS/tree/main/sounds).
-Kenney released the sounds under CC0. `assets/audio/footsteps.py` takes those two files in order and packs them into quarter-second slots.
+Kenney released the sounds under CC0. Grass and snow use five recordings each from
+[Kenney’s Impact Sounds](https://kenney.nl/assets/impact-sounds). The gravel footstep
+is from [TinyWorlds’ Different steps](https://opengameart.org/content/different-steps-on-wood-stone-leaves-gravel-and-mud), also CC0.
+`assets/audio/footsteps.py` trims the tails, matches the levels and packs the recordings into a mono bank.

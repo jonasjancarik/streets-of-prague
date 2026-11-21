@@ -1,3 +1,4 @@
+import type { Footing } from './map/footing.ts';
 import { clamp } from './network.ts';
 import { BOGIES, frontOf } from './trams.ts';
 import { AMBIENCE, ambienceGains, ambienceMuffle, sirenGain, SIREN_RANGE, PASSING, passingFalloff, passingNote, passingLevels, ROTORS, rotorFalloff, sourcePan, PASSAGE_SOUND } from './soundmix.ts';
@@ -22,6 +23,14 @@ import type { BirdSeason } from './soundmix.ts';
 // a tap; M turns it off and on.
 
 export type Surface = 'asphalt' | 'setts' | 'pavers' | 'pavement';
+
+// Offsets and slot lengths in seconds in assets/audio/footsteps.py.
+const FOOTSTEPS: Record<Footing, { offset: number; length: number; takes: number }> = {
+  hard: { offset: 0, length: .25, takes: 6 },
+  grass: { offset: 1.75, length: .5, takes: 5 },
+  snow: { offset: 4.25, length: .5, takes: 5 },
+  gravel: { offset: 6.75, length: .5, takes: 1 },
+};
 
 // How an engine sounds: the overtones of its note, the sub-octave under it, how hard
 // it's driven into distortion, the filter over it (`tone`: base + per Hz of the note +
@@ -320,18 +329,20 @@ export class Sound {
     const ctx = this.ctx;
     if (!ctx || !this.on || this.steps || performance.now() < this.stepRetry) return;
     this.stepRetry = Infinity;
-    void fetch(import.meta.env.BASE_URL + 'audio/footfalls.wav').then(async r => {
+    void fetch(import.meta.env.BASE_URL + 'audio/footfalls.wav?v=2').then(async r => {
       if (!r.ok) throw Error(String(r.status));
       this.steps = await ctx.decodeAudioData(await r.arrayBuffer());
     }).catch(() => { this.stepRetry = performance.now() + 60000; });
   }
 
-  footfall(kind: 'step' | 'land', strength: number) {
+  footfall(kind: 'step' | 'land', strength: number, footing: Footing = 'hard') {
     const ctx = this.ctx;
     if (!ctx || ctx.state !== 'running' || !this.on || !this.steps) return;
-    // Six distinct heel/toe pairs. Avoid the same one on successive contacts.
-    const slot = kind === 'land' ? 6 : (this.lastStep + 1 + Math.floor(Math.random() * 5)) % 6;
-    if (slot < 6) this.lastStep = slot;
+    // The original quarter-second hard-ground bank is also a fallback for older cached audio.
+    const bank = this.steps.duration < 7.24 ? FOOTSTEPS.hard : FOOTSTEPS[footing];
+    const take = (this.lastStep + 1 + Math.floor(Math.random() * (bank.takes - 1))) % bank.takes;
+    const offset = kind === 'land' && bank === FOOTSTEPS.hard ? 1.5 : bank.offset + take * bank.length;
+    this.lastStep = take;
     const source = ctx.createBufferSource();
     source.buffer = this.steps;
     source.playbackRate.value = (kind === 'land' ? 0.82 : 0.94 + strength * 0.12) + Math.random() * 0.05;
@@ -353,7 +364,7 @@ export class Sound {
       dry.connect(send).connect(this.stepEcho);
     }
     source.onended = () => { source.disconnect(); dry.disconnect(); send?.disconnect(); };
-    source.start(ctx.currentTime, slot * 0.25, 0.25);
+    source.start(ctx.currentTime, offset, bank.length);
   }
 
   // Your horn, for as long as it's held: a car's two notes, deeper on a lorry or a bus,
