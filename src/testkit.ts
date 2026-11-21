@@ -131,7 +131,7 @@ interface Game {
   // Trams: the ride you're on (ride.ts) and every tram running.
   tram: {
     ride: { on: boolean; driving: boolean; v: { speed: number } | null; atName: string | null; next: { stop: { name: string }; dist: number } | null; passengers: { doors: boolean; on: number; off: number } | null; board: (v: never) => void; steal: () => boolean; rolling: { v: { speed: number } }[]; doors: () => void };
-    list: () => { parts: { x: number; y: number }[]; look?: unknown; line: { ref: string } }[];
+    list: () => { parts: { x: number; y: number }[]; speed: number; look?: unknown; line: { ref: string } }[];
   };
 }
 
@@ -564,13 +564,15 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     // What a saved game of an older format becomes (null: can't be opened).
     upgradeSave(old: unknown) { return upgrade(old); },
     // Onto the nearest tram and into its cab, as F does once you ride one.
-    takeTram() {
+    takeTram(minKmh = 0) {
       const m = g.me(), ride = g.tram.ride;
-      const v = g.tram.list().slice().sort((a, b) => Math.hypot(a.parts[1].x - m.x, a.parts[1].y - m.y) - Math.hypot(b.parts[1].x - m.x, b.parts[1].y - m.y))[0];
+      const v = g.tram.list().filter(v => minKmh <= 0 || v.speed * 3.6 >= minKmh).sort((a, b) => Math.hypot(a.parts[1].x - m.x, a.parts[1].y - m.y) - Math.hypot(b.parts[1].x - m.x, b.parts[1].y - m.y))[0];
+      if (!v && minKmh > 0) return false;
       if (!v) throw new Error('No tram running near here');
       if (g.mode() !== 'foot') g.enterOrExit();
       ride.board(v as never);
       if (!ride.steal()) throw new Error('Could not take the tram over');
+      return true;
     },
     // The tram you drive: its speed (km/h), the stop its front is at, the next one ahead and whether the doors are open.
     tram() {
@@ -1157,7 +1159,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       if (!load) throw new Error(`No scenario called ${name}; there are ${names.join(', ')}`);
       const s = (await load()).default;
       kit.checks = [];
-      const t0 = performance.now();
+      const t0 = performance.now(), priorUnhurt = kit.unhurt;
       let error: string | undefined;
       // Each scenario starts unwanted, with no police about and no arrest under way, and
       // can't be arrested unless it asks to be: what the one before left must not reach in.
@@ -1180,6 +1182,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       } finally {
         calm();
         kit.unarrested = false;
+        kit.unhurt = priorUnhurt;
         kit.quiet = false;
       }
       const checks = kit.checks;

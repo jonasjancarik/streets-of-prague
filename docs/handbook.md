@@ -29,6 +29,7 @@ with given controls, read back the numbers (`t.probe()`), look from anywhere wit
 `node scripts/scene.mjs serve` keeps headless Chrome open with the game loaded; then
 `run <name…|all>`, `eval "<js with t>"` and `shot` take a second or two each, and follow
 the dev server's reloads. Without a server each command loads the game itself.
+Scenario runs restore the previous player damage setting when they finish, including after a failed check.
 Screenshots go to `$TMPDIR/scene`. The same scenarios run in the developer panel
 ("Run and watch" plays one in real time), and "Copy this situation" there copies where
 you are, the time, weather, money, stars, car and camera as the start of a new scenario.
@@ -1419,7 +1420,7 @@ record the measurements, merge decisions and pending landmark asset activation.
   gap is widest and leave service out of sight. When the clock jumps (the time picked
   on the start screen, a night in the cells or in hospital, the dev panel's time
   slider) every line is laid out afresh for the new hour, keeping only a tram you're on,
-  driving or waiting for; the `tram-clock-jump` scenario checks it. The departure boards count down from where the trams really are, so a
+  driving or waiting for; the `tram-clock-jump` scenario checks it. When a driver jumps off, the tram keeps coasting alongside the player even while the camera catches up. The departure boards count down from where the trams really are, so a
   tram held up in traffic shows up late there too. Each tram counts the seconds it has
   stood for something in the way and makes them up by cutting its stops short (to 8
   seconds at the least). They stop at

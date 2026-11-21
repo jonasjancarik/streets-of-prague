@@ -399,11 +399,13 @@ export class Trams {
   // Bring each line's number of trams towards its timetable, one tram per line at a
   // time: a new one in the middle of the widest gap, and the one whose leaving opens
   // the smallest gap taken out, both only where nobody's looking.
-  manage(seen: (x: number, y: number) => boolean) {
+  manage(seen: (x: number, y: number) => boolean, x: number, y: number) {
     // A tram someone left standing goes once nobody's looking at it.
     for (const v of [...this.list]) {
       const p = v.parts[1];
-      if (v.driven && !v.rider && !seen(p.x, p.y)) this.remove(v);
+      // When the player steps off, the camera can still be catching up with
+      // the tram. Its moving body must remain beside the player on the street.
+      if (v.driven && !v.rider && !seen(p.x, p.y) && Math.hypot(p.x - x, p.y - y) > 2 * HALF) this.remove(v);
     }
     for (const line of this.lines) {
       const want = this.target(line), have = line.trams.length, L = line.path.length;
@@ -516,7 +518,7 @@ export class Trams {
     this.manageT -= dt;
     if (this.manageT < 0) {
       this.manageT = MANAGE;
-      this.manage(seen);
+      this.manage(seen, x, y);
     }
     // Where every tram's sections are, so the trams behind can see them: where they
     // were at the start of this step (keyed by number as in SpatialHash). Only the ones
