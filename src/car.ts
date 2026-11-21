@@ -25,6 +25,20 @@ import { softShade } from './surface.ts';
 import { KINDS, STRIPS, STRIPS_ON } from './reflections.ts';
 import { PROBE_AT, PROBE_K, PROBE_MAP, PROBE_MIX, PROBE_NEAR, PROBE_PREV } from './probe.ts';
 
+// VR (vr.ts): the car you drive, and where your eyes are in it this frame (three.js world
+// coordinates; `frame` equals `frames` when the street model's seat placed them this frame).
+export const VR_SEAT = { car: null as Car | null, eye: new THREE.Vector3(), frame: -1, frames: 0 };
+// The box-built vehicles have no seat to read: how far behind the front the driver's eyes
+// are, and how high above the road (from the cabs built below; the driver sits on the left).
+export const VR_CAB: Record<string, [number, number]> = {
+  bus: [1.1, 1.95], minibus: [1.05, 1.85], truck: [0.95, 2.3], artic: [1, 2.45],
+  garbage: [1, 2.35], fire: [0.95, 2.4], ambulance: [1.85, 1.95],
+};
+// The car you drive in VR leaves out its glass when seen from inside it: where it stands
+// (three.js x, height of its middle, z and its heading) and how far it reaches (half its
+// length and width, half its height, and 1 while it is on).
+export const VR_GLASS = { at: { value: new THREE.Vector4() }, box: { value: new THREE.Vector4() } };
+
 export interface CarSpec {
   headlights?: { forward: number; across: number; height: number; glow: number; streetReach?: number };
   L: number; W: number; H: number; mass: number; accel: number; vmax: number;
@@ -1369,10 +1383,16 @@ vLit += 4. * mod(floor(paint.w / ${AREA_STEP}.), ${DENT_STEP / AREA_STEP}.);`)
     .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nvec4 dents = dentAt(zoneAt());\nobjectNormal = dentNormal(objectNormal, position, dents);\nobjectNormal.xz = swing(objectNormal.xz);')
     .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed = dented(transformed, dents);\ntransformed.xz = hinge.xy + swing(transformed.xz - hinge.xy);');
   sh.uniforms.uSnow = SNOW;
-  Object.assign(sh.uniforms, { uWet: WET, ...VEHICLE_VIEW_UNIFORMS, uMirror: CAR_MIRROR });
+  Object.assign(sh.uniforms, { uWet: WET, ...VEHICLE_VIEW_UNIFORMS, uMirror: CAR_MIRROR, uVrAt: VR_GLASS.at, uVrBox: VR_GLASS.box });
   sh.fragmentShader = sh.fragmentShader
-    .replace('#include <common>', `#include <common>\nuniform float uSnow;\nvarying float vLit;\nvarying vec3 vCrack;\n${COAT_GLSL}\n${CRACKS_GLSL}`)
+    .replace('#include <common>', `#include <common>\nuniform float uSnow;\nvarying float vLit;\nvarying vec3 vCrack;\nuniform vec4 uVrAt, uVrBox;\n#define VR_GLAZED (dot(vColor.rgb, vec3(.3, .59, .11)) < .04 && vColor.b > vColor.r * 1.25)\n${COAT_GLSL}\n${CRACKS_GLSL}`)
     .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+  if (uVrBox.w > .5) {
+    vec3 vrW = cameraPosition + (vec4(-vViewPosition, 0.) * viewMatrix).xyz - uVrAt.xyz;
+    float vrC = cos(uVrAt.w), vrS = sin(uVrAt.w);
+    if (abs(vrW.x * vrC - vrW.z * vrS) < uVrBox.x && abs(vrW.x * vrS + vrW.z * vrC) < uVrBox.y && abs(vrW.y) < uVrBox.z
+      && (opacity < .99 || VR_GLAZED)) discard;
+  }
   float area = floor((vLit + 1.5) / 4.), lit = vLit - 4. * area;
   totalEmissiveRadiance += diffuseColor.rgb * max(lit, 0.) * ${LAMP_GLOW.toFixed(2)};`)
     .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
@@ -1435,6 +1455,7 @@ const streetWheelMaterial = material.clone();
 streetWheelMaterial.customProgramCacheKey = () => 'cars-close';
 streetWheelMaterial.onBeforeCompile = (sh, renderer) => {
   material.onBeforeCompile(sh, renderer);
+  sh.fragmentShader = sh.fragmentShader.replace(/#define VR_GLAZED .*/, '#define VR_GLAZED false'); // (its glass is passengerGlass: a navy paint isn't glass)
   sh.uniforms.uRegistration = { value: registrationAtlas() };
   sh.vertexShader = sh.vertexShader.replace('if (hinge.z < .5) return p;', 'if (hinge.z < .5 || hinge.z > 4.5) return p;').replace('vec2 swing(vec2 p)', `
 attribute vec4 roll;
@@ -2402,7 +2423,12 @@ export class CarPool {
           // carries ignition and speed to the dashboard without a ninth vertex buffer.
           const dial = k === STREET_SEDAN && occupied ? 2 + Math.min(1, Math.abs(speed) * 3.6 / 240) : 1;
           roll.setXYZW(slot, dial * Math.cos(travel.angle), dial * Math.sin(travel.angle), Math.sin(steer) + (k === STREET_SEDAN ? 2 * Math.round(twist / .0025) : 0), travel.plate);
-          if (occupied && fit.layout) this.drivers?.put(fit.layout, travel.plate, c.type === 'police' && c.mode !== 'player', d.matrix);
+          // In VR you sit in the driver's seat yourself: no driver there, and your eyes where theirs would be.
+          if (c === VR_SEAT.car && fit.layout) {
+            const l = fit.layout, pelvis = l[3] + 0.205;
+            VR_SEAT.eye.set(l[9] - 0.06, Math.min(pelvis + 0.74, l[5] - 0.1), -l[10]).applyMatrix4(d.matrix);
+            VR_SEAT.frame = VR_SEAT.frames;
+          } else if (occupied && fit.layout) this.drivers?.put(fit.layout, travel.plate, c.type === 'police' && c.mode !== 'player', d.matrix);
         }
         if (under && !c.two && shaded < UNDER.most) {
           under.setMatrixAt(shaded++, this.m.copy(d.matrix).multiply(this.life.makeScale(c.spec.L, 1, c.spec.W)));

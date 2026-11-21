@@ -44,6 +44,8 @@ export interface StartChoice {
   resume: boolean;
   // Where to begin, as [lon, lat], from the link or the map; null for a random street.
   at: [number, number] | null;
+  // Straight into the headset (the page was opened for VR and Start in VR was pressed).
+  vr: boolean;
 }
 
 const el = (tag: string, cls: string, parent: HTMLElement, text = '') => {
@@ -66,6 +68,9 @@ interface StartOptions {
   saved: (() => string) | null;
   savedLook?: { clock: number; weather: Kind; season?: number };
   lost: boolean;
+  // VR (vr.ts): whether this page was opened for it, whether the phone can show it, and
+  // how to switch to it (a reload: VR needs the WebGL renderer, renderer.ts).
+  vr?: { mode: boolean; supported: Promise<boolean>; pick: () => void };
 }
 
 export function startScreen(root: HTMLElement, opts: StartOptions) {
@@ -202,13 +207,22 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
   const actions = el('div', 'ls-actions', panel);
   const go = el('button', 'ls-go', actions) as HTMLButtonElement;
   const fresh = el('button', 'ls-new', actions) as HTMLButtonElement;
+  // Play in VR, where the phone can show it; on a page opened for VR, Play without VR.
+  const vrMode = !!opts.vr?.mode;
+  const vrButton = el('button', 'ls-new', actions) as HTMLButtonElement;
+  vrButton.type = 'button';
+  vrButton.hidden = true;
+  if (opts.vr) void opts.vr.supported.then((ok) => { vrButton.hidden = !ok && !vrMode; });
+  if (!vrMode) vrButton.addEventListener('click', () => opts.vr?.pick());
   let ready = false;
   const sync = () => {
     panel.classList.toggle('resume', resuming);
     found.hidden = fresh.hidden = !resuming;
     for (const r of [placeRow.row, seasonRow.row, timeRow.row, weatherRow.row]) r.hidden = resuming;
-    go.textContent = !ready ? t('Loading…') : resuming ? t('Continue') : opts.saved ? t('Start new game') : t('Start game');
+    go.textContent = !ready ? t('Loading…') : vrMode ? (resuming ? t('Continue in VR') : t('Start in VR')) : resuming ? t('Continue') : opts.saved ? t('Start new game') : t('Start game');
     fresh.textContent = t('New game');
+    vrButton.textContent = vrMode ? t('Play without VR') : t('Play in VR');
+    if (vrMode) vrButton.disabled = !ready;
   };
   relabel.push(sync);
   go.type = fresh.type = 'button';
@@ -261,19 +275,27 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
       sync();
       go.focus();
       // The first time, the beta note comes between the button and the game.
-      return new Promise((resolve) => go.addEventListener('click', () => {
-        go.disabled = true;
-        const t = TIMES.find((x) => x.id === time);
-        void betaNote(noteAgain).then(() => {
-          const startDay = resuming ? opts.savedLook?.season ?? day : useToday ? pragueToday() : day;
-          // A page or beta note kept open across midnight still starts in today's Prague.
-          const liveExpired = !resuming && startDay !== day && usingLive;
-          const startWeather = liveExpired ? 'clear' : weather;
-          const startSources: StartSources = { ...sources, weatherSource: liveExpired ? 'default' : sources.weatherSource };
-          const at: StartChoice['at'] = resuming ? null : place === 'link' ? opts.linkedStart : spot ? [spot.lon, spot.lat] : null;
-          resolve({ time: t ? t.sec : null, weather: startWeather, sources: startSources, live: !resuming && usingLive && startWeather === weather && liveAvailable(), sound, season: startDay, resume: resuming, at });
-        });
-      }, { once: true }));
+      return new Promise((resolve) => {
+        let begun = false;
+        const begin = (inVR: boolean) => {
+          if (begun) return;
+          begun = true;
+          go.disabled = true;
+          if (vrMode) vrButton.disabled = true;
+          const t = TIMES.find((x) => x.id === time);
+          void betaNote(noteAgain).then(() => {
+            const startDay = resuming ? opts.savedLook?.season ?? day : useToday ? pragueToday() : day;
+            // A page or beta note kept open across midnight still starts in today's Prague.
+            const liveExpired = !resuming && startDay !== day && usingLive;
+            const startWeather = liveExpired ? 'clear' : weather;
+            const startSources: StartSources = { ...sources, weatherSource: liveExpired ? 'default' : sources.weatherSource };
+            const at: StartChoice['at'] = resuming ? null : place === 'link' ? opts.linkedStart : spot ? [spot.lon, spot.lat] : null;
+            resolve({ time: t ? t.sec : null, weather: startWeather, sources: startSources, live: !resuming && usingLive && startWeather === weather && liveAvailable(), sound, season: startDay, resume: resuming, at, vr: inVR });
+          });
+        };
+        go.addEventListener('click', () => begin(vrMode));
+        if (vrMode) vrButton.addEventListener('click', () => begin(false));
+      });
     },
   };
 }

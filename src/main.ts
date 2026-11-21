@@ -22,7 +22,7 @@ import type { BusDepartures } from './buses.ts';
 import { BusPilot } from './busPilot.ts';
 import type { BusPilotData } from './busPilot.ts';
 import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp, streetShare } from './network.ts';
-import { Car, TYPES, CarPool, collideBodies, contact, loadCars, ordinaryCarBodies, useKit, variantName } from './car.ts';
+import { Car, TYPES, CarPool, VR_CAB, VR_GLASS, VR_SEAT, collideBodies, contact, loadCars, ordinaryCarBodies, useKit, variantName } from './car.ts';
 import { CarOutline } from './carOutline.ts';
 import { RestingCars } from './restingCars.ts';
 import { loadKit, FIGURE_SIZE, SCALE, WARDROBE, PEOPLE_SHADOWS, CAST_LAYER } from './figures.ts';
@@ -59,6 +59,7 @@ import { Beacons, ownBeacon } from './beacons.ts';
 import { Cannon, TANK, HOSE } from './cannon.ts';
 import { Graphics } from './graphics.ts';
 import { createGameRenderer, retryStart } from './renderer.ts';
+import { setupVR } from './vr.ts';
 import { StopBoard } from './board.ts';
 import { BusStops, BusRide, busStopZones } from './busstops.ts';
 import { Metro } from './metro.ts';
@@ -87,7 +88,7 @@ import type { Surface, HornKind, Rotor } from './audio.ts';
 import { tunnelFinishesView } from './tunnelFinish.ts';
 import { StreetIronwork } from './streetIronwork.ts';
 import { StreetPlates } from './streetPlates.ts';
-import { eyesFor, firstPersonOptions, initialView, WalkingGait, type Eyes, type PlayerView } from './streetView.ts';
+import { eyesFor, firstPersonOptions, initialView, savePlayerView, vrSupported, WalkingGait, type Eyes, type PlayerView } from './streetView.ts';
 import { setupTouch } from './touch.ts';
 import { setupGamepad, padLabels, usingPad } from './gamepad.ts';
 import './credits.ts';
@@ -235,6 +236,7 @@ async function main() {
     hourSource: clock.linkedTime ? 'link' : 'default',
   };
   const start = params.has('go') ? null : startScreen($('loading'), { now: Clock.nowLabel(), linkedStart, season: season.day, dateLinked, timeLinked: clock.linkedTime, weather: weather.kind, weatherFixed: weather.fixed,
+    vr: { mode: initialView(params) === 'vr', supported: vrSupported(), pick: () => { savePlayerView('vr'); location.reload(); } },
     sound: savedSound !== 'off', saved: saved && (() => describe(saved)), savedLook: saved ? { clock: saved.clock, weather: saved.weather.fixed ? saved.weather.kind : automaticWeather(saved.weather.kind), season: saved.season } : undefined, lost: !saved && !params.has('go') && unreadable('auto', AREA) });
   // The weather in Prague now, for the start screen (the URL's ?weather wins).
   if (start && !params.has('weather')) void liveWeather().then((k) => { if (k) start.live(k); });
@@ -312,6 +314,15 @@ async function main() {
   scene.background = new THREE.Color(BACKDROP);
   const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 1, 6000);
   camera.up.set(0, 0, -1);
+  // VR in a phone headset (vr.ts), when the page was opened for it (the VR camera view, or
+  // ?vr): the first-person view, turned by your head. It stays the chosen view (with Play in
+  // VR on screen outside the headset) until another is picked.
+  const vr = setupVR(params, renderer, camera, (code) => {
+    for (const type of ['keydown', 'keyup']) window.dispatchEvent(new KeyboardEvent(type, { code, bubbles: true, cancelable: true }));
+  }, () => cameraChoice.set('overhead'));
+  let vrView = !!vr;
+  // Where straight ahead is in a vehicle, turned from its nose, and which vehicle that is.
+  let vrSeat: { h: number } | null = null, vrSeatTurn = 0, vrWas = false;
 
   // The sun and the sky's light follow the clock (see Sky).
   const sky = new Sky(scene, renderer);
@@ -325,7 +336,7 @@ async function main() {
   // their own that only the sun's shadow camera sees, and only for the game's own view: for
   // any other (the cars' probe, the mirror) three.js gives it that camera's layers, as before.
   scene.onBeforeRender = (_renderer, _scene, by) => {
-    if (by !== sun.shadow.camera) sun.shadow.camera.layers.mask = by === camera ? 1 | (1 << CAST_LAYER) : 1;
+    if (by !== sun.shadow.camera) sun.shadow.camera.layers.mask = by === camera || (vr?.active && by === vr.xrCamera) ? 1 | (1 << CAST_LAYER) : 1;
   };
 
   // The street graphs grow as tiles load (each tile carries the edges that touch it).
@@ -1630,12 +1641,20 @@ async function main() {
     },
   };
   const cameraChoice = {
-    get: (): PlayerView => testkit?.cam || !testkit?.eyes ? 'overhead' : testkit.eyes.third ? 'third' : 'first',
+    get: (): PlayerView => vrView ? 'vr' : testkit?.cam || !testkit?.eyes ? 'overhead' : testkit.eyes.third ? 'third' : 'first',
     set: (choice: PlayerView) => {
       if (!testkit) return;
+      savePlayerView(choice);
+      // VR needs the page drawn with WebGL, which only a fresh start gives (the game is
+      // saved as the page goes and picked up again from the start screen).
+      if (choice === 'vr' && !vr) { location.reload(); return; }
+      if (choice === 'vr' && vr) void vr.enter().catch((e) => console.warn('VR', e));
+      // (Leaving VR keeps WebGL until the next start: no reload needed.)
+      if (choice !== 'vr' && vrView) vr?.exit();
+      vrView = choice === 'vr';
+      vr?.offer(vrView);
       testkit.cam = null;
       testkit.eyes = eyesFor(choice);
-      try { localStorage.setItem('playerView', choice); } catch { /* storage is optional */ }
     },
   };
   const settingsPanel = setupSettings({ cameraChoice, sound, graphics, weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k); } }, saves });
@@ -2199,6 +2218,8 @@ async function main() {
       const eyes = !testkit?.cam && testkit?.eyes;
       // And like any first-person game, the mouse turns and A/D step sideways.
       if (eyes && eyes.yaw && walker.down <= 0) { walker.h += THREE.MathUtils.degToRad(eyes.yaw); eyes.yaw = 0; }
+      // In the headset you walk the way your head faces.
+      if (vr?.active && walker.down <= 0) walker.h = vr.headH;
       const x = walker.x, y = walker.y;
       walker.update(dt, eyes ? { ...ctl, strafe: true } : ctl);
       if (footView) {
@@ -2720,6 +2741,9 @@ async function main() {
   if (start) {
     status('');
     const choice = await start.ready();
+    // Into the headset while the tap still counts (the browser asks for one).
+    if (vr && choice.vr) void vr.enter().catch((e) => console.warn('VR', e));
+    else if (vr) { vrView = false; vr.offer(false); savePlayerView('overhead'); }
     if (choice.resume && saved) {
       startSources = { ...startSources, weatherSource: 'save', hourSource: 'save' };
       if (saved.season) startSources.monthSource = 'save';
@@ -2749,6 +2773,7 @@ async function main() {
     last = performance.now();
   }
   $('loading').classList.add('done');
+  vr?.ready();
   // The real weather, when the game began with it: asked for again now and then, and the
   // game's weather follows it over a few minutes, until the player picks one by hand.
   setInterval(() => {
@@ -2820,6 +2845,15 @@ async function main() {
     let dt = paused ? 0 : Math.min(0.05, (now - last) / 1000); // the settings and the map pause the game
     // (Filming, a frame's worth of the game's time and no more: see Testkit.frameDt.)
     if (testkit && testkit.frameDt !== undefined) { dt = testkit.frameDt; testkit.frameDt = 0; }
+    // In the headset it's always the view from your eyes, straight ahead the way you faced.
+    if (vr) {
+      vr.frame(now, dt, pad);
+      if (vr.active && !vrWas && testkit) { testkit.cam = null; vr.yaw = (inCar || inHeli || walker).h; }
+      if (vr.active && testkit && (!testkit.eyes || testkit.eyes.third || testkit.eyes.yaw || testkit.eyes.pitch)) testkit.eyes = { yaw: 0, pitch: 0 };
+      if (!vr.active && vrWas && testkit) testkit.eyes = null;
+      vrWas = vr.active;
+    if (!vr.active) VR_GLASS.box.value.w = 0;
+    }
     if (paused !== soundHeld) sound.hold((soundHeld = paused)); // and the sound with it
     graphics.frame(now - last, now, world.busy);
     telemetry.tick(now - last, dt, playingAs(), px(), py(), graphics.choice, graphics.tier);
@@ -2869,6 +2903,12 @@ async function main() {
       jump: input.jump,
       aim: touch.aim || pad.aim,
     };
+    // In the headset, forward is where you look, not up the map.
+    if (vr?.active) {
+      ctl.aim = null;
+      if (vr.move || vr.side) { ctl.move = vr.move; ctl.turn = vr.side; }
+      ctl.run ||= vr.run;
+    }
     if (eyes && ctl.aim && !inCar && !inHeli && !walker.flight && !ride.on && !passenger() && !boats.me && !funicular.me && !ferries.me) {
       // At eye height a stick points across the screen: up walks forward while
       // the other hand looks. Vehicle steering keeps its own aim convention.
@@ -2989,6 +3029,7 @@ async function main() {
       for (const e of brigade.engines) see(e.car);
       for (const r of ambulances.rigs) see(r.car);
     }
+    VR_SEAT.car = vr?.active ? inCar : null; VR_SEAT.frames++;
     carPool.render(drawn, ground, dt, world.terrainRevision, fromStreet, camera.position);
     refuse.render(carPool);
     blinkers.update(dt, inCar, inCar ? satnav.signal(inCar.speed) : null, carPool);
@@ -3209,10 +3250,12 @@ async function main() {
     // Keep the player's ring visible through tree crowns in the overhead view.
     walker.ring.material.depthTest = fromStreet;
     // (Seen from just behind you, the ring is only in the way.)
-    walker.ring.visible = !eyes;
+    walker.ring.visible = !eyes && !vr?.active;
     // At street level you're a life-size person too, like everyone round you (rocketbox.ts).
-    walker.fig.lifeSize = walker.fig.self = !!eyes && !underway;
-    if (walker.mesh.visible) walker.drawFigure();
+    // (Not in the headset, where your eyes are inside your own head.)
+    walker.fig.lifeSize = walker.fig.self = !!eyes && !underway && !vr?.active;
+    if (vr?.active) walker.fig.commit(0);
+    else if (walker.mesh.visible) walker.drawFigure();
     carOutline.update(fromStreet ? null : inCar, carPool);
     streetSurfaceView(fromStreet && !!DOME_NODE.value);
     const streetWalls = fromStreet;
@@ -3471,6 +3514,37 @@ async function main() {
     // (Ultra: the street round the middle of the view, for the cars to mirror.)
     lifeSize.frame(dt, !!eyes && !underway, camera);
     hitches.render(() => {
+      if (vr?.active) {
+        // Your eyes: on foot where you stand, in a car from the driver's seat (on the left),
+        // otherwise where the game's own camera is.
+        const vehicle = inCar || inHeli || null, turn = vr.takeTurn();
+        if (vehicle !== vrSeat) {
+          if (vrSeat && !vehicle) vr.yaw = vrSeat.h + vrSeatTurn;
+          vrSeat = vehicle; vrSeatTurn = 0;
+        }
+        if (vehicle) vrSeatTurn += turn; else vr.yaw += turn;
+        const draw = () => renderer.render(scene, camera);
+        // Inside the car you drive its windows are left out (car.ts), as they would be
+        // clear: their tint and reflections only fog the view in the headset.
+        VR_GLASS.box.value.w = inCar && !underway ? 1 : 0;
+        if (inCar) {
+          const { L, W, H } = inCar.spec;
+          VR_GLASS.at.value.set(inCar.x, eyeH + H / 2, -inCar.y, inCar.h);
+          VR_GLASS.box.value.set(L / 2 + 0.15, W / 2 + 0.15, H / 2 + 0.3, VR_GLASS.box.value.w);
+        }
+        if (inCar && !underway && VR_SEAT.frame === VR_SEAT.frames) {
+          const e = VR_SEAT.eye; // (the street model's own driver's seat: car.ts)
+          vr.draw(e.x, -e.z, e.y, inCar.h + vrSeatTurn, draw);
+        } else if (inCar && !underway) {
+          // A bus, lorry or ambulance: up in its cab, on the left behind the windscreen.
+          const { L, W, H } = inCar.spec, h = inCar.h, c = Math.cos(h), s = Math.sin(h), cab = VR_CAB[inCar.type];
+          const back = cab ? L / 2 - cab[0] : -0.1 * L, left = cab ? W / 2 - 0.6 : W * 0.21;
+          const seat = cab ? cab[1] : Math.min(H - 0.3, Math.max(1.1, H * 0.78));
+          vr.draw(inCar.x + c * back - s * left, inCar.y + s * back + c * left, eyeH + seat, h + vrSeatTurn, draw);
+        } else if (eyes && !underway && !vehicle) vr.draw(walker.x, walker.y, eyeH, vr.yaw, draw);
+        else vr.draw(camera.position.x, -camera.position.z, camera.position.y, vehicle ? vehicle.h + vrSeatTurn : vr.yaw, draw);
+        return;
+      }
       POST.night = sky.dark; POST.wet = weather.now.wet;
       const probed = renderProbe(renderer, scene, camPos.x, camGround, camPos.z, carPool.allMeshes());
       if (renderMirror(renderer, scene, camera, camGround, weather.now.wet) || probed) {
@@ -3556,7 +3630,7 @@ async function main() {
     capture: () => new Promise((resolve) => { grabFull.push(resolve); setTimeout(() => resolve(null), 3000); }),
   });
   // ?fps starts in first person, as the developer panel's First person box does; ?tps in third person.
-  testkit.eyes = eyesFor(initialView(params));
+  testkit.eyes = eyesFor(vr ? 'overhead' : initialView(params)); // (VR: from above until the headset goes on)
   dev.attach(testkit);
   // A fixed target altitude keeps before/after terrain views on the same camera.
   const shot = params.get('camera')?.split(',').map(Number);

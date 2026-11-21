@@ -44,7 +44,8 @@ after four seconds; older replies cannot restore a pause after a newer reply cle
 it. If the local status endpoint is unavailable, the page carries on.
 `node scripts/check-bench-pause.mjs` checks polling and startup recovery offline.
 
-WebGPU is the default renderer; `?renderer=webgl` selects the legacy renderer.
+WebGPU is the default renderer; `?renderer=webgl` selects the legacy renderer, and so does
+`?vr` or the VR camera view (three.js draws for a headset only through WebGL).
 WebGPU reuses the same building, landmark, cutaway and lamp-light shader graphs
 across equivalent meshes. Each mesh keeps its own material, textures and sky-view
 attribute, so unloading one tile does not change another tile's appearance.
@@ -701,6 +702,61 @@ the same signal phase as the overhead light.
   while you hold Space. Release Space to return to the player.
   "Helicopter next to me" parks one on the nearest open ground (flown like the one on
   Palackého náměstí, see Playing).
+- **VR** (`src/vr.ts`, an early version): play in a phone headset such as the
+  Daydream View or a Cardboard, in Chrome on Android. Where the phone can show VR, the
+  start screen has **Play in VR** and the settings' **Camera view** has a **VR** choice
+  beside Overhead, First person and Third person (none of these show where it can't). VR
+  is drawn with WebGL, which only a fresh start can switch to, so picking it reloads the
+  page; the game is saved as the page goes, and the start screen then offers **Start in
+  VR** or **Continue in VR**, with **Play without VR** beside it. The choice is remembered
+  (`playerView` in local storage, as for the other views); `?vr` asks for it from the URL.
+  Out of the headset (Chrome's back button) the game shows **Play in VR** and **Play
+  without VR** over the street. Picking another view leaves VR without a reload; the page
+  stays on WebGL until its next start. Put the phone in the headset once VR has started. Chrome draws the lens correction and follows your head with the
+  phone's sensors. You see the street from your own eyes; in a car you sit in the driver's
+  seat. You walk the way your head faces, by one of three means:
+  - the Daydream controller, paired from **Connect Daydream controller** (shown only
+    with `?daydream`) over Web Bluetooth (not the old Daydream app): the touchpad walks or drives (top forward,
+    sides sideways or steering), clicking it is E (get in or out), the app button runs,
+    and the volume buttons turn you 30° at a time (not working yet, see below);
+  - a gamepad (an Xbox controller works): the left stick walks forward, back and
+    sideways relative to where you look (or steers in a car), and the right stick turns
+    you smoothly, up to 90° a second;
+  - nothing in hand: look well down for a second to start walking, again to stop.
+
+  Chrome needs a secure address for VR: the beta and production sites, or `localhost`
+  (on a phone over USB, `adb reverse tcp:5191 tcp:5191`). The first time, Cardboard asks
+  for the camera so it can scan a viewer's QR code. The Daydream View has no code, so
+  decline the camera and skip the scan. If declining opens Chrome's app info instead,
+  go back and VR starts with the standard Cardboard lens settings.
+  `?vrscale=0.3…1` sets the headset's resolution (default 0.75). The page buttons and
+  the HUD aren't shown in the headset. On a Pixel 5 it runs at about 18–20 frames a
+  second at Lowest and Medium alike, limited by the game's own update and the draw
+  calls, not by pixels. That is too slow to be comfortable, and a faster phone is
+  needed for real play. In a car you sit in the driver's seat; in a bus, lorry,
+  dustcart, fire engine or ambulance, up in the cab on the left behind the windscreen
+  (`VR_CAB` in `car.ts`). The windows of the vehicle you drive are left out, so their
+  tint and reflections don't fog the view; other vehicles keep theirs. Parts of the
+  street car are modelled only from outside, so you see out through them. Checks: `window.__vr` (`fps`, `headH`,
+  `headPitch`).
+
+  The Daydream controller hasn't worked yet (tried 20 Nov 2026 on a Pixel 11 Pro). Chrome
+  pairs with it and finds its data characteristic (service `fe55`, characteristic `0001`,
+  notify), and starting notifications succeeds, yet no report ever arrives, whatever you
+  press. Its other characteristics are `0002` (write) and `0003` (read), and reading
+  `0003` fails with "GATT operation failed for unknown reason". The likely cause: a
+  controller once set up with the Daydream app wants an encrypted, bonded link, and keeps
+  its data from anything else. Write-ups from 2016–2017 got data simply by turning on
+  notifications for `0001`. Not tried yet: forgetting it in Android's Bluetooth settings,
+  then Google's reset (on USB power, hold App and Home together for up to 3 s), then
+  pairing again from the game.
+
+  For a phone whose Chrome can't be inspected remotely (Chrome allows that only with USB
+  debugging on, not over wireless debugging alone), `?vrlog=<port>` sends the controls'
+  state twice a second to `http://localhost:<port>/`: VR on or off, frame rate, movement,
+  the Daydream controller's report count, raw bytes and characteristics, and every
+  gamepad's axes and pressed buttons. Run any small listener that prints POST bodies, and
+  pass the port through with `adb reverse tcp:<port> tcp:<port>`.
 
 ## How it works
 
