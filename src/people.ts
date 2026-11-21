@@ -16,6 +16,7 @@ interface WalkGrid {
   height?: (x: number, y: number) => number;
   view?: (who: Walker) => WalkGrid;
 }
+type PersonOnFoot = Pick<Walker, 'x' | 'y' | 'vx' | 'vy' | 'gz'>;
 interface WalkSpot { e: WalkEdge; s: number }
 export interface Pedestrian extends WalkSpot {
   i: number; fwd: boolean; side: number; speed: number; x: number; y: number; h: number;
@@ -260,7 +261,7 @@ export class Crowd {
 
   // Look a few metres ahead for parked cars and bikes on the path, and pick the nearest
   // way past them (or back into their lane once past).
-  avoid(p: Pedestrian, near: Obstructions) {
+  avoid(p: Pedestrian, near: Obstructions, player?: PersonOnFoot) {
     const dir = p.fwd ? 1 : -1, q = p.e.path.at(p.s + dir * 1.5), base = p.e.path.at(p.s);
     const ux = Math.cos(q.ang) * dir, uy = Math.sin(q.ang) * dir, nx = Math.sin(q.ang), ny = -Math.cos(q.ang);
     const lane = this.lane(p), now = lane + p.dodge;
@@ -274,8 +275,30 @@ export class Crowd {
       const lat = ax * nx + ay * ny, w = o.r + CLEAR;
       spans.push([lat - w, lat + w, along < o.r + 1]);
     }
+    // Leave shoulder room for someone walking towards us or crossing our path.
+    // Predict briefly so a passer-by turns before reaching the first-person camera.
+    let personAhead = Infinity;
+    if (player && Math.abs(player.x - p.x) < 6 && Math.abs(player.y - p.y) < 6 &&
+        Math.abs((player.gz ?? 0) - (p.gz ?? 0)) < 1.5) {
+      const dx = player.x - base.x, dy = player.y - base.y;
+      const along = dx * ux + dy * uy, closing = p.speed - player.vx * ux - player.vy * uy;
+      if (closing > .1 && along > -.45 && along < Math.min(5.5, 1.4 + closing * 1.65)) {
+        const time = clamp(along / closing, 0, .65);
+        const side = dx * nx + dy * ny + time * (player.vx * nx + player.vy * ny);
+        if (Math.min(Math.abs(side - lane), Math.abs(side - now)) < 1.05) {
+          spans.push([side - .98, side + .98, false]);
+          personAhead = along;
+        }
+      }
+    }
     const inside = (v: number) => spans.some(([a, b]) => v > a && v < b);
     const open = (v: number) => {
+      if (Number.isFinite(personAhead)) {
+        // On a roadside pavement keep to this side of the kerb. On a path,
+        // use its width. A narrow doorway may only fit one person at a time.
+        if (p.e.side ? p.side * v < p.e.side - .85 || p.side * v > p.e.side + 1.3
+          : Math.abs(v) > Math.max(.4, p.e.width / 2 - .22)) return false;
+      }
       for (const k of [1, 2.5]) if (this.blocked(base.x + ux * k + nx * v, base.y + uy * k + ny * v)) return false;
       return true;
     };
@@ -288,7 +311,8 @@ export class Crowd {
     for (const [a, b] of spans) {
       for (const v of [a - 0.01, b + 0.01]) if (ok(v) && (best === null || Math.abs(v - now) < Math.abs(best - now))) best = v;
     }
-    p.dodgeTo = best === null ? p.dodgeTo : best - lane;
+    if (best !== null) p.dodgeTo = best - lane;
+    else if (personAhead < 1.8) p.pause = Math.max(p.pause, .25);
   }
 
   blocked(x: number, y: number) { return this.grid.at(x, y) !== 0; }
@@ -308,7 +332,7 @@ export class Crowd {
   }
 
   // `seen`: whether a spot is in view; out of it, nobody's walk or fall is animated.
-  update(dt: number, threats: Iterable<{ x: number; y: number; vx: number; vy: number }>, near?: Obstructions, seen: (x: number, y: number) => boolean = () => true) {
+  update(dt: number, threats: Iterable<{ x: number; y: number; vx: number; vy: number }>, near?: Obstructions, seen: (x: number, y: number) => boolean = () => true, player?: PersonOnFoot) {
     const r = this.r;
     // Each walker looks ahead for things in the way a few times a second, not all at once.
     this.tick = (this.tick + 1) % 4;
@@ -348,7 +372,7 @@ export class Crowd {
           if (p.s < 0 || p.s > p.e.path.length) this.turn(p);
           if (r() < dt * 0.02) p.pause = 1 + r() * 4;
         }
-        if (near && p.i % 4 === this.tick) this.avoid(p, near);
+        if (near && p.i % 4 === this.tick) this.avoid(p, near, player);
         this.follow(p, dt);
       } else if (p.state === 'flee' || p.state === 'down' || p.state === 'rejoin') {
         if (p.state === 'down') {
@@ -460,7 +484,7 @@ export class Crowd {
 
   // Only those `seen` (in view, with room for their shadows) are drawn, packed into the
   // first slots: most of the crowd round you is out of sight.
-  render(height: (x: number, y: number, p: Pedestrian) => number = () => 0, seen: (x: number, y: number) => boolean = () => true) {
+  render(height: (x: number, y: number, p: Pedestrian) => number = () => 0, seen: (x: number, y: number) => boolean = () => true, sheltered?: (x: number, y: number, head: number) => boolean) {
     const m = _m, rain = this.umbrellas.wet > 0;
     let n = 0;
     this.umbrellas.begin();
@@ -469,7 +493,7 @@ export class Crowd {
       m.compose(_p.set(p.x, height(p.x, p.y, p) + p.z, -p.y), _q.setFromAxisAngle(UP, p.h), _s);
       this.fig.wear(n, p.i);
       // (Dropped by anyone running from a car or knocked over.)
-      const up = rain && (p.state === 'walk' || p.state === 'rejoin') && this.umbrellas.up(p.serial);
+      const up = rain && (p.state === 'walk' || p.state === 'rejoin') && this.umbrellas.up(p.serial) && !sheltered?.(p.x, p.y, _p.y + 1.8);
       // (Someone drawn life size holds theirs in the hand: src/rocketbox.ts.)
       if (!this.fig.set(n, m, p.anim, up ? p.serial : -1) && up) this.umbrellas.put(p.serial, _p, p.h, p.anim.phase, Math.min(1, p.pace / 1.2));
       n++;

@@ -338,6 +338,7 @@ export class WeatherFx {
   };
   private street = { value: 0 };
   private cover = new PrecipitationCover();
+  readonly sheltered = (x: number, y: number, head: number) => this.cover.sheltered(x, -y, head);
   private rainOn = { value: 0 };
   private snowOn = { value: 0 };
   private mistOn = { value: 0 };

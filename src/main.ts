@@ -1452,6 +1452,19 @@ async function main() {
   };
   const sound = new Sound();
   const earRight = new THREE.Vector3();
+  const roomSample = { x: Infinity, y: Infinity, revision: -1, amount: 0, altitude: Infinity };
+  const passageSound = () => {
+    const { x, y } = walker, head = walker.mesh.position.y + 1.75;
+    if (world.joined === roomSample.revision && Math.abs(head-roomSample.altitude) < .6 &&
+        Math.hypot(x-roomSample.x, y-roomSample.y) < .65) return roomSample.amount;
+    Object.assign(roomSample, { x, y, altitude: head, revision: world.joined, amount: 0 });
+    if (world.passageAt(x,y) && world.rooftopAt(x,y) > head+.25) {
+      let enclosed = 0;
+      for (const [dx,dy] of [[3,0],[-3,0],[0,3],[0,-3]]) if (world.rooftopAt(x+dx,y+dy) > head+.25) enclosed++;
+      roomSample.amount = .5 + enclosed * .125;
+    }
+    return roomSample.amount;
+  };
   benchPause.onChange((paused) => sound.hold(paused));
   // What the ground under a car is made of, for its tyres: the OSM surface of the street
   // it's on, or the pavement off the streets.
@@ -2283,7 +2296,8 @@ async function main() {
     if (inCar) threats.push(inCar);
     for (const c of movers) if (c.speed > 5) threats.push(c);
     for (const c of cops) if (c.speed > 5) threats.push(c);
-    crowd.update(dt, threats, carsOnly, (x, y) => !offscreen(x, y));
+    crowd.update(dt, threats, carsOnly, (x, y) => !offscreen(x, y),
+      gaitActive && !walker.flight && walker.z < .5 && walker.perch < .4 ? walker : undefined);
     bags.update(dt, px(), py());
     missions.update(dt);
     shootStep(dt);
@@ -2901,7 +2915,7 @@ async function main() {
     tramStops.sync(camPos.x, -camPos.z, viewRadius() + 60, ground, fromStreet);
     busStops.sync(camPos.x, -camPos.z, viewRadius() + 60, ground, fromStreet);
     crowd.umbrellas.wet = weather.now.rain;
-    crowd.render(ground, (x, y) => !offscreen(x, y));
+    crowd.render(ground, (x, y) => !offscreen(x, y), eyes && weather.now.rain > .01 ? weatherFx.sheltered : undefined);
     birds.update(dt, Object.assign(birdsView, { x: camPos.x, y: -camPos.z, radius: viewRadius(), height: eyes ? 1000 : height, dark: sky.dark, rain: weather.now.rain, snow: weather.now.snow }));
     terraces.update(dt, Object.assign(terraceView, { x: camPos.x, y: -camPos.z, radius: viewRadius(), day: season.day }));
     police.render(ground, time.value);
@@ -2965,7 +2979,7 @@ async function main() {
     const earZ = rotors.length ? (inHeli ? inHeli.z : walker.flight?.height ?? ground(px(), py(), inCar || walker)) : 0;
     if (gaitActive) sound.warmFootfalls();
     sound.right = eyes && !metro.active ? earRight.set(1, 0, 0).applyQuaternion(camera.quaternion) : null;
-    sound.update(dt, { x: px(), y: py(), z: earZ, rotors, car: inCar, throttle: ctl.move, surface, trams: trams.list, quiet: metro.active, rain: weather.now.rain, wet: weather.now.wet, snow: weather.now.snow, strikes: weather.now.strikes, busy, road, hour: (clock.t % 86400) / 3600, season, aloft: inHeli ? clamp((inHeli.air - 5) / 40, 0, 1) : 0, traffic: traffic.agents, sirens: [
+    sound.update(dt, { x: px(), y: py(), z: earZ, shelter: eyes && !eyes.third && gaitActive && !walker.flight ? passageSound() : 0, rotors, car: inCar, throttle: ctl.move, surface, trams: trams.list, quiet: metro.active, rain: weather.now.rain, wet: weather.now.wet, snow: weather.now.snow, strikes: weather.now.strikes, busy, road, hour: (clock.t % 86400) / 3600, season, aloft: inHeli ? clamp((inHeli.air - 5) / 40, 0, 1) : 0, traffic: traffic.agents, sirens: [
       ...police.chasing.map((p) => ({ key: p, kind: 'police' as const, x: p.car.x, y: p.car.y, vx: p.car.vx, vy: p.car.vy })),
       ...brigade.engines.filter((e) => e.phase === 'go' && !e.wrecked).map((e) => ({ key: e, kind: 'fire' as const, x: e.car.x, y: e.car.y, vx: e.car.vx, vy: e.car.vy })),
       ...ambulances.rigs.filter((r) => r.phase === 'go' && !r.wrecked).map((r) => ({ key: r, kind: 'ambulance' as const, x: r.car.x, y: r.car.y, vx: r.car.vx, vy: r.car.vy })),

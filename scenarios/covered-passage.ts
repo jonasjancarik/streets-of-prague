@@ -1,12 +1,13 @@
 import { Mesh, Raycaster, Vector3, type Scene } from 'three';
 import type { Scenario } from '../src/testkit.ts';
+import type { Sound } from '../src/audio.ts';
 import type { Walker } from '../src/people.ts';
 import type { TileWorld } from '../src/tiles.ts';
 
 export default {
   title: 'Walk off Vodičkova and into the covered passage of U Nováků',
   async run(t) {
-    const g = window.__drive as { scene: Scene; walker: Walker; world: TileWorld };
+    const g = window.__drive as { scene: Scene; walker: Walker; world: TileWorld; sound: Sound };
     // Begin on the pavement about a metre outside the mapped entrance.
     await t.go([50.08084206, 14.42449525], { heading: 127 });
     t.empty(); t.eyes = { yaw: 0, pitch: 0 };
@@ -25,6 +26,7 @@ export default {
       const hit = (dx: number, dy: number, dz: number) =>
         new Raycaster(eye, new Vector3(dx,dy,dz), 0, 30).intersectObjects(rooms(),false)[0]?.distance ?? Infinity;
       const left = [-Math.sin(w.h),-Math.cos(w.h)];
+      t.check('the audio listener is inside the passage', g.sound.shelter >= .5, g.sound.shelter);
       t.check('the ceiling is just overhead', hit(0,1,0) > 1 && hit(0,1,0) < 2.2);
       t.check('solid walls on both sides hide the neighbouring building',
         hit(left[0],0,left[1]) < 2 && hit(-left[0],0,-left[1]) < 2);
@@ -34,6 +36,7 @@ export default {
       t.check('can walk back onto the pavement', g.world.rooftopAt(w.x,w.y) < w.mesh.position.y + 2);
       t.eyes = null; await t.frames(3);
       t.check('overhead view releases the lining', rooms().length === 0);
+      t.check('the listener returns to open-street sound', g.sound.shelter === 0);
     } finally { t.eyes = null; }
   },
 } satisfies Scenario;

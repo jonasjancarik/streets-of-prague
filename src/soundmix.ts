@@ -159,3 +159,10 @@ export function sourcePan(dx: number, dy: number, distance: number, width: numbe
   const pos = right ? (right.x * dx - right.z * dy) / Math.max(3, distance) * limit : dx / width;
   return clamp(pos, -limit, limit);
 }
+
+// A covered passage cuts the direct hiss and the sharp hits on the pavement.
+// Levels are ratios of the same sounds on the open street, before the user's mixer.
+export const PASSAGE_SOUND = {
+  rainHiss: .42, rainPatter: .20, wind: .34, city: .68, cityCutoff: 2300,
+  reflections: [[.031, .21, -.3], [.074, .13, .3]] as const,
+};

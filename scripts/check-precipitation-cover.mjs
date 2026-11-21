@@ -19,6 +19,8 @@ fill(0, 0, 0);
 assert.equal(cover.box.value.w, 1);
 assert.equal(sample(12, 0), 17.5, 'roof in the shelter map');
 assert.equal(sample(0, 0), -2.25, 'open street keeps its lower ground height');
+assert(cover.sheltered(12, 0, 1.75) && !cover.sheltered(12, 0, 19.25), 'umbrellas close below the roof and open above it');
+assert(!cover.sheltered(0, 0, 1.75) && !cover.sheltered(1000, 1000, 1.75), 'open and unsampled streets keep their umbrellas');
 const before = probes;
 cover.update(1, 0, 0, top);
 assert.equal(probes, before, 'standing in the same cell does not sample roofs again');

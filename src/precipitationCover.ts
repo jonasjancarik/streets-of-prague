@@ -17,6 +17,16 @@ export class PrecipitationCover {
     this.texture.needsUpdate = true;
   }
 
+  sheltered(x: number, z: number, head: number) {
+    const box = this.box.value;
+    if (!box.w) return false;
+    const i = Math.floor((x - box.x) / STEP), j = Math.floor((z - box.y) / STEP);
+    if (i < 0 || i >= CELLS || j < 0 || j >= CELLS) return false;
+    const k = (j * CELLS + i) * 4;
+    const top = (this.pixels[k] * 256 + this.pixels[k + 1]) / 16 - 1024;
+    return top > head + .25;
+  }
+
   update(x: number, z: number, revision: number, topAt: (x: number, z: number) => number) {
     const ox = Math.floor(x / SNAP) * SNAP - SPAN / 2, oz = Math.floor(z / SNAP) * SNAP - SPAN / 2;
     const old = this.box.value;

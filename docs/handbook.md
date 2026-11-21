@@ -260,6 +260,10 @@ stay lit after dark. The displays are scenery imagined for the game.
 Mapped foot passages continue through the ground floors of buildings. At U Nováků
 on Vodičkova you can walk off the pavement, past the display cases, and back
 out again. The openings follow the same route and width as the walking grid.
+Listen at the threshold. Rain on the pavement gets quieter inside, the city's
+high frequencies soften and your footsteps pick up two short wall reflections.
+Nearby walkers put away their umbrellas under cover. On foot in first person,
+people step aside as you approach or wait in a narrow doorway until you clear it.
 Where passages meet, the corridor walls stop at the junction. The ceiling and floor
 follow the terrain and end at the building footprint. The fixtures, finishes and
 display cases are inferred scenery. Nearby interiors are built by an optional

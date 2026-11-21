@@ -1,6 +1,6 @@
 import { clamp } from './network.ts';
 import { BOGIES, frontOf } from './trams.ts';
-import { AMBIENCE, ambienceGains, ambienceMuffle, sirenGain, SIREN_RANGE, PASSING, passingFalloff, passingNote, passingLevels, ROTORS, rotorFalloff, sourcePan } from './soundmix.ts';
+import { AMBIENCE, ambienceGains, ambienceMuffle, sirenGain, SIREN_RANGE, PASSING, passingFalloff, passingNote, passingLevels, ROTORS, rotorFalloff, sourcePan, PASSAGE_SOUND } from './soundmix.ts';
 import type { EarRight, PassingKind } from './soundmix.ts';
 import { Radio, radioOn, setRadioSaved } from './radio.ts';
 import type { Station } from './radio.ts';
@@ -141,6 +141,7 @@ export interface SoundState {
   x: number; y: number; // where you are
   car: Car | null; throttle: number; surface: Surface;
   trams: TramVehicle[];
+  shelter?: number; // 0 on the street, 1 well inside a covered passage
   quiet: boolean; // in the metro
   rain?: number; wet?: number; snow?: number; // the weather, 0–1 each (weather.ts)
   strikes?: number; // lightning so far: each new one thunders a moment later
@@ -169,6 +170,8 @@ const NOISY: Bus[] = ['engine', 'tyres', 'traffic', 'trams', 'city', 'weather'];
 const ANC_CUT = 0.5, ANC_SHELF = -22; // volume left, and dB taken off the lows
 
 export class Sound {
+  shelter = 0;
+  private stepEcho?: AudioNode;
   right: EarRight | null = null; // the camera’s right at street level
   buses = {} as Record<Bus, GainNode>;
   volumes = Object.fromEntries(BUSES.map((b) => [b, 1])) as Record<Bus, number>;
@@ -332,7 +335,24 @@ export class Sound {
     const source = ctx.createBufferSource();
     source.buffer = this.steps;
     source.playbackRate.value = (kind === 'land' ? 0.82 : 0.94 + strength * 0.12) + Math.random() * 0.05;
-    source.connect(gain(ctx, kind === 'land' ? 0.38 : 0.14 + 0.14 * strength)).connect(this.buses.city);
+    const dry = gain(ctx, kind === 'land' ? .38 : .14 + .14 * strength);
+    source.connect(dry).connect(this.buses.city);
+    let send: GainNode | undefined;
+    if (this.shelter > .01) {
+      if (!this.stepEcho) {
+        // Two short wall returns, softer in the highs. Nothing feeds back.
+        const returns = filter(ctx, 'lowpass', 3100);
+        for (const [seconds, level, pan] of PASSAGE_SOUND.reflections) {
+          const delay = ctx.createDelay(.1), side = ctx.createStereoPanner();
+          delay.delayTime.value = seconds; side.pan.value = pan;
+          returns.connect(delay).connect(gain(ctx, level)).connect(side).connect(this.buses.city);
+        }
+        this.stepEcho = returns;
+      }
+      send = gain(ctx, this.shelter);
+      dry.connect(send).connect(this.stepEcho);
+    }
+    source.onended = () => { source.disconnect(); dry.disconnect(); send?.disconnect(); };
     source.start(ctx.currentTime, slot * 0.25, 0.25);
   }
 
@@ -378,6 +398,7 @@ export class Sound {
   }
 
   update(dt: number, s: SoundState) {
+    this.shelter = clamp(s.shelter ?? 0, 0, 1);
     const ctx = this.ctx;
     this.radio?.setStreaming(!!ctx && ctx.state === 'running' && this.on && !document.hidden && !s.quiet && this.volumes.radio > 0);
     if (!ctx || ctx.state !== 'running' || !this.on) { this.radio?.update(false); return; }
@@ -395,9 +416,9 @@ export class Sound {
     this.engine?.update(dt, s.throttle);
     this.radio?.update(!!car && !car.two && !s.quiet, car);
     this.tyres!.update(car, s.surface, s.wet ?? 0);
-    this.weather!.update(s.rain ?? 0, s.snow ?? 0);
+    this.weather!.update(s.rain ?? 0, s.snow ?? 0, this.shelter);
     const aloft = clamp(s.aloft ?? 0, 0, 1);
-    this.ambience?.update(s.busy ?? 0.5, s.hour ?? 12, Math.max(s.rain ?? 0, s.snow ?? 0), aloft, s.season, s.road ?? 0);
+    this.ambience?.update(s.busy ?? 0.5, s.hour ?? 12, Math.max(s.rain ?? 0, s.snow ?? 0), aloft, s.season, s.road ?? 0, this.shelter);
     this.buses.trams.gain.setTargetAtTime(this.level('trams') * (1 - 0.9 * aloft), t, 0.5);
     this.buses.traffic.gain.setTargetAtTime(this.level('traffic') * (1 - 0.9 * aloft), t, 0.5);
     if (s.strikes !== undefined) {
@@ -1214,11 +1235,13 @@ class Ambience {
   }
 
   // `busy` 0–1, `hour` 0–24, `wet` how hard it rains or snows 0–1, `road` how near a big road is 0–1.
-  update(busy: number, hour: number, wet: number, aloft = 0, season?: BirdSeason, road = 0) {
+  update(busy: number, hour: number, wet: number, aloft = 0, season?: BirdSeason, road = 0, shelter = 0) {
     const t = this.ctx.currentTime, gains = ambienceGains(busy, hour, wet, season, road), muffle = ambienceMuffle(busy);
     // High up the city is a faint murmur: much quieter, and only its lows reach you.
-    for (const [name, g] of Object.entries(this.gains)) g.gain.setTargetAtTime((gains[name] ?? 0) * (1 - 0.93 * aloft), t, 2);
-    for (const [name, lp] of Object.entries(this.muffles)) lp.frequency.setTargetAtTime(Math.min(muffle[name] ?? 20000, 20000 - 18500 * aloft), t, 2);
+    const outside = 1 - shelter * (1 - PASSAGE_SOUND.city);
+    const cutoff = 20000 * (PASSAGE_SOUND.cityCutoff / 20000) ** shelter;
+    for (const [name, g] of Object.entries(this.gains)) g.gain.setTargetAtTime((gains[name] ?? 0) * (1 - 0.93 * aloft) * outside, t, 2);
+    for (const [name, lp] of Object.entries(this.muffles)) lp.frequency.setTargetAtTime(Math.min(muffle[name] ?? 20000, 20000 - 18500 * aloft, cutoff), t, 1);
   }
 }
 
@@ -1264,12 +1287,12 @@ class WeatherSound {
     src.stop(at + 9);
   }
 
-  update(rain: number, snow: number) {
+  update(rain: number, snow: number, shelter = 0) {
     const t = this.ctx.currentTime;
-    this.hissGain.gain.setTargetAtTime(rain * 0.09, t, 0.5);
-    this.patterGain.gain.setTargetAtTime(rain * 0.5, t, 0.5);
+    this.hissGain.gain.setTargetAtTime(rain * 0.09 * (1 - shelter * (1 - PASSAGE_SOUND.rainHiss)), t, .5);
+    this.patterGain.gain.setTargetAtTime(rain * 0.5 * (1 - shelter * (1 - PASSAGE_SOUND.rainPatter)), t, .5);
     const gust = 0.6 + 0.25 * Math.sin(t * 0.31) + 0.15 * Math.sin(t * 0.83 + 1);
-    this.windGain.gain.setTargetAtTime(snow * 0.22 * gust, t, 0.8);
+    this.windGain.gain.setTargetAtTime(snow * 0.22 * gust * (1 - shelter * (1 - PASSAGE_SOUND.wind)), t, .8);
     this.wind.frequency.setTargetAtTime(260 + 240 * gust, t, 0.8);
   }
 }
