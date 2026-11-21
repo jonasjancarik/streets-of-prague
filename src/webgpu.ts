@@ -51,7 +51,14 @@ const uGroundSeason = followVec(GRASS_SEASON.park), uMeadowSeason = followVec(GR
 const hedgeV = uv().y;
 const hedgeShade = select(hedgeV.lessThan(1.5), mix(0.55, 1.0, smoothstep(0.0, 1.0, hedgeV)),
   float(1).sub(smoothstep(0.12, 0.3, abs(fract(hedgeV).sub(0.5))).mul(0.3)));
-const hedgeColour = vec4(materialColor.rgb.mul(followColor(HEDGE_SEASON)).mul(hedgeShade), 1);
+// From the pavement the leaf texture is a blur of blobs: within a few metres single leaves
+// show, lighter and darker, with dark gaps into the hedge between them.
+const hedgeAt = vec2(positionWorld.x.add(positionWorld.z.mul(0.7)), positionWorld.y.add(positionWorld.z.mul(0.3)));
+const hedgeNear = detail(hedgeAt, 0.05);
+const hedgeLeaf = vnoise(hedgeAt.mul(31)).mul(0.6).add(vnoise(hedgeAt.mul(vec2(83, 71)).add(9)).mul(0.4)).sub(0.5);
+const hedgeGap = smoothstep(0.6, 0.8, vnoise(hedgeAt.mul(12).add(3)));
+const hedgeClose = float(1).add(hedgeLeaf.mul(1.1).mul(hedgeNear)).mul(float(1).sub(hedgeGap.mul(0.5).mul(hedgeNear)));
+const hedgeColour = vec4(materialColor.rgb.mul(followColor(HEDGE_SEASON)).mul(hedgeShade).mul(hedgeClose), 1);
 addPort(/^hedge-season$/, (node) => { node.colorNode = hedgeColour; });
 // The cars' probe of the street (probe.ts) needs WebGPU's kind of cube target.
 setProbeTargets(() => new CubeRenderTarget(PROBE_SIZE, PROBE_OPTIONS) as never);
@@ -177,7 +184,7 @@ function pGrass(c0: N, p: N, seasonal: boolean, season: typeof uGroundSeason = u
   if (seasonal) dry = clamp(dry.mul(season.w), 0, 1);
   c.assign(mix(c, c.mul(vec3(1.12, 1.05, 0.78)), dry));
   c.assign(mix(c, c.mul(vec3(1.05, 0.9, 0.7)), smoothstep(0.6, 0.8, fbm2(p.mul(0.15).add(3))).mul(0.6)));
-  const d = detail(p, 0.2);
+  const d = detail(p, 0.2), near = detail(p, 0.035);
   If(d.greaterThan(0), () => {
     // Lusher and thinner clumps a metre or two across, which a lawn always has (close up only).
     c.mulAssign(float(1).add(vnoise(p.mul(0.85).add(41)).sub(0.5).mul(0.2).mul(d)));
@@ -186,6 +193,12 @@ function pGrass(c0: N, p: N, seasonal: boolean, season: typeof uGroundSeason = u
     const q = vec2(dot(p, vec2(cos(lean), sin(lean))), dot(p, vec2(sin(lean).negate(), cos(lean))));
     c.mulAssign(float(1).add(vnoise(q.mul(vec2(3, 13))).sub(0.5).mul(0.26).mul(d)));
     c.addAssign(vnoise(p.mul(5)).sub(0.5).mul(0.05).mul(d));
+    // At your feet: single blades, some of them catching the light.
+    If(near.greaterThan(0), () => {
+      const blade = vnoise(q.mul(vec2(21, 96)).add(3)).toVar(), fine = vnoise(q.mul(vec2(55, 230)).add(17));
+      c.mulAssign(float(1).add(blade.sub(0.5).mul(0.5).add(fine.sub(0.5).mul(0.34)).mul(near)));
+      c.assign(mix(c, c.mul(vec3(1.14, 1.12, 0.82)), smoothstep(0.62, 0.9, blade).mul(near).mul(0.5)));
+    });
     // Daisies and dandelions while the trees are in blossom: a white or yellow dot here and there.
     if (seasonal) {
       const cell = floor(p.mul(2.6)), h = hash12(cell.add(7.7));
