@@ -540,10 +540,11 @@ export class Walker {
   _tx?: number;
   _ty?: number;
 
-  flight: { height: number; vz: number; heldTime: number; open: boolean; fromX: number; fromY: number; deck: number; helicopter?: boolean } | null = null;
+  flight: { height: number; peak: number; vz: number; inflation: number; open: boolean; fromX: number; fromY: number; deck: number; helicopter?: boolean } | null = null;
+  readonly body = new THREE.Group();
   private canopy?: THREE.Group;
 
-  constructor(grid: WalkGrid, kit: FigureKit, private world: TileWorld, private splash: (helicopter: boolean) => void) {
+  constructor(grid: WalkGrid, kit: FigureKit, private world: TileWorld, private splash: (helicopter: boolean) => void, private hurt: (points: number) => void) {
     this.grid = grid;
     this.x = this.y = 0;
     this.h = 0;
@@ -559,7 +560,8 @@ export class Walker {
     this.fig.mesh.count = 1;
     this.base = new THREE.Matrix4().makeScale(SCALE, SCALE, SCALE);
     this.mesh = new THREE.Group();
-    this.mesh.add(this.fig.mesh);
+    this.mesh.add(this.body);
+    this.body.add(this.fig.mesh);
     this.ring = new THREE.Mesh(
       new THREE.RingGeometry(0.7, 0.95, 32),
       new THREE.MeshBasicMaterial({ color: '#ffe08a', transparent: true, opacity: 0.95, depthWrite: false }),
@@ -599,7 +601,7 @@ export class Walker {
       const surface = !below.level && water ? this.world.terrainAt(x, y, true) : below.h;
       if (height - surface <= 1.5 || this.world.rooftopAt(x, y) > height + this.z) continue;
       if (!water && this.world.cellAt(x, y, below.level, below.h) !== 0) continue;
-      this.flight = { height: height + this.z, vz: 1, heldTime: 0, open: false, fromX: this.x, fromY: this.y, deck };
+      this.flight = { height: height + this.z, peak: height + this.z, vz: 1, inflation: 0, open: false, fromX: this.x, fromY: this.y, deck };
       this.x = x; this.y = y;
       this.h = Math.atan2(this.vy, this.vx);
       this.sync();
@@ -611,7 +613,7 @@ export class Walker {
   jumpFromHelicopter(c: { x: number; y: number; h: number; z: number; vx: number; vy: number; vz: number }) {
     // While aboard, the hidden walker stays at the boarding spot. Keep it as
     // a fallback if the splashdown has no reachable bank among the loaded tiles.
-    this.flight = { height: c.z + 0.8, vz: c.vz, heldTime: 0, open: false,
+    this.flight = { height: c.z + 0.8, peak: c.z + 0.8, vz: c.vz, inflation: 0, open: false,
       fromX: this.x, fromY: this.y, deck: this.level ?? 0, helicopter: true };
     this.x = c.x; this.y = c.y;
     const lx = -Math.sin(c.h), ly = Math.cos(c.h);
@@ -635,24 +637,43 @@ export class Walker {
     this.flight = null;
     this.z = 0;
     if (this.canopy) this.canopy.visible = false;
+    this.body.rotation.set(0, 0, 0);
+    this.body.position.set(0, 0, 0);
   }
 
-  private fly(dt: number, held: boolean, turn: number, aim?: { h: number } | null) {
+  private fly(dt: number, deploy: boolean, move: number, turn: number, aim?: { h: number; mag: number } | null) {
     const f = this.flight!;
-    f.heldTime = held ? f.heldTime + dt : 0;
-    if (!f.open && f.heldTime >= 0.18) {
+    if (deploy && !f.open) {
       f.open = true;
-      if (!this.canopy) { this.canopy = parachute(); this.mesh.add(this.canopy); }
+      if (!this.canopy) { this.canopy = parachute(); this.body.add(this.canopy); }
       this.canopy.visible = true;
     }
-    if (f.open) {
-      if (aim) turn = clamp(Math.atan2(Math.sin(aim.h - this.h), Math.cos(aim.h - this.h)), -1, 1);
-      this.h += turn * 0.85 * dt;
-      const k = Math.min(1, 2.5 * dt);
-      this.vx += (3.8 * Math.cos(this.h) - this.vx) * k;
-      this.vy += (3.8 * Math.sin(this.h) - this.vy) * k;
-      f.vz += (-2.4 - f.vz) * k;
-    } else f.vz -= 9.81 * dt;
+    if (aim) {
+      turn = clamp(Math.atan2(Math.sin(aim.h - this.h), Math.cos(aim.h - this.h)) * 2, -1, 1);
+      if (!move) move = aim.mag;
+    }
+    this.h += turn * (f.open ? 1.25 : 2) * dt;
+    const dive = Math.max(0, move), flare = Math.max(0, -move);
+    // Track forward through freefall, then trade height for speed under the wing.
+    // Pulling back flares the canopy for a shorter, slower landing.
+    const speed = f.open ? 7 + 6 * dive - 4.5 * flare : 4 + 10 * dive - 3 * flare;
+    const grip = 1 - Math.exp(-dt * (f.open ? 2.6 : 1.4));
+    this.vx += (speed * Math.cos(this.h) - this.vx) * grip;
+    this.vy += (speed * Math.sin(this.h) - this.vy) * grip;
+    if (f.open && this.canopy) {
+      f.inflation = Math.min(1, f.inflation + dt / 0.35);
+      this.canopy.scale.set(0.55 + 0.45 * f.inflation, 0.8 + 0.2 * f.inflation, 0.2 + 0.8 * f.inflation);
+      // Rotate the pilot, lines and wing around the harness, so the feet
+      // swing below it and the attachment points stay together in a turn.
+      this.body.rotation.x += (-turn * 0.35 - this.body.rotation.x) * grip;
+      this.body.rotation.z += ((0.1 + 0.18 * flare - 0.3 * dive) * f.inflation - this.body.rotation.z) * grip;
+      this.body.position.set(0, -1.2, 0).applyQuaternion(this.body.quaternion);
+      this.body.position.y += 1.2;
+      const sink = 2.8 + 3.8 * dive - flare + Math.abs(turn) * 0.6;
+      f.vz += (-sink - f.vz) * (1 - Math.exp(-4 * f.inflation * dt));
+    } else {
+      f.vz = Math.max(-48, f.vz - (9.81 + 6 * dive) * dt);
+    }
     const nx = this.x + this.vx * dt, ny = this.y + this.vy * dt;
     let under = this.world.landingAt(nx, ny, f.height);
     let wet = !under.level && this.world.waterAt(nx, ny);
@@ -666,6 +687,7 @@ export class Walker {
     }
     const surface = wet ? this.world.terrainAt(this.x, this.y, true) : under.h;
     f.height += f.vz * dt;
+    f.peak = Math.max(f.peak, f.height);
     if (f.height <= surface) {
       this.endFlight();
       if (wet) {
@@ -683,13 +705,22 @@ export class Walker {
       this._tx = this.x; this._ty = this.y;
       this.speed = this.side = this.vx = this.vy = 0;
       this.anim.play('idle', true, 0.1);
+      if (!wet && !f.open) {
+        const drop = f.peak - surface;
+        // A fast dive or a moving aircraft alone shouldn't make a short drop fatal.
+        // Use impact energy for intermediate falls, capped by the actual drop.
+        const speedHeight = Math.max(0, -f.vz) ** 2 / (2 * 9.81);
+        const severity = clamp(Math.min(speedHeight - 6, (drop - 6) * 1.5) / (25 - 6), 0, 0.95);
+        if (drop >= 25) this.hurt(100);
+        else if (severity > 0) this.hurt(100 * severity);
+      }
     }
     this.sync();
   }
 
   // `strafe` (first person): left/right step sideways instead of turning.
   update(dt: number, ctl: { turn: number; move: number; run: boolean; jump: boolean; brake?: boolean; aim?: { h: number; mag: number } | null; strafe?: boolean }) {
-    if (this.flight) { this.fly(dt, !!ctl.brake, ctl.turn, ctl.aim); return; }
+    if (this.flight) { this.fly(dt, ctl.jump, ctl.move, ctl.turn, ctl.aim); return; }
     const a = this.anim;
     if (this.down > 0) {
       this.down -= dt;
@@ -766,7 +797,7 @@ export class Walker {
   drawFigure() {
     if (this.fig.lifeSize) {
       this.mesh.updateMatrixWorld();
-      this.fig.set(0, _m.multiplyMatrices(this.mesh.matrixWorld, this.base), this.anim, -1, this.base);
+      this.fig.set(0, _m.multiplyMatrices(this.body.matrixWorld, this.base), this.anim, -1, this.base);
     } else this.fig.set(0, this.base, this.anim);
     this.fig.commit(1);
   }

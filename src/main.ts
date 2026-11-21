@@ -530,11 +530,11 @@ async function main() {
   const boats = new Boats(scene, world, islands, undefined, river.fairway);
 
   // ---- Player ------------------------------------------------------------
-  const walker = new Walker(grid, kit, world, (helicopter) => showBanner(t(helicopter ? 'Back on dry land' : 'Back where you jumped after a splash')));
+  const walker = new Walker(grid, kit, world, (helicopter) => showBanner(t(helicopter ? 'Back on dry land' : 'Back where you jumped after a splash')), (points) => hurt(points));
   scene.add(walker.mesh);
   // A courier's bag you've picked up rides on your back.
   const bags = new Bags(scene, (x, y) => ground(x, y));
-  walker.mesh.add(bags.back);
+  walker.body.add(bags.back);
   // On the pavement beside that street, with a car waiting at the kerb and a bike ahead.
   const standAtStart = (sx: number, sy: number) => {
     const { edge, q } = streetNear(sx, sy);
@@ -1777,7 +1777,7 @@ async function main() {
     }
     if (e.code === 'KeyQ' && !e.repeat) honk(true);
     // Space jumps, except at a tram stop, where holding it waits for a tram.
-    if (e.code === 'Space' && !e.repeat && !board.shown && !inCar && !inHeli && !ride.on && taxi.state !== 'coming') { input.jump = true; telemetry.did('jumped'); }
+    if (e.code === 'Space' && !e.repeat && !inCar && !inHeli && !ride.on && (walker.flight || (!board.shown && taxi.state !== 'coming'))) { input.jump = true; telemetry.did('jumped'); }
     if (e.code === 'KeyM' && !e.repeat) sound.toggle();
     if (e.code === 'KeyR' && !e.repeat && inCar && !inCar.two && sound.radio) {
       const station = sound.radio.next();
@@ -2865,7 +2865,7 @@ async function main() {
       move: touch.move || pad.move || (input.up ? 1 : 0) - (input.down ? 1 : 0),
       turn: touch.turn || pad.turn || (input.left ? 1 : 0) - (input.right ? 1 : 0),
       run: input.run || touch.run,
-      brake: input.brake || touch.brake || (!inCar && !inHeli && !ride.on && touch.jumpHeld),
+      brake: input.brake || touch.brake,
       jump: input.jump,
       aim: touch.aim || pad.aim,
     };
@@ -2903,7 +2903,10 @@ async function main() {
     // (The developer panel can pause the world or slow it down.)
     const run = testkit?.paused ? 0 : scale * (testkit?.speed ?? 1);
     const steps = metro.active || !(dt * run > 0) ? 0 : Math.ceil(run - 1e-6); // underground, the street waits (and paused, nothing steps)
-    for (let i = 0; i < steps; i++) simulate((dt * run) / steps, ctl);
+    for (let i = 0; i < steps; i++) {
+      simulate((dt * run) / steps, ctl);
+      ctl.jump = false;
+    }
     weather.update(dt * run, clock.t, dt);
     input.jump = false;
     // A ticket that runs out while you ride gives you a moment to buy another.
@@ -3315,8 +3318,8 @@ async function main() {
       if (inHeli.damage >= 100) hint = t('Engine failed');
       else if (inHeli.damage > 0) hint = [hint, t('Helicopter damage: {n}%', { n: Math.round(inHeli.damage) })].filter(Boolean).join(' · ');
       if (inHeli.canBailOut && !touch.active) hint += ' · ' + t('<b>E</b> jump out');
-    } else if (walker.flight?.helicopter && !walker.flight.open) {
-      hint = touch.active ? t('Hold Jump to open your parachute') : t('Hold <b>Space</b> to open your parachute');
+    } else if (walker.flight && !walker.flight.open) {
+      hint = touch.active ? t('Tap Jump to open your parachute') : t('Press <b>Space</b> to open your parachute');
     } else if (inCar) {
       if (!assisted) hint = touch.active ? '' : inCar.type === 'fire' ? t('<b>E</b> get out · <b>F</b> water cannon · <b>X</b> blue lights · <b>Shift</b> lane assist') : inCar.type === 'ambulance' || inCar.type === 'police' ? t('<b>E</b> get out · <b>X</b> blue lights · <b>Shift</b> lane assist') : t(inCar.two ? '<b>E</b> get off · <b>Shift</b> lane assist' : '<b>E</b> get out · <b>Shift</b> lane assist');
       // While the assist is on, the panel stays empty so it doesn't grow.

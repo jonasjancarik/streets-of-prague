@@ -555,9 +555,9 @@ the same signal phase as the overhead light.
   W/S fly, A/D turn, Space climbs and Shift comes down. Climb above a building’s roof to fly over it.
   Land on open ground, a bridge deck or a flat or gently sloping roof and press E to
   step out. Both skids need support. A pitched roof or an overhanging skid prevents
-  landing. In flight, press E to jump out, then hold Space to open your parachute
-  and steer with A/D. On a controller, press X then hold A. On touch, tap Jump out
-  then hold Jump. You can bail out after engine failure too. If you splash down,
+  landing. In flight, press E to jump out, then press Space to open your parachute
+  and steer with A/D. On a controller, press X then A. On touch, tap Jump out
+  then tap Jump. You can bail out after engine failure too. If you splash down,
   you return to dry land. Impacts, gunfire and nearby vehicle explosions damage the aircraft.
   At 100% damage the engine fails, and the helicopter explodes on impact. Once you
   fly away from a pad, another helicopter can appear there when the pad is out of
@@ -1247,9 +1247,12 @@ record the measurements, merge decisions and pending landmark asset activation.
   bicycle). Get out of anything doing more than about 15 km/h (car, bike or tram)
   and you fall and get hurt. On foot,
   Space jumps (not at a tram stop, where it waits for a tram); in the air, a car can't
-  knock you over. Move towards a bridge parapet, roof edge or steep drop and jump. Hold Space
+  knock you over. Move towards a bridge parapet, roof edge or steep drop and jump. Press Space again
   (Jump on touch, A on a controller) during the fall to open a parachute. It stays
-  open until you land. Steer gently with A/D or the stick. If you land in the
+  open until you land. Steer through freefall with A/D or the stick. W dives for speed. Under the canopy,
+  You lean with the wing as you turn. W pitches you forward for speed and S leans you back for a slower landing. With the chute
+  packed, drops onto solid ground are harmless up to 6 m. Beyond that, impact speed
+  determines the damage, and a fall of 25 m or more is fatal. If you land in the
   river you return to where you jumped. Jump at a car that's standing still and you climb onto it and can
   walk over its bonnet, roof or boot and drop off the other side. If it drives off with
   you on top, you ride along until it goes faster than about 30 km/h and throws you off.

@@ -32,7 +32,9 @@ export default {
     await t.wait(3, { move: 1 });
     await t.wait(1 / 60, { jump: true, move: 1, brake: true });
     await t.wait(0.72, { move: 1, brake: true });
-    t.check('the same jump opens a parachute off a quay', !!walker.flight?.open && t.pastEdge(quay) > 0);
+    t.check('holding takeoff does not deploy', !!walker.flight && !walker.flight.open);
+    await t.wait(1 / 60, { jump: true });
+    t.check('a second press opens a parachute off a quay', !!walker.flight?.open && t.pastEdge(quay) > 0);
     await t.wait(4);
 
     await t.go([50.0832, 14.4078]);
@@ -74,7 +76,9 @@ export default {
     walker.sync();
     await t.wait(1 / 60, { jump: true, move: 1, brake: true });
     await t.wait(0.9, { move: 1, brake: true });
-    if (!t.check('holding jump opens the canopy past the eave', !!walker.flight?.open)) return;
+    t.check('freefall continues past the eave', !!walker.flight && !walker.flight.open);
+    await t.wait(1 / 60, { jump: true });
+    if (!t.check('a second press opens the canopy past the eave', !!walker.flight?.open)) return;
     const heading = walker.h, altitude = walker.mesh.position.y;
     await t.wait(0.5, { turn: 1 });
     t.check('the open canopy turns gently after Space is released', !!walker.flight?.open && walker.h > heading + 0.2 && walker.h < heading + 0.7 && walker.mesh.position.y < altitude);

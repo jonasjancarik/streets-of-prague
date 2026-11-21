@@ -27,7 +27,7 @@ function keysFor(s: HelpState): { title: string; keys: Keys; note?: string } {
       keys: {
         W: ['walk', 'Walk forwards and back'], S: ['back', 'Walk forwards and back'],
         A: ['left', s.street ? 'Step left' : 'Turn'], D: ['right', s.street ? 'Step right' : 'Turn'],
-        Shift: ['run', 'Run'], Space: ['jump', 'Jump. Hold Space during a long fall to open your parachute, then steer with A or D'],
+        Shift: ['run', 'Run'], Space: ['jump', 'Jump. Press Space again in freefall to open your parachute. A/D steer, W dives and S slows you down'],
         E: ['get in', 'Get into the nearest car, onto a bike or motorbike, or onto a tram at a stop'],
         V: ['view', 'Switch between overhead, first-person and third-person views'],
         T: ['taxi', 'Get a taxi: wave one down or order one through an app'],

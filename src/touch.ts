@@ -7,7 +7,7 @@ import type { Chopper } from './helicopter.ts';
 
 export interface TouchState {
   active: boolean; move: number; turn: number; aim: { h: number; mag: number } | null;
-  jumpHeld: boolean; brake: boolean; run: boolean; fast: boolean;
+  brake: boolean; run: boolean; fast: boolean;
   update(options: { car: Car | Chopper | null; engine?: boolean; beacon?: boolean; driving?: boolean; tram?: boolean; steal?: boolean; wait?: boolean; label?: string | null; canEnter: boolean; limit?: number | null }): void;
 }
 
@@ -71,7 +71,7 @@ export function setupTouch({ action, backOnRoad, zoomBy, eyes, horn, steal, cann
     return el;
   };
   // `aim` (on foot): { h, mag }, the way the stick points in world terms and how far.
-  const state: TouchState = { active: false, move: 0, turn: 0, aim: null, jumpHeld: false, brake: false, run: false, fast: false, update: () => {} };
+  const state: TouchState = { active: false, move: 0, turn: 0, aim: null, brake: false, run: false, fast: false, update: () => {} };
   let inCar: Car | Chopper | null = null, assistOn = false;
   $('touch').dataset.drive = drive;
 
@@ -186,17 +186,7 @@ export function setupTouch({ action, backOnRoad, zoomBy, eyes, horn, steal, cann
   const toggle = $('t-toggle');
   tap(toggle, () => { assistOn = !assistOn; });
   tap($('t-action'), action);
-  const jumpButton = $('t-jump');
-  const jumpUp = () => { state.jumpHeld = false; };
-  jumpButton.addEventListener('pointerdown', (e) => {
-    e.preventDefault();
-    capture(jumpButton, e);
-    state.jumpHeld = true;
-    jump();
-  });
-  jumpButton.addEventListener('pointerup', jumpUp);
-  jumpButton.addEventListener('pointercancel', jumpUp);
-  jumpButton.addEventListener('lostpointercapture', jumpUp);
+  tap($('t-jump'), jump);
   tap($('t-road'), backOnRoad);
   tap($('t-steal'), steal);
   tap($('t-doors'), doors);
@@ -287,7 +277,6 @@ export function setupTouch({ action, backOnRoad, zoomBy, eyes, horn, steal, cann
     stick.classList.remove('held');
     stick.style.transform = knob.style.transform = '';
     releasePedals();
-    jumpUp();
     handUp();
     fastUp();
     hornUp();

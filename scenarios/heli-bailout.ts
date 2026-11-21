@@ -28,13 +28,20 @@ export default {
       const height = c.z;
       t.press();
       t.check('exit starts a fall at aircraft height', t.where().mode === 'foot' && !!walker.flight && !walker.flight.open && Math.abs(walker.mesh.position.y - height) < 1.5);
-      await t.wait(0.35, { brake: true });
+      const exitHeading = walker.h;
+      await t.wait(0.35, { brake: true, move: 1, turn: 1 });
+      t.check('freefall can turn and dive while Space stays held', !!walker.flight && !walker.flight.open && walker.h > exitHeading + 0.3 && walker.flight.vz < -4);
+      await t.wait(1 / 60, { jump: true });
       const heading = walker.h;
       await t.wait(0.5, { turn: 1 });
       t.check('the open parachute steers after release', !!walker.flight?.open && walker.h > heading + 0.2);
+      t.check('the pilot banks into the turn', walker.body.rotation.x < -0.15);
+      await t.wait(0.6, { turn: -1, move: -1 });
+      t.check('the pilot swings across on the opposite turn and leans back to flare', walker.body.rotation.x > 0.12 && walker.body.rotation.z > 0.12);
       t.check('the empty helicopter drops independently', c.z < height - 2);
       await t.wait(14);
       t.check('the pilot lands on dry ground or a roof', !walker.flight && walker.down <= 0 && t.where().mode === 'foot' && !world.waterAt(walker.x, walker.y));
+      t.check('the pilot stands upright on landing', walker.body.rotation.x === 0 && walker.body.rotation.z === 0 && walker.body.position.lengthSq() === 0);
       if (river) t.check('the disabled aircraft crashed after the pilot escaped', c.wrecked);
     }
   },
