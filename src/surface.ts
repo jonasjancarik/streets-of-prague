@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { tunnelFinish, isTunnelFinish } from './tunnelFinish.ts';
 import { PATTERN, patterned, held, DIG, roadRasterEnabled, cutAway } from './shading.ts';
 import type { RoadRaster } from './roadRaster.ts';
 
@@ -9,15 +10,17 @@ import type { RoadRaster } from './roadRaster.ts';
 export interface GroundLayer {
   order: number;
   // `hold`: thin paint that keeps a width in pixels from high up (see held in shading.ts).
-  geometry: { position: Float32Array; normal: Float32Array; index: Uint32Array; alpha?: Float32Array; hold?: Float32Array; trackCoord?: Float32Array };
+  geometry: { position: Float32Array; normal: Float32Array; index: Uint32Array; uv?: Float32Array; alpha?: Float32Array; hold?: Float32Array; trackCoord?: Float32Array };
   color?: string;
   pattern?: string;
   blend?: number | null;
   shade?: number;
   slab?: boolean;
   deck?: boolean;
+  outsideTunnel?: number; // visible indices when seen from inside a road tunnel
   topOnly?: boolean;
   tunnel?: boolean;
+  tunnelFinish?: 'wall' | 'soffit';
   level?: number;
   base?: boolean; // the plain ground under everything (see `photo`)
   raster?: RoadRaster;
@@ -40,7 +43,31 @@ interface SurfaceOptions {
 // triangulated differently, and must stay in front. The hole round you in a tunnel is
 // cut in it too.
 export const GROUND_DEPTH = cutAway(new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide }), 'ground-depth');
-GROUND_DEPTH.visible = false;
+const TUNNEL_TOP_DEPTH = cutAway(new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.FrontSide }), 'ground-depth');
+export function groundDepthView(visible: boolean) {
+  GROUND_DEPTH.visible = TUNNEL_TOP_DEPTH.visible = visible;
+}
+groundDepthView(false);
+const tunnelRanges = new Map<THREE.BufferGeometry, number>();
+const coarseDepth = new Set<THREE.Mesh>();
+let insideTunnel = false;
+export function tunnelDepthMesh(mesh: THREE.Mesh) {
+  coarseDepth.add(mesh);
+  mesh.visible = !insideTunnel;
+  mesh.geometry.addEventListener('dispose', () => coarseDepth.delete(mesh));
+}
+export function tunnelEarthView(inside: boolean) {
+  if (inside === insideTunnel) return;
+  insideTunnel = inside;
+  for (const [g, outside] of tunnelRanges) g.setDrawRange(0, inside ? outside : Infinity);
+  for (const m of coarseDepth) m.visible = !inside;
+}
+function tunnelRange(g: THREE.BufferGeometry, count: number | undefined) {
+  if (count === undefined) return;
+  tunnelRanges.set(g, count);
+  if (insideTunnel) g.setDrawRange(0, count);
+  g.addEventListener('dispose', () => tunnelRanges.delete(g));
+}
 const GROUND_DEPTH_DROP = 0.3; // m
 const WALL_DEPTH_BACK = 0.05; // m: a step's wall in the depth, behind its face
 
@@ -51,16 +78,20 @@ export class Surfaces {
   constructor(layers: GroundLayer[], { time = { value: 0 }, relief = null, masks = new Map(), photo = null }: SurfaceOptions = {}) {
     this.group = new THREE.Group();
     this.masks = [...masks.values()].map((m) => m.texture);
+    const groundDepth = [...masks.keys()].some(level => level < 0) ? TUNNEL_TOP_DEPTH : GROUND_DEPTH;
     for (const l of layers) {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(l.geometry.position, 3));
       g.setAttribute('normal', new THREE.BufferAttribute(l.geometry.normal, 3));
+      if (l.geometry.uv) g.setAttribute('uv', new THREE.BufferAttribute(l.geometry.uv, 2));
       if (l.geometry.trackCoord) g.setAttribute('trackCoord', new THREE.BufferAttribute(l.geometry.trackCoord, 1));
       if (l.geometry.alpha) g.setAttribute('alpha', new THREE.BufferAttribute(l.geometry.alpha, 1));
       g.setIndex(new THREE.BufferAttribute(l.geometry.index, 1));
+      tunnelRange(g, l.outsideTunnel);
       const raster = l.raster ? this.coverageTexture(l.raster) : null;
       const mat = surfaceMaterial(l, time, relief, l.level === undefined ? null : masks.get(l.level) ?? null, l.base ? photo : null, raster);
       const m = new THREE.Mesh(g, mat);
+      if (l.tunnelFinish) m.name = 'Tunnel ' + l.tunnelFinish;
       if (l.geometry.hold) {
         g.setAttribute('hold', new THREE.BufferAttribute(l.geometry.hold, 3));
         held(mat as THREE.MeshLambertMaterial, m);
@@ -72,7 +103,7 @@ export class Surfaces {
       // that (so is everything else: a boat by the quay is hidden from the street).
       if (!l.slab && !l.deck && !l.tunnel) mat.depthTest = true;
       if (l.base) {
-        const depth = new THREE.Mesh(g, GROUND_DEPTH);
+        const depth = new THREE.Mesh(g, groundDepth);
         depth.position.y = -GROUND_DEPTH_DROP;
         depth.renderOrder = -3001;
         this.group.add(depth);
@@ -89,6 +120,7 @@ export class Surfaces {
         const dg = new THREE.BufferGeometry();
         dg.setAttribute('position', new THREE.BufferAttribute(behind, 3));
         dg.setIndex(g.index);
+        tunnelRange(dg, l.outsideTunnel);
         const depth = new THREE.Mesh(dg, GROUND_DEPTH);
         depth.renderOrder = -3001;
         this.group.add(depth);
@@ -110,7 +142,7 @@ export class Surfaces {
   }
 
   dispose() {
-    this.group.traverse((o) => { if (o instanceof THREE.Mesh) { o.geometry.dispose(); if (o.material !== GROUND_DEPTH) o.material.dispose(); } });
+    this.group.traverse((o) => { if (o instanceof THREE.Mesh) { o.geometry.dispose(); if (o.material !== GROUND_DEPTH && o.material !== TUNNEL_TOP_DEPTH && !isTunnelFinish(o.material)) o.material.dispose(); } });
     for (const m of this.masks) m.dispose();
   }
 }
@@ -141,6 +173,7 @@ export const setSoftShade = (f: (opacity: number) => THREE.Material) => { softSh
 export const softShade = (opacity: number) => softShadeBy?.(opacity) ?? null;
 
 function surfaceMaterial(l: GroundLayer, time: { value: number }, relief: SurfaceTexture | null, mask: SurfaceTexture | null, photo: { texture: THREE.Texture; box: number[] } | null = null, raster: THREE.Texture | null = null) {
+  if (l.tunnelFinish) return tunnelFinish(l.tunnelFinish);
   // A bridge deck's slab is solid: drawn with depth, so what's under it is hidden
   // (except round the player, see CUTAWAY), and it casts a shadow.
   if (l.slab) return patterned(new THREE.MeshLambertMaterial({ color: l.color, side: THREE.DoubleSide }), PATTERN[l.pattern ?? 'flat'], time, null, { mask: null });

@@ -12,7 +12,7 @@ import { wallMesh } from './map/buildings.ts';
 import { TreePool } from './trees.ts';
 import { groundStairs, stairLandings } from './map/stairs.ts';
 import { powerMesh, readPowerGrid, type PowerGrid } from './map/powerGrid.ts';
-import { Surfaces } from './surface.ts';
+import { Surfaces, tunnelDepthMesh } from './surface.ts';
 import { buildTin, decodeTin, tinGrid, tinNearSteps, tinSampler, TIN_FORMAT, type TinFile, type TinMesh } from './tin.ts';
 import { shadeBuildings, shadeLandmark, cutAway, broad, ROOF_CLUTTER, roadRasterEnabled } from './shading.ts';
 import { loadFacadeAtlas } from './facades.ts';
@@ -362,6 +362,7 @@ function depthOnlyGround(hm: Float32Array, [x0, y0]: Bounds, n: number, step: nu
   g.setIndex(idx);
   const mesh = new THREE.Mesh(g, cutAway(new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide }), 'depth-ground'));
   mesh.renderOrder = -800;
+  tunnelDepthMesh(mesh);
   return mesh;
 }
 

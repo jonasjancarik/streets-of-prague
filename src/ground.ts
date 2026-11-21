@@ -1,3 +1,5 @@
+import { splitTunnelEarth, tunnelPrisms, TunnelIndex } from './map/tunnelEarth.ts';
+import { tunnelInterior } from './map/tunnelInterior.ts';
 import * as THREE from 'three';
 import { onPolygons, signedArea } from './map/geo.ts';
 import { WATER } from './terrain.ts';
@@ -562,6 +564,7 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
     });
   }
   const upper: GroundLayer[] = [];
+  const bores: ReturnType<typeof tunnelPrisms> = [];
   const railway = new Map<number, Point2[][]>();
   for (const track of d.station?.bridgeTracks ?? d.bridgeTracks ?? []) {
     const lines = railway.get(track.level);
@@ -580,10 +583,15 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
         upper.push(...deckLayers(l.polys, tramsOn.get(k) || [], paintOn.get(k) || [], l.level, railway.get(l.level), !!d.station));
       } else {
         groundHeight = H;
+        bores.push(...tunnelPrisms(l.polys, H));
         upper.push(...tunnelLayers(l.polys, box, masks[k], H, T, paintOn.get(k) || [], l.level));
       }
     });
   } finally { groundHeight = null; }
+  if (bores.length) {
+    const index = new TunnelIndex(bores);
+    for (const layer of lower) layer.outsideTunnel = splitTunnelEarth(layer.geometry, index);
+  }
   return { layers: [...lower, ...upper], masks };
 }
 
@@ -862,7 +870,12 @@ function tunnelLayers(polys: Polygons, box: Bounds, mask: LevelMask, H: HeightAt
   const add = (order: number, geometry: GroundGeometry, color: string, pattern = 'flat') => {
     if (geometry.index.length) out.push({ order, geometry, color, pattern, blend: null, tunnel: true, level });
   };
-  add(-700, polygons(polys), COLORS.tunnel, 'asphalt');
+  const floor = polygons(polys);
+  add(-700, floor, COLORS.tunnel, 'asphalt');
+  const shell = tunnelInterior(polys, floor, edges.map(e => e.pts), box, T, H);
+  for (const [geometry, finish] of [[shell.roof, 'soffit'], [shell.walls, 'wall']] as const) {
+    if (geometry.index.length) out.push({ order: -695, geometry, tunnel: true, level, tunnelFinish: finish });
+  }
   const q = quads();
   openSides(polys, box, mask, H, T, (a, b, ha, hb, ox, oy) => {
     q.quad([b[0], hb, -b[1]], [a[0], ha, -a[1]], [a[0], ha + TUNNEL_H, -a[1]], [b[0], hb + TUNNEL_H, -b[1]], [-ox, 0, oy]);

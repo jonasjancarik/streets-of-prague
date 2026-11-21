@@ -1175,6 +1175,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   round you shown as bare earth. Everything else under the ground stays hidden
   (`track` and `view` in `src/tiles.ts`, the meshes in `src/ground.ts`). The car
   network keeps the tunnels and the magistrála, so traffic drives through them.
+  At street level, a road tunnel has a lit concrete ceiling and tiled walls. The
+  mapped tunnel way sets the ends of the roof, leaving the approaches open to daylight.
+  The floor follows the map. Its headroom and finishes are inferred. From inside,
+  the renderer omits just the pieces of the terrain mesh that enter the lane
+  (`src/map/tunnelInterior.ts`, `src/map/tunnelEarth.ts`).
   A road can change levels partway along an edge. Traffic, buses and the developer
   tool that puts a car back on the road use the level at that point along the lane.
   A named deck or tunnel is used where the loaded tile has its surface and height.

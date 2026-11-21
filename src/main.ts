@@ -68,7 +68,7 @@ import { kindAt, loadStrips, setCentre } from './reflections.ts';
 import { TileWorld } from './tiles.ts';
 import { facadeFinishes, loadFacadeFinishes } from './facadeFinishes.ts';
 import { loadFacadeAtlas } from './facades.ts';
-import { groundSamples, GROUND_DEPTH } from './surface.ts';
+import { groundSamples, groundDepthView, tunnelEarthView } from './surface.ts';
 import { CUTAWAY, DIG, WEATHER_DETAIL } from './shading.ts';
 import { setupDev, watchTransitWhileWaiting } from './dev.ts';
 import { setupSettings } from './settings.ts';
@@ -83,6 +83,7 @@ import { LaneAssist, turnOf, project } from './assist.ts';
 import { Sound, surfaceOf } from './audio.ts';
 import { roadNoise, ROAD_FAR } from './soundmix.ts';
 import type { Surface, HornKind, Rotor } from './audio.ts';
+import { tunnelFinishesView } from './tunnelFinish.ts';
 import { StreetIronwork } from './streetIronwork.ts';
 import { StreetPlates } from './streetPlates.ts';
 import { eyesFor, firstPersonOptions, initialView, WalkingGait, type Eyes, type PlayerView } from './streetView.ts';
@@ -3130,7 +3131,7 @@ async function main() {
     const [hx, hy] = underway ? [underway.x, underway.y] : [px(), py()];
     // (Not in first person: from inside a passage its own vault is what you should see.)
     CUTAWAY.value.set(hx, (underway ? underway.floor : ground(px(), py(), body)) + 2.5, -hy, cutR > 0.3 && !(eyes && !underway) ? cutR : 0);
-    DIG.value.set(hx, -hy, (deep || underway) && cutR > 0.3 ? cutR : 0, 0);
+    DIG.value.set(hx, -hy, (underway || (deep && !eyes)) && cutR > 0.3 ? cutR : 0, 0);
 
     sun.target.position.set(camPos.x, camGround, camPos.z);
     sky.street = !!eyes;
@@ -3159,7 +3160,8 @@ async function main() {
     if ((!eyes || paused || metro.active) && document.pointerLockElement === renderer.domElement) document.exitPointerLock();
     if (camera.near !== nearPlane) { camera.near = nearPlane; camera.updateProjectionMatrix(); }
     // From street level the ground hides what's behind it (see GROUND_DEPTH).
-    GROUND_DEPTH.visible = !!eyes || (POST.ao && POST.on);
+    groundDepthView(!!eyes || (POST.ao && POST.on));
+    tunnelEarthView(!!eyes && !!body && (body.level ?? 0) < 0);
     // …and the trees near you are the ones made to be stood under (map/streetTree.ts).
     // (The free camera too, once it is tilted well off straight down.)
     PEOPLE_SHADOWS.street = fromStreet; // (people cast their own shapes there)
@@ -3175,6 +3177,7 @@ async function main() {
     const streetWalls = fromStreet && !!DOME_NODE.value;
     if (streetWalls && graphics.tier !== 'lowest') loadFacadeFinishes();
     world.facades.update(streetWalls, camera.position.x, camera.position.y, camera.position.z, graphics.tier, !!facadeFinishes.masks);
+    tunnelFinishesView(!!eyes && !underway);
     world.furnitureCamera(fromStreet);
     world.passageCamera(fromStreet, camera.position.x, -camera.position.z);
     ironwork.update(fromStreet, camera.position, graphics.tier, weather.now.wet);
