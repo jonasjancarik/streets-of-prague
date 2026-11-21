@@ -1323,6 +1323,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   passers-by nearest you (within 30 m, less in a crowd) are drawn as avatars from the
   Microsoft Rocketbox library instead, walking, jogging, running and standing with that
   library's motion-captured clips; their feet keep pace with how fast they actually move.
+  Each person switches to their detailed model when it finishes loading. If one model
+  is missing or slow, other people can still appear, including uniformed crews whose
+  base model and outfit are ready.
   Standing, each takes turns with a few ways of waiting (`STANDING`: shifting their weight,
   looking round, texting or calling on a phone, with a phone in the hand). In the rain
   anyone with their umbrella up holds it in the left hand, with Rocketbox's umbrella clip

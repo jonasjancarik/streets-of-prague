@@ -1,10 +1,7 @@
 import type { Scenario } from '../src/testkit.ts';
 
-// First person's life-size people (src/lifesize.ts): their code and avatars load only once
-// you look from the street, and a while back in the view from above they're let go again.
 interface Shell { enabled: boolean; freeAfter: number; loaded: boolean }
 const shell = () => (window.__drive as { lifeSize: Shell }).lifeSize;
-const requested = (part: string) => performance.getEntriesByType('resource').some((r) => r.name.includes(part));
 // Avatars posed in the scene (the group's first child is the umbrellas).
 const shown = () => {
   const g = (window.__drive as { scene: { getObjectByName(n: string): { children: { visible: boolean }[] } | undefined } }).scene.getObjectByName('rocketbox');
@@ -17,27 +14,42 @@ const until = async (t: Parameters<Scenario['run']>[0], ok: () => boolean, secon
 };
 
 export default {
-  title: 'Life-size people load in first person and are let go after it',
+  title: 'Life-size people appear as their models arrive, then unload outside street view',
   async run(t) {
     await t.go('staromak');
     t.time('14:00');
     t.weather('clear');
     const s = shell();
     if (!t.check('life-size people are on', s.enabled)) return;
-    t.eyes = null;
-    await t.frames(5);
-    t.check('from above, no avatars are fetched', !requested('rocketbox/') && !s.loaded);
-    t.eyes = { yaw: 0, pitch: 0 };
-    t.check('the avatars load in first person', await until(t, () => s.loaded && requested('.glb')));
-    t.check('and people near you are drawn life size', await until(t, () => shown() > 0), `${shown()} shown`);
-    await t.shot('life-size-lazy');
-    s.freeAfter = 1;
-    t.eyes = null;
-    t.check('back above, they are let go', await until(t, () => !s.loaded, 10));
-    t.check('nobody is left in the scene', shown() === 0);
-    t.eyes = { yaw: 0, pitch: 0 };
-    t.check('and come back in first person', await until(t, () => s.loaded && shown() > 0), `${shown()} shown`);
-    s.freeAfter = 120;
-    t.eyes = null;
+    const saved = t.eyes, freeAfter = s.freeAfter, fetch = window.fetch;
+    let release!: () => void, delayed = false, requests = 0;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    try {
+      t.eyes = null;
+      s.freeAfter = .25;
+      if (!await until(t, () => !s.loaded)) throw new Error('The earlier street view is still loaded');
+      window.fetch = async (input, init) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (url.includes('rocketbox/')) requests++;
+        if (url.endsWith('/rocketbox/business-male-03.glb')) { delayed = true; await gate; }
+        return fetch.call(window, input, init);
+      };
+      await t.frames(5);
+      t.check('from above, no avatars are fetched', requests === 0 && !s.loaded);
+      t.eyes = { yaw: 0, pitch: 0 };
+      if (!t.check('one character model is still downloading', await until(t, () => delayed))) return;
+      t.check('other people appear while that download waits', await until(t, () => shown() > 0), shown());
+      release();
+      await t.shot('life-size-lazy');
+      t.eyes = null;
+      t.check('back above, the avatars and their scene objects are released', await until(t, () => !s.loaded) && shown() === 0);
+      t.eyes = { yaw: 0, pitch: 0 };
+      t.check('the people return on the next visit', await until(t, () => shown() > 0), shown());
+    } finally {
+      release();
+      window.fetch = fetch;
+      s.freeAfter = freeAfter;
+      t.eyes = saved;
+    }
   },
 } satisfies Scenario;
