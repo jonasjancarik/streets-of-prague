@@ -63,11 +63,12 @@ const FOG_SHARE = 0.88; // WebGPU's share of the fog asked for (see Sky.update)
 // the clouds' lit edges and grey undersides, the sun's or moon's disc and the glow round it
 // (all as what goes in before the tone curve), where the disc stands (w: the cosine of its
 // radius), which way the shadows' light comes from, and the air: x how much the fair-weather
-// clouds show, y how clouded over the sky is, z how well the stars show.
+// clouds show, y how clouded over the sky is, z how well the stars show, w how much of the
+// sunset's or the dawn's colour (`dusk`) lies along the horizon towards the sun.
 export const DOME = {
   zenith: { value: new THREE.Color() }, horizon: { value: new THREE.Color() },
   cloudLit: { value: new THREE.Color() }, cloudBase: { value: new THREE.Color() },
-  disc: { value: new THREE.Color() }, glow: { value: new THREE.Color() },
+  disc: { value: new THREE.Color() }, glow: { value: new THREE.Color() }, dusk: { value: new THREE.Color() },
   sun: { value: new THREE.Vector4(0, 1, 0, 0.9999) }, shade: { value: new THREE.Vector4(0, 1, 0, 0) },
   air: { value: new THREE.Vector4() },
 };
@@ -80,6 +81,8 @@ const DOME_LOOK = {
   base: { day: '#95a3b5', dayGrey: '#8d9399', night: '#11141b', nightGrey: '#2a2625', low: '#8f8798' },
 };
 const MOON = new THREE.Color('#e3e9f4');
+// The band of orange along the horizon under a setting or rising sun, as seen.
+const DUSK = new THREE.Color('#ffbd6e');
 // The sky's node, once the WebGPU side has made it (webgpu.ts): main.ts sets it as the scene's
 // background while the horizon can be in view.
 export const DOME_NODE: { value: unknown } = { value: null };
@@ -311,7 +314,11 @@ export class Sky {
       DOME.glow.value.copy(DOME.disc.value).multiplyScalar(0.02);
     }
     const fairSky = (1 - THREE.MathUtils.smoothstep(w.cloud, 0.15, 0.6)) * (1 - w.mist);
-    DOME.air.value.set(fairSky, THREE.MathUtils.smoothstep(w.cloud, 0.1, 0.95), night * clear * (1 - w.mist), 0);
+    // Sunset and dawn: strongest with the sun on the horizon, gone by 14° up and by the end
+    // of civil twilight; clouds and mist hide it.
+    const dusk = (1 - THREE.MathUtils.smoothstep(deg, 2, 14)) * THREE.MathUtils.smoothstep(deg, -9, -2) * clear * (1 - w.mist);
+    beforeCurve(da.copy(DUSK).multiplyScalar(1 - 0.45 * night), ex, DOME.dusk.value);
+    DOME.air.value.set(fairSky, THREE.MathUtils.smoothstep(w.cloud, 0.1, 0.95), night * clear * (1 - w.mist), dusk);
 
     // The water glitters towards it.
     SUN_DIR.value.copy(this.offset).normalize();
