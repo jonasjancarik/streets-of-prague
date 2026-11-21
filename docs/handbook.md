@@ -1466,7 +1466,17 @@ record the measurements, merge decisions and pending landmark asset activation.
 - **Tram tracks** are OSM's `railway=tram` ways, including those mapped on the same way
   as a street or a bus lane (`highway=busway` or `service` with `railway=tram`, as on
   Lidická and round Anděl: about 300 ways across Prague): `pipeline/osm_area.py` takes
-  the track from a way before deciding what kind of street it is.
+  the track from a way before deciding what kind of street it is. Where they lie comes
+  from the technical map: `pipeline/di_tracks.py` moves each OSM node on a tram track
+  onto the nearest surveyed track axis that runs the same way and is nearer to that
+  track than to its neighbour (at most 3.2 m). OSM traces the tracks from aerial
+  photos: half its track nodes in Prague move by 0.1 m or less, one in ten by more
+  than 0.4 m, and in Újezd one moved 2.7 m, off the kerb it ran into. The tiles' rails (`osm_area.py`) and the
+  lines the trams run along (`build_lines.py`) move the same nodes the same way, so a
+  tram stays on its drawn track and the lines still share their points at the switches.
+  The network, switches, bridges and tunnels stay OSM's. Where the survey has no axis
+  (about 2% of Prague's track nodes, mostly the newest lines), OSM's position is kept.
+  `uv run di_tracks.py` reports how far the tracks moved.
 - **Overhead wires** (`src/wires.ts`) are built with each tile over its tram tracks: a
   contact wire 5.6 m above every track, where the pantographs reach, and every 30 m or so
   a span wire across the tracks, anchored to a building front when one is within 11 m
@@ -2054,6 +2064,12 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   `fetch_sources.py`, into `pipeline/.cache/dtm/ZPS_KR/`. The terrain's survey heights
   (`dtm_heights.py`) and the walls (`dtm_walls.py`) read it; without it the terrain
   has no quay or retaining walls and the streets aren't levelled from their kerbs.
+  The surveyed tram track axes are in another set, transport infrastructure (DI, JVF,
+  57 districts, about 31 MB): `build_tiles.py` downloads what's new into
+  `pipeline/.cache/dtm/DI/` alongside set 2, and `di_tracks.py` keeps the matched track
+  moves in `moves.pkl` there until the OSM extract or the DI files change. A new DI
+  file rebuilds the ground and the streets; rebuild the lines (`build_lines.py`) with
+  them.
 - **IPR.** `ipr_buildings.py` and `ipr_terrain.py` download the SMO-5 sheets they need
   (2.5 × 2 km, about 150 MB each for buildings) into `pipeline/.cache/ipr/` from IPR's
   ArcGIS Online catalogue. Sheets come in blocks of 10 × 10 named after a town, and the

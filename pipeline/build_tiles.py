@@ -48,6 +48,7 @@ from shapely.geometry import LineString, Polygon, box
 from kerbs import NO_PARKING, bridge_ends, estimate, narrowest
 import build_cache
 import chunk_cache
+import di_tracks
 import dtm
 import dtm_walls
 import ipr_trees
@@ -562,6 +563,12 @@ def main() -> None:
             print(f"dtm: couldn't look for a newer map ({e}); using the one here")
         dtm.surfaces()
         dtm.covered([14.42], [50.08])  # (and where the survey reaches at all, kept for the workers)
+        # The surveyed tram track axes (di_tracks.py), and where OSM's tracks move to.
+        try:
+            di_tracks.download()
+        except OSError as e:
+            print(f"di_tracks: couldn't look for a newer map ({e}); using the one here")
+        di_tracks.moved()
     if "ground" in wanted:
         if any(dtm_walls.LINES.glob("*.zip")):
             dtm_walls.lines()
