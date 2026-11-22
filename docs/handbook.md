@@ -825,7 +825,8 @@ The metro ride uses its overhead cutaway camera.
   (`playerView` in local storage, as for the other views); `?vr` asks for it from the URL.
   Out of the headset (Chrome's back button) the game shows **Play in VR** and **Play
   without VR** over the street. Picking another view leaves VR without a reload; the page
-  stays on WebGL until its next start. Put the phone in the headset once VR has started. Chrome draws the lens correction and follows your head with the
+  stays on WebGL until its next start. (Chrome has no way yet to draw a headset with
+  WebGPU for players; `docs/webgpu-vr.md` has the options.) Put the phone in the headset once VR has started. Chrome draws the lens correction and follows your head with the
   phone's sensors. You see the street from your own eyes; in a car you sit in the driver's
   seat. You walk the way your head faces, by one of three means:
   - the Daydream controller, paired from **Connect Daydream controller** (shown only

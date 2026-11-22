@@ -271,8 +271,11 @@ before that day's frame-count fix may be doubled.
   isn't measured.
 - **`Route.ahead` in `traffic.update`** (the fix for taxis stalling) adds a little work
   per car: a `bench.mjs --ab` is owed.
-- **The WebGL renderer and the GLSL** are unmaintained at `?renderer=webgl`; delete them
-  or say they stay.
+- **VR on WebGPU:** VR needs the legacy WebGL renderer until Chrome ships the WebXR/WebGPU
+  binding. A Cardboard mode drawn by the page itself (both eyes, lens pass, gyroscope)
+  would put VR on WebGPU and on iPhone; options and risks in `docs/webgpu-vr.md`.
+- **The WebGL renderer and the GLSL** are unmaintained at `?renderer=webgl`, but VR draws
+  with them, so they can't go while VR needs WebGL.
 - **Sky view:** a wall at a tile's edge doesn't learn about a neighbour that arrives
   later; landmarks have none; neighbours' buildings are now filtered by box before
   the job (saving unmeasured).
