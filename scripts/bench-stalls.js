@@ -129,19 +129,23 @@
     try { o = render(s, c); } finally { depth--; }
     const t1 = performance.now();
     S.acc.render += t1 - t0;
-    if (s === d.scene) {
-      const car = d.car;
-      if (car) {
-        S.gaps.samples++;
-        if (!w.tileAt(car.x, car.y)) S.gaps.player++;
-        if (!w.tileAt(car.x + Math.cos(car.h) * w.T, car.y + Math.sin(car.h) * w.T)) S.gaps.ahead++;
-      }
-      S.acc.e = t1;
-      S.frames.push(S.acc);
-      S.acc = fresh();
-    }
+    // High/Ultra nest the scene render inside the final post-processing render.
+    // The benchmark's callback is the frame endpoint, after all passes finish.
+    if (!window.__bench && s === d.scene) finishFrame(t1);
     return o;
   };
+  const finishFrame = (t1 = performance.now()) => {
+    const car = d.car;
+    if (car) {
+      S.gaps.samples++;
+      if (!w.tileAt(car.x, car.y)) S.gaps.player++;
+      if (!w.tileAt(car.x + Math.cos(car.h) * w.T, car.y + Math.sin(car.h) * w.T)) S.gaps.ahead++;
+    }
+    S.acc.e = t1;
+    S.frames.push(S.acc);
+    S.acc = fresh();
+  };
+  if (window.__bench) window.__bench.endFrame = finishFrame;
 
   S.report = () => {
     const f1 = (x) => Math.round(x * 10) / 10, mb = (x) => (x / 1e6).toFixed(2);

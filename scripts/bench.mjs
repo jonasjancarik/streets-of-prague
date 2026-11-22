@@ -6,6 +6,8 @@
 //   node scripts/bench.mjs [--url http://localhost:5191/] [--scenes stand,drive,woods]
 //     [--seconds 10] [--dpr 2 | tier (the graphics tier's own pixel ratio, as a player gets)] [--cpu 4] [--profile] [--weather clear] [--time 14:00]
 //     [--profile-load] [--load-progress] [--require-webgpu] [--init "js before loading"] [--runs 1] [--graphics high] [--extra "&osm"] [--eval "js after loading"] [--eval-after "js after timing"] [--json out.json] [--stack (page errors with their stack)]
+//     [--view overhead|first|third] [--handling classic|realistic] [--vehicle sedan (deterministic test car)] [--paced (normal display pacing)]
+//     [--settle 5 (seconds before timing, without waiting for streaming to stop)]
 //     [--browser chrome|chromium] [--angle metal|swiftshader (software, drawing like
 //     a desktop GPU that shades every covered pixel: for overdraw)]
 //     [--vs http://localhost:5192/ (compare with another server, taking turns)] [--fresh-browser] [--loading-frames]
@@ -70,6 +72,7 @@ function setUpAndroid(serial) {
   }))];
   for (const p of ports) run('reverse', `tcp:${p}`, `tcp:${p}`);
   run('shell', 'input', 'keyevent', 'KEYCODE_WAKEUP');
+  run('shell', 'wm', 'dismiss-keyguard');
   run('shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', 'about:blank', 'com.android.chrome');
   const devtools = String(args['android-port'] || 9333);
   run('forward', `tcp:${devtools}`, 'localabstract:chrome_devtools_remote');
@@ -139,12 +142,18 @@ const INIT = (loadingFrames = false) => {
     const b = window.__bench;
     b.rendering = 0;
     b.cb = { t, t0 };
+    if (b.on && b.renderer) b.renderer.info.reset();
     cb(t);
     // (render: all of renderer.render in the frame, e.g. the lamps' light map and the scene.)
     // Only the game's own callback is a frame: the page has other loops on
     // requestAnimationFrame (the gamepad's polling, the feedback form's frame counter),
     // and counting theirs doubled the frame rate and halved the JavaScript time.
-    if (b.on && b.rendering > 0) { b.frames.push(t); b.js.push(performance.now() - t0); b.render.push(b.rendering); }
+    if (b.on && b.rendering > 0) {
+      b.frames.push(t); b.js.push(performance.now() - t0); b.render.push(b.rendering);
+      const info = b.renderer.info.render;
+      b.calls.push(info.drawCalls ?? info.calls); b.tris.push(info.triangles);
+      b.endFrame?.();
+    }
   });
 };
 
@@ -176,7 +185,9 @@ async function runScene(browser, name, base = URL_BASE) {
   if (args.init) await page.addInitScript(args.init);
   page.on('pageerror', (e) => { if (closing) return; errors.push(e.message); console.error(`[${name}] page error:`, args.stack ? e.stack : e.message); });
   page.on('console', (m) => { if (closing) return; if (m.type() === 'info' && m.text().startsWith('Renderer:')) console.log(`[${name}] ${m.text()}`); if (m.type() === 'error' && !errors.includes(m.text())) { errors.push(m.text()); console.error(`[${name}] console:`, m.text().slice(0, 3000)); } });
-  const q = `?start=${place.start}${args.dpr === 'tier' ? '' : `&dpr=${DPR}`}&graphics=${args.graphics || 'high'}&time=${args.time || '14:00'}&go&day=wed&weather=${args.weather || 'clear'}${args.extra || ''}`;
+  const view = args.view === 'first' ? '&fps' : args.view === 'third' ? '&tps' : '';
+  const q = `?start=${place.start}${args.dpr === 'tier' ? '' : `&dpr=${DPR}`}&graphics=${args.graphics || 'high'}&time=${args.time || '14:00'}&go&day=wed&weather=${args.weather || 'clear'}${view}${args.extra || ''}`;
+  if (args.handling) await page.addInitScript((handling) => localStorage.setItem('firstPersonOptions', JSON.stringify({ handling })), args.handling);
   // --profile-load: the CPU profile of loading, up to the game starting.
   const loadCdp = args['profile-load'] ? await ctx.newCDPSession(page) : null;
   if (loadCdp) { await loadCdp.send('Profiler.enable'); await loadCdp.send('Profiler.setSamplingInterval', { interval: 200 }); await loadCdp.send('Profiler.start'); }
@@ -222,12 +233,12 @@ async function runScene(browser, name, base = URL_BASE) {
     // E walks to the car's door and gets in, which takes a second or so: wait for
     // the seat, not a fixed pause.
     const e0 = Date.now();
-    await page.keyboard.press('KeyE');
+    if (args.vehicle) await page.evaluate(type => window.__test.drive(type), args.vehicle);
+    else await page.keyboard.press('KeyE');
     seated = await page.waitForFunction(() => !!window.__drive.car, null, { timeout: 10000, polling: 50 }).then(() => (Date.now() - e0) / 1000).catch(() => null);
     if (seated === null) {
       const state = await page.evaluate(() => ({ url: location.href, game: !!window.__drive, loading: document.getElementById('loading')?.classList.contains('done') === false, recorder: !!window.__hitches })).catch((e) => e.message);
-      if (args.hitches) throw new Error(`[${name}] could not get into the car: ${JSON.stringify(state)}`);
-      console.warn(`[${name}] could not get into the car`);
+      throw new Error(`[${name}] could not get into the car: ${JSON.stringify(state)}; refusing to benchmark a walk as a drive`);
     }
     if (args.hitches) await page.evaluate(() => { const c = window.__drive.car; window.__hitches.start = { x: c.x, y: c.y, h: c.h }; window.__hitches.mark('seated'); });
     await page.keyboard.down('ShiftLeft');
@@ -236,8 +247,8 @@ async function runScene(browser, name, base = URL_BASE) {
   // Settle: the streets round the view load, the shaders compile. (Not with
   // --hitches: that cold work is what it records.)
   if (!args.hitches) {
-    await page.waitForTimeout(place.drive ? 3000 : 6000);
-    await page.waitForFunction(() => !window.__drive.world.busy, null, { timeout: 60000, polling: 200 }).catch(() => {});
+    await page.waitForTimeout(args.settle !== undefined ? Number(args.settle) * 1000 : place.drive ? 3000 : 6000);
+    if (args.settle === undefined) await page.waitForFunction(() => !window.__drive.world.busy, null, { timeout: 60000, polling: 200 }).catch(() => {});
   }
   if (args.eval) { const out = await page.evaluate(args.eval); if (out !== undefined) console.log(typeof out === "string" ? out : JSON.stringify(out, null, 1)); await page.waitForTimeout(1000); }
   if (args.shot) {
@@ -253,6 +264,8 @@ async function runScene(browser, name, base = URL_BASE) {
 
   await page.evaluate(() => {
     const d = window.__drive, b = window.__bench, r = d.renderer, gl = r.getContext();
+    b.renderer = r;
+    r.info.autoReset = false; // Count the scene, bloom and shadows once per game callback.
     const ext = gl.getExtension ? gl.getExtension('EXT_disjoint_timer_query_webgl2') : null; // (none on WebGPU)
     const pending = [];
     const render = r.render.bind(r);
@@ -271,7 +284,6 @@ async function runScene(browser, name, base = URL_BASE) {
       render(s, c);
       if (q) { gl.endQuery(ext.TIME_ELAPSED_EXT); pending.push(q); }
       b.rendering += performance.now() - t0;
-      if (b.on && s === d.scene) { b.calls.push(r.info.render.drawCalls ?? r.info.render.calls); b.tris.push(r.info.render.triangles); }
       while (pending.length && gl.getQueryParameter(pending[0], gl.QUERY_RESULT_AVAILABLE)) {
         const p = pending.shift();
         if (!gl.getParameter(ext.GPU_DISJOINT_EXT)) b.gpu.push(gl.getQueryParameter(p, gl.QUERY_RESULT) / 1e6);
@@ -312,6 +324,7 @@ async function runScene(browser, name, base = URL_BASE) {
       people: d.crowd.people.length, traffic: d.traffic.agents.length, loose: d.loose.length, tiles: d.world.loaded.size, building: d.world.inFlight.size,
       ratio: d.renderer.getPixelRatio(), tier: d.graphics.tier, speed: d.car ? d.car.speed * 3.6 : 0 };
   });
+  if (res.frames.length < 2) { await close(); throw new Error(`[${name}] no game frames recorded; refusing a suspended benchmark`); }
   const wall = (Date.now() - t0) / 1000;
   if (args.stalls && !args.ab) for (const line of await page.evaluate(() => window.__stalls.report())) console.log(`[${name}] ${line}`);
   if (args['eval-after']) {
@@ -335,7 +348,8 @@ async function runScene(browser, name, base = URL_BASE) {
   }
   const dts = res.frames.slice(1).map((t, i) => t - res.frames[i]);
   return {
-    name, fps: res.frames.length / wall, frameMed: pct(dts, 0.5), frame95: pct(dts, 0.95), frame99: pct(dts, 0.99),
+    name, fps: res.frames.length / wall, frameMean: mean(dts), frameMed: pct(dts, 0.5), frame95: pct(dts, 0.95), frame99: pct(dts, 0.99),
+    over100: dts.filter(t => t > 100).length, over100Ms: dts.filter(t => t > 100).reduce((a, b) => a + b, 0),
     js: mean(res.js), js95: pct(res.js, 0.95), render: mean(res.render), gpu: res.gpu.length ? mean(res.gpu) : NaN, gpu95: pct(res.gpu, 0.95),
     calls: mean(res.calls), tris: mean(res.tris), people: res.people, traffic: res.traffic, loose: res.loose, tiles: res.tiles,
     ratio: res.ratio, tier: res.tier, speed: res.speed, profile, loadTime, errors, backend, temperature: ANDROID ? ANDROID.temperature() : null,
@@ -362,6 +376,7 @@ async function abScene(page, ctx, name, close) {
     const t0 = Date.now();
     await page.waitForTimeout(win);
     const res = await page.evaluate(() => { const b = window.__bench; b.on = false; return { n: b.frames.length, js: b.js, gpu: b.gpu }; });
+    if (res.n < 2) { await close(); throw new Error(`[${name}] no game frames in A/B window ${k}; refusing a suspended benchmark`); }
     sums[on ? 'on' : 'off'].push({ fps: res.n / ((Date.now() - t0) / 1000), js: mean(res.js), gpu: res.gpu.length ? mean(res.gpu) : NaN });
   }
   await close();
@@ -388,7 +403,7 @@ function topSelf(profile, n = 25) {
 // MSAA costs several times more than Chrome's on a Mac).
 const launchBrowser = () => (ANDROID ? pw.chromium.connectOverCDP(`http://localhost:${ANDROID.devtools}`) : pw.chromium.launch({
   headless: true, channel: args.browser === 'chromium' ? undefined : 'chrome',
-  args: [`--use-angle=${args.angle || 'metal'}`, '--enable-gpu', '--ignore-gpu-blocklist', '--disable-gpu-vsync', '--disable-frame-rate-limit', '--enable-unsafe-webgpu'],
+  args: [`--use-angle=${args.angle || 'metal'}`, '--enable-gpu', '--ignore-gpu-blocklist', ...args.paced ? [] : ['--disable-gpu-vsync', '--disable-frame-rate-limit'], '--enable-unsafe-webgpu'],
 }));
 // The machine to itself (game-lock.mjs): waits for other sessions' scenes and benchmarks
 // to finish, and games open from a dev server stand still until this ends. A phone's
