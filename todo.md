@@ -45,6 +45,27 @@ trees with it. Not rebuilt: the lamp files (`build_lamps.py ujezd centrum praha`
 waiting for a look at dark suburbs. Four full scenario runs on the new map: two clean,
 `wall-crash` once, `fire-brigade` once (old behaviour of the engines, see "Gameplay").
 
+## Branch `beautify-2` (22 November), waiting for a look
+
+Street-level work in the worktree `.claude/worktrees/beautify-2`, before and after
+pictures in its `screenshots/beautify-2/` (not committed). Measured on Ultra against
+`main`: the same from above, 3–5 % more a frame in first person (two runs each). Left open:
+
+- [ ] The sunset's colours need an eye: the sky and the river are pinker and redder than
+  before at 20:40–21:05 in June (`DUSK` in `src/sky.ts`, the band's shape in
+  `src/webgpu/dome.ts`). Only looked at from Charles Bridge, in summer, in clear weather.
+- [ ] Tree sway was checked as two stills and their difference, never watched moving.
+  The crowns seen from above stay still.
+- [ ] Window rows: a wall that starts above the ground (a storey set back on a roof) can
+  still begin with part of a row, and the bare plaster above the last row has no cornice.
+  Walls of authored geometry are not cut between bays.
+- [ ] Hedges are still smooth: the next step would be a fringe of leaf cards along the
+  top and the shoulders. A section is 144 vertices now (30 before); not timed on a phone.
+- [ ] Not touched, seen on the way: shade in narrow lanes is very dark at street level
+  (Seminářská at 11:00); the photo mesh of St Nicholas on Malostranské náměstí shows
+  holes and loose triangles from the pavement; ambient shading (`?ao`) added little in
+  first person in six views, so it stays off.
+
 ## Branch `beautify` (12–13 November), waiting for a look
 
 What it holds, the measurements and the checks are in `docs/performance-log.md` (the last

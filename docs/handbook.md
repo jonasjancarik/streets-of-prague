@@ -254,6 +254,17 @@ point on clear plaster near the corner. The curved face, proportions and enamel
 border follow the examples in [IPR’s Pražský uličník](https://prazskyulicnik.az.iprpraha.cz/clanky/vyvoj-oznaceni-ulic-v-terenu).
 The map supplies the names, while individual sign positions are approximate.
 
+Look up a house front to its roofline. Windows stop where a whole one no longer fits:
+under a gable (a štít), a sloping parapet or a step in the roof the wall is bare plaster,
+and nothing lights up there at night. The game measures the top of every wall bay by
+bay; which bays have windows at all is still inferred, as before
+(`windowRows` and `splitWindowRows` in `src/facades.ts`).
+
+Stand under a street tree on a windy day. The boughs and sprays lean with the wind and
+swing back, in gusts that pass from tree to tree, about three times as hard in a storm.
+Towards sunset or dawn, look along the river at the sun: the horizon there is orange
+and the clouds on that side are lit warm, with only a blush on the opposite side.
+
 At street level on WebGPU and WebGL, a glazed shopfront can show bookshelves, a bakery,
 flowers or ceramics. Look through the glass from the side to see the walls
 and floor behind the window frame. Adjacent bays share a display and some
@@ -1576,6 +1587,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   about 1.6 m. Unlike the walls, they aren't in the tile's collision grid (the people
   and traffic of the city ignore them). Older tiles have none: rebuild the `ground`
   layer (`uv run build_tiles.py <area> --layers ground`).
+  A hedge's shape is rounded and a little uneven: a narrower foot, bellied sides, round
+  shoulders and a slightly crowned top, its height and width varying by a few
+  centimetres along it. Where the hedges stand is mapped; that unevenness is made up.
+
 - **Surveyed walls, fences and railings** (`pipeline/dtm_walls.py`): where the technical
   map's survey covers a tile (30 m of its lines or more), its walls ("Zeď"), fences
   ("Plot") and railings ("Zábradlí", set 3, in `pipeline/.cache/dtm/ZPS_KR/`) stand in
