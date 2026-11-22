@@ -8,7 +8,7 @@ import * as THREE from 'three';
 globalThis.location = { search: '' };
 const server = await createServer({ configFile: false, server: { middlewareMode: true, hmr: false, ws: false } });
 try {
-  const { Boats, body, boatMaterial } = await server.ssrLoadModule('/src/boats.ts');
+  const { Boats, BOAT_TOP, body, boatMaterial } = await server.ssrLoadModule('/src/boats.ts');
   const { Ferries } = await server.ssrLoadModule('/src/ferries.ts');
   const { parseRiver } = await server.ssrLoadModule('/src/river.ts');
   const { StreetVehicleMesh } = await server.ssrLoadModule('/src/vehicleFittings.ts');
@@ -20,6 +20,13 @@ try {
     close.computeBoundingBox();
     simple.computeBoundingBox();
     assert.ok(close.boundingBox.max.y <= simple.boundingBox.max.y + .001, kind + ' keeps its original bridge clearance');
+    if (kind === 'swan') {
+      for (const g of [simple, close]) {
+        const { min, max } = g.boundingBox;
+        assert.ok(max.y <= BOAT_TOP.swan && min.y < 0, 'swan sits in the water and fits under bridges');
+        assert.ok(Math.max(-min.x, max.x) <= 1.72 && Math.max(-min.z, max.z) <= .98, 'swan keeps its boarding footprint');
+      }
+    }
     assert.ok(close.attributes.position.count > simple.attributes.position.count, kind + ' has close fittings');
     assert.ok(close.attributes.glow.array.includes(2), kind + ' keeps its navigation lamps');
     if (kind === 'cruise' || kind === 'ferry') {

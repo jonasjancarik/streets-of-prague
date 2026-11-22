@@ -320,9 +320,15 @@ spokes and chain drives. Shared bikes keep their operator's paint and couriers
 keep their delivery boxes.
 
 From the bank you can see into the cruise boat's saloon and the ferry's wheelhouse.
-Both pedal boats have seats and pedal cranks, with an open seat well between the
-swan's wings. The Petřín and NH hotel funiculars have glazed compartments with
-benches, door handles and boarding steps. These models appear within 50 m.
+The Žofín swan has a low-sided white hull, a black rubbing strip and a recurved
+neck with a yellow-orange bill. At the bank you can see the moulded bench, pedals
+and steering lever. [Slovanka rental photo](https://www.slovanka.net/images/foto/7.jpg)
+
+Petřín's two numbered cars have a continuous white shell around panoramic side
+windows and roof glass. Four stepped landings follow the hill inside. In street
+view, within 50 m, the glass reveals the handrails, timber perches and door sills.
+The NH hotel line has its own small red cabin. [DPP photographs of the 2026 cars](https://www.dpp.cz/en/company/news/detail/342_3462-petrin-funicular-returns-prague-public-transit-company-launches-fourth-generation-cars)
+
 Both helicopter liveries use the same four-seat cockpit, visible within 60 m.
 The metro ride uses its overhead cutaway camera.
 
@@ -1631,7 +1637,7 @@ record the measurements, merge decisions and pending landmark asset activation.
   go: each boat looks ahead and to both sides and turns towards the more open water,
   and turns back short of a weir. They're put on the water near you and taken away
   when they fall far behind; they keep to the water's height, so they pass under the
-  bridges. Low-poly bodies built from boxes and extrusions, one mesh each. At night,
+  bridges. Each boat is drawn as a single mesh. At night,
   when the street lamps come on, the cruise boats' cabin windows light up and they
   show their navigation lights (red to port, green to starboard, white on the mast
   and at the stern).

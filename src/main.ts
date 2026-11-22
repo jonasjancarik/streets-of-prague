@@ -3273,7 +3273,7 @@ async function main() {
     for (const c of funicular.cars) {
       if (!c.mesh.visible) continue;
       const near = fromStreet && camera.position.distanceToSquared(c.mesh.position) < 50 ** 2;
-      for (const bay of c.bays) bay.showDetail(near);
+      c.body.showDetail(near);
     }
     world.furnitureCamera(fromStreet);
     world.passageCamera(fromStreet, camera.position.x, -camera.position.z);

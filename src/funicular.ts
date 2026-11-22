@@ -1,3 +1,5 @@
+import { petrinCar } from './petrinCar.ts';
+import { streetEnamel, streetGlass } from './tramStreet.ts';
 import { StreetVehicleMesh, pane, strut, tint } from './vehicleFittings.ts';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -32,14 +34,14 @@ interface Spec {
   stops: string[]; // bottom to top ('' for stations without a name)
   hours: [number, number][];
   speed: number; acc: number; endWait: number; midWait: number;
-  len: number; w: number; bays: number;
+  len: number; w: number;
   ticket: boolean; // needs a PID ticket (the hotel's own funicular doesn't)
 }
 const SPECS: Spec[] = [
   { name: 'Lanová dráha na Petřín', bottom: [14.40354, 50.08265], stops: ['Újezd', 'Nebozízek', 'Petřín'], hours: [[7, 22]],
-    speed: 4, acc: 0.5, endWait: 75, midWait: 20, len: 14, w: 2.5, bays: 4, ticket: true },
+    speed: 4, acc: 0.5, endWait: 75, midWait: 20, len: 14, w: 2.5, ticket: true },
   { name: 'Lanová dráha hotelu NH', bottom: [14.39685, 50.07107], stops: ['', ''], hours: [[10.5, 11.5], [15, 18], [22, 24]],
-    speed: 1.5, acc: 0.3, endWait: 30, midWait: 0, len: 3, w: 1.6, bays: 1, ticket: false },
+    speed: 1.5, acc: 0.3, endWait: 30, midWait: 0, len: 3, w: 1.6, ticket: false },
 ];
 const BAY = 3.5, BAY_W = 2.5; // the size the compartment's geometry is made at
 const FAST = 6;
@@ -122,15 +124,15 @@ function runAt(tau: number, d: number, v: number, a: number): [number, number] {
 
 const clockTime = (h: number) => `${Math.floor(h)}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`;
 
-function carGeometry(street = false, hotel = false) {
+function hotelCabin(street = false) {
   const parts: THREE.BufferGeometry[] = [], windows: THREE.BufferGeometry[] = [];
   const box = (sx: number, sy: number, sz: number, x: number, y: number, z: number, color: string) =>
     parts.push(tint(new THREE.BoxGeometry(sx, sy, sz).translate(x, y, z), color));
   // One compartment: red below, a band of windows, a cream roof.
   if (street) {
-    const red = hotel ? '#ac3931' : '#9b2a22', cream = '#e1dfce';
+    const red = '#ac3931', cream = '#e1dfce';
     const l = BAY / 2 - .025, w = BAY_W / 2 - .035;
-    const sill = hotel ? .79 : 1.04, top = 2.38, upper = hotel ? l - .30 : l;
+    const sill = .79, top = 2.38, upper = l - .30;
     box(BAY, .16, BAY_W, 0, .39, 0, red);
     for (const side of [-1, 1]) {
       const z = side * w;
@@ -146,7 +148,6 @@ function carGeometry(street = false, hotel = false) {
       const x = side * l;
       box(.065, sill - .45, BAY_W, x, (sill + .45) / 2, 0, red);
       windows.push(tint(pane([x, sill, -w], [side * upper, top, -w], [side * upper, top, w], [x, sill, w]), '#556b74'));
-      if (!hotel) box(.07, top - sill, .06, x, (top + sill) / 2, 0, cream);
       for (const sz of [-.58, .58]) {
         parts.push(tint(strut([side * .87, .48, sz], [side * .87, .76, sz], .034), '#747775'));
       }
@@ -168,7 +169,7 @@ function carGeometry(street = false, hotel = false) {
   box(BAY - 0.5, 0.14, BAY_W * 0.8, 0, 2.7, 0, '#d8d2c2');
   return mergeGeometries(parts);
 }
-const bayGeometry = carGeometry(), hotelGeometry = carGeometry();
+const hotelGeometry = hotelCabin();
 const material = new THREE.MeshLambertMaterial({ vertexColors: true });
 // At night the windows (the dark band) are lit from inside.
 material.onBeforeCompile = (sh) => {
@@ -184,8 +185,8 @@ export interface FunicularCar {
   path: Path;
   flip: boolean; // runs the cable the other way: at the top while the first car is at the bottom
   mesh: THREE.Group;
-  bays: StreetVehicleMesh[];
-  frame: THREE.Mesh;
+  body: StreetVehicleMesh;
+  frame?: THREE.Mesh;
   x: number; y: number; h: number; vx: number; vy: number;
   gz: number; slope: number; // ground height under its middle, and the rise a metre along
   s: number; // along its own path, from the bottom
@@ -233,23 +234,24 @@ export class Funicular {
       const stops = [{ at: 0, name: names[0] }, ...(mid !== null && names.length > 2 ? [{ at: mid, name: names[1] }] : []), { at: length, name: names[names.length - 1] }];
       const line: Line = { spec, length, mid: stops.length > 2 ? mid : null, stops, cars: [], open: false };
       paths.forEach((path, k) => {
-        const mesh = new THREE.Group(), bays: StreetVehicleMesh[] = [], bay = spec.len / spec.bays;
-        for (let i = 0; i < spec.bays; i++) {
-          const m = new StreetVehicleMesh(spec.ticket ? bayGeometry : hotelGeometry, material, () => carGeometry(true, !spec.ticket));
-          m.castShadow = true;
-          m.scale.set(bay / BAY, 1, spec.w / BAY_W);
-          m.position.x = (i + 0.5) * bay - spec.len / 2;
-          bays.push(m);
-          mesh.add(m);
+        const mesh = new THREE.Group();
+        const body = spec.ticket
+          ? new StreetVehicleMesh(petrinCar(k + 1, false), streetEnamel, () => petrinCar(k + 1, true), streetGlass)
+          : new StreetVehicleMesh(hotelGeometry, material, () => hotelCabin(true));
+        body.castShadow = body.receiveShadow = true;
+        mesh.add(body);
+        let frame: THREE.Mesh | undefined;
+        if (!spec.ticket) {
+          body.scale.set(spec.len / BAY, 1, spec.w / BAY_W);
+          frame = new THREE.Mesh(new THREE.BoxGeometry(spec.len - 0.4, 0.5, spec.w * 0.7), frameMaterial);
+          frame.position.y = .25;
+          frame.castShadow = true;
+          mesh.add(frame);
         }
-        // The running gear under the steps, along the slope.
-        const frame = new THREE.Mesh(new THREE.BoxGeometry(spec.len - 0.4, 0.5, spec.w * 0.7), frameMaterial);
-        frame.castShadow = true;
-        mesh.add(frame);
         mesh.visible = false;
         scene.add(mesh);
         const car: FunicularCar = {
-          line, path, flip: k === 1, mesh, bays, frame, x: 0, y: 0, h: 0, vx: 0, vy: 0, gz: 0, slope: 0, s: 0, up: true, stop: null, circles: [],
+          line, path, flip: k === 1, mesh, body, frame, x: 0, y: 0, h: 0, vx: 0, vy: 0, gz: 0, slope: 0, s: 0, up: true, stop: null, circles: [],
         };
         line.cars.push(car);
         this.cars.push(car);
@@ -301,7 +303,7 @@ export class Funicular {
         car.circles.length = 0;
         const end = len / 2 - w / 2, n = Math.max(1, Math.ceil((2 * end) / (w / 2)));
         for (let i = 0; i <= n; i++) { const k = -end + (2 * end * i) / n; car.circles.push([p.x + c * k, p.y + sn * k]); }
-        // Level compartments stepped up the slope, the ends' heights from the ground.
+        // Pitch the carriage (or the hotel cabin’s separate chassis) to the track.
         const back = car.path.at(car.s - len / 2), front = car.path.at(car.s + len / 2);
         const hb = this.o.terrain(back.x, back.y), hf = this.o.terrain(front.x, front.y);
         car.mesh.visible = hb !== null && hf !== null;
@@ -310,9 +312,7 @@ export class Funicular {
         car.gz = (hb + hf) / 2;
         car.mesh.position.set(p.x, car.gz, -p.y);
         car.mesh.rotation.y = p.ang;
-        for (const b of car.bays) b.position.y = car.slope * b.position.x;
-        car.frame.position.y = 0.25;
-        car.frame.rotation.z = Math.atan(car.slope);
+        (car.frame ?? car.body).rotation.z = Math.atan(car.slope);
       }
     }
   }

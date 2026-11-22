@@ -1,3 +1,4 @@
+import { swanBoat } from './swanBoat.ts';
 import { passengerVessel, pedalFittings } from './boatFittings.ts';
 import { loftSections, StreetVehicleMesh } from './vehicleFittings.ts';
 import * as THREE from 'three';
@@ -100,8 +101,12 @@ export function body(kind: Kind, paint: string, street = false) {
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
     g.setAttribute('glow', new THREE.BufferAttribute(new Float32Array(n).fill(glow), 1));
     g.deleteAttribute('uv');
-    if (!street) g.deleteAttribute('normal');
-    (g.userData.cabWindow ? glass : parts).push(g.index ? g.toNonIndexed() : g);
+    // The swan is built entirely from indexed, smooth surfaces in both views.
+    if (kind === 'swan') parts.push(g);
+    else {
+      if (!street) g.deleteAttribute('normal');
+      (g.userData.cabWindow ? glass : parts).push(g.index ? g.toNonIndexed() : g);
+    }
   };
   const box = (sx: number, sy: number, sz: number, x: number, y: number, z: number, color: string, glow = 0) =>
     colour(new THREE.BoxGeometry(sx, sy, sz).translate(x, y, z), color, glow);
@@ -117,9 +122,6 @@ export function body(kind: Kind, paint: string, street = false) {
     const g = new THREE.ExtrudeGeometry(s, { depth: y1 - y0, bevelEnabled: false, curveSegments: 5 });
     g.rotateX(-Math.PI / 2).translate(0, y0, z);
     colour(g, color);
-  };
-  const ball = (sx: number, sy: number, sz: number, x: number, y: number, z: number, color: string) => {
-    colour(new THREE.SphereGeometry(1, street ? 22 : 10, street ? 14 : 7).scale(sx, sy, sz).translate(x, y, z), color);
   };
   if (kind === 'cruise') {
     const L = SPECS.cruise.len, B = SPECS.cruise.beam;
@@ -172,6 +174,9 @@ export function body(kind: Kind, paint: string, street = false) {
     box(0.4, 0.3, 0.1, -1.0, 2.8, B / 2 - 0.3, '#10ff40', 2);
     box(0.07, 0.7, 0.07, -2.6, 3.45, 0, '#c9c7bf');
     box(0.3, 0.25, 0.3, -2.6, 3.8, 0, '#ffffff', 2);
+  } else if (kind === 'swan') {
+    swanBoat(colour, street);
+    if (street) pedalFittings(true, colour, box);
   } else {
     const S = SPECS[kind];
     // Two floats and a deck between them, a seat and a sunshade.
@@ -181,42 +186,23 @@ export function body(kind: Kind, paint: string, street = false) {
         const pontoon = loftSections([[-l, .16, .11, .18], [-l + .14, .13, .20, .27],
         [-l + .46, .11, .25, .30], [l - .68, .11, .25, .30], [l - .31, .14, .22, .24],
         [l - .10, .18, .16, .13], [l, .21, .09, .024]], 3.3).translate(0, 0, z);
-        colour(pontoon, kind === 'swan' ? '#f4f4f0' : paint);
+        colour(pontoon, paint);
       }
       const deck = loftSections([[-l + .20, .37, .043, .57], [-l + .35, .38, .065, .78],
       [l - .55, .38, .065, .79], [l - .32, .39, .061, .69], [l - .19, .40, .051, .45]], 5);
       colour(deck, '#dedbd1');
     } else {
-      for (const z of [-0.6, 0.6]) hull(S.len, 0.6, 0.8, -0.15, 0.35, kind === 'swan' ? '#f4f4f0' : paint, z);
+      for (const z of [-0.6, 0.6]) hull(S.len, 0.6, 0.8, -0.15, 0.35, paint, z);
       box(S.len * 0.8, 0.12, S.beam - 0.2, -0.1, 0.4, 0, '#e9e6de');
     }
-    if (street) pedalFittings(kind === 'swan', colour, box);
+    if (street) pedalFittings(false, colour, box);
     else box(0.7, 0.45, S.beam - 0.5, -0.4, 0.68, 0, '#3c4046');
     // A small all-round white lamp, merged into the body: no extra light or draw call.
-    const lampX = kind === 'pedal' ? -0.6 : -1.3, lampY = kind === 'pedal' ? 2 : 1.25;
+    const lampX = -0.6, lampY = 2;
     box(0.06, 0.35, 0.06, lampX, lampY - 0.23, 0, '#9a9a96');
     box(0.18, 0.16, 0.18, lampX, lampY, 0, '#ffffff', 2);
-    if (kind === 'pedal') {
-      for (const z of [-0.7, 0.7]) box(0.06, 1.2, 0.06, -0.6, 1.0, z, '#9a9a96');
-      box(1.4, 0.06, S.beam - 0.1, -0.5, 1.6, 0, paint);
-    } else {
-      if (street) {
-        // The moulding wraps around the seat well, leaving both pedals exposed.
-        for (const z of [-.72, .72]) ball(1.25, .45, .23, -.2, .65, z, '#fbfbf7');
-        ball(.28, .38, .86, -1.26, .61, 0, '#fbfbf7');
-        ball(.30, .34, .79, .80, .66, 0, '#fbfbf7');
-      } else ball(1.25, 0.7, 0.95, -0.2, 0.75, 0, '#fbfbf7'); // the swan's body round the seat
-      ball(0.7, 0.35, 0.18, -0.4, 1.0, 0.85, '#efefe9'); // wings
-      ball(0.7, 0.35, 0.18, -0.4, 1.0, -0.85, '#efefe9');
-      const neck = new THREE.CylinderGeometry(0.13, 0.2, 1.6, 8).translate(0, 0.8, 0).rotateZ(-0.35).translate(1.1, 0.8, 0);
-      if (street) {
-        const curve = new THREE.CatmullRomCurve3([[.84, .66, 0], [1.10, 1.04, 0], [1.36, 1.40, 0], [1.31, 1.84, 0], [1.48, 2.13, 0], [1.72, 2.24, 0]].map(([x, y, z]) => new THREE.Vector3(x, y, z)));
-        colour(new THREE.TubeGeometry(curve, 20, .145, 12, false), '#fbfbf7');
-      } else colour(neck, '#fbfbf7');
-      ball(0.24, 0.22, 0.2, 1.72, 2.25, 0, '#fbfbf7'); // head
-      box(0.34, 0.1, 0.12, 1.98, 2.2, 0, '#e07a1f'); // beak
-      box(0.1, 0.12, 0.26, 1.72, 2.28, 0, '#1b1b1b'); // eyes
-    }
+    for (const z of [-0.7, 0.7]) box(0.06, 1.2, 0.06, -0.6, 1.0, z, '#9a9a96');
+    box(1.4, 0.06, S.beam - 0.1, -0.5, 1.6, 0, paint);
   }
   const g = mergeGeometries([...parts, ...glass])!;
   if (glass.length) {
@@ -224,7 +210,7 @@ export function body(kind: Kind, paint: string, street = false) {
     g.addGroup(0, opaque, 0);
     g.addGroup(opaque, g.attributes.position.count - opaque, 1);
   }
-  if (!street) g.computeVertexNormals();
+  if (!street && kind !== 'swan') g.computeVertexNormals();
   return g;
 }
 

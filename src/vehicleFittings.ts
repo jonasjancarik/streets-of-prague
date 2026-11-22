@@ -32,9 +32,9 @@ export class StreetVehicleMesh extends THREE.Mesh<THREE.BufferGeometry, THREE.Ma
   private detailed = false;
   private finishes: THREE.Material[];
   constructor(private simple: THREE.BufferGeometry, private finish: THREE.Material,
-    private build: () => THREE.BufferGeometry) {
+    private build: () => THREE.BufferGeometry, glass: THREE.Material = glazing) {
     super(simple, finish);
-    this.finishes = [finish, glazing];
+    this.finishes = [finish, glass];
   }
   showDetail(near: boolean) {
     if (near === this.detailed) return;

@@ -71,9 +71,11 @@ export function passengerVessel(kind: 'cruise' | 'ferry', beam: number, add: Sur
 export function pedalFittings(swan: boolean, add: Surface, box: Box) {
   const metal = '#888e90', rubber = '#333a3e';
   for (const z of [-.35, .35]) {
-    const seat = loftSections([[-.73, .75, .22, .16], [-.64, .72, .22, .215],
-    [-.54, .56, .09, .22], [-.32, .54, .064, .22], [-.16, .56, .065, .18]], 3.3);
-    add(seat.translate(0, 0, z), '#54616b');
+    if (!swan) {
+      const seat = loftSections([[-.73, .75, .22, .16], [-.64, .72, .22, .215],
+      [-.54, .56, .09, .22], [-.32, .54, .064, .22], [-.16, .56, .065, .18]], 3.3);
+      add(seat.translate(0, 0, z), '#54616b');
+    }
     for (const side of [-1, 1]) {
       const end: Point3 = [.20 + side * .11, .60 + side * .07, z + side * .125];
       add(strut([.20, .60, z + side * .105], end, .015), metal);
