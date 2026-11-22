@@ -74,7 +74,7 @@ export function tramFittings(kind: string, index: number, length: number, l: Tra
     const rake = hi === lo ? sample(y) : THREE.MathUtils.lerp(sample(lo), sample(hi), (y - lo) / (hi - lo));
     return s * (n - d - rake * (1 - d / 1.6));
   };
-  const cabinRail = classic ? '#888e87' : '#d4a944', linen = '#d2cfc1';
+  const cabinRail = classic || kind === '52T' ? '#888e87' : '#d4a944', linen = '#d2cfc1';
   // Trim the floor to the rounded nose. A rectangular slab sticks through a T3's
   // lower front corners when seen from the platform.
   const deck = sheet((u, v) => {
@@ -116,7 +116,7 @@ export function tramFittings(kind: string, index: number, length: number, l: Tra
   backGeo.translate(-.014, -.012, 0); backGeo.computeVertexNormals();
   const chair = (x: number, z: number, dir: number, driver = false) => {
     const y = floor + (driver ? .43 : .33), a = dir < 0 ? Math.PI : 0;
-    const tint = driver ? '#394447' : classic ? '#a95642' : kind === '15T' ? '#b79569' : '#677a86';
+    const tint = driver ? '#394447' : classic ? '#a95642' : kind === '15T' ? '#b79569' : kind === '52T' ? '#ab3646' : '#677a86';
     add(seatGeo.clone().rotateY(a).translate(x, y, z), tint, .57);
     add(backGeo.clone().rotateY(a).translate(x, y, z), old ? tint : '#464d4e', .44);
     box(x - .035 * dir, y - .12, z, .10, .25, .095, '#575f5f', .25);
@@ -166,7 +166,7 @@ export function tramFittings(kind: string, index: number, length: number, l: Tra
         rod([x, floor + .03, sz * (w - .27)], [x, l.eave - .17, sz * (w - .29)], .019, cabinRail, .50);
       }
       box(mid, top + .018, side(top), span + .04, .05, .07, '#343735');
-      const steps = classic ? 4 : 2, pw = span / steps;
+      const steps = classic ? 4 : span < .8 ? 1 : 2, pw = span / steps;
       for (let j = 0; j < steps; j++) {
         const cx = a + pw * (j + .5), outer = j < steps / 2 ? -1 : 1;
         if (sz > 0) {
@@ -307,10 +307,11 @@ export function tramFittings(kind: string, index: number, length: number, l: Tra
     for (const sz of [-1, 1]) box(x, (l.eave + l.bottom + .13) / 2, sz * (w - .085), .031, l.eave - l.bottom - .13, .052, '#444743');
   }
   // Side destination display, readable while standing beside the first entrance.
-  if (index === 0) {
-    const x = l.doors[0]?.[0] ?? n - 2.5, cx = Math.min(n - 1.4, x - .73), y = l.glass[1] - .20, z = sideZ(y);
-    box(cx, y, z, .98, .241, .049, '#262b28');
-    displays.push(new THREE.PlaneGeometry(.925, .193).translate(cx, y, z + .027));
+  if (classic || index === (kind === '14T' ? 1 : 0)) {
+    const betweenDoors = kind === '14T', width = betweenDoors ? .68 : .98;
+    const cx = betweenDoors ? 0 : Math.min(n - 1.4, l.doors[0][0] - .73), y = l.glass[1] - .20, z = sideZ(y);
+    box(cx, y, z, width, .241, .049, '#262b28');
+    displays.push(new THREE.PlaneGeometry(width - .055, .193).translate(cx, y, z + .027));
   }
   const merge = (parts: THREE.BufferGeometry[]) => { const g = mergeGeometries(parts)!; parts.forEach(p => p.dispose()); return g; };
   return { body: merge(body), glass: merge(glass), displays, driver, headlamp, numbers: digits.length ? mergeGeometries(digits)! : undefined };

@@ -101,16 +101,17 @@ class Livery:
         return bands[-1][1]
 
     def at(self, x, z, side):
-        if self.paint:
-            m = self.paint(x, z, side)
-            if m:
-                return m
+        # An accent on the shell must not leave a fixed panel across an open door.
         if side < 0 or self.both:
             for a, b in self.doors:
                 if a < x < b and z < self.door_bands[-1][0]:
                     if self.frame and (x < a + 0.07 or x > b - 0.07) and z > self.door_bands[0][0]:
                         return "Door_" + self.frame
                     return "Door_" + self.band(self.door_bands, z)
+        if self.paint:
+            m = self.paint(x, z, side)
+            if m:
+                return m
         if self.glass[0] < z < self.glass[1]:
             return "Glass" if any(a < x < b for a, b in self.windows) else self.pillar
         return self.band(self.bands, z)
@@ -396,7 +397,10 @@ def t15():
         s = Shell()
         s.section(L, W, H, zr, z0, liv, front, back)
         s.block((0, 0, H + 0.1), (L - (2.4 if cab or tail else 1.2), 1.7, 0.2), "Roof")
-        s.bogie(n - 2.6 if not tail else -n + 2.6, W / 2, z0)
+        if cab or tail:
+            s.bogie(n - 2.6 if cab else -n + 2.6, W / 2, z0)
+        if not tail:
+            s.bogie(-n - gap / 2, W / 2, z0)  # shared under the articulation
         if cab:
             s.lamps(n + 0.02, 0.85, 0.88)
             s.mirrors(n - 0.45, W / 2, 2.3)
@@ -419,7 +423,8 @@ def t14():
     lengths = [7.9, 4.3, 5.9, 4.3, 7.0]
     fronts, total = layout(lengths, gap)
     bands = [(0.42, "Skirt"), (1.2, "Red"), (2.78, "Black"), (zr, "Silver")]
-    doors = [[(1.4, 2.7)], [(-0.6, 0.7)], [(-0.65, 0.65)], [(-0.7, 0.6)], [(0.9, 2.2)]]
+    low_doors = [(0.4, 1.7), (-1.7, -0.4)]
+    doors = [[], low_doors, [], low_doors, [(-2.55, -1.85)]]
     door_bands = [(0.4, "Skirt"), (2.25, "Glass")]
 
     def end(z):
@@ -500,7 +505,8 @@ def kt8():
             s.bogie(sg * (n - 3.3), W / 2, z0)
             s.block((-sg * 1.8, 0, H + 0.15), (3.2, 1.5, 0.3), "Metal")
         else:
-            s.bogie(0, W / 2, 0.24)
+            for x in (-n - gap / 2, n + gap / 2):
+                s.bogie(x, W / 2, 0.24)  # the low-floor section rides on the two joint bogies
         if cab_f:
             s.pantograph(n - 3.6, H)
         if not cab_b:
@@ -562,10 +568,12 @@ def t52():
     """Škoda 52T: pale grey with a black cab front and big windows, red panels in turn
     along the sections; five sections."""
     W, H, zr, z0, gap = 2.5, 3.5, 3.15, 0.28, 0.3
-    lengths = [9.4, 4.0, 5.8, 4.0, 7.6]
+    # Section breaks and doorway centres scaled from the side elevation on page 2:
+    # https://admin.skodagroup.com/wp-content/uploads/2025/02/TRAM-PRAHA.pdf
+    lengths = [9.26, 4.02, 4.25, 4.05, 9.21]
     fronts, total = layout(lengths, gap)
     bands = [(1.02, "Light"), (2.92, "Black"), (zr, "Light")]
-    doors = [[(2.0, 3.3), (-4.2, -2.9)], [], [(-0.65, 0.65)], [], [(0.8, 2.1)]]
+    doors = [[(-0.93, 0.37), (-3.93, -2.63)], [], [(0.03, 1.33)], [], [(2.68, 3.98), (-0.33, 0.97)]]
     door_bands = [(0.32, "Light"), (2.4, "Glass")]
     # Red panels: (lower, upper) stretches, as fractions along the section from its front.
     red = [((0.62, 1), (0.45, 1)), ((0, 1), None), ((0, 1), (0, 1)), ((0, 1), None), ((0, 0.4), (0, 0.55))]
@@ -599,7 +607,8 @@ def t52():
         s.section(L, W, H, zr, z0, liv, front, back, roof="Light")
         if L > 5:
             s.block((-0.6 if cab else 0, 0, H + 0.1), (L - 3.0, 1.8, 0.2), "Roof")
-            s.bogie(0 if not cab else -1.5, W / 2, z0)
+        if i != 2:
+            s.bogie(n - 2.3 if cab else -n + 2.3 if tail else 0, W / 2, z0)
         if cab:
             s.lamps(n + 0.02, 0.85, 0.8)
             s.block((n + 0.03, 0, 0.66), (0.06, 0.55, 0.72), "Red")  # the red stripe down the bumper

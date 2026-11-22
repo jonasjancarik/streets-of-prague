@@ -1560,6 +1560,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   the destination reads across the cab and beside the first entrance. The T3's folding
   doors and the modern sliding doors reveal the steps or level floor when boarding.
   After dark the saloon lights pick out the seats and handrails through the glazing.
+  Both cars of a coupled T3 carry a platform-side destination display. The 14T
+  has two wide entrances in each suspended section and a single-leaf rear door.
+  The 52T has five double doors and four bogies, with the centre section suspended.
+  The 15T and KT8 ride on bogies at the ends and under the two articulations.
   Close models are prepared one section at a time as a tram approaches.
 - Embedded tram rails show a polished running head and a dark flange groove on the
   inside. Joints cross the concrete bed at right angles to the track, including on
