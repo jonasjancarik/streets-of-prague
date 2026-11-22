@@ -149,6 +149,10 @@ const RES = 2; // collision grid cells per metre
 // How the streets are painted: a game built on this city may turn off the lane lines and
 // zebra crossings (Praha 1945's streets have none). On by default.
 export const TILE_LOOK = { roadPaint: true };
+// Experiment (performance log, 22 November): at street level the ground of tiles this
+// far (m) from the camera is left out, as the buildings hide it almost everywhere.
+// 0: off. ?farground=250 sets it.
+export const FAR_GROUND = { value: typeof location === 'undefined' ? 0 : Number(new URLSearchParams(location.search).get('farground')) || 0 };
 // ?flatkerbs: the ground as it was, street and pavement level with each other (to compare).
 const KERBS = typeof location === 'undefined' || !location.search.includes('flatkerbs');
 const RAISED = 3; // a building whose underside is this high (m) or more doesn't block the way under it
@@ -1400,6 +1404,13 @@ export class TileWorld {
     this.turns.shift()?.();
     this.street = !!view;
     for (let n = 0; n < 6 && this.reveal.length; n++) this.reveal.shift()!.visible = true;
+    const far = view ? FAR_GROUND.value : 0;
+    for (const tile of this.loaded.values()) {
+      const g = tile.drawn?.surfaces.group;
+      if (!g) continue;
+      const [x0, y0, x1, y1] = tile.box;
+      g.visible = !far || Math.hypot(Math.max(x0 - x, 0, x - x1), Math.max(y0 - y, 0, y - y1)) <= far;
+    }
     const { around, show, shown, keep, keepDrawn } = this.picks(x, y, r, drawn, view);
     const want = around.filter((k) => !((this.retry.get(k) ?? 0) > now));
     for (const k of want.slice(0, 12)) this.fetchTile(k);

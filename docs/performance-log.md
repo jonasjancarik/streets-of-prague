@@ -1636,3 +1636,33 @@ would work in both renderers, VR included; hardware occlusion queries would be W
 and arrive a frame or two late. Before building either, a cheaper check: leave out ground
 tiles beyond 250 m at eye height and see what the Pixel 5 gains, and how often a missing
 tile shows.
+
+### Leaving out distant ground at street level (`?farground`), same day
+
+The first thing the measurement above suggested: in the street views, leave out the
+ground of tiles more than 250 m from the camera (tiles are 250 m squares; the distance is
+to the nearest edge). `FAR_GROUND` in `src/tiles.ts`, off by default, `?farground=250`.
+
+**What it changes on screen** (the 24 eye-height views above, the game held still,
+pictures with and without compared pixel by pixel): no pixel at all in 22 views. By
+Charles Bridge facing south, 0.8 % of the picture: the far bank across the Vltava, a strip
+at the horizon; facing west there, 277 pixels. Left out per view: 4–11 tiles' ground,
+0–145 draws of 260–490 and 0–3.0 of 3.6–9.6 M triangles (median about 1.9 M).
+
+**What it gains on the Pixel 5** (Chrome, WebGPU, Medium, first person, standing on the
+Old Town Square, `--ab` in one page, 4 s windows, no screen touches): nothing measurable.
+At the tier's own pixel ratio 21.0 fps off against 20.4 on (−3 %, within the windows'
+spread, 26 °C); at 2× 14.4 against 14.6 (+2 %, 32 °C). In the bench's view it leaves out
+4 of 12 tiles' ground: 366 → 335 draws and 5.57 → 4.66 M triangles (checked in the page on
+the M5). The phone's frame there is held by its JavaScript (32–46 ms of 48–70 ms), which 31
+fewer draws barely touch. The driving scene in first or third person couldn't be measured
+on the phone: the bench couldn't get into the car there (it can on the M5), and the failed
+runs left game tabs open that then stalled the next connection (closed).
+
+So distant ground alone isn't worth turning on for phones at Medium. It removes
+triangles, not much CPU, and the phone is CPU-bound in first person. Where triangles do
+matter is VR: going from 2 m to 4 m ground (11.7 → 7.1 M triangles) took the stereo frame
+from about 72 to 65 ms (above). `?farground=250` works in VR too (the switch is in the
+tiles, not the renderer) and is worth a try in the headset. For the phone's main thread,
+the larger share is the other hidden draws (buildings, trees, lamps, instanced meshes:
+most of the 87 %), which needs real occlusion culling rather than a distance rule.

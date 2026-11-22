@@ -99,6 +99,12 @@ explain how to prepare the file for another build.
 Add `&roadjunctions` to load the wider junction trial from the matching
 `road-junctions.json`. [Junction trial results and generation](road-profile-pilot.md#extended-junction-trial).
 
+`?farground=250` is an experiment for the street views (first person, third person and
+VR): the ground of tiles more than that many metres from the camera is left out, as the
+buildings hide it almost everywhere at street level (`FAR_GROUND` in `src/tiles.ts`). It
+is off by default; across the river and other wide open views a strip of the far bank
+goes missing (performance log, 22 November).
+
 Add `&roadcorridor` to preview the fitted Dobrovolského corridor when the matching
 `road-corridor.json` is present. [Corridor trial results](road-profile-pilot.md#dobrovolského-corridor-trial).
 

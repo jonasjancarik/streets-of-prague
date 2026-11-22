@@ -273,9 +273,12 @@ before that day's frame-count fix may be doubled.
   per car: a `bench.mjs --ab` is owed.
 - **Occlusion culling at street level** (performance log, 22 November): at eye height
   about 87 % of draws and 76 % of triangles are hidden behind something (median of 24
-  views, `scripts/hidden-draws.js`), mostly distant ground. Next: measure on the Pixel 5
-  what leaving out ground tiles beyond 250 m at street level gains; then decide between a
-  baked visibility table (both renderers) and occlusion queries (WebGPU only).
+  views, `scripts/hidden-draws.js`), mostly distant ground. Leaving out ground beyond
+  250 m (`?farground=250`) changed no pixel in 22 of 24 views but gained nothing
+  measurable on the Pixel 5 standing in first person (held by JavaScript). Next: try it
+  in VR, where triangles count; for the phone's CPU, culling the other hidden draws
+  needs a baked visibility table or occlusion queries. The first- and third-person drive
+  in `bench.mjs --android` can't get into the car.
 - **VR on WebGPU:** VR needs the legacy WebGL renderer until Chrome ships the WebXR/WebGPU
   binding. A Cardboard mode drawn by the page itself (both eyes, lens pass, gyroscope)
   would put VR on WebGPU and on iPhone; options and risks in `docs/webgpu-vr.md`.
