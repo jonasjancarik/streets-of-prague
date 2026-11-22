@@ -602,7 +602,12 @@ vec3 grime(vec3 c, vec4 f) {
   c *= .76 + .34 * fbm2(vec2(f.x * .1 + seed, f.y * .07));
   float streak = fbm2(vec2(f.x * 1.8 + seed, f.y * .12));
   c *= 1. - .28 * smoothstep(.5, .8, streak) * detail(f.xy, .4);
-  return c * mix(.66, 1., smoothstep(0., 1.4, f.y));
+  c *= mix(.66, 1., smoothstep(0., 1.4, f.y));
+  // The dirt rain splashes up off the pavement, and the dark where wall and pavement meet
+  // (wallFoot in webgpu/buildings.ts, which also has the plaster's mottling and grain).
+  float edge = .16 + .55 * fbm2(vec2(f.x * 1.1 + seed, 3.7));
+  c = mix(c, c * vec3(.74, .71, .66), .75 * (1. - smoothstep(edge * .35, edge, f.y)) * detail(f.xy, .5));
+  return c * mix(.6, 1., smoothstep(0., .14, f.y));
 }
 vec3 facade(vec3 c, vec2 f, float bayWidth, vec2 st) {
   float along = f.x, h = f.y;

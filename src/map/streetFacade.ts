@@ -6,7 +6,7 @@ import openings from './facadeOpenings.json' with {type: 'json'};
 import caps from './facadeCaps.json' with {type: 'json'};
 import type { BuildingArrays } from '../contracts.ts';
 
-type Point = [number, number, number]; // along, above foot, outward from wall
+type Point = [number, number, number, number?]; // along, above foot, outward from wall, and how much light reaches it (1 when left out)
 type Triangle = [Point, Point, Point, number, number]; // ambient shading and surface code
 type V2 = [number, number];
 // Exact integer arithmetic within float32's precision, also used by the street
@@ -70,6 +70,25 @@ const j = (i + 1) % outer.length;
     }
   };
   const interruptions: [number, number, number, number][] = [];
+  // Shade where a sill or a cornice keeps the sky off the plaster under it: a sheet a few
+  // millimetres in front of the wall, darkest along its top edge between `lo` and `hi`,
+  // fading out downwards over `drop` and sideways over `feather`. It stops above any
+  // opening below it, so it never covers a cellar window.
+  const shaded: [number, number, number, number, number, number][] = [];
+  const shadeUnder = () => {
+    for (const [lo, hi, top, drop, dark, feather] of shaded) {
+      let bottom = Math.max(0, top - drop);
+      for (const [l, r, , t] of interruptions) if (t <= top + .001 && r > lo - feather && l < hi + feather) bottom = Math.max(bottom, t + .01);
+      if (top - bottom < .06) continue;
+      const fade = 1 - (1 - dark) * Math.min(1, (top - bottom) / drop);
+      const xs = [lo - feather, lo, hi, hi + feather].map(x => Math.min(bay, Math.max(0, x)));
+      for (let i = 0; i < 3; i++) {
+        const a: Point = [xs[i], bottom, SHADE_LIFT, 1], b: Point = [xs[i + 1], bottom, SHADE_LIFT, 1];
+        const c: Point = [xs[i + 1], top, SHADE_LIFT, i < 2 ? fade : 1], d: Point = [xs[i], top, SHADE_LIFT, i > 0 ? fade : 1];
+        tris.push([a, b, c, 1, S.masonry], [a, c, d, 1, S.masonry]);
+      }
+    }
+  };
   for (const [x0, y0, x1, y1, arch, ...lights] of regions) {
     const l = (bay - moduleWidth) / 2 + moduleWidth * x0 / 256, r = (bay - moduleWidth) / 2 + moduleWidth * x1 / 256;
     const b = (1 - y1 / 512) * storey, t = (1 - y0 / 512) * storey;
@@ -87,6 +106,7 @@ const j = (i + 1) % outer.length;
     const projection = (i: number) => lip[i][1] < b + .001 ? (doorway ? .075 : .145) : style <= 1 ? .047 : .022;
     const bevel = (i: number) => projection(i) * .88;
     holes.push(outer); interruptions.push([l - pad, r + pad, b - pad, t + pad]);
+    if (!doorway && b - pad > .12) shaded.push([l - pad, r + pad, b - pad, SILL_SHADE[0], SILL_SHADE[1], .09]);
     ring(outer, bead, () => 0, bevel, .94);
     ring(bead, lip, bevel, projection, 1);
     const inner = outline(l + .014, b + .010, r - .014, t - .014, rise, oval);
@@ -172,7 +192,7 @@ const j = (i + 1) % outer.length;
   }
   // Continuous stone courses cross the piers. Interrupt them at the measured
   // openings so a plinth never crosses a shop door or a basement window.
-  function course(profile: V2[], kind: number) {
+  function course(profile: V2[], kind: number, light?: number[]) {
     let spans: V2[] = [[0, bay]];
     for (const [l, r, b, t] of interruptions) {
       if (profile[0][0] >= t || profile[profile.length - 1][0] <= b) continue;
@@ -180,7 +200,7 @@ const j = (i + 1) % outer.length;
     }
     for (const [a, b] of spans) for (let i = 1; i < profile.length; i++) {
       const [y, z] = profile[i - 1], [h, d] = profile[i];
-      const p: Point = [a, y, z], q: Point = [b, y, z], r: Point = [b, h, d], s: Point = [a, h, d];
+      const p: Point = [a, y, z, light?.[i - 1]], q: Point = [b, y, z, light?.[i - 1]], r: Point = [b, h, d, light?.[i]], s: Point = [a, h, d, light?.[i]];
       tris.push([p, q, r, 1, kind], [p, r, s, 1, kind]);
     }
   }
@@ -189,21 +209,31 @@ const j = (i + 1) % outer.length;
     const e = storey - .025;
     course(style < 2 ? [[e - .25, .003], [e - .23, .045], [e - .15, .050], [e - .12, .10], [e - .074, .12], [e - .052, .16], [e - .019, .16], [e, .003]]
       : [[e - .105, .003], [e - .096, .054], [e - .018, .054], [e, .003]], S.dressedStone);
+    const under = e - (style < 2 ? .25 : .105);
+    course([[under - CORNICE_SHADE[0], SHADE_LIFT], [under, SHADE_LIFT]], S.masonry, [1, CORNICE_SHADE[1]]);
   }
+  shadeUnder();
   return tris;
 }
 
 export interface FacadeGeometry {
   position: Float32Array; normal: Float32Array; color: Float32Array; facade: Float32Array; sky: Float32Array; detail: Float32Array;
+  footShade: Float32Array; // the shade on the pavement along the wall's foot: triangles, x y z and darkness per corner
   plateMounts: Float32Array; // a clear patch of plaster near either end, in world coordinates
 }
 const cross = (ax: number, ay: number, bx: number, by: number) => ax * by - ay * bx;
+// The shade under sills and the ground floor's cornice: how far down it reaches (m) and
+// how much light is left at its top; and how far in front of the plaster its sheet lies.
+const SILL_SHADE = [.5, .5], CORNICE_SHADE = [.6, .5], SHADE_LIFT = .006;
+// The shade on the pavement along a wall's foot: how far out it reaches, how dark it is
+// at the wall (0-1) and how far above the paving it lies.
+const FOOT_SHADE = [.7, .5, .03];
 function clip(poly: Point[], a: V2, b: V2, sign: number) {
   const result: Point[] = []; const dx = b[0] - a[0], dy = b[1] - a[1];
   let last = poly[poly.length - 1], d0 = sign * cross(dx, dy, last[0] - a[0], last[1] - a[1]);
   for (const cur of poly) {
     const d = sign * cross(dx, dy, cur[0] - a[0], cur[1] - a[1]);
-    if ((d >= 0) !== (d0 >= 0)) { const t = d0 / (d0 - d); result.push([last[0] + (cur[0] - last[0]) * t, last[1] + (cur[1] - last[1]) * t, last[2] + (cur[2] - last[2]) * t]); }
+    if ((d >= 0) !== (d0 >= 0)) { const t = d0 / (d0 - d), l3 = last[3] ?? 1; result.push([last[0] + (cur[0] - last[0]) * t, last[1] + (cur[1] - last[1]) * t, last[2] + (cur[2] - last[2]) * t, l3 + ((cur[3] ?? 1) - l3) * t]); }
     if (d >= 0) result.push(cur);
     last = cur; d0 = d;
   }
@@ -216,6 +246,7 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
   const look = Math.min(F_MOD.length - 1, Math.floor((w - style) * 32768) % 16), bay = width / bays, mw = Math.min(bay, F_MOD[look]);
   const ground = F_GROUND[style], storey = F_STOREY[style] * (STOREY_FIT[0] + (Math.floor((w - style) * 1024) % 32) * STOREY_FIT[1] / 31);
   const pos: number[] = [], norm: number[] = [], col: number[] = [], fac: number[] = [], shade: number[] = [], detail: number[] = [];
+  const foot: number[] = [];
   const shapes = new Map<number, Triangle[]>();
   const eligible = new Map<number, boolean>();
   const onWall = (x: number, y: number) => {
@@ -246,6 +277,21 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
     if (Math.abs(det) < 1e-6) return null;
     const X = new THREE.Vector3().fromArray(p, o), U = new THREE.Vector3().fromArray(p, o + 3).sub(X), V = new THREE.Vector3().fromArray(p, o + 6).sub(X);
     const N = new THREE.Vector3().crossVectors(U, V).normalize();
+    // Where this triangle meets the pavement (height 0 in the wall's coordinates), a strip of
+    // shade lies on the paving, darkest at the wall.
+    if (Math.abs(N.y) < .2) {
+      const at = (q: V2) => { const u = cross(q[0] - a[0], q[1] - a[1], vx, vy) / det, v = cross(ux, uy, q[0] - a[0], q[1] - a[1]) / det; return X.clone().addScaledVector(U, u).addScaledVector(V, v); };
+      const low = Math.min(a[1], b[1], d[1]), level = low > 0 && low < .08 ? low : 0, ends: V2[] = [];
+      for (const [p0, p1] of [[a, b], [b, d], [d, a]]) {
+        if (Math.abs(p0[1] - level) < 1e-4) { if (!ends.some(e => Math.abs(e[0] - p0[0]) < 1e-4)) ends.push([p0[0], level]); }
+        else if ((p0[1] - level) * (p1[1] - level) < 0 && Math.abs(p1[1] - level) >= 1e-4) { const t = (level - p0[1]) / (p1[1] - p0[1]); ends.push([p0[0] + (p1[0] - p0[0]) * t, level]); }
+      }
+      if (ends.length === 2 && Math.abs(ends[0][0] - ends[1][0]) > .02) {
+        const out = new THREE.Vector3(N.x, 0, N.z).normalize().multiplyScalar(FOOT_SHADE[0]);
+        const [P, Q] = ends.map(at), P1 = P.clone().add(out), Q1 = Q.clone().add(out);
+        for (const [v, dark] of [[P, 1], [Q, 1], [Q1, 0], [P, 1], [Q1, 0], [P1, 0]] as [THREE.Vector3, number][]) foot.push(v.x, v.y + FOOT_SHADE[2], v.z, dark * FOOT_SHADE[1]);
+      }
+    }
     const minX = Math.min(a[0], b[0], d[0]), maxX = Math.max(a[0], b[0], d[0]), minY = Math.min(a[1], b[1], d[1]), maxY = Math.max(a[1], b[1], d[1]);
     const emit = (poly: Point[], layer: number, ao: number, kind: number = S.masonry) => {
       const sign = Math.sign(det);
@@ -256,9 +302,9 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
       if (poly.length < 3) return;
       // The source triangle's two affine coordinates place even the back of
       // an arched door on the correct side of a sloping street.
-      const placed = poly.map(([x, y, z]) => {
+      const placed = poly.map(([x, y, z, light = 1]) => {
         const u = cross(x - a[0], y - a[1], vx, vy) / det, v = cross(ux, uy, x - a[0], y - a[1]) / det;
-        return { x, y, u, v, depth: z, world: X.clone().addScaledVector(U, u).addScaledVector(V, v).addScaledVector(N, z) };
+        return { x, y, u, v, light, depth: z, world: X.clone().addScaledVector(U, u).addScaledVector(V, v).addScaledVector(N, z) };
       });
       for (let i = 1; i < placed.length - 1; i++) {
         const q = [placed[0], placed[i], placed[i + 1]];
@@ -269,7 +315,7 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
           pos.push(t.world.x, t.world.y, t.world.z); norm.push(normal.x, normal.y, normal.z);
           for (let j = 0; j < 3; j++)col.push(c[o + j] + t.u * (c[o + 3 + j] - c[o + j]) + t.v * (c[o + 6 + j] - c[o + j]));
           fac.push(t.x, t.y, f[k + 2], w); shade.push(sky[vertex] + t.u * (sky[vertex + 1] - sky[vertex]) + t.v * (sky[vertex + 2] - sky[vertex]));
-          detail.push(layer, ao, kind, t.depth);
+          detail.push(layer, ao * t.light, kind, t.depth);
         }
       }
     };
@@ -300,7 +346,7 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
           const dx = j * bay;
           if (dx + Math.min(l[0], m[0], r[0]) > maxX || dx + Math.max(l[0], m[0], r[0]) < minX ||
             bottom + Math.min(l[1], m[1], r[1]) > maxY || bottom + Math.max(l[1], m[1], r[1]) < minY) continue;
-          emit([l, m, r].map(([x, y, z]) => [dx + x, bottom + y, z]), layer, ao, kind);
+          emit([l, m, r].map(([x, y, z, light]) => [dx + x, bottom + y, z, light]), layer, ao, kind);
         }
         if (openings[layer]?.length) modeled = true;
       }
@@ -339,5 +385,5 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
       if ([2.75, 3.1, 2.4, 3.55].some(h => mount(end ? width - inset : inset, h))) break;
     }
   }
-  return { plateMounts: Float32Array.from(mounts), position: new Float32Array(pos), normal: new Float32Array(norm), color: new Float32Array(col), facade: new Float32Array(fac), sky: new Float32Array(shade), detail: new Float32Array(detail) };
+  return { plateMounts: Float32Array.from(mounts), footShade: Float32Array.from(foot), position: new Float32Array(pos), normal: new Float32Array(norm), color: new Float32Array(col), facade: new Float32Array(fac), sky: new Float32Array(shade), detail: new Float32Array(detail) };
 }

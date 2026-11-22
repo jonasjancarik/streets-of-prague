@@ -1605,6 +1605,16 @@ record the measurements, merge decisions and pending landmark asset activation.
   made a 6 m cell at a time and thinned with distance. Where the grass is comes from
   the map; the blades' places and lengths are made up.
 
+- **Walls from the street**: near walls get the shade and dirt that make a house stand on
+  its pavement. Under every window sill and under the ground floor's cornice the plaster
+  is darker, fading out downwards (`SILL_SHADE`, `CORNICE_SHADE` in
+  `src/map/streetFacade.ts`: thin sheets just in front of the wall, part of the walls
+  modelled near you). Along a modelled wall's foot a strip of shade lies on the pavement,
+  darkest at the wall (`FOOT_SHADE`). Every wall, modelled or not, is darker where it
+  meets the ground and carries splashed dirt to an uneven height of a few dozen
+  centimetres, and from close by the plaster is mottled and grainy (`wallFoot` in
+  `src/webgpu/buildings.ts`; the WebGL path has the foot only). All of it is made up from
+  the wall's shape; none of it says how dirty a real house is.
 - **Surveyed walls, fences and railings** (`pipeline/dtm_walls.py`): where the technical
   map's survey covers a tile (30 m of its lines or more), its walls ("Zeď"), fences
   ("Plot") and railings ("Zábradlí", set 3, in `pipeline/.cache/dtm/ZPS_KR/`) stand in

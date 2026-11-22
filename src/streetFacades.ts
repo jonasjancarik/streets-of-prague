@@ -12,6 +12,8 @@ interface Wall { src: Source; tris: Uint32Array; x0: number; x1: number; z0: num
 const material = new THREE.MeshLambertMaterial({ vertexColors: true });
 material.customProgramCacheKey = () => 'street-facade';
 export { material as streetFacadeMaterial };
+// The shade on the pavement along a wall's foot (buildStreetWall): black, as dark as each corner says.
+const footShade = new THREE.MeshBasicMaterial({ color: 0, transparent: true, vertexColors: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, side: THREE.DoubleSide });
 
 function ranges(src: Source) {
   const walls: Wall[] = [], p = src.base.geometry.attributes.position, n = src.base.geometry.attributes.normal;
@@ -81,7 +83,7 @@ export class StreetFacades {
   private remove(w: Wall) {
     if (!w.mesh) return;
     this.plates?.remove(w.mesh);
-    mask(w, false); this.scene.remove(w.mesh); w.mesh.dispose(); w.mesh.geometry.dispose(); w.mesh = undefined; this.live.delete(w);
+    mask(w, false); this.scene.remove(w.mesh); w.mesh.dispose(); w.mesh.geometry.dispose(); for (const child of w.mesh.children) (child as THREE.Mesh).geometry?.dispose(); w.mesh = undefined; this.live.delete(w);
   }
   update(street: boolean, x: number, y: number, z: number, tier: Tier = 'high', finishesReady = true) {
     const [reach, limit] = budgets[tier], keep = reach + 8;
@@ -137,6 +139,14 @@ export class StreetFacades {
     g.computeBoundingSphere();
     const mesh = mirrored(new THREE.Mesh(g, material)); mesh.castShadow = mesh.receiveShadow = true;
     mesh.name = 'Street façade'; mesh.userData.streetFacade = true; mesh.matrixAutoUpdate = false;
+    if (data.footShade.length) {
+      const n = data.footShade.length / 4, at = new Float32Array(n * 3), dark = new Float32Array(n * 4);
+      for (let i = 0; i < n; i++) { at.set(data.footShade.subarray(i * 4, i * 4 + 3), i * 3); dark[i * 4 + 3] = data.footShade[i * 4 + 3]; }
+      const shade = new THREE.BufferGeometry();
+      shade.setAttribute('position', new THREE.BufferAttribute(at, 3)); shade.setAttribute('color', new THREE.BufferAttribute(dark, 4));
+      const strip = new THREE.Mesh(shade, footShade); strip.name = 'Shade at the wall foot'; strip.matrixAutoUpdate = false; strip.renderOrder = 2;
+      mesh.add(strip);
+    }
     this.scene.add(mesh);
     this.plates?.add(mesh, data.plateMounts, w.nx, w.nz);
     mask(w, true); w.mesh = mesh; this.live.add(w);

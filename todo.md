@@ -73,6 +73,15 @@ pictures in its `screenshots/beautify-2/` (not committed). Measured on Ultra aga
 - [ ] Shade from the street gets 60 % more of the sky's light by day (`STREET_FILL` in
   `src/sky.ts`): judged in four places in summer only, not in winter, rain or at dusk, and
   the picture's brightness steps when you switch between the overhead and street views.
+- [ ] Walls from the street (shade under sills and the cornice, shade on the pavement at
+  the wall foot, splashed dirt, plaster grain): about 2 % more a frame in Vodičkova on
+  Ultra (9.1 → 9.3 ms, two runs each). Looked at by day in clear weather in four streets;
+  not at night, in rain or snow, and not on WebGL. The pavement shade is a flat strip
+  0.7 m wide at the wall's foot height: on a pavement that falls away from the wall it
+  floats a few centimetres, at an outside corner it leaves a notch, and walls that are not
+  modelled (far ones, blank ones) have none. Streaks of rain under sills were tried in
+  the shader and taken out: it cannot tell which bays have a window. Inside corners
+  between two walls are not darkened.
 - [ ] Not touched, seen on the way: the photo mesh of St Nicholas on Malostranské náměstí shows
   holes and loose triangles from the pavement; ambient shading (`?ao`) added little in
   first person in six views, so it stays off.

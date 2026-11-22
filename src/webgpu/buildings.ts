@@ -372,7 +372,29 @@ function grime(c0: N, f: N, fWidth: N) {
   const c = c0.mul(fbm2(vec2(f.x.mul(0.1).add(seed), f.y.mul(0.07))).mul(0.34).add(0.76)).toVar();
   const streak = fbm2(vec2(f.x.mul(1.8).add(seed), f.y.mul(0.12)));
   c.mulAssign(float(1).sub(smoothstep(0.5, 0.8, streak).mul(0.28).mul(fade(fWidth, 0.4))));
-  return c.mul(mix(0.66, 1, smoothstep(0, 1.4, f.y)));
+  c.mulAssign(mix(0.66, 1, smoothstep(0, 1.4, f.y)));
+  return wallFoot(c, f, fWidth);
+}
+
+// What the street leaves on the bottom of a wall (wallFoot in shading.ts): the dirt that
+// rain splashes up off the pavement, to an uneven height of a few dozen centimetres, the
+// damp line just above the paving, and the dark where wall and pavement meet. And the
+// plaster's own mottling and grain, seen from close by.
+function wallFoot(c0: N, f: N, fWidth: N) {
+  const seed = fract(f.w).mul(97), c = c0.toVar();
+  // (The splash line is worked out only on the bottom of the wall, the grain only close by:
+  // on every pixel of every wall the five noise reads cost 2 ms a frame from the street.)
+  If(f.y.lessThan(0.75), () => {
+    const edge = fbm2(vec2(f.x.mul(1.1).add(seed), 3.7)).mul(0.55).add(0.16);
+    const splash = float(1).sub(smoothstep(edge.mul(0.35), edge, f.y)).mul(fade(fWidth, 0.5));
+    c.assign(mix(c, c.mul(vec3(0.74, 0.71, 0.66)), splash.mul(0.75)).mul(mix(0.6, 1, smoothstep(0, 0.14, f.y))));
+  });
+  If(fWidth.lessThan(0.085), () => {
+    const mottle = vnoise(f.xy.mul(vec2(0.9, 1.2)).add(seed)).sub(0.5).mul(0.2).mul(fade(fWidth, 0.12));
+    const grain = vnoise(f.xy.mul(47)).sub(0.5).mul(0.09).mul(fade(fWidth, 0.04));
+    c.mulAssign(float(1).add(mottle).add(grain));
+  });
+  return c;
 }
 
 // The picture for a bay and storey, from the atlas's layer, with the wall's plaster
