@@ -166,7 +166,8 @@ vec3 pAsphalt(vec3 c, vec2 p) {
   if (d > 0.) c += (vnoise(p * 16.) - .5) * .07 * d;                   // aggregate
   c *= 1. - .14 * smoothstep(.6, .85, vnoise(p * vec2(.9, .25) + 23.)); // oil and tyre marks
   if (dc > 0.) {
-    float crack = 1. - smoothstep(.0, .025, abs(vnoise(p * .7) - .5));
+    // (Broken into stretches: whole, the noise's contours close into loops that read as scribbles from the pavement.)
+    float crack = (1. - smoothstep(.0, .016, abs(vnoise(p * .7) - .5))) * smoothstep(.42, .6, vnoise(p * .31 + 9.));
     c *= 1. - .3 * crack * dc * smoothstep(.55, .7, vnoise(p * .06 + 2.));
   }
   return c;
@@ -601,7 +602,12 @@ vec3 grime(vec3 c, vec4 f) {
   c *= .76 + .34 * fbm2(vec2(f.x * .1 + seed, f.y * .07));
   float streak = fbm2(vec2(f.x * 1.8 + seed, f.y * .12));
   c *= 1. - .28 * smoothstep(.5, .8, streak) * detail(f.xy, .4);
-  return c * mix(.66, 1., smoothstep(0., 1.4, f.y));
+  c *= mix(.66, 1., smoothstep(0., 1.4, f.y));
+  // The dirt rain splashes up off the pavement, and the dark where wall and pavement meet
+  // (wallFoot in webgpu/buildings.ts, which also has the plaster's mottling and grain).
+  float edge = .16 + .55 * fbm2(vec2(f.x * 1.1 + seed, 3.7));
+  c = mix(c, c * vec3(.74, .71, .66), .75 * (1. - smoothstep(edge * .35, edge, f.y)) * detail(f.xy, .5));
+  return c * mix(.6, 1., smoothstep(0., .14, f.y));
 }
 vec3 facade(vec3 c, vec2 f, float bayWidth, vec2 st) {
   float along = f.x, h = f.y;
@@ -654,6 +660,9 @@ export const BARE = { value: 0 };
 // The time of year for the trees (season.ts, set by weather.ts): how far the leaves have
 // turned, how much the fruit trees are in flower, and how fresh the new leaves are.
 export const SEASON = { value: new THREE.Vector4(0, 0, 0, 0) };
+// The wind in the trees seen from the street (webgpu/streetTrees.ts): the clock in seconds,
+// how hard it blows (about 0.3 on a calm day, 1 in a storm) and which way (x, z).
+export const TREE_SWAY = { value: new THREE.Vector4(0, 0.3, 1, 0) };
 export const SKY_REF = { value: new THREE.Color(0, 0, 0) };
 // What a car's paint mirrors low down, where a real street has its buildings and trees:
 // in the same light as SKY_REF, darker (sky.ts).
@@ -756,10 +765,10 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
     sh.uniforms.uWindows = WINDOWS;
     lampLit(sh, 'vWorld');
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec4 facade;\nattribute float sky;\nvarying float vSky;\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec4 vFacade;')
-      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\n  vWN = normalize(mat3(modelMatrix) * objectNormal);\n  vFacade = facade;\n  vSky = sky;');
+      .replace('#include <common>', '#include <common>\nattribute vec4 facade;\nattribute float sky;\nvarying float vSky;\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec4 vFacade;\nvarying float vRows;')
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\n  vWN = normalize(mat3(modelMatrix) * objectNormal);\n  vFacade = vec4(facade.xy, mod(facade.z, 1024.), facade.w);\n  vRows = floor(facade.z / 1024.);\n  vSky = sky;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying float vSky;\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec4 vFacade;\nuniform vec4 uCut;\nuniform float uDirt;\nuniform float uRoofDetail;\nuniform float uRoofClutter;\nuniform float uWet;\nuniform float uSnow;\nuniform float uWindows;\n${NOISE_GLSL}\n${BUILDING_GLSL}\n${FACADE_GLSL}`)
+      .replace('#include <common>', `#include <common>\nvarying float vSky;\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec4 vFacade;\nvarying float vRows;\nuniform vec4 uCut;\nuniform float uDirt;\nuniform float uRoofDetail;\nuniform float uRoofClutter;\nuniform float uWet;\nuniform float uSnow;\nuniform float uWindows;\n${NOISE_GLSL}\n${BUILDING_GLSL}\n${FACADE_GLSL}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
   if (vWorld.y > uCut.y && distance(vWorld.xz, uCut.xz) < uCut.w) discard;
   vec3 bn = normalize(vWN);

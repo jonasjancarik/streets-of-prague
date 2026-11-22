@@ -115,7 +115,8 @@ export const baysOf = (style: number, length: number) => (style >= BLANK ? 0 : M
 // A wall as facadeCoords measured it, for what has to line up with its windows (the
 // mansard above it): a point on it and its outward normal, the direction its windows
 // are counted along, where it starts and how long it is along that, and its top.
-export interface WallLine { nx: number; nz: number; ax: number; az: number; tx: number; tz: number; from: number; length: number; top: number; tris: number[] }
+// `rows`, `bay`: how many rows of windows fit in each of its bays, and a bay's width (windowRows).
+export interface WallLine { nx: number; nz: number; ax: number; az: number; tx: number; tz: number; from: number; length: number; top: number; tris: number[]; rows?: Int32Array; bay?: number }
 
 // Looks: the sets of modules a facade is drawn with (rows of F_UP, F_DOOR, F_WALL).
 // The first five are the styles' own; the rest are more for some styles.
@@ -180,7 +181,126 @@ export function finishWalls(p: Float32Array, facade: Float32Array, lines: WallLi
     }
     const fraction = (Math.floor((w - whole) * 32) * 1024 + fit * 32 + (STUCCO.has(look) ? two * 16 : 0) + look + 0.5) / 32768;
     for (const t of l.tris) for (let o = t * 12 + 3; o < t * 12 + 12; o += 4) facade[o] = Math.floor(facade[o]) + fraction;
+    if (whole < BLANK) windowRows(facade, l, style, STOREY_FIT[0] + fit * STOREY_FIT[1] / 31);
   }
+}
+
+// How many rows of windows fit on each part of a wall, counted from the ground floor up.
+// The shaders lay a grid of bays and floors over the wall's plane, and a wall is rarely a
+// rectangle: under a gable (a štít), a sloping parapet or a step in the roofline the grid
+// ran on and the outline cut windows in half, or put them in the gable's point. For every
+// bay the wall's top is measured across the width of its window, and a row counts if all
+// but its plaster top is under it. A triangle carries the rows of its bays, plus one, as
+// ROWS_STEP a row on top of the wall's length (the facade attribute's z; 0: no limit, as
+// on roofs, and on a triangle whose bays differ until splitWindowRows has cut it up).
+// Above its rows a wall is bare plaster (fBays in the shaders).
+export const ROWS_STEP = 1024;
+const ROW_SHOWN = 0.86; // the share of a floor's height its window and surround reach to
+export const wallLength = (z: number) => z % ROWS_STEP;
+function windowRows(facade: Float32Array, l: WallLine, style: number, fit: number) {
+  const tris = l.tris, length = facade[tris[0] * 12 + 2], bays = baysOf(style, length);
+  if (bays < 1 || length >= ROWS_STEP) return;
+  const ground = F_GROUND[style], storey = F_STOREY[style] * fit, bay = length / bays;
+  // The wall's top over a point along it: the highest any of its triangles reaches there.
+  const topAt = (x: number) => {
+    let top = -Infinity;
+    for (const t of tris) {
+      const o = t * 12;
+      for (let i = 0; i < 3; i++) {
+        const ax = facade[o + i * 4], ay = facade[o + i * 4 + 1], bx = facade[o + ((i + 1) % 3) * 4], by = facade[o + ((i + 1) % 3) * 4 + 1];
+        if ((ax - x) * (bx - x) > 0 || ax === bx) continue;
+        top = Math.max(top, ay + (by - ay) * (x - ax) / (bx - ax));
+      }
+    }
+    return top;
+  };
+  const rows = new Int32Array(bays);
+  for (let j = 0; j < bays; j++) {
+    let top = Infinity;
+    for (const k of [0.14, 0.32, 0.5, 0.68, 0.86]) top = Math.min(top, topAt((j + k) * bay));
+    rows[j] = top < ground * ROW_SHOWN ? 0 : 1 + Math.max(0, Math.floor((top - ground) / storey + (1 - ROW_SHOWN)));
+  }
+  l.rows = rows; l.bay = bay;
+  for (const t of tris) {
+    const o = t * 12, [j0, j1] = baysUnder(facade, o, bay, bays);
+    let same = true;
+    for (let j = j0 + 1; j <= j1; j++) if (rows[j] !== rows[j0]) same = false;
+    for (let z = o + 2; z < o + 12; z += 4) facade[z] = length + (same ? ROWS_STEP * (Math.min(62, rows[j0]) + 1) : 0);
+  }
+}
+// The first and last bay a wall triangle reaches into.
+function baysUnder(facade: Float32Array, o: number, bay: number, bays: number): [number, number] {
+  const lo = Math.min(facade[o], facade[o + 4], facade[o + 8]), hi = Math.max(facade[o], facade[o + 4], facade[o + 8]);
+  const j0 = Math.min(bays - 1, Math.max(0, Math.floor((lo + 0.02) / bay)));
+  return [j0, Math.max(j0, Math.min(bays - 1, Math.floor((hi - 0.02) / bay)))];
+}
+
+// Wall triangles that reach across bays with different numbers of rows (a wall under a
+// roof's slope, a gable over a row of windows) are cut along the lines between those bays,
+// so that every piece has one number. `arrays`: what there is for every vertex, by how
+// many floats (the facade attribute among them, 4); the pieces take their triangle's
+// place, so the order of the triangles is kept. Returns the new arrays and, for every new
+// triangle, the one it came from; `lines` are given their new triangles.
+export function splitWindowRows(arrays: { array: Float32Array; size: number }[], facade: Float32Array, lines: WallLine[]) {
+  const n = facade.length / 12;
+  const pieces = new Map<number, { w: number[][]; code: number }[]>();
+  for (const l of lines) {
+    if (!l.rows || !l.bay) continue;
+    const rows = l.rows, bay = l.bay, bays = rows.length;
+    for (const t of l.tris) {
+      const o = t * 12;
+      if (facade[o + 2] >= ROWS_STEP || !(facade[o + 2] > 0)) continue; // it has its number
+      const xs = [facade[o], facade[o + 4], facade[o + 8]], [j0, j1] = baysUnder(facade, o, bay, bays);
+      // The triangle as a polygon of weights of its three corners, cut by each line between two bays that differ.
+      let rest: number[][] = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+      const out: { w: number[][]; code: number }[] = [];
+      const xOf = (w: number[]) => w[0] * xs[0] + w[1] * xs[1] + w[2] * xs[2];
+      const cut = (poly: number[][], at: number, keepBelow: boolean) => {
+        const res: number[][] = [];
+        for (let i = 0; i < poly.length; i++) {
+          const a = poly[i], b = poly[(i + 1) % poly.length], xa = xOf(a) - at, xb = xOf(b) - at;
+          const ina = keepBelow ? xa <= 0 : xa >= 0, inb = keepBelow ? xb <= 0 : xb >= 0;
+          if (ina) res.push(a);
+          if (ina !== inb) { const k = xa / (xa - xb); res.push([a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k]); }
+        }
+        return res;
+      };
+      let from = j0;
+      for (let j = j0 + 1; j <= j1 + 1; j++) {
+        if (j <= j1 && rows[j] === rows[from]) continue;
+        const part = j <= j1 ? cut(rest, j * bay, true) : rest;
+        if (part.length >= 3) out.push({ w: part, code: Math.min(62, rows[from]) + 1 });
+        if (j <= j1) rest = cut(rest, j * bay, false);
+        from = j;
+      }
+      if (out.length) pieces.set(t, out);
+    }
+  }
+  if (!pieces.size) return null;
+  let total = n;
+  for (const list of pieces.values()) { total--; for (const p of list) total += p.w.length - 2; }
+  const made = arrays.map(({ size }) => new Float32Array(total * 3 * size)), parent = new Int32Array(total), first = new Int32Array(n + 1);
+  let at = 0;
+  for (let t = 0; t < n; t++) {
+    first[t] = at;
+    const list = pieces.get(t);
+    if (!list) {
+      arrays.forEach(({ array, size }, k) => made[k].set(array.subarray(t * 3 * size, (t + 1) * 3 * size), at * 3 * size));
+      parent[at++] = t;
+      continue;
+    }
+    for (const { w, code } of list) for (let i = 1; i < w.length - 1; i++) {
+      [w[0], w[i], w[i + 1]].forEach((c, v) => arrays.forEach(({ array, size }, k) => {
+        const src = t * 3 * size, dst = (at * 3 + v) * size;
+        for (let q = 0; q < size; q++) made[k][dst + q] = c[0] * array[src + q] + c[1] * array[src + size + q] + c[2] * array[src + 2 * size + q];
+        if (array === facade) { made[k][dst + 2] = wallLength(array[src + 2]) + ROWS_STEP * code; made[k][dst + 3] = array[src + 3]; }
+      }));
+      parent[at++] = t;
+    }
+  }
+  first[n] = at;
+  for (const l of lines) l.tris = l.tris.flatMap((t) => Array.from({ length: first[t + 1] - first[t] }, (_, i) => first[t] + i));
+  return { arrays: made, parent };
 }
 
 // Which building each wall triangle belongs to (a triangle of it, the same for all of
@@ -526,16 +646,21 @@ const float F_MOD[${LOOKS}] = ${glslArray('float', F_MOD)};
 const float F_GROUND[5] = ${glslArray('float', F_GROUND)};
 const float F_STOREY[5] = ${glslArray('float', F_STOREY)};
 float fHash(float a, float b) { return fract(sin(a * 127.1 + b * 311.7) * 43758.5453); }
-// How many window bays across a wall: none on a party wall or one too short for a window.
-float fBays(vec4 f) {
-  int style = int(floor(f.w));
-  return style >= ${BLANK} ? 0. : floor(f.z / F_BAY[style] + .5);
-}
 // The wall's ground floor and its other floors, m, and its building's look (finishWalls).
 vec2 fStorey(vec4 f) {
   int style = min(int(floor(f.w)), 4);
   float fit = mod(floor(fract(f.w) * 1024.), 32.);
   return vec2(F_GROUND[style], F_STOREY[style] * (${STOREY_FIT[0].toFixed(2)} + fit * ${(STOREY_FIT[1] / 31).toFixed(6)}));
+}
+// How many window bays across a wall: none on a party wall, one too short for a window, or
+// above the rows of windows that fit under this part of the wall's top (windowRows; the
+// shader that includes this declares vRows, the facade attribute's z over ROWS_STEP).
+float fBays(vec4 f) {
+  int style = int(floor(f.w));
+  if (style >= ${BLANK}) return 0.;
+  vec2 st = fStorey(f);
+  float row = f.y < st.x ? 0. : 1. + floor((f.y - st.x) / st.y);
+  return vRows > .5 && row > vRows - 1.5 ? 0. : floor(f.z / F_BAY[style] + .5);
 }
 int fLook(vec4 f) { return min(int(mod(floor(fract(f.w) * 32768.), 16.)), ${LOOKS - 1}); }
 float fTwoTone(vec4 f) { return mod(floor(fract(f.w) * 2048.), 2.); }

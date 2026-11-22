@@ -1,3 +1,4 @@
+import { STREET_DETAIL } from './streetHedges.ts';
 import { wantStrips } from './reflections.ts';
 import { PROBE_ON } from './probe.ts';
 import { POST } from './post.ts';
@@ -257,6 +258,8 @@ export class Graphics {
     CAR_SHADE.value = look ? 1 : 0; // (the soft shade under the cars: car.ts)
     PEOPLE_SHADOWS.tier = people; // (what a person casts in the sun: figures.ts)
     CANOPY_LEAVES.value = this.tier === 'ultra' || this.tier === 'high';
+    // The street view's hedge leaves and blades of grass (streetHedges.ts, streetGrass.ts): Medium and up.
+    STREET_DETAIL.value = this.tier === 'ultra' || this.tier === 'high' || this.tier === 'medium';
     // (The lamps resize their maps at the next frame; the materials are bound afresh below,
     // which freezes the game for half a second even on an M5, so Auto keeps the size the
     // lamps were given when it began.)

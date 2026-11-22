@@ -184,9 +184,12 @@ class Fences {
     return -vn;
   }
 
+  // Told of each section as it goes down (the street hedge's leaves: streetHedges.ts).
+  onLay: ((f: FenceSection) => void) | null = null;
   private lay(f: FenceSection, car: Car) {
     f.broken = true;
     this.down.add(f.id);
+    this.onLay?.(f);
     // It falls the way the car was going.
     lay(f, Math.sign((car.vx * (f.y2 - f.y1) - car.vy * (f.x2 - f.x1))) || 1);
   }

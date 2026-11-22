@@ -17,6 +17,7 @@ import { PITCH_LOOKS } from './map/pitches.ts';
 import { coverGeometry } from './map/utility.ts';
 import type { UtilityMark } from './map/utility.ts';
 import type { StationTracks } from './stationTracks.ts';
+import { KERB_HEIGHT, dropAt, streetDepth, type KerbDrop } from './kerbDrop.ts';
 import { stairGeometry, type MappedStair } from './map/stairs.ts';
 import { splitQuietWater } from './map/waterBody.ts';
 
@@ -65,7 +66,8 @@ type GroundGeometry = GroundLayer['geometry'];
 
 // A kerb: how wide its line of granite is, and how far either side of the carriageway's
 // edge is looked at to tell whether it has one (m).
-const KERB_WIDTH = 0.32, KERB_REACH = 0.6, GUTTER_WIDTH = 1.1;
+const KERB_WIDTH = 0.3, KERB_REACH = 0.6, GUTTER_WIDTH = 1.1;
+const KERB_PIECE = 4; // m: the longest piece of a kerb's face, so it follows the ground
 // How dark the street's wear is at most (the shade layer's own), and of that how much the
 // gutter takes at the kerb (the soft shade goes by the square of it).
 const WEAR_SHADE = 0.42, GUTTER_PEAK = 0.9;
@@ -209,6 +211,63 @@ function surfaceRibbon(lines: Point2[][], bands: readonly (readonly [number, num
 const tramRibbon = (lines: Point2[][], rails: boolean) =>
   surfaceRibbon(lines, rails ? [[-.648, -.792], [.648, .792]] : [[-1.25, 1.25]], rails);
 const kerbRibbon = (lines: Point2[][], width: number) => surfaceRibbon(lines, [[-width / 2, width / 2]], false);
+
+// A street's kerbs: the row of granite on the pavement's edge, and its face down to the
+// carriageway (a kerb's height lower: kerbDrop.ts). `right`: which side of each line the
+// pavement is on. The ground's layers cover each other by their order and not by depth, so
+// the face has a second side: seen from the pavement it shows as more of the granite's
+// top, over the strip of gutter the kerb would hide.
+function kerbStones(lines: Point2[][], right: boolean[]): GroundGeometry {
+  const top = joinRibbons([surfaceRibbon(lines.filter((_, k) => right[k]), [[0, KERB_WIDTH]], false), surfaceRibbon(lines.filter((_, k) => !right[k]), [[-KERB_WIDTH, 0]], false)]);
+  const H = groundHeight;
+  if (!H || !kerbField) return top;
+  const pos: number[] = [], nor: number[] = [], idx: number[] = [], coord: number[] = [];
+  for (const [k, pts] of lines.entries()) {
+    const dx0 = pts[1][0] - pts[0][0], dy0 = pts[1][1] - pts[0][1];
+    let along = (pts[0][0] * dx0 + pts[0][1] * dy0) / (Math.hypot(dx0, dy0) || 1); // (as surfaceRibbon counts it: the joints run on down the face)
+    for (let j = 0; j < pts.length - 1; j++) {
+      const a = pts[j], b = pts[j + 1], dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
+      if (len < 1e-6) continue;
+      // Towards the carriageway (in the mesh's x, z).
+      const out = right[k] ? -1 : 1, nx = (dy / len) * out, nz = (dx / len) * out;
+      const n = Math.max(1, Math.ceil(len / KERB_PIECE));
+      for (let i = 0; i < n; i++) {
+        const p = [a[0] + dx * (i / n), a[1] + dy * (i / n)], q = [a[0] + dx * ((i + 1) / n), a[1] + dy * ((i + 1) / n)];
+        const dp = kerbDepth(p[0], p[1], STREET), dq = kerbDepth(q[0], q[1], STREET);
+        if (dp < 0.005 && dq < 0.005) continue;
+        const hp = H(p[0], p[1]), hq = H(q[0], q[1]), sp = along + (len * i) / n, sq = along + (len * (i + 1)) / n;
+        // The face as the street sees it, lit as a wall; then the same again as the
+        // pavement sees it, lit as the top.
+        for (const front of [true, false]) {
+          const base = pos.length / 3;
+          pos.push(p[0], hp - dp, -p[1], q[0], hq - dq, -q[1], q[0], hq, -q[1], p[0], hp, -p[1]);
+          for (let v = 0; v < 4; v++) nor.push(...(front ? [nx, 0, nz] : [0, 1, 0]));
+          coord.push(sp, sq, sq, sp);
+          // (Low p, low q, high q is anticlockwise seen from the right of p → q.)
+          if (front !== right[k]) idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+          else idx.push(base, base + 2, base + 1, base, base + 3, base + 2);
+        }
+      }
+      along += len;
+    }
+  }
+  const at = top.position.length / 3;
+  return {
+    position: new Float32Array([...top.position, ...pos]), normal: new Float32Array([...top.normal, ...nor]),
+    index: new Uint32Array([...top.index, ...idx.map((i) => i + at)]),
+    trackCoord: new Float32Array([...(top.trackCoord ?? new Float32Array(at)), ...coord]),
+  };
+}
+function joinRibbons(parts: GroundGeometry[]): GroundGeometry {
+  const used = parts.filter((g) => g.index.length);
+  if (used.length < 2) return used[0] ?? parts[0];
+  const [a, b] = used, at = a.position.length / 3;
+  return {
+    position: new Float32Array([...a.position, ...b.position]), normal: new Float32Array([...a.normal, ...b.normal]),
+    index: new Uint32Array([...a.index, ...Array.from(b.index, (i) => i + at)]),
+    trackCoord: new Float32Array([...(a.trackCoord ?? new Float32Array(at)), ...(b.trackCoord ?? new Float32Array(b.position.length / 3))]),
+  };
+}
 
 // A soft band just outside each ring, fading from `alpha` at the ring to 0.
 function skirts(ringsList: Polygons, width: number, outside: boolean, skip: (a: Point2, b: Point2) => boolean = () => false): GroundGeometry {
@@ -404,6 +463,15 @@ let roadBoxes: Bounds[] | null = null;
 const ROAD_FINE = 2; // m between draped samples in the experimental corridor
 // Set while the water itself is built: all of it lies at the water's level.
 let afloat = false;
+// Raised kerbs (kerbDrop.ts): the tile's, and how the layer being built lies. STREET: it
+// is carriageway, a kerb's height below the terrain right up to its edge. ON_STREET: it
+// lies on whatever is under it (paint, rails, covers), down on a street and up on a square.
+let kerbField: KerbDrop | null = null;
+const TERRAIN = 0, STREET = 1, ON_STREET = 2;
+let lies = TERRAIN;
+const street = <T>(build: () => T): T => { lies = STREET; try { return build(); } finally { lies = TERRAIN; } };
+const onStreet = <T>(build: () => T): T => { lies = ON_STREET; try { return build(); } finally { lies = TERRAIN; } };
+const kerbDepth = (x: number, y: number, how = lies) => (!kerbField || how === TERRAIN ? 0 : how === STREET ? KERB_HEIGHT * streetDepth(kerbField, x, y) : dropAt(kerbField, x, y));
 const STEP_FINE = 2; // m between a layer's points along a step, so the cut follows its bends
 const WALL_MIN = 0.03; // m: a step lower than this gets no wall
 
@@ -479,7 +547,7 @@ function finish(pos: number[], idx: number[], extra: number[] | null = null, ras
     if (sideOf && !afloat) ({ pos, idx, side, extra } = cutAtSteps(pos, idx, extra, sideOf, refine));
     else idx = subdivide(pos, idx, extra, groundMax, refine);
     if (groundBox) ({ pos, idx, extra, side } = conformTerrainEdges(pos, idx, extra, side, groundBox, STEP_FINE));
-    for (let i = 0, k = 0; i < pos.length; i += 3, k++) pos[i + 1] = groundHeight(pos[i], -pos[i + 2], afloat ? WATER : side ? side[k] : false);
+    for (let i = 0, k = 0; i < pos.length; i += 3, k++) pos[i + 1] = groundHeight(pos[i], -pos[i + 2], afloat ? WATER : side ? side[k] : false) - kerbDepth(pos[i], -pos[i + 2]);
   }
   const nor = new Float32Array(pos.length);
   for (let i = 1; i < nor.length; i += 3) nor[i] = 1;
@@ -505,7 +573,7 @@ function finish(pos: number[], idx: number[], extra: number[] | null = null, ras
 //
 // `steps`: the terrain knows the steps in it (the tile's terraces; its water is in `d`),
 // so the layers are cut along them and the steps get walls (see `sideOf`).
-export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [], parkingZones = [], height = null, levels = null, steps = null, roadProfile, roadSurfaceBoxes, paint = true, rasterRoads = false, fine }: {
+export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [], parkingZones = [], height = null, levels = null, steps = null, roadProfile, roadSurfaceBoxes, paint = true, rasterRoads = false, fine, kerbs = null }: {
   box: Bounds; edges?: GroundRoadEdge[]; buildings?: { rings: Point2[][] }[];
   parkingZones?: (string | null)[]; height?: HeightAt | null; levels?: GroundLevel[] | null; steps?: Terrace[] | null;
   // false: no lane lines (see TILE_LOOK in tiles.ts)
@@ -514,6 +582,7 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
   roadSurfaceBoxes?: Bounds[];
   rasterRoads?: boolean;
   fine?: number;
+  kerbs?: KerbDrop | null; // the tile's raised kerbs (kerbDrop.ts); `height` is the terrain's, without them
 }): GroundResult {
   paintRoads = paint;
   groundMax = fine ?? 8;
@@ -528,7 +597,9 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
     terraceOutlines = outlines;
     terraceOwners = sides?.owners ?? [];
     stepIndex = at ? new TerrainStepIndex(outlines) : null;
-    try { return build(); } finally { groundHeight = sideOf = null; terraceOutlines = []; terraceOwners = []; stepIndex = null; groundBox = roadBoxes = null; }
+    // (Not with the trial's roads drawn from a picture, ?roadraster: they have no outline to step down at.)
+    kerbField = height && !rasterRoads ? kerbs : null;
+    try { return build(); } finally { kerbField = null; groundHeight = sideOf = null; terraceOutlines = []; terraceOwners = []; stepIndex = null; groundBox = roadBoxes = null; }
   };
   if (!levels) return { layers: stepped(() => layers(d, { box, edges, buildings, parkingZones, rasterRoads })), masks: [] };
   const T = height || (() => 0);
@@ -980,7 +1051,7 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
   // the unmapped ground. Found on a small picture of the carriageway rather than by asking
   // every polygon about every edge. (Where there is no canvas to draw on, in the tests
   // outside a browser, there are none.)
-  const kerbs = (): { lines: Point2[][]; edged: Polygons; plain: (a: Point2, b: Point2) => boolean } | null => {
+  const kerbs = (): { lines: Point2[][]; right: boolean[]; edged: Polygons; plain: (a: Point2, b: Point2) => boolean } | null => {
     if (typeof OffscreenCanvas === 'undefined') return null;
     const kinds = [R.road || [], R.sett || [], A.parking || []], edged = kinds.flat();
     const res = 2, w = Math.ceil((x1 - x0) * res) + 2, h = Math.ceil((y1 - y0) * res) + 2;
@@ -1009,18 +1080,26 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
       const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, nx = (-dy / len) * KERB_REACH, ny = (dx / len) * KERB_REACH;
       return carriage(mx + nx, my + ny) === carriage(mx - nx, my - ny);
     };
-    const lines: Point2[][] = [];
-    for (const rings of edged) for (const ring of rings) {
+    // Each line with the side its pavement is on (`right` of the way it runs): a ring may
+    // run either way round, and a hole's the other way from its outline's.
+    const lines: Point2[][] = [], right: boolean[] = [];
+    const pavedRight = ([a, b]: Point2[]) => {
+      const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy) || 1;
+      return carriage((a[0] + b[0]) / 2 - (dy / len) * KERB_REACH, (a[1] + b[1]) / 2 + (dx / len) * KERB_REACH);
+    };
+    const keep = (cur: Point2[]) => { if (cur.length > 1) { lines.push(cur); right.push(pavedRight(cur)); } };
+    // (The trams' own bed lies as low as the street: its edges get a kerb's face too.)
+    for (const rings of [...edged, ...(R.trambed || [])]) for (const ring of rings) {
       let cur: Point2[] = [];
       for (let i = 0; i < ring.length; i++) {
         const a = ring[i], b = ring[(i + 1) % ring.length];
-        if (plain(a, b)) { if (cur.length > 1) lines.push(cur); cur = []; continue; }
+        if (plain(a, b)) { keep(cur); cur = []; continue; }
         if (!cur.length) cur.push(a);
         cur.push(b);
       }
-      if (cur.length > 1) lines.push(cur);
+      keep(cur);
     }
-    return { lines, edged, plain };
+    return { lines, right, edged, plain };
   };
 
   // Base: everything unmapped between streets and houses is paved; gardens round
@@ -1101,34 +1180,34 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     add(strips(d.weirs || [], 2.4), '#9a978d', 'concrete');
     add(strips((d.weirs || []).map((w) => offsetLine(w, -1.6)), 2.2), '#dfe6e2');
 
-    add(polygons(A.parking || []), COLORS.parking, 'asphalt');
+    add(street(() => polygons(A.parking || [])), COLORS.parking, 'asphalt');
     add(polygons(R.dirt || []), COLORS.dirt, 'dirt');
     add(polygons(R.path || []), COLORS.path, 'mosaic');
     // Pavements and traffic islands as the technical map surveyed them, kerb to wall
     // (pipeline/pavements.py): asphalt like the unmapped ground, or Prague's mosaic.
     add(polygons(R.pavement_asphalt || []), COLORS.pavement, 'asphalt');
     add(polygons(R.pavement || []), COLORS.path, 'pavement');
-    add(polygons(R.sett || []), COLORS.sett, 'setts');
+    add(street(() => polygons(R.sett || [])), COLORS.sett, 'setts');
     if (rasterRoads) {
       if (roadRaster) {
         const geometry = roadRasterGeometry(out[0].geometry, roadRaster);
         if (geometry.index.length) out.push({ order, geometry, color: COLORS.asphalt, pattern: 'asphalt', raster: roadRaster });
       }
       order++;
-    } else add(polygons(R.road || []), COLORS.asphalt, 'asphalt');
+    } else add(street(() => polygons(R.road || [])), COLORS.asphalt, 'asphalt');
     // The gutter: what the rain leaves along the kerb darkens the carriageway's edge; then the kerb.
     // (With it, in the same mesh, what traffic leaves on the asphalt: streetWear.)
     const kerb = kerbs();
     const worn = joinShading([...(kerb ? [skirtParts(kerb.edged, GUTTER_WIDTH, false, kerb.plain, GUTTER_PEAK)] : []), ...(paintRoads ? [streetWear(edges, box)] : [])]);
-    shade(finish(worn.pos, worn.idx, worn.alpha), WEAR_SHADE);
-    if (kerb) add(kerbRibbon(kerb.lines, KERB_WIDTH), COLORS.granite, 'graniteKerb');
+    shade(onStreet(() => finish(worn.pos, worn.idx, worn.alpha)), WEAR_SHADE);
+    order++; // (the kerb's stones were here; now they go on top of all that lies on the street, below)
     // Where the trams have a bed of their own beside the street: ballast under the tracks.
-    add(polygons(R.trambed || []), COLORS.ballast, 'gravel');
+    add(street(() => polygons(R.trambed || [])), COLORS.ballast, 'gravel');
     // Bay lines as Prague paints them: a solid blue line in residents' zones, white
     // dashes in the mixed (violet) and visitors' (orange) ones, plain white elsewhere.
     for (const [cat, color, dash] of BAY_PAINT) {
       const rings = (A.parking || []).filter((rs, k) => (parkingZones[k] || null) === cat);
-      add(strips(bayLines(rings.map((rs) => rs[0]), edges, cut), 0.15, dash, true), color);
+      add(onStreet(() => strips(bayLines(rings.map((rs) => rs[0]), edges, cut), 0.15, dash, true)), color);
     }
 
     // Bridges: a soft shadow on the water, then the deck (unless the decks are drawn
@@ -1147,22 +1226,26 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
 
     // Tram tracks: concrete bed and two rails at standard gauge.
     const trams = d.rails.filter((r) => r.kind === 'tram').map((r) => r.pts);
-    add(tramRibbon(trams, false), COLORS.trackbed, 'tramBed');
-    add(tramRibbon(trams, true), COLORS.steel, 'groovedRail');
+    add(onStreet(() => tramRibbon(trams, false)), COLORS.trackbed, 'tramBed');
+    add(onStreet(() => tramRibbon(trams, true)), COLORS.steel, 'groovedRail');
     add(strips(d.rails.filter((r) => r.kind === 'funicular').map((r) => r.pts), 3), COLORS.funicular, 'concrete');
 
     const { dashed, solid } = roadPaint(edges, trams);
-    add(strips(dashed, 0.13, [3, 6], true), COLORS.paint);
-    add(strips(solid, 0.13, null, true), COLORS.paint);
-    add(strips(zebras(d.crossings || [], edges, [...(R.road || []), ...(R.sett || [])], box), 0.5, null, true), COLORS.paint);
+    add(onStreet(() => strips(dashed, 0.13, [3, 6], true)), COLORS.paint);
+    add(onStreet(() => strips(solid, 0.13, null, true)), COLORS.paint);
+    add(onStreet(() => strips(zebras(d.crossings || [], edges, [...(R.road || []), ...(R.sett || [])], box), 0.5, null, true)), COLORS.paint);
     // Manhole covers and storm drains: all of the tile's in one mesh.
-    add(coverGeometry(d.utility || [], edges.map((e) => e.pts), groundHeight ?? (() => 0)), COLORS.iron);
+    const street0 = groundHeight;
+    add(coverGeometry(d.utility || [], edges.map((e) => e.pts), street0 ? (x, y) => street0(x, y) - kerbDepth(x, y, ON_STREET) : () => 0), COLORS.iron);
     if (groundHeight && d.stairs?.length) {
       const blocked = onPolygons([...(R.road ?? []), ...(R.sett ?? []), ...(A.water ?? []), ...buildings.map((b) => b.rings)]);
       const stairs = stairGeometry(d.stairs, box, groundHeight, blocked);
       add(stairs.body, COLORS.slab, 'concrete');
       add(stairs.edges, COLORS.kerb, 'concrete');
     } else order += 2;
+    // The kerb's stones, over everything that lies on the street: seen from the pavement
+    // the kerb hides the gutter behind it, with whatever is painted or let into it.
+    if (kerb) { add(kerbStones(kerb.lines, kerb.right), COLORS.granite, 'graniteKerb'); out[out.length - 1].oneSided = true; }
 
     // Soft contact shadow where each wall meets the ground. The wider, fainter one that
     // used to darken courtyards and lanes is the sky view now (map/skyView.ts), which

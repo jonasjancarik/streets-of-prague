@@ -9,6 +9,7 @@ import { KINDS, STRIPS, STRIPS_ON } from './reflections.ts';
 import { lampLit } from './lamps.ts';
 
 const vertex = `varying vec4 vFacade, vDetail;
+varying float vRows;
 varying vec3 vWorld, vWallNormal;
 varying float vWallSky;`;
 const functions = `
@@ -118,7 +119,7 @@ export function configureStreetFacadeGL() {
     )
       .replace(
         '#include <worldpos_vertex>',
-        '#include <worldpos_vertex>\nvWorld=(modelMatrix*vec4(transformed,1.)).xyz;vWallNormal=normalize(mat3(modelMatrix)*objectNormal);vFacade=facade;vDetail=detail;vWallSky=sky;',
+        '#include <worldpos_vertex>\nvWorld=(modelMatrix*vec4(transformed,1.)).xyz;vWallNormal=normalize(mat3(modelMatrix)*objectNormal);vFacade=vec4(facade.xy,mod(facade.z,1024.),facade.w);vRows=floor(facade.z/1024.);vDetail=detail;vWallSky=sky;',
       );
     sh.fragmentShader = sh.fragmentShader.replace(
       '#include <common>',

@@ -34,7 +34,21 @@ function fenceLook(x: number, y: number) {
 
 const FENCE_VERTS = 12; // a face each way
 const LEAN = 0.45; // how far a fence's two faces lean apart from straight up, for its light
-const HEDGE_VERTS = 30;
+// A hedge's outline across it, from the right foot over the top to the left: how far out
+// (in half widths) and how far up (in heights).
+export const HEDGE_OUTLINE: [number, number][] = [[0.8, 0], [1, 0.3], [0.97, 0.72], [0.62, 0.96], [0, 1.04], [-0.62, 0.96], [-0.97, 0.72], [-1, 0.3], [-0.8, 0]];
+// How far round the outline each of its points is from the foot, for a hedge 1.5 m tall.
+const HEDGE_ROUND = HEDGE_OUTLINE.map((_, k) => {
+  let d = 0;
+  for (let i = 1; i <= k; i++) d += Math.hypot((HEDGE_OUTLINE[i][0] - HEDGE_OUTLINE[i - 1][0]) * HEDGE_W / 2 / HEDGE_H, HEDGE_OUTLINE[i][1] - HEDGE_OUTLINE[i - 1][1]);
+  return d;
+});
+const HEDGE_VERTS = (HEDGE_OUTLINE.length - 1) * 6 * 2 + (HEDGE_OUTLINE.length - 1) * 3 * 2; // two slices round, and the two ends
+// How a hedge has grown at a place (0-1), the same from whichever section asks.
+export function hedgeNoise(x: number, y: number, salt: number) {
+  const s = Math.sin(Math.round(x * 4) * 12.9898 + Math.round(y * 4) * 78.233 + salt * 37.719) * 43758.5453;
+  return s - Math.floor(s);
+}
 export const SECTION_STRIDE = 8;
 
 export interface FenceBuffers {
@@ -115,29 +129,49 @@ export function fenceArrays(data: FenceTile, height: (x: number, y: number) => n
           quad(0, 0, 0, 0, z1 + h, z2 + h, z1 + sink, z2 + sink, [nx * LEAN, ny * LEAN, 1], [u1, u2]);
           quad(0, 0, 0, 0, z1 + h, z2 + h, z1 + sink, z2 + sink, [-nx * LEAN, -ny * LEAN, 1], [u1, u2], true);
         } else {
-          const w = HEDGE_W / 2;
+          // A clipped hedge is not a box: its sides belly out a little over a narrower foot,
+          // its shoulders are round and its top is slightly crowned, and no two stretches
+          // are quite as tall or as wide (it grows between cuts). Rings of the outline
+          // stand at the section's two ends and its middle; where sections meet they
+          // agree, as the unevenness goes by the place.
           const o1 = s === 0 ? startOff : [nx, ny], o2 = s === n - 1 ? endOff : [nx, ny];
-          // Each side stands on the ground under it and the top is level across the hedge,
-          // so on a slope the downhill side doesn't hang in the air.
-          const R1 = [x1 + o1[0] * w, y1 + o1[1] * w], R2 = [x2 + o2[0] * w, y2 + o2[1] * w];
-          const L1 = [x1 - o1[0] * w, y1 - o1[1] * w], L2 = [x2 - o2[0] * w, y2 - o2[1] * w];
-          const t1 = z1 + h, t2 = z2 + h;
-          const foot = (p: number[], z: number) => Math.min(height(p[0], p[1]), z) + sink;
-          const zr1 = foot(R1, z1), zr2 = foot(R2, z2), zl1 = foot(L1, z1), zl2 = foot(L2, z2);
-          quad(o1[0] * w, o1[1] * w, o2[0] * w, o2[1] * w, t1, t2, zr1, zr2, [nx, ny, 0], [u1, u2]);
-          quad(-o1[0] * w, -o1[1] * w, -o2[0] * w, -o2[1] * w, t1, t2, zl1, zl2, [-nx, -ny, 0], [u2, u1], true);
-          // The top, a strip of the two sides' top edges. (Its v is 2 more than the
-          // texture needs, which tells the hedge's shading it's the top, see fenceMeshes.)
-          const T = [[R1[0], t1, -R1[1]], [R2[0], t2, -R2[1]], [L2[0], t2, -L2[1]], [L1[0], t1, -L1[1]]];
-          const V = [[u1, 2.2], [u2, 2.2], [u2, 2.8], [u1, 2.8]];
-          for (const k of [0, 1, 2, 0, 2, 3]) { m.pos.push(...T[k]); m.nor.push(0, 1, 0); m.uv.push(...V[k]); }
-          // The two ends, so a hedge's last section isn't hollow.
-          for (const [A, B, za, zb, top, sgn] of [[L1, R1, zl1, zr1, t1, -1], [L2, R2, zl2, zr2, t2, 1]] as const) {
-            const P = [[A[0], za, -A[1]], [B[0], zb, -B[1]], [B[0], top, -B[1]], [A[0], top, -A[1]]];
-            for (const k of sgn > 0 ? [1, 0, 3, 1, 3, 2] : [0, 1, 2, 0, 2, 3]) {
-              m.pos.push(...P[k]);
-              m.nor.push(dir[0] * sgn, 0, -dir[1] * sgn);
-              m.uv.push(k === 1 || k === 2 ? 1 : 0, k > 1 ? 1 : 0);
+          const ring = (f: number) => {
+            const cx = x1 + (x2 - x1) * f, cy = y1 + (y2 - y1) * f, cz = f === 0 ? z1 : f === 1 ? z2 : height(cx, cy);
+            const o = f === 0 ? o1 : f === 1 ? o2 : [nx, ny];
+            const grown = 1 + (hedgeNoise(cx, cy, 1) - 0.5) * 0.16, wide = (HEDGE_W / 2) * (1 + (hedgeNoise(cx, cy, 2) - 0.5) * 0.3);
+            const top = cz + h * grown;
+            const foot = (side: number) => Math.min(height(cx + o[0] * wide * side, cy + o[1] * wide * side), cz) + sink;
+            const feet = [foot(1), cz + sink, foot(-1)];
+            return HEDGE_OUTLINE.map(([across, up], k) => {
+              const base = feet[across > 0 ? 0 : across < 0 ? 2 : 1];
+              // The outline's own normal, from its neighbours (rounded, not faceted).
+              const a = HEDGE_OUTLINE[Math.max(0, k - 1)], b = HEDGE_OUTLINE[Math.min(HEDGE_OUTLINE.length - 1, k + 1)];
+              let ta = (b[0] - a[0]) * wide, tu = (b[1] - a[1]) * h;
+              if (k === 0 || k === HEDGE_OUTLINE.length - 1) { ta = 0; tu = k === 0 ? 1 : -1; } // (the foot faces straight out)
+              const l = Math.hypot(ta, tu) || 1, na = tu / l, nu = -ta / l;
+              return {
+                p: [cx + o[0] * wide * across, base + (top - base) * up, -(cy + o[1] * wide * across)],
+                // (v: how far round the outline from the foot, in heights, so the leaves are as
+                // big on the shoulders and the top as on the sides; it also shades the foot darker.)
+                n: [nx * na, nu, -ny * na], v: HEDGE_ROUND[Math.min(k, HEDGE_OUTLINE.length - 1 - k)], across: across * wide,
+              };
+            });
+          };
+          const rings = [ring(0), ring(0.5), ring(1)], us = [u1, (u1 + u2) / 2, u2];
+          for (let r = 0; r < 2; r++) for (let k = 0; k < HEDGE_OUTLINE.length - 1; k++) {
+            const Q = [rings[r][k], rings[r + 1][k], rings[r + 1][k + 1], rings[r][k + 1]], U = [us[r], us[r + 1], us[r + 1], us[r]];
+            for (const q of [0, 1, 2, 0, 2, 3]) { m.pos.push(...Q[q].p); m.nor.push(...Q[q].n); m.uv.push(U[q], Q[q].v); }
+          }
+          // The two ends, so a hedge's last section isn't hollow: a fan from the foot's middle.
+          for (const [R, sgn] of [[rings[0], -1], [rings[2], 1]] as const) {
+            const c = [(R[0].p[0] + R[8].p[0]) / 2, (R[0].p[1] + R[8].p[1]) / 2, (R[0].p[2] + R[8].p[2]) / 2];
+            for (let k = 0; k < HEDGE_OUTLINE.length - 1; k++) {
+              const T = sgn < 0 ? [null, R[k], R[k + 1]] : [null, R[k + 1], R[k]];
+              for (const t of T) {
+                m.pos.push(...(t ? t.p : c));
+                m.nor.push(dir[0] * sgn, 0.25, -dir[1] * sgn);
+                m.uv.push(us[sgn < 0 ? 0 : 2] + (t ? t.across : 0) / 2, t ? t.v : 0);
+              }
             }
           }
         }

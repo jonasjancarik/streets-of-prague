@@ -45,6 +45,47 @@ trees with it. Not rebuilt: the lamp files (`build_lamps.py ujezd centrum praha`
 waiting for a look at dark suburbs. Four full scenario runs on the new map: two clean,
 `wall-crash` once, `fire-brigade` once (old behaviour of the engines, see "Gameplay").
 
+## Branch `beautify-2` (22 November), waiting for a look
+
+Street-level work in the worktree `.claude/worktrees/beautify-2`, before and after
+pictures in its `screenshots/beautify-2/` (not committed). Measured on Ultra against
+`main`: the same from above, 3–5 % more a frame in first person (two runs each). Left open:
+
+- [ ] The sunset's colours need an eye: the sky and the river are pinker and redder than
+  before at 20:40–21:05 in June (`DUSK` in `src/sky.ts`, the band's shape in
+  `src/webgpu/dome.ts`). Only looked at from Charles Bridge, in summer, in clear weather.
+- [ ] Tree sway was checked as two stills and their difference, never watched moving.
+  The crowns seen from above stay still.
+- [ ] Window rows: a wall that starts above the ground (a storey set back on a roof) can
+  still begin with part of a row, and the bare plaster above the last row has no cornice.
+  Walls of authored geometry are not cut between bays.
+- [ ] Street hedges (`src/streetHedges.ts`): the clusters cast no shadow of their own,
+  every hedge is a hornbeam, and in winter it stays in leaf (a hornbeam hedge keeps brown
+  leaves; only the season's tint is applied). Flattening by a car was not tried. About
+  20,000 triangles round Štefánikův most; not timed on a phone or below Ultra. WebGL
+  (and VR) shows the rounded body only.
+- [ ] Street grass (`src/streetGrass.ts`): one length of lawn everywhere (a meadow or a
+  verge should be longer and rougher, a pitch shorter; `footSurface` only says "grass"),
+  the cards cast no shadow, and beyond 24 m the lawn is the flat pattern again, with a
+  visible change where the blades end. Hedge leaves and grass together cost about 2 ms a
+  frame standing on Letná's lawn on Ultra (18.3 → 20.5 ms, two runs); Medium and up only,
+  never timed on a phone. Building a cell asks the map for the surface some 5,000 times.
+- [ ] Shade from the street gets 60 % more of the sky's light by day (`STREET_FILL` in
+  `src/sky.ts`): judged in four places in summer only, not in winter, rain or at dusk, and
+  the picture's brightness steps when you switch between the overhead and street views.
+- [ ] Walls from the street (shade under sills and the cornice, shade on the pavement at
+  the wall foot, splashed dirt, plaster grain): about 2 % more a frame in Vodičkova on
+  Ultra (9.1 → 9.3 ms, two runs each). Looked at by day in clear weather in four streets;
+  not at night, in rain or snow, and not on WebGL. The pavement shade is a flat strip
+  0.7 m wide at the wall's foot height: on a pavement that falls away from the wall it
+  floats a few centimetres, at an outside corner it leaves a notch, and walls that are not
+  modelled (far ones, blank ones) have none. Streaks of rain under sills were tried in
+  the shader and taken out: it cannot tell which bays have a window. Inside corners
+  between two walls are not darkened.
+- [ ] Not touched, seen on the way: the photo mesh of St Nicholas on Malostranské náměstí shows
+  holes and loose triangles from the pavement; ambient shading (`?ao`) added little in
+  first person in six views, so it stays off.
+
 ## Branch `beautify` (12–13 November), waiting for a look
 
 What it holds, the measurements and the checks are in `docs/performance-log.md` (the last
@@ -78,7 +119,21 @@ two sections) and the handbook; before and after pictures in `screenshots/beauti
   (10 sides to a head). A finer figure for first person is the biggest thing left there: a
   second mesh on the same skeleton in `assets/figures/build.py`, baked and pooled beside the
   first in `src/figures.ts` (its animation textures are per vertex, so it needs its own).
-  Kerbs are flat lines: the pavement is not raised.
+- [ ] Raised kerbs (`src/kerbDrop.ts`): the height is made up (12 cm everywhere) and no kerb is
+  dropped at a crossing or a driveway. Where the map's driving line runs over a pavement
+  corner or a traffic island (Divadelní at 50.0799), traffic now bumps over it. Kerbs
+  flatten within 8 m of any bridge or tunnel, also for a street that only passes under or
+  over one, and a bridge that starts just past a tile's edge may leave a 12 cm step across
+  the street at that edge (not seen yet; not looked for). Bridge decks keep flat kerbs.
+  The kerb's face is not hidden by depth: a car's tyres show through it from the pavement
+  side. Looked at by day, at night, in rain and in snow with WebGPU, and by day with
+  WebGL; not with `?roadraster` (which keeps the flat ground). No difference in frame
+  rate against `?flatkerbs` on an M5 (standing and driving, Ultra) or on the Pixel 5
+  (driving, Medium; a warming phone, so only a large cost would have shown). Loading
+  took perhaps 2–3 s longer on the phone, within that noise; not pinned down. In 60
+  central tiles the map's driving lines leave the carriageway for 130 m of 80 km (nine
+  places, such as Na dolinách and Ruská). Goes away when the terrain itself has kerbs
+  (`docs/terrain-tin-plan.md`).
 - [ ] Photo mode has no touch controls (its bar works, the camera needs a mouse), and no
   depth of field or frames. Fountains: OSM's are not in the map data yet (only counted for
   footfall); they would need a pipeline step.

@@ -1,0 +1,5 @@
+$imagegen
+Asset: game texture, a foliage card for a real-time clipped hedge, square 1:1, one image, transparent background
+Request: one dense cluster of hornbeam hedge foliage seen face on, as the clipped surface of a garden hedge shows it: many small oval, finely toothed, ribbed hornbeam leaves (each about a twentieth of the picture's width) overlapping in all directions on a few short thin twigs, filling most of the square in a roughly round shape with an irregular, ragged outline of single leaves and small gaps of transparency near the edge. No stem running out of the picture.
+Look: photographic leaf detail, soft even overcast light, no cast shadow, no strong highlights; mid to dark green leaves with natural light and dark variation from leaf to leaf, darker in the gaps between leaves towards the centre.
+Constraints: fully transparent background (alpha), nothing else in the picture, no ground, no sky, no border, no text, no watermark. The cluster must not touch any edge of the picture.

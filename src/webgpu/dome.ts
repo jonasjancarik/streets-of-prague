@@ -24,7 +24,7 @@ const bankReady: N = follow(BANK_READY);
 const uCloud: N = followVec(CLOUD as any);
 const uZenith: N = followColor(DOME.zenith), uHorizon: N = followColor(DOME.horizon);
 const uLit: N = followColor(DOME.cloudLit), uBase: N = followColor(DOME.cloudBase);
-const uDisc: N = followColor(DOME.disc), uGlow: N = followColor(DOME.glow);
+const uDisc: N = followColor(DOME.disc), uGlow: N = followColor(DOME.glow), uDusk: N = followColor(DOME.dusk);
 const uSun: N = followVec(DOME.sun), uShade: N = followVec(DOME.shade), uAir: N = followVec(DOME.air);
 
 // The sky's colour in a direction, seen from over a spot on the ground (`over`: world x, z).
@@ -33,6 +33,13 @@ export const skyAt = (direction: N, over: N): N => Fn(() => {
   const up: N = max(d.y, 0);
   const sky: N = mix(uZenith, uHorizon, pow(float(1).sub(up), 4)).toVar();
   const mu: N = max(dot(d, uSun.xyz), 0).toVar();
+  // Sunset and dawn: orange along the horizon, widest and strongest on the sun's side and
+  // only a blush opposite it, with a fainter wash higher up towards the sun.
+  const sunward: N = dot(normalize(d.xz), normalize(uSun.xz)).mul(0.5).add(0.5).toVar();
+  sunward.assign(sunward.mul(sunward));
+  const low: N = float(1).sub(up).toVar();
+  const band: N = pow(low, 7).mul(mix(0.12, 1, sunward)).add(pow(low, 2.5).mul(sunward).mul(sunward).mul(0.09));
+  sky.assign(mix(sky, uDusk, clamp(band.mul(uAir.w), 0, 1)));
   // The glow round the sun: wide and faint, and brighter close to it; warmer and stronger low down.
   sky.addAssign(uGlow.mul(pow(mu, 6).mul(0.5).add(pow(mu, 48).mul(1.2))).mul(float(1).sub(up.mul(0.5))));
 
@@ -76,7 +83,11 @@ export const skyAt = (direction: N, over: N): N => Fn(() => {
     });
   });
   const fair: N = coverFair.mul(uAir.x).toVar();
-  const cloud: N = mix(uBase, uLit, lit.mul(.86).add(.07)).add(uGlow.mul(pow(mu, 12)).mul(.21));
+  // At sunset the clouds on the sun's side are lit orange from below and their bodies turn
+  // a darker violet grey.
+  const duskLit: N = mix(uLit, uDusk.mul(1.1), sunward.mul(uAir.w).mul(0.36));
+  const duskBase: N = mix(uBase, uBase.mul(vec3(0.8, 0.76, 0.86)), uAir.w.mul(0.6));
+  const cloud: N = mix(duskBase, duskLit, lit.mul(.86).add(.07)).add(uGlow.mul(pow(mu, 12)).mul(.21));
   sky.assign(mix(sky, mix(uHorizon, cloud, distanceHaze.mul(.70).add(.30)), fair.mul(distanceHaze)));
   const cover: N = max(fair, deck);
 

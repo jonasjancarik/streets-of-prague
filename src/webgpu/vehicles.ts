@@ -4,7 +4,7 @@
 // the 'cars', 'trams', 'funicular' and 'boats' materials (see addPort).
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Fn, If, float, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, cameraWorldMatrix, diffuseColor, renderGroup, positionLocal, positionWorld, positionViewDirection, normalLocal, positionGeometry, materialColor, materialSpecular, normalize, dot, smoothstep, mix, select, sin, min, cos, max, floor, mod, exp2, reflect, atan, pow, uniform, texture, cubeTexture, length, clamp, step, distance } from 'three/tsl';
+import { Fn, If, float, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, cameraWorldMatrix, diffuseColor, renderGroup, positionLocal, positionWorld, positionViewDirection, normalLocal, positionGeometry, materialColor, materialSpecular, normalize, dot, smoothstep, mix, select, sin, min, cos, max, floor, mod, exp2, reflect, atan, pow, uniform, texture, cubeTexture, length, clamp, step, distance, cross } from 'three/tsl';
 import { LAMP_GLOW, CAR_GLOSS, DUSTCART_COAT, CAR_MIRROR, CAR_REFLECT as R, CAR_STRIPS as CS, AREA_STEP, DENT_STEP, DENT_SHAPE as DS } from '../car.ts';
 import { sedanInstruments, sedanWeave } from '../sedanFinish.ts';
 import { registrationAtlas } from '../registrationPlates.ts';
@@ -110,6 +110,7 @@ const probeNodes: [N, N][] = [];
 onProbe(() => { for (const [now, prev] of probeNodes) { now.value = PROBE_MAP.value; prev.value = PROBE_PREV.value; } });
 const uProbeAt: N = (() => { const u = uniform(PROBE_AT.value.clone()).setGroup(renderGroup); u.onRenderUpdate(() => { u.value.copy(PROBE_AT.value); return u.value; }); return u; })();
 const uProbeNear: N = (() => { const u = uniform(PROBE_NEAR.value.clone()).setGroup(renderGroup); u.onRenderUpdate(() => { u.value.copy(PROBE_NEAR.value); return u.value; }); return u; })();
+const PROBE_SOFT = 0.045; // how far apart the cube is read for one pixel of paint (radians)
 const stripNodes: N[] = [];
 onStrips((t) => { for (const n of stripNodes) n.value = t; });
 const carStreet = (r: N, neighbourhood: N = area): N => {
@@ -128,9 +129,15 @@ const carStreet = (r: N, neighbourhood: N = area): N => {
   const c0 = select(uStripsOn.greaterThan(0.5), strip, made);
   // On Ultra, near the middle of the view: the real street (probe.ts).
   // (The last two finished cubes, faded from the older to the newer: probe.ts.)
-  const now: N = cubeTexture(PROBE_MAP.value as never, r), prev: N = cubeTexture(PROBE_PREV.value as never, r);
-  probeNodes.push([now, prev]);
-  const m: N = mix(prev, now, uProbeMix);
+  // Paint is not a mirror: four looks a couple of degrees apart, so the cube's texels and the
+  // houses' windows don't show as hard blocks on a bonnet seen from the pavement.
+  const side: N = normalize(cross(r, vec3(0.31, 0.9, 0.3))).mul(PROBE_SOFT), up: N = normalize(cross(r, side)).mul(PROBE_SOFT);
+  let m: N = vec4(0);
+  for (const o of [side.add(up.mul(0.4)), side.negate().sub(up.mul(0.4)), up.sub(side.mul(0.4)), up.negate().add(side.mul(0.4))]) {
+    const now: N = cubeTexture(PROBE_MAP.value as never, r.add(o)), prev: N = cubeTexture(PROBE_PREV.value as never, r.add(o));
+    probeNodes.push([now, prev]);
+    m = m.add(mix(prev, now, uProbeMix).mul(0.25));
+  }
   const w = smoothstep(uProbeNear.y, uProbeNear.x, distance(positionWorld.xz, uProbeAt.xz)).oneMinus().mul(step(0.5, uProbeAt.w));
   const c = mix(c0, m.rgb.mul(uProbeK), m.a.mul(w));
   return c.add(uSunLight.mul(pow(max(dot(r, uSunDir), 0), R.sharp)).mul(R.glint));

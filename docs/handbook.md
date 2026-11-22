@@ -254,6 +254,17 @@ point on clear plaster near the corner. The curved face, proportions and enamel
 border follow the examples in [IPR’s Pražský uličník](https://prazskyulicnik.az.iprpraha.cz/clanky/vyvoj-oznaceni-ulic-v-terenu).
 The map supplies the names, while individual sign positions are approximate.
 
+Look up a house front to its roofline. Windows stop where a whole one no longer fits:
+under a gable (a štít), a sloping parapet or a step in the roof the wall is bare plaster,
+and nothing lights up there at night. The game measures the top of every wall bay by
+bay; which bays have windows at all is still inferred, as before
+(`windowRows` and `splitWindowRows` in `src/facades.ts`).
+
+Stand under a street tree on a windy day. The boughs and sprays lean with the wind and
+swing back, in gusts that pass from tree to tree, about three times as hard in a storm.
+Towards sunset or dawn, look along the river at the sun: the horizon there is orange
+and the clouds on that side are lit warm, with only a blush on the opposite side.
+
 At street level on WebGPU and WebGL, a glazed shopfront can show bookshelves, a bakery,
 flowers or ceramics. Look through the glass from the side to see the walls
 and floor behind the window frame. Adjacent bays share a display and some
@@ -881,6 +892,17 @@ record the measurements, merge decisions and pending landmark asset activation.
   dado and a door or picture, the floor; a quarter of the windows have a blind half down).
   Along the edge of every carriageway runs a kerb of grey granite with a darker gutter
   inside it (`kerbs` in `src/ground.ts`), wherever what lies beside it is not carriageway.
+  The kerb is raised: the carriageway (asphalt, setts, parking bays and the trams' own bed)
+  lies 12 cm below the pavement, with the granite's face between them, so a tree pit or a
+  traffic island in the street stands up out of it too. The terrain has one height for a
+  street and its pavements, so the step is made in the game (`src/kerbDrop.ts`): each tile
+  gets a picture of its carriageway, the ground's height is the terrain's less the kerb
+  there (with a ramp a quarter of a metre wide on the pavement's edge), and the ground's
+  layers are built to match, so cars, trams and people stand on the lowered street. The
+  12 cm is the same everywhere and is not surveyed; there are no dropped kerbs at
+  crossings or driveways. Within 8 m of a bridge or a tunnel the street comes back up
+  level with the pavement, as their decks and floors have no step. `?flatkerbs` shows the
+  ground as it was, to compare.
   The carriageway itself is worn (`streetWear`, in the gutter's own mesh): a dark stripe of
   oil down each lane, heavier where cars wait before a junction, and now and then a patch of
   newer asphalt laid along the street. Lanes, widths and junctions are the map's; which spot
@@ -1602,6 +1624,34 @@ record the measurements, merge decisions and pending landmark asset activation.
   about 1.6 m. Unlike the walls, they aren't in the tile's collision grid (the people
   and traffic of the city ignore them). Older tiles have none: rebuild the `ground`
   layer (`uv run build_tiles.py <area> --layers ground`).
+  A hedge's shape is rounded and a little uneven: a narrower foot, bellied sides, round
+  shoulders and a slightly crowned top, its height and width varying by a few
+  centimetres along it. Where the hedges stand is mapped; that unevenness is made up.
+  From the street (first or third person, WebGPU) a hedge within 60 m is a hornbeam
+  hedge: its body wears the photographed face of a clipped one, and over it stand
+  clusters of hornbeam leaves, some half sunk and dark, some standing proud, stirring in
+  the wind (`src/streetHedges.ts`, `src/webgpu/streetHedges.ts`; the two pictures are
+  generated, `assets/hedges/`). They are made a 20 m patch at a time as you come near
+  and thinned with distance. A hedge a car has flattened loses them. The leaves are a
+  hornbeam's whatever the hedge really is, and every cluster's place is made up.
+- **Grass from the street** (`src/streetGrass.ts`, `src/webgpu/streetGrass.ts`): in first
+  and third person on WebGPU (Medium and up, like the hedge leaves), blades stand on the
+  lawns within 24 m of you, wherever your feet would sound grass: short leaning cards of
+  photographed lawn grass (`assets/grass/`, generated), cut into single blades, in the
+  lawn's colour and the season's, bending with the wind and gone under snow. They are
+  made a 6 m cell at a time and thinned with distance. Where the grass is comes from
+  the map; the blades' places and lengths are made up.
+
+- **Walls from the street**: near walls get the shade and dirt that make a house stand on
+  its pavement. Under every window sill and under the ground floor's cornice the plaster
+  is darker, fading out downwards (`SILL_SHADE`, `CORNICE_SHADE` in
+  `src/map/streetFacade.ts`: thin sheets just in front of the wall, part of the walls
+  modelled near you). Along a modelled wall's foot a strip of shade lies on the pavement,
+  darkest at the wall (`FOOT_SHADE`). Every wall, modelled or not, is darker where it
+  meets the ground and carries splashed dirt to an uneven height of a few dozen
+  centimetres, and from close by the plaster is mottled and grainy (`wallFoot` in
+  `src/webgpu/buildings.ts`; the WebGL path has the foot only). All of it is made up from
+  the wall's shape; none of it says how dirty a real house is.
 - **Surveyed walls, fences and railings** (`pipeline/dtm_walls.py`): where the technical
   map's survey covers a tile (30 m of its lines or more), its walls ("Zeď"), fences
   ("Plot") and railings ("Zábradlí", set 3, in `pipeline/.cache/dtm/ZPS_KR/`) stand in

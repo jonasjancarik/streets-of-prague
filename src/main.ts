@@ -70,7 +70,10 @@ import { TileWorld } from './tiles.ts';
 import { facadeFinishes, loadFacadeFinishes } from './facadeFinishes.ts';
 import { loadFacadeAtlas } from './facades.ts';
 import { groundSamples, groundDepthView, tunnelEarthView } from './surface.ts';
-import { CUTAWAY, DIG, WEATHER_DETAIL } from './shading.ts';
+import { CUTAWAY, DIG, WEATHER_DETAIL, TREE_SWAY } from './shading.ts';
+import { streetHedges } from './streetHedges.ts';
+import { fences } from './fences.ts';
+import { streetGrass, type GrassGround } from './streetGrass.ts';
 import { setupDev, watchTransitWhileWaiting } from './dev.ts';
 import { setupSettings } from './settings.ts';
 import { setScreenshot } from './feedback.ts';
@@ -355,7 +358,15 @@ async function main() {
   await helisLoad;
   if (params.get('mist') === 'volume') MIST_MODE.value = 'volume';
   const weatherFx = new WeatherFx(scene);
+  scene.add(streetHedges.group);
+  scene.add(streetGrass.group);
   const world = new TileWorld({ area: AREA, index, scene, drive, walk, time, night: params.has('night') || clock.night, osmBuildings: params.has('osm'), ortho: params.has('ortho'), countryside: anywhere || params.get('countryside') === 'live' ? 'live' : params.has('countryside') });
+  // Where the street view's blades of grass stand (streetGrass.ts): on what sounds like
+  // grass underfoot, in the open, and not inside a hedge.
+  const grassGround: GrassGround = {
+    grass: (x, y) => world.footSurface(x, y) === 'grass' && world.tileAt(x, y)?.grid.at(x, y) !== 255 && !fences.blocks(x, y, 0.1, 0),
+    height: (x, y) => world.heightAt(x, y),
+  };
   const ironwork = new StreetIronwork(scene, world);
   // Past the city's parts, the town or village from the countryside's map.
   if (world.country) districts.elsewhere = (x, y) => world.country!.placeAt(x, y);
@@ -3279,6 +3290,8 @@ async function main() {
     world.passageCamera(fromStreet, camera.position.x, -camera.position.z);
     ironwork.update(fromStreet, camera.position, graphics.tier, weather.now.wet);
     world.trees.street(fromStreet, free ? free.x : camera.position.x, free ? -free.y : camera.position.z);
+    streetHedges.street(fromStreet, free ? free.x : camera.position.x, free ? free.y : -camera.position.z);
+    streetGrass.street(fromStreet && !underway, free ? free.x : camera.position.x, free ? free.y : -camera.position.z, grassGround, world.terrainRevision + world.joined);
     world.trees.canopy(true, fromStreet);
     sun.position.copy(sun.target.position).add(sky.offset);
     fitShadow();
@@ -3303,6 +3316,8 @@ async function main() {
     weatherFx.tint.value.copy(sky.tint);
     weatherFx.fog.value.copy(sky.haze);
     weatherFx.update(weather.now, time.value, camPos.x, -camPos.z, camGround, height, viewRadius(), renderer.getPixelRatio(), mistGround, mistWater, eyes && !underway ? camera.position : undefined, world.terrainRevision + world.joined, rainSurface);
+    // The trees seen from the street sway with the same wind.
+    { const wind = weatherFx.wind, blow = Math.hypot(wind.x, wind.y) || 1; TREE_SWAY.value.set(time.value, 0.3 + 0.7 * weather.now.storm, wind.x / blow, wind.y / blow); }
     updateChimneySmoke(WEATHER_DETAIL.value > 0 ? Math.max(season.cold, weather.now.cover) : 0, time.value, weatherFx.wind, weatherFx.tint.value, renderer.domElement.height);
 
     // ---- HUD -------------------------------------------------------------

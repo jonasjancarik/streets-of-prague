@@ -1,0 +1,5 @@
+$imagegen
+Asset: game texture, seamless tiling surface, square 1:1, one image
+Request: the clipped face of a dense hornbeam garden hedge photographed straight on from one metre, filling the whole picture edge to edge: hundreds of small oval ribbed hornbeam leaves overlapping at all angles, a few cut twig ends, dark shadowed gaps between the leaves where you see into the hedge. Even density everywhere, no single large feature, no branch crossing the picture, so that the picture can be repeated side by side and above itself without a visible seam.
+Look: photograph, soft even overcast light from the front, no directional shadows, no bright highlights, mid to dark green with natural variation between leaves, a few lighter yellow-green young leaves.
+Constraints: no sky, no ground, no fence, no flowers, no border, no vignette, no text, no watermark; uniform brightness from edge to edge.
