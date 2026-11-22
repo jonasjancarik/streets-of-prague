@@ -104,11 +104,20 @@ export class Culler {
   // What is left out now (for scripts/hidden-draws.js and the developer panel).
   culled() { return [...this.masks.keys()]; }
 
-  update(camera: THREE.Camera, active: boolean) {
+  // From the camera, or in VR from both eyes (their world positions): then from the
+  // point between them, with the allowance less how far each eye is from it.
+  update(camera: THREE.Camera, active: boolean, eyes?: THREE.Vector3[]) {
     this.stats.active = false;
     if (!active || !this.enabled) { this.restoreAll(); return; }
     this.stats.frames++;
-    const eye = camera.getWorldPosition(SPOT);
+    let spread = 0;
+    const eye = SPOT;
+    if (eyes?.length) {
+      eye.set(0, 0, 0);
+      for (const e of eyes) eye.add(e);
+      eye.divideScalar(eyes.length);
+      for (const e of eyes) spread = Math.max(spread, e.distanceTo(eye));
+    } else camera.getWorldPosition(eye);
     const ex = eye.x, ey = -eye.z, ez = eye.y;
     if (!(ez > this.world.terrainAt(ex, ey) - 0.5)) { this.restoreAll(); return; }
     const now = performance.now(), l = this.last, dt = now - l.t;
@@ -130,7 +139,7 @@ export class Culler {
       this.askedAt = { x: ax, y: ay, z: az, tiles: key };
       this.askTime = now;
     }
-    const why = this.usable(ex, ey, ez, keys, key);
+    const why = this.usable(ex, ey, ez, keys, key, spread);
     if (why) { this.stats.waits++; this.stats.why[why]++; this.restoreAll(); return; }
     this.stats.active = true;
     if (this.frame++ % 30 === 0 || !this.candidates.length) this.gather();
@@ -294,6 +303,8 @@ export class Culler {
     const plain = b.matrixWorld.equals(IDENTITY), ws = plain ? 1 : b.matrixWorld.getMaxScaleOnAxis();
     // From the instance seen last time: in a batch that shows, usually the only one tested.
     const n = b.count, first = (this.shown.get(b) ?? 0) % n;
+    const outA = g.getAttribute('outlineA') as THREE.BufferAttribute | undefined, outB = g.getAttribute('outlineB') as THREE.BufferAttribute | undefined;
+    if (outA && outB) return this.crownsHidden(b, outA, outB, first);
     for (let k = 0; k < n; k++) {
       const i = (first + k) % n, o = i * 16;
       const scale = Math.sqrt(Math.max(a[o] ** 2 + a[o + 1] ** 2 + a[o + 2] ** 2, a[o + 4] ** 2 + a[o + 5] ** 2 + a[o + 6] ** 2, a[o + 8] ** 2 + a[o + 9] ** 2 + a[o + 10] ** 2));
@@ -310,6 +321,30 @@ export class Culler {
     return true;
   }
   private shown = new WeakMap<THREE.Object3D, number>(); // (the instance or square seen last)
+
+  // Trees, whose shader shapes each crown (webgpu/trees.ts, streetTrees.ts): wider than
+  // its geometry by the tree's outline (up to its largest number), swaying in the wind.
+  // Each tree is tested as a column: up to its geometry's top times its height, as wide
+  // as its geometry's widest times its width and outline, half a metre more for the wind.
+  private crownsHidden(b: THREE.InstancedMesh, outA: THREE.BufferAttribute, outB: THREE.BufferAttribute, first: number): boolean {
+    const g = b.geometry;
+    if (!g.boundingBox) g.computeBoundingBox();
+    const bb = g.boundingBox!, topY = bb.max.y, wide = Math.hypot(Math.max(-bb.min.x, bb.max.x), Math.max(-bb.min.z, bb.max.z));
+    if (!Number.isFinite(topY) || !Number.isFinite(wide)) return false;
+    const a = b.instanceMatrix.array as Float32Array;
+    if (!b.matrixWorld.equals(IDENTITY)) return false; // (tree pages aren't moved: anything else isn't worked out)
+    const A = outA.array as ArrayLike<number>, B = outB.array as ArrayLike<number>, n = b.count;
+    for (let k = 0; k < n; k++) {
+      const i = (first + k) % n, o = i * 16;
+      const sx = Math.hypot(a[o], a[o + 1], a[o + 2]), sy = Math.hypot(a[o + 4], a[o + 5], a[o + 6]), sz = Math.hypot(a[o + 8], a[o + 9], a[o + 10]);
+      let out = 1;
+      for (let j = 0; j < 4; j++) out = Math.max(out, A[i * 4 + j], B[i * 4 + j]);
+      const r = wide * Math.max(sx, sz) * out + 0.5, top = a[o + 13] + Math.max(0, topY) * sy + 0.1;
+      const x = a[o + 12], y = -a[o + 14];
+      if (!(r < 300) || !(top + MARGIN < this.minSeen(x - r, y - r, x + r, y + r))) { this.shown.set(b, i); return false; }
+    }
+    return true;
+  }
 
   // The lowest height seen anywhere in a box (game metres, x and y north); -Infinity
   // where any of it is outside the window.
@@ -389,10 +424,10 @@ export class Culler {
 
   // Why the latest sweep doesn't hold for the eye, or '' if it does: none back, the eye
   // too far from where it was asked for or inside a building, or a tile it counted gone.
-  private usable(ex: number, ey: number, ez: number, keys: string[], key: string): '' | 'none' | 'away' | 'inside' | 'tiles' {
+  private usable(ex: number, ey: number, ez: number, keys: string[], key: string, spread = 0): '' | 'none' | 'away' | 'inside' | 'tiles' {
     const r = this.result;
     if (!r) return 'none';
-    if (Math.hypot(ex - r.ex, ey - r.ey) > r.slack || Math.abs(ez - r.ez) > r.rise) return 'away';
+    if (Math.hypot(ex - r.ex, ey - r.ey) + spread > r.slack || Math.abs(ez - r.ez) + spread > r.rise) return 'away';
     const w = 2 * r.around + 1;
     const di = Math.floor(ex / CELL) - Math.floor(r.ex / CELL) + r.around, dj = Math.floor(ey / CELL) - Math.floor(r.ey / CELL) + r.around;
     if (di < 0 || dj < 0 || di >= w || dj >= w || r.patch[dj * w + di] > ez - 0.3) return 'inside';

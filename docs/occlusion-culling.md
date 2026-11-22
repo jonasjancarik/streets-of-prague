@@ -261,8 +261,36 @@ most 0.4 % of the picture, once 12 % at Můstek. The steps jump the eye 1.4 m be
 live frames, which throws the culler's speed estimate, so it was active less often
 than in the game (15 of 40 steps at the faster Křižovnická).
 
+### VR (both eyes)
+
+In VR the headset draws one picture per eye, and WebXR moves the eyes at the start of
+each frame. So the culler runs inside the VR draw, after the eyes are placed
+(`VR.eyes()`), not before it as in the other views. It works from the point between the
+eyes, and an eye may be at most the allowance (0.5 m sideways and up) less its distance
+from that point away from where the sweep was made: the 3.2 cm to each eye comes off
+the allowance, and nothing else changes. One set is left out for both pictures, which
+the renderer draws in the same call.
+
+Trees needed a test of their own on the way. Their crowns are shaped by the shader
+(`webgpu/trees.ts`, `streetTrees.ts`), up to their outline numbers wider than the 2 m
+geometry the batches' instance test used, so a crown could be
+judged hidden while its edge showed. Now a batch with those outlines is tested tree by
+tree as a column as wide as the crown at its widest (geometry × width × outline, plus
+0.5 m for the wind) and as high as its geometry's top times its height.
+
+`cull-popping.js` with `stereo` gives the culler two eyes 6.4 cm apart and compares
+pictures from each (`'all'`: also from the middle). Driving from Můstek, along Vodičkova
+and from the Old Town Square, and running through Karlova, the Old Town Square and
+Malostranské náměstí, 20 steps each, three pictures a step: **no changed pixel in any
+of the 120 steps** (360 pictures), the culler active in 114 and leaving out 66–381
+things on average. (One earlier run from Můstek found changed pixels in every step:
+distant tile meshes and a mesh 150 m off; it didn't happen again in five runs of the
+same drive, with or without the tree test, mono or stereo. A run aborted with the
+two-eye stub left installed is the likely cause, and the script now always takes it
+out.) Not yet measured in a headset on the Pixel 5.
+
 Still to do: what the remaining 8 ms of tests a frame on the phone are (todo.md), VR
-(both eyes), the countryside and the overhead view.
+measured on the phone, the countryside and the overhead view.
 
 ## Order (after the reviews)
 

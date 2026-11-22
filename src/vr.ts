@@ -31,6 +31,8 @@ const DAYDREAM_DATA = '00000001-1000-1000-8000-00805f9b34fb';
 
 const ahead = new THREE.Vector3();
 
+const EYES: THREE.Vector3[] = [];
+
 export class VR {
   active = false;
   // Which way straight ahead is (the game's headings: radians, 0 east, counter-clockwise):
@@ -213,6 +215,16 @@ export class VR {
     camera.getWorldDirection(ahead);
     this.headH = Math.atan2(-ahead.z, ahead.x);
     this.headPitch = Math.asin(THREE.MathUtils.clamp(ahead.y, -1, 1));
+  }
+
+  // Where the headset's eyes are this frame (world positions), while it draws: WebXR
+  // gives their poses at the start of the frame, relative to where draw() puts them.
+  eyes(): THREE.Vector3[] {
+    const cams = this.renderer.xr.getCamera().cameras;
+    while (EYES.length < cams.length) EYES.push(new THREE.Vector3());
+    EYES.length = cams.length;
+    cams.forEach((c, i) => this.rig.localToWorld(EYES[i].copy(c.position)));
+    return EYES;
   }
 
   // The camera the headset draws with (for checks against the game's own camera).

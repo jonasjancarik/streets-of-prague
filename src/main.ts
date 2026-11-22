@@ -3577,7 +3577,7 @@ async function main() {
     dev.update();
     // (Ultra: the street round the middle of the view, for the cars to mirror.)
     lifeSize.frame(dt, !!eyes && !underway, camera);
-    culler?.update(camera, !!eyes && !vr?.active && !underway && !metro.active);
+    if (!vr?.active) culler?.update(camera, !!eyes && !underway && !metro.active);
     hitches.render(() => {
       if (vr?.active) {
         // Your eyes: on foot where you stand, in a car from the driver's seat (on the left),
@@ -3588,7 +3588,12 @@ async function main() {
           vrSeat = vehicle; vrSeatTurn = 0;
         }
         if (vehicle) vrSeatTurn += turn; else vr.yaw += turn;
-        const draw = () => renderer.render(scene, camera);
+        // (Culled from both eyes, where the headset has put them this frame.)
+        const draw = () => {
+          const at = vr.eyes();
+          culler?.update(camera, at.length > 0 && !underway && !metro.active, at);
+          renderer.render(scene, camera);
+        };
         // Inside the car you drive its windows are left out (car.ts), as they would be
         // clear: their tint and reflections only fog the view in the headset.
         VR_GLASS.box.value.w = inCar && !underway ? 1 : 0;

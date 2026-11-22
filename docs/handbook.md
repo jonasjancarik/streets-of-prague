@@ -100,7 +100,7 @@ Add `&roadjunctions` to load the wider junction trial from the matching
 `road-junctions.json`. [Junction trial results and generation](road-profile-pilot.md#extended-junction-trial).
 
 `?cull` is a trial of leaving out what the buildings hide in the street views (first
-person and third person; not yet VR): from the camera, a sweep over the drawn tiles'
+person, third person and VR): from the camera (in VR, both eyes), a sweep over the drawn tiles'
 buildings (in a worker, from where the eye will be) works out how high something must
 stand to be seen, and tile meshes,
 instanced batches and other meshes below that leave the main pass but keep casting
