@@ -25,6 +25,41 @@ export const GRADE = {
   fade: 0.34, fadeFrom: 0.5,
 };
 
+// The look laid over the curve, which changes with the hour and the weather (lookAt): the
+// dark end of the picture is tinted one way and the light end another, colours are made
+// stronger or weaker, and the middle steepened a little. WebGPU only; ?look=off leaves it
+// out. (The fog's and the rain's colours, worked back through the curve, don't take it
+// into account: they come out tinted with the rest, by these few per cent.)
+export const LOOK_ON = new URLSearchParams(globalThis.location?.search ?? '').get('look') !== 'off';
+export interface Look { shadow: [number, number, number]; light: [number, number, number]; sat: number; contrast: number }
+export const LOOK: Look = { shadow: [1, 1, 1], light: [1, 1, 1], sat: 1, contrast: 0 };
+// Broad daylight, the low sun's hour, dusk and dawn's blue, night under the lamps, and a
+// clouded sky (rain, snow, mist: `dull`). Kept within a few per cent: a mood, not a filter.
+const LOOKS: Record<'day' | 'golden' | 'blue' | 'night' | 'dull', Look> = {
+  day: { shadow: [0.98, 1, 1.03], light: [1.02, 1, 0.98], sat: 1.04, contrast: 0.1 },
+  golden: { shadow: [0.94, 0.99, 1.07], light: [1.06, 1.01, 0.93], sat: 1.08, contrast: 0.16 },
+  blue: { shadow: [0.93, 0.98, 1.09], light: [1.0, 1.0, 1.02], sat: 0.96, contrast: 0.1 },
+  night: { shadow: [0.92, 0.98, 1.1], light: [1.06, 1.0, 0.9], sat: 1.02, contrast: 0.14 },
+  dull: { shadow: [0.98, 1, 1.02], light: [0.98, 1, 1.02], sat: 0.84, contrast: 0 },
+};
+// The look for a sun `deg` degrees above the horizon and a sky `dull` (0 clear to 1 wholly
+// clouded, misty or snowing), written into LOOK.
+export function lookAt(deg: number, dull: number) {
+  const step = (x: number, a: number, b: number) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const weights: [Look, number][] = [
+    [LOOKS.night, 1 - step(deg, -9, -4)],
+    [LOOKS.blue, step(deg, -9, -4) * (1 - step(deg, -2, 3))],
+    [LOOKS.golden, step(deg, -2, 3) * (1 - step(deg, 10, 24))],
+    [LOOKS.day, step(deg, 10, 24)],
+  ];
+  // (Clouds hide the low sun's colours altogether, and half of the night's: the lamps still shine.)
+  const flat = dull * (1 - 0.5 * weights[0][1]);
+  const mix = (get: (l: Look) => number) => weights.reduce((sum, [l, w]) => sum + get(l) * w, 0) * (1 - flat) + get(LOOKS.dull) * flat;
+  for (let i = 0; i < 3; i++) { LOOK.shadow[i] = mix((l) => l.shadow[i]); LOOK.light[i] = mix((l) => l.light[i]); }
+  LOOK.sat = mix((l) => l.sat); LOOK.contrast = mix((l) => l.contrast);
+  return LOOK;
+}
+
 const LUMA = [0.2126, 0.7152, 0.0722];
 
 // The curve for one channel (without the saturation, which keeps the brightness).

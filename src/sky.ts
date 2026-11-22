@@ -3,7 +3,7 @@ import { SKY_REF, STREET_REF, SUN_DIR, SUN_LIGHT, WINDOWS } from './shading.ts';
 import { CLEAR, MIST } from './weather.ts';
 import { updateClouds } from './clouds.ts';
 import type { Conditions } from './weather.ts';
-import { GRADE, OLD_GRADE, filmic, ungrade } from './grade.ts';
+import { GRADE, OLD_GRADE, filmic, lookAt, ungrade } from './grade.ts';
 
 // The light of the time of day: where the sun is over Prague, and the colour and
 // strength of the sunlight and of the sky's light, blended between a few moods by the
@@ -275,6 +275,7 @@ export class Sky {
       this.fog.near = 0.5 * height;
       this.fog.far = this.fog.near + (height - this.fog.near) / x;
     }
+    lookAt(deg, Math.max(w.cloud, w.mist, w.cover * 0.6));
     if (!OLD_GRADE) exposure *= GRADE.gain;
     this.renderer.toneMappingExposure = this.curve ? exposure : -toneCurve(0.18 * exposure) / 0.18;
     // WebGPU mixes the fog in before the tone curve: there it gets the colour the curve turns into
