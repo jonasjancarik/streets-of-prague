@@ -1,9 +1,10 @@
 import { clamp } from './network.ts';
 import type { DriveEdge, DriveGraph, Polyline, RawStreetEdge } from './network.ts';
+import type { StreetHandling } from './streetHandling.ts';
 
 interface AssistedCar {
   x: number; y: number; h: number; forwardSpeed: number;
-  spec: { vmax: number; turn: number };
+  spec: { vmax: number; turn: number; radius?: number };
 }
 
 // Lane assist (hold Shift while driving): picks up the lane you're driving in and
@@ -96,7 +97,7 @@ export class LaneAssist {
 
   // The steering (-1..1, left positive) that keeps the car in lane, or null if there's
   // no lane to follow here.
-  steer(car: AssistedCar, playerSteer: number): number | null {
+  steer(car: AssistedCar, playerSteer: number, handling?: StreetHandling): number | null {
     if (!this.edge && !this.acquire(car)) return null;
     if (!this.edge) return null;
     let p = project(this.edge.path, car.x, car.y, this.s - 15, this.s + 40);
@@ -121,13 +122,17 @@ export class LaneAssist {
       this.next = null;
       this.intent = 0;
       this.s = 0;
-      return this.steer(car, 0);
+      return this.steer(car, 0, handling);
     }
     const target = left >= L || !this.next ? this.edge.path.at(this.s + L) : this.next.path.at(L - left);
     // Pure pursuit: the curvature that reaches the target, turned into a yaw rate the
     // car's steering can deliver.
     const alpha = turnOf(car.h, Math.atan2(target.y - car.y, target.x - car.x));
     const dist = Math.hypot(target.x - car.x, target.y - car.y) || 1;
+    if (handling) {
+      const wheel = handling.steerForCurvature(2 * Math.sin(alpha) / dist, speed, car.spec.radius ?? 3.8);
+      return wheel * Math.sign(car.forwardSpeed || 1);
+    }
     const yaw = (2 * Math.sin(alpha) * Math.max(speed, 1)) / dist;
     const S = car.spec, fast = clamp(speed / S.vmax, 0, 1);
     const maxW = Math.min(speed / 3.6, S.turn * (1 - 0.35 * fast)) || 1;

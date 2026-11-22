@@ -4,9 +4,11 @@ export interface Eyes { yaw: number; pitch: number; still?: number; third?: bool
 // a page load can switch to (renderer.ts), so choosing it, or leaving it for good, reloads.
 export type PlayerView = 'overhead' | 'first' | 'third' | 'vr';
 
-export interface FirstPersonOptions { fov: number; sensitivity: number; motion: 'device' | 'steady' | 'gentle' }
-export const firstPersonOptions: FirstPersonOptions = { fov: 55, sensitivity: 100, motion: 'device' };
+export type CarHandling = 'classic' | 'realistic';
+export interface FirstPersonOptions { handling: CarHandling; fov: number; sensitivity: number; motion: 'device' | 'steady' | 'gentle' }
+export const firstPersonOptions: FirstPersonOptions = { fov: 55, sensitivity: 100, motion: 'device', handling: 'classic' };
 export function setFirstPersonOptions(pick: Partial<FirstPersonOptions>, save = true) {
+  if (pick.handling === 'classic' || pick.handling === 'realistic') firstPersonOptions.handling = pick.handling;
   if (typeof pick.fov === 'number' && Number.isFinite(pick.fov))
     firstPersonOptions.fov = Math.round(Math.min(80, Math.max(45, pick.fov)));
   if (typeof pick.sensitivity === 'number' && Number.isFinite(pick.sensitivity))

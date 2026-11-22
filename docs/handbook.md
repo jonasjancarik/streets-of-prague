@@ -359,6 +359,21 @@ The metro ride uses its overhead cutaway camera.
   snow not yet cleared from the streets clearly more. Braking hard, the handbrake and sliding round a
   corner leave dark tyre marks that fade after a minute (`src/skids.ts`); so do the
   police and cars sent skidding by a crash.
+- **Car handling.** In Settings → Car handling, choose **Realistic (experimental)**
+  to try it in first or third person. Classic is the default. The choice is remembered
+  between games and takes effect on the next driving step. It applies to the car, van
+  or pickup you drive, including taxis and patrol cars. Overhead driving, VR, two-wheelers,
+  heavy vehicles and AI drivers use Classic.
+  With Realistic selected, feed in the steering as you approach a bend. Braking or
+  accelerating hard leaves the tyres less grip for turning. A short handbrake pull
+  lets the tail step out. Release it and unwind the steering to catch the slide.
+  Holding the opposite pedal brakes first, then selects the other direction after a
+  brief stop. Under power the nose rises, under braking it dips, and the body
+  leans outwards in a turn while the wheels follow the road. Vans and SUVs lean
+  more than saloons. The chase camera follows some of the car's momentum in a slide.
+  The two-axle model and damped springs are in `src/streetHandling.ts`.
+  Run `node scripts/check-street-handling.mjs` to compare launches, stops and cornering
+  on a flat test road. The `street-handling` scene checks the driving modes in-game.
 - In the car, holding Shift is lane assist (`src/assist.ts`): it steers along your
   lane, and A/D then pick the turn at the next junction instead of steering. It also
   keeps you to the street's speed limit (OSM `maxspeed`, else 50 km/h in town, 70 on

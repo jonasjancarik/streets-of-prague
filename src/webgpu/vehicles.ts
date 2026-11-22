@@ -5,7 +5,8 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Fn, If, float, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, cameraWorldMatrix, diffuseColor, renderGroup, positionLocal, positionWorld, positionViewDirection, normalLocal, positionGeometry, materialColor, materialSpecular, normalize, dot, smoothstep, mix, select, sin, min, cos, max, floor, mod, exp2, reflect, atan, pow, uniform, texture, cubeTexture, length, clamp, step, distance, cross } from 'three/tsl';
-import { LAMP_GLOW, CAR_GLOSS, DUSTCART_COAT, CAR_MIRROR, CAR_REFLECT as R, CAR_STRIPS as CS, AREA_STEP, DENT_STEP, DENT_SHAPE as DS } from '../car.ts';
+import { LAMP_GLOW, CAR_GLOSS, DUSTCART_COAT, CAR_MIRROR, WHEEL_LEVEL, CAR_REFLECT as R, CAR_STRIPS as CS, AREA_STEP, DENT_STEP, DENT_SHAPE as DS } from '../car.ts';
+import { ROLL_CENTRE } from '../streetHandling.ts';
 import { sedanInstruments, sedanWeave } from '../sedanFinish.ts';
 import { registrationAtlas } from '../registrationPlates.ts';
 import { STRIPS, STRIPS_ON, onStrips } from '../reflections.ts';
@@ -14,7 +15,10 @@ import { SKY_REF, STREET_REF, SUN_DIR, SUN_LIGHT } from '../shading.ts';
 import { lampLit, lampLight, uLampOn } from './lamps.ts';
 import { shareInstances } from './trees.ts';
 import { skyAt } from './dome.ts';
-import { type N, addPort, uSnow, uWet, follow, followColor } from './common.ts';
+import { type N, addPort, uSnow, uWet, follow, followColor, followVec } from './common.ts';
+
+const wheelLevel = followVec(WHEEL_LEVEL);
+const levelWheel = (p: N) => p.add(cross(wheelLevel.xyz, cross(wheelLevel.xyz, p).add(p.mul(wheelLevel.w))).mul(2));
 
 const luma = (c: N) => dot(c, vec3(0.3, 0.59, 0.11));
 
@@ -180,7 +184,7 @@ addPort(/^cars(?:-service|-dustcart|-close|-coachglass|-coachwork)?$/, (node, le
     const phase = hero ? normalize(roll.xy) : roll.xy;
     const fixed = hinge.z.lessThan(-1);
     const x = select(fixed, p.x, phase.x.mul(p.x).sub(phase.y.mul(p.y))), y = select(fixed, p.y, phase.y.mul(p.x).add(phase.x.mul(p.y)));
-    const steer: N = hero ? roll.z.sub(floor(roll.z.add(1).mul(.5)).mul(2)) : roll.z;
+    const steer: N = roll.z.sub(floor(roll.z.add(1).mul(.5)).mul(2));
     const c: N = max(float(1).sub(steer.mul(steer)), 0).sqrt();
     return select(hinge.x.greaterThan(0), vec3(c.mul(x).add(steer.mul(p.z)), y, c.mul(p.z).sub(steer.mul(x))), vec3(x,y,p.z));
   };
@@ -192,14 +196,20 @@ addPort(/^cars(?:-service|-dustcart|-close|-coachglass|-coachwork)?$/, (node, le
     if (closeCar) {
       const axle = vec3(hinge.x, hinge.z.negate().sub(select(hinge.z.lessThan(-1), 2, 0)), hinge.y), wheel = hinge.z.lessThan(0);
       let spun: N = axle.add(rollWheel(pos.sub(axle)));
+      const twist: N = floor(attribute('roll','vec4').z.add(1).mul(.5)).mul(.0025).mul(hinge.x.mul(hinge.y).negate().sign());
       if (hero) {
-        const twist = floor(attribute('roll','vec4').z.add(1).mul(.5)).mul(.0025).mul(hinge.x.mul(hinge.y).negate().sign());
         const contact = max(0, spun.y.sub(float(1).sub(smoothstep(0,.045,spun.y)).mul(.010)));
-        const wheelHeight: N = select(hinge.z.greaterThan(-1), contact, spun.y).add(twist);
+        const wheelHeight: N = select(hinge.z.greaterThan(-1), contact, spun.y);
         spun = vec3(spun.x, wheelHeight, spun.z);
       }
-      pos = select(wheel, spun, pos);
-      nrm = select(wheel, rollWheel(nrm), nrm);
+      const wheelPos = spun.add(vec3(0, twist, 0)).toVar(), wheelNormal = rollWheel(nrm).toVar();
+      If(wheel.and(attribute('roll', 'vec4').w.lessThan(0)), () => {
+        const pivot = vec3(0, ROLL_CENTRE, 0);
+        wheelPos.assign(levelWheel(wheelPos.sub(pivot)).add(pivot));
+        wheelNormal.assign(levelWheel(wheelNormal));
+      });
+      pos = select(wheel, wheelPos, pos);
+      nrm = select(wheel, wheelNormal, nrm);
     }
     const d = dentAt(), bent = dented(pos, d), normal = dentNormal(nrm, positionGeometry, d);
     const p = swing(bent.xz.sub(hinge.xy), closeCar).add(hinge.xy), n = swing(normal.xz, closeCar);
@@ -213,7 +223,7 @@ addPort(/^cars(?:-service|-dustcart|-close|-coachglass|-coachwork)?$/, (node, le
     proto.setupDiffuseColor.call(this, builder);
     if (closeCar) {
       const slot = hinge.z.sub(5), roll = attribute('roll','vec4');
-      const digit = select(slot.equal(1), float(10), mod(floor(roll.w.div(pow(10,clamp(float(6).sub(slot),0,5)))),10));
+      const digit = select(slot.equal(1), float(10), mod(floor(roll.w.abs().div(pow(10,clamp(float(6).sub(slot),0,5)))),10));
       const atlasUV = select(hinge.z.greaterThan(4.5).and(hinge.z.lessThan(11.5)),vec2(digit.add(hinge.x.mul(.96)).add(.02).div(16),hinge.y.mul(.96).add(.02)),vec2(-1)).toVarying('vPlateUV');
       If(atlasUV.x.greaterThanEqual(0), () => { diffuseColor.rgb.mulAssign(texture(registrationAtlas(),atlasUV).rgb); });
     }

@@ -1,3 +1,4 @@
+import { StreetHandling, ROLL_CENTRE } from './streetHandling.ts';
 import { busCabin, commercialCab } from './commercialCab.ts';
 import { twoWheelerStreet } from './twoWheelerStreet.ts';
 import * as THREE from 'three';
@@ -40,6 +41,10 @@ export const VR_CAB: Record<string, [number, number]> = {
 // (three.js x, height of its middle, z and its heading) and how far it reaches (half its
 // length and width, half its height, and 1 while it is on).
 export const VR_GLASS = { at: { value: new THREE.Vector4() }, box: { value: new THREE.Vector4() } };
+
+// Inverse chassis rotation for the one sprung player car. Its instance marks
+// the registration negative so the other cars in the same draw keep their pose.
+export const WHEEL_LEVEL = { value: new THREE.Vector4(0, 0, 0, 1) };
 
 export interface CarSpec {
   headlights?: { forward: number; across: number; height: number; glow: number; streetReach?: number };
@@ -1504,37 +1509,46 @@ function streetMaterials(atlas: string) {
   }
   return materials;
 }
-// roll.xy rotates the wheels, roll.z steers the front pair, and roll.w
-// supplies a stable registration number in the same instanced body draw.
+// roll.xy rotates the wheels. roll.z packs steering and diagonal axle travel.
+// The magnitude of roll.w is the registration; a negative sign marks the sprung car.
 const streetWheelMaterial = material.clone();
 streetWheelMaterial.customProgramCacheKey = () => 'cars-close';
 streetWheelMaterial.onBeforeCompile = (sh, renderer) => {
   material.onBeforeCompile(sh, renderer);
   sh.fragmentShader = sh.fragmentShader.replace(/#define VR_GLAZED .*/, '#define VR_GLAZED false'); // (its glass is passengerGlass: a navy paint isn't glass)
   sh.uniforms.uRegistration = { value: registrationAtlas() };
+  sh.uniforms.uWheelLevel = WHEEL_LEVEL;
   sh.vertexShader = sh.vertexShader.replace('if (hinge.z < .5) return p;', 'if (hinge.z < .5 || hinge.z > 4.5) return p;').replace('vec2 swing(vec2 p)', `
 attribute vec4 roll;
+uniform vec4 uWheelLevel;
+vec3 wheelLevel(vec3 p) { return p + 2. * cross(uWheelLevel.xyz, cross(uWheelLevel.xyz, p) + uWheelLevel.w*p); }
 varying float vWheelCoat;
 varying vec2 vPlateUV;
 vec3 rollWheel(vec3 p) {
   vec2 spun = hinge.z < -1. ? p.xy : vec2(roll.x*p.x-roll.y*p.y, roll.y*p.x+roll.x*p.y);
-  float c = sqrt(max(0.,1.-roll.z*roll.z));
-  return hinge.x > 0. ? vec3(c*spun.x+roll.z*p.z, spun.y, -roll.z*spun.x+c*p.z) : vec3(spun,p.z);
+  float steer = roll.z-2.*floor((roll.z+1.)*.5);
+  float c = sqrt(max(0.,1.-steer*steer));
+  return hinge.x > 0. ? vec3(c*spun.x+steer*p.z, spun.y, -steer*spun.x+c*p.z) : vec3(spun,p.z);
 }
 vec2 swing(vec2 p)`)
-    .replace('vec4 dents = dentAt(zoneAt());', 'vec4 dents = dentAt(zoneAt()); if (hinge.z < 0.) objectNormal = rollWheel(objectNormal);')
+    .replace('vec4 dents = dentAt(zoneAt());', 'vec4 dents = dentAt(zoneAt()); if (hinge.z < 0.) { objectNormal = rollWheel(objectNormal); if (roll.w < 0.) objectNormal = wheelLevel(objectNormal); }')
     .replace('transformed = dented(transformed, dents);', `float brightness = dot(color.rgb,vec3(.3,.59,.11));
 bool glazed = brightness < .04 && color.b > color.r*1.25;
 vWheelCoat = (mod(floor(painted),16.) == 0. && !glazed) ? mix(.08,1.,smoothstep(.035,.17,brightness)) : 1.;
 vPlateUV = vec2(-1.);
 if (hinge.z > 4.5 && hinge.z < 11.5) {
   float slot = hinge.z - 5.;
-  float digit = slot == 1. ? 10. : mod(floor(roll.w / pow(10., min(5.,6.-slot))), 10.);
+  float digit = slot == 1. ? 10. : mod(floor(abs(roll.w) / pow(10., min(5.,6.-slot))), 10.);
   vPlateUV = vec2((digit + .02 + .96 * hinge.x) / 16., .02 + .96*hinge.y);
 }
 if (hinge.z < 0.) {
   vec3 axle = vec3(hinge.x, -hinge.z - (hinge.z < -1. ? 2. : 0.), hinge.y);
   transformed = axle + rollWheel(transformed - axle);
+  transformed.y += sign(-hinge.x*hinge.y)*.0025*floor((roll.z+1.)*.5);
+  if (roll.w < 0.) {
+    vec3 pivot = vec3(0., ${ROLL_CENTRE}, 0.);
+    transformed = pivot + wheelLevel(transformed - pivot);
+  }
   vWheelCoat = mix(.045,.45,smoothstep(.045,.24,dot(color.rgb,vec3(.3,.59,.11))));
 }
 if (hinge.z > 11.5) vWheelCoat = .065;
@@ -1579,11 +1593,8 @@ coachPaint.onBeforeCompile = (sh, renderer) => {
     .replace('varying float vWheelCoat;', 'varying float vWheelCoat; varying float vFinish; varying vec3 vDial; varying float vEngine;')
     .replace('vec2 spun = hinge.z < -1. ? p.xy : vec2(roll.x*p.x-roll.y*p.y, roll.y*p.x+roll.x*p.y);',
       'vec2 phase = normalize(roll.xy); vec2 spun = hinge.z < -1. ? p.xy : vec2(phase.x*p.x-phase.y*p.y,phase.y*p.x+phase.x*p.y);')
-    .replace('float c = sqrt(max(0.,1.-roll.z*roll.z));', 'float steer = roll.z-2.*floor((roll.z+1.)*.5); float c=sqrt(max(0.,1.-steer*steer));')
-    .replace('c*spun.x+roll.z*p.z, spun.y, -roll.z*spun.x+c*p.z', 'c*spun.x+steer*p.z, spun.y, -steer*spun.x+c*p.z')
     .replace('transformed = axle + rollWheel(transformed - axle);', `transformed= axle + rollWheel(transformed - axle);
-      if(hinge.z > -1.) transformed.y=max(0.,transformed.y-.010*(1.-smoothstep(0.,.045,transformed.y)));
-      transformed.y+=sign(-hinge.x*hinge.y)*.0025*floor((roll.z+1.)*.5);`)
+      if(hinge.z > -1.) transformed.y=max(0.,transformed.y-.010*(1.-smoothstep(0.,.045,transformed.y)));`)
     .replace('vPlateUV = vec2(-1.);', `vPlateUV = vec2(-1.);
       vFinish = floor(fract(painted)*16.+.5);
       if (hinge.z<0.) vFinish=brightness>.068?2.:4.;
@@ -1653,6 +1664,7 @@ export class Car {
   touchDriving = false;
   rider: Look | null;
   lean: number;
+  suspension?: StreetHandling;
   // Which side an unmounted bike fell onto.
   tipped?: -1 | 1;
   r: number;
@@ -1886,19 +1898,45 @@ export class Car {
   // Free-body physics. `ctl` = { throttle -1..1, steer -1..1 (left +), handbrake, cap }.
   // `cap` (m/s, optional) limits the speed: the gas fades as the car gets near it, and
   // above it the car eases down, as if you'd lifted off and touched the brake.
-  update(dt: number, ctl: CarControl | null, grid: CarGrid) {
-    // The ground and walls as this car meets them: on a bridge deck or under it.
+  update(dt: number, ctl: CarControl | null, grid: CarGrid, realistic = false) {
     if (grid.view) grid = grid.view(this);
-    const S = this.spec;
     ctl = ctl || { throttle: 0, steer: 0, handbrake: false };
-    const fx = Math.cos(this.h), fy = Math.sin(this.h);
+    const S = this.spec, fx = Math.cos(this.h), fy = Math.sin(this.h);
+    let slope = 0;
+    if (grid.height) {
+      const half = S.L / 2;
+      slope = (grid.height(this.x + fx * half, this.y + fy * half) - grid.height(this.x - fx * half, this.y - fy * half)) / S.L;
+    }
+    const weatherLoss = this.driven ? (S.weather ?? 1) * Math.max(.25 * WET.value, .45 * SNOW.value * STREET_SNOW.value, .25 * SNOW.value) : 0;
+    const thrust = ctl.cap == null || ctl.throttle <= 0 ? ctl.throttle : Math.min(ctl.throttle, clamp((ctl.cap - (this.vx * fx + this.vy * fy)) / 2, 0, 1));
+    if (realistic && this.mode === 'player' && S.cabin) {
+      this.suspension ??= new StreetHandling(this.forwardSpeed, closeBodies.get(this.key)?.wheelbase ?? S.L * .62);
+      this.suspension.advance(this, ctl, 1 - weatherLoss, slope, dt);
+    } else {
+      this.suspension = undefined;
+      this.arcadeVelocity(dt, ctl, thrust, fx, fy, slope, 1 - weatherLoss * (S.drive === 'awd' ? .6 : 1));
+    }
+
+    // Substeps so a fast car can't skip through a thin wall.
+    const escape = this.mode === 'player' && grid.trunkAt ? (this.treeEscape ??= new TreeEscape()) : undefined;
+    escape?.begin(this, !ctl.handbrake && Math.abs(thrust) >= .2 ? Math.sign(thrust) : 0);
+    const steps = Math.max(1, Math.ceil((this.speed * dt) / 0.25));
+    let impact = 0;
+    for (let i = 0; i < steps; i++) {
+      this.x += (this.vx * dt) / steps;
+      this.y += (this.vy * dt) / steps;
+      impact = Math.max(impact, posts.collide(this), fences.collide(this), this.collideGrid(grid));
+    }
+    escape?.end(this, dt);
+    this.sync();
+    return impact;
+  }
+
+  private arcadeVelocity(dt: number, ctl: CarControl, throttle: number, fx: number, fy: number, slope: number, road: number) {
+    const S = this.spec;
     let vf = this.vx * fx + this.vy * fy;
     let vl = this.vx * fy - this.vy * fx;
     const fast = clamp(Math.abs(vf) / S.vmax, 0, 1);
-    const throttle = ctl.cap == null || ctl.throttle <= 0 ? ctl.throttle : Math.min(ctl.throttle, clamp((ctl.cap - vf) / 2, 0, 1));
-    // A wet road and snow take some of the tyres' grip: longer braking, wider slides
-    // (for the cars someone is driving hard; the traffic keeps to its lanes as before).
-    const road = this.driven ? 1 - (S.weather ?? 1) * (S.drive === 'awd' ? 0.6 : 1) * Math.max(0.25 * WET.value, 0.45 * SNOW.value * STREET_SNOW.value, 0.25 * SNOW.value) : 1;
     const brake = S.brake ?? 16;
     this.braking = this.driven && ((throttle < 0 && vf > 0.3) || (throttle > 0 && vf < -0.3) || (ctl.handbrake && Math.abs(vf) > 0.3)
       || (ctl.cap != null && vf > ctl.cap + 0.5));
@@ -1913,12 +1951,7 @@ export class Car {
       vf -= Math.sign(vf) * Math.min(Math.abs(vf), (this.driven ? S.drag ?? 0.6 : 5) * dt);
     }
     if (ctl.handbrake) vf -= Math.sign(vf) * Math.min(Math.abs(vf), 5 * dt);
-    // Hills: gravity along the car's heading (rolls back down, slower uphill).
-    if (grid.height) {
-      const half = S.L / 2;
-      const slope = (grid.height(this.x + fx * half, this.y + fy * half) - grid.height(this.x - fx * half, this.y - fy * half)) / S.L;
-      vf -= 9.81 * slope * dt;
-    }
+    vf -= 9.81 * slope * dt;
     if (ctl.cap != null && vf > ctl.cap) vf = Math.max(ctl.cap, vf - 3 * dt);
 
     // Full throttle in a bend: the driven wheels lose sideways grip (rear-wheel drive)
@@ -1961,19 +1994,6 @@ export class Car {
     this.vx = nx * vf + ny * vl;
     this.vy = ny * vf - nx * vl;
 
-    // Substeps so a fast car can't skip through a thin wall.
-    const escape = this.mode === 'player' && grid.trunkAt ? (this.treeEscape ??= new TreeEscape()) : undefined;
-    escape?.begin(this, !ctl.handbrake && Math.abs(throttle) >= 0.2 ? Math.sign(throttle) : 0);
-    const steps = Math.max(1, Math.ceil((this.speed * dt) / 0.25));
-    let impact = 0;
-    for (let i = 0; i < steps; i++) {
-      this.x += (this.vx * dt) / steps;
-      this.y += (this.vy * dt) / steps;
-      impact = Math.max(impact, posts.collide(this), fences.collide(this), this.collideGrid(grid));
-    }
-    escape?.end(this, dt);
-    this.sync();
-    return impact;
   }
 
   // The whole outline every ~0.4 m, for checking against walls: a wall's corner can
@@ -2184,6 +2204,10 @@ export class CarPool {
   life: THREE.Matrix4;
   m: THREE.Matrix4;
   boards: THREE.Mesh[] = [];
+  private springEuler = new THREE.Euler(0, 0, 0, 'ZXY');
+  private springRotation = new THREE.Quaternion();
+  private springPose = new THREE.Matrix4();
+  private springGround = new THREE.Matrix4();
   private colours = new Map<string, THREE.Color>();
   private hingeless = new WeakMap<THREE.BufferGeometry, THREE.BufferAttribute>();
   // Each parked four-wheeler's matrix and what it was worked out from (see placed).
@@ -2429,7 +2453,8 @@ export class CarPool {
         const slot = i % CarPool.pageCapacity;
         const keep = height && terrain !== undefined && !c.two && c.mode === 'loose';
         const was = keep ? this.placings.get(c) : undefined;
-        const axleFit = k === STREET_SEDAN && !c.tipped ? closeBodies.get(c.key) : undefined;
+        const suspension = streetView && c.mode === 'player' ? c.suspension : undefined;
+        const axleFit = (k === STREET_SEDAN || (suspension && k.endsWith('|street-wheels'))) && !c.tipped ? closeBodies.get(c.key) : undefined;
         let twist = 0;
         if (was && (was.wheelTwist !== undefined) === !!axleFit && placed(was, c, height!, terrain!)) {
           d.matrix.fromArray(was.m); twist = was.wheelTwist ?? 0;
@@ -2466,6 +2491,14 @@ export class CarPool {
             if (p) { p.wheelTwist = axleFit ? twist : undefined; this.placings.set(c, p); } else this.placings.delete(c);
           }
         }
+        if (suspension) {
+          this.springGround.copy(d.matrix);
+          const q = this.springRotation.setFromEuler(this.springEuler.set(suspension.roll, 0, suspension.pitch));
+          const pose = this.springPose.makeRotationFromQuaternion(q), e = pose.elements;
+          pose.setPosition(-e[4] * ROLL_CENTRE, (1 - e[5]) * ROLL_CENTRE, -e[6] * ROLL_CENTRE);
+          d.matrix.multiply(pose);
+          WHEEL_LEVEL.value.set(-q.x, -q.y, -q.z, q.w);
+        }
         // A bike or motorbike shrinks with its rider in first person (FIGURE_SIZE).
         m.setMatrixAt(slot, c.two && FIGURE_SIZE.value < SCALE ? this.m.copy(d.matrix).multiply(this.life.makeScale(FIGURE_SIZE.value / SCALE, FIGURE_SIZE.value / SCALE, FIGURE_SIZE.value / SCALE)) : d.matrix);
         const roll = m.geometry.getAttribute('roll') as THREE.InstancedBufferAttribute | undefined;
@@ -2481,12 +2514,12 @@ export class CarPool {
           travel.angle = (travel.angle - distance / fit.radius) % (2 * Math.PI);
           travel.x = c.x; travel.y = c.y;
           const speed = c.forwardSpeed;
-          const steer = Math.abs(speed) > 0.25 ? clamp(Math.atan(c.w * fit.wheelbase / speed), -0.55, 0.55) : 0;
+          const steer = suspension?.steer ?? (Math.abs(speed) > 0.25 ? clamp(Math.atan(c.w * fit.wheelbase / speed), -0.55, 0.55) : 0);
           const occupied = c.mode === 'player' || c.mode === 'traffic' || (c.mode === 'police' && c.crew);
           // Direction retains the rotation; its length on the coachwork page
           // carries ignition and speed to the dashboard without a ninth vertex buffer.
           const dial = k === STREET_SEDAN && occupied ? 2 + Math.min(1, Math.abs(speed) * 3.6 / 240) : 1;
-          roll.setXYZW(slot, dial * Math.cos(travel.angle), dial * Math.sin(travel.angle), Math.sin(steer) + (k === STREET_SEDAN ? 2 * Math.round(twist / .0025) : 0), travel.plate);
+          roll.setXYZW(slot, dial * Math.cos(travel.angle), dial * Math.sin(travel.angle), Math.sin(steer) + 2 * Math.round(twist / .0025), suspension ? -travel.plate : travel.plate);
           // In VR you sit in the driver's seat yourself: no driver there, and your eyes where theirs would be.
           if (c === VR_SEAT.car && fit.layout) {
             const l = fit.layout, pelvis = l[3] + 0.205;
@@ -2498,7 +2531,7 @@ export class CarPool {
           this.drivers?.putAt(driverSeat[0], driverSeat[1], driverSeat[2], driverSeat[3], 0, false, d.matrix);
         }
         if (under && !c.two && shaded < UNDER.most) {
-          under.setMatrixAt(shaded++, this.m.copy(d.matrix).multiply(this.life.makeScale(c.spec.L, 1, c.spec.W)));
+          under.setMatrixAt(shaded++, this.m.copy(suspension ? this.springGround : d.matrix).multiply(this.life.makeScale(c.spec.L, 1, c.spec.W)));
           sum += c.x * 1.37 + c.y * 0.73 + c.h * 11 + d.matrix.elements[13] * 3.1;
         }
         let paint = this.colours.get(c.paint);

@@ -1,4 +1,4 @@
-import { firstPersonOptions, setFirstPersonOptions, vrSupported, type FirstPersonOptions, type PlayerView } from './streetView.ts';
+import { firstPersonOptions, setFirstPersonOptions, vrSupported, type CarHandling, type FirstPersonOptions, type PlayerView } from './streetView.ts';
 import { LANGS, getLang, onLang, setLang, t } from './i18n.ts';
 import type { Lang } from './i18n.ts';
 import type { Graphics, Choice, Reflections } from './graphics.ts';
@@ -263,6 +263,12 @@ export function setupSettings({ sound, graphics, weather, saves, cameraChoice }:
   relabel.push(() => { motionTitle.textContent = t('Walking camera'); });
   motion.onchange = () => setFirstPersonOptions({ motion: motion.value as FirstPersonOptions['motion'] });
   refresh.push(() => { motion.value = firstPersonOptions.motion; });
+  const handlingRow = row<CarHandling>('Car handling', [
+    { id: 'classic', label: () => t('Classic') },
+    { id: 'realistic', label: () => t('Realistic (experimental)') },
+  ], () => firstPersonOptions.handling, handling => setFirstPersonOptions({ handling }));
+  const handlingNote = el('p', 'settings-note', handlingRow);
+  relabel.push(() => { handlingNote.textContent = t('Realistic handling gives cars, vans and pickups more gradual acceleration, longer stops and body roll in first and third person.'); });
   row('Minimap', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (minimapOn() ? 'on' : 'off'), (id) => setMinimap(id === 'on'));
   row<TunnelView>('Tunnels', TUNNEL_VIEWS.map((v) => ({ id: v, label: () => t(TUNNEL_LABEL[v]) })), tunnelView, setTunnelView);
   row<Reflections>('Wet streets', [{ id: 'none', label: () => t('No reflections') }, { id: 'lights', label: () => t('Lights reflect') }, { id: 'mirror', label: () => t('Full mirror (demanding)') }], () => graphics.reflections, (id) => graphics.setReflections(id));

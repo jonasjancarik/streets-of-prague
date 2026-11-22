@@ -18,7 +18,7 @@ if (!['prepare', 'capacity', 'render', 'all'].includes(selected)) {
 const checks = `(async () => {
   const d = window.__drive, pool = d.carPool, r = d.renderer;
   const loadedModule = (path) => performance.getEntriesByType('resource').filter(e => new URL(e.name).pathname === path).at(-1)?.name || path;
-  const { Car, ordinaryCarBodies, COURIER_BOXES } = await import(loadedModule('/src/car.ts'));
+  const { Car, ordinaryCarBodies, COURIER_BOXES, WHEEL_LEVEL } = await import(loadedModule('/src/car.ts'));
   const THREE = await import(loadedModule('/node_modules/.vite/deps/three.js'));
   const assert = (ok, message) => { if (!ok) throw new Error(message); };
   const page = (key) => pool.meshes.get(key)?.[0];
@@ -244,6 +244,30 @@ const checks = `(async () => {
       assert(page(c.key).count === 1 && !detailed.visible && !c.streetHeadlights,c.key + ' uses the original distant body');
       visible(c,5,false);
       assert(page(c.key).count === 1 && !detailed.visible,c.key + ' uses the original overhead body');
+    }
+    // The sprung chassis and its driver tilt; all four wheel contacts stay on
+    // the terrain. Exercise the hero and the ordinary close-wheel shader inputs.
+    const { ROLL_CENTRE } = await import(loadedModule('/src/streetHandling.ts'));
+    for (const type of ['sedan', 'suv']) {
+      const car = new Car(type, () => .2), parked = new Car(type, () => .2, 5, 0);
+      car.mode = 'player'; car.vx = 14;
+      for (let i = 0; i < 60; i++) car.update(1/60,{throttle:.2,steer:1,handbrake:false},{at:()=>0},true);
+      assert(car.suspension.roll > .05, type + ' chassis has taken a set');
+      Object.assign(car, {x:0,y:0,h:0});
+      const bump = (x,y) => x>0 && y>0 ? .12 : 0;
+      pool.render([car, parked],bump,0,1,true,eye);
+      const active = page(type === 'sedan' ? heroKey : modelKey(car)), attr = active.geometry.attributes.roll;
+      assert(attr.getW(0)<0 && attr.getW(1)>0,type + ' suspension applies only to the player instance');
+      const matrix = new THREE.Matrix4(); pool.matrixOf(car,matrix);
+      const q = new THREE.Quaternion().fromArray(WHEEL_LEVEL.value.toArray()), pivot = new THREE.Vector3(0,ROLL_CENTRE,0);
+      const hinge = active.geometry.attributes.hinge, hubs = new Map();
+      for(let i=0;i<hinge.count;i++) if(hinge.getZ(i)<0) hubs.set(hinge.getX(i)+','+hinge.getY(i), [hinge.getX(i),hinge.getY(i)]);
+      assert(hubs.size===4,type+' has four wheel contacts');
+      for(const [x,z] of hubs.values()) {
+        const warp = Math.sign(-x*z) * Math.floor((attr.getZ(0)+1)/2)*.0025;
+        const contact = new THREE.Vector3(x,warp,z).sub(pivot).applyQuaternion(q).add(pivot).applyMatrix4(matrix);
+        assert(Math.abs(contact.y-bump(x,-z))<.003,type+' wheel clears the road by '+contact.y);
+      }
     }
     const rig = new Car('ambulance', () => .3, 19, 27, .5);
     const matrix = new THREE.Matrix4();

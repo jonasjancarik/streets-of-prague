@@ -1067,6 +1067,7 @@ async function main() {
     [walker.x, walker.y] = spot || (walker.level ? [c.x, c.y] : nearestWalkable(grid, c.x, c.y));
     walker.h = c.h;
     c.mode = 'loose';
+    c.suspension = undefined;
     c.treeEscape = undefined;
     c.rider = null;
     c.setBox(); // (the bag you carry goes back on your back)
@@ -2212,16 +2213,17 @@ async function main() {
     if (!footView && gaitActive) gait.reset();
     gaitActive = footView;
     if (inCar) {
+      const realistic = firstPersonOptions.handling === 'realistic' && !!testkit?.eyes && !testkit.cam && !vrView;
       let steer = ctl.aim ? steerToward(inCar, ctl.aim.h, ctl.move) : ctl.turn;
       if (ctl.run) {
-        const a = assist.steer(inCar, steer);
+        const a = assist.steer(inCar, steer, realistic ? inCar.suspension : undefined);
         if (a !== null) { steer = a; assisted = true; }
       } else assist.reset();
       held = ctl.aim && !assisted ? { h: ctl.aim.h, throttle: ctl.move, handbrake: ctl.brake } : null;
       // Keeping to the lane, you keep to the speed limit too.
       const cap = assisted ? (assist.limit ?? 50) / 3.6 : null;
       inCar.touchDriving = touch.active;
-      const hit = inCar.update(dt, { throttle: ctl.move, steer, handbrake: ctl.brake, cap }, grid);
+      const hit = inCar.update(dt, { throttle: ctl.move, steer, handbrake: ctl.brake, cap }, grid, realistic);
       if (hit > 6) { shake = Math.min(1.2, shake + hit * 0.04); hapticCrash(hit); }
       jolt = hit;
     } else if (!scripted && !arrest.active && !inHeli && !ride.on && !boats.me && !funicular.me && !ferries.me && !passenger()) {
@@ -3152,7 +3154,13 @@ async function main() {
       if (vehicle) {
         // (A new vehicle, or after a teleport, starts straight behind it.)
         if (chased !== vehicle) { chased = vehicle; chaseH = vehicle.h; }
-        chaseH += Math.atan2(Math.sin(vehicle.h - chaseH), Math.cos(vehicle.h - chaseH)) * Math.min(1, dt * 3);
+        let followHeading = vehicle.h;
+        if (inCar?.suspension && inCar.forwardSpeed > 3) {
+          // Let the car turn across the view in a slide, with the road ahead still in sight.
+          const slip = turnOf(inCar.h, Math.atan2(inCar.vy, inCar.vx));
+          followHeading += .55 * clamp(slip, -.85, .85);
+        }
+        chaseH += turnOf(chaseH, followHeading) * Math.min(1, dt * 3);
         const len = inCar ? inCar.spec.L : 14, tall = inCar ? inCar.spec.H : 4;
         // Like a driving game's chase camera: high enough to see the road over the roof,
         // the car in the lower third of the picture.
