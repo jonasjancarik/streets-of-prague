@@ -65,10 +65,10 @@ def side_width(x, z):
     h = (z - sill(x)) / (belt(x) - sill(x))
     # Lower door tuck, taut shoulder crease, and flared metal around the tyres.
     w = curve(WIDTH, x) - 0.065 * (1 - smooth(h / 0.32)) - 0.074 * smooth((h - 0.775) / 0.225) ** 1.65
-    w -= 0.019 * math.exp(-(((h - 0.45) / 0.18) ** 2))
+    w -= 0.027 * math.exp(-(((h - 0.43) / 0.20) ** 2))
     w += 0.010 * math.exp(-(((h - 0.78) / 0.052) ** 2))
     radial = min(math.hypot(x - a, z - 0.31) for a in AXLES)
-    return w + 0.011 * math.exp(-(((radial - ARCH - 0.025) / 0.048) ** 2))
+    return w + 0.019 * math.exp(-(((radial - ARCH - 0.029) / 0.060) ** 2))
 
 
 def sidepoint(x, z, s, depth=0):
@@ -128,7 +128,7 @@ def deck(s, t, q):
     x = lerp(a, b, t)
     z = belt(x)
     h = z + lerp(0.030 if s > 0 else 0.042, crown(s, 0), t) * (1 - q * q)
-    ridge = (0.020 if s > 0 else 0.008) * math.sin(math.pi * t) ** 0.8
+    ridge = (0.027 if s > 0 else 0.008) * math.sin(math.pi * t) ** 0.8
     h += ridge * (math.exp(-(((abs(q) - lerp(0.67, 0.49, t)) / 0.115) ** 2)) - 0.32 * (1 - q * q))
     if s < 0:
         h += 0.015 * math.exp(-(((t - 0.84) / 0.13) ** 2)) * (1 - q * q)
@@ -140,16 +140,16 @@ def deck(s, t, q):
 
 def sideglass(u, v, s):
     x0 = lerp(XA, XD, u)
-    x1 = lerp(XB, XC, u) - 0.028 * math.sin(math.pi * u)
+    x1 = lerp(XB + .062, XC - .13, u) - .044 * math.sin(math.pi * u)
     y0 = side_width(x0, belt(x0))
-    y1 = 0.654 + 0.027 * math.sin(math.pi * u)
-    z1 = 1.345 + 0.063 * math.sin(math.pi * u)
+    y1 = .642 + .041 * math.sin(math.pi * u) - .021*u**3
+    z1 = 1.327 + .082 * math.sin(math.pi * u) - .032*u**3
     return (lerp(x0, x1, v), s * (lerp(y0, y1, v) + 0.026 * math.sin(math.pi * v)), lerp(belt(x0), z1, v))
 
 
 def roof(t, q):
     x, w, z = sideglass(t, 1, 1)
-    return (x + 0.085 * (1 - 2 * t) * (1 - q * q), q * w, z + 0.032 * (1 - q * q) + 0.030 * (1 - q**10))
+    return (x + 0.104 * (1 - 2 * t) * (1 - q * q), q * w, z + .027 * (1 - q * q) + .040 * (1 - q**8))
 
 
 def screen(s, u, v):

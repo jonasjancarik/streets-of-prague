@@ -250,6 +250,9 @@ def bake_occlusion(objects):
         mesh = obj.data
         # The game needs one neutral factor, not four exported colour channels.
         cavity = mesh.attributes.new(name="_CAVITY", type="FLOAT", domain="POINT")
+        # Editing a mesh attribute invalidates Blender's cached vertex normals.
+        # Finish tracing the whole object before writing any of its cavity values.
+        values = [0.0] * len(mesh.vertices)
         for v in mesh.vertices:
             n = v.normal.normalized()
             p = obj.matrix_world @ v.co + n * 0.0018
@@ -261,4 +264,5 @@ def bake_occlusion(objects):
                 if hit[0] is not None:
                     blocked += (1 - hit[3] / 0.23) ** 1.4
             ao = 1 - 0.60 * blocked / len(rays)
-            cavity.data[v.index].value = round(ao * 128) / 128
+            values[v.index] = round(ao * 128) / 128
+        cavity.data.foreach_set("value", values)
