@@ -104,6 +104,7 @@ export const CS: Record<string, string> = {
   'VR couldn’t start. Try again.': 'VR se nepodařilo spustit. Zkus to znovu.',
   'Put the phone in a VR headset. You walk the way you look: steer with a gamepad, or look straight down for a moment to start or stop walking.': 'Vlož telefon do brýlí pro VR. Jdeš tam, kam se díváš: řídíš herním ovladačem, nebo se na chvíli podívej přímo dolů a vyrazíš či zastavíš.',
   'Minimap': 'Minimapa',
+  'Motion blur when driving': 'Rozmazání pohybem při jízdě',
   'With the stick only, you drive with one thumb: push further to go faster, point behind the car to brake and turn round, let go to coast.': 'Jen s pákou řídíš jedním palcem: čím víc ji vychýlíš, tím rychleji jedeš, když ji namíříš za auto, zabrzdíš a otočíš se, a když ji pustíš, auto dojede samo.',
   Tunnels: 'Tunely',
   'Usual view': 'Běžný pohled',

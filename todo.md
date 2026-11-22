@@ -119,6 +119,15 @@ two sections) and the handbook; before and after pictures in `screenshots/beauti
   (10 sides to a head). A finer figure for first person is the biggest thing left there: a
   second mesh on the same skeleton in `assets/figures/build.py`, baked and pooled beside the
   first in `src/figures.ts` (its animation textures are per vertex, so it needs its own).
+- [ ] The look by hour and weather (`lookAt`, `src/grade.ts`) is mild and was only judged in
+  Vodičkova on Ultra; not from above over greenery or water, not in snow or mist. The fog's
+  and rain's colours, worked back through the tone curve, don't allow for it. The old WebGL
+  renderer doesn't have it. The tone curve is no longer a shader function of its own (the
+  look's uniforms didn't reach one); no cost seen on the M5 or the Pixel 5.
+- [ ] Motion blur when driving: other traffic is blurred as if standing still, the blur ignores
+  a turning camera, and it was tuned in one street at 80–90 km/h in third person; first person
+  through the windscreen, night and the helicopter were not looked at. On the Pixel 5 the tiers
+  that have it (High, Ultra) run at 2–3 fps from the street with or without it.
 - [ ] Raised kerbs (`src/kerbDrop.ts`): the height is made up (12 cm everywhere) and no kerb is
   dropped at a crossing or a driveway. Where the map's driving line runs over a pavement
   corner or a traffic island (Divadelní at 50.0799), traffic now bumps over it. Kerbs

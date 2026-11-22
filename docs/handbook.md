@@ -171,6 +171,7 @@ Graphics (<kbd>G</kbd> cycles it, remembered in the browser):
 | Lamps' light map | 2048² | 1024² | 1024² | 1024² | 1024² |
 | Cones of light in the air, glints on cars and wet ground (WebGPU) | On | On | Off | Off | Off |
 | Bloom round lights and glints, darker corners (WebGPU) | On | On | Off | Off | Off |
+| Motion blur when driving, from the street (WebGPU) | On | On | Off | Off | Off |
 | Waves and glitter on the river, until you choose | On | On | On | On | Off |
 | Sprays of leaves and needles on trees and shrubs seen from above | On | On | Off | Off | Off |
 | Shadows that soften with distance from what casts them | On | Off | Off | Off | Off |
@@ -203,12 +204,30 @@ is properly dark. The numbers are in one place for the WebGPU tone-mapping node
 the screen (fog, rain, smoke). `?grade=old` brings back the curve before it (an extended
 Reinhard, under which everything sunlit sat on the shoulder and read as flat).
 
+Over the curve lies a look that changes with the hour and the weather (`lookAt` in
+`src/grade.ts`; WebGPU only, at every tier with the curve): the dark end of the picture
+is tinted one way and the light end another, colours are made a little stronger or weaker
+and the middle steepened. Broad daylight is close to neutral; a low sun has warmer
+lights over cooler shade; dusk and dawn are bluer; night is blue in the dark with warm
+lamplight; under cloud, in rain, snow or mist the colours are weaker and flatter. All
+within a few per cent. `?look=off` leaves it out.
+
 On High and Ultra the frame goes through one more pass (`src/webgpu/post.ts`, three.js's
 `RenderPipeline`): the scene is drawn to a target of its own, what is brighter than a
 threshold spills light round itself (bloom: by day only glints and the brightest plaster,
 at night the lamps' pools, lit windows and headlights), then the tone curve runs and the
 corners are darkened a little. The bloom's first copy is a quarter of the picture's width.
 `?post=on|off` overrides the tier for one visit.
+
+Driving faster than 30 km/h in first or third person, that pass also blurs the picture
+along the way the street moves across it (full strength from about 100 km/h): from the
+picture's depth and the vehicle's speed it works out where each point was a moment
+before and reads the picture eight times along that line. Your own vehicle and the road
+far ahead stay sharp, and turning the camera blurs nothing. Other traffic is smeared as
+if it stood still, so a car keeping pace beside you is blurred too. It can be turned off
+in Settings (Motion blur when driving); `?motionblur=off` does so for one visit and
+`=full` gives its full strength at any speed. Not on foot, from above, on Medium and
+below, or with the WebGL renderer.
 
 Photo mode (<kbd>C</kbd>, `src/photo.ts`) stops the game, clears the screen of everything
 but the picture and frees the camera: drag to move, scroll to zoom, right-drag or the

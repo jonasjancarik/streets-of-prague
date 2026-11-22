@@ -15,6 +15,7 @@ import { updateNotice } from './update.ts';
 import { hapticsOn, setHaptics } from './haptics.ts';
 import { touchDrive, setTouchDrive } from './touch.ts';
 import { minimapOn, setMinimap } from './minimap.ts';
+import { motionBlurOn, setMotionBlur } from './post.ts';
 import type { TouchDrive } from './touch.ts';
 import { TUNNEL_VIEWS, tunnelView, setTunnelView } from './tunnelView.ts';
 import type { TunnelView } from './tunnelView.ts';
@@ -269,6 +270,7 @@ export function setupSettings({ sound, graphics, weather, saves, cameraChoice }:
   ], () => firstPersonOptions.handling, handling => setFirstPersonOptions({ handling }));
   const handlingNote = el('p', 'settings-note', handlingRow);
   relabel.push(() => { handlingNote.textContent = t('Realistic handling gives cars, vans and pickups more gradual acceleration, longer stops and body roll in first and third person.'); });
+  row('Motion blur when driving', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (motionBlurOn() ? 'on' : 'off'), (id) => setMotionBlur(id === 'on'));
   row('Minimap', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (minimapOn() ? 'on' : 'off'), (id) => setMinimap(id === 'on'));
   row<TunnelView>('Tunnels', TUNNEL_VIEWS.map((v) => ({ id: v, label: () => t(TUNNEL_LABEL[v]) })), tunnelView, setTunnelView);
   row<Reflections>('Wet streets', [{ id: 'none', label: () => t('No reflections') }, { id: 'lights', label: () => t('Lights reflect') }, { id: 'mirror', label: () => t('Full mirror (demanding)') }], () => graphics.reflections, (id) => graphics.setReflections(id));
