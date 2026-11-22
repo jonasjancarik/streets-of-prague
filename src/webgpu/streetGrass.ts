@@ -11,7 +11,7 @@ import { GRASS_SEASON } from '../groundSeason.ts';
 import { TREE_SWAY } from '../shading.ts';
 import { GRASS_FADE, GRASS_REACH, GRASS_THIN, setGrassMaterial } from '../streetGrass.ts';
 import { lampLit } from './lamps.ts';
-import { type N, followVec, uWet, uSnow, vnoise, hash12 } from './common.ts';
+import { type N, followVec, uWet, uSnow, vnoise } from './common.ts';
 
 const uSway: N = followVec(TREE_SWAY), uSeason: N = followVec(GRASS_SEASON.park);
 // The lawn's green as the ground draws it (COLORS.park in ground.ts, linear light), a little livelier.
@@ -51,7 +51,7 @@ function material() {
   // The picture's lower half is a solid mass of blades, and a card of that is a green board
   // on the lawn. So the card is cut into blades of its own as well: narrow columns across
   // it, two in five of them left out and the rest ending at heights of their own.
-  const column: N = floor(uv().x.mul(150)), cut: N = hash12(vec2(column, floor(tone.mul(97))));
+  const column: N = floor(uv().x.mul(150)), cut: N = fract(sin(column.mul(127.1).add(floor(tone.mul(97)).mul(311.7))).mul(43758.5453));
   const stands: N = step(0.4, cut).mul(step(up, fract(cut.mul(7.7)).mul(0.75).add(0.3)));
   m.opacityNode = p.a.mul(stands);
   m.alphaTest = 0.3;
