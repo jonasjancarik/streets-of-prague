@@ -3,8 +3,10 @@
 //
 // The buildings of the drawn tiles are rasterised into a height grid (2 m cells: the
 // top of their walls, a cell in from their outlines, passages and buildings a landmark
-// replaces cut out). From the camera a sweep over that grid works out, for every cell
-// within reach, the lowest height at which something there can be seen. Each frame
+// replaces cut out). A worker sweeps over that grid from the camera (occlusionSweep.ts)
+// and works out, for every cell within reach, the lowest height at which something
+// there can be seen, from anywhere within a few metres of the eye: the result holds
+// while the eye moves on and the next one is worked out. Each frame
 // every tile mesh, every instanced batch (all of whose instances must be hidden) and
 // every other mesh is tested against it; what is hidden leaves the main pass (layer 0)
 // but keeps casting shadows (CAST_LAYER, which only the sun's shadow camera sees).
@@ -17,16 +19,21 @@ import * as THREE from 'three';
 import type { Bounds, Point2 } from './map/geo.ts';
 import type { TileJSON } from './contracts.ts';
 import { CAST_LAYER } from './figures.ts';
+import { CELL, N, SECTORS, LEVELS, type SweepResult } from './occlusionSweep.ts';
+import type { CullMessage } from './occlusionWorker.ts';
 
-const CELL = 2; // metres a cell of the occluder grid
-const REACH = 400; // as far as the street views draw (EYES_REACH in main.ts)
-const N = Math.ceil((2 * REACH) / CELL) + 1; // cells a side of the sweep's window
-const HALF = (N - 1) / 2;
 const SQUARE = 31.25; // the squares a tile mesh's tops are kept for (64 a tile)
 const MARGIN = 0.5; // metres added to every top
-const RESWEEP = 1; // metres the eye may move before the sweep is done again
 const PITCHED_EAVES = 0.65; // a pitched roof's eaves, as a share of the building's height
-const SECTORS = 1024; // directions round the eye for what lies beyond the window
+// How far the eye may be from where a sweep was asked for and still use it (the sweep
+// runs in a worker and comes back a frame or so later): sideways and up or down. Each
+// sweep is asked for from where the eye will be in the frame that uses it, so this only
+// has to cover how the movement differs from that guess. Anything above zero shrinks the
+// buildings by a cell (scripts/hidden-draws.js `shift` checks it).
+const SLACK = 0.5;
+const RISE = 0.5;
+// How far the eye moves before the next sweep is asked for.
+const REASK = 0.1;
 
 // What this needs of a tile (TileWorld's own type isn't exported).
 export interface CullTile {
@@ -39,23 +46,23 @@ export interface CullWorld { loaded: Map<string, CullTile>; terrainAt(x: number,
 const SHADOW = 1 << CAST_LAYER;
 
 export class Culler {
-  // The sweep's result: the lowest height seen in each cell (-Infinity: anything),
-  // and its minimums over blocks of 4, 16 and 64 cells for quick box tests.
-  private seen = new Float32Array(N * N);
-  private occ = new Float32Array(N * N);
-  private slope = new Float32Array(N * N);
-  private mins: { b: number; n: number; v: Float32Array }[] = [4, 16, 64].map((b) => ({ b, n: Math.ceil(N / b), v: new Float32Array(Math.ceil(N / b) ** 2) }));
-  private x0 = 0; private y0 = 0; // the window's lower corner (game metres)
-  // Beyond the window: for each of SECTORS directions round the eye, the lowest slope
-  // of the window's edge cells that way. Anything further that way has to climb at
-  // least that slope to be seen (whatever lies beyond the edge only hides more).
-  private horizon = new Float32Array(SECTORS);
-  private ex = 0; private ey = 0; private ez = 0;
+  // The latest sweep back from the worker (occlusionSweep.ts), and its tiles.
+  private result: SweepResult | null = null;
+  private resultKeys: string[] = [];
+  private mins: { b: number; n: number; v: Float32Array }[] = [];
+  private worker = new Worker(new URL('./occlusionWorker.ts', import.meta.url), { type: 'module' });
+  private asked = 0; // the id of the last sweep asked for
+  private pending = false;
+  private askedAt = { x: NaN, y: NaN, z: NaN, tiles: '' };
+  private askTime = 0;
+  // The eye's speed (metres a millisecond, smoothed) and how long a sweep takes to come back.
+  private last = { x: NaN, y: NaN, z: NaN, t: 0 };
+  private v = { x: 0, y: 0, z: 0 };
+  private trip = 30;
+  private frameMs = 30;
+  private posted = new Map<CullTile, string>(); // the tiles the worker has
   // Where the squares a tile mesh's tops are kept for start (the tiles' own grid).
   private sq: Point2 | null = null;
-  private eye = new THREE.Vector3(NaN, NaN, NaN);
-  private swept = false;
-  private sweptTiles = '';
   private tileOcc = new WeakMap<CullTile, Float32Array>();
   private tops = new WeakMap<THREE.Object3D, Float32Array>();
   private verdicts = new Map<THREE.Object3D, boolean>();
@@ -66,9 +73,22 @@ export class Culler {
   private frame = 0;
   // Off for comparing (bench.mjs --ab): everything drawn as without ?cull.
   enabled = true;
-  readonly stats = { active: false, culled: 0, tested: 0, sweepMs: 0, testMs: 0, sweeps: 0 };
+  // No new sweeps (scripts/hidden-draws.js checks a result from an eye moved off it).
+  hold = false;
+  slack = SLACK; rise = RISE;
+  readonly stats = { active: false, culled: 0, tested: 0, sweepMs: 0, testMs: 0, sweeps: 0, postMs: 0, frames: 0, waits: 0 };
 
-  constructor(private scene: THREE.Scene, private world: CullWorld) {}
+  constructor(private scene: THREE.Scene, private world: CullWorld) {
+    this.worker.onmessage = (e: MessageEvent<{ id: number; keys: string[]; result: SweepResult }>) => {
+      if (e.data.id === this.asked) { this.pending = false; this.trip += (performance.now() - this.askTime - this.trip) * 0.3; }
+      const r = e.data.result;
+      this.result = r.ok ? r : null;
+      this.resultKeys = e.data.keys;
+      this.mins = LEVELS.map((b, l) => ({ b, n: Math.ceil(N / b), v: r.mins[l] }));
+      this.stats.sweepMs = r.ms;
+      this.stats.sweeps++;
+    };
+  }
 
   // What is left out now (for scripts/hidden-draws.js and the developer panel).
   culled() { return [...this.masks.keys()]; }
@@ -76,20 +96,30 @@ export class Culler {
   update(camera: THREE.Camera, active: boolean) {
     this.stats.active = false;
     if (!active || !this.enabled) { this.restoreAll(); return; }
-    const eye = camera.getWorldPosition(new THREE.Vector3());
+    this.stats.frames++;
+    const eye = camera.getWorldPosition(SPOT);
     const ex = eye.x, ey = -eye.z, ez = eye.y;
     if (!(ez > this.world.terrainAt(ex, ey) - 0.5)) { this.restoreAll(); return; }
+    const now = performance.now(), l = this.last, dt = now - l.t;
+    if (dt > 0 && dt < 500 && Number.isFinite(l.x) && Math.hypot(ex - l.x, ey - l.y, ez - l.z) < dt * 0.1) {
+      const k = Math.min(1, dt / 150), v = this.v;
+      v.x += ((ex - l.x) / dt - v.x) * k; v.y += ((ey - l.y) / dt - v.y) * k; v.z += ((ez - l.z) / dt - v.z) * k;
+      this.frameMs += (dt - this.frameMs) * 0.1;
+    } else this.v = { x: 0, y: 0, z: 0 }; // (standing, or a jump: a teleport)
+    this.last = { x: ex, y: ey, z: ez, t: now };
     const tiles = [...this.world.loaded.values()].filter((t) => t.drawn && t.drawn.group.parent && t.drawn.own.every((m) => m.visible));
-    const key = tiles.map((t) => t.box[0] + ',' + t.box[1]).join(';');
-    if (!this.swept || key !== this.sweptTiles || Math.abs(ex - this.eye.x) > RESWEEP || Math.abs(ey + this.eye.z) > RESWEEP || Math.abs(ez - this.eye.y) > RESWEEP) {
-      const s0 = performance.now();
-      this.swept = this.sweep(tiles, ex, ey, ez);
-      this.sweptTiles = key;
-      this.eye.copy(eye);
-      this.stats.sweepMs = performance.now() - s0;
-      this.stats.sweeps++;
+    const keys = tiles.map((t) => t.box[0] + ',' + t.box[1]), key = keys.join(';');
+    // Where the eye will be in the frame that uses the sweep: the first one after it
+    // comes back (the next is asked for then).
+    const lead = Math.max(1, Math.ceil(Math.min(this.trip, 500) / this.frameMs)) * this.frameMs;
+    const ax = ex + this.v.x * lead, ay = ey + this.v.y * lead, az = ez + this.v.z * lead;
+    const a = this.askedAt;
+    if (!this.hold && !this.pending && (key !== a.tiles || Math.hypot(ax - a.x, ay - a.y) > REASK || Math.abs(az - a.z) > this.rise / 4)) {
+      this.ask(tiles, keys, ax, ay, az);
+      this.askedAt = { x: ax, y: ay, z: az, tiles: key };
+      this.askTime = now;
     }
-    if (!this.swept) { this.restoreAll(); return; }
+    if (!this.usable(ex, ey, ez, keys)) { this.stats.waits++; this.restoreAll(); return; }
     this.stats.active = true;
     if (this.frame++ % 30 === 0 || !this.candidates.length) this.gather();
     const c0 = performance.now();
@@ -246,21 +276,22 @@ export class Culler {
   // The lowest height seen anywhere in a box (game metres, x and y north); -Infinity
   // where any of it is outside the window.
   private minSeen(x0: number, y0: number, x1: number, y1: number): number {
-    const i0 = Math.floor((x0 - this.x0) / CELL), j0 = Math.floor((y0 - this.y0) / CELL);
-    const i1 = Math.floor((x1 - this.x0) / CELL), j1 = Math.floor((y1 - this.y0) / CELL);
+    const r = this.result!;
+    const i0 = Math.floor((x0 - r.x0) / CELL), j0 = Math.floor((y0 - r.y0) / CELL);
+    const i1 = Math.floor((x1 - r.x0) / CELL), j1 = Math.floor((y1 - r.y0) / CELL);
     if (i0 < 0 || j0 < 0 || i1 >= N || j1 >= N) {
       const beyond = this.beyond(x0, y0, x1, y1);
       if (beyond === -Infinity) return beyond;
       const ci0 = Math.max(0, i0), cj0 = Math.max(0, j0), ci1 = Math.min(N - 1, i1), cj1 = Math.min(N - 1, j1);
       if (ci0 > ci1 || cj0 > cj1) return beyond;
-      return Math.min(beyond, this.minSeen(this.x0 + ci0 * CELL, this.y0 + cj0 * CELL, this.x0 + ci1 * CELL + CELL * 0.5, this.y0 + cj1 * CELL + CELL * 0.5));
+      return Math.min(beyond, this.minSeen(r.x0 + ci0 * CELL, r.y0 + cj0 * CELL, r.x0 + ci1 * CELL + CELL * 0.5, r.y0 + cj1 * CELL + CELL * 0.5));
     }
     const span = Math.max(i1 - i0, j1 - j0) + 1;
     let level = null as null | { b: number; n: number; v: Float32Array };
     for (const l of this.mins) if (span >= l.b * 4) level = l;
     let low = Infinity;
     if (!level) {
-      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const v = this.seen[j * N + i]; if (v < low) low = v; }
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const v = r.seen[j * N + i]; if (v < low) low = v; }
       return low;
     }
     const { b, n, v } = level;
@@ -274,9 +305,11 @@ export class Culler {
   // The lowest height seen in a box that reaches beyond the window, from the horizon
   // in the directions it lies in: the eye's height plus the slope times the distance
   // (the nearest corner's when the slope climbs, the furthest's when it falls).
+  // (Distances from the eye the sweep was from, which hold for the eye anywhere near:
+  // see occlusionSweep.ts. A box within that reach of the eye isn't worked out.)
   private beyond(x0: number, y0: number, x1: number, y1: number): number {
-    const { ex, ey, ez } = this;
-    if (ex >= x0 && ex <= x1 && ey >= y0 && ey <= y1) return -Infinity;
+    const r = this.result!, { ex, ey, slack } = r, ez = r.ez + r.rise;
+    if (ex >= x0 - slack && ex <= x1 + slack && ey >= y0 - slack && ey <= y1 + slack) return -Infinity;
     const near = Math.hypot(Math.max(x0 - ex, 0, ex - x1), Math.max(y0 - ey, 0, ey - y1));
     const far = Math.hypot(Math.max(Math.abs(x0 - ex), Math.abs(x1 - ex)), Math.max(Math.abs(y0 - ey), Math.abs(y1 - ey)));
     const angles = [[x0, y0], [x1, y0], [x0, y1], [x1, y1]].map(([x, y]) => Math.atan2(y - ey, x - ex));
@@ -286,7 +319,7 @@ export class Culler {
     const s0 = Math.floor(((lo / (2 * Math.PI)) + 1) * SECTORS), s1 = Math.floor(((hi / (2 * Math.PI)) + 1) * SECTORS);
     let low = Infinity;
     for (let k = s0; k <= s1; k++) {
-      const h = this.horizon[k % SECTORS];
+      const h = r.horizon[k % SECTORS];
       if (h === -Infinity) return -Infinity;
       const v = ez + h * (h >= 0 ? near : far);
       if (v < low) low = v;
@@ -294,80 +327,45 @@ export class Culler {
     return low;
   }
 
-  // The occluders round the eye from the drawn tiles, then the lowest height seen in
-  // every cell. False when the eye is inside a building or nothing could be worked out.
-  private sweep(tiles: CullTile[], ex: number, ey: number, ez: number): boolean {
-    const occ = this.occ, seen = this.seen, slope = this.slope;
-    // The window, aligned to the cell grid, with the eye in its middle cell.
-    const ci = Math.floor(ex / CELL), cj = Math.floor(ey / CELL);
-    this.x0 = (ci - HALF) * CELL; this.y0 = (cj - HALF) * CELL;
-    this.ex = ex; this.ey = ey; this.ez = ez;
-    occ.fill(-Infinity);
-    for (const t of tiles) {
+  // Sends the worker the tiles it hasn't got and asks for a sweep from the eye.
+  private ask(tiles: CullTile[], keys: string[], ex: number, ey: number, ez: number) {
+    const p0 = performance.now();
+    const now = new Set(tiles);
+    for (const t of this.posted.keys()) if (!now.has(t)) this.posted.delete(t);
+    tiles.forEach((t, k) => {
+      if (this.posted.has(t)) return;
       const [bx0, by0, bx1, by1] = t.box;
-      if (bx1 < this.x0 || by1 < this.y0 || bx0 > this.x0 + N * CELL || by0 > this.y0 + N * CELL) continue;
+      // (Tiles out of the sweep's reach are sent when they come into it.)
+      if (bx1 < ex - N * CELL || by1 < ey - N * CELL || bx0 > ex + N * CELL || by0 > ey + N * CELL) return;
       let grid = this.tileOcc.get(t);
       if (!grid) { grid = this.rasterise(t); this.tileOcc.set(t, grid); }
-      const n = Math.round((bx1 - bx0) / CELL), gi = Math.round((bx0 - this.x0) / CELL), gj = Math.round((by0 - this.y0) / CELL);
-      // (Tiles don't overlap: their rows are copied as they are.)
-      const i0 = Math.max(0, -gi), i1 = Math.min(n, N - gi);
-      if (i0 >= i1) continue;
-      for (let j = Math.max(0, -gj); j < n && gj + j < N; j++) occ.set(grid.subarray(j * n + i0, j * n + i1), (gj + j) * N + gi + i0);
-    }
-    const c = HALF;
-    if (occ[c * N + c] > ez - 0.3) return false;
-    // Rays from the eye to every edge cell of the window, half a cell a step. Each
-    // cell keeps the lowest slope a ray reached it with (the steepest it had to climb
-    // over what lay before), then the ray counts the cell's own occluder. Rays are
-    // closer than a cell everywhere, so every cell is reached; a cell no ray passes
-    // stays at -Infinity (seen).
-    const ox = (ci + 0.5) * CELL - ex, oy = (cj + 0.5) * CELL - ey; // the eye's cell centre from the eye
-    slope.fill(Infinity);
-    this.horizon.fill(Infinity);
-    const ix = c + 0.5 - ox / CELL, iy = c + 0.5 - oy / CELL; // the eye in cell units
-    const ray = (ti: number, tj: number) => {
-      // Cell by cell (a grid walk), each cell the ray passes through once.
-      const dx = ti + 0.5 - ix, dy = tj + 0.5 - iy;
-      const stepI = dx > 0 ? 1 : -1, stepJ = dy > 0 ? 1 : -1;
-      const tdI = dx ? Math.abs(1 / dx) : Infinity, tdJ = dy ? Math.abs(1 / dy) : Infinity;
-      let i = Math.floor(ix), j = Math.floor(iy);
-      let tI = dx ? (dx > 0 ? i + 1 - ix : ix - i) * tdI : Infinity, tJ = dy ? (dy > 0 ? j + 1 - iy : iy - j) * tdJ : Infinity;
-      const len = Math.hypot(dx, dy) * CELL;
-      let run = -Infinity;
-      while (true) {
-        let t: number;
-        if (tI < tJ) { t = tI; tI += tdI; i += stepI; } else { t = tJ; tJ += tdJ; j += stepJ; }
-        if (t > 1 || i < 0 || j < 0 || i >= N || j >= N) break;
-        const p = j * N + i;
-        if (run < slope[p]) slope[p] = run;
-        const o = occ[p];
-        // (Its occluder from the ray's entry into the cell: the nearest it can be.)
-        if (o !== -Infinity) { const v = (o - ez) / Math.max(t * len, 0.5); if (v > run) run = v; }
-      }
-      const a = Math.atan2(dy, dx), q = Math.floor(((a / (2 * Math.PI)) + 1) * SECTORS) % SECTORS;
-      for (const r of [q - 1, q, q + 1]) { const w = (r + SECTORS) % SECTORS; if (run < this.horizon[w]) this.horizon[w] = run; }
-    };
-    for (let e = 0; e < N; e++) { ray(0, e); ray(N - 1, e); ray(e, 0); ray(e, N - 1); }
-    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) slope[(c + dj) * N + c + di] = -Infinity;
-    // (Distances from the eye's cell centre, give or take the eye's place in its cell:
-    // the nearer for a climbing slope, the further for a falling one.)
-    for (let p = 0; p < N * N; p++) {
-      const s = slope[p];
-      seen[p] = s === -Infinity || s === Infinity ? -Infinity : ez + s * (s > 0 ? NEAR[p] : FAR[p]);
-    }
-    // Each level from the one below it (4 cells, then 4 × 4 blocks, …).
-    let below: Float32Array = seen, bn = N, bb = 1;
-    for (const level of this.mins) {
-      const { b, n, v } = level, f = b / bb;
-      v.fill(Infinity);
-      for (let j = 0; j < bn; j++) {
-        const row = Math.floor(j / f) * n;
-        for (let i = 0; i < bn; i++) { const q = row + Math.floor(i / f), x = below[j * bn + i]; if (x < v[q]) v[q] = x; }
-      }
-      below = v; bn = n; bb = b;
-    }
-    return true;
+      this.post({ type: 'tile', key: keys[k], box: [bx0, by0, bx1, by1], grid });
+      this.posted.set(t, keys[k]);
+    });
+    this.post({ type: 'sweep', id: ++this.asked, keys, ask: { ex, ey, ez, slack: this.slack, rise: this.rise } });
+    this.pending = true;
+    this.stats.postMs = performance.now() - p0;
   }
+
+  private post(m: CullMessage) { this.worker.postMessage(m); }
+
+  // Whether the latest sweep holds for the eye: near enough where it was asked for,
+  // not inside a building, and none of the tiles it counted gone.
+  private usable(ex: number, ey: number, ez: number, keys: string[]): boolean {
+    const r = this.result;
+    if (!r || Math.hypot(ex - r.ex, ey - r.ey) > r.slack || Math.abs(ez - r.ez) > r.rise) return false;
+    const w = 2 * r.around + 1;
+    const di = Math.floor(ex / CELL) - Math.floor(r.ex / CELL) + r.around, dj = Math.floor(ey / CELL) - Math.floor(r.ey / CELL) + r.around;
+    if (di < 0 || dj < 0 || di >= w || dj >= w || r.patch[dj * w + di] > ez - 0.3) return false;
+    if (this.resultKeys !== this.checkedKeys) {
+      const now = new Set(keys);
+      this.keysHeld = this.resultKeys.every((k) => now.has(k));
+      this.checkedKeys = this.resultKeys;
+    }
+    return this.keysHeld;
+  }
+  private checkedKeys: string[] = [];
+  private keysHeld = false;
 
   // A tile's buildings as solid columns up to their eaves: a cell in from the outlines,
   // not those that float, are too low or a landmark replaces, with the passages through
@@ -409,13 +407,6 @@ export class Culler {
   }
 }
 
-// Each cell's distance from the window's middle cell, less and plus how far the eye can
-// be from that cell's centre.
-const NEAR = new Float32Array(N * N), FAR = new Float32Array(N * N);
-for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
-  const d = Math.hypot(i - HALF, j - HALF) * CELL;
-  NEAR[j * N + i] = Math.max(0, d - CELL * Math.SQRT1_2); FAR[j * N + i] = d + CELL * Math.SQRT1_2;
-}
 const IDENTITY = new THREE.Matrix4();
 const SPOT = new THREE.Vector3();
 

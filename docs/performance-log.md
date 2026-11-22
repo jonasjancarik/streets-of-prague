@@ -1741,3 +1741,21 @@ On the Pixel 5 (Medium, first person standing on the Old Town Square, `--ab` on
 gained 4.5 % (29.2 °C, 62.5 → 59.7 ms): the tests cost 1.5 ms a frame there, 0.6 ms once
 verdicts were kept until the next sweep. The sweep costs about 15 ms on the phone each
 time the eye has moved a metre; standing, that's rare.
+
+### The culler's sweep in a worker, driving (22 November, evening)
+
+The sweep moved into a worker (`src/occlusionSweep.ts`, `src/occlusionWorker.ts`), asked
+for from where the eye will be in the frame that uses it and safe for an eye within
+0.5 m of that (details in `docs/occlusion-culling.md`). Pixel 5, Medium, first person,
+the drive scene in a sedan with lane assist, `--ab` on `culler.enabled`, 60 s:
+
+| | Run 1 (27.1 °C) | Run 2 (27.7 °C) |
+|---|---|---|
+| Off | 9.0 fps, 116.1 ms, JS 54.1 ms | 8.8 fps, 115.9 ms, JS 47.6 ms |
+| On | 10.0 fps, 101.6 ms, JS 47.1 ms | 9.9 fps, 103.4 ms, JS 48.2 ms |
+| | **12.6 % quicker** | **10.7 % quicker** |
+
+In 31 % of the frames there was no usable sweep (nothing culled), and with a new sweep
+each frame the tests are all done again (19 ms in the last frame measured). Both leave
+room. `bench.mjs` now runs `--eval-after` with `--ab` too.
+

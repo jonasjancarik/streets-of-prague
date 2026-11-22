@@ -101,7 +101,8 @@ Add `&roadjunctions` to load the wider junction trial from the matching
 
 `?cull` is a trial of leaving out what the buildings hide in the street views (first
 person and third person; not yet VR): from the camera, a sweep over the drawn tiles'
-buildings works out how high something must stand to be seen, and tile meshes,
+buildings (in a worker, from where the eye will be) works out how high something must
+stand to be seen, and tile meshes,
 instanced batches and other meshes below that leave the main pass but keep casting
 shadows (`src/occlusion.ts`, `docs/occlusion-culling.md`). Off by default.
 

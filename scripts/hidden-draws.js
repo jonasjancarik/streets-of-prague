@@ -14,6 +14,9 @@
 // and no ground layer hidden only by another ground layer).
 // cull (score the game's culler, ?cull: what it leaves out now, the pixels that change
 // without it, and how much of the hidden set it catches).
+// shift ([east, north] metres, with cull: the eye is moved that far once the culler
+// has its sweep, and no new one is made, to check that a sweep holds for an eye near
+// where it was made).
 // Without place it measures the camera as it is.
 //
 // The live game is held (paused, no frames drawn, shadow maps and shader time frozen,
@@ -42,6 +45,17 @@ if (ARGS.place) {
   t.eyes = ARGS.overhead ? null : { yaw: ARGS.yaw ?? 0, pitch: ARGS.pitch ?? 0, onFoot: !ARGS.drive, third: !!ARGS.third };
   if (ARGS.overhead) t.view(1);
   await sleep((ARGS.settle ?? 8) * 1000);
+}
+let shifted = null;
+if (ARGS.shift && D.culler) {
+  // The eye put that far from where the culler's sweep was made.
+  const [dx, dy] = ARGS.shift, w = D.walker, r = D.culler.result;
+  D.culler.hold = !ARGS.fresh;
+  const e = D.camera.getWorldPosition(new THREE.Vector3());
+  if (r) D.teleport(w.x + r.ex + dx - e.x, w.y + r.ey + dy + e.z);
+  await sleep(500);
+  const f = D.camera.getWorldPosition(new THREE.Vector3()), q = D.culler.result;
+  shifted = q && [f.x - q.ex, -f.z - q.ey, f.y - q.ez].map((v) => Math.round(v * 100) / 100);
 }
 if (ARGS.shot) await t.shot(ARGS.shot);
 
@@ -134,6 +148,7 @@ try {
   const culledNow = ARGS.cull ? (D.culler?.culled() ?? []) : null;
   const cullStats = D.culler ? { ...D.culler.stats } : null;
   D.culler?.restoreAll();
+  if (D.culler) D.culler.hold = false;
   R.setRenderTarget(rt);
   R.render(scene, cam);
   R.setRenderTarget(target);
@@ -213,7 +228,7 @@ try {
         wrongBy.push({ kind: kind(o), name: o.name, pixels: n, centre: [c.x, -c.z, c.y].map(Math.round), size: [z.x, z.z, z.y].map(Math.round), eye: cam.getWorldPosition(new THREE.Vector3()).toArray().map(Math.round) });
       }
     }
-    cull = { wrongPixels: wrong, wrongBy, culled: culledNow.length, culledInView: inView.length, alsoTrulyHidden: inView.filter((o) => hiddenSet.has(o)).length, missed, hiddenInView: hiddenSet.size, notInHiddenSet: extra, stats: cullStats };
+    cull = { wrongPixels: wrong, wrongBy, culled: culledNow.length, culledInView: inView.length, alsoTrulyHidden: inView.filter((o) => hiddenSet.has(o)).length, missed, hiddenInView: hiddenSet.size, notInHiddenSet: extra, stats: cullStats, shifted };
   }
   const near = cam.getWorldPosition(new THREE.Vector3());
   const by = {}, bands = {}, all = { draws: 0, tris: 0, hiddenDraws: 0, hiddenTris: 0 };

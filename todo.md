@@ -278,8 +278,11 @@ before that day's frame-count fix may be doubled.
   measurable on the Pixel 5 standing in first person (held by JavaScript). Leaving out
   every hidden draw in that view (`scripts/cull-ab.js`) made the frame 25 % quicker
   there (63 → 47 ms, JavaScript 44 → 36 ms), so real culling is worth building: a baked
-  visibility table or occlusion queries. Also try `?farground=250` in VR. The first- and third-person drive
-  in `bench.mjs --android` can't get into the car.
+  visibility table or occlusion queries. Also try `?farground=250` in VR. Now `?cull`
+  (`docs/occlusion-culling.md`): the sweep in a worker, 7.7 % quicker standing and
+  11–13 % driving on the Pixel 5. Left: cheaper tests when each frame brings a new sweep,
+  fewer frames without one (31 % driving), VR, countryside, overhead view. On the phone,
+  drive with `--vehicle sedan` (pressing E doesn't always get into the car).
 - **VR on WebGPU:** VR needs the legacy WebGL renderer until Chrome ships the WebXR/WebGPU
   binding. A Cardboard mode drawn by the page itself (both eyes, lens pass, gyroscope)
   would put VR on WebGPU and on iPhone; options and risks in `docs/webgpu-vr.md`.

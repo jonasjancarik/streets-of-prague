@@ -150,9 +150,10 @@ would stay as it is.
   tiles whose buildings are all revealed count.
 - **Sweep**: rays from the eye through every edge cell of an 802 m window, cell by cell;
   each cell keeps the lowest slope a ray reached it with. Beyond the window, the edge
-  cells' slopes in 1024 directions. Done again when the eye has moved 1 m (any way) or
-  the drawn tiles change. No sweep (nothing culled) with the eye inside a building or
-  below the ground.
+  cells' slopes in 1024 directions. In a worker since the evening (below); at first on
+  the main thread, done again when the eye had moved 1 m (any way) or the drawn tiles
+  changed. No sweep (nothing culled) with the eye inside a building or below the
+  ground.
 - **Tests**: tile meshes by their highest point in each 31.25 m square; instanced
   batches by every instance's sphere (a batch with no instances is always left out);
   other frustum-culled meshes by their sphere; near people (skinned) by a sphere round
@@ -170,9 +171,59 @@ Pixel 5, Medium, first person standing on the Old Town Square, `--ab` on
 `culler.enabled`: **7.7 % quicker a frame** (49.1 → 45.3 ms, JavaScript 34.6 → 31.5 ms;
 30.5 °C, no touches). The ceiling with every hidden tile mesh left out was 10 % there.
 
-Not done yet: the sweep in a worker (driving would sweep about 14 times a second, which
-the main thread can't afford on the phone), VR (both eyes), the countryside, the
+Not done yet then: the sweep in a worker (driving would sweep about 14 times a second,
+which the main thread can't afford on the phone), VR (both eyes), the countryside, the
 overhead view, and a check for popping while moving.
+
+### The sweep in a worker
+
+`src/occlusionSweep.ts` runs in `src/occlusionWorker.ts`. The main thread still
+rasterises each tile (it needs the terrain) and sends the grid once; each request
+names the tiles to count, and the worker forgets the rest. A result comes back a frame
+or so after it was asked for, so it is asked for from where the eye will be in the frame
+that uses it (the eye's speed times the frames a round trip takes), and made to hold for
+an eye within 0.5 m sideways and 0.5 m up or down of that guess:
+
+- **Sideways**: a sightline from the moved eye to a target and the one from the
+  original eye pass any occluder at the same share of the way to the target, so the
+  ratio of the distances that decides whether the target shows over it doesn't change.
+  The two lines are never further apart than the eye moved, so the occluders are shrunk
+  by that much more: a cell for anything up to 2 m.
+- **Up**: a higher eye sees more of everything behind the buildings, so the sweep is from
+  the allowance above the eye; a lower one sees less.
+- **Inside a building**: the result carries the grid round the eye, and the main thread
+  checks the eye's own cell before using it.
+
+A result is used only while the eye is within its allowance and none of its tiles has
+gone; otherwise nothing is culled until the next one. The next one is asked for as soon
+as the last is back.
+
+Why 0.5 m and not more: the sweep's rays already pass up to a cell beside the true
+sightline, and the allowance adds to that. At 1.4 m (and the one cell of shrinking it
+gets) people up the slope of Malostranské náměstí were left out while visible (359 and
+1122 pixels in two of 24 views), while a fresh sweep from the moved eye left out
+nothing; 2 m or more shrinks by two cells, which costs most of what is caught. What
+the shrinking costs, in four views (Old Town Square and Karlova, north and south), of
+the truly hidden tile draws caught: none 85/130, 126/170, 288/336, 175/202; one cell
+61/110, 127/207, 258/336, 151/202; two cells 40/110, 89/207, 243/336, 58/202. The vertical
+allowance costs nearly nothing.
+
+Moved by 0.45 m (east, and north-west) from where its sweep was made, in the 24 views:
+**no changed pixel** in 47 (one didn't run), and 58–59 % of the truly hidden tile draws
+caught, against 57–70 % with the sweep on the main thread.
+
+Pixel 5, Medium, first person driving the bench's drive scene (sedan, lane assist,
+about 30 km/h), `--ab` on `culler.enabled`, 60 s, no touches: **12.6 % quicker a frame**
+(116.1 → 101.6 ms, 27.1 °C) and **10.7 %** in a second run (115.9 → 103.4 ms,
+27.7 °C), more than standing. The culler's own figures at the end of the second run:
+the sweep 14 ms in the worker, a round trip 49 ms; in 118 of 379 frames (31 %) the eye
+was outside the result's allowance or none had come back, and those frames culled
+nothing. The last frame's tests took 19 ms: with a new sweep every frame, every verdict
+is worked out again.
+
+Still to do: tests that cost less when every frame brings a new sweep (each 31.25 m
+square's lowest height worked out once a sweep rather than once a mesh), fewer frames
+without a usable sweep, VR (both eyes), the countryside and the overhead view.
 
 ## Order (after the reviews)
 

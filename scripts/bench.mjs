@@ -379,6 +379,10 @@ async function abScene(page, ctx, name, close) {
     if (res.n < 2) { await close(); throw new Error(`[${name}] no game frames in A/B window ${k}; refusing a suspended benchmark`); }
     sums[on ? 'on' : 'off'].push({ fps: res.n / ((Date.now() - t0) / 1000), js: mean(res.js), gpu: res.gpu.length ? mean(res.gpu) : NaN });
   }
+  if (args['eval-after']) {
+    const out = await page.evaluate(args['eval-after']);
+    if (out !== undefined) console.log(typeof out === 'string' ? out : JSON.stringify(out, null, 1));
+  }
   await close();
   const agg = (xs) => ({ fps: mean(xs.map((x) => x.fps)), ms: mean(xs.map((x) => 1000 / x.fps)), js: mean(xs.map((x) => x.js)), gpu: mean(xs.map((x) => x.gpu)), each: xs.map((x) => Math.round(x.fps)).join(' ') });
   const off = agg(sums.off), on = agg(sums.on);
