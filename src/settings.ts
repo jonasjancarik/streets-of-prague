@@ -15,6 +15,7 @@ import { updateNotice } from './update.ts';
 import { hapticsOn, setHaptics } from './haptics.ts';
 import { touchDrive, setTouchDrive } from './touch.ts';
 import { minimapOn, setMinimap } from './minimap.ts';
+import { motionBlurOn, setMotionBlur } from './post.ts';
 import type { TouchDrive } from './touch.ts';
 import { TUNNEL_VIEWS, tunnelView, setTunnelView } from './tunnelView.ts';
 import type { TunnelView } from './tunnelView.ts';
@@ -263,6 +264,7 @@ export function setupSettings({ sound, graphics, weather, saves, cameraChoice }:
   relabel.push(() => { motionTitle.textContent = t('Walking camera'); });
   motion.onchange = () => setFirstPersonOptions({ motion: motion.value as FirstPersonOptions['motion'] });
   refresh.push(() => { motion.value = firstPersonOptions.motion; });
+  row('Motion blur when driving', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (motionBlurOn() ? 'on' : 'off'), (id) => setMotionBlur(id === 'on'));
   row('Minimap', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (minimapOn() ? 'on' : 'off'), (id) => setMinimap(id === 'on'));
   row<TunnelView>('Tunnels', TUNNEL_VIEWS.map((v) => ({ id: v, label: () => t(TUNNEL_LABEL[v]) })), tunnelView, setTunnelView);
   row<Reflections>('Wet streets', [{ id: 'none', label: () => t('No reflections') }, { id: 'lights', label: () => t('Lights reflect') }, { id: 'mirror', label: () => t('Full mirror (demanding)') }], () => graphics.reflections, (id) => graphics.setReflections(id));

@@ -14,6 +14,13 @@ export const POST = {
   wet: 0,
   // A trial (?ao): ambient shading from the picture's depth (webgpu/post.ts).
   ao: new URLSearchParams(globalThis.location?.search ?? '').has('ao'),
+  // Motion blur while driving, seen from the street: how much of it (0 below 30 km/h, 1 from
+  // about 100), and the player's vehicle, which keeps sharp (its middle and reach, in the scene's
+  // coordinates; a reach below 0 for none).
+  blur: 0,
+  // Which way and how fast that vehicle goes (m/s, in the scene's coordinates): the camera goes with it.
+  going: [0, 0, 0] as [number, number, number],
+  car: [0, 0, 0, -1] as [number, number, number, number],
   get on() { return asked === 'on' || (asked !== 'off' && this.value > 0); },
 };
 
@@ -27,4 +34,16 @@ export function drawPost(scene: THREE.Scene, camera: THREE.Camera) {
   if (!draw || !POST.on) return false;
   draw(scene, camera);
   return true;
+}
+
+// The player's choice (Settings): some people feel sick with motion blur.
+let blurOn = true;
+try { blurOn = localStorage.getItem('motionBlur') !== 'off'; } catch { /* no storage: stay on */ }
+// (?motionblur=off for one visit, to compare; =full is its full strength at any speed, to time it.)
+const blurAsked = new URLSearchParams(globalThis.location?.search ?? '').get('motionblur');
+export const motionBlurOn = () => blurOn && blurAsked !== 'off';
+export const motionBlurFull = blurAsked === 'full';
+export function setMotionBlur(enabled: boolean) {
+  blurOn = enabled;
+  try { localStorage.setItem('motionBlur', enabled ? 'on' : 'off'); } catch { /* not saved */ }
 }
