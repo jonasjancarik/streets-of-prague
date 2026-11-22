@@ -1584,3 +1584,55 @@ checks after the final changes, night/bad-weather coverage and long-session cach
 memory remain open, as does Pixel 11 Pro testing. Raw frame arrays, CPU profiles,
 prototype helpers, screenshots and logs are retained locally under
 `docs/evidence/performance-2026-11-22/optimisation/` (ignored by git).
+
+## 22 November 2026 — what the buildings hide at street level
+
+Asked: how much of what the game draws at street level can't be seen, as a measure of
+what occlusion culling could save (the idea behind GPU-driven renderers such as GTA VI's;
+`docs/webgpu-vr.md` has the VR side). Nothing in the game culls by occlusion today: every
+draw in front of the camera within the view distance is drawn.
+
+Measured with `scripts/hidden-draws.js` through the scene runner, on the M5 in headless
+Chrome, WebGPU, High, 1440 × 900, 14:00, clear. With the live game held still (no frames
+drawn, shadow maps and shader time frozen, so two pictures of a view are identical), the
+main pass's draws are taken away one at a time, biggest first, and each stays away if no
+pixel changes. The set left out at the end changes no pixel as a whole (checked every
+time: 0 pixels). Occlusion queries were tried first and dropped: three.js reads a
+render's results at the next render with queries, and the answers mixed runs.
+
+Views: six places (Karlova, the Old Town Square, Malostranské náměstí, Vodičkova, by
+Charles Bridge, Můstek), each from eye height facing north, east, south and west; four
+places from a car's driving seat at the same four headings; four places from the
+ordinary overhead camera.
+
+| Camera | Views | Draws hidden (median, range) | Triangles hidden (median, range) | Drawn per view |
+|---|---:|---|---|---|
+| Eye height, on foot | 24 | 87 % (74–98 %) | 76 % (44–99 %) | 300–490 draws, 4.9–15.3 M triangles |
+| Driving seat | 15 | 84 % (76–95 %) | 70 % (52–82 %) | 330–500 draws, 5.8–11.0 M triangles |
+| Overhead | 4 | 73 % (67–74 %) | 52 % (40–73 %) | 90–140 draws, 1.3–2.3 M triangles |
+
+- **The ground is most of it.** At eye height the ground's layers are about three
+  quarters of the triangles drawn (4.4 of 5.7 M on the Old Town Square facing north), and
+  65–91 % of them are hidden. Draws more than 250 m away were 78–100 % hidden in every
+  view broken down by distance.
+- **Open places hide least:** the Old Town Square facing its open side 44 %, Malostranské
+  náměstí facing east 49 %. Lanes and courtyards hide 85–99 %.
+- **Overhead isn't free of it either,** but there it's mostly lower ground layers covered
+  by the layers above them and lamps under the trees, not the buildings.
+- The numbers are of one moment's streaming state: the same view measured twice drew
+  5.7 and 6.5 M triangles (more tree pages loaded the second time), and the share hidden
+  moved by up to 20 points between such runs.
+
+Not covered: the sun's shadow pass (a caster hidden from the camera can still cast into
+view), single instances of an instanced mesh (counted hidden only when all of them are),
+the WebGL renderer used for VR (same scene, so similar shares expected), the phone, and
+any timing: this counts work that could be skipped, not frame time.
+
+What it suggests: occlusion culling at street level could skip roughly four draws in five
+and most of the triangles, the distant ground above all. The game's draws are coarse (a
+tile's ground layers, a tile's buildings), so a per-tile answer captures most of it. A
+visibility table baked by the pipeline (which tiles can be seen from each patch of street)
+would work in both renderers, VR included; hardware occlusion queries would be WebGPU only
+and arrive a frame or two late. Before building either, a cheaper check: leave out ground
+tiles beyond 250 m at eye height and see what the Pixel 5 gains, and how often a missing
+tile shows.

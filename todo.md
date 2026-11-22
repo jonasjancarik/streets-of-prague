@@ -271,6 +271,11 @@ before that day's frame-count fix may be doubled.
   isn't measured.
 - **`Route.ahead` in `traffic.update`** (the fix for taxis stalling) adds a little work
   per car: a `bench.mjs --ab` is owed.
+- **Occlusion culling at street level** (performance log, 22 November): at eye height
+  about 87 % of draws and 76 % of triangles are hidden behind something (median of 24
+  views, `scripts/hidden-draws.js`), mostly distant ground. Next: measure on the Pixel 5
+  what leaving out ground tiles beyond 250 m at street level gains; then decide between a
+  baked visibility table (both renderers) and occlusion queries (WebGPU only).
 - **VR on WebGPU:** VR needs the legacy WebGL renderer until Chrome ships the WebXR/WebGPU
   binding. A Cardboard mode drawn by the page itself (both eyes, lens pass, gyroscope)
   would put VR on WebGPU and on iPhone; options and risks in `docs/webgpu-vr.md`.
