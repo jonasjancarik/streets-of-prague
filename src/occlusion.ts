@@ -81,6 +81,7 @@ export class Culler {
   private retested = 0;
   private frameStart = 0;
   private deferred = false; // (a verdict put off, not to be kept)
+  private spent = false; // (this frame's time for new meshes' tops used up)
   // Off for comparing (bench.mjs --ab): everything drawn as without ?cull.
   enabled = true;
   // No new sweeps (scripts/hidden-draws.js checks a result from an eye moved off it).
@@ -145,6 +146,7 @@ export class Culler {
     if (this.frame++ % 30 === 0 || !this.candidates.length) this.gather();
     const c0 = performance.now();
     this.frameStart = c0;
+    this.spent = false;
     this.retested = 0;
     let culled = 0;
     for (const o of this.candidates) {
@@ -267,7 +269,7 @@ export class Culler {
     if (!tops) {
       // (Working them out goes through every vertex: a few meshes a frame, the others
       // drawn until their turn.)
-      if (performance.now() - this.frameStart > TOPS_MS) { this.deferred = true; return false; }
+      if (this.spent || performance.now() - this.frameStart > TOPS_MS) { this.spent = this.deferred = true; return false; }
       tops = squareTops(m, sq);
       for (let k = 0; k < tops.length; k += 3) {
         const x = sq[0] + (tops[k] + 0.5) * SQUARE, y = sq[1] + (tops[k + 1] + 0.5) * SQUARE;
@@ -304,7 +306,7 @@ export class Culler {
     // From the instance seen last time: in a batch that shows, usually the only one tested.
     const n = b.count, first = (this.shown.get(b) ?? 0) % n;
     const outA = g.getAttribute('outlineA') as THREE.BufferAttribute | undefined, outB = g.getAttribute('outlineB') as THREE.BufferAttribute | undefined;
-    if (outA && outB) return this.crownsHidden(b, outA, outB, first);
+    if (outA && outB) return this.crownsHidden(b, outA, outB);
     for (let k = 0; k < n; k++) {
       const i = (first + k) % n, o = i * 16;
       const scale = Math.sqrt(Math.max(a[o] ** 2 + a[o + 1] ** 2 + a[o + 2] ** 2, a[o + 4] ** 2 + a[o + 5] ** 2 + a[o + 6] ** 2, a[o + 8] ** 2 + a[o + 9] ** 2 + a[o + 10] ** 2));
@@ -326,24 +328,67 @@ export class Culler {
   // its geometry by the tree's outline (up to its largest number), swaying in the wind.
   // Each tree is tested as a column: up to its geometry's top times its height, as wide
   // as its geometry's widest times its width and outline, half a metre more for the wind.
-  private crownsHidden(b: THREE.InstancedMesh, outA: THREE.BufferAttribute, outB: THREE.BufferAttribute, first: number): boolean {
+  // The columns are worked out once (until the page changes), and kept in groups by the
+  // 31.25 m square they stand in: a group whose box is hidden hides all its trees, so a
+  // hidden page costs a test a group, not a tree (only a group that shows is gone
+  // through tree by tree).
+  private crownsHidden(b: THREE.InstancedMesh, outA: THREE.BufferAttribute, outB: THREE.BufferAttribute): boolean {
+    if (!b.matrixWorld.equals(IDENTITY)) return false; // (tree pages aren't moved: anything else isn't worked out)
+    const c = this.columns(b, outA, outB);
+    if (!c) return false;
+    const { trees: t, groups: g } = c, n = g.length / 6, first = (this.shown.get(b) ?? 0) % Math.max(n, 1);
+    for (let q = 0; q < n; q++) {
+      const k = ((first + q) % n) * 6;
+      if (g[k + 4] + MARGIN < this.minSeen(g[k], g[k + 1], g[k + 2], g[k + 3])) continue;
+      // (The group shows somewhere: is it one of its trees?)
+      for (let i = c.from[k / 6], end = c.from[k / 6 + 1]; i < end; i++) {
+        const o = c.order[i] * 4, r = t[o + 2];
+        if (!(t[o + 3] + MARGIN < this.minSeen(t[o] - r, t[o + 1] - r, t[o] + r, t[o + 1] + r))) { this.shown.set(b, k / 6); return false; }
+      }
+    }
+    return true;
+  }
+  private crowns = new WeakMap<THREE.InstancedMesh, Columns>();
+  private columns(b: THREE.InstancedMesh, outA: THREE.BufferAttribute, outB: THREE.BufferAttribute): Columns | null {
+    const had = this.crowns.get(b), m = b.instanceMatrix.version, n = b.count;
+    if (had && had.m === m && had.n === n && had.a === outA.version && had.b === outB.version) return had.ok ? had : null;
     const g = b.geometry;
     if (!g.boundingBox) g.computeBoundingBox();
     const bb = g.boundingBox!, topY = bb.max.y, wide = Math.hypot(Math.max(-bb.min.x, bb.max.x), Math.max(-bb.min.z, bb.max.z));
-    if (!Number.isFinite(topY) || !Number.isFinite(wide)) return false;
-    const a = b.instanceMatrix.array as Float32Array;
-    if (!b.matrixWorld.equals(IDENTITY)) return false; // (tree pages aren't moved: anything else isn't worked out)
-    const A = outA.array as ArrayLike<number>, B = outB.array as ArrayLike<number>, n = b.count;
-    for (let k = 0; k < n; k++) {
-      const i = (first + k) % n, o = i * 16;
+    const a = b.instanceMatrix.array as Float32Array, A = outA.array as ArrayLike<number>, B = outB.array as ArrayLike<number>;
+    const trees = new Float32Array(n * 4), bySquare = new Map<number, number[]>();
+    let ok = Number.isFinite(topY) && Number.isFinite(wide);
+    for (let i = 0; i < n && ok; i++) {
+      const o = i * 16;
       const sx = Math.hypot(a[o], a[o + 1], a[o + 2]), sy = Math.hypot(a[o + 4], a[o + 5], a[o + 6]), sz = Math.hypot(a[o + 8], a[o + 9], a[o + 10]);
       let out = 1;
       for (let j = 0; j < 4; j++) out = Math.max(out, A[i * 4 + j], B[i * 4 + j]);
-      const r = wide * Math.max(sx, sz) * out + 0.5, top = a[o + 13] + Math.max(0, topY) * sy + 0.1;
-      const x = a[o + 12], y = -a[o + 14];
-      if (!(r < 300) || !(top + MARGIN < this.minSeen(x - r, y - r, x + r, y + r))) { this.shown.set(b, i); return false; }
+      const r = wide * Math.max(sx, sz) * out + 0.5, x = a[o + 12], y = -a[o + 14];
+      if (!(r < 300)) ok = false;
+      trees.set([x, y, r, a[o + 13] + Math.max(0, topY) * sy + 0.1], i * 4);
+      const sq = Math.floor(x / SQUARE) * 8192 + Math.floor(y / SQUARE);
+      let list = bySquare.get(sq);
+      if (!list) bySquare.set(sq, list = []);
+      list.push(i);
     }
-    return true;
+    const groups = new Float32Array(bySquare.size * 6), order = new Uint32Array(n), from = new Uint32Array(bySquare.size + 1);
+    let k = 0, at = 0;
+    for (const list of bySquare.values()) {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, top = -Infinity;
+      from[k] = at;
+      for (const i of list) {
+        const o = i * 4, r = trees[o + 2];
+        x0 = Math.min(x0, trees[o] - r); y0 = Math.min(y0, trees[o + 1] - r); x1 = Math.max(x1, trees[o] + r); y1 = Math.max(y1, trees[o + 1] + r);
+        top = Math.max(top, trees[o + 3]);
+        order[at++] = i;
+      }
+      groups.set([x0, y0, x1, y1, top, 0], k * 6);
+      k++;
+    }
+    from[k] = at;
+    const c: Columns = { m, n, a: outA.version, b: outB.version, ok, trees, groups, order, from };
+    this.crowns.set(b, c);
+    return ok ? c : null;
   }
 
   // The lowest height seen anywhere in a box (game metres, x and y north); -Infinity
@@ -385,10 +430,13 @@ export class Culler {
     if (ex >= x0 - slack && ex <= x1 + slack && ey >= y0 - slack && ey <= y1 + slack) return -Infinity;
     const near = Math.hypot(Math.max(x0 - ex, 0, ex - x1), Math.max(y0 - ey, 0, ey - y1));
     const far = Math.hypot(Math.max(Math.abs(x0 - ex), Math.abs(x1 - ex)), Math.max(Math.abs(y0 - ey), Math.abs(y1 - ey)));
-    const angles = [[x0, y0], [x1, y0], [x0, y1], [x1, y1]].map(([x, y]) => Math.atan2(y - ey, x - ex));
+    const a0 = Math.atan2(y0 - ey, x0 - ex), a1 = Math.atan2(y0 - ey, x1 - ex), a2 = Math.atan2(y1 - ey, x0 - ex), a3 = Math.atan2(y1 - ey, x1 - ex);
     // The corners' angles span less than half a turn (the eye is outside the box).
-    let lo = Math.min(...angles), hi = Math.max(...angles);
-    if (hi - lo > Math.PI) { const shifted = angles.map((a) => (a < 0 ? a + 2 * Math.PI : a)); lo = Math.min(...shifted); hi = Math.max(...shifted); }
+    let lo = Math.min(a0, a1, a2, a3), hi = Math.max(a0, a1, a2, a3);
+    if (hi - lo > Math.PI) {
+      const t = 2 * Math.PI, b0 = a0 < 0 ? a0 + t : a0, b1 = a1 < 0 ? a1 + t : a1, b2 = a2 < 0 ? a2 + t : a2, b3 = a3 < 0 ? a3 + t : a3;
+      lo = Math.min(b0, b1, b2, b3); hi = Math.max(b0, b1, b2, b3);
+    }
     const s0 = Math.floor(((lo / (2 * Math.PI)) + 1) * SECTORS), s1 = Math.floor(((hi / (2 * Math.PI)) + 1) * SECTORS);
     let low = Infinity;
     for (let k = s0; k <= s1; k++) {
@@ -480,6 +528,10 @@ export class Culler {
 }
 
 const IDENTITY = new THREE.Matrix4();
+
+// A tree page's columns (for its instances' and outlines' versions and count; x, y north, radius, top a tree) and their groups by square
+// (box x0, y0, x1, y1, top, unused), the trees of group g being order[from[g]…from[g+1]].
+interface Columns { m: number; n: number; a: number; b: number; ok: boolean; trees: Float32Array; groups: Float32Array; order: Uint32Array; from: Uint32Array }
 const SPOT = new THREE.Vector3();
 
 // Set the cells inside a polygon (outer ring, then holes) to f(their value).
