@@ -12,6 +12,8 @@
 // tiles (only the tiles' own meshes may go, each tile's ground layers together, as a
 // culler working with the tiles could: not the shared pages of trees, people and cars,
 // and no ground layer hidden only by another ground layer).
+// cull (score the game's culler, ?cull: what it leaves out now, the pixels that change
+// without it, and how much of the hidden set it catches).
 // Without place it measures the camera as it is.
 //
 // The live game is held (paused, no frames drawn, shadow maps and shader time frozen,
@@ -128,6 +130,10 @@ try {
   scene.traverse((o) => { if (/^birds/.test(label.get(o) ?? '') && o.visible) movers.push(o); });
   movers.forEach((o) => { o.visible = false; });
   await sleep(300);
+  // (The game's culler, ?cull: what it leaves out now, all of it drawn for the measurement.)
+  const culledNow = ARGS.cull ? (D.culler?.culled() ?? []) : null;
+  const cullStats = D.culler ? { ...D.culler.stats } : null;
+  D.culler?.restoreAll();
   R.setRenderTarget(rt);
   R.render(scene, cam);
   R.setRenderTarget(target);
@@ -186,6 +192,29 @@ try {
   const check = changed(base, await picture());
   if (ARGS.keep) window.__hiddenDraws = away.map(([o]) => o);
   for (const [o, was] of away) o.visible = was;
+  let cull = null;
+  if (culledNow) {
+    culledNow.forEach((o) => { o.userData.__cw = o.visible; o.visible = false; });
+    const wrong = changed(base, await picture());
+    culledNow.forEach((o) => { o.visible = o.userData.__cw; delete o.userData.__cw; });
+    const hiddenSet = new Set(away.map(([o]) => o)), inView = culledNow.filter((o) => drawn.has(o));
+    const culledSet = new Set(culledNow), missed = {};
+    for (const o of hiddenSet) if (!culledSet.has(o)) missed[kind(o)] = (missed[kind(o)] ?? 0) + 1;
+    const extra = {};
+    for (const o of inView) if (!hiddenSet.has(o)) extra[kind(o)] = (extra[kind(o)] ?? 0) + 1;
+    const wrongBy = [];
+    if (wrong) for (const o of inView) {
+      o.userData.__cw = o.visible; o.visible = false;
+      const n = changed(base, await picture());
+      o.visible = o.userData.__cw; delete o.userData.__cw;
+      if (n) {
+        o.updateWorldMatrix(true, false);
+        const b = new THREE.Box3().setFromObject(o), c = b.getCenter(new THREE.Vector3()), z = b.getSize(new THREE.Vector3());
+        wrongBy.push({ kind: kind(o), name: o.name, pixels: n, centre: [c.x, -c.z, c.y].map(Math.round), size: [z.x, z.z, z.y].map(Math.round), eye: cam.getWorldPosition(new THREE.Vector3()).toArray().map(Math.round) });
+      }
+    }
+    cull = { wrongPixels: wrong, wrongBy, culled: culledNow.length, culledInView: inView.length, alsoTrulyHidden: inView.filter((o) => hiddenSet.has(o)).length, missed, hiddenInView: hiddenSet.size, notInHiddenSet: extra, stats: cullStats };
+  }
   const near = cam.getWorldPosition(new THREE.Vector3());
   const by = {}, bands = {}, all = { draws: 0, tris: 0, hiddenDraws: 0, hiddenTris: 0 };
   const add = (s, e, hid) => { s.draws += e.draws; s.tris += e.tris; if (hid) { s.hiddenDraws += e.draws; s.hiddenTris += e.tris; } };
@@ -202,7 +231,7 @@ try {
   const pct = (a, b) => (b ? Math.round((100 * a) / b) : 0);
   const line = (s) => `${s.hiddenDraws}/${s.draws} draws hidden, ${(s.hiddenTris / 1e3).toFixed(0)}k/${(s.tris / 1e3).toFixed(0)}k tris (${pct(s.hiddenTris, s.tris)} %)`;
   return {
-    check, flickering, masked: mask.reduce((a, b) => a + b, 0),
+    check, cull, flickering, masked: mask.reduce((a, b) => a + b, 0),
     where: t.where(), heading: t.where().heading, runway: Math.round(t.runway(t.where().heading)), eye: near.toArray().map((v) => Math.round(v)), fov: cam.fov, size: [w, h], repeat,
     seconds: Math.round((performance.now() - started) / 1000),
     total: line(all),

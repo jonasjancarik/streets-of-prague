@@ -26,6 +26,7 @@ import { Car, TYPES, CarPool, VR_CAB, VR_GLASS, VR_SEAT, collideBodies, contact,
 import { CarOutline } from './carOutline.ts';
 import { RestingCars } from './restingCars.ts';
 import { loadKit, FIGURE_SIZE, SCALE, WARDROBE, PEOPLE_SHADOWS, CAST_LAYER } from './figures.ts';
+import { Culler } from './occlusion.ts';
 import { LifeSize } from './lifesize.ts';
 import { Traffic, trafficWanted, type TrafficAgent } from './traffic.ts';
 import { roadHint } from './roadLevels.ts';
@@ -362,6 +363,8 @@ async function main() {
   scene.add(streetHedges.group);
   scene.add(streetGrass.group);
   const world = new TileWorld({ area: AREA, index, scene, drive, walk, time, night: params.has('night') || clock.night, osmBuildings: params.has('osm'), ortho: params.has('ortho'), countryside: anywhere || params.get('countryside') === 'live' ? 'live' : params.has('countryside') });
+  // Leaving out what the buildings hide in the street views: a trial (docs/occlusion-culling.md).
+  const culler = params.has('cull') ? new Culler(scene, world) : null;
   // Where the street view's blades of grass stand (streetGrass.ts): on what sounds like
   // grass underfoot, in the open, and not inside a hedge.
   const grassGround: GrassGround = {
@@ -3574,6 +3577,7 @@ async function main() {
     dev.update();
     // (Ultra: the street round the middle of the view, for the cars to mirror.)
     lifeSize.frame(dt, !!eyes && !underway, camera);
+    culler?.update(camera, !!eyes && !vr?.active && !underway && !metro.active);
     hitches.render(() => {
       if (vr?.active) {
         // Your eyes: on foot where you stand, in a car from the driver's seat (on the left),
@@ -3623,7 +3627,7 @@ async function main() {
   });
 
   window.__drive = {
-    hitches, tilePrograms, birds, birdsView, lifeSize, scene, camera, traffic, crowd, loose, restingByCar, restingIndex, get resting() { return resting; }, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, refuse, health, fires, trams, ride, taxi, clock, board, busStops, busRide, metro, funicular, ferries, graphics, sound, weather, lamps, sky, skids, bikeShare, carPool, spawnWork, bags,
+    culler, hitches, tilePrograms, birds, birdsView, lifeSize, scene, camera, traffic, crowd, loose, restingByCar, restingIndex, get resting() { return resting; }, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, refuse, health, fires, trams, ride, taxi, clock, board, busStops, busRide, metro, funicular, ferries, graphics, sound, weather, lamps, sky, skids, bikeShare, carPool, spawnWork, bags,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,

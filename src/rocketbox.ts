@@ -141,6 +141,7 @@ export class LifeSize {
           // (Lit by the street lamps at night, like the rest of the street.)
           for (const m of Array.isArray(o.material) ? o.material : [o.material]) cutAway(m, 'rocketbox');
           o.frustumCulled = false; // (their bounds are of the bind pose)
+          o.userData.cullRadius = 1.3; // (round the hips, for leaving out those the buildings hide: occlusion.ts)
         });
         const hips = g.scene.getObjectByName('Bip01')?.position.y ?? 0.9;
         const kind: Kind = { template: g.scene, clips: {}, stride: {} as Kind['stride'], standing: STANDING[sex] };

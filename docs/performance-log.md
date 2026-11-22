@@ -1721,3 +1721,23 @@ gain follows the number of draws, and a culler of tile meshes alone would get ab
 of the ceiling. The other 60 % is in the shared pages and the many small instanced
 meshes: cull those as whole pages only if a page is all hidden, or give them pages per
 area so they can go with the tiles.
+
+### The culler prototype (`?cull`), same day
+
+The sweep from the camera that both reviewers suggested, in `src/occlusion.ts` (details
+in `docs/occlusion-culling.md`). In the 24 views it left out nothing visible (no changed
+pixel) and caught 70 % of the truly hidden tile draws, plus 15–69 batches and other
+meshes a view.
+
+On the Pixel 5 (Medium, first person standing on the Old Town Square, `--ab` on
+`culler.enabled`, 60 s, no touches):
+
+| | fps | Frame | JavaScript |
+|---|---|---|---|
+| Off | 20.4 (20–22 a window) | 49.1 ms | 34.6 ms |
+| On | 22.1 (21–24 a window) | 45.3 ms | 31.5 ms |
+
+**7.7 % quicker a frame** (30.5 °C). A first run with every verdict tested every frame
+gained 4.5 % (29.2 °C, 62.5 → 59.7 ms): the tests cost 1.5 ms a frame there, 0.6 ms once
+verdicts were kept until the next sweep. The sweep costs about 15 ms on the phone each
+time the eye has moved a metre; standing, that's rare.

@@ -139,6 +139,41 @@ would stay as it is.
    `?cull` switched in the page), and VR.
 4. **Bake**: time per tile, the whole city's size on disk, the download per tile.
 
+## The prototype (22 November, `?cull`)
+
+`src/occlusion.ts`, the sweep in the game (step 2 below), on the main thread:
+
+- **Occluders**: each drawn tile's buildings rasterised once into 2 m cells: grounded
+  ones (`minh` ≤ 0.5 m, at least 3 m high) up to their eaves (the full height for a flat
+  roof, 65 % of it otherwise), from the lowest ground under their outline; buildings a
+  landmark replaces and the passages (2 m wider) cut out; then eroded by a cell. Only
+  tiles whose buildings are all revealed count.
+- **Sweep**: rays from the eye through every edge cell of an 802 m window, cell by cell;
+  each cell keeps the lowest slope a ray reached it with. Beyond the window, the edge
+  cells' slopes in 1024 directions. Done again when the eye has moved 1 m (any way) or
+  the drawn tiles change. No sweep (nothing culled) with the eye inside a building or
+  below the ground.
+- **Tests**: tile meshes by their highest point in each 31.25 m square; instanced
+  batches by every instance's sphere (a batch with no instances is always left out);
+  other frustum-culled meshes by their sphere; near people (skinned) by a sphere round
+  the hips. A tile mesh whose vertices aren't near its tile is placed by its shader and
+  never left out. Verdicts are kept until the next sweep unless the thing moved.
+- **Leaving out**: layer 0 off, the shadow layer on.
+
+Scored with `hidden-draws.js` (`cull: true`, `tiles: true`) in the 24 views: **no
+changed pixel in any**, and 3028 of the 4337 truly hidden tile draws caught (70 %; 85–93 %
+in Karlova, 16–47 % on Charles Bridge), plus 1047 batches and other meshes. The sweep
+takes 4–7 ms on the M5 and about 15 ms on the Pixel 5, standing it runs only when the
+eye moves.
+
+Pixel 5, Medium, first person standing on the Old Town Square, `--ab` on
+`culler.enabled`: **7.7 % quicker a frame** (49.1 → 45.3 ms, JavaScript 34.6 → 31.5 ms;
+30.5 °C, no touches). The ceiling with every hidden tile mesh left out was 10 % there.
+
+Not done yet: the sweep in a worker (driving would sweep about 14 times a second, which
+the main thread can't afford on the phone), VR (both eyes), the countryside, the
+overhead view, and a check for popping while moving.
+
 ## Order (after the reviews)
 
 1. **Measure the ceiling this design can reach.** The 25 % on the Pixel 5 left out
