@@ -36,7 +36,7 @@ const FENCE_VERTS = 12; // a face each way
 const LEAN = 0.45; // how far a fence's two faces lean apart from straight up, for its light
 // A hedge's outline across it, from the right foot over the top to the left: how far out
 // (in half widths) and how far up (in heights).
-const HEDGE_OUTLINE: [number, number][] = [[0.8, 0], [1, 0.3], [0.97, 0.72], [0.62, 0.96], [0, 1.04], [-0.62, 0.96], [-0.97, 0.72], [-1, 0.3], [-0.8, 0]];
+export const HEDGE_OUTLINE: [number, number][] = [[0.8, 0], [1, 0.3], [0.97, 0.72], [0.62, 0.96], [0, 1.04], [-0.62, 0.96], [-0.97, 0.72], [-1, 0.3], [-0.8, 0]];
 // How far round the outline each of its points is from the foot, for a hedge 1.5 m tall.
 const HEDGE_ROUND = HEDGE_OUTLINE.map((_, k) => {
   let d = 0;
@@ -45,7 +45,7 @@ const HEDGE_ROUND = HEDGE_OUTLINE.map((_, k) => {
 });
 const HEDGE_VERTS = (HEDGE_OUTLINE.length - 1) * 6 * 2 + (HEDGE_OUTLINE.length - 1) * 3 * 2; // two slices round, and the two ends
 // How a hedge has grown at a place (0-1), the same from whichever section asks.
-function hedgeNoise(x: number, y: number, salt: number) {
+export function hedgeNoise(x: number, y: number, salt: number) {
   const s = Math.sin(Math.round(x * 4) * 12.9898 + Math.round(y * 4) * 78.233 + salt * 37.719) * 43758.5453;
   return s - Math.floor(s);
 }

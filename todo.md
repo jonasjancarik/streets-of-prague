@@ -59,8 +59,12 @@ pictures in its `screenshots/beautify-2/` (not committed). Measured on Ultra aga
 - [ ] Window rows: a wall that starts above the ground (a storey set back on a roof) can
   still begin with part of a row, and the bare plaster above the last row has no cornice.
   Walls of authored geometry are not cut between bays.
-- [ ] Hedges are still smooth: the next step would be a fringe of leaf cards along the
-  top and the shoulders. A section is 144 vertices now (30 before); not timed on a phone.
+- [ ] Street hedges (leaf sprays over the body, `src/streetHedges.ts`): the sprays cast
+  no shadow of their own, the leaves are the lime-like spray the trees use (a hornbeam
+  or privet picture would be truer), under snow whole sprays turn pale, and a few dark
+  gaps still show between sprays up close. Flattening by a car was not tried. About 50,000
+  triangles round Štefánikův most; 0–1.5 ms a frame there on Ultra (two noisy runs), not
+  timed on a phone or below Ultra. WebGL (and VR) shows the rounded body only.
 - [ ] Not touched, seen on the way: shade in narrow lanes is very dark at street level
   (Seminářská at 11:00); the photo mesh of St Nicholas on Malostranské náměstí shows
   holes and loose triangles from the pavement; ambient shading (`?ao`) added little in

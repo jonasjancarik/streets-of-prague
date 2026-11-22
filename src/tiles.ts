@@ -49,6 +49,7 @@ import { stepEdges, type Crosser, type StepEdge } from './stepEdges.ts';
 import { byLevel, bridgeApproaches } from './roadLevels.ts';
 import type { RoadHint } from './roadLevels.ts';
 import { fenceMeshes } from './map/fences.ts';
+import { streetHedges } from './streetHedges.ts';
 import { shedMesh } from './map/sheds.ts';
 import { furnitureMeshes, furnitureView, disposeFurniture } from './furniture.ts';
 import { placeBridge, clipDecks, bridgeMesh, inPedestal, NO_BRIDGE, type Bridge } from './statues.ts';
@@ -1664,6 +1665,7 @@ export class TileWorld {
     const furniture = furnitureMeshes(land.furniture, this.streetFurniture);
     const statues = this.statueFixtures(onLevels, t.box);
     const fenceSections = fences.sections(k, land.fences.sections, fenceRows);
+    streetHedges.add(k, fenceSections);
     // The overhead wires over the tram tracks, at the height of the bridge deck a track
     // is on (as ground.ts lays the tracks) or of the ground: the deck the map names for
     // that stretch (deckRails), or with an older map the lowest one there.
@@ -2002,6 +2004,7 @@ export class TileWorld {
     }
     for (const p of t.poles) posts.remove(p);
     fences.remove(t.fences);
+    streetHedges.remove(k);
     this.loaded.delete(k);
     this.byIndex.delete(t.i * 65536 + t.j);
     this.last.i = NaN;

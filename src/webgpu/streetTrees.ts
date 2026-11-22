@@ -28,7 +28,8 @@ const blank = (rgba: number[]) => {
   t.needsUpdate = true;
   return t;
 };
-const sprays: N = texture(blank([120, 120, 120, 0])), bark: N = texture(blank([96, 88, 76, 255]));
+export const sprays: N = texture(blank([120, 120, 120, 0]));
+const bark: N = texture(blank([96, 88, 76, 255]));
 // Whether both pictures are in (the pool draws the top-down trees until then).
 export const STREET_TREES_READY = { value: false };
 let asked = false;

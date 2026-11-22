@@ -71,6 +71,7 @@ import { facadeFinishes, loadFacadeFinishes } from './facadeFinishes.ts';
 import { loadFacadeAtlas } from './facades.ts';
 import { groundSamples, groundDepthView, tunnelEarthView } from './surface.ts';
 import { CUTAWAY, DIG, WEATHER_DETAIL, TREE_SWAY } from './shading.ts';
+import { streetHedges } from './streetHedges.ts';
 import { setupDev, watchTransitWhileWaiting } from './dev.ts';
 import { setupSettings } from './settings.ts';
 import { setScreenshot } from './feedback.ts';
@@ -355,6 +356,7 @@ async function main() {
   await helisLoad;
   if (params.get('mist') === 'volume') MIST_MODE.value = 'volume';
   const weatherFx = new WeatherFx(scene);
+  scene.add(streetHedges.group);
   const world = new TileWorld({ area: AREA, index, scene, drive, walk, time, night: params.has('night') || clock.night, osmBuildings: params.has('osm'), ortho: params.has('ortho'), countryside: anywhere || params.get('countryside') === 'live' ? 'live' : params.has('countryside') });
   const ironwork = new StreetIronwork(scene, world);
   // Past the city's parts, the town or village from the countryside's map.
@@ -3268,6 +3270,7 @@ async function main() {
     world.passageCamera(fromStreet, camera.position.x, -camera.position.z);
     ironwork.update(fromStreet, camera.position, graphics.tier, weather.now.wet);
     world.trees.street(fromStreet, free ? free.x : camera.position.x, free ? -free.y : camera.position.z);
+    streetHedges.street(fromStreet, free ? free.x : camera.position.x, free ? free.y : -camera.position.z);
     world.trees.canopy(true, fromStreet);
     sun.position.copy(sun.target.position).add(sky.offset);
     fitShadow();
