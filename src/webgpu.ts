@@ -16,7 +16,6 @@ import {
   attribute, positionLocal, modelViewMatrix, cameraProjectionMatrix, screenSize, uniform, renderGroup, uv, cameraPosition, normalize,
 } from 'three/tsl';
 import { GRASS_SEASON, WOOD_SEASON, FIELD_SEASON, HEDGE_SEASON } from './groundSeason.ts';
-import { HEDGE_FADE, HEDGE_REACH, HEDGE_STREET } from './streetHedges.ts';
 import { setPatterned, setHeld, HOLD_PX, SKY_REF, GRIT, GRIT_M, LAMP_MIRROR, SEASON } from './shading.ts';
 import type { RasterGroundInput } from './shading.ts';
 import {
@@ -64,10 +63,7 @@ const hedgeClose = float(1).add(hedgeLeaf.mul(1.1).mul(hedgeNear)).mul(float(1).
 // near the top is a yellower green (at any distance: this is what stops it reading as one flat band).
 const hedgePatch = vnoise(hedgeAt.mul(0.55).add(21)).mul(0.3).add(0.86);
 const hedgeGrowth = mix(vec3(1), vec3(1.16, 1.12, 0.72), smoothstep(0.55, 1, hedgeV).mul(vnoise(hedgeAt.mul(1.7).add(5))).mul(0.7));
-// From the street the hedge wears leaves of its own (streetHedges.ts) and this body is only
-// what shows between them: the dark inside, as far as the leaves reach.
-const hedgeInside = mix(1, mix(0.36, 1, smoothstep(HEDGE_FADE - 6, HEDGE_REACH, distance(cameraPosition, positionWorld))), follow(HEDGE_STREET));
-const hedgeColour = vec4(materialColor.rgb.mul(followColor(HEDGE_SEASON)).mul(hedgeShade).mul(hedgeClose).mul(hedgePatch).mul(hedgeGrowth).mul(hedgeInside), 1);
+const hedgeColour = vec4(materialColor.rgb.mul(followColor(HEDGE_SEASON)).mul(hedgeShade).mul(hedgeClose).mul(hedgePatch).mul(hedgeGrowth), 1);
 addPort(/^hedge-season$/, (node) => { node.colorNode = hedgeColour; });
 // The cars' probe of the street (probe.ts) needs WebGPU's kind of cube target.
 setProbeTargets(() => new CubeRenderTarget(PROBE_SIZE, PROBE_OPTIONS) as never);

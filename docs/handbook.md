@@ -1590,12 +1590,13 @@ record the measurements, merge decisions and pending landmark asset activation.
   A hedge's shape is rounded and a little uneven: a narrower foot, bellied sides, round
   shoulders and a slightly crowned top, its height and width varying by a few
   centimetres along it. Where the hedges stand is mapped; that unevenness is made up.
-  From the street (first or third person, WebGPU) a hedge within 60 m wears leaves:
-  a dense skin of small sprays over that body, some deep and dark, some standing proud
-  and lighter, stirring in the wind. They are the street trees' photographed leaves,
-  made a 20 m patch at a time as you come near and thinned with distance
-  (`src/streetHedges.ts`, `src/webgpu/streetHedges.ts`). A hedge a car has flattened
-  loses them. Every spray's place is made up.
+  From the street (first or third person, WebGPU) a hedge within 60 m is a hornbeam
+  hedge: its body wears the photographed face of a clipped one, and over it stand
+  clusters of hornbeam leaves, some half sunk and dark, some standing proud, stirring in
+  the wind (`src/streetHedges.ts`, `src/webgpu/streetHedges.ts`; the two pictures are
+  generated, `assets/hedges/`). They are made a 20 m patch at a time as you come near
+  and thinned with distance. A hedge a car has flattened loses them. The leaves are a
+  hornbeam's whatever the hedge really is, and every cluster's place is made up.
 
 - **Surveyed walls, fences and railings** (`pipeline/dtm_walls.py`): where the technical
   map's survey covers a tile (30 m of its lines or more), its walls ("Zeď"), fences
