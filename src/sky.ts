@@ -55,6 +55,8 @@ const MOODS: [number, Mood][] = [
 const OVERCAST = new THREE.Color('#b3b8bf'), CITY_GLOW = new THREE.Color('#5a4d48');
 // The share of the sunlight that comes back off the street's sunlit walls into its shade.
 const BOUNCE = 0.12;
+// How much more of the sky's light the shade gets in first and third person, by day.
+const STREET_FILL = 0.6;
 const SNOWY_GROUND =new THREE.Color('#b9bec6'), LIGHTNING = new THREE.Color('#dfe6ff');
 // Fog and mist, as seen (display colours): by day, at night, at night under clouds.
 const FOG_DAY = new THREE.Color('#b4b9bf'), FOG_NIGHT = new THREE.Color('#1a1e25'), FOG_GLOW = new THREE.Color('#2c2a2b');
@@ -243,6 +245,11 @@ export class Sky {
     const bounce = BOUNCE * this.sun.intensity * Math.cos(el) * THREE.MathUtils.smoothstep(deg, -2, 4);
     cc.copy(this.hemi.color).multiplyScalar(this.hemi.intensity).add(lc.copy(this.sun.color).multiplyScalar(bounce));
     this.hemi.color.copy(cc.multiplyScalar(1 / this.hemi.intensity));
+    // From the street, by day, the shade is lighter than the view from above draws it: there a
+    // dark shadow makes a roofline read, but down in a lane it left whole house fronts nearly
+    // black at noon, where a real shaded street is lit by the whole sky and by the walls
+    // across it. (After the reflections above, which keep their strength.)
+    if (this.street) this.hemi.intensity *= 1 + STREET_FILL * (1 - night) * (1 - 0.4 * w.cloud);
 
     // Fog, measured from the camera: `amount` of it on the ground right below, more
     // further off, less on the roofs.

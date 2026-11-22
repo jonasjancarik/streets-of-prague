@@ -70,8 +70,10 @@ pictures in its `screenshots/beautify-2/` (not committed). Measured on Ultra aga
   visible change where the blades end. Hedge leaves and grass together cost about 2 ms a
   frame standing on Letná's lawn on Ultra (18.3 → 20.5 ms, two runs); Medium and up only,
   never timed on a phone. Building a cell asks the map for the surface some 5,000 times.
-- [ ] Not touched, seen on the way: shade in narrow lanes is very dark at street level
-  (Seminářská at 11:00); the photo mesh of St Nicholas on Malostranské náměstí shows
+- [ ] Shade from the street gets 60 % more of the sky's light by day (`STREET_FILL` in
+  `src/sky.ts`): judged in four places in summer only, not in winter, rain or at dusk, and
+  the picture's brightness steps when you switch between the overhead and street views.
+- [ ] Not touched, seen on the way: the photo mesh of St Nicholas on Malostranské náměstí shows
   holes and loose triangles from the pavement; ambient shading (`?ao`) added little in
   first person in six views, so it stays off.
 
