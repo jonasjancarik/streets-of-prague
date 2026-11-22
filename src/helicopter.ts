@@ -1,3 +1,4 @@
+import { cockpitView } from './helicopterCabin.ts';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clamp } from './network.ts';
@@ -8,6 +9,7 @@ interface Flyer { x: number; y: number; vx: number; vy: number }
 interface Helicopter {
   x: number; y: number; z: number; vx: number; vy: number; h: number; w: number;
   g: THREE.Group; rotor: THREE.Group; tail: THREE.Group;
+  cockpit: (near: boolean) => void;
   leaving: boolean; orbit: number; air: boolean; gone?: boolean; pitch?: number; roll?: number;
   blades: number; fan: number; // the rotors' angles
 }
@@ -71,9 +73,11 @@ function model(paint = POLICE) {
   if (!built) throw new Error('loadHelicopters first');
   const colour = (part: string) => part === 'Paint' ? paint.body : part === 'Band' ? paint.band : part === 'Stripe' ? paint.stripe : PART[part] || '#777777';
   const g = new THREE.Group();
+  const windows: THREE.Mesh[] = [];
   const meshes = (parts: Part[], parent: THREE.Object3D, mat = (p: Part) => shared(colour(p.part))) => {
     for (const p of parts) {
       const m = new THREE.Mesh(p.geometry, mat(p));
+      if (p.part === 'Glass') windows.push(m);
       m.castShadow = true;
       parent.add(m);
     }
@@ -108,7 +112,7 @@ function model(paint = POLICE) {
     blur.material.opacity = 0.13 * spin;
     trails.forEach((m, i) => { m.opacity = spin * (i < trails.length / 2 ? 0.4 : 0.2); });
   };
-  return { g, rotor, tail, blurred };
+  return { g, rotor, tail, blurred, cockpit: cockpitView(g, windows) };
 }
 
 
@@ -139,10 +143,10 @@ export class Helicopters {
   spawn(x: number, y: number, d = 260) {
     const a = Math.random() * Math.PI * 2;
     const hx = x + Math.cos(a) * d, hy = y + Math.sin(a) * d;
-    const { g, rotor, tail, blurred } = model();
+    const { g, rotor, tail, blurred, cockpit } = model();
     blurred(1);
     this.scene.add(g);
-    const h: Helicopter = { x: hx, y: hy, z: this.height(hx, hy) + ALT, vx: 0, vy: 0, h: a + Math.PI, w: 0, g, rotor, tail, leaving: false, orbit: Math.random() * 6, air: true, blades: 0, fan: 0 };
+    const h: Helicopter = { x: hx, y: hy, z: this.height(hx, hy) + ALT, vx: 0, vy: 0, h: a + Math.PI, w: 0, g, rotor, tail, cockpit, leaving: false, orbit: Math.random() * 6, air: true, blades: 0, fan: 0 };
     this.list.push(h);
     return h;
   }
@@ -200,13 +204,14 @@ export class Helicopters {
     this.me = me;
   }
 
-  render(time: number) {
+  render(time: number, eye?: THREE.Vector3) {
     let n = 0;
     this.lit.length = 0;
     this.spot.material.opacity = 0.32 * (1 - this.night);
     for (const h of this.list) {
       h.g.position.set(h.x, h.z, -h.y);
       h.g.rotation.set(h.roll || 0, h.h, h.pitch || 0, 'YZX');
+      h.cockpit(!!eye && eye.distanceToSquared(h.g.position) < 60 ** 2);
       h.rotor.rotation.y = h.blades;
       h.tail.rotation.z = h.fan;
       if (h.leaving || !this.me) continue;
@@ -251,6 +256,7 @@ export class Chopper {
   wrecked = false;
   private impactCooldown = 0;
   private resting = true;
+  private cockpit: (near: boolean) => void;
   private blurred: (spin: number) => void;
 
   // `z`: the height to put it down from (onto a bridge's deck, or the ground under it).
@@ -259,7 +265,7 @@ export class Chopper {
     this.vx = 0; this.vy = 0; this.vz = 0; this.w = 0; this.spin = 0;
     this.z = below(x, y, z).h;
     const m = model({ body: '#c8312b', band: '#f2efe8', stripe: '#2a2d31' });
-    this.g = m.g; this.rotor = m.rotor; this.tail = m.tail; this.blurred = m.blurred;
+    this.g = m.g; this.rotor = m.rotor; this.tail = m.tail; this.blurred = m.blurred; this.cockpit = m.cockpit;
     scene.add(m.g);
   }
 
@@ -374,6 +380,7 @@ export class Chopper {
     }
     this.impact(impact);
     if (this.damage >= 100 && this.z <= floor + 0.01) {
+      this.cockpit(false);
       this.wrecked = true;
       this.vx = this.vy = this.vz = this.spin = 0;
       this.roll = 0.85;
@@ -393,8 +400,9 @@ export class Chopper {
     this.roll = clamp(-this.w * this.speed * 0.02, -0.35, 0.35);
   }
 
-  render() {
+  render(eye?: THREE.Vector3) {
     this.g.position.set(this.x, this.z, -this.y);
+    this.cockpit(!this.wrecked && !!eye && eye.distanceToSquared(this.g.position) < 60 ** 2);
     this.g.rotation.set(this.roll || 0, this.h, this.pitch || 0, 'YZX');
     this.rotor.rotation.y = this.blades;
     this.tail.rotation.z = this.fan;

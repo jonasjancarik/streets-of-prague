@@ -1,3 +1,4 @@
+import { StreetVehicleMesh } from './vehicleFittings.ts';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { body, boatMaterial, FERRY, wakeFor, poseWake } from './boats.ts';
@@ -82,7 +83,7 @@ export interface Ferry {
   legs: Course[];
   steps: Step[]; // one round trip, landing by landing
   period: number;
-  mesh: THREE.Mesh;
+  mesh: StreetVehicleMesh;
   wake: THREE.Mesh | null; // (boats.ts)
   piers: THREE.Mesh[];
   x: number; y: number; h: number; vx: number; vy: number;
@@ -108,7 +109,7 @@ export class Ferries {
       const add = (stop: number | null, leg: number, back: boolean, dur: number) => { steps.push({ stop, leg, back, from: at, dur }); at += dur; };
       for (let k = 0; k < legs.length; k++) { add(k, k, false, DWELL); add(null, k, false, runTime(legs[k].length, FERRY.speed, ACC)); }
       for (let k = legs.length - 1; k >= 0; k--) { add(k + 1, k, true, DWELL); add(null, k, true, runTime(legs[k].length, FERRY.speed, ACC)); }
-      const mesh = new THREE.Mesh(body('ferry', line.colour), boatMaterial());
+      const mesh = new StreetVehicleMesh(body('ferry', line.colour), boatMaterial(), () => body('ferry', line.colour, true));
       mesh.castShadow = true;
       mesh.visible = false;
       mesh.matrixAutoUpdate = false;

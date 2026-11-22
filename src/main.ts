@@ -2996,7 +2996,7 @@ async function main() {
     crowd.render(ground, (x, y) => !offscreen(x, y), eyes && weather.now.rain > .01 ? weatherFx.sheltered : undefined);
     birds.update(dt, Object.assign(birdsView, { x: camPos.x, y: -camPos.z, radius: viewRadius(), height: eyes ? 1000 : height, dark: sky.dark, rain: weather.now.rain, snow: weather.now.snow }));
     terraces.update(dt, Object.assign(terraceView, { x: camPos.x, y: -camPos.z, radius: viewRadius(), day: season.day }));
-    police.render(ground, time.value);
+    police.render(ground, time.value, fromStreet ? camera.position : undefined);
     {
       const chasing = police.lit, engines = brigade.lit, rescue = ambulances.lit, carts = refuse.lit;
       // The one you're driving, as you've set its lights.
@@ -3048,7 +3048,7 @@ async function main() {
       busy = clamp(footfall.around(px(), py(), 150) / 0.2, 0, 1);
       road = roadNoise(edgesNear(px(), py(), ROAD_FAR), px(), py());
     }
-    for (const c of choppers) c.render();
+    for (const c of choppers) c.render(fromStreet ? camera.position : undefined);
     if (hornHeld && !inCar && !ride.driving) honk(false);
     if (hornHeld && (hornT -= dt) < 0) { hornT = 0.5; scareAhead(); }
     // Helicopters with their rotors turning: yours, others winding down and the police's.
@@ -3264,6 +3264,17 @@ async function main() {
     if (streetWalls && graphics.tier !== 'lowest') loadFacadeFinishes();
     world.facades.update(streetWalls, camera.position.x, camera.position.y, camera.position.z, graphics.tier, !!facadeFinishes.masks);
     tunnelFinishesView(!!eyes && !underway);
+    for (const b of boats.list) {
+      if (b.live) b.mesh.showDetail(fromStreet && camera.position.distanceToSquared(b.mesh.position) < 50 ** 2);
+    }
+    for (const f of ferries.list) {
+      if (f.mesh.visible) f.mesh.showDetail(fromStreet && camera.position.distanceToSquared(f.mesh.position) < 50 ** 2);
+    }
+    for (const c of funicular.cars) {
+      if (!c.mesh.visible) continue;
+      const near = fromStreet && camera.position.distanceToSquared(c.mesh.position) < 50 ** 2;
+      for (const bay of c.bays) bay.showDetail(near);
+    }
     world.furnitureCamera(fromStreet);
     world.passageCamera(fromStreet, camera.position.x, -camera.position.z);
     ironwork.update(fromStreet, camera.position, graphics.tier, weather.now.wet);

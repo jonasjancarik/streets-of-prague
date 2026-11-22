@@ -835,8 +835,8 @@ export class Police {
   // as you set them: Car.beacon, in main.ts.)
   get lit() { return this.cars.filter((p) => !p.calm && !p.wrecked).map((p) => p.car); }
 
-  render(height: (x: number, y: number, who: Car | Officer) => number, time: number) {
-    this.helis.render(time);
+  render(height: (x: number, y: number, who: Car | Officer) => number, time: number, eye?: THREE.Vector3) {
+    this.helis.render(time, eye);
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(SCALE, SCALE, SCALE);
     for (const o of this.officers) {
       m.compose(p.set(o.x, height(o.x, o.y, o), -o.y), q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, o.h), sc);

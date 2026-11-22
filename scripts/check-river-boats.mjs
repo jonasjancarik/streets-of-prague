@@ -8,9 +8,29 @@ import * as THREE from 'three';
 globalThis.location = { search: '' };
 const server = await createServer({ configFile: false, server: { middlewareMode: true, hmr: false, ws: false } });
 try {
-  const { Boats } = await server.ssrLoadModule('/src/boats.ts');
+  const { Boats, body, boatMaterial } = await server.ssrLoadModule('/src/boats.ts');
   const { Ferries } = await server.ssrLoadModule('/src/ferries.ts');
   const { parseRiver } = await server.ssrLoadModule('/src/river.ts');
+  const { StreetVehicleMesh } = await server.ssrLoadModule('/src/vehicleFittings.ts');
+  for (const kind of ['pedal', 'swan', 'cruise', 'ferry']) {
+    const simple = body(kind, '#c44338');
+    const mesh = new StreetVehicleMesh(simple, boatMaterial(), () => body(kind, '#c44338', true));
+    mesh.showDetail(true);
+    const close = mesh.geometry;
+    close.computeBoundingBox();
+    simple.computeBoundingBox();
+    assert.ok(close.boundingBox.max.y <= simple.boundingBox.max.y + .001, kind + ' keeps its original bridge clearance');
+    assert.ok(close.attributes.position.count > simple.attributes.position.count, kind + ' has close fittings');
+    assert.ok(close.attributes.glow.array.includes(2), kind + ' keeps its navigation lamps');
+    if (kind === 'cruise' || kind === 'ferry') {
+      assert.equal(close.groups.length, 2, kind + ' has a separate window pass');
+      assert.ok(mesh.material[1].transparent);
+    }
+    mesh.showDetail(false);
+    assert.equal(mesh.geometry, simple);
+    mesh.showDetail(true);
+    assert.equal(mesh.geometry, close, kind + ' reuses its detailed hull');
+  }
   // A straight river 60 m wide and 900 m long, far from the real city, whose water
   // drops 2 m at x = 500 (a lock's worth).
   const O = 20000, half = 30;

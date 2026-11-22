@@ -310,6 +310,22 @@ lantern gives the line letters, with the station name and neighbouring stops bel
 At a pedestrian crossing, the red standing figure and the green walking figure share
 the same signal phase as the overhead light.
 
+### Vehicle models at street level
+
+Within 24 m of the camera, the bus and minibus have separate panes in their doors
+and windows. You can see the aisle, red seats, yellow rails and driver's controls.
+The box lorry, articulated lorry and dustcart keep their cargo bodies and have
+glazed cabs with seats, instruments and mirrors. Bicycles and motorbikes gain rims,
+spokes and chain drives. Shared bikes keep their operator's paint and couriers
+keep their delivery boxes.
+
+From the bank you can see into the cruise boat's saloon and the ferry's wheelhouse.
+Both pedal boats have seats and pedal cranks, with an open seat well between the
+swan's wings. The Petřín and NH hotel funiculars have glazed compartments with
+benches, door handles and boarding steps. These models appear within 50 m.
+Both helicopter liveries use the same four-seat cockpit, visible within 60 m.
+The metro ride uses its overhead cutaway camera.
+
 ## Playing
 
 - On foot, the yellow ring stays visible from above when you walk under trees.

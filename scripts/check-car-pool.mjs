@@ -228,6 +228,30 @@ const checks = `(async () => {
       }
     }
     pool.render([]);
+    for (const type of ['bus', 'minibus', 'truck', 'artic', 'garbage', 'bike', 'moto']) {
+      const two = type === 'bike' || type === 'moto';
+      const vehicle = new Car(type, () => .2, 0, 0, 0, '#e75394', two ? COURIER_BOXES[0] : undefined);
+      const fitted = vehicle.key + '|fitted', simple = page(vehicle.key);
+      for (const [street, distance, close] of [[true, 6, true], [true, 40, false], [false, 6, false], [true, 6, true]]) {
+        pool.render([vehicle], null, 0, undefined, street, { x: distance, z: 0 });
+        assert(page(fitted).count === Number(close) && simple.count === Number(!close), type + ' near/far/overhead');
+        assert(pool.matrixOf(vehicle, new THREE.Matrix4()), type + ' accessory transform follows its active body');
+      }
+      const mesh = page(fitted);
+      assert(mesh.geometry.attributes.position.count > simple.geometry.attributes.position.count, type + ' fitted geometry');
+      if (two) {
+        assert(mesh.geometry.attributes.painted.array.some(value => value === 1), type + ' uses the rider’s paint');
+      } else {
+        assert(mesh.geometry.groups.length === 2 && mesh.material[1].transparent && !mesh.material[1].depthWrite,
+          type + ' has separate cab glazing');
+        vehicle.mode = 'traffic';
+        pool.render([vehicle], null, 0, undefined, true, eye);
+        assert(driversShown() === 1, type + ' occupied driver seat');
+      }
+      vehicle.burn();
+      pool.render([vehicle], null, 0, undefined, true, eye);
+      assert(page(vehicle.key).count === 1 && mesh.count === 0, type + ' keeps its charred wreck');
+    }
     const tender = new Car('fire', () => .2);
     for (const [street, distance, detail] of [[true, 8, true], [true, 40, false], [false, 8, false]]) {
       pool.render([tender], null, 0, undefined, street, {x:distance, z:0});

@@ -1,3 +1,4 @@
+import { StreetVehicleMesh, pane, strut, tint } from './vehicleFittings.ts';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Point2 } from './map/geo.ts';
@@ -121,24 +122,53 @@ function runAt(tau: number, d: number, v: number, a: number): [number, number] {
 
 const clockTime = (h: number) => `${Math.floor(h)}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`;
 
-function carGeometry() {
-  const parts: THREE.BufferGeometry[] = [];
-  const box = (sx: number, sy: number, sz: number, x: number, y: number, z: number, color: string) => {
-    const g = new THREE.BoxGeometry(sx, sy, sz);
-    g.translate(x, y, z);
-    const c = new THREE.Color(color), n = g.attributes.position.count, col = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) col.set([c.r, c.g, c.b], i * 3);
-    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    parts.push(g);
-  };
+function carGeometry(street = false, hotel = false) {
+  const parts: THREE.BufferGeometry[] = [], windows: THREE.BufferGeometry[] = [];
+  const box = (sx: number, sy: number, sz: number, x: number, y: number, z: number, color: string) =>
+    parts.push(tint(new THREE.BoxGeometry(sx, sy, sz).translate(x, y, z), color));
   // One compartment: red below, a band of windows, a cream roof.
+  if (street) {
+    const red = hotel ? '#ac3931' : '#9b2a22', cream = '#e1dfce';
+    const l = BAY / 2 - .025, w = BAY_W / 2 - .035;
+    const sill = hotel ? .79 : 1.04, top = 2.38, upper = hotel ? l - .30 : l;
+    box(BAY, .16, BAY_W, 0, .39, 0, red);
+    for (const side of [-1, 1]) {
+      const z = side * w;
+      box(BAY, sill - .45, .075, 0, (sill + .45) / 2, z, red);
+      box(BAY, .07, .085, 0, sill, z, cream);
+      windows.push(tint(pane([-l, sill, z], [l, sill, z], [upper, top, z], [-upper, top, z]), '#556b74'));
+      for (const end of [-1, 1]) parts.push(tint(strut([end * l, sill, z], [end * upper, top, z], .046), cream));
+      for (const x of [-.70, .15]) box(.065, top - sill, .08, x, (top + sill) / 2, z, cream);
+      // The sliding door seam, recessed handle and step are visible from the platform.
+      box(.025, sill - .46, .085, .15, (sill + .46) / 2, z, '#483d36');
+      box(.14, .036, .096, .04, sill - .12, z, '#c8c5b9');
+      box(.88, .07, .16, -.27, .33, z, '#787b79');
+      const x = side * l;
+      box(.065, sill - .45, BAY_W, x, (sill + .45) / 2, 0, red);
+      windows.push(tint(pane([x, sill, -w], [side * upper, top, -w], [side * upper, top, w], [x, sill, w]), '#556b74'));
+      if (!hotel) box(.07, top - sill, .06, x, (top + sill) / 2, 0, cream);
+      for (const sz of [-.58, .58]) {
+        parts.push(tint(strut([side * .87, .48, sz], [side * .87, .76, sz], .034), '#747775'));
+      }
+      box(.44, .09, 1.70, side * .87, .78, 0, '#9c7350');
+      box(.08, .39, 1.70, side * 1.05, .97, 0, '#a8825d');
+      parts.push(tint(strut([side * .56, .47, .91], [side * .56, top, .91], .024), '#b3aba0'));
+    }
+    box(upper * 2 + .05, .21, BAY_W, 0, 2.46, 0, red);
+    box(upper * 2 - .07, .14, BAY_W - .10, 0, 2.64, 0, cream);
+    box(1.30, .035, .12, 0, 2.34, 0, '#23282c');
+    const g = mergeGeometries([...parts, ...windows]);
+    const opaque = parts.reduce((sum, p) => sum + p.index!.count, 0);
+    g.addGroup(0, opaque, 0); g.addGroup(opaque, g.index!.count - opaque, 1);
+    return g;
+  }
   box(BAY, 0.9, BAY_W, 0, 0.75, 0, '#9b2a22');
   box(BAY - 0.06, 1.1, BAY_W * 0.99, 0, 1.75, 0, '#23282c');
   box(BAY, 0.35, BAY_W, 0, 2.47, 0, '#9b2a22');
   box(BAY - 0.5, 0.14, BAY_W * 0.8, 0, 2.7, 0, '#d8d2c2');
   return mergeGeometries(parts);
 }
-const bayGeometry = carGeometry();
+const bayGeometry = carGeometry(), hotelGeometry = carGeometry();
 const material = new THREE.MeshLambertMaterial({ vertexColors: true });
 // At night the windows (the dark band) are lit from inside.
 material.onBeforeCompile = (sh) => {
@@ -154,7 +184,7 @@ export interface FunicularCar {
   path: Path;
   flip: boolean; // runs the cable the other way: at the top while the first car is at the bottom
   mesh: THREE.Group;
-  bays: THREE.Mesh[];
+  bays: StreetVehicleMesh[];
   frame: THREE.Mesh;
   x: number; y: number; h: number; vx: number; vy: number;
   gz: number; slope: number; // ground height under its middle, and the rise a metre along
@@ -203,9 +233,9 @@ export class Funicular {
       const stops = [{ at: 0, name: names[0] }, ...(mid !== null && names.length > 2 ? [{ at: mid, name: names[1] }] : []), { at: length, name: names[names.length - 1] }];
       const line: Line = { spec, length, mid: stops.length > 2 ? mid : null, stops, cars: [], open: false };
       paths.forEach((path, k) => {
-        const mesh = new THREE.Group(), bays: THREE.Mesh[] = [], bay = spec.len / spec.bays;
+        const mesh = new THREE.Group(), bays: StreetVehicleMesh[] = [], bay = spec.len / spec.bays;
         for (let i = 0; i < spec.bays; i++) {
-          const m = new THREE.Mesh(bayGeometry, material);
+          const m = new StreetVehicleMesh(spec.ticket ? bayGeometry : hotelGeometry, material, () => carGeometry(true, !spec.ticket));
           m.castShadow = true;
           m.scale.set(bay / BAY, 1, spec.w / BAY_W);
           m.position.x = (i + 0.5) * bay - spec.len / 2;

@@ -165,14 +165,16 @@ export class SeatedDrivers {
   *meshes() { for (const k of this.kinds) yield* k.pages; }
   begin() { for (const k of this.kinds) k.count = 0; }
   put(layout: readonly number[], plate: number, officer: boolean, matrix: THREE.Matrix4) {
+    this.putAt(layout[9] - .14, layout[3] + .205, -layout[10], layout[5], plate, officer, matrix);
+  }
+  putAt(x: number, pelvis: number, z: number, roof: number, variant: number, officer: boolean, matrix: THREE.Matrix4) {
     if (!this.kinds.length) {
       if (!this.loading && performance.now() >= this.retryAt) void this.load();
       return;
     }
-    const k = this.kinds[officer && this.kinds[2] ? 2 : plate % 2];
+    const k = this.kinds[officer && this.kinds[2] ? 2 : variant % 2];
     if (!k) return;
-    const floor = layout[3], roof = layout[5], x = layout[9] - 0.14, z = -layout[10];
-    const pelvis = floor + 0.205, size = Math.min(1.01, (roof - 0.115 - pelvis) / k.height);
+    const size = Math.min(1.01, (roof - 0.115 - pelvis) / k.height);
     this.local.makeTranslation(x, pelvis, z).scale(this.scale.setScalar(size));
     const i = k.count++, batch = Math.floor(i / 64);
     if (!k.pages[batch]) this.page(k);

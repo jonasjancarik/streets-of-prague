@@ -1,3 +1,5 @@
+import { passengerVessel, pedalFittings } from './boatFittings.ts';
+import { loftSections, StreetVehicleMesh } from './vehicleFittings.ts';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { clamp } from './network.ts';
@@ -77,7 +79,7 @@ const RISE = 0.3; // m/s: how fast a boat rises or sinks where the water's heigh
 const BOARD_REACH = 4.5, BOARD_STEP = 0.8; // a short step between a low bank and the deck
 
 interface Boat {
-  kind: Kind; s: Spec; mesh: THREE.Mesh; live: boolean;
+  kind: Kind; s: Spec; mesh: StreetVehicleMesh; live: boolean;
   wake: THREE.Mesh | null;
   x: number; y: number; h: number; v: number; w: number; phase: number; wander: number; side: number;
   next: number; turn: number; ahead: number; // when to look round again, and what it found
@@ -90,16 +92,16 @@ interface Boat {
 // Boxes and extrusions with a colour per vertex, merged into one body. Forward is +x,
 // right +z, the waterline y = 0, as for the cars. `glow` marks what shines at night:
 // 1 the cabin windows (lit from inside), 2 the navigation lights (their own colour).
-export function body(kind: Kind, paint: string) {
-  const parts: THREE.BufferGeometry[] = [];
+export function body(kind: Kind, paint: string, street = false) {
+  const parts: THREE.BufferGeometry[] = [], glass: THREE.BufferGeometry[] = [];
   const colour = (g: THREE.BufferGeometry, color: string, glow = 0) => {
     const c = new THREE.Color(color), n = g.attributes.position.count, col = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) col.set([c.r, c.g, c.b], i * 3);
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
     g.setAttribute('glow', new THREE.BufferAttribute(new Float32Array(n).fill(glow), 1));
     g.deleteAttribute('uv');
-    g.deleteAttribute('normal');
-    parts.push(g.index ? g.toNonIndexed() : g);
+    if (!street) g.deleteAttribute('normal');
+    (g.userData.cabWindow ? glass : parts).push(g.index ? g.toNonIndexed() : g);
   };
   const box = (sx: number, sy: number, sz: number, x: number, y: number, z: number, color: string, glow = 0) =>
     colour(new THREE.BoxGeometry(sx, sy, sz).translate(x, y, z), color, glow);
@@ -117,20 +119,26 @@ export function body(kind: Kind, paint: string) {
     colour(g, color);
   };
   const ball = (sx: number, sy: number, sz: number, x: number, y: number, z: number, color: string) => {
-    colour(new THREE.SphereGeometry(1, 10, 7).scale(sx, sy, sz).translate(x, y, z), color);
+    colour(new THREE.SphereGeometry(1, street ? 22 : 10, street ? 14 : 7).scale(sx, sy, sz).translate(x, y, z), color);
   };
   if (kind === 'cruise') {
     const L = SPECS.cruise.len, B = SPECS.cruise.beam;
     hull(L, B, 7, -0.4, 0.5, '#1f3550');
     hull(L, B, 7, 0.5, 1.5, '#f2f1ec');
     hull(L - 0.7, B - 0.7, 6.6, 1.5, 1.56, '#a9855a'); // wooden deck fore and aft
-    box(L * 0.64, 1.85, B - 1, -2, 2.42, 0, '#f4f3ee'); // the cabin (low, like the boats that fit under Prague's bridges)
-    box(L * 0.62, 0.95, B - 0.3, -2, 2.55, 0, '#27343f', 1); // its windows all round (a little proud of the roof, so they show from above)
+    if (street) passengerVessel('cruise', B, colour, box);
+    else {
+      box(L * 0.64, 1.85, B - 1, -2, 2.42, 0, '#f4f3ee'); // the cabin (low, like the boats that fit under Prague's bridges)
+      box(L * 0.62, 0.95, B - 0.3, -2, 2.55, 0, '#27343f', 1); // its windows all round (a little proud of the roof, so they show from above)
+    }
     box(L * 0.68, 0.14, B - 0.6, -2, 3.4, 0, '#7f98a8'); // the roof deck
-    box(L * 0.66, 0.3, 0.06, -2, 3.6, (B - 0.7) / 2, '#c9c7bf'); // low railings along it
-    box(L * 0.66, 0.3, 0.06, -2, 3.6, -(B - 0.7) / 2, '#c9c7bf');
-    box(4.2, 1.7, 3.4, 9.6, 2.35, 0, '#f4f3ee'); // the wheelhouse forward
-    box(0.1, 0.8, 3.0, 11.7, 2.55, 0, '#27343f');
+    if (street) box(3.02, .15, 3.48, 10.32, 3.20, 0, '#edece5');
+    else {
+      box(L * 0.66, 0.3, 0.06, -2, 3.6, (B - 0.7) / 2, '#c9c7bf'); // low railings along it
+      box(L * 0.66, 0.3, 0.06, -2, 3.6, -(B - 0.7) / 2, '#c9c7bf');
+      box(4.2, 1.7, 3.4, 9.6, 2.35, 0, '#f4f3ee'); // the wheelhouse forward
+      box(0.1, 0.8, 3.0, 11.7, 2.55, 0, '#27343f');
+    }
     // Navigation lights: red to port (left), green to starboard, white on a stub of a mast.
     box(0.5, 0.35, 0.12, 9.9, 2.9, -1.76, '#ff1a10', 2);
     box(0.5, 0.35, 0.12, 9.9, 2.9, 1.76, '#10ff40', 2);
@@ -138,7 +146,7 @@ export function body(kind: Kind, paint: string) {
     box(0.45, 0.25, 0.45, 10.4, 3.6, 0, '#ffffff', 2);
     box(0.3, 0.3, 0.3, -2 - L * 0.32 + 0.3, 2.0, 0, '#ffffff', 2); // and one at the stern
     box(0.8, 0.2, 5.2, -2 - L * 0.32 + 0.5, 1.55, 0, '#8a2b2b'); // a red stripe at the stern
-    for (let i = 0; i < 6; i++) box(1.2, 0.08, 0.5, -12 + i * 3.6, 3.55, 0, '#3d6f9a'); // benches up top
+    if (!street) for (let i = 0; i < 6; i++) box(1.2, 0.08, 0.5, -12 + i * 3.6, 3.55, 0, '#3d6f9a'); // benches up top
   } else if (kind === 'ferry') {
     // PID's little ferry: a dark hull with a band in the line's colour, an open deck
     // forward under an awning, the cabin and wheelhouse aft.
@@ -147,16 +155,19 @@ export function body(kind: Kind, paint: string) {
     hull(L, B, 2.6, 0.45, 0.8, paint);
     hull(L, B, 2.6, 0.8, 1.05, '#f2f1ec');
     hull(L - 0.5, B - 0.5, 2.4, 1.05, 1.1, '#8d9296'); // the deck
-    box(3.6, 1.9, B - 0.7, -2.6, 2.05, 0, '#f4f3ee'); // the cabin
-    box(3.4, 0.8, B - 0.5, -2.6, 2.3, 0, '#27343f', 1); // its windows
+    if (street) passengerVessel('ferry', B, colour, box);
+    else {
+      box(3.6, 1.9, B - 0.7, -2.6, 2.05, 0, '#f4f3ee'); // the cabin
+      box(3.4, 0.8, B - 0.5, -2.6, 2.3, 0, '#27343f', 1); // its windows
+    }
     box(3.9, 0.12, B - 0.4, -2.6, 3.06, 0, '#e9e6de');
     for (const z of [-(B / 2 - 0.35), B / 2 - 0.35]) {
       for (const x of [-0.4, 1.6, 3.2]) box(0.07, 1.9, 0.07, x, 2.05, z, '#c9c7bf'); // the awning's posts
       box(4.0, 0.06, 0.06, 1.4, 2.0, z, '#c9c7bf'); // and a rail along each side
     }
     box(4.2, 0.08, B - 0.5, 1.4, 3.02, 0, paint); // the awning
-    box(1.6, 0.3, 0.5, 1.2, 1.4, -0.9, '#6f5a43'); // benches
-    box(1.6, 0.3, 0.5, 1.2, 1.4, 0.9, '#6f5a43');
+    if (!street) box(1.6, 0.3, 0.5, 1.2, 1.4, -0.9, '#6f5a43'); // benches
+    if (!street) box(1.6, 0.3, 0.5, 1.2, 1.4, 0.9, '#6f5a43');
     box(0.4, 0.3, 0.1, -1.0, 2.8, -(B / 2 - 0.3), '#ff1a10', 2);
     box(0.4, 0.3, 0.1, -1.0, 2.8, B / 2 - 0.3, '#10ff40', 2);
     box(0.07, 0.7, 0.07, -2.6, 3.45, 0, '#c9c7bf');
@@ -164,9 +175,23 @@ export function body(kind: Kind, paint: string) {
   } else {
     const S = SPECS[kind];
     // Two floats and a deck between them, a seat and a sunshade.
-    for (const z of [-0.6, 0.6]) hull(S.len, 0.6, 0.8, -0.15, 0.35, kind === 'swan' ? '#f4f4f0' : paint, z);
-    box(S.len * 0.8, 0.12, S.beam - 0.2, -0.1, 0.4, 0, '#e9e6de');
-    box(0.7, 0.45, S.beam - 0.5, -0.4, 0.68, 0, '#3c4046');
+    if (street) {
+      const l = S.len / 2;
+      for (const z of [-.60, .60]) {
+        const pontoon = loftSections([[-l, .16, .11, .18], [-l + .14, .13, .20, .27],
+        [-l + .46, .11, .25, .30], [l - .68, .11, .25, .30], [l - .31, .14, .22, .24],
+        [l - .10, .18, .16, .13], [l, .21, .09, .024]], 3.3).translate(0, 0, z);
+        colour(pontoon, kind === 'swan' ? '#f4f4f0' : paint);
+      }
+      const deck = loftSections([[-l + .20, .37, .043, .57], [-l + .35, .38, .065, .78],
+      [l - .55, .38, .065, .79], [l - .32, .39, .061, .69], [l - .19, .40, .051, .45]], 5);
+      colour(deck, '#dedbd1');
+    } else {
+      for (const z of [-0.6, 0.6]) hull(S.len, 0.6, 0.8, -0.15, 0.35, kind === 'swan' ? '#f4f4f0' : paint, z);
+      box(S.len * 0.8, 0.12, S.beam - 0.2, -0.1, 0.4, 0, '#e9e6de');
+    }
+    if (street) pedalFittings(kind === 'swan', colour, box);
+    else box(0.7, 0.45, S.beam - 0.5, -0.4, 0.68, 0, '#3c4046');
     // A small all-round white lamp, merged into the body: no extra light or draw call.
     const lampX = kind === 'pedal' ? -0.6 : -1.3, lampY = kind === 'pedal' ? 2 : 1.25;
     box(0.06, 0.35, 0.06, lampX, lampY - 0.23, 0, '#9a9a96');
@@ -175,18 +200,31 @@ export function body(kind: Kind, paint: string) {
       for (const z of [-0.7, 0.7]) box(0.06, 1.2, 0.06, -0.6, 1.0, z, '#9a9a96');
       box(1.4, 0.06, S.beam - 0.1, -0.5, 1.6, 0, paint);
     } else {
-      ball(1.25, 0.7, 0.95, -0.2, 0.75, 0, '#fbfbf7'); // the swan's body round the seat
+      if (street) {
+        // The moulding wraps around the seat well, leaving both pedals exposed.
+        for (const z of [-.72, .72]) ball(1.25, .45, .23, -.2, .65, z, '#fbfbf7');
+        ball(.28, .38, .86, -1.26, .61, 0, '#fbfbf7');
+        ball(.30, .34, .79, .80, .66, 0, '#fbfbf7');
+      } else ball(1.25, 0.7, 0.95, -0.2, 0.75, 0, '#fbfbf7'); // the swan's body round the seat
       ball(0.7, 0.35, 0.18, -0.4, 1.0, 0.85, '#efefe9'); // wings
       ball(0.7, 0.35, 0.18, -0.4, 1.0, -0.85, '#efefe9');
       const neck = new THREE.CylinderGeometry(0.13, 0.2, 1.6, 8).translate(0, 0.8, 0).rotateZ(-0.35).translate(1.1, 0.8, 0);
-      colour(neck, '#fbfbf7');
+      if (street) {
+        const curve = new THREE.CatmullRomCurve3([[.84, .66, 0], [1.10, 1.04, 0], [1.36, 1.40, 0], [1.31, 1.84, 0], [1.48, 2.13, 0], [1.72, 2.24, 0]].map(([x, y, z]) => new THREE.Vector3(x, y, z)));
+        colour(new THREE.TubeGeometry(curve, 20, .145, 12, false), '#fbfbf7');
+      } else colour(neck, '#fbfbf7');
       ball(0.24, 0.22, 0.2, 1.72, 2.25, 0, '#fbfbf7'); // head
       box(0.34, 0.1, 0.12, 1.98, 2.2, 0, '#e07a1f'); // beak
       box(0.1, 0.12, 0.26, 1.72, 2.28, 0, '#1b1b1b'); // eyes
     }
   }
-  const g = mergeGeometries(parts)!;
-  g.computeVertexNormals();
+  const g = mergeGeometries([...parts, ...glass])!;
+  if (glass.length) {
+    const opaque = parts.reduce((sum, p) => sum + p.attributes.position.count, 0);
+    g.addGroup(0, opaque, 0);
+    g.addGroup(opaque, g.attributes.position.count - opaque, 1);
+  }
+  if (!street) g.computeVertexNormals();
   return g;
 }
 
@@ -253,7 +291,7 @@ export class Boats {
     const add = (kind: Kind, paint: string) => {
       const k = `${kind}|${paint}`;
       if (!geometries.has(k)) geometries.set(k, body(kind, paint));
-      const mesh = new THREE.Mesh(geometries.get(k), material);
+      const mesh = new StreetVehicleMesh(geometries.get(k)!, material, () => body(kind, paint, true));
       mesh.castShadow = true;
       mesh.visible = false;
       mesh.matrixAutoUpdate = false;

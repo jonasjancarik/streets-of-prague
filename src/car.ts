@@ -1,3 +1,5 @@
+import { busCabin, commercialCab } from './commercialCab.ts';
+import { twoWheelerStreet } from './twoWheelerStreet.ts';
 import * as THREE from 'three';
 import { SeatedDrivers, passengerCabin } from './passengerCabin.ts';
 import { buildStreetWheels } from './streetWheels.ts';
@@ -333,6 +335,27 @@ function prepareStreetCar(type: string, box?: string) {
   return street;
 }
 
+// Cab and cycle detail has no moving wheel shader. Keep its page on the normal
+// car material, sharing the two-wheeler itself across all courier box colours.
+const streetFleet = new Map<string, string>();
+function prepareFleetBody(type: string, box?: string): string | undefined {
+  const key = bodyKey(type, box), street = key + '|fitted';
+  if (streetFleet.has(key)) return street;
+  const spec = TYPES[type];
+  let g: THREE.BufferGeometry;
+  if (spec?.two) {
+    const bare = box ? cache.get(prepareFleetBody(type)!)! : undefined;
+    g = bare ? mergeGeometries([bare, boxGeometry(type, box!)]) : twoWheelerStreet(spec.two, carGeometry(type));
+  } else if (type === 'bus' || type === 'minibus') g = busGeometry(spec, true);
+  else if (type === 'truck' || type === 'artic') g = truckGeometry(type, spec, true);
+  else if (type === 'garbage') g = garbageGeometry(spec, true);
+  else return;
+  if (!spec.two) markZones(g);
+  cache.set(street, g);
+  streetFleet.set(key, street);
+  return street;
+}
+
 // The authored body is a separate GLB. The existing fitted sedan remains usable
 // while it arrives, including on a slow connection or during a retry.
 const STREET_SEDAN = 'sedan|coachwork|street-wheels';
@@ -602,27 +625,39 @@ function boxBuilder(paintColour?: string, serviceAtlas?: 'ambulance' | 'fire') {
       }
     }
   };
+  let driverSeat: number[] | undefined;
+  const setSeat = (x: number, pelvis: number, z: number, roof: number) => { driverSeat = [x, pelvis, z, roof]; };
   const done = () => {
     if (!windows.length) return mergeGeometries(parts);
     const body = mergeGeometries(parts.concat(windows));
+    body.userData.driverSeat = driverSeat;
     const opaqueCount = parts.reduce((sum, g) => sum + (g.index?.count ?? g.attributes.position.count), 0);
     body.addGroup(0, opaqueCount, 0);
     body.addGroup(opaqueCount, (body.index?.count ?? body.attributes.position.count) - opaqueCount, 1);
     return body;
   };
-  return { add, box, rounded, panel, wheel, roadWheel, done };
+  return { add, box, rounded, panel, wheel, roadWheel, setSeat, done };
 }
 
-function busGeometry(S: CarSpec): THREE.BufferGeometry {
-  const { box, rounded, wheel, done } = boxBuilder(S.color || '#c8102e');
+function busGeometry(S: CarSpec, street = false): THREE.BufferGeometry {
+  const builder = boxBuilder(S.color || '#c8102e');
+  const { box, rounded, done } = builder;
+  const wheel = street ? builder.roadWheel : builder.wheel;
   const L = S.L / 2, W = S.W, red = S.color || '#c8102e', white = '#eeeeea', glass = '#1b242c', grey = '#8a8f94';
   const small = S.L < 10;
   const sill = 1.15, top = small ? 2.3 : 2.55, roof = small ? 2.65 : 2.95;
   // Rounded at the corners, more at the front than the back.
   const nose = 0.3, tail = 0.16;
-  rounded('#2a2c2f', -L + 0.05, L - 0.05, 0.28, 0.5, W - 0.02, [nose, tail]); // skirt and bumpers
-  rounded(red, -L, L, 0.5, sill, W, [nose, tail]);
-  rounded(glass, -L + 0.02, L - 0.02, sill, top, W - 0.06, [nose - 0.02, tail - 0.02]);
+  rounded('#2a2c2f', -L + 0.05, L - 0.05, 0.28, 0.5, W - (street ? .70 : .02), [nose, tail]); // skirt and bumpers
+  const doors = small ? [L - (street ? 2.75 : 1.1), -L + 2.6] : [L - 1.35, 0.6, -3.8];
+  if (street) {
+    busCabin(builder, L, W, small, sill, top, doors, red);
+    for (const x of [-L + .12, L - .12]) rounded('#2a2c2f', x - .12, x + .12, .28, .50, W - .08, .10);
+  }
+  else {
+    rounded(red, -L, L, 0.5, sill, W, [nose, tail]);
+    rounded(glass, -L + 0.02, L - 0.02, sill, top, W - 0.06, [nose - 0.02, tail - 0.02]);
+  }
   // The roof stops short of the front, so from above the dark windscreen and line
   // board show which way the bus faces; its edges are rounded off.
   rounded(white, -L, L - 0.4, top, roof, W, [0.06, tail], 0.1);
@@ -635,30 +670,31 @@ function busGeometry(S: CarSpec): THREE.BufferGeometry {
     box('#b9bdbf', 1.9, 2.7, roof, roof + 0.06, 0.8); // roof hatches
     box('#b9bdbf', -5.0, -4.2, roof, roof + 0.06, 0.8);
   }
-  // Pillars between the side windows (none where the doors are).
-  const doors = small ? [L - 1.1, -L + 2.6] : [L - 1.35, 0.6, -3.8];
-  for (let x = -L + 0.9; x < L - 2.2; x += 1.45) {
-    if (doors.some((d) => Math.abs(x - d) < 0.9)) continue;
-    box(white, x - 0.07, x + 0.07, sill, top, W + 0.01);
+  if (!street) {
+    // Pillars between the side windows (none where the doors are).
+    for (let x = -L + 0.9; x < L - 2.2; x += 1.45) {
+      if (doors.some((d) => Math.abs(x - d) < 0.9)) continue;
+      box(white, x - 0.07, x + 0.07, sill, top, W + 0.01);
+    }
+    box(white, L - 2.25, L - 2.1, sill, top, W + 0.01);
+    rounded(white, -L + 0.02, -L + 0.5, sill, top, W + 0.01, [0.005, tail]); // the back corners
+    // Doors on the right (+z): glass nearly down to the kerb, a red frame round them.
+    for (const d of doors) {
+      box(red, d - 0.68, d + 0.68, 0.32, top, 0.04, W / 2);
+      box('#26313a', d - 0.6, d + 0.6, 0.38, top - 0.08, 0.06, W / 2 + 0.005);
+      box('#15191d', d - 0.02, d + 0.02, 0.38, top - 0.08, 0.08, W / 2 + 0.005);
+    }
+    // Front: a tall windscreen, the line board above it, headlamps; tail lamps at the back.
+    // (Everything on the front and back stays inside the rounded corners.)
+    box(glass, L - 0.05, L + 0.02, 0.9, top, W - 2 * nose);
   }
-  box(white, L - 2.25, L - 2.1, sill, top, W + 0.01);
-  rounded(white, -L + 0.02, -L + 0.5, sill, top, W + 0.01, [0.005, tail]); // the back corners
-  // Doors on the right (+z): glass nearly down to the kerb, a red frame round them.
-  for (const d of doors) {
-    box(red, d - 0.68, d + 0.68, 0.32, top, 0.04, W / 2);
-    box('#26313a', d - 0.6, d + 0.6, 0.38, top - 0.08, 0.06, W / 2 + 0.005);
-    box('#15191d', d - 0.02, d + 0.02, 0.38, top - 0.08, 0.08, W / 2 + 0.005);
-  }
-  // Front: a tall windscreen, the line board above it, headlamps; tail lamps at the back.
-  // (Everything on the front and back stays inside the rounded corners.)
-  box(glass, L - 0.05, L + 0.02, 0.9, top, W - 2 * nose);
   box('#141414', L - 0.04, L + 0.03, top + 0.04, roof - 0.06, W - 0.62);
   box('#ffb020', L - 0.03, L + 0.035, top + 0.1, roof - 0.12, W - 0.9);
   for (const z of [-1, 1]) {
     box('#fff6d8', L - 0.05, L + 0.03, 0.55, 0.72, 0.36, z * (W / 2 - nose - 0.2));
     box('#b3161b', -L - 0.03, -L + 0.05, 0.6, 1.1, 0.22, z * (W / 2 - tail - 0.13));
   }
-  box(glass, -L - 0.02, -L + 0.05, 1.4, top - 0.1, W - 0.5);
+  if (!street) box(glass, -L - 0.02, -L + 0.05, 1.4, top - 0.1, W - 0.5);
   box('#e3e5e0', L - 0.03, L + 0.04, 0.3, 0.42, 0.52); // number plate
   // Wheels: two at the front, twin tyres at the back.
   wheel(L - (small ? 1.3 : 2.7), W);
@@ -903,9 +939,10 @@ function ambulanceGeometry(S: CarSpec, street = false): THREE.BufferGeometry {
 
 // Prague rear loader. +x is the cab, +z the kerb. The steps and bin slots at
 // the tail line up with the two members of the crew in refuse.ts.
-function garbageGeometry(S: CarSpec): THREE.BufferGeometry {
+function garbageGeometry(S: CarSpec, street = false): THREE.BufferGeometry {
   const orange = S.color || '#e8701e';
-  const { add, box, rounded, panel, wheel, done } = boxBuilder(orange);
+  const builder = boxBuilder(orange);
+  const { add, box, rounded, panel, wheel, done } = builder;
   const L = S.L / 2, W = S.W, cab = L - 2.2, back = -L + 0.45;
   const green = '#43803c', steel = '#a6a7a0', rubber = '#292a29', iron = '#555650';
   const glass = '#27343c', lift = '#c36727', pale = '#e7e6db';
@@ -942,7 +979,8 @@ function garbageGeometry(S: CarSpec): THREE.BufferGeometry {
   panel(orange, [[cab, 0.67], [frontAxle - 0.60, 0.67], [frontAxle - 0.46, 1.00],
     [frontAxle - 0.24, 1.11], [frontAxle + 0.30, 1.11], [frontAxle + 0.54, 0.91],
     [frontAxle + 0.63, 0.62], [L - 0.05, 0.62], [L, 1.56], [cab, 1.56]], W - 0.09);
-  panel(glass, [[cab + 0.05, 1.55], [L, 1.55], [L - 0.30, 2.72], [cab + 0.05, 2.72]], W - 0.15);
+  if (street) commercialCab(builder, cab + .05, L, W - .15, 1.55, 2.72, .30);
+  else panel(glass, [[cab + 0.05, 1.55], [L, 1.55], [L - 0.30, 2.72], [cab + 0.05, 2.72]], W - 0.15);
   rounded(orange, cab, L - 0.24, 2.65, 2.86, W - 0.04, [0.24, 0.10], 0.08);
   rounded(rubber, cab + 0.62, cab + 1.25, 2.854, 2.89, 0.86, 0.10);
   rounded(iron, L - 0.15, L + 0.11, 0.37, 0.68, W - 0.08, 0.10);
@@ -1066,9 +1104,10 @@ function garbageGeometry(S: CarSpec): THREE.BufferGeometry {
 
 // A refrigerated delivery lorry and a long-haul tractor with a curtain-sided
 // trailer. Both keep their cab paint from the traffic palette.
-function truckGeometry(type: string, S: CarSpec): THREE.BufferGeometry {
+function truckGeometry(type: string, S: CarSpec, street = false): THREE.BufferGeometry {
   const paint = '#ffffff', glass = '#24333c', dark = '#2d3336', alloy = '#a8afaf';
-  const { box, rounded, panel, add, roadWheel, done } = boxBuilder(paint);
+  const builder = boxBuilder(paint);
+  const { box, rounded, panel, add, roadWheel, done } = builder;
   const L = S.L / 2, W = S.W, artic = type === 'artic';
   const cab = L - (artic ? 2.65 : 1.96), top = artic ? 3.15 : 2.76;
   const frontAxle = L - 1.1, bodyFront = cab - (artic ? 0.92 : 0.40);
@@ -1080,7 +1119,8 @@ function truckGeometry(type: string, S: CarSpec): THREE.BufferGeometry {
   panel(paint, [[cab, 0.64], [frontAxle - 0.59, 0.64], [frontAxle - 0.49, 0.93],
     [frontAxle - 0.29, 1.07], [frontAxle + 0.29, 1.07], [frontAxle + 0.49, 0.93],
     [frontAxle + 0.59, 0.64], [L, 0.64], [L, 1.63], [cab, 1.63]], W - 0.09);
-  panel(glass, [[cab + 0.04, 1.62], [L, 1.62], [L - 0.32, top - 0.11],
+  if (street) commercialCab(builder, cab + .04, L, W - .13, 1.62, top - .11, .32);
+  else panel(glass, [[cab + 0.04, 1.62], [L, 1.62], [L - 0.32, top - 0.11],
     [cab + 0.04, top - 0.11]], W - 0.13);
   rounded(paint, cab, L - 0.25, top - 0.19, top + 0.02, W - 0.07, 0.13, 0.08);
   const fairing = artic ? 0.69 : 0.37;
@@ -2206,9 +2246,12 @@ export class CarPool {
     const wheels = key.endsWith('|street-wheels');
     if (wheels) geometry.setAttribute('roll', new THREE.InstancedBufferAttribute(new Float32Array(CarPool.pageCapacity * 4), 4));
     const street = key === STREET_AMBULANCE || key === STREET_FIRE;
-    if (street || wheels) for (const g of body.groups) geometry.addGroup(g.start, g.count, g.materialIndex);
+    if (street || wheels || key.endsWith('|fitted')) {
+      for (const g of body.groups) geometry.addGroup(g.start, g.count, g.materialIndex);
+    }
     const finish = key === STREET_SEDAN ? sedanMaterials : wheels ? (body.groups.length ? passengerMaterials : streetWheelMaterial) : key === 'garbage' || key === 'garbage|burnt' ? dustcartMaterial : material;
-    const materials = street ? streetMaterials(key === STREET_FIRE ? 'fire-appliance.webp' : 'ambulance-livery.webp') : finish;
+    const fitted = key.endsWith('|fitted') && body.groups.length > 0;
+    const materials = fitted ? [key === 'garbage|fitted' ? dustcartMaterial : material, passengerGlass] : street ? streetMaterials(key === STREET_FIRE ? 'fire-appliance.webp' : 'ambulance-livery.webp') : finish;
     const mesh = mirrored(new THREE.InstancedMesh(geometry, materials, CarPool.pageCapacity));
     mesh.userData.sharedMatrices = true; // (see configureRenderer in webgpu.ts)
     mesh.count = 0;
@@ -2274,7 +2317,7 @@ export class CarPool {
     carGeometry(type, box);
     while ((this.meshes.get(key)?.length || 0) < pages) this.page(key);
     this.prepared.add(key);
-    const close = prepareStreetCar(type, box);
+    const close = prepareStreetCar(type, box) ?? prepareFleetBody(type, box);
     if (close && !this.meshes.has(close)) {
       this.page(close); this.prepared.add(close);
       this.drivers ??= new SeatedDrivers(this.scene);
@@ -2341,6 +2384,9 @@ export class CarPool {
           prepareStreetFire();
           key = STREET_FIRE;
           this.closeCars.set(c, key);
+        } else if (distance2 < STREET_CAR_REACH ** 2 && streetFleet.has(c.key)) {
+          key = streetFleet.get(c.key)!;
+          this.closeCars.set(c, key);
         } else if (close) {
           key = c.key === 'sedan' && cache.has(STREET_SEDAN) ? STREET_SEDAN : close.key;
           this.closeCars.set(c, key);
@@ -2360,6 +2406,7 @@ export class CarPool {
       let pages = this.meshes.get(k);
       if (!pages) { this.latePages++; this.page(k); pages = this.meshes.get(k)!; }
       while (pages.length * CarPool.pageCapacity < list.length) { this.page(k); this.overflowPages++; }
+      const driverSeat: number[] | undefined = cache.get(k)?.userData.driverSeat;
       list.forEach((c, i) => {
         const m = pages[Math.floor(i / CarPool.pageCapacity)];
         const slot = i % CarPool.pageCapacity;
@@ -2429,6 +2476,9 @@ export class CarPool {
             VR_SEAT.eye.set(l[9] - 0.06, Math.min(pelvis + 0.74, l[5] - 0.1), -l[10]).applyMatrix4(d.matrix);
             VR_SEAT.frame = VR_SEAT.frames;
           } else if (occupied && fit.layout) this.drivers?.put(fit.layout, travel.plate, c.type === 'police' && c.mode !== 'player', d.matrix);
+        }
+        if (driverSeat && c.mode !== 'loose' && c !== VR_SEAT.car) {
+          this.drivers?.putAt(driverSeat[0], driverSeat[1], driverSeat[2], driverSeat[3], 0, false, d.matrix);
         }
         if (under && !c.two && shaded < UNDER.most) {
           under.setMatrixAt(shaded++, this.m.copy(d.matrix).multiply(this.life.makeScale(c.spec.L, 1, c.spec.W)));
