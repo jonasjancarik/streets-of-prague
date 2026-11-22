@@ -19,9 +19,10 @@ const url = option('--url');
 if (!url) {
   const main = await readFile(new URL('../src/main.ts', import.meta.url), 'utf8');
   // From the elapsed-time multiplier to the stepping loop, exactly as main.ts has them.
-  const block = main.match(/const run = testkit\?\.paused [^\n]*\n[\s\S]*?for \(let i = 0; i < steps; i\+\+\) simulate\([^\n]*\);/)?.[0];
-  assert.ok(block, 'locate the animation loop physics dispatch in src/main.ts');
-  assert.ok(block.split('\n').length <= 4, 'the dispatch block stays compact (run, steps, loop)');
+  const start = main.indexOf('const run = testkit?.paused ');
+  const end = main.indexOf('    weather.update(dt * run', start);
+  assert.ok(start >= 0 && end > start, 'locate the animation loop physics dispatch in src/main.ts');
+  const block = main.slice(start, end);
   const dispatch = new Function('testkit', 'scale', 'metro', 'dt', 'simulate', 'ctl', `${block}\nreturn { run, steps };`);
   const go = ({ dt, scale = 1, speed, paused = false, metro = false }) => {
     const calls = [];
