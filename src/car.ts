@@ -321,7 +321,11 @@ function carGeometry(type: string, box?: string): THREE.BufferGeometry {
 // Keep the original GLB body in the overhead view and at a distance. Only
 // assets that describe their wheel mounts can exchange the low-poly hubs.
 const STREET_CAR_REACH = 24; // m from the camera
-const closeBodies = new Map<string, { key: string; radius: number; wheelbase: number; front: number; rear: number; track: number; layout?: number[] }>();
+interface CloseBody {
+  key: string; type: string; box?: string; radius: number; wheelbase: number; front: number; rear: number; track: number;
+  layout?: number[]; formed?: string; fittedLamps?: CarSpec['headlights'];
+}
+const closeBodies = new Map<string, CloseBody>();
 function prepareStreetCar(type: string, box?: string) {
   const mounts = bodies?.getObjectByName(type)?.userData.wheelMounts as number[] | undefined;
   if (mounts?.length !== 16) return;
@@ -330,7 +334,7 @@ function prepareStreetCar(type: string, box?: string) {
     const g = bodyGeometry(type, box, true);
     markZones(g);
     cache.set(street, g);
-    closeBodies.set(key, { key: street, radius: mounts[1], wheelbase: Math.abs(mounts[0] - mounts[8]), front: mounts[0], rear: mounts[8], track: 2 * Math.abs(mounts[2]), layout: bodies?.getObjectByName(type)?.userData.cabinLayout });
+    closeBodies.set(key, { key: street, type, box, radius: mounts[1], wheelbase: Math.abs(mounts[0] - mounts[8]), front: mounts[0], rear: mounts[8], track: 2 * Math.abs(mounts[2]), layout: bodies?.getObjectByName(type)?.userData.cabinLayout });
   }
   return street;
 }
@@ -356,32 +360,38 @@ function prepareFleetBody(type: string, box?: string): string | undefined {
   return street;
 }
 
-// The authored body is a separate GLB. The existing fitted sedan remains usable
-// while it arrives, including on a slow connection or during a retry.
+// Request one body type at a time. A patrol's ordinary and armoured pages
+// share a download. The already-prepared body works while loading or retrying.
 const STREET_SEDAN = 'sedan|coachwork|street-wheels';
-let sedanUrl = '', sedanLoading = false, sedanRetryAt = 0;
-let sedanHeadlights: CarSpec['headlights'];
-function requestStreetSedan() {
-  if (cache.has(STREET_SEDAN)) return;
-  if (sedanUrl && !sedanLoading && performance.now() >= sedanRetryAt) {
-    sedanLoading = true;
-    void new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(sedanUrl).then(({ scene }) => {
-      scene.updateMatrixWorld(true);
-      const shell = scene.getObjectByName('sedan_coachwork');
-      if (!shell) throw Error('Missing sedan coachwork');
-      const g = bodyGeometry('sedan', undefined, true, shell);
+const loadingForms = new Set<string>(), retryFormAt = new Map<string, number>();
+let carAssetUrl = '';
+function requestStreetForm(type: string) {
+  if (!carAssetUrl || loadingForms.has(type) || performance.now() < (retryFormAt.get(type) ?? 0)) return;
+  loadingForms.add(type);
+  const url = new URL(type + '-street.glb', carAssetUrl).href;
+  void new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(url).then(({ scene }) => {
+    scene.updateMatrixWorld(true);
+    const sedan = type === 'sedan';
+    const shell = scene.getObjectByName(sedan ? 'sedan_coachwork' : type);
+    const trim = sedan ? undefined : scene.getObjectByName(type + '_street_trim');
+    if (!shell || (!sedan && !trim)) throw Error('Missing street body or fittings: ' + type);
+    const lens = (trim ?? shell).userData.headlamp;
+    for (const fit of closeBodies.values()) {
+      if (fit.type !== type || fit.formed) continue;
+      const g = bodyGeometry(type, fit.box, true, { shell, trim });
       markZones(g);
-      const lens = shell.userData.headlamp;
+      const key = sedan ? STREET_SEDAN : bodyKey(type, fit.box) + '|formed|street-wheels';
+      cache.set(key, g);
       if (Array.isArray(lens) && lens.length === 3 && lens.every(Number.isFinite)) {
         const [forward, across, height] = lens;
-        sedanHeadlights = { forward, across, height, glow: .42, streetReach: STREET_CAR_REACH };
+        fit.fittedLamps = { forward, across, height, glow: .42, streetReach: STREET_CAR_REACH };
       }
-      cache.set(STREET_SEDAN, g);
-    }).catch(error => {
-      sedanRetryAt = performance.now() + 60000;
-      console.warn('Could not load street sedan', error);
-    }).finally(() => { sedanLoading = false; });
-  }
+      fit.formed = key;
+    }
+  }).catch(error => {
+    retryFormAt.set(type, performance.now() + 60000);
+    console.warn('Could not load street car body', type, error);
+  }).finally(() => loadingForms.delete(type));
 }
 
 const STREET_FIRE = 'fire|street';
@@ -435,7 +445,8 @@ function markZones(g: THREE.BufferGeometry) {
 }
 
 // A car body from cars.glb.
-function bodyGeometry(type: string, box?: string, closeCar = false, coachwork?: THREE.Object3D): THREE.BufferGeometry {
+function bodyGeometry(type: string, box?: string, closeCar = false,
+  replacement?: { shell: THREE.Object3D; trim?: THREE.Object3D }): THREE.BufferGeometry {
   if (!bodies) throw new Error('Car bodies are not loaded');
   const c = new THREE.Color();
   const parts: THREE.BufferGeometry[] = [];
@@ -449,8 +460,9 @@ function bodyGeometry(type: string, box?: string, closeCar = false, coachwork?: 
   const glazing: THREE.BufferGeometry[] = [];
   const base = nodes[0];
   const layout = closeCar ? base.userData.cabinLayout as number[] | undefined : undefined;
-  if (coachwork) nodes[0] = coachwork;
-  const trim = closeCar && !coachwork ? bodies.getObjectByName(type + '_street_trim') : undefined;
+  const coachwork = type === 'sedan' ? replacement?.shell : undefined;
+  nodes[0] = replacement?.shell ?? base;
+  const trim = replacement?.trim ?? (closeCar && !coachwork ? bodies.getObjectByName(type + '_street_trim') : undefined);
   if (trim) nodes.push(trim);
   for (const node of nodes) node.traverse((o) => {
     if (!(o instanceof THREE.Mesh)) return;
@@ -473,7 +485,10 @@ function bodyGeometry(type: string, box?: string, closeCar = false, coachwork?: 
     const n = hung && hung !== node ? Number(hung.name.slice(-1)) : 0;
     const hinge = new Float32Array(g.attributes.position.count * 3);
     if (n) {
-      hung!.getWorldPosition(at);
+      // The alternate skin has its own local mesh origins. Animate it about the
+      // hinge used by entry, open-door clearance and the distant body.
+      const pivot = replacement?.trim ? base.getObjectByName(type + '_door' + n) : hung;
+      (pivot ?? hung)!.getWorldPosition(at);
       for (let i = 0; i < hinge.length; i += 3) hinge.set([at.x, at.z, n], i);
       g.computeBoundingBox();
       const door = doors.find((d) => d.n === n);
@@ -1248,7 +1263,7 @@ let bodies: THREE.Object3D | null = null;
 export async function loadCars(url = 'cars.glb') {
   const gltf = await new GLTFLoader().loadAsync(url);
   if (typeof document !== 'undefined' && !/^(data|blob):/.test(url)) {
-    sedanUrl = new URL('sedan-street.glb', new URL(url, document.baseURI)).href;
+    carAssetUrl = new URL(url, document.baseURI).href;
   }
   gltf.scene.updateMatrixWorld(true);
   bodies = gltf.scene;
@@ -2375,11 +2390,13 @@ export class CarPool {
     for (const list of this.groups.values()) list.length = 0;
     for (const c of cars) {
       let key = this.renderKey(c.key);
+      c.streetHeadlights = undefined;
       if (streetView && eye) {
         const distance2 = (c.x - eye.x) ** 2 + (c.y + eye.z) ** 2;
         // Start decoding a little before the model can enter the close view.
-        if (c.key === 'sedan' && distance2 < 38 ** 2) requestStreetSedan();
-        const close = distance2 < STREET_CAR_REACH ** 2 ? closeBodies.get(c.key) : undefined;
+        const fit = distance2 < 38 ** 2 ? closeBodies.get(c.key) : undefined;
+        if (fit && !fit.formed) requestStreetForm(fit.type);
+        const close = distance2 < STREET_CAR_REACH ** 2 ? fit : undefined;
         if (c.key === 'fire' && distance2 < STREET_CAR_REACH ** 2) {
           prepareStreetFire();
           key = STREET_FIRE;
@@ -2388,11 +2405,11 @@ export class CarPool {
           key = streetFleet.get(c.key)!;
           this.closeCars.set(c, key);
         } else if (close) {
-          key = c.key === 'sedan' && cache.has(STREET_SEDAN) ? STREET_SEDAN : close.key;
+          key = close.formed ?? close.key;
+          c.streetHeadlights = close.fittedLamps;
           this.closeCars.set(c, key);
         }
       }
-      if (c.type === 'sedan') c.streetHeadlights = key === STREET_SEDAN ? sedanHeadlights : undefined;
       if (!this.groups.has(key)) this.groups.set(key, []);
       this.groups.get(key)!.push(c);
     }

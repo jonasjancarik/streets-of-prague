@@ -26,6 +26,7 @@ usage: blender -b --factory-startup -P assets/cars/build.py
        (renders the cars from above, as the game sees them, into DIR)
 """
 import math
+from functools import partial
 import sys
 from pathlib import Path
 
@@ -87,7 +88,7 @@ def material(name):
 
 
 class Car:
-    def __init__(self):
+    def __init__(self, name=None):
         self.bm = bmesh.new()
         self.under = []  # faces that close the body for working out normals, then go
         self.door = self.bm.faces.layers.int.new("door")  # which door a face is part of (0: none)
@@ -343,6 +344,33 @@ class Car:
         for q in ((0, 1, 3, 2), (4, 6, 7, 5), (0, 4, 5, 1), (2, 3, 7, 6), (0, 2, 6, 4), (1, 5, 7, 3)):
             self.face([vs[i] for i in q], mat)
 
+    def roof_rails(self, xb, xc, wr, roof):
+        for side in (1, -1):
+            self.block(((xb + xc) / 2, side * (wr - .05), roof + .02), (xb - xc - .1, .05, .05), "Trim")
+
+    def aerial(self, xc, roof):
+        self.block((xc + .2, 0, roof + .06), (.17, .045, .06), "Trim")
+
+    def taxi_sign(self, mid, height):
+        self.block((mid, 0, height + .1), (.24, .62, .2), "Sign")
+
+    def roof_pressings(self, xa, nb, wr, H):
+        # The ribs pressed into the roof, along it.
+        x0, x1 = xa - 1.05, -nb + 0.3
+        for y in (-0.66, -0.22, 0.22, 0.66):
+            self.block(((x0 + x1) / 2, y * wr, H - 0.06 + 0.06 * (1 - abs(y)) + 0.004), (x0 - x1, 0.09, 0.03), "Paint")
+
+    def bed(self, shape, xd, rail):
+        # The bed: a dark floor between paint rails, and the tailgate.
+        end = -shape.nb + 0.04
+        half = shape.half
+        side = half((xd + end) / 2)
+        self.block(((xd + end) / 2 - 0.02, 0, rail + 0.012), (xd - end - 0.2, 2 * side - 0.3, 0.024), "Trim")
+        for s in (1, -1):
+            self.block(((xd + end) / 2, s * (side - 0.07), rail + 0.03), (xd - end, 0.14, 0.06), "Paint")
+        self.block((end + 0.04, 0, rail + 0.04), (0.08, 2 * half(end + 0.04) - 0.04, 0.08), "Paint")
+        self.block((xd - 0.06, 0, rail + 0.04), (0.1, 2 * half(xd) - 0.04, 0.08), "Paint")
+
     def wheel(self, x, y, r, width, n=10):
         """A tyre with a hub on the outside, at (x, y) with y the outer face."""
         s = 1 if y > 0 else -1
@@ -586,7 +614,7 @@ def patrol_word(parent, word, width, ink, project):
 
 
 def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, r=0.31, lift=0.0, word=None,
-           sunroof=0.0, fin=True):
+           sunroof=0.0, fin=True, factory=Car):
     """A car: `rear` is 'hatch', 'sedan' or 'estate'; `bar` is where along the roof the
     light bar goes (the middle of `cabin` in src/car.ts, where src/police.ts flashes it).
     `r` is the wheel radius and `lift` how much higher the bonnet and sills sit (an SUV).
@@ -600,7 +628,7 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, 
     bumpers round the ends, a bonnet, boot and roof that bulge in the middle, a roof
     rounded where it meets the windscreen and the rear window, and the lamps showing on
     top of the nose and tail."""
-    c = Car()
+    c = factory(name)
     w, n = W / 2, L / 2
     belt = 0.93 if H < 1.48 else 0.95 if H < 1.6 else 1.03
     boot = {"hatch": belt, "sedan": belt + 0.03, "estate": belt}[rear]
@@ -646,6 +674,7 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, 
 
     c.body(stations, wheels, r, stripe=stripe, doors=[(xa, xm, 1), (xm, xq, 3)], cabin=(xa, back),
            livery=livery if word else None, crown=bulge)
+    shape.top = getattr(c, "deck_height", shape.top)
     shape.bumpers(c, (0.3 + lift, 0.52 + lift), (0.32 + lift, 0.56 + lift))
     city = name == "police_city"
     if city:
@@ -674,14 +703,13 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, 
         x0 = xb - 0.16
         c.strip(x0, max(x0 - sunroof, xc + 0.2), [-0.6 * wr, 0, 0.6 * wr], "Glass", lambda x, y: roof + 0.035 * (1 - abs(y) / wr))
     if fin:
-        c.block((xc + 0.2, 0, roof + 0.06), (0.17, 0.045, 0.06), "Trim")
+        c.aerial(xc, roof)
     if sign:
-        c.block((mid, 0, H + 0.1), (0.24, 0.62, 0.2), "Sign")
+        c.taxi_sign(mid, H)
     if bar is not None:
         patrol_bar(c, bar, H, W)
     if rails:
-        for s in (1, -1):
-            c.block(((xb + xc) / 2, s * (w * 0.74 - 0.05), roof + 0.02), (xb - xc - 0.1, 0.05, 0.05), "Trim")
+        c.roof_rails(xb, xc, wr, roof)
     build_trim(name, shape, c, 0.64 + lift, boot - 0.12, material, MATS)
     body = c.finish(name)
     if word:
@@ -691,14 +719,16 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, 
             door = bpy.data.objects[f"{name}_door{k}"]
             def skin(u, v):
                 x = (xa+xm)/2 - side*u
-                return Vector((x,side*(shape.half(x)+.003),.61+v))
+                z = .61 + v
+                width = c.side_width(x, z) if hasattr(c, "side_width") else shape.half(x)
+                return Vector((x, side * (width + .003), z))
             patrol_word(door, "MĚSTSKÁ POLICIE" if city else word, .99 if city else .83,
                         "PatrolWhite", skin)
     return body
 
 
-def van(name="van", L=5.2, W=2.0, H=2.3):
-    c = Car()
+def van(name="van", L=5.2, W=2.0, H=2.3, factory=Car):
+    c = factory(name)
     w, n = W / 2, L / 2
     belt = 1.05
     profile = [
@@ -713,6 +743,7 @@ def van(name="van", L=5.2, W=2.0, H=2.3):
     xm = xa - 1.05
     shape.bulge = lambda x: 0.03 * min(max(x - xa, 0.0), 0.25) / 0.25
     c.body(shape.stations, wheels, 0.34, doors=[(xa, xm, 1)], cabin=(xa, xm - 0.3), crown=shape.bulge)
+    shape.top = getattr(c, "deck_height", shape.top)
     shape.bumpers(c, (0.34, 0.56), (0.36, 0.6))
     # A tall box behind the cab: windows only in the cab doors, none in the back; the
     # roof bulges a little and reaches over the windscreen in the middle.
@@ -722,10 +753,7 @@ def van(name="van", L=5.2, W=2.0, H=2.3):
     c.interior(xa - 0.01, xm - 0.3, w - 0.08, 0.5, belt - 0.02, H - 0.07, xa - 0.75, xm - 0.3, w * 0.93 - 0.03,
                [(xa - 0.6, s * w * 0.5, 0.55) for s in (1, -1)])
     c.screen(shape, xa, xa - 0.72, belt - 0.02, H - 0.06, half(xa) - 0.1)
-    # The ribs pressed into the roof, along it.
-    wr, x0, x1 = w * 0.93, xa - 1.05, -nb + 0.3
-    for y in (-0.66, -0.22, 0.22, 0.66):
-        c.block(((x0 + x1) / 2, y * wr, H - 0.06 + 0.06 * (1 - abs(y)) + 0.004), (x0 - x1, 0.09, 0.03), "Paint")
+    c.roof_pressings(xa, nb, w * .93, H)
     c.wheels(wheels, w, 0.34, 0.23)
     c.mirrors(xa - 0.05, half(xa - 0.05) + 0.03, belt + 0.1, stalk=True)
     c.lamps(nb - 0.06, -nb + 0.06, half(nb) - 0.17, half(-nb) - 0.15, 0.72, 0.85,
@@ -735,9 +763,9 @@ def van(name="van", L=5.2, W=2.0, H=2.3):
     return c.finish(name)
 
 
-def pickup(name="pickup", L=5.9, W=2.03, H=1.95):
+def pickup(name="pickup", L=5.9, W=2.03, H=1.95, factory=Car):
     """A full-size American pickup (an F-150): a long bonnet, a crew cab and an open bed."""
-    c = Car()
+    c = factory(name)
     w, n = W / 2, L / 2
     belt, rail, r = 1.24, 1.2, 0.4
     profile = [
@@ -755,6 +783,7 @@ def pickup(name="pickup", L=5.9, W=2.03, H=1.95):
     shape.bulge = lambda x: 0.03 * min(max(x - xa, 0.0), 0.3) / 0.3
     c.body(shape.stations, wheels, r, doors=[(xa, xm, 1), (xm, xd + 0.08, 3)], cabin=(xa, xd + 0.05),
            crown=shape.bulge)
+    shape.top = getattr(c, "deck_height", shape.top)
     shape.bumpers(c, (0.44, 0.72), (0.46, 0.76))
     c.cabin(belt, xa, xa - 0.65, xm, xd + 0.1, xd, w - 0.12, w * 0.8, H - 0.035, xm_top=xa - 1.15,
             edge=lambda x: half(x) - LID, crown=0.035, bow=(0.05, 0.0))
@@ -766,14 +795,7 @@ def pickup(name="pickup", L=5.9, W=2.03, H=1.95):
     c.lamps(nb - 0.06, -nb + 0.06, half(nb) - 0.17, half(-nb) - 0.14, 0.86, 0.98,
             plates=((n - 0.01, 0.6), (-n + 0.01, 0.62)))
     shape.lamps(c, size=(0.14, 0.32))
-    # The bed: a dark floor between paint rails, and the tailgate.
-    end = -nb + 0.04
-    side = half((xd + end) / 2)
-    c.block(((xd + end) / 2 - 0.02, 0, rail + 0.012), (xd - end - 0.2, 2 * side - 0.3, 0.024), "Trim")
-    for s in (1, -1):
-        c.block(((xd + end) / 2, s * (side - 0.07), rail + 0.03), (xd - end, 0.14, 0.06), "Paint")
-    c.block((end + 0.04, 0, rail + 0.04), (0.08, 2 * half(end + 0.04) - 0.04, 0.08), "Paint")
-    c.block((xd - 0.06, 0, rail + 0.04), (0.1, 2 * half(xd) - 0.04, 0.08), "Paint")
+    c.bed(shape, xd, rail)
     build_trim(name, shape, c, 0.86, 0.98, material, MATS)
     return c.finish(name)
 
@@ -795,19 +817,20 @@ def ram(name, L, W):
     return c.finish(name)
 
 
-def build():
+def build(factory=Car):
     bpy.ops.wm.read_factory_settings(use_empty=True)
+    passenger = partial(saloon, factory=factory)
     return [
-        saloon("hatch", 3.9, 1.75, 1.45, "hatch"),
-        saloon("sedan", 4.6, 1.82, 1.45, "sedan", sunroof=0.5),
-        saloon("estate", 4.7, 1.82, 1.5, "estate", rails=True),
-        saloon("suv", 4.65, 1.88, 1.65, "estate", rails=True, r=0.36, lift=0.07, sunroof=1.0),
-        van(),
-        pickup(),
-        saloon("taxi", 4.6, 1.82, 1.45, "sedan", sign=True),
-        saloon("police", 4.7, 1.84, 1.5, "estate", stripe=POLICE_STRIPE, bar=-0.25, rails=True, word="POLICIE", fin=False),
+        passenger("hatch", 3.9, 1.75, 1.45, "hatch"),
+        passenger("sedan", 4.6, 1.82, 1.45, "sedan", sunroof=0.5),
+        passenger("estate", 4.7, 1.82, 1.5, "estate", rails=True),
+        passenger("suv", 4.65, 1.88, 1.65, "estate", rails=True, r=0.36, lift=0.07, sunroof=1.0),
+        van(factory=factory),
+        pickup(factory=factory),
+        passenger("taxi", 4.6, 1.82, 1.45, "sedan", sign=True),
+        passenger("police", 4.7, 1.84, 1.5, "estate", stripe=POLICE_STRIPE, bar=-0.25, rails=True, word="POLICIE", fin=False),
         ram("police_ram", 4.7, 1.84),
-        saloon("police_city", 4.7, 1.84, 1.5, "sedan",
+        passenger("police_city", 4.7, 1.84, 1.5, "sedan",
                stripe=[(.52,"PatrolNavy"),(.71,"PatrolWhite"),(.775,"Paint")],
                bar=-.25, word="POLICIE"),
     ]

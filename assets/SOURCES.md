@@ -8,6 +8,7 @@ and the map data its credits in the README.
 - `cars/build.py`, `trams/build.py`, `figures/build.py` build the cars, trams, people
   and bikes (`public/cars.glb`, `public/trams.glb`, `public/figures.glb`) in Blender
   from code. No outside models are used.
+- The hatchback, estate, SUV, taxi, van, pickup and police shells (`cars/street_shapes.py`) are original Blender surfaces fitted to the game's wheel and door layouts. An ImageGen concept sheet informed the hatchback, estate, SUV and taxi proportions. The game uses the modelled geometry.
 - The street sedan (`cars/sedan.py`, `sedan_surfaces.py`, `sedan_fascia.py`, `sedan_cabin.py`)
   is original unbadged coachwork. Rebuild with Blender 5.2 using
   `blender -b --factory-startup --python-exit-code 1 -P assets/cars/sedan.py`.

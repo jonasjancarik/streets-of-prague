@@ -202,6 +202,49 @@ const checks = `(async () => {
     pool.render([saloon,distant]);
     assert(!wheels.visible && page('sedan').count === 2, 'overhead uses the original body for both cars');
 
+    // All close passenger bodies use the distant body's hinges. Wait for the
+    // actual optional GLBs here so a missing variant cannot pass via fallback.
+    const formedCars = ['hatch','estate','suv','taxi','van','pickup'].map(type => new Car(type, () => .2));
+    for (const roll of [.2,.9]) {
+      formedCars.push(new Car('police', () => roll));
+      const armoured = new Car('police', () => roll); armoured.armour(); formedCars.push(armoured);
+    }
+    const modelKey = c => c.key + '|formed|street-wheels';
+    const visible = (c, distance, street = true) => pool.render([c],null,0,undefined,street,{ x:distance,z:0 });
+    // Trigger the prefetch, then inspect selection at both distances.
+    for (const c of formedCars) visible(c, 32);
+    const formsDeadline = performance.now() + 20000;
+    do {
+      pool.render(formedCars,null,0,undefined,true,eye);
+      if (formedCars.every(c => page(modelKey(c))?.count === 1)) break;
+      await new Promise(requestAnimationFrame);
+    } while (performance.now() < formsDeadline);
+    for (const c of formedCars) {
+      const detailed = page(modelKey(c)), fallback = page(c.key + '|street-wheels');
+      visible(c, 5);
+      assert(detailed?.count === 1 && !fallback.visible && !page(c.key).visible, c.key + ' selects its sculpted shell');
+      assert(detailed.geometry.groups.length === 2 && detailed.material[1].transparent && c.streetHeadlights?.forward > 1,
+        c.key + ' has fitted glazing and lamp origins');
+      const hinge = geometry => {
+        const result = new Map(), attr = geometry.attributes.hinge;
+        for (let i=0;i<attr.count;i++) {
+          const n=attr.getZ(i);
+          if(n>=1 && n<=4 && !result.has(n)) result.set(n,[attr.getX(i),attr.getY(i)]);
+        }
+        return result;
+      };
+      const original = hinge(fallback.geometry), replacement = hinge(detailed.geometry);
+      assert(original.size === c.doors.length && [...original].every(([n,p]) => {
+        const q = replacement.get(n); return q && Math.hypot(p[0]-q[0],p[1]-q[1]) < .001;
+      }), c.key + ' retains all original door pivots');
+      c.open(1,true); c.swing(1); visible(c,5);
+      assert(detailed.geometry.attributes.doors.getX(0) > 1 && pool.matrixOf(c,new THREE.Matrix4()),
+        c.key + ' animates the driver door on the rendered body');
+      visible(c,32);
+      assert(page(c.key).count === 1 && !detailed.visible && !c.streetHeadlights,c.key + ' uses the original distant body');
+      visible(c,5,false);
+      assert(page(c.key).count === 1 && !detailed.visible,c.key + ' uses the original overhead body');
+    }
     const rig = new Car('ambulance', () => .3, 19, 27, .5);
     const matrix = new THREE.Matrix4();
     for (const wreck of [false, true]) {
@@ -267,7 +310,7 @@ const checks = `(async () => {
       assert(saved.key === body, 'saved patrol keeps its body and paint');
       patrol.armour();
       pool.render([patrol],null,0,undefined,true,{x:0,z:0});
-      assert(page(body+'|box:ram|street-wheels').count === 1 && patrol.ram, 'close marked patrol retains ram');
+      assert(page(modelKey(patrol)).count === 1 && patrol.ram, 'close marked patrol retains ram');
       patrol.burn();
       pool.render([patrol]);
       assert(page(body+'|ram|burnt').count === 1, 'charred patrol retains correct silhouette');

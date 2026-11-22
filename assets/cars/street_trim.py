@@ -52,6 +52,7 @@ class Panels:
 def build_trim(name, shape, source, front_z, rear_z, material, materials):
     """Single badge-free front and rear assemblies, fitted to each car shell."""
     panels = Panels()
+    formed = hasattr(source, "front_intakes")
     utility = name in ("van", "pickup")
     tall = name in ("suv", "van", "pickup")
 
@@ -75,7 +76,8 @@ def build_trim(name, shape, source, front_z, rear_z, material, materials):
         y = edge * u / straight if u <= straight else shape.half(x)
         approximate = Vector((x, side * y, z))
         normal = Vector((end * math.cos(angle), side * math.sin(angle), .23)).normalized()
-        hit = skin.ray_cast(approximate + normal * .13, -normal, .36)[0]
+        ray = Vector((normal.x, normal.y, 0)).normalized() if formed else normal
+        hit = skin.ray_cast(approximate + ray * .13, -ray, .36)[0]
         return (hit if hit is not None else approximate) + normal * proud
 
     def centre(end, half, bottom, top, mat, offset, taper=0):
@@ -92,7 +94,7 @@ def build_trim(name, shape, source, front_z, rear_z, material, materials):
         low = shape.stations[0 if end > 0 else -1][3] + .006
         for side in (-1, 1):
             normal = Vector((end, side, .12))
-            panels.patch("RubStrip", 24, 2, lambda u, v: shell(end, side, u, low + v * .071, .018), normal)
+            panels.patch("Trim" if formed else "RubStrip", 24, 2, lambda u, v: shell(end, side, u, low + v * .071, .012 if formed else .018), normal)
             if end > 0:
                 first = .39 if utility else .41
                 last = .92 if name == "hatch" else .97
@@ -149,7 +151,9 @@ def build_trim(name, shape, source, front_z, rear_z, material, materials):
                     panels.patch("Tail",15,1,lambda u,v:tail(.07+.85*u,row+.085*v,.034),normal)
                 panels.patch("Optic",4,1,lambda u,v:tail(.07+.17*u,.35+.14*v,.034),normal)
 
-        if end > 0:
+        if end > 0 and formed:
+            source.front_intakes(panels, shell, height, low)
+        elif end > 0:
             top = height + (.067 if utility else .039)
             half = shape.half(shape.nb) * (.82 if utility else .76)
             bottom = top - (.205 if utility else .138)
@@ -171,10 +175,16 @@ def build_trim(name, shape, source, front_z, rear_z, material, materials):
                     return (-shape.nb-.004,across,z)
                 panels.patch("PanelGap",2,6,seam,Vector((-1,0,0)))
             centre(end,shape.half(-shape.nb)*.67,low+.152,low+.162,"PanelGap",.005,.004)
+        # One flat mounting plinth clears the convex fascia, even at the lip of
+        # the lower air intake. The glyph shader expects a planar plate face.
+        plate_base = shape.nb + (.044 if formed else 0)
+        if formed:
+            panels.patch("Trim",8,3,lambda u,v:
+                (end*(plate_base+.036*v),(.536-.012*v)*(u-.5),plate_z-.061),Vector((0,0,-1)))
         for half, high, offset, mat in ((.265,.064,.037,"RubStrip"),(.254,.055,.041,"Plate")):
-            panels.patch(mat,1,1,lambda u,v: (end*(shape.nb+offset),(2*u-1)*half,plate_z+(2*v-1)*high),Vector((end,0,0)))
+            panels.patch(mat,1,1,lambda u,v: (end*(plate_base+offset),(2*u-1)*half,plate_z+(2*v-1)*high),Vector((end,0,0)))
         # Blue country strip on the reader's left. No manufacturer badges.
-        panels.patch("EUBlue",1,1,lambda u,v:(end*(shape.nb+.045),-end*(.215+.038*u),plate_z-.05+.10*v),Vector((end,0,0)))
+        panels.patch("EUBlue",1,1,lambda u,v:(end*(plate_base+.045),-end*(.215+.038*u),plate_z-.05+.10*v),Vector((end,0,0)))
     # Rubber blades sit on the lower windscreen. Sample the actual inset
     # panes so the tips follow the bowed glass rather than hovering above it.
     xa, xb, sill, header, half = source.screen_layout

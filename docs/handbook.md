@@ -1519,9 +1519,14 @@ record the measurements, merge decisions and pending landmark asset activation.
   the front and rear. The same individual lamps go dark when broken. Tinted windows reveal
   the dashboard, steering wheel and upholstered seats. The mirrors, latches and inner
   armrests move with their doors (`<type>_door1` to `4`, each with its origin on the hinge).
-  The street sedan has a separate mesh (`assets/cars/sedan.py` → `public/sedan-street.glb`).
-  Approaching within 38 m in street view starts the download. Within 24 m the fitted
-  body takes over when ready. Its four doors use the original hinges. It has a recessed
+  Each street body downloads separately when its type comes within 38 m of the street
+  camera. Inside 24 m the sculpted shell takes over when ready. Until then the car
+  keeps its fitted wheels and original body. The new shells share those wheel mounts and
+  door pivots. The hatchback has a short bonnet and a raked tailgate, the estate a longer
+  roof, and the SUV flared wheel openings. The pickup has a recessed, ribbed load bed.
+  Both police liveries keep their markings and optional ram on the close body.
+  Rebuild these bodies with `blender -b --factory-startup --python-exit-code 1 -P assets/cars/street_shapes.py`.
+  The sedan uses its own generator (`assets/cars/sedan.py`). It has a recessed
   sunroof, clear-coated paint, dark rear glazing, and separate lamp bowls below clear
   covers. Each tyre sits on its own ground sample when the car straddles a kerb.
   The brake calipers steer with the front hubs while the discs and wheels rotate.
