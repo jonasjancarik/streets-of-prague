@@ -280,7 +280,8 @@ before that day's frame-count fix may be doubled.
   there (63 → 47 ms, JavaScript 44 → 36 ms), so real culling is worth building: a baked
   visibility table or occlusion queries. Also try `?farground=250` in VR. Now `?cull`
   (`docs/occlusion-culling.md`): the sweep in a worker, 7.7 % quicker standing and
-  8–15 % driving on the Pixel 5. Left: VR, countryside, overhead view, and the tests'
+  8–15 % driving on the Pixel 5, nothing popping in 240 steps of driving and walking
+  (`scripts/cull-popping.js`). Left: VR, countryside, overhead view, and the tests'
   cost while driving: about 8.5 ms a frame on the Pixel 5 against 0.7 ms on the M5 (12×,
   where the game is usually 5–8× slower there), so probably something phone-specific
   (garbage, a slow path, the 1.5 ms cap on new meshes' tops letting a big one through

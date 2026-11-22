@@ -247,8 +247,22 @@ the guess, square and deferral changes: no changed pixel in 32 views (24, and 8 
 eye moved 0.45 m); the last two changes (the order of the tests, drawn things tested
 every fourth frame) can only draw more and weren't rescored.
 
-Still to do: find what the remaining 8 ms of tests a frame on the phone are, VR (both
-eyes), the countryside and the overhead view.
+### Popping while moving
+
+`scripts/cull-popping.js` drives (or walks) with the live culler, and after every step
+compares the frame as the game drew it with the same frame with everything drawn; any
+pixel that differs is something that would have popped into view. Driving at about
+50 km/h (up to 79 on Křižovnická) along Vodičkova, from the Old Town Square, over
+Křižovnická and from Můstek, 40 steps of 0.1 s each, and running on foot through Karlova
+and Malostranské náměstí, 40 steps of 0.25 s: **no changed pixel in any of the 240
+steps**, with the culler active in 167 of them (left out 130–410 things on average).
+Pixels that differ between two identical pictures (dithered shading) don't count: at
+most 0.4 % of the picture, once 12 % at Můstek. The steps jump the eye 1.4 m between
+live frames, which throws the culler's speed estimate, so it was active less often
+than in the game (15 of 40 steps at the faster Křižovnická).
+
+Still to do: what the remaining 8 ms of tests a frame on the phone are (todo.md), VR
+(both eyes), the countryside and the overhead view.
 
 ## Order (after the reviews)
 
