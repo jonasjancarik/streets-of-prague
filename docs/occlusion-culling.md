@@ -287,10 +287,20 @@ things on average. (One earlier run from Můstek found changed pixels in every s
 distant tile meshes and a mesh 150 m off; it didn't happen again in five runs of the
 same drive, with or without the tree test, mono or stereo. A run aborted with the
 two-eye stub left installed is the likely cause, and the script now always takes it
-out.) Not yet measured in a headset on the Pixel 5.
+out.)
+
+Pixel 5, a real Cardboard `immersive-vr` session (Medium, standing in a street off the
+Old Town Square, the phone still, no viewer), the culler switched on and off every 3 s
+for 90 s and the first second of each switch left out, timed from the XR session's own
+frames: **11 % and 16 % quicker a frame** (115.1 → 101.9 ms, 121.7 → 102.6 ms; medians
+114 → 100 and 113 → 99 ms), the culler active in every frame and leaving out about 350
+things. The phone was warm (33.7–35.4 °C), hence about 9–10 frames a second against the
+12 measured on Medium on 22 November. (The script lives in the session's scratchpad: it
+attaches to the open tab over adb, as entering VR needs a tap on the phone; Cardboard's
+camera prompt for its QR code is passed by pressing Back on the App info page it opens.)
 
 Still to do: what the remaining 8 ms of tests a frame on the phone are (todo.md), VR
-measured on the phone, the countryside and the overhead view.
+while driving, the countryside and the overhead view.
 
 ## Order (after the reviews)
 
