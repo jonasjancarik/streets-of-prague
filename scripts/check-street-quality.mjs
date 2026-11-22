@@ -9,6 +9,39 @@ const { streetTreeGeometry } = await import('../src/map/streetTree.ts');
 const { AutoTier } = await import('../src/graphics.ts');
 const { LifeSize } = await import('../src/rocketbox.ts');
 const { VR } = await import('../src/vr.ts');
+const { inStreetCone } = await import('../src/streetView.ts');
+const { firstPersonOptions, setFirstPersonOptions } = await import('../src/streetView.ts');
+assert.equal(firstPersonOptions.vrShortView,false,'VR keeps the long view by default');
+setFirstPersonOptions({vrShortView:true},false);
+assert.equal(firstPersonOptions.vrShortView,true,'short VR view can be selected independently');
+setFirstPersonOptions({vrShortView:false},false);
+const { retainTilePrograms } = await import('../src/surface.ts');
+const props = new WeakMap(), programA={}, programB={}; let rendererDisposed=0, materialDisposed=0;
+const fakeRenderer={properties:{get:m=>props.get(m)??{}},dispose:()=>rendererDisposed++};
+const retained=retainTilePrograms(fakeRenderer), owners=[new THREE.MeshBasicMaterial(),new THREE.MeshBasicMaterial(),new THREE.MeshBasicMaterial()];
+owners.forEach(m=>m.addEventListener('dispose',()=>materialDisposed++));
+props.set(owners[0],{programs:new Map([['a',programA]])});props.set(owners[1],{programs:new Map([['a',programA]])});props.set(owners[2],{programs:new Map([['b',programB]])});
+assert(retained.keep(owners[0]) && retained.keep(owners[0]),'the retained owner survives repeated retirement');
+assert(!retained.keep(owners[1]),'a duplicate program does not retain another material');
+owners[1].dispose();assert(retained.keep(owners[2]));assert.equal(retained.size,2);
+fakeRenderer.dispose();assert.equal(materialDisposed,3,'renderer disposal releases retained owners');assert.equal(rendererDisposed,1);
+retained.release();assert.equal(materialDisposed,3,'release is idempotent');
+const headRig = new THREE.Object3D();
+headRig.rotation.y = -Math.PI / 2; headRig.updateMatrixWorld(true);
+const eyePose = { quaternion: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), Math.PI/2) };
+const tracked = Object.assign(Object.create(VR.prototype), { active:true, renderer:{xr:{getCamera:()=>({cameras:[eyePose]})},getRenderTarget:()=>null},rig:headRig,
+  frames:0,since:0,queue:[],daydream:{touched:false,click:false,app:false,plus:false,minus:false},lastInput:500,headH:Math.PI,headPitch:0 });
+tracked.frame(500,1/60,{move:0,turn:0});
+assert(Math.abs(tracked.headH-Math.PI/2)<1e-6,'visibility uses the current eye pose in the world rig');
+eyePose.quaternion.setFromAxisAngle(new THREE.Vector3(1,0,0),Math.PI/3);
+tracked.frame(510,1/60,{move:0,turn:0});
+assert(Math.abs(tracked.headPitch-Math.PI/3)<1e-6,'a new head tilt is available before rendering');
+const half = Math.PI / 3;
+const visible = (x,y,h=0) => inStreetCone(x,y,Math.cos(h),Math.sin(h),Math.sin(half),Math.cos(half),45);
+assert(visible(200,0), 'distant cars ahead remain visible');
+assert(visible(-40,0) && visible(0,40), 'nearby off-screen casters and headlights remain');
+assert(!visible(-100,0) && !visible(0,200), 'distant cars behind and outside the expanded cone are skipped');
+assert(visible(0,200,Math.PI/2) && !visible(0,-100,Math.PI/2), 'turning the head rotates the view cone');
 
 const hash = createHash('sha256'), lawn = new StreetGrass();
 lawn.ground = { grass: (x, y) => Math.sin(x * .7) + Math.cos(y * .4) > .2, height: (x, y) => Math.sin(x * .1) * .3 + y * .02 };
@@ -68,7 +101,7 @@ for (const [seed, boughs] of [[5, 9], [9, 13]]) {
 let previous = { avatars: 0, avatarReach: 0, carReach: 0, treeWood: 0, vrScale: 0 };
 for (const tier of ['lowest', 'low', 'medium', 'high', 'ultra']) {
   const budget = STREET_TIERS[tier];
-  for (const key of Object.keys(previous)) assert(budget[key] >= previous[key], `${tier}: ${key} scales in order`);
+  for (const key of ['avatars', 'avatarReach', 'carReach', 'treeWood', 'vrScale']) assert(budget[key] >= previous[key], `${tier}: ${key} scales in order`);
   previous = budget;
 }
 assert.deepEqual(STREET_QUALITY, STREET_TIERS.high, 'startup budget retains High detail');

@@ -89,6 +89,8 @@ export const CS: Record<string, string> = {
   'key: view': 'pohled',
   'Switch between overhead, first-person and third-person views': 'Přepínat mezi pohledem shora, z první a ze třetí osoby',
   'Camera view': 'Pohled kamery',
+  'Shorter view in VR': 'Kratší dohled ve VR',
+  'Limits the view to 120 m and adds haze to help VR run faster. Off keeps the usual 400 m view.': 'Omezí dohled na 120 m a přidá opar, aby VR běželo plynuleji. Vypnuto zachová obvyklý dohled 400 m.',
   'Overhead': 'Shora',
   'First person': 'Z první osoby',
   'Third person': 'Z třetí osoby',

@@ -7,6 +7,7 @@ import { roofLookup, ROOFTOP } from './roofSurface.ts';
 import { dataUrl } from './data.ts';
 import * as telemetry from './telemetry.ts';
 import * as THREE from 'three';
+import { STREET_QUALITY } from './streetQuality.ts';
 import { mirrored } from './mirror.ts';
 import { streetOf } from './map/roofRules.ts';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -15,7 +16,7 @@ import { wallMesh } from './map/buildings.ts';
 import { TreePool } from './trees.ts';
 import { bridgeStairRails, groundStairs, stairLandings } from './map/stairs.ts';
 import { powerMesh, readPowerGrid, type PowerGrid } from './map/powerGrid.ts';
-import { Surfaces, tunnelDepthMesh } from './surface.ts';
+import { Surfaces, tunnelDepthMesh, disposeTileMaterial } from './surface.ts';
 import { buildTin, decodeTin, tinGrid, tinNearSteps, tinSampler, TIN_FORMAT, type TinFile, type TinMesh } from './tin.ts';
 import { shadeBuildings, shadeLandmark, cutAway, broad, ROOF_CLUTTER, roadRasterEnabled } from './shading.ts';
 import { loadFacadeAtlas } from './facades.ts';
@@ -1769,7 +1770,7 @@ export class TileWorld {
       w.run('ground', {
         d: { areas: withPatches(t), roads: t.roads, rails: t.rails, deckRails: t.deckRails, bridgeTracks: t.bridgeTracks, station, weirs: t.weirs, crossings: TILE_LOOK.roadPaint ? t.crossings : [], marks: t.marks, utility: t.utility,
           stairs: groundStairs(t.walk).map(({ pts, width }) => ({ pts, width })) },
-        paint: TILE_LOOK.roadPaint, rasterRoads: !this.ortho && !!s.ground && roadRasterEnabled(), box: s.bounds, edges: s.clipped, buildings: s.standing, parkingZones: s.parkingZones, ground: s.ground, levels: s.levels,
+        paint: TILE_LOOK.roadPaint, fine: STREET_QUALITY.groundFine, rasterRoads: !this.ortho && !!s.ground && roadRasterEnabled(), box: s.bounds, edges: s.clipped, buildings: s.standing, parkingZones: s.parkingZones, ground: s.ground, levels: s.levels,
       }),
       buffer ? w.run('ipr', { buffer, box: t.box, absolute: this.index.iprRef != null, passages: tileOpenings(t), ground: s.ground, bbox: this.index.bbox_wgs84, hide: s.hide, clutter: ROOF_CLUTTER.value > 0.5, footprints: s.footprints }, [buffer]) : null,
       !s.withIpr || s.extrude.length ? w.run('roofs', { buildings: s.extrude, size: s.size, origin: s.origin, ground: s.ground, bbox: this.index.bbox_wgs84, water: t.areas?.water ?? [], passages: tileOpenings(t), stops: stopLines(t) }) : null,
@@ -1930,8 +1931,8 @@ export class TileWorld {
       this.facades.drop(m);
       m.dispose();
       m.geometry.dispose();
-      if (Array.isArray(m.material)) m.material.forEach((material) => material.dispose());
-      else m.material.dispose();
+      if (Array.isArray(m.material)) m.material.forEach(disposeTileMaterial);
+      else disposeTileMaterial(m.material);
     }
     // What stays with the tile gives up its copy on the graphics card until it's drawn again.
     for (const m of tile.fixtures) { m.dispose(); m.geometry.dispose(); }
@@ -2009,8 +2010,8 @@ export class TileWorld {
     this.dropPhoto(k);
     for (const m of t.fixtures) {
       m.geometry.dispose();
-      if (Array.isArray(m.material)) m.material.forEach((material) => material.dispose());
-      else m.material.dispose();
+      if (Array.isArray(m.material)) m.material.forEach(disposeTileMaterial);
+      else disposeTileMaterial(m.material);
     }
     for (const p of t.poles) posts.remove(p);
     fences.remove(t.fences);

@@ -235,7 +235,12 @@ before that day's frame-count fix may be doubled.
   improved frame time in both orders. M5 driving comparisons remain inconclusive
   against a 22% unchanged-build control. Still needed: a quiet M5 comparison and
   stereo testing on the Pixel 11 Pro. Real Pixel 5 stereo, tier re-entry and Auto
-  were checked afterward: rendering works, but the square still runs at 12–16 FPS.
+  were checked afterward. Further work reduces terrain/actor drawing and repeated
+  crowd calculations, retains streamed WebGL shaders, and offers a saved 120 m VR
+  view with haze; the default remains 400 m. Before the last crowd/shader changes,
+  the shorter view reached 22.3 FPS standing but about 14 FPS driving. Still needed:
+  final-code phone timings at both distances, a moving route with head turns, night
+  and bad weather, and long-session shader-cache memory checks. Smooth VR is not yet achieved.
   See the dated entries in `docs/performance-log.md`.
 - **Driving hitches** (performance log, 26 October): the return-visit shader rebuild
   and the new-tile parking task are fixed. Open: idle-thread long frames (trace the

@@ -133,6 +133,14 @@ export class VR {
   // At the start of each frame: the frames others asked for, and this frame's controls.
   frame(now: number, dt: number, pad: { move: number; turn: number }) {
     if (!this.active) return;
+    // WebXR has already supplied this frame's eye pose. Use it for movement and
+    // visibility before drawing, so a head turn does not cull from the old pose.
+    const eye = this.renderer.xr.getCamera().cameras[0];
+    if (eye) {
+      ahead.set(0, 0, -1).applyQuaternion(eye.quaternion).transformDirection(this.rig.matrixWorld);
+      this.headH = Math.atan2(-ahead.z, ahead.x);
+      this.headPitch = Math.asin(THREE.MathUtils.clamp(ahead.y, -1, 1));
+    }
     // Frames per second in the headset, and the main thread's share of each frame: the
     // whole game loop and the drawing for both eyes (ms, medians over the last second),
     // for checking (window.__vr, ?vrlog). A loop much shorter than the frame means the

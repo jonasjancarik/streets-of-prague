@@ -5,9 +5,10 @@ export interface Eyes { yaw: number; pitch: number; still?: number; third?: bool
 export type PlayerView = 'overhead' | 'first' | 'third' | 'vr';
 
 export type CarHandling = 'classic' | 'realistic';
-export interface FirstPersonOptions { handling: CarHandling; fov: number; sensitivity: number; motion: 'device' | 'steady' | 'gentle' }
-export const firstPersonOptions: FirstPersonOptions = { fov: 55, sensitivity: 100, motion: 'device', handling: 'classic' };
+export interface FirstPersonOptions { handling: CarHandling; fov: number; sensitivity: number; motion: 'device' | 'steady' | 'gentle'; vrShortView: boolean }
+export const firstPersonOptions: FirstPersonOptions = { fov: 55, sensitivity: 100, motion: 'device', handling: 'classic', vrShortView: false };
 export function setFirstPersonOptions(pick: Partial<FirstPersonOptions>, save = true) {
+  if (typeof pick.vrShortView === 'boolean') firstPersonOptions.vrShortView = pick.vrShortView;
   if (pick.handling === 'classic' || pick.handling === 'realistic') firstPersonOptions.handling = pick.handling;
   if (typeof pick.fov === 'number' && Number.isFinite(pick.fov))
     firstPersonOptions.fov = Math.round(Math.min(80, Math.max(45, pick.fov)));
@@ -51,6 +52,14 @@ export function vrSupported(): Promise<boolean> {
 
 export function eyesFor(view: PlayerView): Eyes | null {
   return view === 'overhead' ? null : { yaw: 0, pitch: 0, third: view === 'third' };
+}
+
+// A horizontal view cone expanded by a world-space margin. The margin keeps
+// long vehicles, nearby shadows/headlights and the edge of a head turn in view.
+export function inStreetCone(dx: number, dy: number, forwardX: number, forwardY: number, sinHalf: number, cosHalf: number, margin: number) {
+  const ahead = dx * forwardX + dy * forwardY;
+  const side = Math.abs(dy * forwardX - dx * forwardY);
+  return ahead >= -margin && side * cosHalf - ahead * sinHalf <= margin;
 }
 
 // One cycle per planted foot. Advance from distance actually walked, so leaning

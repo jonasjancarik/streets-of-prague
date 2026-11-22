@@ -158,6 +158,7 @@ export interface WorkerJobs {
     d: GroundTileData; box: Bounds; edges: GroundRoadEdge[];
     buildings: { rings: Point2[][] }[]; parkingZones: (string | null)[];
     ground: HeightGrid | null; levels: LevelInput[] | null; paint?: boolean; rasterRoads?: boolean;
+    fine?: number; // maximum ground triangle edge; step cuts and road refinement stay finer
   };
   sky: SkyJob;
   // The tile's raised kerbs (kerbDrop.ts): its carriageway, and its bridges and tunnels.

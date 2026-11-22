@@ -72,6 +72,38 @@ function tunnelRange(g: THREE.BufferGeometry, count: number | undefined) {
 const GROUND_DEPTH_DROP = 0.3; // m
 const WALL_DEPTH_BACK = 0.05; // m: a step's wall in the depth, behind its face
 
+let keepTileMaterial: ((material: THREE.Material) => boolean) | null = null;
+
+// WebGL drops a program when its last material is disposed. Keep one material
+// per encountered static-tile program variant, so streaming cannot undo warm-up.
+// Geometries and tile textures still retire; retained programs end with the renderer.
+export function retainTilePrograms(renderer: THREE.WebGLRenderer) {
+  const programs = new Set<object>(), materials = new Set<THREE.Material>();
+  const previous = keepTileMaterial;
+  const keep = (material: THREE.Material) => {
+    if (materials.has(material)) return true;
+    if (materials.size >= 128) return false;
+    const compiled = (renderer.properties.get(material) as { programs?: Map<unknown, object> }).programs;
+    if (!compiled || ![...compiled.values()].some(p => !programs.has(p))) return false;
+    for (const p of compiled.values()) programs.add(p);
+    materials.add(material);
+    return true;
+  };
+  keepTileMaterial = keep;
+  const release = () => {
+    if (keepTileMaterial === keep) keepTileMaterial = previous;
+    for (const material of materials) material.dispose();
+    materials.clear(); programs.clear();
+  };
+  const dispose = renderer.dispose.bind(renderer);
+  renderer.dispose = () => { release(); dispose(); };
+  return { keep, release, get size() { return materials.size; } };
+}
+
+export function disposeTileMaterial(material: THREE.Material) {
+  if (!keepTileMaterial?.(material)) material.dispose();
+}
+
 export class Surfaces {
   group: THREE.Group;
   masks: THREE.DataTexture[];
@@ -149,7 +181,7 @@ export class Surfaces {
       // materials. Freeing the vertex buffers alone leaves the mesh reachable.
       o.dispose();
       o.geometry.dispose();
-      if (o.material !== GROUND_DEPTH && o.material !== TUNNEL_TOP_DEPTH && !isTunnelFinish(o.material)) o.material.dispose();
+      if (o.material !== GROUND_DEPTH && o.material !== TUNNEL_TOP_DEPTH && !isTunnelFinish(o.material)) disposeTileMaterial(o.material);
     });
     this.group.clear();
     for (const m of this.masks) m.dispose();

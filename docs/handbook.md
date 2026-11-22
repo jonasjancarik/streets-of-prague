@@ -182,6 +182,7 @@ Graphics (<kbd>G</kbd> cycles it, remembered in the browser):
 | Detailed people within | 30 m | 30 m | 22 m | 14 m | 8 m |
 | Close car bodies within | 24 m | 24 m | 20 m | 16 m | 12 m |
 | Street-tree branches | Full | Full | Fewer sides | Fewer sides | Fewer sides |
+| Ordinary terrain mesh spacing | 2 m | 2 m | 2 m | 4 m | 4 m |
 | VR resolution at session entry | 75% | 75% | 65% | 55% | 45% |
 
 The sun shadow map covers just what is on screen, as the sun sees it, so shadows stay
@@ -193,6 +194,10 @@ instanced models. Your own avatar and the car you drive keep their close models.
 Simpler tree branches keep the same leaf cards and crown outline. Grass placement
 runs in short slices while you move, so checking the ground under a new patch does
 not have to finish in one frame.
+Low and Lowest use fewer triangles on ordinary surveyed terrain. Tile edges, steps,
+road edges, bridge decks and tunnel floors keep their finer spacing; collision
+heights do not change. Terrain spacing applies to newly built tiles, so an already
+loaded tile keeps its mesh until it is rebuilt or the page reloads.
 Auto, the default, starts High (Medium on touch devices) and moves between tiers
 by how steady the frames are (`src/graphics.ts`), ignoring loading and tile builds;
 it never picks Ultra, which only choosing it turns on. On WebGPU it doesn't step down
@@ -839,12 +844,20 @@ The metro ride uses its overhead cutaway camera.
   go back and VR starts with the standard Cardboard lens settings.
   The graphics tier sets headset resolution when entering VR, from 45% on Lowest
   to 75% on High and Ultra, which keep the previous resolution. `?vrscale=0.3…1` overrides it for
-  the visit. Leave and re-enter VR to apply a new resolution. The page buttons and
-  the HUD aren't shown in the headset. Real Cardboard stereo on a Pixel 5, checked
-  without a viewer on 22 November, averaged 12.4 FPS on Medium, 13.4 on Low and
-  15.5 on Lowest at the Old Town Square. Main-thread work alone took 39–43 ms per
-  frame, above the 60 FPS budget. See the [stereo check](performance-log.md#22-november-2026--real-cardboard-stereo-check)
-  for setup and limits. In a car you sit in the driver's seat; in a bus, lorry,
+  the visit. Leave and re-enter VR to apply a new resolution.
+  With **Camera view → VR** selected, **Shorter view in VR** appears in Settings.
+  It is off by default, keeping the usual 400 m horizon. Turning it on limits the
+  view to 120 m and adds haze to reduce drawing work. This choice is saved separately
+  from the graphics tier and takes effect on entering VR, without another page reload.
+  Distant buildings disappear into the haze sooner. The page buttons, minimap and
+  HUD aren't shown in the headset; the hidden minimap also stops drawing.
+  Real Cardboard stereo on a Pixel 5, checked without a viewer on 22 November,
+  remained well below 60 FPS. A shorter-view sample reached 22.3 FPS standing at
+  the Old Town Square, but a moving sample was about 14 FPS. These samples preceded
+  the final crowd and shader-retention changes. See the [stereo optimisation notes](performance-log.md#22-november-2026--stereo-vr-optimisation-and-optional-shorter-view)
+  for comparisons and limits.
+
+  In a car you sit in the driver's seat; in a bus, lorry,
   dustcart, fire engine or ambulance, up in the cab on the left behind the windscreen
   (`VR_CAB` in `car.ts`). The windows of the vehicle you drive are left out, so their
   tint and reflections don't fog the view; other vehicles keep theirs. Parts of the

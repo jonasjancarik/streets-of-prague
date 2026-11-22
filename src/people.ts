@@ -73,6 +73,7 @@ export function knocked(a: Anim, dt: number, left: number) {
 }
 
 export class Crowd {
+  private threatScan: { x: number; y: number; ux: number; uy: number; reach2: number; jump2: number }[] = [];
   walk: WalkGraph;
   grid: WalkGrid;
   r: () => number;
@@ -334,6 +335,17 @@ export class Crowd {
   // `seen`: whether a spot is in view; out of it, nobody's walk or fall is animated.
   update(dt: number, threats: Iterable<{ x: number; y: number; vx: number; vy: number }>, near?: Obstructions, seen: (x: number, y: number) => boolean = () => true, player?: PersonOnFoot) {
     const r = this.r;
+    // All walkers see the same car positions during this step. Prepare speed,
+    // direction and reach once per car rather than once per walker and car.
+    let threatN = 0;
+    for (const car of threats) {
+      const speed = Math.hypot(car.vx, car.vy);
+      if (speed < 1.5) continue;
+      const item = this.threatScan[threatN] ??= { x: 0, y: 0, ux: 0, uy: 0, reach2: 0, jump2: 0 };
+      item.x = car.x; item.y = car.y; item.ux = car.vx / speed; item.uy = car.vy / speed;
+      item.reach2 = (9 + speed * 1.1) ** 2; item.jump2 = (3 + speed * .35) ** 2;
+      threatN++;
+    }
     // Each walker looks ahead for things in the way a few times a second, not all at once.
     this.tick = (this.tick + 1) % 4;
     for (const p of this.people) {
@@ -345,13 +357,12 @@ export class Crowd {
       }
       if (p.state === 'walk') {
         // Look out for fast cars heading this way.
-        for (const c of threats) {
-          const sp = Math.hypot(c.vx, c.vy);
-          if (sp < 1.5) continue;
+        for (let i = 0; i < threatN; i++) {
+          const c = this.threatScan[i];
           const dx = p.x - c.x, dy = p.y - c.y;
-          const dist = Math.hypot(dx, dy);
-          if (dist > 9 + sp * 1.1) continue;
-          const ux = c.vx / sp, uy = c.vy / sp;
+          const dist2 = dx * dx + dy * dy;
+          if (dist2 > c.reach2) continue;
+          const ux = c.ux, uy = c.uy;
           const ahead = dx * ux + dy * uy, side = dx * uy - dy * ux;
           if (ahead > -1 && Math.abs(side) < 4) {
             const s = side >= 0 ? 1 : -1;
@@ -360,7 +371,7 @@ export class Crowd {
             p.vx = uy * s * 5.5;
             p.vy = -ux * s * 5.5;
             // Too close to just run: they leap out of the way.
-            if (dist < 3 + sp * 0.35) p.anim.play('jump', true, 0.08);
+            if (dist2 < c.jump2) p.anim.play('jump', true, 0.08);
             break;
           }
         }
@@ -484,12 +495,13 @@ export class Crowd {
 
   // Only those `seen` (in view, with room for their shadows) are drawn, packed into the
   // first slots: most of the crowd round you is out of sight.
-  render(height: (x: number, y: number, p: Pedestrian) => number = () => 0, seen: (x: number, y: number) => boolean = () => true, sheltered?: (x: number, y: number, head: number) => boolean) {
+  // The predicate receives the person too, so stereo can retain elevated casters.
+  render(height: (x: number, y: number, p: Pedestrian) => number = () => 0, seen: (x: number, y: number, p: Pedestrian) => boolean = () => true, sheltered?: (x: number, y: number, head: number) => boolean) {
     const m = _m, rain = this.umbrellas.wet > 0;
     let n = 0;
     this.umbrellas.begin();
     for (const p of this.people) {
-      if (!seen(p.x, p.y)) continue;
+      if (!seen(p.x, p.y, p)) continue;
       m.compose(_p.set(p.x, height(p.x, p.y, p) + p.z, -p.y), _q.setFromAxisAngle(UP, p.h), _s);
       this.fig.wear(n, p.i);
       // (Dropped by anyone running from a car or knocked over.)

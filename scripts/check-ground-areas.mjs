@@ -103,11 +103,16 @@ globalThis.OffscreenCanvas = class {
 try {
   const levelPoly = [[[[0, 0], [100, 0], [100, 100], [0, 100]]]];
   for (const kind of ['bridge', 'tunnel']) {
-    const result = groundLayers(data(), { ...opts, edges: [{ ...roadEdge, [kind]: true, level: 1 }],
-      levels: [{ kind, level: 1, polys: levelPoly, height: () => kind === 'bridge' ? 5 : -5 }] });
+    const levelOpts = { ...opts, edges: [{ ...roadEdge, [kind]: true, level: 1 }],
+      levels: [{ kind, level: 1, polys: levelPoly, height: () => kind === 'bridge' ? 5 : -5 }] };
+    const result = groundLayers(data(), levelOpts);
     const paint = result.layers.filter(l => l.color === COLORS.paint);
     assert.equal(paint.length, 2, `${kind} has dashed and solid paint`);
     assert.ok(paint.every(l => l.geometry.hold && Math.abs(l.geometry.hold[2] - .13) < 1e-6));
+    const detailed = groundLayers(data(), { ...levelOpts, fine: 2 }).layers.filter(l => l.level === 1);
+    const economy = groundLayers(data(), { ...levelOpts, fine: 4 }).layers.filter(l => l.level === 1);
+    assert.ok(detailed.length, `${kind} fixture has a raised/underground level`);
+    assert.deepEqual(economy, detailed, `${kind} keeps full geometry precision on economy ground`);
   }
 } finally { delete globalThis.OffscreenCanvas; }
 console.log('Ground layer order, fixed slots, patterns, and pavement palette passed');

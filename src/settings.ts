@@ -234,6 +234,11 @@ export function setupSettings({ sound, graphics, weather, saves, cameraChoice }:
       : t('Click the street and move the mouse to look around, swipe on a touchscreen, or use the right stick.');
   };
   refresh.push(updateLookNote);
+  const vrDistance = row('Shorter view in VR', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }],
+    () => firstPersonOptions.vrShortView ? 'on' : 'off', id => setFirstPersonOptions({ vrShortView: id === 'on' }));
+  const vrDistanceNote = el('p', 'settings-note', vrDistance);
+  relabel.push(() => { vrDistanceNote.textContent = t('Limits the view to 120 m and adds haze to help VR run faster. Off keeps the usual 400 m view.'); });
+  refresh.push(() => { vrDistance.hidden = cameraChoice.get() !== 'vr'; });
   const walkSettings = el('details', 'settings-radio', viewRow);
   const walkSummary = el('summary', '', walkSettings);
   relabel.push(() => { walkSummary.textContent = t('First-person controls'); });

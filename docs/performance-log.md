@@ -1497,3 +1497,90 @@ Raw frames, Auto transitions and the stereo screenshot are saved locally under
 `docs/evidence/performance-2026-11-22/stereo/` (ignored by git). The owned test tab
 was closed, temporary port mappings removed and the phone's sleep setting restored.
 Pixel 11 Pro stereo and moving driving routes were not measured here.
+
+## 22 November 2026 — stereo VR optimisation and optional shorter view
+
+Follow-up measurements used real Cardboard-mode WebGL stereo on the Pixel 5 at
+the Old Town Square, with two eyes, 600 people, Lowest graphics and the same
+694 × 340 XR framebuffer. No viewer was fitted; the phone was recentered while
+lying flat. Profiles include both eyes and the shadow/depth passes; CPU
+times do not isolate GPU cost, and this phone has no usable GPU timer extension.
+The clean starting revision was `84059da7`.
+
+A fresh baseline averaged 15.2 FPS (65.7 ms mean, 91.6 ms p95, 186.8 ms p99),
+with 11.27 million triangles per frame. The stereo CPU profile put about 33% of
+sampled wall time inside rendering and 18% in simulation. Ground layers were
+large and repeated for both eyes and the depth pass; cars and people also cost
+substantial geometry. A moving profile later put about 10% in `Crowd.update` and
+18% in WebGL program selection. Those are inclusive sampled shares, not separate
+costs to add together.
+
+Changes now implemented:
+
+- Low and Lowest build ordinary surveyed ground at 4 m spacing instead of 2 m.
+  Tile seams, step walls and road refinement retain their finer geometry, as do
+  bridge decks and tunnel floors. Physics still samples the original terrain.
+  Existing tiles are not rebuilt just because the graphics tier changes.
+- VR skips distant ordinary cars and people outside a head-facing cone expanded
+  by at least 45 m. The current eye pose and XR projection set the direction and
+  width; nearby shadows/headlights, elevated actors, bridges, tunnels, unknown
+  heights and steep head tilts keep conservative treatment. Populations and
+  simulation continue. The invisible minimap stops drawing in an XR session.
+- A saved **Shorter view in VR** setting offers a 120 m view with haze. It is
+  **off by default**: every graphics tier keeps the previous 400 m horizon unless
+  the player chooses it. Tile loading still covers 400 m, and the camera's far
+  clipping plane stays unchanged so distant markers are not clipped away.
+- Crowd escape checks prepare each threat's speed/direction once per simulation
+  step, then use squared distances for each walker. This removes repeated square
+  roots without changing escape/jump thresholds or random-number order.
+- VR retains a material owner for each encountered static-tile WebGL program,
+  up to 128 owners, so retiring a tile does not discard the last reference to its
+  compiled shader. Duplicate programs do not retain another owner. Geometry and
+  tile textures still dispose normally; retained materials release with the renderer.
+
+The controlled comparisons switched geometry and drawing in one warmed stereo
+session. Six-second windows alternated between the two configurations, three
+times each, at 400 m. Full 2 m
+ground with the old minimap work took 72.1 / 70.5 / 69.5 ms per frame; 4 m ground
+with hidden minimap drawing disabled took 63.7 / 64.3 / 68.1 ms. Geometry fell from
+about 11.7 to 7.1 million triangles per frame, with about the same 516 draw calls.
+CPU time did not clearly improve. A series starting with the candidate and
+including conservative car visibility took 77.9 / 74.9 / 77.5 ms before and
+71.3 / 70.1 / 71.4 ms after, with about 5.6 million triangles. These were separate
+runs, so the gains must not be added. Separate fresh candidate loads were slower
+than the fresh baseline (93.0 and 80.1 ms). They are retained and not attributed
+to heat. Battery temperature reached about 36.5–36.7 °C during the work; this does
+not show whether GPU throttling occurred.
+
+The 120 m samples showed lower geometry and draw-call counts than the 400 m runs
+above. An application snapshot with the short view was checked: both eyes and
+nearby scenery rendered without console errors.
+
+| Lowest, 120 m | FPS | Mean / p95 / p99 frame interval, ms | Frames over 100 ms | CPU through stereo draw, ms/frame | Draw calls/frame | Triangles/frame |
+|---|---:|---|---:|---:|---:|---:|
+| Standing, 20 s | 22.3 | 44.9 / 66.7 / 73.8 | 0 | 36.1 | 233 | 2.10 million |
+| Driving at 50 km/h, 12 s | 14.0 | 71.6 / 138.9 / 216.1 | 24 | 52.6 | 280 | 3.65 million |
+
+These are single samples, **not a controlled final-code speed-up**. They preceded
+the saved setting, final crowd threat preparation and shader retention. The
+shorter view hides distant buildings behind haze; the game owner chose to keep 400 m
+as the default and make the shorter view optional. A hard 120 m camera far plane
+and frozen shadows were diagnostic trials only and were not kept. Neither these
+numbers nor reduced geometry demonstrate smooth VR, especially while driving.
+
+Final-code verification on the Mac: typecheck, production bundle build without
+copying map assets, street-quality/VR pose and cache-lifecycle checks, the crowd
+escape regression, ground area/bridge/tunnel checks, and 25 terrain seam/cut tests
+passed. A real Chrome WebGL check retired/recreated three ground surfaces and
+verified reuse of the same program with only one retained material owner.
+Street-handling, tunnel-layers, pedestrians-escape and bike-hit scenes passed;
+the Lowest overhead screenshot was inspected. The in-app browser confirmed the
+new setting defaults off, persists when enabled across reload, and returns to off.
+Full pipeline suites were not run.
+
+The Pixel 5 became active in another app before the final-code timing run, so it
+was left alone. Latest-code phone FPS at either distance, moving-route/head-turn
+checks after the final changes, night/bad-weather coverage and long-session cache
+memory remain open, as does Pixel 11 Pro testing. Raw frame arrays, CPU profiles,
+prototype helpers, screenshots and logs are retained locally under
+`docs/evidence/performance-2026-11-22/optimisation/` (ignored by git).

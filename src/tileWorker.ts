@@ -488,7 +488,7 @@ worker.onmessage = async (event: MessageEvent<unknown>) => {
         // (The layers take the terrain's own heights, and the kerbs beside them: a layer is
         // street or pavement as a whole, right up to its edge.)
         const result = groundLayers(d, {
-          ...opts, height: ground ? groundAt({ ...ground, kerbs: null }) : null, kerbs: ground?.kerbs, roadProfile: ground?.roadProfile, fine: ground?.tin ? 2 : undefined,
+          ...opts, height: ground ? groundAt({ ...ground, kerbs: null }) : null, kerbs: ground?.kerbs, roadProfile: ground?.roadProfile, fine: ground?.tin ? opts.fine ?? 2 : undefined,
           roadSurfaceBoxes: ground?.underpass ? [...(ground.roadSurfaces?.map(p=>p.box) ?? []), ground.underpass.box] : ground?.roadSurfaces?.map((p) => p.box),
           steps: ground?.labels ? ground.terraces ?? [] : null,
           levels: levels ? levels.map((l) => ({ level: l.level, kind: l.kind, polys: l.polys, height: groundAt(l.heights) })) : null,

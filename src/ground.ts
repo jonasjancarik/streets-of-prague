@@ -642,6 +642,10 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
     const lines = railway.get(track.level);
     if (lines) lines.push(track.pts); else railway.set(track.level, [track.pts]);
   }
+  const lowerFine = groundMax;
+  // Bridge decks and tunnel floors keep their original TIN precision even when
+  // the ordinary ground uses fewer triangles on a lower graphics tier.
+  if (fine !== undefined) groundMax = Math.min(groundMax, 2);
   try {
     levels.forEach((l, k) => {
       const H = (x: number, y: number) => { const h = l.height(x, y); return Number.isNaN(h) ? T(x, y) : h; };
@@ -659,7 +663,7 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
         upper.push(...tunnelLayers(l.polys, box, masks[k], H, T, paintOn.get(k) || [], l.level));
       }
     });
-  } finally { groundHeight = null; }
+  } finally { groundHeight = null; groundMax = lowerFine; }
   if (bores.length) {
     const index = new TunnelIndex(bores);
     for (const layer of lower) layer.outsideTunnel = splitTunnelEarth(layer.geometry, index);

@@ -69,7 +69,7 @@ import { kindAt, loadStrips, setCentre } from './reflections.ts';
 import { TileWorld } from './tiles.ts';
 import { facadeFinishes, loadFacadeFinishes } from './facadeFinishes.ts';
 import { loadFacadeAtlas } from './facades.ts';
-import { groundSamples, groundDepthView, tunnelEarthView } from './surface.ts';
+import { groundSamples, groundDepthView, tunnelEarthView, retainTilePrograms } from './surface.ts';
 import { CUTAWAY, DIG, WEATHER_DETAIL, TREE_SWAY } from './shading.ts';
 import { streetHedges } from './streetHedges.ts';
 import { fences } from './fences.ts';
@@ -91,7 +91,7 @@ import type { Surface, HornKind, Rotor } from './audio.ts';
 import { tunnelFinishesView } from './tunnelFinish.ts';
 import { StreetIronwork } from './streetIronwork.ts';
 import { StreetPlates } from './streetPlates.ts';
-import { eyesFor, firstPersonOptions, initialView, savePlayerView, vrSupported, WalkingGait, type Eyes, type PlayerView } from './streetView.ts';
+import { eyesFor, firstPersonOptions, initialView, inStreetCone, savePlayerView, vrSupported, WalkingGait, type Eyes, type PlayerView } from './streetView.ts';
 import { setupTouch } from './touch.ts';
 import { setupGamepad, padLabels, usingPad } from './gamepad.ts';
 import './credits.ts';
@@ -324,6 +324,7 @@ async function main() {
     for (const type of ['keydown', 'keyup']) window.dispatchEvent(new KeyboardEvent(type, { code, bubbles: true, cancelable: true }));
   }, () => cameraChoice.set('overhead'));
   let vrView = !!vr;
+  const tilePrograms = vr ? retainTilePrograms(renderer) : null;
   // Where straight ahead is in a vehicle, turned from its nose, and which vehicle that is.
   let vrSeat: { h: number } | null = null, vrSeatTurn = 0, vrWas = false;
 
@@ -2894,6 +2895,7 @@ async function main() {
     // (In first person you see along the street: 400 m of it, as far as the haze lets you,
     // and of that only the tiles the view looks towards are drawn.)
     const eyes = !testkit?.cam && testkit?.eyes;
+    const eyeReach = vr?.active && firstPersonOptions.vrShortView ? 120 : EYES_REACH;
     if (eyes) {
       camera.getWorldDirection(looking);
       // (A little wider than the picture, so turning doesn't show an empty edge at once;
@@ -2905,7 +2907,7 @@ async function main() {
     // (A tile joins the scene just after a frame's update, so this frame draws it first.)
     const tilesFrom = performance.now(), joined = world.joined !== joinedWas;
     joinedWas = world.joined;
-    world.update(camPos.x, -camPos.z, eyes ? EYES_REACH : viewRadius() + 220, testkit?.cam ? Infinity : eyes ? EYES_REACH : viewRadius(Math.max(height, heightWanted)) + world.drawBeyond, eyes ? view : null, waitingViewTiles);
+    world.update(camPos.x, -camPos.z, eyes ? EYES_REACH : viewRadius() + 220, testkit?.cam ? Infinity : eyes ? eyeReach : viewRadius(Math.max(height, heightWanted)) + world.drawBeyond, eyes ? view : null, waitingViewTiles);
     hitches.tiles(performance.now() - tilesFrom, joined);
 
     // Player: keyboard and touch controls together. In the car, Shift is lane assist:
@@ -3000,13 +3002,25 @@ async function main() {
     if (ride.on && ride.arrived() && inspector.phase !== 'decide') getOff();
     if (police.stars === 0 && inspector.owed) inspector.owed = 0;
     const fromStreet = !!eyes || (testkit?.cam?.tilt ?? 0) > 35;
+    const stereoCone = vr?.active && Math.abs(vr.headPitch) < .7;
+    const head = vr?.headH ?? 0, forwardX = Math.cos(head), forwardY = Math.sin(head);
+    // The XR projection describes the combined eyes. The canvas aspect ratio
+    // describes both viewports side by side and greatly overestimates the view.
+    const eyeProjection = vr?.active ? renderer.xr.getCamera().projectionMatrix.elements : null;
+    const coneHalf = Math.min(Math.PI / 2, eyeProjection && eyeProjection[0] ? Math.atan((1 + Math.abs(eyeProjection[8])) / Math.abs(eyeProjection[0])) + .35 + STEP5 : view.spread + STEP5);
+    const sinHalf = Math.sin(coneHalf), cosHalf = Math.cos(coneHalf);
+    const shadowSlope = Math.hypot(sky.offset.x, sky.offset.z) / Math.max(1, sky.offset.y);
+    const peopleMargin = Math.max(45, 11 * shadowSlope), actorReach = eyeReach + peopleMargin;
     trams.sync(camPos.x, -camPos.z, viewRadius() + 150, ground, fromStreet, dt, ride.passengers?.doors ? ride.v : null);
     metro.update(dt);
     metro.sync(camPos.x, -camPos.z, viewRadius() + 60, ground, fromStreet);
     tramStops.sync(camPos.x, -camPos.z, viewRadius() + 60, ground, fromStreet);
     busStops.sync(camPos.x, -camPos.z, viewRadius() + 60, ground, fromStreet);
     crowd.umbrellas.wet = weather.now.rain;
-    crowd.render(ground, (x, y) => !offscreen(x, y), eyes && weather.now.rain > .01 ? weatherFx.sheltered : undefined);
+    crowd.render(ground, (x, y, p) => !offscreen(x, y) && (!vr?.active || p.gz === undefined || p.z > 3 || p.e.bridge || p.e.tunnel || !!p.e.level || Math.abs(p.gz - camGround) >= 5 ||
+      ((x - camPos.x) ** 2 + (y + camPos.z) ** 2 <= actorReach ** 2 && (!stereoCone ||
+        inStreetCone(x - camPos.x, y + camPos.z, forwardX, forwardY, sinHalf, cosHalf, peopleMargin)))),
+    eyes && weather.now.rain > .01 ? weatherFx.sheltered : undefined);
     birds.update(dt, Object.assign(birdsView, { x: camPos.x, y: -camPos.z, radius: viewRadius(), height: eyes ? 1000 : height, dark: sky.dark, rain: weather.now.rain, snow: weather.now.snow }));
     terraces.update(dt, Object.assign(terraceView, { x: camPos.x, y: -camPos.z, radius: viewRadius(), day: season.day }));
     police.render(ground, time.value, fromStreet ? camera.position : undefined);
@@ -3028,12 +3042,20 @@ async function main() {
     drawn.length = 0;
     {
       const cx = camPos.x, cy = -camPos.z, r = viewRadius() + 12;
+      // Car pages cannot cull individual instances. In stereo, keep only the
+      // broad head-facing cone plus enough space for shadows and headlights.
+      // Different elevations/levels stay conservative, as do steep head tilts.
       // Not the cars on the street over the tunnel you're in (or on the bridge over
       // you), where the hole looks down past it: the ground and the houses there are cut
       // away too (see CUTAWAY).
       const [hx, hz, hy, hr] = [CUTAWAY.value.x, CUTAWAY.value.y, -CUTAWAY.value.z, CUTAWAY.value.w];
       const see = (c: Car) => {
         if (hr > 0 && Math.hypot(c.x - hx, c.y - hy) < hr && (c.gz ?? world.terrainAt(c.x, c.y)) > hz) { c.lastH = undefined; return; }
+        if (vr?.active && c !== inCar && !c.level && c.gz !== undefined && Math.abs(c.gz - camGround) < 5) {
+          const margin = Math.max(45, c.spec.L + (c.spec.H + Math.abs(c.gz - camGround) + 4) * shadowSlope);
+          if ((c.x - cx) ** 2 + (c.y - cy) ** 2 > (eyeReach + margin) ** 2 ||
+            (stereoCone && !inStreetCone(c.x - cx, c.y - cy, forwardX, forwardY, sinHalf, cosHalf, margin))) { c.lastH = undefined; return; }
+        }
         if (Math.abs(c.x - cx) < r && Math.abs(c.y - cy) < r) drawn.push(c);
         else c.lastH = undefined; // so a bike coming back into view doesn't lean at once
       };
@@ -3247,8 +3269,8 @@ async function main() {
     if (eyes) {
       const w = weather.now;
       const haze = Math.max(w.rain * .60, w.storm * .76, w.snow * .85, w.mist * .92);
-      sky.fog.near = Math.min(sky.fog.near, 120 - 105 * haze);
-      sky.fog.far = Math.min(sky.fog.far, EYES_REACH - 305 * haze);
+      sky.fog.near = Math.min(sky.fog.near, 120 - 105 * haze, eyeReach * .3);
+      sky.fog.far = Math.min(sky.fog.far, eyeReach - Math.min(305, eyeReach - 35) * haze);
       (scene.background as THREE.Color).copy(sky.haze);
     } else (scene.background as THREE.Color).set(BACKDROP);
     // (The sky itself, where the renderer can draw it: webgpu/dome.ts. The free camera sees it once it is tilted towards the horizon.)
@@ -3546,7 +3568,7 @@ async function main() {
     const goTo = satnav.target, meNow = inCar || inHeli || walker;
     const dots = police.cars.map((p) => ({ x: p.car.x, y: p.car.y, colour: '#5b8cff' }));
     if (wanted_ && goTo && !goTo.job) dots.push({ x: wanted_.x, y: wanted_.y, colour: '#5ee6a8' });
-    minimap.update(dt, minimapOn() && !metro.active && !mapOpen(), { x: meNow.x, y: meNow.y, h: meNow.h }, satnav.drawn(),
+    minimap.update(dt, minimapOn() && !vr?.active && !metro.active && !mapOpen(), { x: meNow.x, y: meNow.y, h: meNow.h }, satnav.drawn(),
       goTo ? { x: goTo.x, y: goTo.y, colour: goTo.job ? '#5ee6a8' : '#6cc4ff' } : null, dots);
 
     dev.update();
@@ -3601,7 +3623,7 @@ async function main() {
   });
 
   window.__drive = {
-    hitches, birds, birdsView, lifeSize, scene, camera, traffic, crowd, loose, restingByCar, restingIndex, get resting() { return resting; }, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, refuse, health, fires, trams, ride, taxi, clock, board, busStops, busRide, metro, funicular, ferries, graphics, sound, weather, lamps, sky, skids, bikeShare, carPool, spawnWork, bags,
+    hitches, tilePrograms, birds, birdsView, lifeSize, scene, camera, traffic, crowd, loose, restingByCar, restingIndex, get resting() { return resting; }, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, refuse, health, fires, trams, ride, taxi, clock, board, busStops, busRide, metro, funicular, ferries, graphics, sound, weather, lamps, sky, skids, bikeShare, carPool, spawnWork, bags,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,

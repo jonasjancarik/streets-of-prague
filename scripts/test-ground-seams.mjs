@@ -6,9 +6,9 @@ import { edgeHeightSampler, conformTerrainEdges } from '../src/terrain-edges.ts'
 
 const leftPolys=[[[[3,0],[8,0],[8,3.1],[4,6],[3,6]]]],rightPolys=[[[[8,0],[16,0],[16,4],[10,4],[8,3.1]]]];
 const H=(x,y,label)=>.1*y*y+(label?3:0);
-function build(box,polys,label=1) {
+function build(box,polys,label=1,fine=2) {
   const d={areas:label===1?{water:polys}:{},roads:{},rails:[]};
-  return groundLayers(d,{box,height:H,steps:[{label,polys}]}).layers.find(l=>l.base).geometry;
+  return groundLayers(d,{box,height:H,fine,steps:[{label,polys}]}).layers.find(l=>l.base).geometry;
 }
 function edges(geometry,x=8,vertical=true) {
   const out=[],p=geometry.position,idx=geometry.index;
@@ -41,6 +41,22 @@ test('groundLayers keeps independently clipped shoreline meshes joined over curv
   const result=check(build([0,0,8,8],leftPolys),build([8,0,16,8],rightPolys));
   assert.equal(result.gapAt5,0);
   console.log('integrated shoreline seam:',JSON.stringify(result));
+});
+test('different ground quality tiers retain the same shoreline edge profile',()=>{
+  for(const left of [2,4]) for(const right of [2,4]) {
+    check(build([0,0,8,8],leftPolys,1,left),build([8,0,16,8],rightPolys,1,right));
+  }
+});
+test('coarser ground reduces triangles without changing planar heights or step walls',()=>{
+  const water=[[[[3,0],[12,0],[12,32],[3,32]]]];
+  const make=fine=>groundLayers({areas:{water},roads:{},rails:[]},{box:[0,0,32,32],height:(x,y,side)=>x*.03+y*.02+(side?2:0),fine,steps:[{label:1,polys:water}]}).layers;
+  const full=make(2),coarse=make(4),a=full.find(l=>l.base).geometry,b=coarse.find(l=>l.base).geometry;
+  assert.ok(b.index.length<a.index.length,'ordinary ground has fewer triangles while step refinement stays fine');
+  for(const l of coarse) if(l.base) for(let i=0;i<l.geometry.position.length;i+=3) {
+    const p=l.geometry.position,x=p[i],y=-p[i+2],h=p[i+1];
+    assert.ok(Math.min(Math.abs(h-(x*.03+y*.02)),Math.abs(h-(x*.03+y*.02+2)))<1e-5,'both terrace planes retain their heights');
+  }
+  assert.deepEqual(coarse.filter(l=>l.wall),full.filter(l=>l.wall),'retaining-wall geometry is unchanged');
 });
 test('groundLayers edge refinement agrees with reversed rings and different local terrace labels',()=>{
   const reversed=rightPolys.map(rings=>rings.map(ring=>ring.slice().reverse()));
