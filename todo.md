@@ -275,9 +275,10 @@ before that day's frame-count fix may be doubled.
   about 87 % of draws and 76 % of triangles are hidden behind something (median of 24
   views, `scripts/hidden-draws.js`), mostly distant ground. Leaving out ground beyond
   250 m (`?farground=250`) changed no pixel in 22 of 24 views but gained nothing
-  measurable on the Pixel 5 standing in first person (held by JavaScript). Next: try it
-  in VR, where triangles count; for the phone's CPU, culling the other hidden draws
-  needs a baked visibility table or occlusion queries. The first- and third-person drive
+  measurable on the Pixel 5 standing in first person (held by JavaScript). Leaving out
+  every hidden draw in that view (`scripts/cull-ab.js`) made the frame 25 % quicker
+  there (63 → 47 ms, JavaScript 44 → 36 ms), so real culling is worth building: a baked
+  visibility table or occlusion queries. Also try `?farground=250` in VR. The first- and third-person drive
   in `bench.mjs --android` can't get into the car.
 - **VR on WebGPU:** VR needs the legacy WebGL renderer until Chrome ships the WebXR/WebGPU
   binding. A Cardboard mode drawn by the page itself (both eyes, lens pass, gyroscope)

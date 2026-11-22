@@ -1666,3 +1666,34 @@ from about 72 to 65 ms (above). `?farground=250` works in VR too (the switch is 
 tiles, not the renderer) and is worth a try in the headset. For the phone's main thread,
 the larger share is the other hidden draws (buildings, trees, lamps, instanced meshes:
 most of the 87 %), which needs real occlusion culling rather than a distance rule.
+
+### The best occlusion culling could do on the Pixel 5, same day
+
+Before building any culling: what does the phone gain if the draws the buildings hide
+aren't drawn at all? `scripts/cull-ab.js` builds the hidden set with
+`scripts/hidden-draws.js` in the page itself, once the bench has loaded (in the bench's
+view, at half the picture's size), and `--ab` then moves those objects to the layer only
+the sun's shadow camera sees. They leave the main pass but still cast, as with real
+culling. The set is the one hidden at the start; nothing follows what comes into view
+later.
+
+Pixel 5, Chrome WebGPU, Medium at the tier's pixel ratio, first person standing on the
+Old Town Square, 60 s in four-second windows, no screen touches, 29–30 °C:
+
+| | Main pass draws | fps | Frame | JavaScript |
+|---|---|---|---|---|
+| Everything drawn | 188 | 15.9 (15–16 a window) | 63.0 ms | 44.4 ms |
+| Hidden ones left out | 18 | 21.2 (21–22 a window) | 47.1 ms | 36.3 ms |
+
+**25 % quicker a frame**; the windows don't overlap. 170 of 188 draws and 2.6 of 3.0 M
+triangles were hidden there (all beyond 100 m, and 49 of 63 nearer). A control in the same
+setup with a switch that does nothing measured 15.6 against 15.8 fps (1.5 %), so the
+building of the set doesn't slow the page down. The baseline is lower than the 21 fps of
+the morning's distant-ground test in the same scene (26 °C then); the gain is measured
+within one page, so that doesn't change it. On the M5 the same switch in another view
+halved the drawing calls of a whole frame (shadow passes included) with no visible change.
+
+So culling is worth building: about 8 ms of JavaScript and 16 ms of frame on the phone in
+one ordinary view, against nothing measurable for the distant ground alone. This is a
+ceiling: a real culler costs something itself, keeps a margin round what it can't be sure
+of, and has to follow the camera as it moves.

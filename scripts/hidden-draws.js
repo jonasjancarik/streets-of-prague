@@ -7,7 +7,8 @@
 // ARGS: place (a PLACES name or [lat, lon]) and heading (compass degrees; without one,
 // the way t.runway finds longest), drive (in a car), overhead (the ordinary camera
 // instead of the eyes), yaw/pitch, fov, settle (seconds for the tiles to appear, 8),
-// shot (a screenshot's name), scale (of the picture), top (how many kinds to list).
+// shot (a screenshot's name), scale (of the picture), top (how many kinds to list),
+// keep (leave the hidden objects in window.__hiddenDraws; scripts/cull-ab.js uses them).
 // Without place it measures the camera as it is.
 //
 // The live game is held (paused, no frames drawn, shadow maps and shader time frozen,
@@ -167,6 +168,7 @@ try {
     if (n <= repeat) away.push([o, was]); else o.visible = was;
   }
   const check = changed(base, await picture());
+  if (ARGS.keep) window.__hiddenDraws = away.map(([o]) => o);
   for (const [o, was] of away) o.visible = was;
   const near = cam.getWorldPosition(new THREE.Vector3());
   const by = {}, bands = {}, all = { draws: 0, tris: 0, hiddenDraws: 0, hiddenTris: 0 };
