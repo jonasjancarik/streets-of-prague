@@ -153,6 +153,12 @@ would stay as it is.
    download or versioning, and covers the countryside too, which would make the query
    fallback unnecessary. A height grid per tile from the tile worker, the sweep in a
    worker, redone when the camera has moved more than the occluders were shrunk by.
+   The sweep has no height limit of its own: from a helicopter flying low between
+   blocks, or a tower or terrace, it still culls what the roofs hide, and it culls
+   nothing once the eye is above every roof within reach (checked first, so a high
+   flight costs nothing). The camera can rise fast, so it has to sweep again when the
+   eye has moved the margin in any direction, height included, or sweep from a little
+   above the eye while climbing.
 3. **Score it against `hidden-draws.js`** over the 24 views and hand-picked hard places
    (lane mouths, passage ends, courtyard gates, the quays, the Hradčany slopes, the
    chase camera at corners, across Charles Bridge): what share of the truly hidden draws

@@ -1697,3 +1697,27 @@ So culling is worth building: about 8 ms of JavaScript and 16 ms of frame on the
 one ordinary view, against nothing measurable for the distant ground alone. This is a
 ceiling: a real culler costs something itself, keeps a margin round what it can't be sure
 of, and has to follow the camera as it moves.
+
+### The same with only the tiles' own meshes, same day
+
+Both reviews of the culling plan (`docs/occlusion-culling.md`) pointed out that the 25 %
+above could leave out anything that changed no pixel, including the shared instanced
+pages (trees, lamps, cars, people) and ground layers covered only by other ground
+layers, which a culler working with tiles can't. `hidden-draws.js` with `tiles: true`
+lets only the tiles' own meshes go, each tile's ground layers as one.
+
+In one view on the M5 (Old Town Square, first person, Medium) that is 89 of 272 draws
+instead of 207 of 262. On the Pixel 5, same setup as above but the phone warmer (34.5 °C
+at the start, JavaScript 60–67 ms a frame against 36–44 before):
+
+| | Main pass draws left out | fps | Frame | JavaScript |
+|---|---|---|---|---|
+| Everything drawn | 0 of 188 | 14.3 (13–16 a window) | 70.3 ms | 66.7 ms |
+| Hidden tile meshes left out | 70 of 188 | 15.9 (15–18 a window) | 63.0 ms | 60.2 ms |
+
+**10 % quicker a frame**, the windows overlapping a little. Per draw left out it is the
+same as the full set: about 0.1 ms of frame each (7.3 ms for 70, 16 ms for 170). So the
+gain follows the number of draws, and a culler of tile meshes alone would get about 40 %
+of the ceiling. The other 60 % is in the shared pages and the many small instanced
+meshes: cull those as whole pages only if a page is all hidden, or give them pages per
+area so they can go with the tiles.

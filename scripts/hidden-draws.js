@@ -8,7 +8,10 @@
 // the way t.runway finds longest), drive (in a car), overhead (the ordinary camera
 // instead of the eyes), yaw/pitch, fov, settle (seconds for the tiles to appear, 8),
 // shot (a screenshot's name), scale (of the picture), top (how many kinds to list),
-// keep (leave the hidden objects in window.__hiddenDraws; scripts/cull-ab.js uses them).
+// keep (leave the hidden objects in window.__hiddenDraws; scripts/cull-ab.js uses them),
+// tiles (only the tiles' own meshes may go, each tile's ground layers together, as a
+// culler working with the tiles could: not the shared pages of trees, people and cars,
+// and no ground layer hidden only by another ground layer).
 // Without place it measures the camera as it is.
 //
 // The live game is held (paused, no frames drawn, shadow maps and shader time frozen,
@@ -158,14 +161,27 @@ try {
   // same without it and all those already taken away. The set at the end can be left
   // out as a whole without changing a pixel.
   const seen = new Map();
-  const order = [...drawn.keys()].sort((a, b) => drawn.get(b).tris - drawn.get(a).tris);
+  let units = [...drawn.keys()].map((o) => [o]);
+  if (ARGS.tiles) {
+    units = [];
+    for (const tile of D.world.loaded.values()) {
+      const d = tile.drawn;
+      if (!d) continue;
+      const ground = [];
+      d.surfaces?.group?.traverse((o) => { if (drawn.has(o)) ground.push(o); });
+      if (ground.length) units.push(ground);
+      d.group.traverse((o) => { if (drawn.has(o) && !ground.includes(o)) units.push([o]); });
+    }
+  }
+  const size = (u) => u.reduce((a, o) => a + drawn.get(o).tris, 0);
+  const order = units.sort((a, b) => size(b) - size(a));
   const away = [];
-  for (const o of order) {
-    const was = o.visible;
-    o.visible = false;
+  for (const unit of order) {
+    const was = unit.map((o) => o.visible);
+    unit.forEach((o) => { o.visible = false; });
     const n = changed(base, await picture());
-    seen.set(o, n);
-    if (n <= repeat) away.push([o, was]); else o.visible = was;
+    unit.forEach((o) => seen.set(o, n));
+    if (n <= repeat) unit.forEach((o, k) => away.push([o, was[k]])); else unit.forEach((o, k) => { o.visible = was[k]; });
   }
   const check = changed(base, await picture());
   if (ARGS.keep) window.__hiddenDraws = away.map(([o]) => o);
@@ -174,7 +190,7 @@ try {
   const by = {}, bands = {}, all = { draws: 0, tris: 0, hiddenDraws: 0, hiddenTris: 0 };
   const add = (s, e, hid) => { s.draws += e.draws; s.tris += e.tris; if (hid) { s.hiddenDraws += e.draws; s.hiddenTris += e.tris; } };
   for (const [o, e] of drawn) {
-    const hid = seen.get(o) <= repeat;
+    const hid = seen.has(o) && seen.get(o) <= repeat;
     add((by[kind(o)] ??= { draws: 0, tris: 0, hiddenDraws: 0, hiddenTris: 0 }), e, hid);
     add(all, e, hid);
     if (o.geometry && !o.isInstancedMesh) {
