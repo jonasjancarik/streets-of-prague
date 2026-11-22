@@ -178,17 +178,31 @@ Graphics (<kbd>G</kbd> cycles it, remembered in the browser):
 | A soft shade under every car | On | On | On | On | Off |
 | A person's shadow from the sun | Their own shape | Their own shape | Their own shape | A plain shape | A plain shape |
 | Maximum crowd | 1200 | 1200 | 1200 | 1200 | 600 |
+| Close detailed people, up to | 24 | 24 | 12 | 6 | 2 |
+| Detailed people within | 30 m | 30 m | 22 m | 14 m | 8 m |
+| Close car bodies within | 24 m | 24 m | 20 m | 16 m | 12 m |
+| Street-tree branches | Full | Full | Fewer sides | Fewer sides | Fewer sides |
+| VR resolution at session entry | 75% | 75% | 65% | 55% | 45% |
 
 The sun shadow map covers just what is on screen, as the sun sees it, so shadows stay
 sharp when you drive and when the sun is low. Street patterns and facade pictures
 stay on at every tier. Quieter streets have
 fewer people; changing tiers lets surplus people leave out of sight.
+At street level, people and cars beyond the close-detail ranges use their usual
+instanced models. Your own avatar and the car you drive keep their close models.
+Simpler tree branches keep the same leaf cards and crown outline. Grass placement
+runs in short slices while you move, so checking the ground under a new patch does
+not have to finish in one frame.
 Auto, the default, starts High (Medium on touch devices) and moves between tiers
 by how steady the frames are (`src/graphics.ts`), ignoring loading and tile builds;
 it never picks Ultra, which only choosing it turns on. On WebGPU it doesn't step down
 when frames are slow only because they wait: when the browser or the screen holds the
 game at 30 frames a second (Chrome's Energy Saver does), a frame whose work fits in
 half the time stays at its tier.
+In VR, Auto aims for the headset's refresh rate (60 FPS when the browser does not
+report one). It reduces street detail while you play. Headset resolution changes
+on the next VR entry; changing the page's pixel ratio cannot resize an active XR
+framebuffer.
 `?graphics=auto|ultra|high|medium|low|lowest` overrides it for one visit; `?dpr=1` fixes
 only the pixel ratio. The Water setting turns on waves, sun glitter and lamp reflections on
 the river (`src/webgpu/water.ts`; WebGPU only, not on Lowest; on by default from Low
@@ -823,8 +837,10 @@ The metro ride uses its overhead cutaway camera.
   for the camera so it can scan a viewer's QR code. The Daydream View has no code, so
   decline the camera and skip the scan. If declining opens Chrome's app info instead,
   go back and VR starts with the standard Cardboard lens settings.
-  `?vrscale=0.3…1` sets the headset's resolution (default 0.75). The page buttons and
-  the HUD aren't shown in the headset. On a Pixel 5 it runs at about 18–20 frames a
+  The graphics tier sets headset resolution when entering VR, from 45% on Lowest
+  to 75% on High and Ultra, which keep the previous resolution. `?vrscale=0.3…1` overrides it for
+  the visit. Leave and re-enter VR to apply a new resolution. The page buttons and
+  the HUD aren't shown in the headset. An earlier Pixel 5 check ran at about 18–20 frames a
   second at Lowest and Medium alike, limited by the game's own update and the draw
   calls, not by pixels. That is too slow to be comfortable, and a faster phone is
   needed for real play. In a car you sit in the driver's seat; in a bus, lorry,

@@ -36,7 +36,7 @@ export function makePost(renderer: WebGPURenderer) {
   let glow: N = null;
   // The camera's travel while the shutter is open, as the camera sees it; the player's vehicle
   // there (its reach in w); the picture's width over its height.
-  const travel: N = uniform(new Vector3()), player: N = uniform(new Vector4(0, 0, 0, -1)), aspect: N = uniform(1);
+  const travel: N = uniform(new Vector3()), player: N = uniform(new Vector4(0, 0, 0, -1)), aspect: N = uniform(1), minSmear: N = uniform(0);
   const speed = new Vector3();
   const build = (scene: THREE.Scene, camera: THREE.Camera) => {
     pipeline?.dispose();
@@ -75,11 +75,17 @@ export function makePost(renderer: WebGPURenderer) {
           const smear: N = was.sub(at).mul(keep).toVar();
           // (Behind the camera the sums turn over: nothing there is in the picture anyway.)
           smear.mulAssign(min(1, float(REACH).div(max(length(smear.mul(vec2(aspect, 1))), 1e-5))).mul(clip.w.greaterThan(0.05).select(1, 0)));
-          const sum: N = vec3(0).toVar();
-          // (Each pixel reads at its own places along the smear, which turns steps into fine grain.)
-          const shift: N = fract(fract(dot(screenCoordinate.xy, vec2(0.06711056, 0.00583715))).mul(52.9829189)).sub(0.5).div(TAPS);
-          for (let i = 0; i < TAPS; i++) sum.addAssign(sharp.sample(at.add(smear.mul(shift.add((i + 0.5) / TAPS - 0.5)))).level(0).rgb);
-          out.assign(vec4(sum.div(TAPS), out.a));
+          // The sky, distant scenery and the protected player's car usually move
+          // less than a third of a pixel. Keep the original sample there instead
+          // of reading the same texel eight more times (also in bloom's input).
+          const pixels: N = smear.mul(vec2(aspect, 1));
+          If(dot(pixels, pixels).greaterThan(minSmear), () => {
+            const sum: N = vec3(0).toVar();
+            // (Each pixel reads at its own places along the smear, which turns steps into fine grain.)
+            const shift: N = fract(fract(dot(screenCoordinate.xy, vec2(0.06711056, 0.00583715))).mul(52.9829189)).sub(0.5).div(TAPS);
+            for (let i = 0; i < TAPS; i++) sum.addAssign(sharp.sample(at.add(smear.mul(shift.add((i + 0.5) / TAPS - 0.5)))).level(0).rgb);
+            out.assign(vec4(sum.div(TAPS), out.a));
+          });
         });
         return out;
       })();
@@ -106,6 +112,7 @@ export function makePost(renderer: WebGPURenderer) {
       travel.value.copy(speed).transformDirection(camera.matrixWorldInverse).multiplyScalar(speed.length() * SHUTTER * POST.blur);
       player.value.set(POST.car[0], POST.car[1], POST.car[2], 1).applyMatrix4(camera.matrixWorldInverse).setW(POST.car[3]);
       aspect.value = (camera as THREE.PerspectiveCamera).aspect || 1;
+      minSmear.value = (.35 / Math.max(1, renderer.domElement.height)) ** 2;
     } else travel.value.set(0, 0, 0);
     pipeline!.render();
   });

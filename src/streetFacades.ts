@@ -45,7 +45,7 @@ function mask(w: Wall, hide: boolean) {
     const n = geom.attributes.position.count;
     const ids = n > 65535 ? new Uint32Array(n) : new Uint16Array(n);
     for (let i = 0; i < n; i++)ids[i] = i;
-    src.index = new THREE.BufferAttribute(ids, 1).setUsage(THREE.DynamicDrawUsage);
+    src.index = new THREE.BufferAttribute(ids, 1);
     geom.setIndex(src.index);
   }
   const index = src.index, ids = index.array;

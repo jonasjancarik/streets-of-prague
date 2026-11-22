@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { t } from './i18n.ts';
 import { initialView } from './streetView.ts';
+import { STREET_QUALITY } from './streetQuality.ts';
 
 // VR on a phone in a headset (a Daydream View, a Cardboard), the VR camera view (or ?vr): the game's own
 // first-person view, drawn once per eye by the browser's WebXR (Chrome on Android draws the
@@ -75,13 +76,13 @@ export class VR {
     private renderer: THREE.WebGLRenderer,
     private camera: THREE.PerspectiveCamera,
     private key: (code: string) => void,
-    private scale: number,
+    private scale: number | null,
     // Back to the game without VR, from the button beside Play in VR.
     private without: () => void,
   ) {
     renderer.xr.enabled = true;
     renderer.xr.setReferenceSpaceType('local');
-    renderer.xr.setFramebufferScaleFactor(scale);
+    renderer.xr.setFramebufferScaleFactor(scale ?? STREET_QUALITY.vrScale);
     // A picture the game draws for itself (the street lamps' light map, the cars' probe, a
     // puddle's mirror) is drawn with its own camera, not the headset's two eyes.
     const render = renderer.render.bind(renderer);
@@ -108,6 +109,9 @@ export class VR {
     if (this.active) return;
     const session = this.session = await xr.requestSession('immersive-vr', { optionalFeatures: ['local'] });
     session.addEventListener('end', () => this.leave());
+    // The framebuffer can only be sized before setSession. Read the current
+    // tier on every entry, including after Auto stepped down in the last session.
+    this.renderer.xr.setFramebufferScaleFactor(this.scale ?? STREET_QUALITY.vrScale);
     await this.renderer.xr.setSession(session as unknown as XRSession);
     this.active = true;
     this.walking = false;
@@ -305,11 +309,12 @@ export class VR {
   }
 }
 
-// The VR mode, when the page was opened for it (the VR camera view, or ?vr; ?vrscale=0.5…1
-// sets how sharp, less for speed).
+// The VR mode, when the page was opened for it. The tier sets the eyes' resolution
+// at entry; ?vrscale=0.3…1 overrides it for this visit.
 export function setupVR(params: URLSearchParams, renderer: THREE.WebGLRenderer, camera: THREE.PerspectiveCamera, key: (code: string) => void, without: () => void) {
   if (initialView(params) !== 'vr') return null;
-  const scale = THREE.MathUtils.clamp(Number(params.get('vrscale')) || 0.75, 0.3, 1);
+  const asked = Number(params.get('vrscale'));
+  const scale = Number.isFinite(asked) && asked > 0 ? THREE.MathUtils.clamp(asked, 0.3, 1) : null;
   const vr = new VR(renderer, camera, key, scale, without);
   // ?vrlog=<port>: the controls' state, twice a second, to a listener on the computer (for
   // a phone whose Chrome can't be inspected remotely; `adb reverse` the port).

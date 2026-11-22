@@ -1362,3 +1362,99 @@ The look: the plain shape's shadow is a thin spike whatever the person does, so 
 lying down or on a bike casts a standing one. `check-graphics` covers the tiers' choice;
 it stops at "high: actual MSAA depth texture", as it does without this change. Not
 measured: Medium and up (unchanged), the M5.
+
+## 22 November 2026 — street views and VR quality
+
+Medium's new street budgets reduced Pixel 5 mono FPV frame time in both test
+orders, by 5.3–20.9%. M5 driving results remain inconclusive against the measured
+background variation, and actual Daydream stereo performance was not tested.
+
+The realistic tyre/suspension model took 8.6 ms across 384 updates in an M5 Ultra
+driving profile, about 0.022 ms per update. It was not the main cost in that run.
+Rendering, uploads and repeated ground-polygon checks cost much more. This is a
+measurement of the handling model itself, not every consequence of driving it.
+
+Changes:
+
+- Grass placement yields every 32 candidates and resumes within a 1 ms frame
+  budget. Buffer assembly still finishes in one task. A regression check compares
+  every generated buffer against a hash from the original builder: the settled
+  geometry is identical. New patches can take more frames to appear.
+- Street facade indexes and ironwork matrices use explicit dirty ranges without
+  `DynamicDrawUsage`, which forced uploads even while stationary. In three paired
+  drives, non-long-task attribute uploads went from 0.20–0.21 to 0.07 MB/frame;
+  total buffer writes went from 0.42 to 0.28–0.31 MB/frame. The driven routes and
+  streamed contents differ slightly, so these are work counts for those runs.
+- Motion blur keeps the original sample when the projected smear is below 0.35
+  pixels, including the protected player car and most sky pixels, instead of
+  taking eight redundant samples. Its independent frame-time benefit is unmeasured.
+- Street budgets now scale at fixed resolution: detailed avatars go from 24 on
+  High/Ultra to 12/6/2 on Medium/Low/Lowest, with shorter ranges for them and close
+  car bodies. Lower tiers simplify branch tubes while retaining every leaf card.
+  The player's avatar and driven car keep their close models.
+- VR entry allocates 45/55/65% resolution on Lowest/Low/Medium and keeps the previous
+  75% on High/Ultra; `vrscale`
+  still overrides it. Auto targets the reported headset refresh rate, falling back
+  to 60 FPS, rather than desktop's 40. Active XR sessions scale street detail;
+  resolution changes at re-entry. Canvas DPR is restored when leaving XR.
+
+### Pixel 5
+
+Chrome WebGPU, Old Town Square, first person, Medium shading/shadows at 1×,
+clear at 14:00. The new Medium street budgets and the previous full budgets
+alternated in one page, four-second windows after warming both states. These
+compare a deliberate detail tradeoff at the same resolution, not identical looks.
+
+| Order | Full budgets | Medium budgets | Reduction in frame time |
+|---|---:|---:|---:|
+| Full first | 42.4 ms | 33.5 ms | 20.9% |
+| Medium first | 37.6 ms | 35.6 ms | 5.3% |
+
+Starts were at 25.0 and 25.5 °C. The first Medium window of the second run was
+slower than its later windows. Both runs completed without console errors. These
+are mono FPV results; they do not establish Daydream stereo performance.
+
+The same phone's WebGL path (used by VR), one 24-second mono FPV A/B at 27.2 °C,
+gave 36.1 → 34.5 ms (4.6%) with full → Medium street budgets and no console
+errors. That single run was not repeated in reverse order.
+
+### M5 Ultra driving
+
+Chrome WebGPU, third person, realistic sedan, lane assist, 2×, clear 14:00;
+16-second samples after five seconds of driving. Detached source snapshots
+included the pre-existing avatar edits in the baseline. Three alternating pairs,
+then two pairs with the starting order reversed:
+
+| Pair | Baseline mean/p95/p99, ms | Changed mean/p95/p99, ms | Baseline/changed frames over 100 ms |
+|---|---|---|---|
+| 1 | 42.7 / 71.8 / 95.4 | 32.9 / 62.0 / 142.4 | 3 / 12 |
+| 2 | 43.2 / 71.9 / 97.2 | 35.3 / 66.0 / 150.1 | 3 / 10 |
+| 3 | 30.7 / 53.2 / 75.2 | 27.1 / 48.7 / 64.5 | 2 / 1 |
+| Reversed 1 | 27.9 / 51.1 / 69.9 | 24.6 / 42.5 / 65.2 | 0 / 2 |
+| Reversed 2 | 32.4 / 52.2 / 79.8 | 26.1 / 46.1 / 71.9 | 2 / 3 |
+
+Mean intervals improved, but an unchanged-build control moved from 26.3 to 32.2
+ms (22%). Tails worsened in the first two pairs, and the changed build also had
+more frames over 100 ms in both reversed pairs. Desktop smoothness and the
+size of any gain remain inconclusive. Loads ranged from 10.7 to 58.5 seconds.
+The GPU was already 72% busy before testing. Later per-client GPU-time samples
+identified Codex and WindowServer as active consumers; briefly pausing Spotify's
+renderer reduced only part of the load, and it was resumed.
+
+The benchmark now counts draws/stalls after all post-processing passes, refuses
+failed car entry and zero-frame runs, and offers view, handling, deterministic
+vehicle, fixed settling and normal pacing options. An early failed car-entry run,
+a suspended phone run and a profile whose per-draw material-key tracing added
+substantial overhead were excluded. Local JSON/log evidence is under
+`docs/evidence/performance-2026-11-22/` (ignored by git).
+
+Validation: typecheck, production bundle build without copying map assets,
+`check-street-quality`, `check-player-avatar`, `check-street-handling`, offline
+`check-tree-shadows` and `check-street-facades`; FPV/TPV visual tier switching in
+the in-app browser. Full gameplay/pipeline suites and actual Daydream stereo
+testing were not run. The in-app browser tool stalled during the final overhead
+screenshot, so that screenshot was not verified.
+The full-strength motion-blur path was also checked in normally paced Chrome:
+an 80 km/h vehicle velocity with simulation paused rendered at 59.9 FPS over two
+seconds (p99 16.8 ms), with the player car sharp and the surrounding street blurred.
+That checks the shader and picture, not smoothness on a moving driving route.

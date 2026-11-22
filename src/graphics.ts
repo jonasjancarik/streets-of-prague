@@ -16,10 +16,13 @@ import { t } from './i18n.ts';
 import { slowHint } from './graphicswarning.ts';
 import * as telemetry from './telemetry.ts';
 import { startRetry } from './renderer.ts';
+import { STREET_QUALITY, STREET_TIERS } from './streetQuality.ts';
 
 // Graphics tiers keep the street surfaces and facade pictures at every level. High,
 // Medium and Low keep the dirt, grime, leaves, tone curve and detailed roofs too.
-// The pixel ratio does most of the GPU scaling; Low also halves the sun shadow map.
+// Pixel ratio scales shading; streetQuality.ts also scales close avatars, cars and
+// tree branches, so lower tiers reduce geometry and CPU work at street level and in VR.
+// Low also halves the sun shadow map.
 // Ultra is High with a sun shadow map twice as sharp and softer shadow edges, and
 // shadows in lamplight from people, trams and posts as well as cars.
 // Only choosing it turns it on, Auto goes no higher than High.
@@ -41,7 +44,8 @@ import { startRetry } from './renderer.ts';
 // texels across on High and Ultra (at 1024 a car's shadow stepped along the texels), 1024 below.
 // Auto keeps the light map at the size it began with: a new size rebuilds every shader.
 //
-// Auto starts high (medium on touch devices) and judges windows of 60 frame times
+// Auto starts high (medium on touch devices), targets 40 FPS on a screen or the
+// headset's refresh rate in XR, and judges windows of 60 frame times
 // by their mean without the quickest and slowest tenth. That mean doesn't see hitches,
 // so it also adds up the time spent in frames over 50 ms: two windows in a row that
 // spend a quarter of their time in them step down too, and a choppy window never steps
@@ -103,12 +107,10 @@ function setSamples(renderer: THREE.WebGLRenderer, samples: number) {
 }
 
 const TARGET_MS = 1000 / 40;  // 40 frames a second
-const SLOW = TARGET_MS * 1.1; // a window whose average frame is slower steps down
-const QUICK = TARGET_MS * 0.75, STEADY = 0.9; // …and one with 90% of its frames within 3/4 of the target can step up
+const STEADY = 0.9; // 90% of frames within 3/4 of the target can step up
 const SAMPLES = 60;
 const LONGEST = 250;          // longer isn't averaged in…
 const PAUSE = 1000;           // …and longer still is a pause (a dialog, the debugger), not a hitch
-const HITCH = TARGET_MS * 2;  // a frame this long (50 ms) is a hitch, and a window that spends
 const CHOPPY = 0.25, CHOPPY_WINDOWS = 2; // a quarter of its time in them is choppy: two in a row step down
 const WARMUP = 4000, SETTLE = 3000, RETRY = 120000;
 const STUCK = 5;
@@ -116,6 +118,7 @@ const WAITING = 0.5; // a frame whose work took under half its time was waiting
 
 export class AutoTier {
   tier: Tier;
+  private targetMs = TARGET_MS;
   private samples: number[] = [];
   private spent = 0;  // the window's time (ms)…
   private stalled = 0; // …and how much of it went in hitches
@@ -134,6 +137,15 @@ export class AutoTier {
     this.same = same;
   }
 
+  // Headsets need a frame per refresh. Start a fresh window when entering/leaving
+  // XR so the desktop's 40 FPS target and its failed tiers do not carry over.
+  target(ms: number, now: number) {
+    if (ms === this.targetMs) return;
+    this.targetMs = ms;
+    for (const tier of CHOICES) if (tier !== 'auto') this.failures[tier] = this.retryAt[tier] = 0;
+    this.hold(now, SETTLE);
+  }
+
   // Ignore frames for a while (loading, a change, coming back to the tab).
   hold(now: number, ms: number) {
     this.holdUntil = Math.max(this.holdUntil, now + ms);
@@ -150,7 +162,7 @@ export class AutoTier {
   record(ms: number, now: number): Tier | null {
     if (ms > PAUSE || now < this.holdUntil) return null;
     this.spent += ms;
-    if (ms > HITCH) this.stalled += ms;
+    if (ms > this.targetMs * 2) this.stalled += ms;
     if (ms > LONGEST) return null;
     this.samples.push(ms);
     if (this.samples.length < SAMPLES) return null;
@@ -158,12 +170,12 @@ export class AutoTier {
     const trim = sorted.slice(SAMPLES / 10, -SAMPLES / 10);
     const mean = trim.reduce((a, b) => a + b, 0) / trim.length;
     const choppy = this.stalled > this.spent * CHOPPY;
-    const steady = !choppy && sorted.filter((t) => t <= QUICK).length >= sorted.length * STEADY;
+    const steady = !choppy && sorted.filter((t) => t <= this.targetMs * .75).length >= sorted.length * STEADY;
     this.choppy = choppy ? this.choppy + 1 : 0;
     const median = (a: number[]) => [...a].sort((x, y) => x - y)[a.length >> 1];
     const waiting = this.worked.length >= SAMPLES / 2 && median(this.worked) < median(sorted) * WAITING;
-    const slow = mean > SLOW && !waiting;
-    if (mean > SLOW && waiting) this.capped++;
+    const slow = mean > this.targetMs * 1.1 && !waiting;
+    if (mean > this.targetMs * 1.1 && waiting) this.capped++;
     this.samples.length = this.worked.length = 0;
     this.spent = this.stalled = 0;
     const step = (dir: 1 | -1) => {
@@ -200,6 +212,7 @@ export class Graphics {
   private sky: Sky;
   private fixedRatio: number | null;
   private applied = false;
+  private presenting = false;
 
   constructor(renderer: THREE.WebGLRenderer, sky: Sky, params: URLSearchParams) {
     this.renderer = renderer;
@@ -236,13 +249,16 @@ export class Graphics {
     return x.look === y.look && x.cars === y.cars && x.lights === y.lights && x.lampMap === y.lampMap && x.shadowSize === y.shadowSize && x.shadowBlur === y.shadowBlur
       && x.roofs === y.roofs && x.clutter === y.clutter && x.crowd === y.crowd && x.people === y.people
       && (!(this.renderer as GPURenderer).backend?.isWebGPUBackend || x.samples === y.samples)
-      && this.ratio(a) === this.ratio(b);
+      && (this.renderer.xr.isPresenting || this.ratio(a) === this.ratio(b))
+      && STREET_TIERS[a].avatars === STREET_TIERS[b].avatars && STREET_TIERS[a].treeWood === STREET_TIERS[b].treeWood
+      && STREET_TIERS[a].carReach === STREET_TIERS[b].carReach;
   }
 
   // Fewer people on Lowest, with the usual off-screen retirement (no popping).
   get crowd() { return TIERS[this.tier].crowd; }
 
   private apply() {
+    Object.assign(STREET_QUALITY, STREET_TIERS[this.tier]);
     const { look, samples, shadowSize, shadowBlur, roofs, clutter, cars, lights, lampMap, people } = TIERS[this.tier];
     DIRT.value = LEAVES.value = look ? 1 : 0;
     WATER.value = look && this.water ? 1 : 0;
@@ -302,7 +318,7 @@ export class Graphics {
       for (const material of materials) material.dispose();
     }
     const r = this.ratio(this.tier);
-    if (this.renderer.getPixelRatio() !== r) this.renderer.setPixelRatio(r);
+    if (!this.renderer.xr.isPresenting && this.renderer.getPixelRatio() !== r) this.renderer.setPixelRatio(r);
   }
 
   setReflections(r: Reflections) {
@@ -339,6 +355,12 @@ export class Graphics {
 
   // `busy`: map tiles are being built, so this frame doesn't count.
   frame(ms: number, now: number, busy = false) {
+    if (this.presenting !== this.renderer.xr.isPresenting) {
+      this.presenting = this.renderer.xr.isPresenting;
+      if (!this.presenting) this.apply(); // restore the desktop canvas to Auto's current tier
+    }
+    const session = this.renderer.xr.isPresenting ? this.renderer.xr.getSession() as (XRSession & { frameRate?: number }) | null : null;
+    this.auto.target(this.renderer.xr.isPresenting ? 1000 / (session?.frameRate || 60) : TARGET_MS, now);
     if (this.choice !== 'auto' || busy) return;
     const capped = this.auto.capped;
     const next = this.auto.record(ms, now);

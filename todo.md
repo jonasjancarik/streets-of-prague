@@ -229,6 +229,13 @@ before that day's frame-count fix may be doubled.
 
 ## Performance
 
+- **Street views and VR (22 November):** lower tiers now limit detailed avatars,
+  close car bodies and branch geometry; grass placement is sliced and stationary
+  street details no longer force uploads every render. Pixel 5 FPV budget switches
+  improved frame time in both orders. M5 driving comparisons remain inconclusive
+  against a 22% unchanged-build control. Still needed: a quiet M5 comparison and
+  actual Daydream stereo/Auto testing on the Pixel 11 Pro, including re-entry after
+  Auto changes tier. See the dated entry in `docs/performance-log.md`.
 - **Driving hitches** (performance log, 26 October): the return-visit shader rebuild
   and the new-tile parking task are fixed. Open: idle-thread long frames (trace the
   GPU process on the phone) and the loading warm-up running 16–19 s into the drive.

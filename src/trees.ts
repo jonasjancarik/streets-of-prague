@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { STREET_QUALITY } from './streetQuality.ts';
 import { send } from './gpu.ts';
 import { treePageFactory, OUTLINE, type TreeInstances } from './map/vegetation.ts';
 import { streetTreeGeometry, canopyGeometry, coniferGeometry } from './map/streetTree.ts';
@@ -172,6 +173,7 @@ export class TreePool {
   // second mesh over the same instances (made when first wanted); `on` false puts every
   // page back to its top-down crowns.
   private streetShapes: THREE.BufferGeometry[] | null = null;
+  private streetLods = new Map<number, THREE.BufferGeometry[]>();
   private streetMade: THREE.Material | null = null;
   private streetOn = false;
   street(on: boolean, x = 0, z = 0) {
@@ -181,7 +183,9 @@ export class TreePool {
     if (on && !this.streetMade && streetMaterial) {
       this.streetMade = streetMaterial();
     }
-    if (on && !this.streetShapes) this.streetShapes = [streetTreeGeometry(5, 9, 3), streetTreeGeometry(9, 13, 3)];
+    const detail = STREET_QUALITY.treeWood;
+    if (on && !this.streetLods.has(detail)) this.streetLods.set(detail, [streetTreeGeometry(5, 9, 3, detail), streetTreeGeometry(9, 13, 3, detail)]);
+    if (on) this.streetShapes = this.streetLods.get(detail)!;
     const ready = on && !!this.streetMade && streetReady.value;
     for (const page of this.pages) {
       const mesh = page.mesh, used = page.owner !== null && mesh.count > 0;
@@ -190,6 +194,11 @@ export class TreePool {
       const near = ready && used && !!sphere && Math.hypot(sphere.center.x - x, sphere.center.z - z) - sphere.radius < STREET_REACH;
       if (near && !page.street) page.street = this.streetMesh(page);
       if (page.street) {
+        const shape = this.streetShapes?.[page.kind === 3 ? 1 : 0];
+        if (near && shape && page.street.geometry.index !== shape.index) {
+          page.street.geometry.setIndex(shape.index);
+          for (const [name, attr] of Object.entries(shape.attributes)) page.street.geometry.setAttribute(name, attr);
+        }
         page.street.visible = near;
         if (near) { page.street.count = mesh.count; page.street.boundingSphere = mesh.boundingSphere; page.street.boundingBox = mesh.boundingBox; }
       }
@@ -279,7 +288,7 @@ export class TreePool {
       if (page.canopy) { page.canopy.geometry.dispose(); page.canopy.dispose(); }
     }
     this.streetMade?.dispose();
-    for (const shape of [...(this.streetShapes ?? []), ...(this.canopyShapes ?? [])]) {
+    for (const shape of [...[...this.streetLods.values()].flat(), ...(this.canopyShapes ?? [])]) {
       for (const a of [shape.index, ...Object.values(shape.attributes)]) if (a) (a as { shared?: boolean }).shared = false;
       shape.dispose();
     }

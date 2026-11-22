@@ -191,7 +191,8 @@ export class StreetIronwork {
         mesh.visible = false;
         mesh.receiveShadow = true;
         mesh.frustumCulled = false;
-        mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        // Updates already mark only the used range. DynamicDrawUsage makes the
+        // WebGPU backend upload even a stationary page on every render pass.
         this.scene.add(mesh);
         this.meshes.push(mesh);
       }

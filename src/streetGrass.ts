@@ -5,7 +5,7 @@
 // turned and leaning its own way, some 46 to a square metre close by and fewer further off.
 // (webgpu/streetGrass.ts draws them, in the lawn's colour and the season's.)
 //
-// The lawn is worked through a cell of 6 m at a time, one a frame, the nearest first, and
+// The lawn is worked through a cell of 6 m at a time, the nearest first, in short frame slices, and
 // a cell is let go once you are well away. Where the grass is comes from the map; every
 // blade's place is made up, and so is its length (a mown lawn here, longer there).
 
@@ -17,6 +17,7 @@ export const GRASS_THIN = 5; // m: from here on fewer cards are drawn, each wide
 const CELL = 6; // m
 const PER_M2 = 46; // cards to a square metre
 const FORGET = 40; // m
+const SLICE_MS = 1;
 
 let material: (() => THREE.Material) | null = null, ready: { value: boolean } = { value: false };
 export const setGrassMaterial = (make: () => THREE.Material, isReady: { value: boolean }) => { material = make; ready = isReady; };
@@ -38,13 +39,14 @@ const lengthAt = (x: number, y: number) => {
   return 0.14 + 0.2 * Math.max(0, k - 0.45) / 0.55;
 };
 
-class StreetGrass {
+export class StreetGrass {
   readonly group = new THREE.Group();
   private cells = new Map<string, THREE.Mesh | null>(); // null: no grass there
   private made: THREE.Material | null = null;
   private on = false;
   private ground: GrassGround | null = null;
   private revision = -1;
+  private pending: { i: number; j: number; job: Generator<void, THREE.Mesh | null> } | null = null;
 
   constructor() { this.group.name = 'street-grass'; }
 
@@ -55,12 +57,14 @@ class StreetGrass {
     on &&= !!material && STREET_DETAIL.value;
     if (!on && !this.on) return;
     this.on = on;
+    if (!on) this.pending = null;
     if (on && !this.made) this.made = material!();
     const shown = on && ready.value;
     this.group.visible = shown;
     if (!shown || !ground) return;
     this.ground = ground;
     if (revision !== this.revision) {
+      this.pending = null;
       this.revision = revision;
       for (const [k, m] of this.cells) if (!m) this.cells.delete(k);
     }
@@ -71,7 +75,17 @@ class StreetGrass {
       if (d > GRASS_REACH + CELL * 0.7 || this.cells.has(`${i},${j}`)) continue;
       if (d < nearest) { nearest = d; next = [i, j]; }
     }
-    if (next) this.cells.set(`${next[0]},${next[1]}`, this.build(next[0], next[1]));
+    if (this.pending && Math.hypot((this.pending.i + .5) * CELL - x, (this.pending.j + .5) * CELL - y) > GRASS_REACH + CELL) this.pending = null;
+    if (!this.pending && next) this.pending = { i: next[0], j: next[1], job: this.build(next[0], next[1]) };
+    const pending = this.pending, until = performance.now() + SLICE_MS;
+    if (pending) do {
+      const step = pending.job.next();
+      if (step.done) {
+        this.cells.set(`${pending.i},${pending.j}`, step.value);
+        this.pending = null;
+        break;
+      }
+    } while (performance.now() < until);
     for (const [k, m] of this.cells) {
       const [i, j] = k.split(',').map(Number), d = Math.hypot((i + 0.5) * CELL - x, (j + 0.5) * CELL - y);
       if (m) m.visible = d < GRASS_REACH + CELL;
@@ -82,11 +96,12 @@ class StreetGrass {
     }
   }
 
-  private build(i: number, j: number) {
+  private *build(i: number, j: number): Generator<void, THREE.Mesh | null> {
     const g = this.ground!, at: number[] = [], corner: number[] = [], uv: number[] = [], blade: number[] = [], index: number[] = [];
     let seed = (Math.imul(i, 73856093) ^ Math.imul(j, 19349663)) >>> 0 || 1;
     const rand = () => ((seed = Math.imul(seed ^ (seed >>> 15), 2246822519) + 0x9e3779b9 >>> 0) >>> 8) / 16777216;
     for (let n = 0, all = Math.round(CELL * CELL * PER_M2); n < all; n++) {
+      if (n && n % 32 === 0) yield;
       const x = (i + rand()) * CELL, y = (j + rand()) * CELL, turn = rand() * Math.PI, wide = 0.22 + 0.2 * rand(), tone = rand(), rank = rand(), u0 = rand();
       // (Both ends of the card on grass, so no blade stands over a path's edge.)
       const dx = Math.cos(turn) * wide / 2, dy = Math.sin(turn) * wide / 2;

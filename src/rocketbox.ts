@@ -4,6 +4,7 @@ import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { LIFE_SIZE } from './figures.ts';
+import { STREET_QUALITY } from './streetQuality.ts';
 import { cutAway } from './shading.ts';
 import { fireGear } from './responderGear.ts';
 import type { Anim, Figures, UniformRole } from './figures.ts';
@@ -52,6 +53,8 @@ const OVER = 50; // how much more the umbrella arm counts than the walk's own
 const REACH = 30; // metres: taken within this of the camera (less in a crowd, see frame())…
 const SLACK = 6; // …and given back this much further off
 const MOST = 24; // avatars at once
+// Lower tiers keep the instanced people further away, including their animations.
+// The player's own avatar always keeps its slot.
 const TURN = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2); // their front is +z, the figures' +x
 
 // The clips by name: the gaits, the ways of standing, 'umbrella' (standing with one) and
@@ -253,7 +256,7 @@ export class LifeSize {
     if (anim.name !== 'idle' && !GAITS.includes(anim.name as Move) && !this.figureActions[anim.name]) return false;
     const pos = _p.setFromMatrixPosition(matrix);
     const d = Math.hypot(pos.x - this.cam.x, pos.z - this.cam.z);
-    if (d < REACH + SLACK && !fig.self) this.offered.push(d);
+    if (d < STREET_QUALITY.avatarReach + SLACK && !fig.self) this.offered.push(d);
     let gid = this.ids.get(fig);
     if (gid === undefined) this.ids.set(fig, (gid = this.ids_++));
     const key = `${gid}:${id}`;
@@ -265,7 +268,7 @@ export class LifeSize {
       const role = typeof fig.lifeSize === 'string' ? fig.lifeSize : undefined;
       const kind = role ? this.uniformKind(role, id) : this.baseKinds[(fig.avatarSeed ?? (gid * 7919 + id * 104729)) % AVATARS.length];
       if (kind == null) return false;
-      if (!fig.self && this.live.size >= MOST - (role ? 0 : this.reserved)) {
+      if (!fig.self && this.live.size >= STREET_QUALITY.avatars - (role ? 0 : this.reserved)) {
         if (role) this.waitingCrew++;
         return false;
       }
@@ -285,7 +288,7 @@ export class LifeSize {
       this.live.set(key, p);
       this.pose(p, anim);
       for (const c in p.w) p.w[c] = p.want[c] ?? 0;
-    } else if (!fig.self && d > this.reach + SLACK) return false;
+    } else if (!fig.self && (d > this.reach + SLACK || (this.live.size > STREET_QUALITY.avatars && !this.kinds[p.kind].role))) return false;
     p.pos.copy(pos);
     matrix.decompose(_v, p.turn, _s);
     p.umbrella = umbrella;
@@ -380,9 +383,10 @@ export class LifeSize {
     this.on = eyes && this.kinds.length > 0;
     this.cam.copy(camera.position);
     // In a crowd there are more people near than avatars: the reach draws in to the
-    // nearest MOST of them (those beyond it are let go) and widens again as the crowd thins.
+    // nearest tier budget of them (those beyond it are let go), widening as the crowd thins.
     const o = this.offered.sort((a, b) => a - b);
-    this.reach = o.length > MOST ? Math.min(REACH, o[MOST - 1]) : REACH;
+    const limit = STREET_QUALITY.avatars;
+    this.reach = o.length > limit ? Math.min(STREET_QUALITY.avatarReach, o[limit - 1]) : STREET_QUALITY.avatarReach;
     o.length = 0;
     // A nearby responder can arrive after all slots are held by civilians.
     // Give the farthest civilians back to their instanced figures on the next
@@ -390,7 +394,7 @@ export class LifeSize {
     this.reserved = this.waitingCrew;
     if (this.waitingCrew) {
       const present = [...this.live.values()].filter(p => p.seen);
-      const need = Math.max(0, present.length + this.waitingCrew - MOST);
+      const need = Math.max(0, present.length + this.waitingCrew - limit);
       const civilians = present.filter(p => !p.self && !this.kinds[p.kind].role)
         .sort((a, b) => b.pos.distanceToSquared(this.cam) - a.pos.distanceToSquared(this.cam));
       for (let i = 0; i < Math.min(need, civilians.length); i++) civilians[i].yieldSlot = true;

@@ -27,7 +27,7 @@ export const CANOPY = -2;
 // …and of a conifer's bough (coniferGeometry): its card shows the atlas's third picture.
 export const BOUGH = -3;
 
-export function streetTreeGeometry(seed: number, boughs: number, sprays: number) {
+export function streetTreeGeometry(seed: number, boughs: number, sprays: number, woodDetail = 1) {
   const r = rng(seed);
   const pos: number[] = [], nor: number[] = [], uv: number[] = [], part: number[] = [], idx: number[] = [];
   const v = (p: THREE.Vector3, n: THREE.Vector3, s: number, t: number, a: number, b: number, c: number, d: number) => {
@@ -38,6 +38,7 @@ export function streetTreeGeometry(seed: number, boughs: number, sprays: number)
 
   // A tube through `points` ([place, radius, how far up the lower trunk or -1]), `sides` round.
   const tube = (points: [THREE.Vector3, number, number][], sides: number, turns: number) => {
+    sides = Math.max(3, Math.round(sides * woodDetail));
     let last: number[] = [];
     const u = new THREE.Vector3(), w = new THREE.Vector3(), dir = new THREE.Vector3(), n = new THREE.Vector3(), p = new THREE.Vector3();
     points.forEach(([at, radius, rise], i) => {

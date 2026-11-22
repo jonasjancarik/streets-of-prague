@@ -1,4 +1,5 @@
 import { StreetHandling, ROLL_CENTRE } from './streetHandling.ts';
+import { STREET_QUALITY } from './streetQuality.ts';
 import { busCabin, commercialCab } from './commercialCab.ts';
 import { twoWheelerStreet } from './twoWheelerStreet.ts';
 import * as THREE from 'three';
@@ -2417,15 +2418,16 @@ export class CarPool {
       c.streetHeadlights = undefined;
       if (streetView && eye) {
         const distance2 = (c.x - eye.x) ** 2 + (c.y + eye.z) ** 2;
+        const reach = c.mode === 'player' ? STREET_CAR_REACH : STREET_QUALITY.carReach;
         // Start decoding a little before the model can enter the close view.
-        const fit = distance2 < 38 ** 2 ? closeBodies.get(c.key) : undefined;
+        const fit = distance2 < (reach + 14) ** 2 ? closeBodies.get(c.key) : undefined;
         if (fit && !fit.formed) requestStreetForm(fit.type);
-        const close = distance2 < STREET_CAR_REACH ** 2 ? fit : undefined;
-        if (c.key === 'fire' && distance2 < STREET_CAR_REACH ** 2) {
+        const close = distance2 < reach ** 2 ? fit : undefined;
+        if (c.key === 'fire' && distance2 < reach ** 2) {
           prepareStreetFire();
           key = STREET_FIRE;
           this.closeCars.set(c, key);
-        } else if (distance2 < STREET_CAR_REACH ** 2 && streetFleet.has(c.key)) {
+        } else if (distance2 < reach ** 2 && streetFleet.has(c.key)) {
           key = streetFleet.get(c.key)!;
           this.closeCars.set(c, key);
         } else if (close) {
