@@ -1759,3 +1759,8 @@ In 31 % of the frames there was no usable sweep (nothing culled), and with a new
 each frame the tests are all done again (19 ms in the last frame measured). Both leave
 room. `bench.mjs` now runs `--eval-after` with `--ab` too.
 
+Later that evening (details in `docs/occlusion-culling.md`): the guess of where the eye
+will be now uses the measured lag (frames without culling 31 % → 20–23 %), and the tests
+cost less at their worst (560 → 43–69 ms) but not on average (about 8.5 ms a frame on
+the phone). Four more driving A/Bs: 12.7 %, 8.9 %, 8.3 % and 15.4 % quicker (28–33 °C).
+

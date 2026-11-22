@@ -221,9 +221,34 @@ was outside the result's allowance or none had come back, and those frames culle
 nothing. The last frame's tests took 19 ms: with a new sweep every frame, every verdict
 is worked out again.
 
-Still to do: tests that cost less when every frame brings a new sweep (each 31.25 m
-square's lowest height worked out once a sweep rather than once a mesh), fewer frames
-without a usable sweep, VR (both eyes), the countryside and the overhead view.
+Then, the same evening:
+
+- **The guess of where the eye will be** uses the measured time from asking to the first
+  frame that uses the answer. The frame time it used before was wrong by half (56 against
+  about 100 ms on the phone). Frames without a usable sweep went from 31 % to 20–23 %, all
+  of them now with the eye outside the allowance (at about 100 ms a frame the car moves
+  over a metre between frames, so frame-to-frame jitter alone takes it past 0.5 m).
+- **Cheaper tests**: each 31.25 m square's lowest height is worked out once a sweep for all
+  tile meshes; a batch starts from the instance that showed last time and a tile mesh
+  from its square that did; something drawn is tested against a new sweep only every
+  fourth frame (in turns; what is left out is tested every time); new tile meshes'
+  tops (a pass over every vertex) take at most about 1.5 ms a frame, the rest drawn
+  until their turn. The worst frame's tests went from 560 to 43–69 ms; the average
+  stayed about 8.5 ms a frame on the phone (0.7 ms on the M5), spread over `minSeen`,
+  `tileVerdict`, `beyond` and `batchHidden` in a profile, and not yet explained.
+- A tile the result counted that went while the same result was still in use wasn't
+  noticed (the check ran only when a result came in); fixed.
+
+Pixel 5 driving after these, `--ab`, 60 s each: 12.7 % (113.0 → 98.7 ms, 28.4 °C),
+8.9 % (110.1 → 100.3, 29.1 °C), 8.3 % (116.5 → 106.9, 31.4 °C) and 15.4 % (121.4 →
+102.7, 33.4 °C) quicker a frame. With the two runs before them, 8–15 %: the runs vary by
+more than any one of these changes, so none is measured on its own. Desktop checks after
+the guess, square and deferral changes: no changed pixel in 32 views (24, and 8 with the
+eye moved 0.45 m); the last two changes (the order of the tests, drawn things tested
+every fourth frame) can only draw more and weren't rescored.
+
+Still to do: find what the remaining 8 ms of tests a frame on the phone are, VR (both
+eyes), the countryside and the overhead view.
 
 ## Order (after the reviews)
 

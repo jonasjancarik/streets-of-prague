@@ -34,6 +34,10 @@ const SLACK = 0.5;
 const RISE = 0.5;
 // How far the eye moves before the next sweep is asked for.
 const REASK = 0.1;
+// Milliseconds a frame for finding new tile meshes' tops (and the tests before them).
+const TOPS_MS = 1.5;
+// Frames between tests of something drawn, against a new sweep.
+const RETEST = 4;
 
 // What this needs of a tile (TileWorld's own type isn't exported).
 export interface CullTile {
@@ -58,8 +62,9 @@ export class Culler {
   // The eye's speed (metres a millisecond, smoothed) and how long a sweep takes to come back.
   private last = { x: NaN, y: NaN, z: NaN, t: 0 };
   private v = { x: 0, y: 0, z: 0 };
-  private trip = 30;
-  private frameMs = 30;
+  // From asking for a sweep to the first frame that uses it (milliseconds, smoothed).
+  private lag = 50;
+  private fresh = false;
   private posted = new Map<CullTile, string>(); // the tiles the worker has
   // Where the squares a tile mesh's tops are kept for start (the tiles' own grid).
   private sq: Point2 | null = null;
@@ -67,20 +72,26 @@ export class Culler {
   private tops = new WeakMap<THREE.Object3D, Float32Array>();
   private verdicts = new Map<THREE.Object3D, boolean>();
   private verdictSweep = -1;
+  private squares = new Map<number, number>();
+  private squaresSweep = -1;
   private masks = new Map<THREE.Object3D, number>();
   private candidates: THREE.Object3D[] = [];
   private tileMeshes = new Map<THREE.Object3D, Bounds>();
   private frame = 0;
+  private retested = 0;
+  private frameStart = 0;
+  private deferred = false; // (a verdict put off, not to be kept)
   // Off for comparing (bench.mjs --ab): everything drawn as without ?cull.
   enabled = true;
   // No new sweeps (scripts/hidden-draws.js checks a result from an eye moved off it).
   hold = false;
   slack = SLACK; rise = RISE;
-  readonly stats = { active: false, culled: 0, tested: 0, sweepMs: 0, testMs: 0, sweeps: 0, postMs: 0, frames: 0, waits: 0 };
+  readonly stats = { active: false, culled: 0, tested: 0, sweepMs: 0, testMs: 0, sweeps: 0, postMs: 0, frames: 0, waits: 0, retested: 0, testMsMax: 0, testMsSum: 0, tests: 0,
+    why: { none: 0, away: 0, inside: 0, tiles: 0 } };
 
   constructor(private scene: THREE.Scene, private world: CullWorld) {
     this.worker.onmessage = (e: MessageEvent<{ id: number; keys: string[]; result: SweepResult }>) => {
-      if (e.data.id === this.asked) { this.pending = false; this.trip += (performance.now() - this.askTime - this.trip) * 0.3; }
+      if (e.data.id === this.asked) { this.pending = false; this.fresh = true; }
       const r = e.data.result;
       this.result = r.ok ? r : null;
       this.resultKeys = e.data.keys;
@@ -104,14 +115,14 @@ export class Culler {
     if (dt > 0 && dt < 500 && Number.isFinite(l.x) && Math.hypot(ex - l.x, ey - l.y, ez - l.z) < dt * 0.1) {
       const k = Math.min(1, dt / 150), v = this.v;
       v.x += ((ex - l.x) / dt - v.x) * k; v.y += ((ey - l.y) / dt - v.y) * k; v.z += ((ez - l.z) / dt - v.z) * k;
-      this.frameMs += (dt - this.frameMs) * 0.1;
     } else this.v = { x: 0, y: 0, z: 0 }; // (standing, or a jump: a teleport)
     this.last = { x: ex, y: ey, z: ez, t: now };
     const tiles = [...this.world.loaded.values()].filter((t) => t.drawn && t.drawn.group.parent && t.drawn.own.every((m) => m.visible));
     const keys = tiles.map((t) => t.box[0] + ',' + t.box[1]), key = keys.join(';');
-    // Where the eye will be in the frame that uses the sweep: the first one after it
-    // comes back (the next is asked for then).
-    const lead = Math.max(1, Math.ceil(Math.min(this.trip, 500) / this.frameMs)) * this.frameMs;
+    if (this.fresh) { this.lag += (Math.min(now - this.askTime, 500) - this.lag) * 0.3; this.fresh = false; }
+    // Where the eye will be in the frame that uses the sweep (the first after it comes
+    // back; the next one is asked for then).
+    const lead = this.lag;
     const ax = ex + this.v.x * lead, ay = ey + this.v.y * lead, az = ez + this.v.z * lead;
     const a = this.askedAt;
     if (!this.hold && !this.pending && (key !== a.tiles || Math.hypot(ax - a.x, ay - a.y) > REASK || Math.abs(az - a.z) > this.rise / 4)) {
@@ -119,10 +130,13 @@ export class Culler {
       this.askedAt = { x: ax, y: ay, z: az, tiles: key };
       this.askTime = now;
     }
-    if (!this.usable(ex, ey, ez, keys)) { this.stats.waits++; this.restoreAll(); return; }
+    const why = this.usable(ex, ey, ez, keys, key);
+    if (why) { this.stats.waits++; this.stats.why[why]++; this.restoreAll(); return; }
     this.stats.active = true;
     if (this.frame++ % 30 === 0 || !this.candidates.length) this.gather();
     const c0 = performance.now();
+    this.frameStart = c0;
+    this.retested = 0;
     let culled = 0;
     for (const o of this.candidates) {
       const hide = this.hidden(o);
@@ -143,7 +157,9 @@ export class Culler {
     }
     this.stats.culled = culled;
     this.stats.tested = this.candidates.length;
-    this.stats.testMs = performance.now() - c0;
+    const ms = performance.now() - c0;
+    this.stats.testMs = ms; this.stats.testMsMax = Math.max(this.stats.testMsMax, ms); this.stats.testMsSum += ms; this.stats.tests++;
+    this.stats.retested = this.retested; this.retested = 0;
   }
 
   restoreAll() {
@@ -187,7 +203,14 @@ export class Culler {
   private hidden(o: THREE.Object3D): boolean {
     const key = this.keyOf(o), was = this.kept.get(o);
     if (was && was.sweep === this.stats.sweeps && was.key === key) return was.hide;
+    // Something drawn may stay drawn a few frames more (always safe): with a new sweep
+    // every frame while moving, it is tested again in its turn, a quarter each frame.
+    // What is left out is tested against every sweep.
+    if (was && !was.hide && (o.id + this.frame) % RETEST !== 0) return false;
+    this.deferred = false;
     const hide = this.test(o);
+    this.retested++;
+    if (this.deferred) return hide;
     this.kept.set(o, { sweep: this.stats.sweeps, key, hide });
     return hide;
   }
@@ -225,7 +248,7 @@ export class Culler {
     const known = this.verdicts.get(m);
     if (known !== undefined) return known;
     const verdict = this.tileVerdict(m, [bx0, by0, bx1, by1]);
-    this.verdicts.set(m, verdict);
+    if (!this.deferred) this.verdicts.set(m, verdict);
     return verdict;
   }
 
@@ -233,6 +256,9 @@ export class Culler {
     let tops = this.tops.get(m);
     const sq = this.sq ?? [0, 0];
     if (!tops) {
+      // (Working them out goes through every vertex: a few meshes a frame, the others
+      // drawn until their turn.)
+      if (performance.now() - this.frameStart > TOPS_MS) { this.deferred = true; return false; }
       tops = squareTops(m, sq);
       for (let k = 0; k < tops.length; k += 3) {
         const x = sq[0] + (tops[k] + 0.5) * SQUARE, y = sq[1] + (tops[k + 1] + 0.5) * SQUARE;
@@ -240,9 +266,18 @@ export class Culler {
       }
       this.tops.set(m, tops);
     }
-    for (let k = 0; k < tops.length; k += 3) {
-      const x = sq[0] + tops[k] * SQUARE, y = sq[1] + tops[k + 1] * SQUARE;
-      if (!(tops[k + 2] + MARGIN < this.minSeen(x, y, x + SQUARE, y + SQUARE))) return false;
+    // (Each square's lowest height seen is worked out once a sweep, for all meshes.)
+    if (this.squaresSweep !== this.stats.sweeps) { this.squares.clear(); this.squaresSweep = this.stats.sweeps; }
+    const n = tops.length / 3, first = (this.shown.get(m) ?? 0) % Math.max(n, 1);
+    for (let q = 0; q < n; q++) {
+      const k = ((first + q) % n) * 3, key = (tops[k] + 4096) * 8192 + tops[k + 1] + 4096;
+      let low = this.squares.get(key);
+      if (low === undefined) {
+        const x = sq[0] + tops[k] * SQUARE, y = sq[1] + tops[k + 1] * SQUARE;
+        low = this.minSeen(x, y, x + SQUARE, y + SQUARE);
+        this.squares.set(key, low);
+      }
+      if (!(tops[k + 2] + MARGIN < low)) { this.shown.set(m, k / 3); return false; }
     }
     return tops.length > 0;
   }
@@ -257,8 +292,10 @@ export class Culler {
     b.updateWorldMatrix(true, false);
     const w = b.matrixWorld.elements, a = b.instanceMatrix.array as Float32Array;
     const plain = b.matrixWorld.equals(IDENTITY), ws = plain ? 1 : b.matrixWorld.getMaxScaleOnAxis();
-    for (let i = 0; i < b.count; i++) {
-      const o = i * 16;
+    // From the instance seen last time: in a batch that shows, usually the only one tested.
+    const n = b.count, first = (this.shown.get(b) ?? 0) % n;
+    for (let k = 0; k < n; k++) {
+      const i = (first + k) % n, o = i * 16;
       const scale = Math.sqrt(Math.max(a[o] ** 2 + a[o + 1] ** 2 + a[o + 2] ** 2, a[o + 4] ** 2 + a[o + 5] ** 2 + a[o + 6] ** 2, a[o + 8] ** 2 + a[o + 9] ** 2 + a[o + 10] ** 2));
       // The sphere's centre in the instance, then in the world.
       const cx0 = a[o] * s.center.x + a[o + 4] * s.center.y + a[o + 8] * s.center.z + a[o + 12];
@@ -268,10 +305,11 @@ export class Culler {
       const cy = plain ? cy0 : w[1] * cx0 + w[5] * cy0 + w[9] * cz0 + w[13];
       const cz = plain ? cz0 : w[2] * cx0 + w[6] * cy0 + w[10] * cz0 + w[14];
       const r = s.radius * scale * ws;
-      if (!(r < 300) || !(cy + r + MARGIN < this.minSeen(cx - r, -cz - r, cx + r, -cz + r))) return false;
+      if (!(r < 300) || !(cy + r + MARGIN < this.minSeen(cx - r, -cz - r, cx + r, -cz + r))) { this.shown.set(b, i); return false; }
     }
     return true;
   }
+  private shown = new WeakMap<THREE.Object3D, number>(); // (the instance or square seen last)
 
   // The lowest height seen anywhere in a box (game metres, x and y north); -Infinity
   // where any of it is outside the window.
@@ -349,23 +387,22 @@ export class Culler {
 
   private post(m: CullMessage) { this.worker.postMessage(m); }
 
-  // Whether the latest sweep holds for the eye: near enough where it was asked for,
-  // not inside a building, and none of the tiles it counted gone.
-  private usable(ex: number, ey: number, ez: number, keys: string[]): boolean {
+  // Why the latest sweep doesn't hold for the eye, or '' if it does: none back, the eye
+  // too far from where it was asked for or inside a building, or a tile it counted gone.
+  private usable(ex: number, ey: number, ez: number, keys: string[], key: string): '' | 'none' | 'away' | 'inside' | 'tiles' {
     const r = this.result;
-    if (!r || Math.hypot(ex - r.ex, ey - r.ey) > r.slack || Math.abs(ez - r.ez) > r.rise) return false;
+    if (!r) return 'none';
+    if (Math.hypot(ex - r.ex, ey - r.ey) > r.slack || Math.abs(ez - r.ez) > r.rise) return 'away';
     const w = 2 * r.around + 1;
     const di = Math.floor(ex / CELL) - Math.floor(r.ex / CELL) + r.around, dj = Math.floor(ey / CELL) - Math.floor(r.ey / CELL) + r.around;
-    if (di < 0 || dj < 0 || di >= w || dj >= w || r.patch[dj * w + di] > ez - 0.3) return false;
-    if (this.resultKeys !== this.checkedKeys) {
+    if (di < 0 || dj < 0 || di >= w || dj >= w || r.patch[dj * w + di] > ez - 0.3) return 'inside';
+    if (this.resultKeys !== this.checked.of || key !== this.checked.now) {
       const now = new Set(keys);
-      this.keysHeld = this.resultKeys.every((k) => now.has(k));
-      this.checkedKeys = this.resultKeys;
+      this.checked = { of: this.resultKeys, now: key, held: this.resultKeys.every((k) => now.has(k)) };
     }
-    return this.keysHeld;
+    return this.checked.held ? '' : 'tiles';
   }
-  private checkedKeys: string[] = [];
-  private keysHeld = false;
+  private checked = { of: [] as string[], now: '', held: false };
 
   // A tile's buildings as solid columns up to their eaves: a cell in from the outlines,
   // not those that float, are too low or a landmark replaces, with the passages through
