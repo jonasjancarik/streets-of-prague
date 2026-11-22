@@ -126,9 +126,13 @@ two sections) and the handbook; before and after pictures in `screenshots/beauti
   over one, and a bridge that starts just past a tile's edge may leave a 12 cm step across
   the street at that edge (not seen yet; not looked for). Bridge decks keep flat kerbs.
   The kerb's face is not hidden by depth: a car's tyres show through it from the pavement
-  side. Looked at by day on Ultra with WebGPU only; not at night, in rain or snow, on
-  WebGL, on a phone, or with `?roadraster` (which keeps the flat ground). The cost of the
-  extra job per tile was not timed. Goes away when the terrain itself has kerbs
+  side. Looked at by day, at night, in rain and in snow with WebGPU, and by day with
+  WebGL; not with `?roadraster` (which keeps the flat ground). No difference in frame
+  rate against `?flatkerbs` on an M5 (standing and driving, Ultra) or on the Pixel 5
+  (driving, Medium; a warming phone, so only a large cost would have shown). Loading
+  took perhaps 2–3 s longer on the phone, within that noise; not pinned down. In 60
+  central tiles the map's driving lines leave the carriageway for 130 m of 80 km (nine
+  places, such as Na dolinách and Ruská). Goes away when the terrain itself has kerbs
   (`docs/terrain-tin-plan.md`).
 - [ ] Photo mode has no touch controls (its bar works, the camera needs a mouse), and no
   depth of field or frames. Fountains: OSM's are not in the map data yet (only counted for
