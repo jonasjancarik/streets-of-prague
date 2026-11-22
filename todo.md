@@ -234,8 +234,9 @@ before that day's frame-count fix may be doubled.
   street details no longer force uploads every render. Pixel 5 FPV budget switches
   improved frame time in both orders. M5 driving comparisons remain inconclusive
   against a 22% unchanged-build control. Still needed: a quiet M5 comparison and
-  actual Daydream stereo/Auto testing on the Pixel 11 Pro, including re-entry after
-  Auto changes tier. See the dated entry in `docs/performance-log.md`.
+  stereo testing on the Pixel 11 Pro. Real Pixel 5 stereo, tier re-entry and Auto
+  were checked afterward: rendering works, but the square still runs at 12–16 FPS.
+  See the dated entries in `docs/performance-log.md`.
 - **Driving hitches** (performance log, 26 October): the return-visit shader rebuild
   and the new-tile parking task are fixed. Open: idle-thread long frames (trace the
   GPU process on the phone) and the loading warm-up running 16–19 s into the drive.

@@ -1458,3 +1458,42 @@ The full-strength motion-blur path was also checked in normally paced Chrome:
 an 80 km/h vehicle velocity with simulation paused rendered at 59.9 FPS over two
 seconds (p99 16.8 ms), with the player car sharp and the surrounding street blurred.
 That checks the shader and picture, not smoothness on a moving driving route.
+
+## 22 November 2026 — real Cardboard stereo check
+
+Pixel 5, Chrome WebGL, actual `immersive-vr` sessions over USB/localhost, without
+a viewer. Both XR eye cameras rendered, 6 cm apart, with separate viewports and
+Cardboard lens correction. The phone lay flat; an offset reference space
+recentered its physical pose toward the street. The saved screenshot shows both
+eye views of the Old Town Square.
+
+Each tier ran for 30 seconds, in Medium → Low → Lowest order, leaving and
+re-entering VR for each resolution. These are single stationary samples of a
+living city, not a controlled before/after comparison. Battery temperature rose
+from 27.2 to 31.0 °C across the series.
+
+| Tier | FPS | Mean / p95 / p99 frame interval, ms | XR framebuffer, both eyes | CPU through stereo draw, ms/frame | Draw calls/frame |
+|---|---:|---|---|---:|---:|
+| Medium | 12.4 | 80.8 / 81.4 / 88.7 | 1064 × 491 | 42.4 | 631 |
+| Low | 13.4 | 74.8 / 103.9 / 165.5 | 848 × 415 | 43.0 | 569 |
+| Lowest | 15.5 | 64.3 / 71.9 / 132.8 | 694 × 340 | 39.1 | 497 |
+
+Fixed order, scene changes and warming confound tier differences; Low's worse
+p95/p99 also show why higher average FPS does not establish smoother play.
+The recorder sampled the real XR animation callback, through the end of stereo
+drawing; `renderer.info` was reset once per callback, so counts include the
+shadow and other render passes. Lowest averaged 12.01 million triangles per
+frame. Both eye views rendered with no console errors; even the best sample,
+15.5 FPS, remained far below the 60 FPS target. CPU timing does not isolate GPU cost.
+
+In a further 30-second active session starting with Lowest's framebuffer, Auto
+used the fallback 16.67 ms target and stepped
+High → Medium → Low → Lowest at about 0 / 7.8 / 15.5 / 22.5 seconds. The active
+694 × 340 framebuffer stayed unchanged as designed; the final reported rate was
+16 FPS. Re-entry applied the fixed-tier framebuffer sizes shown in the table.
+No application code changes were needed for this check.
+
+Raw frames, Auto transitions and the stereo screenshot are saved locally under
+`docs/evidence/performance-2026-11-22/stereo/` (ignored by git). The owned test tab
+was closed, temporary port mappings removed and the phone's sleep setting restored.
+Pixel 11 Pro stereo and moving driving routes were not measured here.

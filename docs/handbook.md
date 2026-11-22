@@ -840,10 +840,11 @@ The metro ride uses its overhead cutaway camera.
   The graphics tier sets headset resolution when entering VR, from 45% on Lowest
   to 75% on High and Ultra, which keep the previous resolution. `?vrscale=0.3…1` overrides it for
   the visit. Leave and re-enter VR to apply a new resolution. The page buttons and
-  the HUD aren't shown in the headset. An earlier Pixel 5 check ran at about 18–20 frames a
-  second at Lowest and Medium alike, limited by the game's own update and the draw
-  calls, not by pixels. That is too slow to be comfortable, and a faster phone is
-  needed for real play. In a car you sit in the driver's seat; in a bus, lorry,
+  the HUD aren't shown in the headset. Real Cardboard stereo on a Pixel 5, checked
+  without a viewer on 22 November, averaged 12.4 FPS on Medium, 13.4 on Low and
+  15.5 on Lowest at the Old Town Square. Main-thread work alone took 39–43 ms per
+  frame, above the 60 FPS budget. See the [stereo check](performance-log.md#22-november-2026--real-cardboard-stereo-check)
+  for setup and limits. In a car you sit in the driver's seat; in a bus, lorry,
   dustcart, fire engine or ambulance, up in the cab on the left behind the windscreen
   (`VR_CAB` in `car.ts`). The windows of the vehicle you drive are left out, so their
   tint and reflections don't fog the view; other vehicles keep theirs. Parts of the
