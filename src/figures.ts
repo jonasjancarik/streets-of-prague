@@ -293,6 +293,8 @@ export class Figures {
   // You (people.ts's Walker): drawn life size in first and third person however near the
   // camera, and always, whatever the crowd round you.
   self = false;
+  // Optional stable identity, independent of which people render first.
+  avatarSeed?: number;
 
   constructor(kit: FigureKit, capacity: number) {
     this.kit = kit;

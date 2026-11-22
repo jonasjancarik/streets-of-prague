@@ -263,7 +263,7 @@ export class LifeSize {
       // (Not someone the camera is inside; you, though, always: see Figures.self.)
       if (!fig.self && (d > this.reach || d < 1)) return false;
       const role = typeof fig.lifeSize === 'string' ? fig.lifeSize : undefined;
-      const kind = role ? this.uniformKind(role, id) : this.baseKinds[(gid * 7919 + id * 104729) % AVATARS.length];
+      const kind = role ? this.uniformKind(role, id) : this.baseKinds[(fig.avatarSeed ?? (gid * 7919 + id * 104729)) % AVATARS.length];
       if (kind == null) return false;
       if (!fig.self && this.live.size >= MOST - (role ? 0 : this.reserved)) {
         if (role) this.waitingCrew++;

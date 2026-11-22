@@ -1490,6 +1490,8 @@ record the measurements, merge decisions and pending landmark asset activation.
   Each person switches to their detailed model when it finishes loading. If one model
   is missing or slow, other people can still appear, including uniformed crews whose
   base model and outfit are ready.
+  The player gets a random avatar each session and keeps it when switching between
+  first and third person, including after the detailed models are freed and reloaded.
   Standing, each takes turns with a few ways of waiting (`STANDING`: shifting their weight,
   looking round, texting or calling on a phone, with a phone in the hand). In the rain
   anyone with their umbrella up holds it in the left hand, with Rocketbox's umbrella clip

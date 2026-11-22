@@ -556,6 +556,7 @@ export class Walker {
     this.anim = new Anim(kit, 'idle');
     this.look = { shirt: '#d9612c', trousers: '#2f3a4f', skin: '#e3b99a', hair: '#3a2618', sleeves: false };
     this.fig = new Figures(kit, 1);
+    this.fig.avatarSeed = Math.floor(Math.random() * 0x100000000);
     this.fig.look(0, this.look);
     this.fig.mesh.count = 1;
     this.base = new THREE.Matrix4().makeScale(SCALE, SCALE, SCALE);
