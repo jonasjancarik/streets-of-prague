@@ -64,6 +64,12 @@ pictures in its `screenshots/beautify-2/` (not committed). Measured on Ultra aga
   leaves; only the season's tint is applied). Flattening by a car was not tried. About
   20,000 triangles round Štefánikův most; not timed on a phone or below Ultra. WebGL
   (and VR) shows the rounded body only.
+- [ ] Street grass (`src/streetGrass.ts`): one length of lawn everywhere (a meadow or a
+  verge should be longer and rougher, a pitch shorter; `footSurface` only says "grass"),
+  the cards cast no shadow, and beyond 24 m the lawn is the flat pattern again, with a
+  visible change where the blades end. Hedge leaves and grass together cost about 2 ms a
+  frame standing on Letná's lawn on Ultra (18.3 → 20.5 ms, two runs); Medium and up only,
+  never timed on a phone. Building a cell asks the map for the surface some 5,000 times.
 - [ ] Not touched, seen on the way: shade in narrow lanes is very dark at street level
   (Seminářská at 11:00); the photo mesh of St Nicholas on Malostranské náměstí shows
   holes and loose triangles from the pavement; ambient shading (`?ao`) added little in

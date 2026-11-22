@@ -1597,6 +1597,13 @@ record the measurements, merge decisions and pending landmark asset activation.
   generated, `assets/hedges/`). They are made a 20 m patch at a time as you come near
   and thinned with distance. A hedge a car has flattened loses them. The leaves are a
   hornbeam's whatever the hedge really is, and every cluster's place is made up.
+- **Grass from the street** (`src/streetGrass.ts`, `src/webgpu/streetGrass.ts`): in first
+  and third person on WebGPU (Medium and up, like the hedge leaves), blades stand on the
+  lawns within 24 m of you, wherever your feet would sound grass: short leaning cards of
+  photographed lawn grass (`assets/grass/`, generated), cut into single blades, in the
+  lawn's colour and the season's, bending with the wind and gone under snow. They are
+  made a 6 m cell at a time and thinned with distance. Where the grass is comes from
+  the map; the blades' places and lengths are made up.
 
 - **Surveyed walls, fences and railings** (`pipeline/dtm_walls.py`): where the technical
   map's survey covers a tile (30 m of its lines or more), its walls ("Zeď"), fences

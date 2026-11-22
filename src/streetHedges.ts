@@ -17,6 +17,8 @@ import { HEDGE_OUTLINE, HEDGE_W, hedgeNoise } from './map/fences.ts';
 
 export const HEDGE_REACH = 60, HEDGE_FADE = 46; // m from the eye: where the last sprays end, and begin to shrink
 export const HEDGE_THIN = 14; // m: from here on fewer sprays are drawn, each larger
+// Whether the tier draws the street view's hedge leaves and grass at all (graphics.ts).
+export const STREET_DETAIL = { value: true };
 export const FACE_M = 1.15; // m of hedge one copy of the face's picture covers (its leaves then about 5 cm long)
 const PER_M2 = 17; // clusters to a square metre of hedge, over a body that already shows leaves
 const SIZE = [0.34, 0.82]; // m: a cluster's card (its leaves then 3-5 cm, a hornbeam's)
@@ -114,7 +116,7 @@ class StreetHedges {
   // Each frame: whether the view is from the street, and where the eye is (the game's x, y).
   // One patch's sprays are made a frame, the nearest first.
   street(on: boolean, x = 0, y = 0) {
-    on &&= !!material;
+    on &&= !!material && STREET_DETAIL.value;
     if (!on && !this.on) return;
     this.on = on;
     if (on && !this.made) this.made = material!();

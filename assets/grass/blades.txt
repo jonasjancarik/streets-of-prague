@@ -1,0 +1,5 @@
+$imagegen
+Asset: game texture, a foliage card for real-time lawn grass, square 1:1, one image, transparent background
+Request: a strip of ordinary park lawn grass seen exactly from the side at ground level, as a cross-section: dozens of thin grass blades of different heights rising from the bottom edge of the picture, some straight, some bent over or leaning, a few taller ones with pointed tips, densest at the bottom and thinning to single blades at the top, the tallest reaching about three quarters of the picture's height. The blades span the full width evenly, from the left edge to the right edge, so the strip can be repeated side by side.
+Look: photographic, soft even overcast light, no cast shadow; fresh mid green blades, a little darker and denser at the base, lighter at the tips, a few yellowish dry blades.
+Constraints: fully transparent background (alpha) above and between the blades, no soil, no ground line, no flowers, no sky, no border, no text, no watermark. The top quarter of the picture is empty and transparent.
