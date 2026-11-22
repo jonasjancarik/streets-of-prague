@@ -288,6 +288,12 @@ before that day's frame-count fix may be doubled.
   each frame). Worth perhaps 4–5 % of a frame; profile it on the phone with the
   culler's functions split up. On the phone,
   drive with `--vehicle sedan` (pressing E doesn't always get into the car).
+- **Drawing driven by the GPU** (`docs/gpu-driven-drawing-plan.md`, a plan, not started):
+  the city's geometry in a few big buffers, a compute pass picking what is visible, and
+  indirect draws, so the main thread's cost of drawing barely depends on how much there
+  is. In stages, starting with checks on the Pixel 5 and the buildings alone behind
+  `?gpudraw`. First, and on its own: nearby people are 17–29 % of a street view's draws
+  (three meshes each, in the main and the shadow pass).
 - **VR on WebGPU:** VR needs the legacy WebGL renderer until Chrome ships the WebXR/WebGPU
   binding. A Cardboard mode drawn by the page itself (both eyes, lens pass, gyroscope)
   would put VR on WebGPU and on iPhone; options and risks in `docs/webgpu-vr.md`.

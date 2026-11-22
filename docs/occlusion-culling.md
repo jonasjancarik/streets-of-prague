@@ -302,6 +302,9 @@ camera prompt for its QR code is passed by pressing Back on the App info page it
 Still to do: what the remaining 8 ms of tests a frame on the phone are (todo.md), VR
 while driving, the countryside and the overhead view.
 
+Culling on the GPU, as part of drawing driven by the GPU on WebGPU, is planned in
+[gpu-driven-drawing-plan.md](gpu-driven-drawing-plan.md).
+
 ## Order (after the reviews)
 
 1. **Measure the ceiling this design can reach.** The 25 % on the Pixel 5 left out
