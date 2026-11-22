@@ -12,7 +12,9 @@ export default {
   async run(t) {
     t.time('13:00');
     t.weather('clear');
-    await t.go([50.08, 14.41393], { heading: 0 });
+    // (Starting north of the traffic island at 50.0799: the map's line runs over it, and
+    // with raised kerbs that is a bump of its own.)
+    await t.go([50.0803, 14.41393], { heading: 0 });
     t.empty();
     await t.drive('sedan');
     const { lat, lon } = t.where();

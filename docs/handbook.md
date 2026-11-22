@@ -870,6 +870,17 @@ record the measurements, merge decisions and pending landmark asset activation.
   dado and a door or picture, the floor; a quarter of the windows have a blind half down).
   Along the edge of every carriageway runs a kerb of grey granite with a darker gutter
   inside it (`kerbs` in `src/ground.ts`), wherever what lies beside it is not carriageway.
+  The kerb is raised: the carriageway (asphalt, setts, parking bays and the trams' own bed)
+  lies 12 cm below the pavement, with the granite's face between them, so a tree pit or a
+  traffic island in the street stands up out of it too. The terrain has one height for a
+  street and its pavements, so the step is made in the game (`src/kerbDrop.ts`): each tile
+  gets a picture of its carriageway, the ground's height is the terrain's less the kerb
+  there (with a ramp a quarter of a metre wide on the pavement's edge), and the ground's
+  layers are built to match, so cars, trams and people stand on the lowered street. The
+  12 cm is the same everywhere and is not surveyed; there are no dropped kerbs at
+  crossings or driveways. Within 8 m of a bridge or a tunnel the street comes back up
+  level with the pavement, as their decks and floors have no step. `?flatkerbs` shows the
+  ground as it was, to compare.
   The carriageway itself is worn (`streetWear`, in the gutter's own mesh): a dark stripe of
   oil down each lane, heavier where cars wait before a junction, and now and then a patch of
   newer asphalt laid along the street. Lanes, widths and junctions are the map's; which spot

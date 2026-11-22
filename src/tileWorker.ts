@@ -32,6 +32,7 @@ import { groundLayers, layerBuffers, levelMask } from './ground.ts';
 import { flatTerraces, heightSampler, lineReach, stepLineIndex, terraceAt, withRamps } from './terrain.ts';
 import { withRoadProfile } from './roadProfiles.ts';
 import { withRoadSurfaces } from './roadSurfaces.ts';
+import { kerbDrop, withKerbs } from './kerbDrop.ts';
 import { skyView } from './map/skyView.ts';
 import { stepEdges, stampEdges, parapetArrays } from './stepEdges.ts';
 import type { StepEdge } from './stepEdges.ts';
@@ -91,7 +92,7 @@ function groundAt(g: HeightGrid | null) {
   const own = g.tin ? tinSampler(g.tin, ref, base).sample : base;
   const profiled = withRoadProfile(withRamps(own, g.ramps, ref), g.roadProfile, ref);
   const road = withRoadSurfaces(profiled, g.roadSurfaces, ref, g.roadSurfaces ? terraceAt(g.terraces) : null);
-  return withBridgeWalk(road, g.underpass, ref);
+  return withKerbs(withBridgeWalk(road, g.underpass, ref), g.kerbs);
 }
 
 function roofs({ buildings, size, origin, ground, bbox, water, stops }: WorkerJobs['roofs']): BuildingArrays {
@@ -435,7 +436,7 @@ function land({ data, seeds, ground, bridges, box, structures }: WorkerJobs['lan
 function isRequest(value: unknown): value is WorkerRequest {
   if (typeof value !== 'object' || value === null) return false;
   const message = value as Record<string, unknown>;
-  return typeof message.id === 'number' && ['roofs', 'ipr', 'ground', 'land', 'sky', 'streetFacade', 'passage'].includes(String(message.type))
+  return typeof message.id === 'number' && ['roofs', 'ipr', 'ground', 'land', 'sky', 'streetFacade', 'passage', 'kerbs'].includes(String(message.type))
     && typeof message.data === 'object' && message.data !== null;
 }
 
@@ -484,8 +485,10 @@ worker.onmessage = async (event: MessageEvent<unknown>) => {
       case 'ground': {
         const { d, ground, levels, ...opts } = event.data.data;
         const started = performance.now();
+        // (The layers take the terrain's own heights, and the kerbs beside them: a layer is
+        // street or pavement as a whole, right up to its edge.)
         const result = groundLayers(d, {
-          ...opts, height: ground ? groundAt(ground) : null, roadProfile: ground?.roadProfile, fine: ground?.tin ? 2 : undefined,
+          ...opts, height: ground ? groundAt({ ...ground, kerbs: null }) : null, kerbs: ground?.kerbs, roadProfile: ground?.roadProfile, fine: ground?.tin ? 2 : undefined,
           roadSurfaceBoxes: ground?.underpass ? [...(ground.roadSurfaces?.map(p=>p.box) ?? []), ground.underpass.box] : ground?.roadSurfaces?.map((p) => p.box),
           steps: ground?.labels ? ground.terraces ?? [] : null,
           levels: levels ? levels.map((l) => ({ level: l.level, kind: l.kind, polys: l.polys, height: groundAt(l.heights) })) : null,
@@ -494,6 +497,12 @@ worker.onmessage = async (event: MessageEvent<unknown>) => {
         result.triangles = { ground: 0, walls: 0 };
         for (const l of result.layers) result.triangles[l.wall ? 'walls' : 'ground'] += l.geometry.index.length / 3;
         worker.postMessage({ id, result } satisfies WorkerResponse, layerBuffers(result));
+        break;
+      }
+      case 'kerbs': {
+        const { box, low, joins } = event.data.data;
+        const result = kerbDrop(box, low, joins);
+        worker.postMessage({ id, result } satisfies WorkerResponse, result ? [result.drop.buffer, ...(result.fade ? [result.fade.cells.buffer] : [])] as ArrayBuffer[] : []);
         break;
       }
       case 'sky': {

@@ -119,7 +119,17 @@ two sections) and the handbook; before and after pictures in `screenshots/beauti
   (10 sides to a head). A finer figure for first person is the biggest thing left there: a
   second mesh on the same skeleton in `assets/figures/build.py`, baked and pooled beside the
   first in `src/figures.ts` (its animation textures are per vertex, so it needs its own).
-  Kerbs are flat lines: the pavement is not raised.
+- [ ] Raised kerbs (`src/kerbDrop.ts`): the height is made up (12 cm everywhere) and no kerb is
+  dropped at a crossing or a driveway. Where the map's driving line runs over a pavement
+  corner or a traffic island (Divadelní at 50.0799), traffic now bumps over it. Kerbs
+  flatten within 8 m of any bridge or tunnel, also for a street that only passes under or
+  over one, and a bridge that starts just past a tile's edge may leave a 12 cm step across
+  the street at that edge (not seen yet; not looked for). Bridge decks keep flat kerbs.
+  The kerb's face is not hidden by depth: a car's tyres show through it from the pavement
+  side. Looked at by day on Ultra with WebGPU only; not at night, in rain or snow, on
+  WebGL, on a phone, or with `?roadraster` (which keeps the flat ground). The cost of the
+  extra job per tile was not timed. Goes away when the terrain itself has kerbs
+  (`docs/terrain-tin-plan.md`).
 - [ ] Photo mode has no touch controls (its bar works, the camera needs a mouse), and no
   depth of field or frames. Fountains: OSM's are not in the map data yet (only counted for
   footfall); they would need a pipeline step.

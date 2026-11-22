@@ -25,6 +25,7 @@ import { finish, parkingAisles } from './parkingClearance.ts';
 import { openWater } from './river.ts';
 import { readRoadProfile, withRoadProfile } from './roadProfiles.ts';
 import { readRoadSurfaces, withRoadSurfaces } from './roadSurfaces.ts';
+import { withKerbs } from './kerbDrop.ts';
 import { bridgeSurfaceBuffers, bridgeSurfaceTile, readBridgeSurfacePreview } from './bridgeSurfacePreview.ts';
 import { readStationTracks } from './stationTracks.ts';
 import { decodeHeights, decodeLevels, flatTerraces, heightSampler, lineReach, pointLabels, stepLineIndex, terraceAt, fetchBinary, withRamps } from './terrain.ts';
@@ -147,6 +148,8 @@ const RES = 2; // collision grid cells per metre
 // How the streets are painted: a game built on this city may turn off the lane lines and
 // zebra crossings (Praha 1945's streets have none). On by default.
 export const TILE_LOOK = { roadPaint: true };
+// ?flatkerbs: the ground as it was, street and pavement level with each other (to compare).
+const KERBS = typeof location === 'undefined' || !location.search.includes('flatkerbs');
 const RAISED = 3; // a building whose underside is this high (m) or more doesn't block the way under it
 // Metres a car or a walker can go up or down between the ground and a bridge or a
 // tunnel, or between two levels: where a bridge is that close to the ground (at its
@@ -1572,9 +1575,16 @@ export class TileWorld {
     if (shade && surfaces) shade.sample = withRoadSurfaces(shade.sample, surfaces, this.ref, terraceAt(t.terraces));
     const underpass = shade && t.structures?.some(s => s.kind === 'bridge') ? bridgeWalk(t.walk) : undefined;
     if (shade && underpass) shade.sample = withBridgeWalk(shade.sample, underpass, this.ref);
+    // Raised kerbs: the carriageway a kerb's height below the terrain (kerbDrop.ts), for
+    // all that stands on the ground here and, in the workers, for the ground itself.
+    const kerbs = shade && KERBS ? await this.workers.run('kerbs', {
+      box: t.box, low: [...(t.roads.road ?? []), ...(t.roads.sett ?? []), ...(withPatches(t).parking ?? []), ...(t.roads.trambed ?? [])],
+      joins: [...(t.structures ?? []).flatMap((s) => s.polys), ...(t.roads.bridge ?? []), ...(t.areas.bridge ?? [])],
+    }) : null;
+    if (shade && kerbs) shade.sample = withKerbs(shade.sample, kerbs);
     const hAt = shade ? shade.sample : () => 0;
     const ground = shade && terrain ? { hm: shade.hm, box: t.box, n: terrain.n, step: terrain.step, labels: shade.labels,
-      terraces: t.terraces, ...(underpass ? { underpass } : {}), stepLines: this.stepLines ? t.stepLines : undefined, unit: terrain.unit, ref: this.ref, ...(roadProfile ? { roadProfile } : {}), ...(surfaces ? { roadSurfaces: surfaces } : {}), ...(tin ? { tin } : {}) } : null;
+      terraces: t.terraces, ...(underpass ? { underpass } : {}), stepLines: this.stepLines ? t.stepLines : undefined, unit: terrain.unit, ref: this.ref, ...(roadProfile ? { roadProfile } : {}), ...(surfaces ? { roadSurfaces: surfaces } : {}), ...(tin ? { tin } : {}), ...(kerbs ? { kerbs } : {}) } : null;
     // Bridges above the ground and tunnels below it, each level with its own heights.
     // (Charles Bridge's cutwaters come off its deck.)
     const structures = clipDecks(t.structures || [], this.charles.piers, t.box);

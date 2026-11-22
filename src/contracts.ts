@@ -113,7 +113,7 @@ export interface TileJSON extends GroundTileData {
 
 // labels, terraces: the steps in the ground (terrain.ts, pointLabels), where the tile has any.
 // ramps: on a bridge level's grid, its stairs (terrain.ts, withRamps).
-export interface HeightGrid { hm: Float32Array; box: Bounds; n: number; step: number; labels?: Uint8Array | null; terraces?: Terrace[]; stepLines?: StepLine[]; unit?: number; ref?: number; ramps?: Ramp[]; roadProfile?: RoadProfile; roadSurfaces?: RoadSurface[]; underpass?: import('./map/bridgeWalk.ts').BridgeWalk; tin?: import('./tin.ts').TinMesh }
+export interface HeightGrid { hm: Float32Array; box: Bounds; n: number; step: number; labels?: Uint8Array | null; terraces?: Terrace[]; stepLines?: StepLine[]; unit?: number; ref?: number; ramps?: Ramp[]; roadProfile?: RoadProfile; roadSurfaces?: RoadSurface[]; underpass?: import('./map/bridgeWalk.ts').BridgeWalk; tin?: import('./tin.ts').TinMesh; kerbs?: import('./kerbDrop.ts').KerbDrop | null }
 // A level with its heights, for the tile workers.
 export interface LevelInput extends TileStructure { heights: HeightGrid }
 
@@ -160,6 +160,8 @@ export interface WorkerJobs {
     ground: HeightGrid | null; levels: LevelInput[] | null; paint?: boolean; rasterRoads?: boolean;
   };
   sky: SkyJob;
+  // The tile's raised kerbs (kerbDrop.ts): its carriageway, and its bridges and tunnels.
+  kerbs: { box: Bounds; low: Point2[][][]; joins: Point2[][][] };
   land: {
     data: FurnitureData & { levels: boolean; utility?: UtilityMark[]; crossers: Crosser[]; stepEdges: boolean; fences: FenceTile['fences']; sheds: Shed[]; furnitureBuildings: { rings: Point2[][] }[]; furnitureEnabled: boolean };
     seeds: Float64Array; ground: HeightGrid | null; bridges: HeightGrid[];
@@ -176,6 +178,7 @@ export interface WorkerResults {
   ground: GroundResult;
   land: LandResult;
   sky: SkyResult;
+  kerbs: import('./kerbDrop.ts').KerbDrop | null;
 }
 
 export type WorkerKind = keyof WorkerJobs;

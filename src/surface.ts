@@ -25,6 +25,7 @@ export interface GroundLayer {
   base?: boolean; // the plain ground under everything (see `photo`)
   raster?: RoadRaster;
   wall?: boolean; // the walls at the ground's steps: upright, drawn from their lower side only
+  oneSided?: boolean; // each triangle shows from its front only (the kerbs' faces, ground.ts)
 }
 
 interface SurfaceTexture { texture: THREE.DataTexture; box: number[]; sky?: { texture: THREE.Texture; box: number[] } | null }
@@ -216,7 +217,7 @@ function surfaceMaterial(l: GroundLayer, time: { value: number }, relief: Surfac
     raster && l.raster ? { texture: raster, box: l.raster.box } : null);
   if (l.blend !== null && l.blend !== undefined) { mat.blending = THREE.CustomBlending; mat.opacity = l.blend; }
   // Seen from behind, a wall would be drawn over the ground above it.
-  if (l.wall) mat.side = THREE.FrontSide;
+  if (l.wall || l.oneSided) mat.side = THREE.FrontSide;
   return mat;
 }
 
