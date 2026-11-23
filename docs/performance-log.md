@@ -1779,3 +1779,37 @@ Pixel 5, Medium, tier pixel ratio (1.5×), first person, sedan, `&dev`, 45 s, no
 6.9 fps both runs (29.4 °C and 30.1 → 31.2 °C), 30 km/h by lane assist from about 12 s
 to the end of timing. At 7 fps the game's step limit (0.05 s) runs the world at about a
 third of real time, so 30 km/h on the speedometer covered about 3 m a second.
+
+## 23 November 2026 — where the Pixel 5's GPU time goes on the ground
+
+`scripts/ground-ab.js` through `--ab`: every drawn tile's ground layers get a cheaper
+material (the depth-only meshes and the soft shading stay). Medium at the tier's pixel ratio
+(1.5×), standing on the Old Town Square, 60 s each, no `&dev`, no touches, 28–34 °C. Without
+the ground's cost the phone would no longer be limited by its GPU (JavaScript about 25 ms).
+
+| Left out | Frame | Saved |
+|---|---|---|
+| nothing (the run's own off windows) | 52–54 ms | |
+| the whole ground (its layers hidden) | 52.3 → 26.5 ms | 25.8 ms, half the frame |
+| all shading (an unlit flat colour, same draws and stencil) | 54.5 → 35.2 ms | 19.3 ms |
+| all but the sun's light and shadow (no pattern, mirror, normals or sky darkening) | 52.9 → 40.7 ms | 12.2 ms |
+| the pattern (`userData.flatten()`) | 53.4 → 46.8 ms | 6.6 ms |
+| the sun's shadow (`receiveShadow` off) | 51.8 → 46.7 ms | 5.1 ms |
+| the sky darkening (`aoNode`: one read of the tile's sky texture) | 54.1 → 49.9 ms | 4.2 ms |
+| lamp light, the wet mirror and the sheen (`emissiveNode`) | 53.7 → 49.7 ms | 4.0 ms |
+| the paving's and setts' normals | 64.6 → 62.6 ms | 2.0 ms (a slow run, 33 ms of JavaScript) |
+
+So the ground costs the phone about 26 ms a frame now, against 14.6 ms at 2× on 11 November
+(since then: the street look, raised kerbs, the wet mirror and sheen). About 9 ms of it is
+drawing the layers at all, even unlit; 52 of the frame's 169 draws are ground layers. The
+shading's 19 ms splits roughly into the parts above, which add up to a little more than the
+whole. The plain-colour swap (`colorNode` only) saved nothing: the emissive part reads the
+same colour, so the pattern and weathering run anyway.
+
+Leads, unmeasured: the 9 ms of drawing (number of draws or layers over each other, on a
+tiled GPU); one read for the sky and relief textures together; a cheaper shadow lookup on
+the ground at Medium; the pattern's cost on phones.
+
+Two variants first failed to compile on the phone and looked like large savings:
+`Material.clone()` leaves out the tile textures the ground's graph reads from the material
+(`reliefMap`, `skyMap` and so on). Check the bench's console lines before trusting an A/B.
