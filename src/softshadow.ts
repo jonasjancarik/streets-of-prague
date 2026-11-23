@@ -9,3 +9,6 @@ export const SOFT_SHADOWS = {
 };
 // The filter itself, once the WebGPU side has made it: graphics.ts puts it on the sun's shadow while Ultra is chosen.
 export const SHADOW_FILTER: { value: unknown } = { value: null };
+// three.js's one-read filter, kept for scripts/shadow-ab.js, which measures it against the
+// five reads of the default (PCF) on the phone. Nothing in the game uses it.
+export const CHEAP_SHADOW_FILTER: { value: unknown } = { value: null };

@@ -6,9 +6,10 @@
 //   node scripts/bench.mjs ... --window 5 --warmup 10 --ab "const FILTER = 'basic'; $(cat scripts/shadow-ab.js)"
 window.__ab = (on) => {
   const D = __drive, shadow = D.sky.sun.shadow;
-  const url = (re) => performance.getEntriesByType('resource').map((e) => e.name).find((n) => re.test(n));
+  // three.js's filter from the game's own copy of three (src/softshadow.ts holds it), so the
+  // nodes it builds belong to the same three.js as the materials.
   if (!window.__shadowAb) {
-    window.__shadowAb = { own: shadow.filterNode ?? null, pending: import(url(/deps\/three_tsl\.js\?/)).then((TSL) => { window.__shadowAb.filters = { basic: TSL.BasicShadowFilter }; }) };
+    window.__shadowAb = { own: shadow.filterNode ?? null, pending: import('/src/softshadow.ts').then((M) => { window.__shadowAb.filters = { basic: M.CHEAP_SHADOW_FILTER.value }; }) };
   }
   const S = window.__shadowAb;
   const apply = () => {

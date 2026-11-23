@@ -12,9 +12,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
   Fn, If, float, ivec2, vec2, texture, textureLoad, uniform, renderGroup, reference, screenCoordinate, clamp, max, min,
-  interleavedGradientNoise, vogelDiskSample,
+  interleavedGradientNoise, vogelDiskSample, BasicShadowFilter,
 } from 'three/tsl';
-import { SHADOW_FILTER } from '../softshadow.ts';
+import { SHADOW_FILTER, CHEAP_SHADOW_FILTER } from '../softshadow.ts';
 import type { N } from './common.ts';
 
 const SEARCH = 5;      // samples looking for what casts the shadow
@@ -77,3 +77,4 @@ const filter = Fn(({ depthTexture, shadowCoord, shadow }: N) => {
 });
 
 SHADOW_FILTER.value = filter;
+CHEAP_SHADOW_FILTER.value = BasicShadowFilter;
