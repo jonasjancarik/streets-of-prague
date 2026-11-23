@@ -99,12 +99,12 @@ explain how to prepare the file for another build.
 Add `&roadjunctions` to load the wider junction trial from the matching
 `road-junctions.json`. [Junction trial results and generation](road-profile-pilot.md#extended-junction-trial).
 
-`?cull` is a trial of leaving out what the buildings hide in the street views (first
+The game leaves out what the buildings hide in the street views (first
 person, third person and VR): from the camera (in VR, both eyes), a sweep over the drawn tiles'
 buildings (in a worker, from where the eye will be) works out how high something must
 stand to be seen, and tile meshes,
 instanced batches and other meshes below that leave the main pass but keep casting
-shadows (`src/occlusion.ts`, `docs/occlusion-culling.md`). Off by default.
+shadows (`src/occlusion.ts`, `docs/occlusion-culling.md`). On by default since 23 November 2026; `?cull=0` draws everything, for comparison.
 
 `?farground=250` is an experiment for the street views (first person, third person and
 VR): the ground of tiles more than that many metres from the camera is left out, as the

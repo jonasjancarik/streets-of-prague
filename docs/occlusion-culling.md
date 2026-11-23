@@ -320,6 +320,16 @@ about 40 things were left out: 228.2 → 235.3 ms (median 221 → 225). The phon
 hot by then (4–6 frames a second) to tell a few per cent, and needs measuring again
 cool.
 
+### On by default (23 November)
+
+The culler is on for everyone now; `?cull=0` draws everything. Before switching: in the
+countryside past the map's edge (`&countryside`, at the `countryside-edge` scenario's
+join and just outside it, driving and running, 20 steps each) no changed pixel, though it leaves out little there (2–27
+things); the game's one raycast is against a flat plane, so nothing that picks or aims
+misses what is left out; and all 92 gameplay scenarios were run with it on: the
+failures were either flaky (passing alone, and again three times running) or failed with
+it off too (`drive-through`, `job-ambulance`, `repy-bridge-ride`).
+
 Still to do: VR while driving on a cool phone, the countryside and the overhead view.
 
 Culling on the GPU, as part of drawing driven by the GPU on WebGPU, is planned in

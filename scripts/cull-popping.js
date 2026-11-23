@@ -1,8 +1,8 @@
-// Does the culler (?cull) leave out anything visible while driving? Drives a car in
+// Does the culler (src/occlusion.ts) leave out anything visible while driving? Drives a car in
 // first person with lane assist, and after every step compares the frame as the game
 // drew it (with what the culler left out) with the same frame with everything drawn.
 // Any pixel that differs is something that would have popped. Runs in the game through
-// the scene runner, which must have been started with --extra "&cull":
+// the scene runner (not with --extra "&cull=0"):
 //
 //   node scripts/scene.mjs eval "const ARGS = { place: 'vodickova' }; $(cat scripts/cull-popping.js)"
 //
@@ -12,7 +12,7 @@
 // comparisons, 0.1: about what a car covers between two frames on the Pixel 5), frames
 // (live frames after each step, for the culler to update and its sweep to come back, 2).
 const D = __drive, R = D.renderer, scene = D.scene, c = D.culler;
-if (!c) return { error: 'no culler: start the scene server with --extra "&cull"' };
+if (!c) return { error: 'no culler: the scene server was started with &cull=0' };
 const url = performance.getEntriesByType('resource').map((e) => e.name).find((n) => /deps\/three\.js\?/.test(n));
 const THREE = await import(url);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

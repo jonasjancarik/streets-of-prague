@@ -12,7 +12,7 @@
 // tiles (only the tiles' own meshes may go, each tile's ground layers together, as a
 // culler working with the tiles could: not the shared pages of trees, people and cars,
 // and no ground layer hidden only by another ground layer).
-// cull (score the game's culler, ?cull: what it leaves out now, the pixels that change
+// cull (score the game's culler (on unless ?cull=0): what it leaves out now, the pixels that change
 // without it, and how much of the hidden set it catches).
 // shift ([east, north] metres, with cull: the eye is moved that far once the culler
 // has its sweep, and no new one is made, to check that a sweep holds for an eye near
@@ -144,7 +144,7 @@ try {
   scene.traverse((o) => { if (/^birds/.test(label.get(o) ?? '') && o.visible) movers.push(o); });
   movers.forEach((o) => { o.visible = false; });
   await sleep(300);
-  // (The game's culler, ?cull: what it leaves out now, all of it drawn for the measurement.)
+  // (The game's culler: what it leaves out now, all of it drawn for the measurement.)
   const culledNow = ARGS.cull ? (D.culler?.culled() ?? []) : null;
   const cullStats = D.culler ? { ...D.culler.stats } : null;
   D.culler?.restoreAll();

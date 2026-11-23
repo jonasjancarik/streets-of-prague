@@ -363,8 +363,9 @@ async function main() {
   scene.add(streetHedges.group);
   scene.add(streetGrass.group);
   const world = new TileWorld({ area: AREA, index, scene, drive, walk, time, night: params.has('night') || clock.night, osmBuildings: params.has('osm'), ortho: params.has('ortho'), countryside: anywhere || params.get('countryside') === 'live' ? 'live' : params.has('countryside') });
-  // Leaving out what the buildings hide in the street views: a trial (docs/occlusion-culling.md).
-  const culler = params.has('cull') ? new Culler(scene, world) : null;
+  // Leaving out what the buildings hide in the street views (docs/occlusion-culling.md);
+  // ?cull=0 draws everything.
+  const culler = params.get('cull') !== '0' ? new Culler(scene, world) : null;
   // Where the street view's blades of grass stand (streetGrass.ts): on what sounds like
   // grass underfoot, in the open, and not inside a hedge.
   const grassGround: GrassGround = {
