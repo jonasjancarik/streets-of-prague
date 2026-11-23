@@ -22,10 +22,13 @@ window.__ab = async (on) => {
   const D = __drive;
   const off = typeof OFF === 'undefined' ? 'original' : OFF;
   const url = (re) => performance.getEntriesByType('resource').map((e) => e.name).find((n) => re.test(n));
-  if (!window.__groundAb) {
-    const W = await import(url(/deps\/three_webgpu\.js\?/));
-    const TSL = await import(url(/deps\/three_tsl\.js\?/));
-    window.__groundAb = { W, TSL, kept: new Map(), merged: null };
+  // three.js's modules only for the variants that build materials of their own (the page's
+  // list of loaded files stops at 250, so they may not be found in a long-open page).
+  const needs3 = ['basic', 'collapse', 'merged', 'flat', 'nocolor'].includes(on ? MODE : off);
+  if (!window.__groundAb) window.__groundAb = { kept: new Map(), merged: null };
+  if (needs3 && !window.__groundAb.W) {
+    window.__groundAb.W = await import(url(/deps\/three_webgpu\.js\?/));
+    window.__groundAb.TSL = await import(url(/deps\/three_tsl\.js\?/));
   }
   const G = window.__groundAb, { W, TSL, kept } = G;
   const layers = [];
