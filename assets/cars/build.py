@@ -647,15 +647,19 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, 
     shape = Shape(n, w, profile, nose=(0.5, 0.36), tail={"hatch": (0.26, 0.24), "sedan": (0.36, 0.3), "estate": (0.24, 0.22)}[rear])
     half, nb, stations = shape.half, shape.nb, shape.stations
 
-    xa = n - 1.45
+    # A small hatchback's bonnet is shorter, and its back wheels sit nearer the tail; an
+    # estate's are further in, under a long load bay. The front doors are a little over
+    # a metre long whatever the car (the saloon's split is the one assets/cars/sedan.py
+    # models its doors on).
+    xa = n - (1.28 if rear == "hatch" else 1.45)
     if rear == "hatch":
         xb, xc, xd = xa - 0.72, -n + 0.45, -n + 0.12
     elif rear == "sedan":
         xb, xc, xd = xa - 0.78, -n + 1.55, -n + 0.85
     else:
         xb, xc, xd = xa - 0.78, -n + 0.3, -n + 0.1
-    xm = (xa + xd) / 2 + 0.1
-    wheels = (n - 0.82, -n + 0.8)
+    xm = (xa + xd) / 2 + 0.1 if rear == "sedan" else xa - 1.1
+    wheels = (n - 0.82, -n + {"hatch": 0.68, "sedan": 0.8, "estate": 0.98}[rear])
     # The rear doors end over the wheel, their bottom edge following its arch; a window
     # going on behind that (a hatchback's, an estate's) gets a pillar there.
     xq = max(wheels[1] + 0.05, xm - 0.95)
@@ -687,7 +691,7 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, 
                      (xa+.075,side*.57)], "PatrolNavy", shape.top, .004)
     roof = H - 0.035
     c.cabin(belt, xa, xb, xm, xc, xd, w - 0.11, w * 0.74, roof, xm_top=(xb + xc) / 2 + 0.05,
-            xq=xq if xq - 0.06 > xc + 0.3 else None, edge=lambda x: half(x) - LID, crown=0.035, bow=0.05)
+            xq=xq if xq - 0.06 > xc + 0.2 else None, edge=lambda x: half(x) - LID, crown=0.035, bow=0.05)
     floor = 0.36 + lift
     c.interior(xa - 0.01, back, w - 0.08, floor, belt - 0.02, H - 0.03, xb - 0.03, xc + 0.03, w * 0.74 - 0.03,
                [((xa + xm) / 2 - 0.1, s * w * 0.48, 0.5) for s in (1, -1)] + [((xm + xq) / 2 - 0.05, 0, W - 0.4)])

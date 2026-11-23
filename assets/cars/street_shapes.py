@@ -104,7 +104,7 @@ class StreetCar(Car):
         self.xs = [p[0] for p in self.stations]
         self.end, self.front_door = self.xs[-1], doors[0][0]
         lead = {
-            "hatch": 0.33,
+            "hatch": 0.22,
             "estate": 0.20,
             "suv": 0.24,
             "taxi": 0.23,
@@ -251,6 +251,47 @@ class StreetCar(Car):
                 return (face_x(x, z, 2 * u - 1), y, self.deck_height(x, y))
 
             self.patch("Paint", [a, b], steps(14), deck, Vector((0, 0, 1)))
+        self.side_fittings()
+
+    def side_fittings(self):
+        """An amber repeater on each front wing and, on a car, the fuel flap's outline."""
+
+        def on_side(x, z, side, proud):
+            return (x, side * (self.side_width(x, z) + proud), z)
+
+        front = max(self.axles) - self.arch - min(0.07, (max(self.axles) - self.arch - self.front_door) / 2)
+        height = self.belt(front) - 0.17
+        for side in (-1, 1):
+            for mat, size, proud in (("RubStrip", 1.25, 0.002), ("Indicator", 1.0, 0.005)):
+                self.patch(
+                    mat,
+                    steps(10),
+                    [0, 0.6, 1],
+                    lambda t, r: on_side(
+                        front + size * 0.040 * r * math.cos(math.tau * t),
+                        height + size * 0.014 * r * math.sin(math.tau * t),
+                        side,
+                        proud * (1 - 0.5 * r * r),
+                    ),
+                    Vector((0, side, 0)),
+                )
+        if self.utility:
+            return
+        # On the right, behind the back wheel: a rounded square let into the wing.
+        x0 = min(self.axles) - 0.30
+        z0 = self.belt(x0) - 0.20
+
+        def rim(t, r):
+            c, q = math.cos(math.tau * t), math.sin(math.tau * t)
+            reach = 1 + 0.07 * r
+            return on_side(
+                x0 + reach * 0.078 * math.copysign(abs(c) ** 0.45, c),
+                z0 + reach * 0.066 * math.copysign(abs(q) ** 0.45, q),
+                -1,
+                0.0015,
+            )
+
+        self.patch("PanelGap", steps(32), [0, 1], rim, Vector((0, -1, 0)))
 
     def front_intakes(self, panels, shell, lamp, low):
         # The grille follows the crown of the actual bumper all the way round
@@ -379,6 +420,33 @@ class StreetCar(Car):
             else:
                 self.window(surf, direction, 0, (0.052, 0.066, 0.070), 18, 9)
         self.patch("Paint", steps(22), [2 * u - 1 for u in steps(16)], roof, Vector((0, 0, 1)))
+        back = Vector((-1, 0, 0.3))
+
+        def on_back(u, v, proud):
+            return screen(1, u, v) + back.normalized() * proud
+
+        tailgate = glass_rear and not self.utility and self.kind not in ("taxi", "police_city", "sedan")
+        if tailgate:
+            # The rear wiper, parked along the bottom of the glass, and its arm.
+            self.patch("RubStrip", steps(8), [0, 1], lambda u, v: on_back(0.47 + 0.27 * u, 0.125 + 0.022 * v, 0.006), back)
+            self.patch("RubStrip", steps(4), [0, 1], lambda u, v: on_back(0.50 + 0.10 * u, 0.072 + 0.058 * u + 0.016 * v, 0.011), back)
+            self.patch(
+                "RubStrip",
+                steps(8),
+                [0, 1],
+                lambda t, r: on_back(0.50 + 0.022 * r * math.cos(math.tau * t), 0.070 + 0.040 * r * math.sin(math.tau * t), 0.014),
+                back,
+            )
+            # The high brake light, behind the top of the glass.
+            self.patch("RedLens", steps(6), [0, 1], lambda u, v: on_back(0.39 + 0.22 * u, 0.895 + 0.024 * v, 0.001), back)
+        if self.kind == "van":
+            # The pair of back doors: the gap between them, their hinges and the handle.
+            self.patch("PanelGap", [0, 1], steps(8), lambda u, v: on_back(0.497 + 0.006 * u, 0.02 + 0.93 * v, 0.002), back)
+            for u in (0.045, 0.955):
+                self.patch("PanelGap", [0, 1], steps(8), lambda t, v: on_back(u + 0.005 * t, 0.02 + 0.93 * v, 0.002), back)
+                for v in (0.2, 0.75):
+                    self.patch("RubStrip", [0, 1], [0, 1], lambda t, k: on_back(u - 0.012 + 0.03 * t, v + 0.05 * k, 0.012), back)
+            self.patch("RubStrip", [0, 1], [0, 1], lambda t, k: on_back(0.455 + 0.035 * t, 0.06 + 0.11 * k, 0.014), back)
         self.patch(
             "Seat",
             steps(12),

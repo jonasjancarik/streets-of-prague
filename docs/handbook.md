@@ -1610,7 +1610,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   door pivots. The hatchback has a short bonnet and a raked tailgate, the estate a longer
   roof, and the SUV flared wheel openings and a taller, blunter nose. The estate, the SUV
   and the state police car carry low roof rails that follow the roof on three feet. The
-  van has a tall nose and a high waist under its cab windows. The pickup has a recessed,
+  van has a tall nose and a high waist under its cab windows. Each has an amber
+  repeater on the front wings, red reflectors in the rear bumper and a tailpipe under
+  it. The cars have a fuel flap on the right; those with a tailgate have a rear wiper and a
+  high brake light, and the van a pair of back doors with hinges. The pickup has a recessed,
   ribbed load bed. The bonnet's profile and the van's waist come from `build.py`, so a
   change there needs both files rebuilt.
   Both police liveries keep their markings and optional ram on the close body.

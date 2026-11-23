@@ -170,6 +170,23 @@ def build_trim(name, shape, source, front_z, rear_z, material, materials):
                 z = bottom + (i+1)*(top-bottom)/(4 if utility else 3)
                 centre(end,half-.012,z,z+.012,"DarkChrome",.026,.03)
             centre(end,shape.w*.52,low+.035,low+.115,"RubStrip",.026,.045)
+        if end < 0 and formed:
+            # A red reflector in each corner of the bumper, and the tailpipe under it.
+            for side in (-1, 1):
+                panels.patch("RedLens", 6, 1, lambda u, v: shell(end, side, .56 + .17 * u, low + .105 + .026 * v, .004),
+                             Vector((end, side, 0)))
+            pipe = Vector((-shape.nb + .15, -.36 * shape.w, low - .022))
+            for k in range(10):
+                a0, a1 = math.tau * k / 10, math.tau * (k + 1) / 10
+                def ring(u, v, r=.024):
+                    a = a0 + (a1 - a0) * u
+                    return pipe + Vector((-.125 * v, r * math.cos(a), r * math.sin(a)))
+                mid = (a0 + a1) / 2
+                panels.patch("DarkChrome", 1, 1, ring, Vector((0, math.cos(mid), math.sin(mid))))
+                panels.patch("Trim", 1, 1, lambda u, v: ring(u, 1, .024 * (1 - v)) + Vector((.012 * v, 0, 0)), Vector((-1, 0, 0)))
+            if name == "van":
+                panels.patch("PanelGap", 1, 6, lambda u, v: (-shape.nb - .004, .003 * (2 * u - 1), low + .16 + (height + .2 - low) * v),
+                             Vector((-1, 0, 0)))
         plate_z = height - (.18 if utility else .17) if end < 0 else low + .155
         if end < 0:
             centre(end, .28, plate_z+.075,plate_z+.104,"DarkChrome",.025,.016)
