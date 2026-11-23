@@ -19,15 +19,15 @@ from sedan_surfaces import lerp, smooth
 
 # Rearward belt rise, roof shoulder roll, trailing roof setback, fender flare.
 FORMS = {
-    "hatch": (0.077, 0.092, 0.23, 0.035),
-    "estate": (0.042, 0.074, 0.23, 0.033),
-    "suv": (0.092, 0.110, 0.31, 0.055),
-    "taxi": (0.087, 0.095, 0.00, 0.034),
-    "police": (0.048, 0.075, 0.22, 0.036),
-    "police_city": (0.078, 0.090, 0.02, 0.035),
-    "van": (0.012, 0.093, 0.03, 0.034),
-    "pickup": (0.018, 0.076, 0.06, 0.061),
-    "sedan": (0.083, 0.092, 0.02, 0.034),
+    "hatch": (0.050, 0.070, 0.23, 0.010),
+    "estate": (0.042, 0.066, 0.23, 0.010),
+    "suv": (0.060, 0.080, 0.31, 0.022),
+    "taxi": (0.050, 0.070, 0.00, 0.010),
+    "police": (0.045, 0.066, 0.22, 0.010),
+    "police_city": (0.050, 0.070, 0.02, 0.010),
+    "van": (0.012, 0.093, 0.03, 0.012),
+    "pickup": (0.018, 0.076, 0.06, 0.030),
+    "sedan": (0.050, 0.070, 0.02, 0.010),
 }
 
 
@@ -64,15 +64,16 @@ class StreetCar(Car):
         width, _, sill = self.station(x)
         h = max(0, min(1, (z - sill) / (self.belt(x) - sill)))
         arches = min(math.hypot(x - axle, z - self.radius) for axle in self.axles)
-        shoulder = math.exp(-(((h - 0.78) / 0.085) ** 2))
         arch = math.exp(-(((arches - self.arch - 0.035) / 0.105) ** 2))
+        # A real car's side is close to flat from the sill to the shoulder, then steps
+        # in under the glass in a few centimetres: that crease is what the eye follows.
+        # (Measured on a real liftback: within 1 cm from 0.25 m up to 0.85 m, then 8 cm in.)
         return (
             width
-            - 0.093 * (1 - smooth(h / 0.31))
-            # (a van's box stands straight up from its waist, without a car's rolled shoulder)
-            - (0.035 if self.kind == "van" else 0.100) * smooth((h - 0.76) / 0.24) ** 1.5
-            - 0.033 * math.sin(math.pi * h) ** 2
-            + 0.017 * shoulder
+            - 0.030 * (1 - smooth(h / 0.20))
+            # (a van's box stands straight up from its waist, without a car's shoulder)
+            - (0.035 if self.kind == "van" else 0.085) * smooth((h - 0.87) / 0.13)
+            - 0.006 * math.sin(math.pi * h) ** 2
             - 0.008 * math.exp(-((min(abs(x - e) for e in self.shut_lines) / 0.011) ** 2)) * smooth(h / 0.15)
             + self.flare * arch
         )
@@ -363,7 +364,8 @@ class StreetCar(Car):
         # The front header leads the roof into the screen, while the rear
         # header falls away towards the hatch instead of ending at a right angle.
         xa = self.cowl
-        xb += 0.06 + 0.70 * (xa - self.front_door)
+        # (The windscreen reaches the roof half a metre behind the front door's leading edge, at its middle.)
+        xb = xb + 0.06 + 0.70 * (xa - self.front_door) if self.utility else self.front_door - (0.58 if self.kind == "hatch" else 0.62)
         xc += self.setback
 
         long_roof = self.kind in ("estate", "suv", "police")
@@ -374,8 +376,10 @@ class StreetCar(Car):
             x = lerp(xb, xc, t)
             # Widest over the front seats, drawn in evenly to the windscreen and the
             # tail: a pinch near either end shows as a notch above the pillar.
-            w = wr + 0.040 - 0.045 * (1 - t / 0.42) ** 2 if t < 0.42 else wr + 0.040 - 0.035 * ((t - 0.42) / 0.58) ** 2
-            z = top - 0.04 - fall_front * (1 - smooth(t / 0.38)) - fall_back * smooth((t - 0.55) / 0.45)
+            # The side glass leans in some 25 degrees: the roof is two thirds of the body's width.
+            gain = 0.040 if self.utility else -0.050
+            w = wr + gain - 0.045 * (1 - t / 0.42) ** 2 if t < 0.42 else wr + gain - 0.035 * ((t - 0.42) / 0.58) ** 2
+            z = top - (0.04 if self.utility else 0.085) - fall_front * (1 - smooth(t / 0.38)) - fall_back * smooth((t - 0.55) / 0.45)
             return x, w, z
 
         def roof(t, q):

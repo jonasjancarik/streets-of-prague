@@ -1570,7 +1570,7 @@ transformed = dented(transformed, dents);`);
 };
 const passengerGlass = material.clone();
 passengerGlass.transparent = true;
-passengerGlass.opacity = 0.57;
+passengerGlass.opacity = 0.7;
 passengerGlass.depthWrite = false;
 passengerGlass.side = THREE.DoubleSide;
 passengerGlass.forceSinglePass = true;

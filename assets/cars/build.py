@@ -140,6 +140,8 @@ class Car:
         for x0, x1, _ in doors:
             xs |= {x for x in (x0, x1) if all(abs(x - k) > 1e-4 for k in xs)}
         xs = sorted(xs, reverse=True)
+        # (An arch can end exactly on a station: two rings there would be one, and its faces nothing.)
+        xs = [x for i, x in enumerate(xs) if not i or xs[i - 1] - x > 1e-4]
         rings = []
         for x in xs:
             w, zt, z0 = at(x)
@@ -614,7 +616,7 @@ def patrol_word(parent, word, width, ink, project):
 
 
 def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, r=0.31, lift=0.0, word=None,
-           sunroof=0.0, fin=True, blunt=0.0, factory=Car):
+           sunroof=0.0, fin=True, blunt=0.0, fit=None, factory=Car):
     """A car: `rear` is 'hatch', 'sedan' or 'estate'; `bar` is where along the roof the
     light bar goes (the middle of `cabin` in src/car.ts, where src/police.ts flashes it).
     `r` is the wheel radius and `lift` how much higher the bonnet and sills sit (an SUV).
@@ -622,6 +624,8 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, 
     blocks on the front wings and behind the rear doors (the Czech police's colours).
     `sunroof` is the length of a glass panel in the roof, and `fin` an aerial at the back of it.
     `blunt` is how much higher the nose stands (an SUV's tall, upright front).
+    `fit` moves the cabin, the door cuts and the wheels to where a street shell made
+    elsewhere has them (xa, xb, xc, xd, xm, xq, wheels, top: the cabin's ceiling).
 
     Seen from above (and from above at a slant, away from the middle of the screen) a
     car is its outline, its glass and how the light runs over it, so: corners rounded
@@ -651,7 +655,10 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, 
     # estate's are further in, under a long load bay. The front doors are a little over
     # a metre long whatever the car (the saloon's split is the one assets/cars/sedan.py
     # models its doors on).
-    xa = n - (1.28 if rear == "hatch" else 1.45)
+    # (Measured on a real liftback, as a share of its length: front wheels 19% back from
+    # the nose, back wheels 23% in from the tail, the front door starting 13 cm behind
+    # the front arch, 1.1 m long, and the back door ending over the axle.)
+    xa = n - {"hatch": 1.28, "sedan": 1.45, "estate": 1.35}[rear]
     if rear == "hatch":
         xb, xc, xd = xa - 0.72, -n + 0.45, -n + 0.12
     elif rear == "sedan":
@@ -659,10 +666,13 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, 
     else:
         xb, xc, xd = xa - 0.78, -n + 0.3, -n + 0.1
     xm = (xa + xd) / 2 + 0.1 if rear == "sedan" else xa - 1.1
-    wheels = (n - 0.82, -n + {"hatch": 0.68, "sedan": 0.8, "estate": 0.98}[rear])
+    wheels = (n - {"hatch": 0.8, "sedan": 0.82, "estate": 0.89}[rear], -n + {"hatch": 0.68, "sedan": 0.8, "estate": 1.06}[rear])
     # The rear doors end over the wheel, their bottom edge following its arch; a window
     # going on behind that (a hatchback's, an estate's) gets a pillar there.
-    xq = max(wheels[1] + 0.05, xm - 0.95)
+    xq = max(wheels[1] + 0.05, xm - (0.95 if rear == "sedan" else 1.08))
+    if fit:
+        xa, xb, xc, xd, xm, xq = (fit.get(k, v) for k, v in (("xa", xa), ("xb", xb), ("xc", xc), ("xd", xd), ("xm", xm), ("xq", xq)))
+        wheels = fit.get("wheels", wheels)
     back = max(xd + 0.05, -n + 0.3)
 
     def bulge(x):
@@ -693,7 +703,7 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, 
     c.cabin(belt, xa, xb, xm, xc, xd, w - 0.11, w * 0.74, roof, xm_top=(xb + xc) / 2 + 0.05,
             xq=xq if xq - 0.06 > xc + 0.2 else None, edge=lambda x: half(x) - LID, crown=0.035, bow=0.05)
     floor = 0.36 + lift
-    c.interior(xa - 0.01, back, w - 0.08, floor, belt - 0.02, H - 0.03, xb - 0.03, xc + 0.03, w * 0.74 - 0.03,
+    c.interior(xa - 0.01, back, w - 0.08, floor, belt - 0.02, (fit or {}).get("top", H - 0.07), xb - 0.03, xc + 0.03, w * 0.66 - 0.03,
                [((xa + xm) / 2 - 0.1, s * w * 0.48, 0.5) for s in (1, -1)] + [((xm + xq) / 2 - 0.05, 0, W - 0.4)])
     c.wheels(wheels, w, r)
     c.mirrors(xa - 0.1, half(xa - 0.1), belt + 0.08, stalk=True)
@@ -827,6 +837,11 @@ def ram(name, L, W):
     return c.finish(name)
 
 
+# Trial: where the taxi's imported liftback shell has its glass, doors and wheels
+# (measured by the converter), so the overhead body, the wheels and the door hinges agree.
+LIFTBACK = dict(xa=0.95, xb=0.33, xc=-1.12, xd=-1.9, xm=-0.165, xq=-1.245, wheels=(1.406, -1.222), top=1.38)
+
+
 def build(factory=Car):
     bpy.ops.wm.read_factory_settings(use_empty=True)
     passenger = partial(saloon, factory=factory)
@@ -837,7 +852,7 @@ def build(factory=Car):
         passenger("suv", 4.65, 1.88, 1.65, "estate", rails=True, r=0.36, lift=0.07, sunroof=1.0, blunt=0.08),
         van(factory=factory),
         pickup(factory=factory),
-        passenger("taxi", 4.6, 1.82, 1.45, "sedan", sign=True),
+        passenger("taxi", 4.6, 1.82, 1.45, "sedan", sign=True, r=0.325, fit=LIFTBACK),
         passenger("police", 4.7, 1.84, 1.5, "estate", stripe=POLICE_STRIPE, bar=-0.25, rails=True, word="POLICIE", fin=False),
         ram("police_ram", 4.7, 1.84),
         passenger("police_city", 4.7, 1.84, 1.5, "sedan",

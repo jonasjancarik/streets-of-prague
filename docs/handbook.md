@@ -1620,6 +1620,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   sharp, bright street on every panel made smooth bodies look crumpled. The bonnet's profile and the van's waist come from `build.py`, so a
   change there needs both files rebuilt.
   Both police liveries keep their markings and optional ram on the close body.
+  The bodies' proportions follow measurements of a real liftback: sides flat from the sill to
+  a crease under the glass, side glass leaning in some 25°, the windscreen's base well ahead
+  of the front door, front wheels a fifth of the length back from the nose and the back
+  door ending over the rear axle. The taxi and the municipal police car are liftbacks.
   Rebuild these bodies with `blender -b --factory-startup --python-exit-code 1 -P assets/cars/street_shapes.py`.
   The sedan uses its own generator (`assets/cars/sedan.py`). It has a recessed
   sunroof, clear-coated paint, dark rear glazing, and separate lamp bowls below clear
