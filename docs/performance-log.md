@@ -1830,3 +1830,33 @@ place): 13 tiles drawn, 344 ground layers, 6.1 M triangles and 3.4 M vertices in
 311–621 thousand triangles a tile. A coarser ground for the farther tiles is the lead for
 that part, not fewer draws. (The run with no layers took 38.1 ms, against 26.5 ms in the
 first run: compare within a run, not across runs.)
+
+### The ground draped by error (23 November, late afternoon)
+
+Most of the ground's GPU time on the phone is its triangles, so the next step was fewer of
+them. `scripts/ground-lod-ab.js` has the tile workers build every drawn tile's ground again
+and swaps it in (`--warmup 40`), standing, Medium, 60 s, no `&dev`, no touches:
+
+| Ground | Old Town Square, 8 tiles | |
+|---|---|---|
+| triangles up to 8 m everywhere (4.46 M → 0.47 M triangles) | 52.4 → 37.2 ms | 29 % quicker |
+| up to 4 m everywhere, as on Low (→ 1.32 M) | 52.1 → 40.7 ms | 22 % quicker |
+| 8 m only for tiles over 100 m away | 49.6 → 46.6 ms | 6 %: the triangles that cost are near you |
+
+A uniform 8 m ground loses the shape of slopes and kerbs, so instead the ground is draped
+by error (the TIN plan's idea): triangles up to 8 m, an edge split down to the tier's 2 m
+only where the terrain or the kerbs' depth is more than 3 cm off the straight line at a
+quarter, half or three quarters along it. The test reads positions only, so layers sharing
+a border split it alike.
+
+| Draped by error | Triangles in the tiles' ground | Pixel 5 |
+|---|---|---|
+| Old Town Square (`stand`) | 4.46 M → 0.89 M | 55.1 → 40.2 ms, 27 % quicker |
+| Petřín (`woods`, the trees hold it at 5 fps) | 8.42 M → 3.24 M | 209.5 → 194.6 ms, 7 % |
+| Malá Strana (`strana`) | 3.37 M → 1.10 M | 71.7 → 66.3 ms, 7.6 % |
+
+The same frame held and drawn with both grounds (M5, Medium): 18 to 1,035 pixels of a
+million differ at Petřín and Malostranské náměstí, at eye height and from above, all of
+them one-pixel lines where the ground meets a wall or a step. Building a tile's ground in
+the worker: median 133 → 171 ms on the M5 (the first version took 7 times as long; the
+test now answers each edge once). On by default on every tier (`groundFlat: 8`).

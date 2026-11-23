@@ -207,8 +207,11 @@ instanced models. Your own avatar and the car you drive keep their close models.
 Simpler tree branches keep the same leaf cards and crown outline. Grass placement
 runs in short slices while you move, so checking the ground under a new patch does
 not have to finish in one frame.
-Low and Lowest use fewer triangles on ordinary surveyed terrain. Tile edges, steps,
-road edges, bridge decks and tunnel floors keep their finer spacing; collision
+Low and Lowest use fewer triangles on ordinary surveyed terrain. On every tier the
+ground's triangles are up to 8 m long where it is flat, and are split down to the
+tier's spacing only where the terrain or the kerbs bend more than 3 cm off a straight
+line (`groundFlat` in `src/streetQuality.ts`, `bender` in `src/ground.ts`). Tile edges,
+steps, road edges, bridge decks and tunnel floors keep their finer spacing; collision
 heights do not change. Terrain spacing applies to newly built tiles, so an already
 loaded tile keeps its mesh until it is rebuilt or the page reloads.
 Auto, the default, starts High (Medium on touch devices) and moves between tiers

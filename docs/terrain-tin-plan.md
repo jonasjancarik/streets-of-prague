@@ -152,6 +152,9 @@ A new module, `pipeline/tin.py`, runs after the lattice and the step lines in
   to about a metre. Breaklines cut the layers the way `cutTerrainSteps` cuts them at
   terraces today, and their walls come from the breaklines. Kerbs get a face of their
   own, so the pavement stands up.
+  (Done on the lattice and TIN grounds alike, 23 November 2026: `bender` in
+  `src/ground.ts`, 3 cm, triangles up to 8 m; it was for the phone's GPU, see the
+  performance log.)
 - **Depth in first person.** The plain ground's depth pass can draw the TIN itself, so
   what hides things behind a crest is the ground that's drawn.
 - **Shading** from the TIN's normals, or from the lattice during the trial.

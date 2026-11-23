@@ -3,10 +3,10 @@ import type { Tier } from './graphics.ts';
 // Street-level budgets scale work even at 1× resolution and inside an XR framebuffer.
 // Instanced people and the regular car bodies fill in beyond the close-detail range.
 export const STREET_TIERS = {
-  lowest: { avatars: 2, avatarReach: 8, carReach: 12, treeWood: .5, vrScale: .45, groundFine: 4, groundFlat: 0 },
-  low: { avatars: 6, avatarReach: 14, carReach: 16, treeWood: .5, vrScale: .55, groundFine: 4, groundFlat: 0 },
-  medium: { avatars: 12, avatarReach: 22, carReach: 20, treeWood: .75, vrScale: .65, groundFine: 2, groundFlat: 0 },
-  high: { avatars: 24, avatarReach: 30, carReach: 24, treeWood: 1, vrScale: .75, groundFine: 2, groundFlat: 0 },
-  ultra: { avatars: 24, avatarReach: 30, carReach: 24, treeWood: 1, vrScale: .75, groundFine: 2, groundFlat: 0 },
+  lowest: { avatars: 2, avatarReach: 8, carReach: 12, treeWood: .5, vrScale: .45, groundFine: 4, groundFlat: 8 },
+  low: { avatars: 6, avatarReach: 14, carReach: 16, treeWood: .5, vrScale: .55, groundFine: 4, groundFlat: 8 },
+  medium: { avatars: 12, avatarReach: 22, carReach: 20, treeWood: .75, vrScale: .65, groundFine: 2, groundFlat: 8 },
+  high: { avatars: 24, avatarReach: 30, carReach: 24, treeWood: 1, vrScale: .75, groundFine: 2, groundFlat: 8 },
+  ultra: { avatars: 24, avatarReach: 30, carReach: 24, treeWood: 1, vrScale: .75, groundFine: 2, groundFlat: 8 },
 } satisfies Record<Tier, object>;
 export const STREET_QUALITY = { ...STREET_TIERS.high };
