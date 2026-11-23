@@ -7,9 +7,11 @@
 window.__ab = (on) => {
   const D = __drive, shadow = D.sky.sun.shadow;
   // three.js's filter from the game's own copy of three (src/softshadow.ts holds it), so the
-  // nodes it builds belong to the same three.js as the materials.
+  // nodes it builds belong to the same three.js as the materials. After an edit the dev
+  // server serves the game's copy as softshadow.ts?t=…, so use that URL when it's listed.
   if (!window.__shadowAb) {
-    window.__shadowAb = { own: shadow.filterNode ?? null, pending: import('/src/softshadow.ts').then((M) => { window.__shadowAb.filters = { basic: M.CHEAP_SHADOW_FILTER.value }; }) };
+    const own = performance.getEntriesByType('resource').map((e) => e.name).find((n) => /\/src\/softshadow\.ts\?t=/.test(n));
+    window.__shadowAb = { own: shadow.filterNode ?? null, pending: import(own ?? '/src/softshadow.ts').then((M) => { const basic = M.CHEAP_SHADOW_FILTER.value; if (!basic) throw new Error('shadow-ab: the game\'s CHEAP_SHADOW_FILTER is empty'); window.__shadowAb.filters = { basic }; }) };
   }
   const S = window.__shadowAb;
   const apply = () => {
