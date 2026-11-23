@@ -1307,7 +1307,14 @@ export const CAR_GLOSS = { dry: 0.25, sky: 0.5, lamps: 0.12, rim: [0.5, 0.8], ri
 // much more one seen at a slant does, `wet` how much more of both in the rain; the band's
 // top is `edge` (the sine of its height) give or take `ragged`.
 export const CAR_MIRROR = { value: 1 };
-export const CAR_REFLECT = { top: 0.32, side: 2.4, wet: 1.5, edge: 0.17, ragged: 0.09, horizon: 2.4, zenith: 1.3, glint: 0.08, sharp: 400 };
+// At street level (CAR_STREET 1, set by CarPool.render) a car fills the view, and a sharp,
+// bright street on every panel makes smooth paint look crumpled: there the paint and the
+// glass mirror less (`street.top`, `street.side`, and `street.glass` times as much for
+// glass instead of CAR_GLOSS.glass), and what they mirror is out of focus (`street.soft`,
+// how many mip levels down the strip of the street is read).
+export const CAR_STREET = { value: 0 };
+export const CAR_REFLECT = { top: 0.32, side: 2.4, wet: 1.5, edge: 0.17, ragged: 0.09, horizon: 2.4, zenith: 1.3, glint: 0.08, sharp: 400,
+  street: { top: 0.07, side: 1.1, glass: 1.8, soft: 3 } };
 // The strips of real-looking streets (reflections.ts) cover from below the horizon up to
 // `stripTop` (the tangent of the top's height, 35°), the horizon `stripHorizon` of the way
 // down each; `stripGain` brings their colours to the light of the made-up street.
@@ -1361,9 +1368,9 @@ float cracks(vec2 p) {
   return 1. - smoothstep(.03, .09, min(a, min(b, c)));
 }`;
 const R = CAR_REFLECT, CS = CAR_STRIPS;
-export const VEHICLE_VIEW_UNIFORMS = { uSkyRef: SKY_REF, uStreetRef: STREET_REF, uSunDir: SUN_DIR, uSunLight: SUN_LIGHT, uStrips: STRIPS, uStripsOn: STRIPS_ON, uProbe: PROBE_MAP, uProbePrev: PROBE_PREV, uProbeMix: PROBE_MIX, uProbeAt: PROBE_AT, uProbeNear: PROBE_NEAR, uProbeK: PROBE_K };
+export const VEHICLE_VIEW_UNIFORMS = { uStreetView: CAR_STREET, uSkyRef: SKY_REF, uStreetRef: STREET_REF, uSunDir: SUN_DIR, uSunLight: SUN_LIGHT, uStrips: STRIPS, uStripsOn: STRIPS_ON, uProbe: PROBE_MAP, uProbePrev: PROBE_PREV, uProbeMix: PROBE_MIX, uProbeAt: PROBE_AT, uProbeNear: PROBE_NEAR, uProbeK: PROBE_K };
 export const VEHICLE_VIEW_GLSL = /* glsl */ `
-uniform float uWet, uMirror, uStripsOn;
+uniform float uWet, uMirror, uStripsOn, uStreetView;
 uniform vec3 uSkyRef, uStreetRef, uSunDir, uSunLight;
 uniform sampler2D uStrips;
 uniform samplerCube uProbe, uProbePrev;
@@ -1373,7 +1380,8 @@ uniform vec2 uProbeNear;
 uniform float uProbeK;
 float carTop(vec3 n) { return smoothstep(.35, .9, dot(n, (viewMatrix * vec4(0., 1., 0., 0.)).xyz)); }
 // The street round the car, seen in the direction r (world), in the car's kind of area.
-vec3 carStreet(vec3 r, float area, vec3 p) {
+// (soft: how many mip levels down the strip is read, for paint that isn't a mirror.)
+vec3 carStreetSoft(vec3 r, float area, vec3 p, float soft) {
   float a = atan(r.z, r.x);
   float edge = ${R.edge.toFixed(3)} + ${R.ragged.toFixed(3)} * (.55 * sin(a * 5.) + .3 * sin(a * 13. + 1.7) + .15 * sin(a * 31. + .4));
   vec3 sky = uSkyRef * mix(${R.horizon.toFixed(2)}, ${R.zenith.toFixed(2)}, smoothstep(.1, .9, r.y));
@@ -1384,7 +1392,7 @@ vec3 carStreet(vec3 r, float area, vec3 p) {
   if (uStripsOn > .5) {
     float t = r.y / max(length(r.xz), .001) / ${CS.stripTop.toFixed(3)};
     float v = ${CS.stripHorizon.toFixed(3)} * (1. - t);
-    vec4 s = texture2D(uStrips, vec2(a / 6.2832 + .5, 1. - (area + clamp(v, .01, .99)) / ${CS.kinds.toFixed(1)}));
+    vec4 s = texture2D(uStrips, vec2(a / 6.2832 + .5, 1. - (area + clamp(v, .01, .99)) / ${CS.kinds.toFixed(1)}), soft);
     s.a *= step(0., v);
     vec3 street = s.rgb * dot(uStreetRef, vec3(.3, .59, .11)) * ${CS.stripGain.toFixed(2)};
     c = mix(mix(ground, sky, above), street, v > 1. ? 0. : s.a);
@@ -1398,16 +1406,17 @@ vec3 carStreet(vec3 r, float area, vec3 p) {
   }
   return c + uSunLight * pow(max(dot(r, uSunDir), 0.), ${R.sharp.toFixed(1)}) * ${R.glint.toFixed(3)};
 }
+vec3 carStreet(vec3 r, float area, vec3 p) { return carStreetSoft(r, area, p, 0.); }
 `;
 const COAT_GLSL = /* glsl */ `${VEHICLE_VIEW_GLSL}
 vec3 carCoat(vec3 c, vec3 n, vec3 v, vec3 lamp, float area, vec3 p) {
-  float glass = dot(c, vec3(.3, .59, .11)) < .04 && c.b > c.r * 1.25 ? ${CAR_GLOSS.glass.toFixed(2)} : 1.;
+  float glass = dot(c, vec3(.3, .59, .11)) < .04 && c.b > c.r * 1.25 ? mix(${CAR_GLOSS.glass.toFixed(2)}, ${R.street.glass.toFixed(2)}, uStreetView) : 1.;
   float coat = mix(${CAR_GLOSS.dry.toFixed(2)}, 1., uWet) * glass * carTop(n);
   float slant = 1. - max(dot(n, v), 0.), rim = slant * slant * slant * slant * mix(${CAR_GLOSS.rim[0].toFixed(2)}, ${CAR_GLOSS.rim[1].toFixed(2)}, uWet) * glass;
   vec3 tint = uSkyRef * ${CAR_GLOSS.sky.toFixed(1)} * coat + uSkyRef * ${CAR_GLOSS.rimSky.toFixed(1)} * rim;
   vec3 r = (vec4(reflect(-v, n), 0.) * viewMatrix).xyz;
   float s4 = slant * slant * slant * slant;
-  vec3 mirrored = carStreet(r, area, p) * (${R.top.toFixed(2)} + ${R.side.toFixed(2)} * s4) * glass * mix(1., ${R.wet.toFixed(2)}, uWet);
+  vec3 mirrored = carStreetSoft(r, area, p, ${R.street.soft.toFixed(1)} * uStreetView) * (mix(${R.top.toFixed(2)}, ${R.street.top.toFixed(2)}, uStreetView) + mix(${R.side.toFixed(2)}, ${R.street.side.toFixed(2)}, uStreetView) * s4) * glass * mix(1., ${R.wet.toFixed(2)}, uWet);
   return mix(tint, mirrored, uMirror) + lamp * (${CAR_GLOSS.lamps.toFixed(2)} * coat + ${CAR_GLOSS.rimLamps.toFixed(2)} * rim);
 }`;
 // Snow settles on the roofs and bonnets (weather.ts).
@@ -2406,6 +2415,7 @@ export class CarPool {
   // hasn't moved keeps its matrix instead of sampling the ground again every frame.
   render(cars: Car[], height: ((x: number, y: number, car: Car) => number) | null = null, dt = 0, terrain?: number, streetView = false, eye?: { x: number; z: number }) {
     this.streetView = streetView;
+    CAR_STREET.value = streetView ? 1 : 0;
     for (const c of cars) {
       if (c.two) this.lean(c, dt);
       else if (c.door) c.swing(dt);

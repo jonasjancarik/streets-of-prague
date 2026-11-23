@@ -5,7 +5,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Fn, If, float, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, cameraWorldMatrix, diffuseColor, renderGroup, positionLocal, positionWorld, positionViewDirection, normalLocal, positionGeometry, materialColor, materialSpecular, normalize, dot, smoothstep, mix, select, sin, min, cos, max, floor, mod, exp2, reflect, atan, pow, uniform, texture, cubeTexture, length, clamp, step, distance, cross } from 'three/tsl';
-import { LAMP_GLOW, CAR_GLOSS, DUSTCART_COAT, CAR_MIRROR, WHEEL_LEVEL, CAR_REFLECT as R, CAR_STRIPS as CS, AREA_STEP, DENT_STEP, DENT_SHAPE as DS } from '../car.ts';
+import { LAMP_GLOW, CAR_GLOSS, DUSTCART_COAT, CAR_MIRROR, CAR_STREET, WHEEL_LEVEL, CAR_REFLECT as R, CAR_STRIPS as CS, AREA_STEP, DENT_STEP, DENT_SHAPE as DS } from '../car.ts';
 import { ROLL_CENTRE } from '../streetHandling.ts';
 import { sedanInstruments, sedanWeave } from '../sedanFinish.ts';
 import { registrationAtlas } from '../registrationPlates.ts';
@@ -101,7 +101,7 @@ const cracks = (p: N): N => {
 // more of it by what's seen at a slant; more when wet.
 // And what they mirror (CAR_REFLECT in car.ts): the street round the car, the sky above it.
 const uSkyRef: N = followColor(SKY_REF), uStreetRef: N = followColor(STREET_REF), uSunLight: N = followColor(SUN_LIGHT);
-const uMirror: N = follow(CAR_MIRROR);
+const uMirror: N = follow(CAR_MIRROR), uStreetView: N = follow(CAR_STREET);
 const uSunDir: N = (() => {
   const u = uniform(SUN_DIR.value.clone()).setGroup(renderGroup);
   u.onRenderUpdate(() => { u.value.copy(SUN_DIR.value); return u.value; });
@@ -117,7 +117,8 @@ const uProbeNear: N = (() => { const u = uniform(PROBE_NEAR.value.clone()).setGr
 const PROBE_SOFT = 0.045; // how far apart the cube is read for one pixel of paint (radians)
 const stripNodes: N[] = [];
 onStrips((t) => { for (const n of stripNodes) n.value = t; });
-const carStreet = (r: N, neighbourhood: N = area): N => {
+// (`soft`: how many mip levels down the strip is read, for paint that isn't a mirror.)
+const carStreet = (r: N, neighbourhood: N = area, soft?: N): N => {
   const a = atan(r.z, r.x);
   const edge = float(R.edge).add(sin(a.mul(5)).mul(0.55).add(sin(a.mul(13).add(1.7)).mul(0.3)).add(sin(a.mul(31).add(0.4)).mul(0.15)).mul(R.ragged));
   const sky = uSkyRef.mul(mix(R.horizon, R.zenith, smoothstep(0.1, 0.9, r.y)));
@@ -126,7 +127,8 @@ const carStreet = (r: N, neighbourhood: N = area): N => {
   const made = mix(ground, mix(walls, sky, smoothstep(edge.sub(0.015), edge.add(0.015), r.y)), above);
   // The strip of the car's kind of area, where the strips are in.
   const v: N = float(CS.stripHorizon).mul(r.y.div(max(length(r.xz), 0.001)).div(CS.stripTop).oneMinus());
-  const sample: N = texture(STRIPS.value, vec2(a.div(6.2832).add(0.5), float(1).sub(neighbourhood.add(clamp(v, 0.01, 0.99)).div(CS.kinds))));
+  const at = vec2(a.div(6.2832).add(0.5), float(1).sub(neighbourhood.add(clamp(v, 0.01, 0.99)).div(CS.kinds)));
+  const sample: N = soft ? texture(STRIPS.value, at).bias(soft) : texture(STRIPS.value, at);
   stripNodes.push(sample);
   const street = sample.rgb.mul(luma(uStreetRef)).mul(CS.stripGain);
   const strip = select(v.greaterThan(1), ground, mix(mix(ground, sky, above), street, sample.a.mul(step(0, v))));
@@ -148,14 +150,15 @@ const carStreet = (r: N, neighbourhood: N = area): N => {
 };
 const carCoat = (c: N): N => {
   const lamp = lampLight(positionWorld, normalView);
-  const glass = select(luma(c).lessThan(0.04).and(c.z.greaterThan(c.x.mul(1.25))), float(CAR_GLOSS.glass), float(1));
+  // (At street level less of the street, and out of focus: CAR_STREET in car.ts.)
+  const glass = select(luma(c).lessThan(0.04).and(c.z.greaterThan(c.x.mul(1.25))), mix(CAR_GLOSS.glass, R.street.glass, uStreetView), float(1));
   const coat = mix(CAR_GLOSS.dry, 1, uWet).mul(glass).mul(carTop());
   const slant = max(dot(normalView, positionViewDirection), 0).oneMinus();
   const s4 = slant.mul(slant).mul(slant).mul(slant);
   const rim = s4.mul(mix(CAR_GLOSS.rim[0], CAR_GLOSS.rim[1], uWet)).mul(glass);
   const tint = uSkyRef.mul(CAR_GLOSS.sky).mul(coat).add(uSkyRef.mul(CAR_GLOSS.rimSky).mul(rim));
   const r = cameraWorldMatrix.mul(vec4(reflect(positionViewDirection.negate(), normalView), 0)).xyz;
-  const mirrored = carStreet(r).mul(s4.mul(R.side).add(R.top)).mul(glass).mul(mix(1, R.wet, uWet));
+  const mirrored = carStreet(r, area, uStreetView.mul(R.street.soft)).mul(s4.mul(mix(R.side, R.street.side, uStreetView)).add(mix(R.top, R.street.top, uStreetView))).mul(glass).mul(mix(1, R.wet, uWet));
   return mix(tint, mirrored, uMirror).add(lamp.mul(coat.mul(CAR_GLOSS.lamps).add(rim.mul(CAR_GLOSS.rimLamps))));
 };
 
