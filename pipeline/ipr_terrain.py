@@ -630,12 +630,14 @@ def main() -> None:
     tiles, boxes, outlines, roads, ways, water, by_water, driven = {}, {}, [], [], [], [], [], []
     weirs, streets, street_edges, tile_water, kerbs = [], {}, {}, {}, {}
     ground_edges = {}  # the drive and walk edges not on a bridge (deck_ends)
+    tram_rails = []  # (an underpass under them stays a tunnel: structures.cuttings)
     for i, j, t in layers.tiles(area, meta):
         tiles[(i, j)] = np.full((N + 1, N + 1), np.nan, dtype=np.float32)
         boxes[(i, j)] = box(*t["box"])
         tile_water[(i, j)] = t["areas"].get("water", [])
         water += [Polygon(r[0], r[1:]).buffer(0) for r in t["areas"].get("water", [])]
         weirs += t.get("weirs") or []
+        tram_rails += [LineString(r["pts"]) for r in t.get("rails") or [] if r.get("kind") == "tram" and len(r["pts"]) > 1]
         # The car streets on the ground, kerb to kerb (a tile lists each edge that touches it).
         for e in t.get("drive") or []:
             if not e.get("bridge") and len(e["pts"]) > 1 and e["id"] not in streets:
@@ -722,7 +724,7 @@ def main() -> None:
     if args.survey_companion_decks:
         import dtm_structures
         deck_survey = dtm_structures.for_area(AREAS[area], krovak_to_local(local).transform)
-    dropped, cut_bridges = structures.cuttings(ways, street_edges, sampler(tiles, N, T, step, gx0, gy0), deck_survey)
+    dropped, cut_bridges = structures.cuttings(ways, street_edges, sampler(tiles, N, T, step, gx0, gy0), deck_survey, tram_rails)
     if dropped:
         ways = [w for w in ways if w["id"] not in dropped] + cut_bridges
         print(f"  {len(dropped)} underpasses in an open cutting: on the ground, {len(cut_bridges)} streets over them on bridges")

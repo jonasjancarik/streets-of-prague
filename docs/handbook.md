@@ -2212,6 +2212,10 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   the game paints that stretch on the deck (`onDeck` in `src/ground.ts`). Under such a
   bridge the ground is the terrain model's cutting. The build log lists each one
   (`cutting: …`). See `docs/road-surface-findings.md`.
+  An underpass that tram tracks cross stays a tunnel (`under tram tracks: …` in the
+  log): a street with trams is wider than its car lanes, and only the lanes are ways to
+  put on bridges. Národní over Divadelní got two decks 3 m wide lying askew over a pit,
+  the tracks and the pavements between and beside them left in the air.
   The optional `ipr_terrain.py praha --survey-companion-decks` adds a missing
   carriageway to a cutting bridge the build already found. The DTM must place both
   carriageways on the same bridge footprint. Surveyed kerbs from the added road must

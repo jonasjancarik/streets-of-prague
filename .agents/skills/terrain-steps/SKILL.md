@@ -425,6 +425,18 @@ steeper than VALLEY anywhere, which took steps over 1 m from 71 to 38.
   Wilsonova (`on_roof` in `osm_area.py`). `cellAt` in the game shows it as 255 under
   the carriageway on level 0.
 
+- An underpass in a cutting whose street on top is wider than its car lanes can't be
+  turned round (`structures.cuttings`): only the lanes become bridges. Národní over
+  Divadelní (the dense terrain model shows the cutting since 16 November 2026) got two
+  decks 3 m wide, one for each lane and askew as OSM draws them, the ground under them
+  dug down to the LiDAR in pits, and the tram tracks and pavements between them left on
+  ground at the street's height. An underpass that tram tracks cross stays a tunnel
+  (the build prints `under tram tracks:`); in November 2026 it was the only cutting in
+  the city with tracks within 30 m. `window.py` leaves the streets' levels in the tiles
+  as the city build wrote them, so after such a change the window's tiles still say
+  "Národní on a bridge here" and paint the underpass's road on the ground: set `level`
+  and `levels` by hand (as `layers.assemble` would) before believing the pictures.
+
 Tried and dropped: a terrace for every surveyed street well above or below the ground
 beside it (cliffs 12 m high under Letná); leaving the terrain model wherever the
 survey is far off it with no step near (breaks in the street where the two meet).

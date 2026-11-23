@@ -120,6 +120,7 @@ def main():
     tiles, boxes, outlines, roads, ways, water, by_water, driven = {}, {}, [], [], [], [], [], []
     weirs, streets, street_edges, tile_water, kerbs = [], {}, {}, {}, {}
     ground_edges = {}
+    tram_rails = []
     for ci, cj in chunks:
         parts = {layer: layers.read_chunk(area, layer, ci, cj)["tiles"] for layer in layers.CHUNKED}
         for i, j in layers.chunk_tiles(meta, ci, cj):
@@ -135,6 +136,7 @@ def main():
             tile_water[(i, j)] = t["areas"].get("water", [])
             water += [Polygon(r[0], r[1:]).buffer(0) for r in t["areas"].get("water", [])]
             weirs += t.get("weirs") or []
+            tram_rails += [LineString(r["pts"]) for r in t.get("rails") or [] if r.get("kind") == "tram" and len(r["pts"]) > 1]
             for ed in t.get("drive") or []:
                 if not ed.get("bridge") and len(ed["pts"]) > 1 and ed["id"] not in streets:
                     half = min(ed["width"] / 2, *(ed.get("kerb") or [ed["width"] / 2]))
@@ -194,7 +196,7 @@ def main():
     unknown = {k: np.isnan(arr) for k, arr in tiles.items() if np.isnan(arr).any()}
     ipr_terrain.fill_gaps(tiles, N, T, step)
     bare = {k: arr.copy() for k, arr in tiles.items()}
-    dropped, cut_bridges = structures.cuttings(ways, street_edges, ipr_terrain.sampler(tiles, N, T, step, gx0, gy0), None)
+    dropped, cut_bridges = structures.cuttings(ways, street_edges, ipr_terrain.sampler(tiles, N, T, step, gx0, gy0), None, tram_rails)
     if dropped:
         ways = [way for way in ways if way["id"] not in dropped] + cut_bridges
 

@@ -683,7 +683,7 @@ CUT_LOOK = 30.0  # m either side of the crossing that the street's own height is
 CUT_GRADE = 0.06  # the steepest the street over it can run from one side to the other
 
 
-def cuttings(ways, streets, ground, deck_survey=None):
+def cuttings(ways, streets, ground, deck_survey=None, rails=()):
     """A short underpass whose street the terrain model shows in an open cutting: the
     model leaves the deck over it out, as it does a bridge's, and runs down the street
     inside (Kongresová under 5. května at Pankrác: a trench 20 m wide and 6 m deep under
@@ -695,13 +695,21 @@ def cuttings(ways, streets, ground, deck_survey=None):
     `ways`: structure_ways; `streets`: the car streets on the ground, {id: edge} (with
     pts, width, hw); `ground(xs, ys)`: the bare terrain. Returns the ids of the tunnel
     ways that are on the ground after all, and the bridge ways (marked `cut`). An
-    optional `deck_survey` can add a missing carriageway on an already-found deck."""
+    optional `deck_survey` can add a missing carriageway on an already-found deck.
+
+    `rails`: the tram tracks on the ground, as lines. An underpass they cross stays a
+    tunnel: a street with trams is wider than its car lanes, and the tracks and the
+    paving between and beside the lanes are no way of their own to put on a bridge.
+    Národní over Divadelní (November 2026) got two decks 3 m wide, one for each car
+    lane, lying askew over a pit with the tracks in the air between them."""
     tunnels = [w for w in ways if w["kind"] == "tunnel" and len(w["pts"]) > 1 and w["hw"] not in ON_FOOT | STATION_FOOT | {"cycleway", "bridleway"}]
     edges = [e for e in streets.values() if len(e["pts"]) > 1 and not e.get("tunnel")]
     if not tunnels or not edges:
         return set(), []
     lines = [LineString(e["pts"]) for e in edges]
     tree = STRtree(lines)
+    rails = list(rails)
+    rail_tree = STRtree(rails) if rails else None
     dropped, out = set(), []
     serial = iter(range(-1, -10**9, -1))  # (ids of their own for the new ways and their points: OSM's are positive)
     survey_serial = iter(range(-10**9, -2 * 10**9, -1))  # companions never renumber an existing cutting
@@ -721,6 +729,13 @@ def cuttings(ways, streets, ground, deck_survey=None):
         line = LineString(w["pts"])
         if line.length > CUT_LONGEST:
             continue
+        if rail_tree is not None:
+            # (Crossing over it, not meeting it at a portal.)
+            over = shapely.get_coordinates([rails[k].intersection(line) for k in rail_tree.query(line, predicate="intersects")])
+            along = shapely.line_locate_point(line, shapely.points(over)) if len(over) else []
+            if any(min(d, line.length - d) >= w["w"] / 2 for d in along):
+                print(f"    under tram tracks: {w['hw']} way {w['id']} at ({over[0][0]:.0f}, {over[0][1]:.0f}) stays a tunnel")
+                continue
         near = [lines[k] for k in tree.query(line.buffer(CUT_LOOK + w["w"]))]
         merged = shapely.ops.linemerge(near)
         chains = list(getattr(merged, "geoms", [merged])) if not merged.is_empty else []

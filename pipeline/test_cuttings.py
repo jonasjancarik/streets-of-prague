@@ -48,6 +48,17 @@ class Cuttings(unittest.TestCase):
         dropped, _ = structures.cuttings([tunnel(1, [[-20, 0], [20, 0]])], {"a": street("a", [[0, -60], [0, 60]])}, slope)
         self.assertEqual(dropped, set())
 
+    def test_tunnel_under_tram_tracks_stays(self):
+        # The street over it is wider than its car lanes: the tracks beside them are no
+        # way of their own to put on a bridge (Národní over Divadelní).
+        ways, streets = [tunnel(1, [[-20, 0], [20, 0]])], {"a": street("a", [[0, -60], [0, 60]], 3.0)}
+        tracks = [LineString([[4, -60], [4, 60]])]
+        self.assertEqual(structures.cuttings(ways, streets, trench(6), rails=tracks), (set(), []))
+        # Tracks passing its portal, or nowhere near, change nothing.
+        for aside in ([[-20, -60], [-20, 60]], [[40, -60], [40, 60]]):
+            dropped, bridges = structures.cuttings(ways, streets, trench(6), rails=[LineString(aside)])
+            self.assertEqual((dropped, len(bridges)), ({1}, 1))
+
     def test_long_tunnel_stays(self):
         dropped, _ = structures.cuttings([tunnel(1, [[-200, 0], [200, 0]])], {"a": street("a", [[0, -60], [0, 60]])}, trench(6))
         self.assertEqual(dropped, set())
