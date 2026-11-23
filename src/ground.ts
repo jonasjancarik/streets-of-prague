@@ -483,21 +483,29 @@ let flatMax = 0;
 const FLAT_TOLERANCE = 0.03; // m
 function bender(pos: number[]) {
   const H = groundHeight!, at = sideOf;
-  const heights = (x: number, y: number): [number, number, number] => {
-    const side = at ? at(x, y) : false;
-    return [H(x, y, side), kerbDepth(x, y, STREET), kerbDepth(x, y, ON_STREET)];
-  };
-  const cache: [number, number, number][] = [];
-  const of = (i: number) => (cache[i] ??= heights(pos[i * 3], -pos[i * 3 + 2]));
+  const heights = (x: number, y: number, side: number | false): [number, number, number] =>
+    [H(x, y, side), kerbDepth(x, y, STREET), kerbDepth(x, y, ON_STREET)];
+  const sides: (number | false)[] = [], cache: [number, number, number][] = [], said = new Map<number, boolean>();
+  const sideAt = (i: number) => (sides[i] ??= at ? at(pos[i * 3], -pos[i * 3 + 2]) : false);
+  const of = (i: number) => (cache[i] ??= heights(pos[i * 3], -pos[i * 3 + 2], sideAt(i)));
+  // (Asked again for the same edge on every pass and by both its triangles: answered once.
+  // An edge across a step is split anyway, so its samples take one end's side.)
   return (i: number, j: number) => {
-    const a = of(i), b = of(j), ax = pos[i * 3], ay = -pos[i * 3 + 2], bx = pos[j * 3], by = -pos[j * 3 + 2];
-    for (const t of [0.25, 0.5, 0.75]) {
-      const h = heights(ax + (bx - ax) * t, ay + (by - ay) * t);
-      for (let k = 0; k < 3; k++) if (Math.abs(h[k] - (a[k] + (b[k] - a[k]) * t)) > FLAT_TOLERANCE) return true;
+    const key = i < j ? i * 4194304 + j : j * 4194304 + i;
+    let bent = said.get(key);
+    if (bent !== undefined) return bent;
+    const a = of(i), b = of(j), side = sideAt(i), ax = pos[i * 3], ay = -pos[i * 3 + 2], bx = pos[j * 3], by = -pos[j * 3 + 2];
+    bent = false;
+    for (const t of [0.5, 0.25, 0.75]) {
+      const h = heights(ax + (bx - ax) * t, ay + (by - ay) * t, side);
+      if (Math.abs(h[0] - (a[0] + (b[0] - a[0]) * t)) > FLAT_TOLERANCE || Math.abs(h[1] - (a[1] + (b[1] - a[1]) * t)) > FLAT_TOLERANCE
+        || Math.abs(h[2] - (a[2] + (b[2] - a[2]) * t)) > FLAT_TOLERANCE) { bent = true; break; }
     }
-    return false;
+    said.set(key, bent);
+    return bent;
   };
 }
+
 const WALL_MIN = 0.03; // m: a step lower than this gets no wall
 
 function refineRoad(pos: number[], i: number, j: number, d2: number) {
