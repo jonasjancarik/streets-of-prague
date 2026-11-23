@@ -279,15 +279,13 @@ before that day's frame-count fix may be doubled.
   every hidden draw in that view (`scripts/cull-ab.js`) made the frame 25 % quicker
   there (63 → 47 ms, JavaScript 44 → 36 ms), so real culling is worth building: a baked
   visibility table or occlusion queries. Also try `?farground=250` in VR. Now `?cull`
-  (`docs/occlusion-culling.md`): the sweep in a worker, 7.7 % quicker standing and
-  8–15 % driving on the Pixel 5, nothing popping in 240 steps of driving and walking
-  (`scripts/cull-popping.js`). Works in VR too (both eyes): 11–16 % quicker a frame standing in VR on the Pixel 5. Left: VR while driving, countryside, overhead view, and the tests'
-  cost while driving: about 8.5 ms a frame on the Pixel 5 against 0.7 ms on the M5 (12×,
-  where the game is usually 5–8× slower there), so probably something phone-specific
-  (garbage, a slow path, the 1.5 ms cap on new meshes' tops letting a big one through
-  each frame). Worth perhaps 4–5 % of a frame; profile it on the phone with the
-  culler's functions split up. On the phone,
-  drive with `--vehicle sedan` (pressing E doesn't always get into the car).
+  (`docs/occlusion-culling.md`): the sweep in a worker, 7.7 % quicker standing and 8–15
+  % driving on the Pixel 5, nothing popping in 240 steps of driving and walking
+  (`scripts/cull-popping.js`). Works in VR too (both eyes): 11–16 % quicker a frame
+  standing in VR on the Pixel 5; no gain measured driving in VR (phone too hot, 36–38
+  °C, to tell). The tests' cost on the phone halved (tree pages tested by groups, 11 →
+  5.7 ms a frame). Left: VR driving on a cool phone, countryside, overhead view. On the
+  phone, drive with `--vehicle sedan` (pressing E doesn't always get into the car).
 - **Drawing driven by the GPU** (`docs/gpu-driven-drawing-plan.md`, a plan, not started):
   the city's geometry in a few big buffers, a compute pass picking what is visible, and
   indirect draws, so the main thread's cost of drawing barely depends on how much there

@@ -299,8 +299,28 @@ things. The phone was warm (33.7–35.4 °C), hence about 9–10 frames a second
 attaches to the open tab over adb, as entering VR needs a tap on the phone; Cardboard's
 camera prompt for its QR code is passed by pressing Back on the App info page it opens.)
 
-Still to do: what the remaining 8 ms of tests a frame on the phone are (todo.md), VR
-while driving, the countryside and the overhead view.
+### The tests' cost on the phone, and VR while driving
+
+A CPU profile of a 40 s drive on the Pixel 5 (Medium, first person, `--profile`) put
+half the culler's time in the tree test: a hidden tree page was gone through tree by
+tree on every new sweep, and each wide crown covers many cells. A page's columns are now
+worked out once and kept in groups by 31.25 m square; a group whose box is hidden hides
+all its trees, and only a group that shows is gone through tree by tree. The culler's
+time in the same drive went from 3350 to 1723 ms of 42 s (about 11 → 5.7 ms a frame;
+the tree test 1786 → 291 ms). What is left is mostly the tile meshes' squares
+(`tileVerdict`, 721 ms, a quarter of it working out new meshes' tops). No changed pixel
+in `cull-popping` on Petřín (three eyes), Malostranské náměstí, Vodičkova and Karlovo
+náměstí. Driving, `--ab` 60 s afterwards: 10 % quicker a frame (283.5 → 255.2 ms), but
+the phone was hot (34 °C) and ran at about 4 frames a second either way.
+
+VR while driving (lane assist from Újezd, the culler on and off every 3 s): no gain
+measured. 60 s at 35.8 °C: 172.4 → 182.3 ms a frame on average (median 160.6 → 156.4,
+95th percentile 282 → 346); 120 s at 37.8 °C, in a more open part of town where only
+about 40 things were left out: 228.2 → 235.3 ms (median 221 → 225). The phone was too
+hot by then (4–6 frames a second) to tell a few per cent, and needs measuring again
+cool.
+
+Still to do: VR while driving on a cool phone, the countryside and the overhead view.
 
 Culling on the GPU, as part of drawing driven by the GPU on WebGPU, is planned in
 [gpu-driven-drawing-plan.md](gpu-driven-drawing-plan.md).
