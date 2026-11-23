@@ -1969,3 +1969,12 @@ façades (`21da2fbe`) and the revised façades in three alternating pairs. WebGP
 1×, clear summer afternoon, eight seconds per run. Mean frame times were 7.33, 7.39
 and 7.76 ms before, and 7.50, 7.33 and 7.98 ms after. The average difference of
 0.11 ms was smaller than the variation between runs. Mobile performance is unmeasured.
+
+### Panel-house loggias on Poznaňská (23 November)
+
+At 50.1301764, 14.4199635, looking 35° along a Bohnice block with the camera tilted
+18° up, three alternating desktop WebGPU runs averaged 6.5 ms per frame at `72fde5f8`
+and 6.8 ms with the larger windows and modelled loggias. High, 1×, clear summer
+afternoon, eight seconds per run. The 95th percentiles were 7.2, 7.3 and 9.0 ms
+before, and 7.1, 8.9 and 9.4 ms after. Both versions slowed during the test.
+These measurements cover a standing desktop view. Mobile frame time is unmeasured.

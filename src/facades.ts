@@ -19,7 +19,7 @@ export const FACADE_ON = { value: 0 };
 export const STREET_FACADE = { value: 0 };
 // Surface codes carried by the optional street mesh. The back of a closed
 // timber door and the metal in front of cellar glass must never light as rooms.
-export const F_SURFACE = { masonry: 0, glass: 1, reveal: 2, dressedStone: 3, plinth: 4, joinery: 5, brass: 6, grilleGlass: 7, iron: 8, display: 9, infill: 10, shopPaint: 11, canvas: 12, shopSign: 13 } as const;
+export const F_SURFACE = { masonry: 0, glass: 1, reveal: 2, dressedStone: 3, plinth: 4, joinery: 5, brass: 6, grilleGlass: 7, iron: 8, display: 9, infill: 10, shopPaint: 11, canvas: 12, shopSign: 13, precast: 14, metalFrame: 15, balconyGlass: 16 } as const;
 
 let loading = null;
 export function loadFacadeAtlas() {
@@ -99,7 +99,7 @@ export function styleFor(index: { bbox_wgs84: [number, number, number, number] }
 
 // How wide a window bay is in each style, m between window axes, and how many bays a
 // wall of a style and length gets (fBays in the shaders).
-export const F_BAY = [2.9, 3.1, 2.6, 2.4, 2.8];
+export const F_BAY = [2.9, 3.1, 2.6, 3.6, 2.8];
 // How tall the ground floor and the floors above it are in each style, m from floor to
 // floor, and how much wall a cornice or parapet takes above the top floor. A
 // 19th-century tenement's floors are about 3.7 m (rooms 3.2-3.5 m high under wooden
@@ -181,7 +181,14 @@ export function finishWalls(p: Float32Array, facade: Float32Array, lines: WallLi
       if (r < sum) { look = mix[i][0]; break; }
     }
     const composition = Math.floor(cellHash(r * 13, 5.3) * 8);
-    const fraction = (Math.floor((w - whole) * 32) * 1024 + fit * 32 + (STUCCO.has(look) ? two * 16 : 0) + look + (composition + .5) / 8) / 32768;
+    // Give the sunnier of opposing panel-block elevations the loggia stacks.
+    // Using the plane normal keeps adjoining sections facing the same way.
+    let wallPick = Math.floor((w - whole) * 32);
+    if (style === STYLE.panel) {
+      const sunny = Math.abs(l.nz) > Math.abs(l.nx) ? l.nz > 0 : l.nx < 0;
+      wallPick = wallPick % 16 + (sunny ? 16 : 0);
+    }
+    const fraction = (wallPick * 1024 + fit * 32 + (STUCCO.has(look) ? two * 16 : 0) + look + (composition + .5) / 8) / 32768;
     for (const t of l.tris) for (let o = t * 12 + 3; o < t * 12 + 12; o += 4) facade[o] = Math.floor(facade[o]) + fraction;
     if (whole < BLANK) windowRows(facade, l, style, STOREY_FIT[0] + fit * STOREY_FIT[1] / 31);
   }
@@ -633,7 +640,16 @@ export const F_DOOR = [56, 57, 8, 18, 19, 20, 31, 31, 34, 32, 32, 34, 42, 44, 45
 export const F_WALL = [
   54, 55, 58, 6, 21, 22, 23, 20, 30, 30, 30, 35, 33, 35, 33, 35, 43, 46, 47, 43, 66, 68, 70, 71, 78, 80, 81, 83,
   91, 92, 94, 95, 102, 106, 107, 102, 116, 118, 119, 116, 127, 128, 129, 131, 139, 140, 142, 140, 43, 30, 47, 43];
-export const F_MOD = [1.9, 1.9, 2, 2.4, 1.9, 1.9, 1.9, 1.9, 2, 1.9, 2.4, 1.9, 2];
+export const F_MOD = [1.9, 1.9, 2, 5.4, 1.9, 1.9, 1.9, 1.9, 2, 1.9, 5.4, 1.9, 2];
+// Six room bays per entrance section. For each finish, the access elevation
+// (door under a stair light) and balcony elevation (paired loggias), each
+// ground floor then upper floors. One- and two-bay returns just get windows.
+export const F_PANEL = [
+  32, 33, 27, 27, 33, 27,   29, 27, 27, 27, 27, 27,
+  32, 33, 33, 27, 33, 33,   27, 28, 28, 27, 28, 28,
+  126, 127, 131, 131, 130, 127,   124, 120, 121, 120, 121, 120,
+  126, 127, 127, 131, 130, 127,   120, 122, 123, 121, 122, 122,
+];
 // Two elevations per period. Each quartet is the first floor's ordinary and
 // accented windows, the middle storeys, then the quieter windows above them.
 // The final pair is a residential ground-floor window and a plain or cellar bay.
@@ -659,9 +675,9 @@ export const F_ELEVATION = [
 export const SHOPFRONTS = new Set([6, 20, 30, 58, 66, 71, 80, 81, 91, 95, 102, 115, 119, 128, 139]);
 const GATES = new Set([9, 18, 57, 69, 82, 93, 117, 141]);
 export const F_STREET_WIDTH = Array.from({ length: SHEETS * 12 }, (_, layer) => {
+  if (layer >= 27 && layer <= 29 || layer === 32 || layer === 33 || layer === 35 || layer >= 120 && layer <= 131) return 5.4;
   if (SHOPFRONTS.has(layer) || GATES.has(layer)) return 3.6;
   if (layer >= 96 && layer < 108 || layer === 24 || layer === 25) return 2.9;
-  if (layer >= 27 && layer <= 29 || layer >= 120 && layer < 132) return 2.4;
   if (layer < 24 || layer >= 48 && layer % 12 < 6) return 2.55;
   return 2;
 });
@@ -675,6 +691,7 @@ const int F_UP[${LOOKS * 6}] = ${glslArray('int', F_UP)};
 const int F_DOOR[${LOOKS * 3}] = ${glslArray('int', F_DOOR)};
 const int F_WALL[${LOOKS * 4}] = ${glslArray('int', F_WALL)};
 const int F_ELEVATION[${F_ELEVATION.length}] = ${glslArray('int', F_ELEVATION)};
+const int F_PANEL[${F_PANEL.length}] = ${glslArray('int', F_PANEL)};
 const float F_STREET_WIDTH[${F_STREET_WIDTH.length}] = ${glslArray('float', F_STREET_WIDTH)};
 const float F_BAY[5] = ${glslArray('float', F_BAY)};
 const float F_MOD[${LOOKS}] = ${glslArray('float', F_MOD)};
@@ -712,6 +729,12 @@ int streetLayer(vec4 f, float bays, vec2 cell, bool ground) {
   float seed = mod(floor(fract(f.w) * 32768.), 997.);
   int look = fLook(f);
   float composition = floor(fract(f.w * 32768.) * 8.);
+  if (look == 3 || look == 10) {
+    if (bays < 3.) return look == 3 ? (ground ? 33 : 27) : (ground ? 127 : 120);
+    int part = F_PANEL[(look == 10 ? 24 : 0) + (fract(f.w) >= .5 ? 12 : 0) + (ground ? 0 : 6) + int(mod(cell.x, 6.))];
+    if ((part == 122 || part == 123) && streetPick(seed, cell.x + (cell.y+1.)*23., 11.) < .38) return 125;
+    return part;
+  }
   if (ground) {
     float run = min(bays, 8.), entrance = floor(streetPick(seed, 0., 1.) * run);
     bool residential = floor(f.w) < 2. && composition >= 5.;
@@ -723,8 +746,7 @@ int streetLayer(vec4 f, float bays, vec2 cell, bool ground) {
     if (residential) return F_ELEVATION[look*10 + (mod(cell.x, run) == mod(entrance + 1., run) ? 9 : 8)];
     return F_WALL[look*4 + int(streetPick(seed, floor(cell.x/3.), 3.)*4.)];
   }
-  if (look == 3 || look == 10 || look == 4)
-    return F_UP[look*6 + int(streetPick(seed, look == 4 ? cell.y+1. : cell.x, 4.)*6.)];
+  if (look == 4) return F_UP[look*6 + int(streetPick(seed, cell.y+1., 4.)*6.)];
   float edge = min(cell.x, bays - 1. - cell.x), rhythm = mod(composition, 3.);
   bool accent = bays >= 3. && (rhythm == 0. ? edge == 0. : rhythm == 1. ? edge == floor((bays-1.)/2.) : mod(edge, 2.) == 1.);
   int role = cell.y == 0. || look == 8 ? (accent ? 1 : 0) : (cell.y == 1. ? 2 : 3);
@@ -743,16 +765,27 @@ vec3 facadeModuleAt(vec3 wall, vec4 f, vec4 fdx, vec4 fdy, float explicitLayer) 
   float bay = f.z / bays, mw = min(F_MOD[look], bay);
   int layer;
   if (explicitLayer >= 0.) layer = int(explicitLayer + .5);
-  else if (uStreetFacade > .5) layer = streetLayer(f, bays, cell, f.y < st.x);
+  else if (uStreetFacade > .5 || style == 3) layer = streetLayer(f, bays, cell, f.y < st.x);
   else if (f.y < st.x) {
     float r = fHash(seed, cell.x);
     layer = r < .18 ? F_DOOR[look * 3 + int(r / .18 * 3.)] : F_WALL[look * 4 + int(fHash(cell.x, seed) * 4.)];
   } else layer = F_UP[look * 6 + int(fHash(seed, look == 3 || look == 10 ? cell.x + 50. : cell.y + 7.) * 6.)];
   if (uStreetFacade > .5) mw = min(bay, F_STREET_WIDTH[layer]);
-  float u = clamp((uv.x - .5) * bay / mw + .5, .016, .984);
+  float edge = style == 3 ? .001 : .016;
+  float u = clamp((uv.x - .5) * bay / mw + .5, edge, 1. - edge);
   vec2 k = vec2(1. / mw, 1. / (uStreetFacade > .5 && f.y < st.x ? st.x : st.y));
   vec4 tm = textureGrad(uFacades, vec3(u, 1. - uv.y, float(layer)), fdx.xy * k, fdy.xy * k);
   vec3 t = tm.rgb;
+  if (style == 3) {
+    vec3 cement = mix(vec3(dot(wall, vec3(.30,.59,.11))), vec3(.66,.65,.60), .55);
+    vec3 coat = cement;
+    if (look == 10 && layer >= 120 && layer <= 124 && layer != 122 && layer != 123) {
+      float tone = mod(floor(fract(f.w * 32768.) * 8.), 4.);
+      vec3 accent = tone < 1. ? vec3(.49,.17,.11) : tone < 2. ? vec3(.69,.40,.11) : tone < 3. ? vec3(.25,.43,.37) : vec3(.23,.38,.53);
+      coat = mix(wall, accent, .80);
+    }
+    return mix(t, t * coat / .55, tm.a);
+  }
   // Plaster is drawn neutral grey: give it the wall's colour, or on a two-tone house its
   // stucco a pale cream. Frames, doors and metal keep their own.
   vec3 plaster = mix(wall, mix(wall, vec3(.85, .79, .67), .6), tm.a * fTwoTone(f));

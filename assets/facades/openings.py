@@ -8,10 +8,11 @@ import json
 import numpy as np
 from PIL import Image, ImageDraw
 from scipy import ndimage as nd
+from proportions import remap_rect
 
 ROOT = Path(__file__).resolve().parents[2]
 # Decorative blind niches and wall-only modules have no opening.
-blank = {5, 11, 17, 23, 35, 41, 47, 113, 118, 125, 129}
+blank = {5, 11, 17, 23, 35, 41, 47, 113, 118, 129}
 arched = {9, 18, 19, 20, 57, 67, 69, 73, 90, 93, 114, 115, 117, 141}
 # The facade sheet includes shutters, grilles, balconies and basement lights.
 # Crop to each actual opening before looking for its dark glass or joinery.
@@ -30,7 +31,7 @@ manual = {
     10: [[72, 110, 184, 245, 0]],
     22: [[68, 331, 187, 426, 34]],
     19: [[27, 62, 226, 459, 105]],
-    28: [[53, 147, 211, 264, 0]],
+    28: [[18, 65, 238, 418, 0]],
     29: [[75, 13, 178, 486, 0]],
     32: [[44, 84, 214, 417, 0]],
     40: [[58, 88, 202, 383, 0]],
@@ -46,7 +47,10 @@ manual = {
     104: [[9, 64, 247, 411, 0]],
     114: [[48, 90, 207, 448, 76]],
     117: [[29, 264, 228, 434, 62]],
+    122: [[12, 61, 244, 416, 0]],
+    123: [[12, 61, 244, 416, 0]],
     124: [[83, 45, 179, 430, 0]],
+    125: [[12, 61, 244, 416, 0]],
     138: [[53, 102, 199, 452, 0]],
     141: [[18, 85, 231, 459, 99]],
     143: [[62, 92, 194, 451, 0]],
@@ -61,7 +65,7 @@ def measure(im, i):
     if i in blank:
         return []
     if i in manual:
-        return [rect.copy() for rect in manual[i]]
+        return [remap_rect(rect, i) for rect in manual[i]]
     rgb = np.asarray(im, dtype=float)
     lum = rgb @ np.array([0.28, 0.57, 0.15])
     wall = np.percentile(lum, 83)
@@ -143,6 +147,7 @@ def bake(preview=None):
                 117,
                 122,
                 123,
+                125,
                 130,
                 140,
                 141,

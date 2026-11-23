@@ -1048,8 +1048,18 @@ record the measurements, merge decisions and pending landmark asset activation.
   brick or stone cladding, with window bays aligned vertically. Some flats have partly
   drawn curtains or lowered blinds. The same opening sizes and spacing carry
   on along the street beyond the range of the detailed meshes. The plaster grain
-  covers two metres per repeat. The ground floor and first three upper floors get
-  physical depth. On High, up to eighteen nearby walls qualify within 34 m. Lowest
+  covers two metres per repeat. The atlas builder sizes the glazing within each
+  storey before measuring the openings. This leaves room for tall tenement sashes,
+  smaller Old Town casements and low cellar lights.
+
+  Panel houses use a 3.6 m room bay. Long walls repeat entrance sections, with
+  stairwell lights above the doors on the access side and pairs of loggias on the
+  sunnier elevation. Exposed concrete shows its joints. On insulated blocks, painted
+  window bays alternate with pale balconies and some households have enclosed their
+  loggia with sliding glass. The panel layout is inferred from the wall geometry.
+  Ordinary windows get physical depth through the first three upper floors.
+  Nearby loggias have a slab, a guard and a rear door 0.92 m back, up to twelve upper
+  floors. On High, up to eighteen nearby walls qualify within 34 m. Lowest
   and the overhead camera use the original flat geometry. Photo landmarks keep
   their authored models.
 - **Portraits and the loading screen.** Characters are half-length portraits drawn by

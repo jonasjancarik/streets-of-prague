@@ -1,7 +1,7 @@
 // Cut architectural profiles into existing wall triangles in the wall's own
 // metre coordinates. Clipping retains gables, sloping pavements and passages.
 import * as THREE from 'three';
-import { baysOf, wallLength, BLANK, F_SURFACE as S, F_GROUND, F_STOREY, STOREY_FIT, F_UP, F_DOOR, F_WALL, F_MOD, F_ELEVATION, F_STREET_WIDTH, SHOPFRONTS, LOOK } from '../facades.ts';
+import { baysOf, wallLength, BLANK, F_SURFACE as S, F_GROUND, F_STOREY, STOREY_FIT, F_UP, F_DOOR, F_WALL, F_MOD, F_ELEVATION, F_PANEL, F_STREET_WIDTH, SHOPFRONTS, LOOK, STYLE } from '../facades.ts';
 import openings from './facadeOpenings.json' with {type: 'json'};
 import caps from './facadeCaps.json' with {type: 'json'};
 import type { BuildingArrays } from '../contracts.ts';
@@ -10,6 +10,7 @@ type Point = [number, number, number, number?]; // along, above foot, outward fr
 type Triangle = [Point, Point, Point, number, number]; // ambient shading and surface code
 type V2 = [number, number];
 const FURNISHED_PANE = -1; // replaced by glass and a furnishing seed when emitting this bay
+const isLoggia = (layer: number) => layer === 28 || layer === 122 || layer === 123 || layer === 125;
 // Exact integer arithmetic within float32's precision, also used by the street
 // shader on distant shells. A portal stays in the same bay throughout approach.
 function pick(seed: number, column: number, salt: number) {
@@ -19,6 +20,12 @@ function pick(seed: number, column: number, salt: number) {
 export function streetModule(w: number, bay: number, floor: number, bays: number) {
   const packed = Math.floor((w - Math.floor(w)) * 32768), look = Math.min(F_MOD.length - 1, packed % 16), seed = packed % 997;
   const composition = Math.floor(w * 262144) % 8;
+  if (look === LOOK.panel || look === LOOK.renovatedPanel) {
+    const renovated = look === LOOK.renovatedPanel;
+    if (bays < 3) return renovated ? (floor ? 120 : 127) : (floor ? 27 : 33);
+    const part = F_PANEL[(renovated ? 24 : 0) + (packed >= 16384 ? 12 : 0) + (floor ? 6 : 0) + bay % 6];
+    return (part === 122 || part === 123) && pick(seed, bay + floor * 23, 11) < .38 ? 125 : part;
+  }
   if (floor === 0) {
     const run = Math.min(bays, 8);
     const entrance = Math.floor(pick(seed, 0, 1) * run);
@@ -31,8 +38,7 @@ export function streetModule(w: number, bay: number, floor: number, bays: number
     if (residential) return F_ELEVATION[look * 10 + (bay % run === (entrance + 1) % run ? 9 : 8)];
     return F_WALL[look * 4 + Math.floor(pick(seed, Math.floor(bay / 3), 3) * 4)];
   }
-  if (look === LOOK.panel || look === LOOK.renovatedPanel || look === LOOK.house)
-    return F_UP[look * 6 + Math.floor(pick(seed, look === LOOK.house ? floor : bay, 4) * 6)];
+  if (look === LOOK.house) return F_UP[look * 6 + Math.floor(pick(seed, floor, 4) * 6)];
   const edge = Math.min(bay, bays - 1 - bay), rhythm = composition % 3;
   const accent = bays >= 3 && (rhythm === 0 ? edge === 0 : rhythm === 1 ? edge === Math.floor((bays - 1) / 2) : edge % 2 === 1);
   const role = floor === 1 || look === LOOK.modern ? Number(accent) : floor === 2 ? 2 : 3;
@@ -82,6 +88,56 @@ function cellShape(layer: number, bay: number, storey: number, moduleWidth: numb
       tris.push([pt(all[i], depth), pt(all[j], depth), pt(all[k], depth), ao, kind]);
     }
   };
+  if (isLoggia(layer)) {
+    // A balcony is a room behind a guard. The atlas gives the perimeter of
+    // its mouth; the ceiling, cheeks and rear door must move in parallax.
+    const [x0, y0, x1, y1] = regions[0];
+    const l = (bay - moduleWidth) / 2 + x0 / 256 * moduleWidth, r = l + (x1 - x0) / 256 * moduleWidth;
+    const b = (1 - y1 / 512) * storey, t = (1 - y0 / 512) * storey, rear = -.92;
+    const mouth = rectangle(l, b, r, t);
+    fill(rectangle(0, 0, bay, storey), [mouth], 0, 1);
+    ring(mouth, mouth, 0, rear, .83, S.precast);
+    fill(mouth, [], rear, .69, S.precast);
+    const solid = (face: V2[], back: number, front: number, ao: number, kind: number) => {
+      ring(face, face, back, front, ao, kind);
+      fill(face, [], front, ao, kind);
+    };
+    const span = r - l, left = l + span * .09, right = r - span * .09, mullion = left + span * .29;
+    const head = t - .27, foot = b + .06, sill = b + .79;
+    const frame: V2[] = [[left, foot], [mullion, foot], [mullion, sill], [right, sill], [right, head], [left, head]];
+    const door = rectangle(left + .055, foot + .10, mullion - .027, head - .055);
+    const light = rectangle(mullion + .027, sill + .055, right - .055, head - .055);
+    ring(frame, frame, rear, rear + .055, .85, S.metalFrame);
+    fill(frame, [door, light], rear + .055, .9, S.metalFrame);
+    for (const pane of [door, light]) {
+      ring(pane, pane, rear + .055, rear + .025, .88, S.metalFrame);
+      fill(pane, [], rear + .025, 1, S.balconyGlass);
+    }
+    const guard = storey * (1 - 319 / 512);
+    if (layer === 123) {
+      const bars = Math.ceil(span / .14);
+      for (let i = 1; i < bars; i++) {
+        const x = l + i * span / bars;
+        solid(rectangle(x - .014, b + .045, x + .014, guard), -.055, -.025, .92, S.metalFrame);
+      }
+    } else {
+      const sheet = rectangle(l, b + .045, r, guard);
+      solid(sheet, -.075, -.025, .94, S.joinery);
+      fill([...sheet].reverse(), [], -.075, .78, S.precast);
+    }
+    solid(rectangle(l, guard - .018, r, guard + .022), -.075, .012, 1, S.metalFrame);
+    if (layer === 125) {
+      // Slim aluminium meeting stiles and top track of a glazed-in loggia.
+      // The clear lights leave the real door visible a metre behind them.
+      for (const portion of [1 / 3, 2 / 3]) {
+        const x = l + span * portion;
+        solid(rectangle(x - .012, guard, x + .012, t), -.07, -.035, .96, S.metalFrame);
+      }
+      solid(rectangle(l, t - .035, r, t), -.07, -.025, .98, S.metalFrame);
+    }
+    solid(rectangle(0, 0, bay, b + .04), -.01, .075, .98, S.precast);
+    return tris;
+  }
   const interruptions: [number, number, number, number][] = [];
   // Shade where a sill or a cornice keeps the sky off the plaster under it: a sheet a few
   // millimetres in front of the wall, darkest along its top edge between `lo` and `hi`,
@@ -123,14 +179,15 @@ function cellShape(layer: number, bay: number, storey: number, moduleWidth: numb
       // stay parallel to the glazing down to their feet.
       const sill = rectangle(l - pad, b - pad, r + pad, b - .006);
       const depth = style <= 1 ? .115 : .075;
-      ring(sill, sill, .002, depth, .94, S.dressedStone);
-      fill(sill, [], depth, 1, S.dressedStone);
+      const material = style === STYLE.panel ? S.metalFrame : S.dressedStone;
+      ring(sill, sill, .002, depth, .94, material);
+      fill(sill, [], depth, 1, material);
       shaded.push([l - pad, r + pad, b - pad, SILL_SHADE[0], SILL_SHADE[1], .09]);
     }
     ring(outer, bead, 0, bevel, .94);
     ring(bead, lip, bevel, projection, 1);
     const inner = outline(l + .014, b + .010, r - .014, t - .014, rise, oval);
-    ring(lip, inner, projection, -inset, .75, S.reveal);
+    ring(lip, inner, projection, -inset, .75, style === STYLE.panel ? S.precast : S.reveal);
     const glassFinish = !upper && SHOPFRONTS.has(layer) ? S.display : S.glass;
     const panes: V2[][] = [];
     for (let k = 0; k < lights.length; k += 4) {
@@ -272,7 +329,9 @@ function cellShape(layer: number, bay: number, storey: number, moduleWidth: numb
       tris.push([p, q, r, 1, kind], [p, r, s, 1, kind]);
     }
   }
-  if (!upper) {
+  if (!upper && style === STYLE.panel) {
+    course([[.01, .002], [.025, .035], [.33, .035], [.35, .002]], S.plinth);
+  } else if (!upper) {
     course([[.01, .002], [.04, .057], [.47, .057], [.50, .071], [.54, .071], [.57, .003]], S.plinth);
     const e = storey - .025;
     course(style < 2 ? [[e - .25, .003], [e - .23, .045], [e - .15, .050], [e - .12, .10], [e - .074, .12], [e - .052, .16], [e - .019, .16], [e, .003]]
@@ -392,25 +451,29 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
         }
       }
     };
-    // Below grade and above the first three upper floors keep the exact flat
-    // surface; only the reachable elevation needs the added geometry.
+    // Most openings only need relief near the pavement. A deep loggia casts
+    // a visible shadow even several floors up when you stand below the block.
     const band = (lo: number, hi: number) => {
       if (hi <= lo) return;
-      emit([[minX, lo, 0], [maxX, lo, 0], [maxX, hi, 0]], -1, 1, 1);
-      emit([[minX, lo, 0], [maxX, hi, 0], [minX, hi, 0]], -1, 1, 1);
+      const shell = style === STYLE.panel ? S.masonry : S.glass;
+      emit([[minX, lo, 0], [maxX, lo, 0], [maxX, hi, 0]], -1, 1, shell);
+      emit([[minX, lo, 0], [maxX, hi, 0], [minX, hi, 0]], -1, 1, shell);
     };
-    band(minY, Math.min(0, maxY)); band(Math.max(ground + 3 * storey, minY), maxY);
-    for (let row = 0; row <= 3; row++) {
+    const upperRows = style === STYLE.panel ? 12 : 3;
+    band(minY, Math.min(0, maxY)); band(Math.max(ground + upperRows * storey, minY), maxY);
+    for (let row = 0; row <= upperRows; row++) {
       const bottom = row ? ground + (row - 1) * storey : 0, h = row ? storey : ground;
       if (bottom >= maxY || bottom + h <= minY) continue;
       for (let j = Math.max(0, Math.floor(minX / bay)); j < Math.min(bays, Math.ceil(maxX / bay)); j++) {
         const layer = streetModule(w, j, row, bays);
-        if (!fits(layer, j, row, bottom, h)) {
+        const fitsBay = fits(layer, j, row, bottom, h);
+        if (!fitsBay || (row > 3 && !isLoggia(layer))) {
           // The map clips this bay at a passage, gable or parapet. Leave a
           // plain infill here instead of exposing half a window at the roofline.
           const lo = j * bay, hi = lo + bay, top = bottom + h;
-          emit([[lo, bottom, 0], [hi, bottom, 0], [hi, top, 0]], layer, 1, S.infill);
-          emit([[lo, bottom, 0], [hi, top, 0], [lo, top, 0]], layer, 1, S.infill);
+          const surface = fitsBay ? S.masonry : S.infill;
+          emit([[lo, bottom, 0], [hi, bottom, 0], [hi, top, 0]], layer, 1, surface);
+          emit([[lo, bottom, 0], [hi, top, 0], [lo, top, 0]], layer, 1, surface);
           continue;
         }
         const shop = !row && SHOPFRONTS.has(layer), group = Math.floor(j / 2);

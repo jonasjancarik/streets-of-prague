@@ -52,7 +52,7 @@ const paint = `
   vec2 st = fStorey(f);
   float bay = f.z / bays;
   float footprint = length(fwidth(f.xy));
-  if (kind == ${S.masonry}. && layer >= 0.) {
+  if (kind == ${S.masonry}. && layer >= 0. && floor(f.w) != 3.) {
     float u = (fract(f.x / bay) - .5) * bay / min(F_STREET_WIDTH[int(layer)], bay) + .5;
     float v = 1. - fract(f.y < st.x ? clamp(f.y / st.x, 0., .999) : (f.y - st.x) / st.y);
     float mask = texture(uMasks, maskUV(layer, vec2(u, v))).r * (1. - smoothstep(.47, .506, abs(u - .5)));
@@ -73,6 +73,9 @@ const paint = `
     wall = mix(pier, wall, mask);
   }
   if (kind == ${S.infill}.) wall = stone;
+  if (kind == ${S.precast}.) wall = mix(vec3(dot(diffuseColor.rgb, vec3(.30,.59,.11))), vec3(.66,.65,.60), .55);
+  if (kind == ${S.metalFrame}.) wall = vec3(.66,.69,.68);
+  if (kind == ${S.balconyGlass}.) wall = layer == 125. ? vec3(.16,.21,.24) : vec3(.046,.070,.083);
   if (kind == ${S.shopPaint}. || kind == ${S.canvas}.) wall = diffuseColor.rgb;
   if (kind == ${S.shopSign}.) {
     vec2 at = vec2(clamp(.5 + (.5 - fract(f.x / bay)) * 1.55, .004, .996), (3. - floor(vDetail.w) + fract(vDetail.w)) * .25);
@@ -91,7 +94,7 @@ const paint = `
   if (masonry) wall *= 1. + scan.r * .52;
   float contact = kind == ${S.reveal}. ? clamp(1. + vDetail.w * 1.25, .60, 1.) : 1.;
   vec3 glow = vec3(0.);
-  if (kind == ${S.display}. || kind == ${S.glass}. || kind == ${S.grilleGlass}.) {
+  if (kind == ${S.display}. || kind == ${S.glass}. || kind == ${S.grilleGlass}. || kind == ${S.balconyGlass}.) {
     vec3 n = normalize(vWallNormal), view = normalize(cameraPosition - vWorld), r = reflect(-view, n);
     if (kind == ${S.glass}. && vDetail.w > 0. && vDetail.w < .74) {
       float shift = .12 / max(.19, dot(view, n)), pick = fract(vDetail.w * 17.7);

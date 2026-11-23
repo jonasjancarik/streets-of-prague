@@ -9,8 +9,9 @@ sheets are stacked, one under another, in the order src/facades.ts expects.
 It also writes public/facades-mask.webp, the same size: white where an upper floor's
 module has ornament round its window (frames, pediments, sills, stucco panels), black on
 the flat wall, so the game can draw a building's stucco a lighter shade than its wall.
-Ground floors stay black: their rustication and grooves read as ornament and came out in
-patches.
+Ground floors stay black except on panel houses. There the mask marks the exterior
+render, keeping paint off the white PVC frames, metalwork and glass. One spare cell
+holds the sliding-glass conversion of the renovated loggia.
 
 usage: cd pipeline && uv run python ../assets/facades/build_atlas.py   (Pillow, numpy, scipy)
 """
@@ -19,6 +20,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageFilter
 from scipy import ndimage
+from proportions import PANEL_FITTINGS, enclosed_loggia, panel_mask, precast_joints, remap
 
 HERE = Path(__file__).parent
 OUT = HERE.parent.parent / "public" / "facades.webp"
@@ -100,9 +102,18 @@ def main():
     mask = Image.new("L", atlas.size)
     for s, path in enumerate(sheets):
         for i, cell in enumerate(cells(path)):
+            layer = s * 12 + i
+            cell = remap(cell, layer)
             at = ((i % COLS) * CELL[0], (s * ROWS + i // COLS) * CELL[1])
+            if layer == 125:
+                left, top = at[0] - 3 * CELL[0], at[1]  # layer 122, open loggia
+                cell = enclosed_loggia(atlas.crop((left, top, left + CELL[0], top + CELL[1])))
+            elif layer in PANEL_FITTINGS and layer < 120:
+                cell = precast_joints(cell)
             atlas.paste(cell, at)
-            if i < COLS:
+            if layer in PANEL_FITTINGS:
+                mask.paste(panel_mask(layer), at)
+            elif i < COLS:
                 mask.paste(Image.fromarray(ornament(cell)), at)
     atlas.save(OUT, quality=88)
     mask.convert("RGB").save(MASK, quality=80)

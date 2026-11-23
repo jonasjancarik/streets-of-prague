@@ -3,7 +3,8 @@
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { buildStreetWall, packStreetWalls, streetModule } from '../src/map/streetFacade.ts';
-import { FACADE_ON, F_SURFACE } from '../src/facades.ts';
+import { FACADE_ON, F_SURFACE, F_BAY, F_STOREY, F_STREET_WIDTH } from '../src/facades.ts';
+import apertures from '../src/map/facadeOpenings.json' with { type: 'json' };
 import { StreetFacades } from '../src/streetFacades.ts';
 
 const p = [], f = [], colors = [], labels = [];
@@ -124,3 +125,40 @@ for (let i = 0; i < awningWall.detail.length; i += 4) {
 }
 assert.ok(canvas && frame && signs, 'a rectangular display receives a lettered fascia and awning');
 console.log('Verified window composition, vertically stacked bays and shop awning clearance.');
+
+// The atlas rectangle is the physical opening, including the sash. A normal
+// estate window admits daylight over about half the storey. Cellar lights
+// below it remain small, and a tenement has a taller opening than a panel flat.
+const metric = (layer, style) => {
+  const [l, t, r, b] = apertures[layer][0];
+  return [(r-l) / 256 * Math.min(F_BAY[style], F_STREET_WIDTH[layer]), (b-t) / 512 * F_STOREY[style]];
+};
+const [width, height] = metric(120, 3);
+assert.ok(width > 2.5 && height > 1.4 && height < 1.65);
+assert.ok(metric(49, 0)[1] > 1.9 && metric(108, 1)[1] > 1.4 && metric(127, 3)[1] < .7);
+
+const access = 3 + packed(10, 1, 3, 14), sunny = 3 + packed(10, 1, 19, 14);
+assert.equal(streetModule(access, 0, 0, 6), 126);
+assert.equal(streetModule(access, 0, 4, 6), 124, 'stair lights stand over the common entrance');
+const balconies = new Set([122, 123, 125]), guards = new Set();
+for (let row = 1; row <= 10; row++) {
+  const elevation = upper(sunny, row, 6);
+  assert.deepEqual(elevation.map(layer => balconies.has(layer)), [false,true,true,false,true,true]);
+  for (const part of elevation) if (balconies.has(part)) guards.add(part);
+}
+assert.equal(guards.size, 3, 'open rails, solid guards and glazed-in balconies share the same stack');
+assert.ok(upper(sunny, 1, 2).every(layer => layer === 120), 'a short return is windowed');
+
+const slabWidth = F_BAY[3] * 6, slabTop = 24;
+const corners = [[0,0], [slabWidth,0], [slabWidth,slabTop], [0,0], [slabWidth,slabTop], [0,slabTop]];
+const slab = buildStreetWall({
+  position: Float32Array.from(corners.flatMap(([x,y]) => [x,y,0])),
+  facade: Float32Array.from(corners.flatMap(([x,y]) => [x,y,slabWidth,sunny])),
+  color: new Float32Array(18).fill(.6),
+}, new Float32Array(6).fill(1), Uint32Array.of(0,1));
+const highPanes = [];
+for (let i = 0; i < slab.detail.length; i += 4) {
+  if (slab.detail[i+2] === F_SURFACE.balconyGlass && slab.facade[i+1] > 16) highPanes.push(slab.detail[i+3]);
+}
+assert.ok(highPanes.length && highPanes.every(z => z < -.85), 'upper-floor balcony doors sit behind the front guard');
+console.log('Verified apartment window dimensions, panel entrance sections and deep loggia stacks.');

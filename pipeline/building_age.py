@@ -47,7 +47,7 @@ NEAR = 3.0  # m; a building just outside every outline takes the nearest one's p
 TENEMENT, BAROQUE, FUNCTIONALIST, PANEL, HOUSE = range(5)
 ERA_STYLE = (None, BAROQUE, TENEMENT, TENEMENT, TENEMENT, TENEMENT, FUNCTIONALIST, FUNCTIONALIST, PANEL, PANEL,
              FUNCTIONALIST, FUNCTIONALIST, FUNCTIONALIST)
-BAY = (2.9, 3.1, 2.6, 2.4, 2.8)
+BAY = (2.9, 3.1, 2.6, 3.6, 2.8)
 # What ipr_buildings.py writes in the upper half of a wall's material byte (WALL_CODES in
 # src/facades.ts): the style plus one, or for buildings of these eras a code that also
 # tells the game the period's looks: tenements of 1843-1875 (mostly plain), 1876-1889
