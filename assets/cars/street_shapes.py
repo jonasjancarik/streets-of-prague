@@ -393,15 +393,21 @@ class StreetCar(Car):
 
         self.roof_point = roof
 
+        sail = max(1e-3, (xa - self.front_door) / (xa - xd))
+
         def sidepane(low, high, v, s):
             # From `low` of the way along the belt up to `high` of the way along the
             # roof, in a straight line: that keeps every pillar straight.
             x = lerp(xa, xd, low)
             xx, ww, zz = rail(high)
             z = self.belt(x) - 0.006
+            # The glass bows out a little, but not where it meets the windscreen or the
+            # rear window: their edges are straight, and a bow there left a slit
+            # up the pillar that one could see through.
+            bow = 0.020 * math.sin(math.pi * v) * smooth(low / sail) * smooth((1 - low) / 0.08)
             return (
                 lerp(x, xx, v),
-                s * (lerp(self.side_width(x, z), ww, v) + 0.020 * math.sin(math.pi * v)),
+                s * (lerp(self.side_width(x, z), ww, v) + bow),
                 lerp(z, zz, v),
             )
 
@@ -465,7 +471,6 @@ class StreetCar(Car):
         # only slightly at the header (the roof is much shorter than the belt).
         top_b = min(0.83, max(0.16, (xb - (xm - (0.07 if tall else 0.10))) / (xb - xc)))
         top_q = min(0.92, max(top_b + 0.08, (xb - (xq + 0.04)) / (xb - xc))) if xq is not None else 1
-        sail = (xa - self.front_door) / (xa - xd)
         spans = [
             (0, sail, 0, 0.018, 0),
             (sail, b, 0.018, top_b, 1),
@@ -482,7 +487,9 @@ class StreetCar(Car):
 
                 k = door + (s < 0) if door else 0
                 if hi == sail:
-                    self.patch("GlassSeal", steps(3), steps(7), panel, normal)
+                    # The front pillar, between the windscreen and the door's glass: paint,
+                    # as the body is (in black it read as a sliver of glass).
+                    self.patch("Paint", steps(3), steps(7), panel, normal)
                 elif not glass_back_side and lo >= b:
 
                     def cargo(u, v):
@@ -522,6 +529,13 @@ class StreetCar(Car):
                         "GlassSeal" if hi <= rear_cut else "Paint",
                     )
                     self.window(panel, normal, k, (0.050 if k else 0.095, 0.046, 0.075), 12, 7, frames)
+                    if door == 1:
+                        # The black corner the mirror stands on, at the front of the door's glass.
+                        def mount(u, v, k=k, panel=panel):
+                            p = Vector(panel(0.045 + 0.19 * u * (1 - v), 0.04 + 0.50 * v))
+                            return p + Vector((0, s * 0.004, 0))
+
+                        self.patch("GlassSeal", steps(4), steps(4), mount, normal, k)
         if not self.utility and self.kind not in ("taxi", "police_city", "sedan"):
             # The tailgate glass tucks under a shallow lip. Both surfaces of
             # the overhang are present when it is seen from underneath.
