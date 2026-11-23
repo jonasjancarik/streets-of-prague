@@ -1,10 +1,27 @@
 import * as THREE from 'three';
 
-export const facadeFinishes: { plaster?: THREE.Texture; masks?: THREE.Texture; shops?: THREE.Texture } = {};
+export const facadeFinishes: { plaster?: THREE.Texture; masks?: THREE.Texture; shops?: THREE.Texture; signs?: THREE.Texture } = {};
 let loading = false, retryAt = 0;
 let shopRetry = 0;
 export const shopReady = { value: 0 };
 export const shopTexture: { value: THREE.Texture | null } = { value: null };
+
+// The four trades in shop-displays.webp, in the same order. All shop fascias
+// share this little mask; the wall material supplies the paint and lighting.
+function shopLetters() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512; canvas.height = 256;
+  const g = canvas.getContext('2d')!;
+  g.fillStyle = '#000'; g.fillRect(0, 0, 512, 256);
+  g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (const [i, title] of ['KNIHKUPECTVÍ', 'PEKAŘSTVÍ', 'KVĚTINY', 'KERAMIKA'].entries()) {
+    g.font = i % 2 ? 'bold 44px sans-serif' : 'bold 46px Georgia, serif';
+    g.fillText(title, 256, i * 64 + 34, 402);
+  }
+  const map = new THREE.CanvasTexture(canvas);
+  map.anisotropy = 4;
+  return map;
+}
 
 // Publish the pair atomically. In particular the first WebGPU wall must bind
 // the finished masks, not compile its material against an undecoded image.
@@ -18,6 +35,7 @@ export function loadFacadeFinishes() {
   }
   if (loading || facadeFinishes.masks || performance.now() < retryAt) return;
   loading = true;
+  facadeFinishes.signs ??= shopLetters();
   const loader = new THREE.TextureLoader(), base = import.meta.env.BASE_URL;
   void Promise.allSettled([loader.loadAsync(base + 'street-plaster.webp'), loader.loadAsync(base + 'street-facade-masks.webp')]).then(results => {
     const [plaster, masks] = results;

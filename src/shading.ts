@@ -824,7 +824,7 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
   if (uWindows > .005 && bn.y < .15 && vFacade.z > .1 && bays > .5) {
     vec2 st = fStorey(vFacade);
     vec2 cell = vec2(floor(vFacade.x / vFacade.z * bays), floor((vFacade.y - st.x) / st.y));
-    float lit = step(fHash(cell.x + fract(vFacade.w) * 97., cell.y), uWindows * (vFacade.y < st.x ? 1.6 : 1.));
+    float lit = step(fHash(cell.x + fSeed(vFacade) * 97., cell.y), uWindows * (vFacade.y < st.x ? 1.6 : 1.));
     float glass = 1. - smoothstep(.13, .22, luma(diffuseColor.rgb) / max(luma(vColor.rgb), .02));
     // Upper floors: only the bluish glass, not the dark shadowed mouldings and sills round it.
     if (vFacade.y >= st.x) glass *= smoothstep(1.03, 1.12, diffuseColor.b / max(diffuseColor.r, .01));

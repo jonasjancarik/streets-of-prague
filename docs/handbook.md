@@ -1039,7 +1039,15 @@ record the measurements, merge decisions and pending landmark asset activation.
   At street level the WebGPU renderer fits recessed doors and windows, sash bars,
   projecting sills and stone hoods to nearby ordinary buildings. The meshes follow
   the mapped walls, including their sloping feet and existing passages. Opening
-  positions and ornament are inferred from the façade artwork. The plaster grain
+  positions and ornament are inferred from the façade artwork. In first and third person,
+  historical façades give the first floor a centrepiece, a pair of end bays or alternating
+  window hoods, with simpler windows above. Some ground floors have a house entrance,
+  barred windows and a stretch of plaster. Others have groups of wider display windows
+  with painted frames, Czech shop signs and occasional folding awnings. Window jambs
+  have a constant depth above a separate horizontal sill. Modern infill can have facing
+  brick or stone cladding, with window bays aligned vertically. Some flats have partly
+  drawn curtains or lowered blinds. The same opening sizes and spacing carry
+  on along the street beyond the range of the detailed meshes. The plaster grain
   covers two metres per repeat. The ground floor and first three upper floors get
   physical depth. On High, up to eighteen nearby walls qualify within 34 m. Lowest
   and the overhead camera use the original flat geometry. Photo landmarks keep

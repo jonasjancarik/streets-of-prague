@@ -14,7 +14,7 @@ varying vec3 vWorld, vWallNormal;
 varying float vWallSky;`;
 const functions = `
 
-uniform sampler2D uShop, uPlaster, uMasks, uStrip;
+uniform sampler2D uShop, uPlaster, uMasks, uStrip, uShopSigns;
 uniform float uShopReady, uStripOn, uWet, uWindows;
 uniform vec4 uCut;
 uniform vec3 uSkyRef;
@@ -51,18 +51,33 @@ const paint = `
   vec3 wall = facadeModuleAt(diffuseColor.rgb, f, dFdx(f), dFdy(f), layer);
   vec2 st = fStorey(f);
   float bay = f.z / bays;
+  float footprint = length(fwidth(f.xy));
   if (kind == ${S.masonry}. && layer >= 0.) {
-    float u = (fract(f.x / bay) - .5) * bay / min(F_MOD[fLook(f)], bay) + .5;
+    float u = (fract(f.x / bay) - .5) * bay / min(F_STREET_WIDTH[int(layer)], bay) + .5;
     float v = 1. - fract(f.y < st.x ? clamp(f.y / st.x, 0., .999) : (f.y - st.x) / st.y);
     float mask = texture(uMasks, maskUV(layer, vec2(u, v))).r * (1. - smoothstep(.47, .506, abs(u - .5)));
     float seed = mod(floor(fract(f.w) * 32768.), 997.);
-    float datum = f.y < st.x
-                      ? float(F_WALL[fLook(f) * 4 + int(streetPick(seed, floor(f.x / bay / 6.), 3.) * 4.)])
-                      : layer;
+    float composition = floor(fract(f.w * 32768.) * 8.);
+    int look = fLook(f);
+    int baseLayer = floor(f.w) < 2. && composition >= 5. ? F_ELEVATION[look * 10 + 8]
+                                                         : F_WALL[look * 4 + int(streetPick(seed, 0., 3.) * 4.)];
+    float datum = f.y < st.x ? float(baseLayer) : layer;
     float row = texture(uMasks, maskUV(datum, vec2(.5, v))).g * 1.25 + .25;
-    wall = mix(stone * row, wall, mask);
+    vec3 pier = stone * row;
+    if (look == 8 && composition < 6.) {
+      vec2 size = mod(composition, 2.) == 0. ? vec2(.25,.075) : vec2(.92,.44);
+      vec2 block = blocks(f.xy, size);
+      float joint = 1. - smoothstep(.001, footprint * .55 + .006, block.x);
+      pier *= 1. + ((block.y - .5) * .15 - joint * .25) * (1. - smoothstep(size.y * .2, size.y * .7, footprint));
+    }
+    wall = mix(pier, wall, mask);
   }
   if (kind == ${S.infill}.) wall = stone;
+  if (kind == ${S.shopPaint}. || kind == ${S.canvas}.) wall = diffuseColor.rgb;
+  if (kind == ${S.shopSign}.) {
+    vec2 at = vec2(clamp(.5 + (.5 - fract(f.x / bay)) * 1.55, .004, .996), (3. - floor(vDetail.w) + fract(vDetail.w)) * .25);
+    wall = mix(diffuseColor.rgb, vec3(.81,.72,.53), texture(uShopSigns, at).r);
+  }
   if (kind == ${S.brass}.) wall = vec3(.131, .102, .064);
   if (kind == ${S.iron}.) wall = vec3(.031, .034, .033);
   if (kind == ${S.grilleGlass}.) wall = vec3(.022, .032, .040);
@@ -78,6 +93,16 @@ const paint = `
   vec3 glow = vec3(0.);
   if (kind == ${S.display}. || kind == ${S.glass}. || kind == ${S.grilleGlass}.) {
     vec3 n = normalize(vWallNormal), view = normalize(cameraPosition - vWorld), r = reflect(-view, n);
+    if (kind == ${S.glass}. && vDetail.w > 0. && vDetail.w < .74) {
+      float shift = .12 / max(.19, dot(view, n)), pick = fract(vDetail.w * 17.7);
+      float x = (fract(f.x / bay) - .5) * bay - dot(view, vec3(-n.z, 0., n.x)) * shift;
+      float y = f.y - view.y * shift;
+      float height = f.y < st.x ? y / st.x : (y - st.x) / st.y - floor((f.y - st.x) / st.y);
+      bool blind = vDetail.w < .35;
+      float cover = blind ? smoothstep(0., .012, height - mix(.32,.71,pick)) : smoothstep(0.,.025, abs(x) - mix(.12,.53,pick));
+      vec3 cloth = mix(vec3(.24,.21,.16), vec3(.47,.45,.39), pick) * (blind ? .88 : .82 + .15 * cos(x * 42.));
+      wall = mix(wall, cloth, cover * .82);
+    }
     float fresnel = .10 + .48 * pow(1. - abs(dot(view, n)), 4.);
     int style = int(floor(f.w)), zone = style == 1 ? 0 : style == 3 ? 2 : style == 4 ? 3 : 1;
     float h = .806 * (1. - r.y / max(length(r.xz), .001) / .7);
@@ -89,7 +114,7 @@ const paint = `
       glow += shopRoom(f, -view, n) * (1. - fresnel) + uSkyRef * smoothstep(.01, .4, r.y) * fresnel * vWallSky;
     } else {
       float floorId = floor((f.y - st.x) / st.y), cell = floor(f.x / bay);
-      glow += vec3(.8, .54, .28) * step(fHash(cell + fract(f.w) * 97., floorId), uWindows) * .38;
+      glow += vec3(.8, .54, .28) * step(fHash(cell + fSeed(f) * 97., floorId), uWindows) * .38;
     }
   }
   diffuseColor.rgb = wall * vDetail.y * contact * mix(1., .84, uWet);
@@ -111,6 +136,7 @@ export function configureStreetFacadeGL() {
       uMasks: { value: facadeFinishes.masks },
       uPlaster: { value: facadeFinishes.plaster },
       uShop: shopTexture,
+      uShopSigns: { value: facadeFinishes.signs },
       uShopReady: shopReady,
     });
     sh.vertexShader = sh.vertexShader.replace(

@@ -12,7 +12,7 @@ import {
 import { passageAtlas } from '../passageMaterial.ts';
 import { facadeFinishes, shopReady } from '../facadeFinishes.ts';
 import { STRIPS, STRIPS_ON, onStrips, KINDS } from '../reflections.ts';
-import { FACADE_ATLAS, FACADE_ON, STREET_FACADE, F_SURFACE as S, BLANK, F_BAY as BAY_WIDTH, F_UP as UP, F_DOOR as DOOR, F_WALL as WALL, F_MOD as MOD, F_GROUND as GROUND, F_STOREY as STOREY, STOREY_FIT, ROWS_STEP } from '../facades.ts';
+import { FACADE_ATLAS, FACADE_ON, STREET_FACADE, F_SURFACE as S, BLANK, F_BAY as BAY_WIDTH, F_UP as UP, F_DOOR as DOOR, F_WALL as WALL, F_MOD as MOD, F_ELEVATION, F_STREET_WIDTH, F_GROUND as GROUND, F_STOREY as STOREY, STOREY_FIT, ROWS_STEP } from '../facades.ts';
 import { WINDOWS, ROOF_DETAIL, ROOF_CLUTTER, LANDMARK_ROOF as R, SUN_DIR, SUN_LIGHT } from '../shading.ts';
 import { lampLit } from './lamps.ts';
 import { EDGE, EDGE_STEP } from '../map/roofEdges.ts';
@@ -67,6 +67,7 @@ const F_WALL = ints(WALL);
 const floats = (v: number[]): N => uniformArray(v, 'float');
 const F_BAY = floats(BAY_WIDTH);
 const F_MOD = floats(MOD);
+const elevation = ints(F_ELEVATION), streetWidth = floats(F_STREET_WIDTH);
 const F_GROUND = floats(GROUND), F_STOREY = floats(STOREY);
 // The facade attribute as the shaders take it, z being the wall's length alone; what rides
 // on top of the length is how many rows of windows fit there, plus one (windowRows in facades.ts).
@@ -89,6 +90,8 @@ const fStorey = (f: N) => {
   return vec2(F_GROUND.element(style), F_STOREY.element(style).mul(fit.mul(STOREY_FIT[1] / 31).add(STOREY_FIT[0])));
 };
 const fLook = (f: N) => min(mod(floor(fract(f.w).mul(32768)), 16), MOD.length - 1).toInt();
+const fComposition = (f: N) => floor(fract(f.w.mul(32768)).mul(8));
+const fSeed = (f: N) => floor(fract(f.w).mul(32768)).add(.5).div(32768);
 const fTwoTone = (f: N) => mod(floor(fract(f.w).mul(2048)), 2);
 const LANDMARK_TILE = vec3(...R.rgb);
 const luma = (c: N) => dot(c, vec3(0.299, 0.587, 0.114));
@@ -404,28 +407,40 @@ const streetPick = (seed: N, column: N, salt: number) => {
   return mod(n.mul(n.add(71)).add(241), 997).div(997);
 };
 function facadeModules(wall: N, f: N, bays: N, fdx: N, fdy: N, explicit?: N) {
-  const style = floor(f.w).toInt(), seed = fract(f.w).mul(97), st = fStorey(f);
+  const style = floor(f.w).toInt(), seed = fSeed(f).mul(97), st = fStorey(f);
   const look = fLook(f).toVar();
   // (toVar: declared here, before the branches below. Left to TSL, `q` was worked out inside the
   // upper floors' branch only, and a ground floor read it unset: every pixel of it took the module's
   // top left corner, plain plaster, so ground floors and whole low buildings had no doors or windows.)
   const q = vec2(f.x.div(f.z).mul(bays), select(f.y.lessThan(st.x), clamp(f.y.div(st.x), 0, 0.999), f.y.sub(st.x).div(st.y))).toVar();
   const cell = floor(q).toVar(), uv = fract(q);
-  const bay: N = f.z.div(bays), mw: N = min(F_MOD.element(look), bay);
-  const u: N = clamp(uv.x.sub(0.5).mul(bay).div(mw).add(0.5), 0.016, 0.984);
+  const bay: N = f.z.div(bays);
   const layer = int(0).toVar();
 
   const chooseStreet = () => {
     const seed = mod(floor(fract(f.w).mul(32768)), 997);
     If(f.y.lessThan(st.x), () => {
       const run = min(bays, 8), door = floor(streetPick(seed, float(0), 1).mul(run));
+      const residential = style.lessThan(2).and(fComposition(f).greaterThanEqual(5));
       If(mod(cell.x, run).equal(door), () => {
         const portal = F_DOOR.element(look.mul(3).add(floor(streetPick(seed, floor(cell.x.div(run)), 2).mul(3)).toInt()));
-        layer.assign(select(portal.equal(19), int(18), portal));
-      }).Else(() => { layer.assign(F_WALL.element(look.mul(4).add(floor(streetPick(seed, floor(cell.x.div(6)), 3).mul(4)).toInt()))); });
+        layer.assign(select(residential, F_DOOR.element(look.mul(3)), select(portal.equal(19), int(18), portal)));
+      }).ElseIf(residential, () => {
+        const plain = mod(cell.x, run).equal(mod(door.add(1), run));
+        layer.assign(elevation.element(look.mul(10).add(select(plain, int(9), int(8)))));
+      }).Else(() => { layer.assign(F_WALL.element(look.mul(4).add(floor(streetPick(seed, floor(cell.x.div(3)), 3).mul(4)).toInt()))); });
     }).Else(() => {
-      const selectBy = select(look.equal(3).or(look.equal(10)), cell.x, cell.y.add(1));
-      layer.assign(F_UP.element(look.mul(6).add(floor(streetPick(seed, selectBy, 4).mul(6)).toInt())));
+      If(look.equal(3).or(look.equal(10)).or(look.equal(4)), () => {
+        const selectBy = select(look.equal(4), cell.y.add(1), cell.x);
+        layer.assign(F_UP.element(look.mul(6).add(floor(streetPick(seed, selectBy, 4).mul(6)).toInt())));
+      }).Else(() => {
+        const composition = fComposition(f);
+        const edge = min(cell.x, bays.sub(1).sub(cell.x)), rhythm = mod(composition, 3);
+        const accent = bays.greaterThanEqual(3).and(select(rhythm.equal(0), edge.equal(0),
+          select(rhythm.equal(1), edge.equal(floor(bays.sub(1).div(2))), mod(edge, 2).equal(1))));
+        const role = select(cell.y.equal(0).or(look.equal(8)), select(accent, int(1), int(0)), select(cell.y.equal(1), int(2), int(3)));
+        layer.assign(elevation.element(look.mul(10).add(mod(composition, 2).toInt().mul(4)).add(role)));
+      });
     });
   };
   if (explicit) If(explicit.greaterThanEqual(0), () => { layer.assign(explicit.toInt()); }).Else(chooseStreet);
@@ -440,6 +455,8 @@ function facadeModules(wall: N, f: N, bays: N, fdx: N, fdy: N, explicit?: N) {
     layer.assign(F_UP.element(look.mul(6).add(fHash(seed, select(byColumn, cell.x.add(50), cell.y.add(7))).mul(6).toInt())));
   });
   });
+  const mw = min(bay, select(uStreetFacade.greaterThan(.5), streetWidth.element(layer), F_MOD.element(look)));
+  const u: N = clamp(uv.x.sub(.5).mul(bay).div(mw).add(.5), .016, .984);
   const k = vec2(float(1).div(mw), float(1).div(select(uStreetFacade.greaterThan(.5).and(f.y.lessThan(st.x)), st.x, st.y)));
   const tm = atlas.sample(vec2(u, float(1).sub(uv.y))).depth(layer).grad(fdx.xy.mul(k), fdy.xy.mul(k));
   const t = tm.rgb;
@@ -579,7 +596,7 @@ const windowGlow = Fn(() => {
   If(uWindows.greaterThan(0.005).and(bn.y.lessThan(0.15)).and(f.z.greaterThan(0.1)).and(bays.greaterThan(0.5)), () => {
     const st = fStorey(f);
     const cell = vec2(floor(f.x.div(f.z).mul(bays)), floor(f.y.sub(st.x).div(st.y)));
-    const lit = step(fHash(cell.x.add(fract(f.w).mul(97)), cell.y), uWindows.mul(select(f.y.lessThan(st.x), 1.6, 1)));
+    const lit = step(fHash(cell.x.add(fSeed(f).mul(97)), cell.y), uWindows.mul(select(f.y.lessThan(st.x), 1.6, 1)));
     const dark = float(1).sub(smoothstep(0.13, 0.22, luma(diffuseColor.rgb).div(max(luma(vertexColor().rgb), 0.02))));
     // Upper floors: only the bluish glass, not the dark shadowed mouldings and sills round it.
     const glass = select(f.y.lessThan(st.x), dark, dark.mul(smoothstep(1.03, 1.12, diffuseColor.b.div(max(diffuseColor.r, 0.01)))));
@@ -587,7 +604,7 @@ const windowGlow = Fn(() => {
     // The room behind the glass, where the detail is on (ROOF_DETAIL: not on Lowest).
     const ground: N = f.y.lessThan(st.x);
     const inBay: N = vec2(fract(f.x.div(f.z).mul(bays)), select(ground, clamp(f.y.div(st.x), 0, 1), fract(f.y.sub(st.x).div(st.y))));
-    const seen: N = select(uRoofDetail.greaterThan(0.5), room(inBay, vec2(f.z.div(bays), select(ground, st.x, st.y)), along, eye, bn, fHash(cell.x.add(3.7), cell.y.add(fract(f.w).mul(31)))).mul(0.78), vec3(1));
+    const seen: N = select(uRoofDetail.greaterThan(0.5), room(inBay, vec2(f.z.div(bays), select(ground, st.x, st.y)), along, eye, bn, fHash(cell.x.add(3.7), cell.y.add(fSeed(f).mul(31)))).mul(0.78), vec3(1));
     g.assign(lamp.mul(lit).mul(glass).mul(0.55).mul(seen));
   }).ElseIf(uWindows.greaterThan(0.005).and(abs(f.w.sub(10)).lessThan(0.5)).and(bn.y.greaterThan(0.15)), () => {
     // Roof windows (roofGlass).
@@ -629,7 +646,7 @@ const windowGlow = Fn(() => {
     const dark = float(1).sub(smoothstep(0.13, 0.22, luma(diffuseColor.rgb).div(max(luma(vertexColor().rgb), 0.02))));
     const glass = select(f.y.lessThan(st.x), dark, dark.mul(smoothstep(1.03, 1.12, diffuseColor.b.div(max(diffuseColor.r, 0.01)))));
     const view: N = normalize(cameraPosition.sub(positionWorld)), facing: N = max(dot(view, bn), 0);
-    const up: N = reflect(view.negate(), bn).y.add(fHash(cell.x.add(fract(f.w).mul(53)), cell.y).sub(0.5).mul(0.22));
+    const up: N = reflect(view.negate(), bn).y.add(fHash(cell.x.add(fSeed(f).mul(53)), cell.y).sub(0.5).mul(0.22));
     const fresnel: N = pow(float(1).sub(facing), 4).mul(0.85).add(0.045);
     const sky: N = mix(uHorizon, uZenith, smoothstep(0, 1.2, up));
     g.addAssign(sky.mul(fresnel).mul(smoothstep(-0.04, 0.2, up)).mul(glass).mul(mix(0.3, 1, attribute('sky', 'float'))));
@@ -719,24 +736,48 @@ const streetWallColor = Fn(() => {
   const f: N = facadeAttr().toVar(), info: N = attribute('detail', 'vec4');
   const kind = floor(info.z.add(.5)), layer = floor(info.x.add(.5));
   const dx: N = dFdx(f).toVar(), dy: N = dFdy(f).toVar();
+  const footprint = length(abs(dx.xy).add(abs(dy.xy)));
   const base: N = vec3(materialColor).mul(vertexColor().rgb);
   const wall: N = facadeModules(base, f, fBays(f), dx, dy, layer).toVar();
   const stone = base.mul(.79).toVar();
   // The pictures cover the opening and its surround. Let the scan continue
   // across the masonry piers at its real two-metre scale instead of pulling
   // a single column of the facade picture across a metre of plaster.
-  const bays = fBays(f), bay = f.z.div(bays), mw = min(F_MOD.element(fLook(f)), bay);
+  const bays = fBays(f), bay = f.z.div(bays);
   If(layer.greaterThanEqual(0).and(kind.equal(S.masonry)), () => {
+    const mw = min(streetWidth.element(layer.toInt()), bay);
     const rawU = fract(f.x.div(bay)).sub(.5).mul(bay).div(mw).add(.5);
     const st = fStorey(f), ground = f.y.lessThan(st.x);
     const v = float(1).sub(fract(select(ground, clamp(f.y.div(st.x), 0, .999), f.y.sub(st.x).div(st.y))));
     const local = facadeMask(layer, rawU, v).r.mul(float(1).sub(smoothstep(.47, .506, abs(rawU.sub(.5)))));
     const seed = mod(floor(fract(f.w).mul(32768)), 997);
-    const datum = F_WALL.element(fLook(f).mul(4).add(floor(streetPick(seed, floor(f.x.div(bay).div(6)), 3).mul(4)).toInt()));
+    const look = fLook(f), composition = fComposition(f);
+    const residential = f.w.lessThan(2).and(composition.greaterThanEqual(5));
+    const datum = select(residential, elevation.element(look.mul(10).add(8)),
+      F_WALL.element(look.mul(4).add(floor(streetPick(seed, float(0), 3).mul(4)).toInt())));
     const row = facadeMask(select(ground, datum.toFloat(), layer), float(.5), v).g.mul(1.25).add(.25);
-    wall.assign(mix(stone.mul(row), wall, local));
+    const pier = stone.mul(row).toVar();
+    // Pale facing brick and larger stone slabs on modern infill. The narrow
+    // mortar lines dissolve before they can flicker along a receding street.
+    If(look.equal(8).and(composition.lessThan(6)), () => {
+      const brick = mod(composition, 2).equal(0);
+      const size = select(brick, vec2(.25, .075), vec2(.92, .44));
+      const block = blocks(f.xy, size.x, size.y);
+      const joint = float(1).sub(smoothstep(.001, footprint.mul(.55).add(.006), block.x));
+      const finish = block.y.sub(.5).mul(.15).sub(joint.mul(.25));
+      const visible = float(1).sub(smoothstep(size.y.mul(.2), size.y.mul(.7), footprint));
+      pier.mulAssign(float(1).add(finish.mul(visible)));
+    });
+    wall.assign(mix(pier, wall, local));
   });
   If(kind.equal(S.infill), () => { wall.assign(stone); });
+  If(kind.equal(S.shopPaint).or(kind.equal(S.canvas)), () => { wall.assign(base); });
+  If(kind.equal(S.shopSign), () => {
+    const u = clamp(float(.5).sub(fract(f.x.div(bay))).mul(1.55).add(.5), .004, .996);
+    const v = float(3).sub(floor(info.w)).add(fract(info.w)).mul(.25);
+    const ink = texture(facadeFinishes.signs!, vec2(u, v)).r;
+    wall.assign(mix(base, vec3(.81, .72, .53), ink));
+  });
   If(kind.equal(S.brass), () => { wall.assign(vec3(.131, .102, .064)); });
   If(kind.equal(S.display).and(uShopReady.greaterThan(.5)), () => { wall.assign(vec3(.010, .014, .016)); });
   If(kind.equal(S.grilleGlass), () => { wall.assign(vec3(.022, .032, .040)); });
@@ -746,8 +787,25 @@ const streetWallColor = Fn(() => {
     const dressed=mix(stone,vec3(.67,.61,.50),fTwoTone(f).mul(.24));
     wall.assign(select(kind.equal(S.dressedStone),dressed.mul(1.10),stone.mul(select(kind.equal(S.plinth),.76,1))));
   });
-  If(uDirt.greaterThan(.5), () => { wall.assign(grime(wall, f, length(abs(dx.xy).add(abs(dy.xy))))); });
   const masonry = kind.equal(S.masonry).or(kind.greaterThanEqual(S.reveal).and(kind.lessThanEqual(S.plinth)));
+  If(uDirt.greaterThan(.5).and(masonry.or(kind.equal(S.infill))), () => {
+    wall.assign(mix(wall, grime(wall, f, footprint), mix(.90, .40, smoothstep(.2, 1.6, f.y))));
+  });
+  // A furnishing sits just inside a measured pane. Sample one continuous
+  // piece across the sashes, displaced behind the glass as the eye moves.
+  If(kind.equal(S.glass).and(info.w.greaterThan(0)).and(info.w.lessThan(.74)), () => {
+    const n = normalWorldGeometry, eye = normalize(cameraPosition.sub(positionWorld));
+    const shift = float(.12).div(max(.19, dot(eye, n)));
+    const x: N = fract(f.x.div(bay)).sub(.5).mul(bay).sub(dot(eye, vec3(n.z.negate(), 0, n.x)).mul(shift));
+    const st = fStorey(f), y = f.y.sub(eye.y.mul(shift));
+    const h = select(f.y.lessThan(st.x), y.div(st.x), y.sub(st.x).div(st.y).sub(floor(f.y.sub(st.x).div(st.y))));
+    const blind = info.w.lessThan(.35), pick = fract(info.w.mul(17.7));
+    const covered = select(blind, smoothstep(.0, .012, h.sub(mix(.32, .71, pick))),
+      smoothstep(.0, .025, abs(x).sub(mix(.12, .53, pick))));
+    const fold: N = select(blind, float(.88), cos(x.mul(42)).mul(.15).add(.82));
+    const cloth = mix(vec3(.24,.21,.16), vec3(.47,.45,.39), pick).mul(fold);
+    wall.assign(mix(wall, cloth, covered.mul(.82)));
+  });
   const grain = plasterScan().r.sub(.5);
   wall.mulAssign(select(masonry, grain.mul(.52).add(1), float(1)));
   const contact = select(kind.equal(S.reveal), clamp(info.w.mul(1.25).add(1), .60, 1), float(1));

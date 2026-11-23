@@ -1,7 +1,7 @@
 // Cut architectural profiles into existing wall triangles in the wall's own
 // metre coordinates. Clipping retains gables, sloping pavements and passages.
 import * as THREE from 'three';
-import { baysOf, wallLength, BLANK, F_SURFACE as S, F_GROUND, F_STOREY, STOREY_FIT, F_UP, F_DOOR, F_WALL, F_MOD } from '../facades.ts';
+import { baysOf, wallLength, BLANK, F_SURFACE as S, F_GROUND, F_STOREY, STOREY_FIT, F_UP, F_DOOR, F_WALL, F_MOD, F_ELEVATION, F_STREET_WIDTH, SHOPFRONTS, LOOK } from '../facades.ts';
 import openings from './facadeOpenings.json' with {type: 'json'};
 import caps from './facadeCaps.json' with {type: 'json'};
 import type { BuildingArrays } from '../contracts.ts';
@@ -9,6 +9,7 @@ import type { BuildingArrays } from '../contracts.ts';
 type Point = [number, number, number, number?]; // along, above foot, outward from wall, and how much light reaches it (1 when left out)
 type Triangle = [Point, Point, Point, number, number]; // ambient shading and surface code
 type V2 = [number, number];
+const FURNISHED_PANE = -1; // replaced by glass and a furnishing seed when emitting this bay
 // Exact integer arithmetic within float32's precision, also used by the street
 // shader on distant shells. A portal stays in the same bay throughout approach.
 function pick(seed: number, column: number, salt: number) {
@@ -17,16 +18,25 @@ function pick(seed: number, column: number, salt: number) {
 }
 export function streetModule(w: number, bay: number, floor: number, bays: number) {
   const packed = Math.floor((w - Math.floor(w)) * 32768), look = Math.min(F_MOD.length - 1, packed % 16), seed = packed % 997;
+  const composition = Math.floor(w * 262144) % 8;
   if (floor === 0) {
     const run = Math.min(bays, 8);
     const entrance = Math.floor(pick(seed, 0, 1) * run);
+    const residential = Math.floor(w) < 2 && composition >= 5;
     if (bay % run === entrance) {
+      if (residential) return F_DOOR[look * 3];
       const door = F_DOOR[look * 3 + Math.floor(pick(seed, Math.floor(bay / run), 2) * 3)];
       return door === 19 ? 18 : door; // an inferred closed portal, not a painted passage to walk into
     }
-    return F_WALL[look * 4 + Math.floor(pick(seed, Math.floor(bay / 6), 3) * 4)];
+    if (residential) return F_ELEVATION[look * 10 + (bay % run === (entrance + 1) % run ? 9 : 8)];
+    return F_WALL[look * 4 + Math.floor(pick(seed, Math.floor(bay / 3), 3) * 4)];
   }
-  return F_UP[look * 6 + Math.floor(pick(seed, look === 3 || look === 10 ? bay : floor, 4) * 6)];
+  if (look === LOOK.panel || look === LOOK.renovatedPanel || look === LOOK.house)
+    return F_UP[look * 6 + Math.floor(pick(seed, look === LOOK.house ? floor : bay, 4) * 6)];
+  const edge = Math.min(bay, bays - 1 - bay), rhythm = composition % 3;
+  const accent = bays >= 3 && (rhythm === 0 ? edge === 0 : rhythm === 1 ? edge === Math.floor((bays - 1) / 2) : edge % 2 === 1);
+  const role = floor === 1 || look === LOOK.modern ? Number(accent) : floor === 2 ? 2 : 3;
+  return F_ELEVATION[look * 10 + composition % 2 * 4 + role];
 }
 
 // Preserve the connectivity found by facadeCoords. Two parallel walls with
@@ -49,18 +59,21 @@ function outline(l: number, b: number, r: number, t: number, rise: number, oval:
   for (let j = 0; j <= 10; j++) { const a = j * Math.PI / 10; p.push([(l + r) / 2 + Math.cos(a) * (r - l) / 2, t - rise + Math.sin(a) * rise]); }
   return p;
 }
-// Shopfronts identified in the source artwork (assets/facades/sheet*.txt).
-// Only their inset glass panes see merchandise; doors, shutters and flats keep their own finish.
-const SHOPFRONTS = new Set([6, 20, 30, 58, 66, 71, 80, 81, 91, 95, 102, 115, 119, 128, 139]);
-function cellShape(layer: number, bay: number, storey: number, moduleWidth: number, upper: boolean, style: number) {
+// Shop joinery and its canvas, sRGB. Neighbouring lights of the same premises
+// share a finish. The worker bakes these few colours into the wall's own mesh.
+const SHOP_FINISHES = [
+  [0x415750, 0xe8d4ad], [0x624343, 0xa85343], [0x455263, 0xd8cbb3],
+  [0x76573e, 0xb99a70], [0x444545, 0x819381], [0x4a6062, 0xdbcbac],
+].map(pair => pair.map(hex => new THREE.Color(hex)));
+function cellShape(layer: number, bay: number, storey: number, moduleWidth: number, upper: boolean, style: number, awning: boolean) {
   const tris: Triangle[] = [], holes: V2[][] = [], regions = openings[layer] || [];
   const pt = (p: V2, d: number): Point => [p[0], p[1], d];
-  const ring = (outer: V2[], inner: V2[], da: (i: number) => number, db: (i: number) => number, ao: number, kind: number = S.masonry) => {
+  const ring = (outer: V2[], inner: V2[], da: number, db: number, ao: number, kind: number = S.masonry) => {
     for (let i = 0; i < outer.length; i++) {
-const j = (i + 1) % outer.length;
-      const a = pt(outer[i], da(i)), b = pt(outer[j], da(j)), c = pt(inner[j], db(j)), d = pt(inner[i], db(i));
+      const j = (i + 1) % outer.length;
+      const a = pt(outer[i], da), b = pt(outer[j], da), c = pt(inner[j], db), d = pt(inner[i], db);
       tris.push([a, b, c, ao, kind], [a, c, d, ao, kind]);
-}
+    }
   };
   const fill = (outer: V2[], holes: V2[][], depth: number, ao: number, kind: number = S.masonry) => {
     const vec = (p: V2[]) => p.map(([x, y]) => new THREE.Vector2(x, y));
@@ -103,14 +116,21 @@ const j = (i + 1) % outer.length;
     const lip = outline(l, b, r, t, rise, oval);
     // A planted frame above the plaster, a sill that throws rain clear,
     // then the reveal and sash set back into the masonry.
-    const projection = (i: number) => lip[i][1] < b + .001 ? (doorway ? .075 : .145) : style <= 1 ? .047 : .022;
-    const bevel = (i: number) => projection(i) * .88;
+    const projection = style <= 1 ? .047 : .022, bevel = projection * .88;
     holes.push(outer); interruptions.push([l - pad, r + pad, b - pad, t + pad]);
-    if (!doorway && b - pad > .12) shaded.push([l - pad, r + pad, b - pad, SILL_SHADE[0], SILL_SHADE[1], .09]);
-    ring(outer, bead, () => 0, bevel, .94);
+    if (!doorway && !oval && b - pad > .12) {
+      // Only the horizontal sill projects beyond the surround. The jambs
+      // stay parallel to the glazing down to their feet.
+      const sill = rectangle(l - pad, b - pad, r + pad, b - .006);
+      const depth = style <= 1 ? .115 : .075;
+      ring(sill, sill, .002, depth, .94, S.dressedStone);
+      fill(sill, [], depth, 1, S.dressedStone);
+      shaded.push([l - pad, r + pad, b - pad, SILL_SHADE[0], SILL_SHADE[1], .09]);
+    }
+    ring(outer, bead, 0, bevel, .94);
     ring(bead, lip, bevel, projection, 1);
     const inner = outline(l + .014, b + .010, r - .014, t - .014, rise, oval);
-    ring(lip, inner, projection, () => -inset, .75, S.reveal);
+    ring(lip, inner, projection, -inset, .75, S.reveal);
     const glassFinish = !upper && SHOPFRONTS.has(layer) ? S.display : S.glass;
     const panes: V2[][] = [];
     for (let k = 0; k < lights.length; k += 4) {
@@ -120,8 +140,8 @@ const j = (i + 1) % outer.length;
       if (!glass.every(([x, y]) => inner.every((a, i) => { const b = inner[(i + 1) % inner.length]; return cross(b[0] - a[0], b[1] - a[1], x - a[0], y - a[1]) > .00001; }))) continue;
       if (panes.some(p => glass[0][0] < p[2][0] && glass[2][0] > p[0][0] && glass[0][1] < p[2][1] && glass[2][1] > p[0][1])) continue;
       panes.push(glass);
-      ring(glass, glass, () => -inset, () => -inset - .038, .80);
-      fill(glass, [], -inset - .038, .94, glassFinish);
+      ring(glass, glass, -inset, -inset - .038, .80);
+      fill(glass, [], -inset - .038, .94, upper ? FURNISHED_PANE : glassFinish);
     }
     const timber = [8, 9, 18, 19, 34, 42, 44, 45, 56, 57, 67, 69, 79, 82, 90, 93, 105, 114, 117, 130, 138, 141, 143].includes(layer);
     const barred = [10, 21, 22, 54, 55, 68, 92, 116, 140].includes(layer) && !panes.length;
@@ -140,10 +160,58 @@ const j = (i + 1) % outer.length;
       const rows = (t - b) > .95 ? [.27, .67] : [.48];
       for (const y of rows) {
         const rail = rectangle(l + .008, b + y * (t - b) - .010, r - .008, b + y * (t - b) + .010);
-        ring(rail, rail, () => -.032, () => -.016, 1, S.iron); fill(rail, [], -.016, 1, S.iron);
+        ring(rail, rail, -.032, -.016, 1, S.iron); fill(rail, [], -.016, 1, S.iron);
       }
     }
-    fill(inner, panes, -inset, .92, barred ? S.grilleGlass : panes.length || timber ? S.joinery : glassFinish);
+    const back = barred ? S.grilleGlass : panes.length || timber ? S.joinery : glassFinish;
+    fill(inner, panes, -inset, .92, !panes.length && (layer === 96 || layer === 107) ? FURNISHED_PANE : back);
+    // The shopfitter inserts a frame between the masonry piers, with a
+    // continuous head above the lights. Keep the stone arch of older shops.
+    if (glassFinish === S.display && !rise && !oval && r - l > 1.25 && t > 2.45) {
+      const side = Math.min(.105, l * .7, (bay - r) * .7);
+      const head = Math.min(storey - .32, t + .31);
+      const board = (lo: number, low: number, hi: number, high: number, depth: number, sign = false) => {
+        const face = rectangle(lo, low, hi, high);
+        ring(face, face, .001, depth, .94, S.shopPaint);
+        if (sign) {
+          // On the fascia's front the fourth coordinate is the vertical position
+          // in the lettering. It survives clipping across source triangles.
+          const [a, b, c, d] = face.map(([x, y], i): Point => [x, y, depth, i < 2 ? 0 : 1]);
+          tris.push([a,b,c,1,S.shopSign], [a,c,d,1,S.shopSign]);
+        } else fill(face, [], depth, 1, S.shopPaint);
+      };
+      if (head > t + .10 && side > .03) {
+        board(l - side, b, l, t, .066);
+        board(r, b, r + side, t, .066);
+        board(l - side, t, r + side, head, .078, true);
+        board(l - side - .016, head, r + side + .016, head + .034, .105);
+        // A lowered folding awning with a short valance. Both winding orders
+        // are needed for the inside of the thin fabric when walking under it.
+        if (awning && t - .51 > 2.24) {
+          const lo = l - side, hi = r + side, reach = Math.min(.94, (hi - lo) * .42);
+          const strip = (y: number, z: number, nextY: number, nextZ: number, light: number) => {
+            const a: Point = [lo, y, z], b: Point = [hi, y, z], c: Point = [hi, nextY, nextZ], d: Point = [lo, nextY, nextZ];
+            tris.push([a,c,b,light,S.canvas], [a,d,c,light,S.canvas], [a,b,c,.73,S.canvas], [a,c,d,.73,S.canvas]);
+          };
+          strip(t, .09, t - .32, reach, 1);
+          strip(t - .32, reach, t - .45, reach, .94);
+          // Narrow hinged arms under the roller, visible when looking up.
+          for (const x of [lo + .09, hi - .09]) {
+            const arm = (offset: number): Point[] => [
+              [x + offset, t - .51, .055], [x + offset, t - .35, reach - .025],
+              [x + offset, t - .323, reach - .025], [x + offset, t - .48, .055],
+            ];
+            const left = arm(-.014), right = arm(.014);
+            tris.push([left[0], left[1], left[2], 1, S.iron], [left[0], left[2], left[3], 1, S.iron],
+              [right[2], right[1], right[0], 1, S.iron], [right[3], right[2], right[0], 1, S.iron]);
+            for (let i = 0; i < 4; i++) {
+              const j = (i + 1) % 4;
+              tris.push([left[i], right[i], right[j], 1, S.iron], [left[i], right[j], left[j], 1, S.iron]);
+            }
+          }
+        }
+      }
+    }
     // Cut limestone voussoirs around a round-headed portal. Their narrow
     // joints follow the arch; the centre keystone projects past its neighbours.
     if (rise > .12 && !oval && style <= 1) {
@@ -155,7 +223,7 @@ const j = (i + 1) % outer.length;
           return [cx + Math.cos(angle) * (rx + (outer ? thick : .026)), cy + Math.sin(angle) * (rise + (outer ? thick : .026))];
         };
         const block = [arc(0, false), arc(0, true), arc(.5, true), arc(1, true), arc(1, false), arc(.5, false)];
-        ring(block, block, () => .002, () => depth, .94, S.dressedStone);
+        ring(block, block, .002, depth, .94, S.dressedStone);
         fill(block, [], depth, 1, S.dressedStone);
       }
     }
@@ -175,11 +243,11 @@ const j = (i + 1) % outer.length;
     if (doorway && [8, 18, 56, 57, 67, 69, 79, 82, 90, 93, 114, 138, 141, 143].includes(layer)) {
       const hx = (l + r) * .5 + .051, hy = b + Math.min(1.03, (t - b) * .42);
       const plate = outline(hx - .027, hy - .081, hx + .027, hy + .081, .018, false);
-      ring(plate, plate, () => -inset, () => -inset + .009, 1, S.brass); fill(plate, [], -inset + .009, 1, S.brass);
+      ring(plate, plate, -inset, -inset + .009, 1, S.brass); fill(plate, [], -inset + .009, 1, S.brass);
       const grip = rectangle(hx - .012, hy + .018, hx + .096, hy + .040);
-      ring(grip, grip, () => -inset + .034, () => -inset + .050, 1, S.brass); fill(grip, [], -inset + .050, 1, S.brass);
+      ring(grip, grip, -inset + .034, -inset + .050, 1, S.brass); fill(grip, [], -inset + .050, 1, S.brass);
       const spindle = rectangle(hx - .011, hy + .014, hx + .014, hy + .043);
-      ring(spindle, spindle, () => -inset + .009, () => -inset + .039, 1, S.brass);
+      ring(spindle, spindle, -inset + .009, -inset + .039, 1, S.brass);
     }
   }
   fill(rectangle(0, 0, bay, storey), holes, 0, 1);
@@ -188,7 +256,7 @@ const j = (i + 1) % outer.length;
     const edge: V2[] = cap.map(([x, y]) => [(bay - moduleWidth) / 2 + x / 256 * moduleWidth, (1 - y / 512) * storey]);
     if (THREE.ShapeUtils.isClockWise(edge.map(([x, y]) => new THREE.Vector2(x, y)))) edge.reverse();
     // The painted hood (flat, arched or pedimented) projects as a shaped stone.
-    ring(edge, edge, () => 0, () => .118, .91, S.reveal); fill(edge, [], .118, 1);
+    ring(edge, edge, 0, .118, .91, S.reveal); fill(edge, [], .118, 1);
   }
   // Continuous stone courses cross the piers. Interrupt them at the measured
   // openings so a plinth never crosses a shop door or a basement window.
@@ -243,7 +311,7 @@ function clip(poly: Point[], a: V2, b: V2, sign: number) {
 export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color' | 'facade'>, sky: Float32Array, triangles: Uint32Array): FacadeGeometry | null {
   const { position: p, color: c, facade: f } = arrays, first = triangles[0] * 12, w = f[first + 3], width = wallLength(f[first + 2]), style = Math.floor(w), bays = baysOf(style, width);
   if (!bays || style >= BLANK || width < 2) return null;
-  const look = Math.min(F_MOD.length - 1, Math.floor((w - style) * 32768) % 16), bay = width / bays, mw = Math.min(bay, F_MOD[look]);
+  const seed = Math.floor((w - style) * 32768) % 997, bay = width / bays;
   const ground = F_GROUND[style], storey = F_STOREY[style] * (STOREY_FIT[0] + (Math.floor((w - style) * 1024) % 32) * STOREY_FIT[1] / 31);
   const pos: number[] = [], norm: number[] = [], col: number[] = [], fac: number[] = [], shade: number[] = [], detail: number[] = [];
   const foot: number[] = [];
@@ -260,7 +328,7 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
   function fits(layer: number, j: number, row: number, bottom: number, h: number) {
     const key = row * bays + j, seen = eligible.get(key);
     if (seen !== undefined) return seen;
-    const start = j * bay + (bay - mw) / 2;
+    const mw = Math.min(bay, F_STREET_WIDTH[layer]), start = j * bay + (bay - mw) / 2;
     const ok = openings[layer].every(([x0, y0, x1, y1]) => {
       const lo = start + x0 / 256 * mw - .045, hi = start + x1 / 256 * mw + .045;
       const peak = caps[layer].reduce((y, p) => Math.min(y, p[1]), y0);
@@ -293,7 +361,7 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
       }
     }
     const minX = Math.min(a[0], b[0], d[0]), maxX = Math.max(a[0], b[0], d[0]), minY = Math.min(a[1], b[1], d[1]), maxY = Math.max(a[1], b[1], d[1]);
-    const emit = (poly: Point[], layer: number, ao: number, kind: number = S.masonry) => {
+    const emit = (poly: Point[], layer: number, ao: number, kind: number = S.masonry, paint?: THREE.Color, finish?: number) => {
       const sign = Math.sign(det);
       for (const [p0, p1] of [[a, b], [b, d], [d, a]]) {
         if (!poly.length) return;
@@ -313,9 +381,14 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
         if (normal.lengthSq() < 1e-14) continue; normal.normalize();
         for (const t of q) {
           pos.push(t.world.x, t.world.y, t.world.z); norm.push(normal.x, normal.y, normal.z);
-          for (let j = 0; j < 3; j++)col.push(c[o + j] + t.u * (c[o + 3 + j] - c[o + j]) + t.v * (c[o + 6 + j] - c[o + j]));
+          if (paint) col.push(paint.r, paint.g, paint.b);
+          else for (let j = 0; j < 3; j++)col.push(c[o + j] + t.u * (c[o + 3 + j] - c[o + j]) + t.v * (c[o + 6 + j] - c[o + j]));
           fac.push(t.x, t.y, f[k + 2], w); shade.push(sky[vertex] + t.u * (sky[vertex + 1] - sky[vertex]) + t.v * (sky[vertex + 2] - sky[vertex]));
-          detail.push(layer, ao * t.light, kind, t.depth);
+          // For a glazed light the spare depth channel identifies the curtains
+          // or blind shared by its sashes. Reveal faces still carry real depth.
+          const fascia = kind === S.shopSign;
+          const value = fascia ? (finish ?? 0) + .04 + .92 * t.light : finish ?? t.depth;
+          detail.push(layer, fascia || kind === S.shopPaint ? ao : ao * t.light, kind, value);
         }
       }
     };
@@ -331,7 +404,7 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
       const bottom = row ? ground + (row - 1) * storey : 0, h = row ? storey : ground;
       if (bottom >= maxY || bottom + h <= minY) continue;
       for (let j = Math.max(0, Math.floor(minX / bay)); j < Math.min(bays, Math.ceil(maxX / bay)); j++) {
-        const layer = streetModule(w, j, row, bays), key = layer * 2 + (row ? 1 : 0);
+        const layer = streetModule(w, j, row, bays);
         if (!fits(layer, j, row, bottom, h)) {
           // The map clips this bay at a passage, gable or parapet. Leave a
           // plain infill here instead of exposing half a window at the roofline.
@@ -340,13 +413,27 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
           emit([[lo, bottom, 0], [hi, top, 0], [lo, top, 0]], layer, 1, S.infill);
           continue;
         }
+        const shop = !row && SHOPFRONTS.has(layer), group = Math.floor(j / 2);
+        const finish = shop ? SHOP_FINISHES[Math.floor(pick(seed, group, 12) * SHOP_FINISHES.length)] : null;
+        const awning = shop && pick(seed, group, 13) < .36;
+        // Two adjacent displays see one room; only its first fascia names it.
+        const sign = shop && (j % 2 === 0 || !SHOPFRONTS.has(streetModule(w, j - 1, 0, bays)));
+        const trade = Math.floor(pick(seed, group, 9) * 4);
+        const furnishing = pick(seed, j, 20 + row);
+        const key = layer * 4 + Number(!!row) * 2 + Number(awning);
         let shape = shapes.get(key);
-        if (!shape) { shape = cellShape(layer, bay, h, mw, !!row, style); shapes.set(key, shape); }
+        if (!shape) {
+          shape = cellShape(layer, bay, h, Math.min(bay, F_STREET_WIDTH[layer]), !!row, style, awning);
+          shapes.set(key, shape);
+        }
         for (const [l, m, r, ao, kind] of shape) {
           const dx = j * bay;
           if (dx + Math.min(l[0], m[0], r[0]) > maxX || dx + Math.max(l[0], m[0], r[0]) < minX ||
             bottom + Math.min(l[1], m[1], r[1]) > maxY || bottom + Math.max(l[1], m[1], r[1]) < minY) continue;
-          emit([l, m, r].map(([x, y, z, light]) => [dx + x, bottom + y, z, light]), layer, ao, kind);
+          const paint = kind === S.shopPaint || kind === S.shopSign ? finish?.[0] : kind === S.canvas ? finish?.[1] : undefined;
+          const pane = kind === FURNISHED_PANE;
+          const surface = pane ? S.glass : kind === S.shopSign && !sign ? S.shopPaint : kind;
+          emit([l, m, r].map(([x, y, z, light]) => [dx + x, bottom + y, z, light]), layer, ao, surface, paint, pane ? furnishing : surface === S.shopSign ? trade : undefined);
         }
         if (openings[layer]?.length) modeled = true;
       }
@@ -360,10 +447,10 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
     const left = u - .44, right = u + .44, low = h - .24, high = h + .24;
     if (left < 0 || right > width || high > ground - .30) return false;
     for (let j = Math.floor(left / bay); j <= Math.min(bays - 1, Math.floor(right / bay)); j++) {
-      const start = j * bay + (bay - mw) / 2, layer = streetModule(w, j, 0, bays);
+      const layer = streetModule(w, j, 0, bays), mw = Math.min(bay, F_STREET_WIDTH[layer]), start = j * bay + (bay - mw) / 2;
       if (openings[layer].some(([x0, y0, x1, y1]) =>
         right > start + x0 / 256 * mw - .23 && left < start + x1 / 256 * mw + .23 &&
-        high > (1 - y1 / 512) * ground - .15 && low < (1 - y0 / 512) * ground + .24)) return false;
+        high > (1 - y1 / 512) * ground - .15 && low < (1 - y0 / 512) * ground + (SHOPFRONTS.has(layer) ? .36 : .24))) return false;
     }
     if (![left, right].every(x => onWall(x, low) && onWall(x, high))) return false;
     for (const tri of triangles) {

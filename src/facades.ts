@@ -19,7 +19,7 @@ export const FACADE_ON = { value: 0 };
 export const STREET_FACADE = { value: 0 };
 // Surface codes carried by the optional street mesh. The back of a closed
 // timber door and the metal in front of cellar glass must never light as rooms.
-export const F_SURFACE = { masonry: 0, glass: 1, reveal: 2, dressedStone: 3, plinth: 4, joinery: 5, brass: 6, grilleGlass: 7, iron: 8, display: 9, infill: 10 } as const;
+export const F_SURFACE = { masonry: 0, glass: 1, reveal: 2, dressedStone: 3, plinth: 4, joinery: 5, brass: 6, grilleGlass: 7, iron: 8, display: 9, infill: 10, shopPaint: 11, canvas: 12, shopSign: 13 } as const;
 
 let loading = null;
 export function loadFacadeAtlas() {
@@ -154,8 +154,9 @@ export const WALL_CODES: [number, Mix][] = [
 // older looks, nearly half the buildings have their stucco a lighter shade than the
 // wall (two-tone), as many of Prague's houses do. All of it goes in the fraction of the
 // facade attribute's w, with the wall's random pick:
-// (pick × 1024 + fit × 32 + two-tone × 16 + look + 0.5) / 32768, five, five, one and
-// four bits (fLook, fStorey and fTwoTone in the shaders). `lines`: the walls, as facadeCoords gives them; `base(t)`:
+// (pick × 1024 + fit × 32 + two-tone × 16 + look + fraction) / 32768, five, five, one and
+// four bits (fLook, fStorey and fTwoTone in the shaders). Within the last unit, eight
+// bin centres identify a composition shared by the building's walls. `lines`: the walls, as facadeCoords gives them; `base(t)`:
 // the colour a triangle came with (see paintWalls); `code(t)`: what the map says
 // (WALL_CODES), if it says.
 export function finishWalls(p: Float32Array, facade: Float32Array, lines: WallLine[], base: (t: number) => [number, number, number], code?: (t: number) => number) {
@@ -179,7 +180,8 @@ export function finishWalls(p: Float32Array, facade: Float32Array, lines: WallLi
       sum += mix[i][1] / all;
       if (r < sum) { look = mix[i][0]; break; }
     }
-    const fraction = (Math.floor((w - whole) * 32) * 1024 + fit * 32 + (STUCCO.has(look) ? two * 16 : 0) + look + 0.5) / 32768;
+    const composition = Math.floor(cellHash(r * 13, 5.3) * 8);
+    const fraction = (Math.floor((w - whole) * 32) * 1024 + fit * 32 + (STUCCO.has(look) ? two * 16 : 0) + look + (composition + .5) / 8) / 32768;
     for (const t of l.tris) for (let o = t * 12 + 3; o < t * 12 + 12; o += 4) facade[o] = Math.floor(facade[o]) + fraction;
     if (whole < BLANK) windowRows(facade, l, style, STOREY_FIT[0] + fit * STOREY_FIT[1] / 31);
   }
@@ -632,6 +634,37 @@ export const F_WALL = [
   54, 55, 58, 6, 21, 22, 23, 20, 30, 30, 30, 35, 33, 35, 33, 35, 43, 46, 47, 43, 66, 68, 70, 71, 78, 80, 81, 83,
   91, 92, 94, 95, 102, 106, 107, 102, 116, 118, 119, 116, 127, 128, 129, 131, 139, 140, 142, 140, 43, 30, 47, 43];
 export const F_MOD = [1.9, 1.9, 2, 2.4, 1.9, 1.9, 1.9, 1.9, 2, 1.9, 2.4, 1.9, 2];
+// Two elevations per period. Each quartet is the first floor's ordinary and
+// accented windows, the middle storeys, then the quieter windows above them.
+// The final pair is a residential ground-floor window and a plain or cellar bay.
+// Modern infill carries its accent up the building. Panel blocks keep their
+// stacked loggias and stairs; detached houses keep their own floor-by-floor mix.
+export const F_ELEVATION = [
+  [48, 49, 51, 50, 49, 48, 52, 50, 54, 59],       // neo-Renaissance
+  [12, 13, 15, 12, 13, 15, 12, 15, 21, 23],       // baroque
+  [24, 25, 24, 24, 25, 24, 25, 25, 33, 35],       // functionalist
+  [], [],                                  // panel, house
+  [60, 62, 61, 65, 63, 64, 60, 65, 68, 70],       // Art Nouveau
+  [72, 73, 75, 76, 74, 72, 74, 76, 78, 83],       // plain tenement
+  [84, 85, 87, 89, 86, 88, 84, 89, 92, 94],       // early 20th century
+  [96, 97, 96, 96, 98, 100, 98, 98, 107, 106],    // modern infill
+  [109, 110, 108, 112, 112, 109, 110, 108, 116, 118], // burgher
+  [],                                      // renovated panel
+  [132, 134, 133, 137, 135, 136, 132, 137, 140, 142], // sorela
+  [39, 24, 39, 39, 24, 39, 24, 24, 43, 47],       // postwar
+].flatMap(row => row.length ? row : Array(10).fill(0));
+// The measured casement only occupies about 40% of its atlas cell. At eye
+// height give it room for a pair of sashes. Display windows and coach gates
+// can fill the bay between piers; house doors retain their domestic scale.
+export const SHOPFRONTS = new Set([6, 20, 30, 58, 66, 71, 80, 81, 91, 95, 102, 115, 119, 128, 139]);
+const GATES = new Set([9, 18, 57, 69, 82, 93, 117, 141]);
+export const F_STREET_WIDTH = Array.from({ length: SHEETS * 12 }, (_, layer) => {
+  if (SHOPFRONTS.has(layer) || GATES.has(layer)) return 3.6;
+  if (layer >= 96 && layer < 108 || layer === 24 || layer === 25) return 2.9;
+  if (layer >= 27 && layer <= 29 || layer >= 120 && layer < 132) return 2.4;
+  if (layer < 24 || layer >= 48 && layer % 12 < 6) return 2.55;
+  return 2;
+});
 const LOOKS = F_MOD.length;
 const glslArray = (type: string, v: number[]) => `${type}[${v.length}](${v.map((x) => (type === 'float' ? x.toFixed(2) : x)).join(', ')})`;
 export const FACADE_GLSL = /* glsl */ `
@@ -641,6 +674,8 @@ uniform float uStreetFacade;
 const int F_UP[${LOOKS * 6}] = ${glslArray('int', F_UP)};
 const int F_DOOR[${LOOKS * 3}] = ${glslArray('int', F_DOOR)};
 const int F_WALL[${LOOKS * 4}] = ${glslArray('int', F_WALL)};
+const int F_ELEVATION[${F_ELEVATION.length}] = ${glslArray('int', F_ELEVATION)};
+const float F_STREET_WIDTH[${F_STREET_WIDTH.length}] = ${glslArray('float', F_STREET_WIDTH)};
 const float F_BAY[5] = ${glslArray('float', F_BAY)};
 const float F_MOD[${LOOKS}] = ${glslArray('float', F_MOD)};
 const float F_GROUND[5] = ${glslArray('float', F_GROUND)};
@@ -664,6 +699,9 @@ float fBays(vec4 f) {
 }
 int fLook(vec4 f) { return min(int(mod(floor(fract(f.w) * 32768.), 16.)), ${LOOKS - 1}); }
 float fTwoTone(vec4 f) { return mod(floor(fract(f.w) * 2048.), 2.); }
+// House composition shares the last fraction. Keep the original wall seed
+// for the overhead layout and window lights.
+float fSeed(vec4 f) { return (floor(fract(f.w) * 32768.) + .5) / 32768.; }
 // Same integer choice as map/streetFacade.ts, so a detailed opening keeps
 // the shape and shop it had when seen from the far end of the street.
 float streetPick(float seed, float column, float salt) {
@@ -673,28 +711,36 @@ float streetPick(float seed, float column, float salt) {
 int streetLayer(vec4 f, float bays, vec2 cell, bool ground) {
   float seed = mod(floor(fract(f.w) * 32768.), 997.);
   int look = fLook(f);
+  float composition = floor(fract(f.w * 32768.) * 8.);
   if (ground) {
-    float run = min(bays, 8.);
-    if (mod(cell.x, run) == floor(streetPick(seed, 0., 1.) * run)) {
+    float run = min(bays, 8.), entrance = floor(streetPick(seed, 0., 1.) * run);
+    bool residential = floor(f.w) < 2. && composition >= 5.;
+    if (mod(cell.x, run) == entrance) {
+      if (residential) return F_DOOR[look * 3];
       int door = F_DOOR[look * 3 + int(streetPick(seed, floor(cell.x/run), 2.) * 3.)];
       return door == 19 ? 18 : door;
     }
-    return F_WALL[look*4 + int(streetPick(seed, floor(cell.x/6.), 3.)*4.)];
+    if (residential) return F_ELEVATION[look*10 + (mod(cell.x, run) == mod(entrance + 1., run) ? 9 : 8)];
+    return F_WALL[look*4 + int(streetPick(seed, floor(cell.x/3.), 3.)*4.)];
   }
-  return F_UP[look*6 + int(streetPick(seed, look == 3 || look == 10 ? cell.x : cell.y+1., 4.)*6.)];
+  if (look == 3 || look == 10 || look == 4)
+    return F_UP[look*6 + int(streetPick(seed, look == 4 ? cell.y+1. : cell.x, 4.)*6.)];
+  float edge = min(cell.x, bays - 1. - cell.x), rhythm = mod(composition, 3.);
+  bool accent = bays >= 3. && (rhythm == 0. ? edge == 0. : rhythm == 1. ? edge == floor((bays-1.)/2.) : mod(edge, 2.) == 1.);
+  int role = cell.y == 0. || look == 8 ? (accent ? 1 : 0) : (cell.y == 1. ? 2 : 3);
+  return F_ELEVATION[look*10 + int(mod(composition, 2.))*4 + role];
 }
 vec3 facadeModuleAt(vec3 wall, vec4 f, vec4 fdx, vec4 fdy, float explicitLayer) {
   float bays = fBays(f);
   // Bare plaster, as bright as the modules' plaster (drawn about .45 grey: × .8).
   if (bays < .5) return wall * (.77 + .06 * vnoise(f.xy * vec2(.9, .6)));
   int style = int(floor(f.w));
-  float seed = fract(f.w) * 97.;
+  float seed = fSeed(f) * 97.;
   int look = min(fLook(f), ${LOOKS - 1});
   vec2 st = fStorey(f);
   vec2 q = vec2(f.x / f.z * bays, f.y < st.x ? clamp(f.y / st.x, 0., .999) : (f.y - st.x) / st.y);
   vec2 cell = floor(q), uv = fract(q);
   float bay = f.z / bays, mw = min(F_MOD[look], bay);
-  float u = clamp((uv.x - .5) * bay / mw + .5, .016, .984);
   int layer;
   if (explicitLayer >= 0.) layer = int(explicitLayer + .5);
   else if (uStreetFacade > .5) layer = streetLayer(f, bays, cell, f.y < st.x);
@@ -702,7 +748,9 @@ vec3 facadeModuleAt(vec3 wall, vec4 f, vec4 fdx, vec4 fdy, float explicitLayer) 
     float r = fHash(seed, cell.x);
     layer = r < .18 ? F_DOOR[look * 3 + int(r / .18 * 3.)] : F_WALL[look * 4 + int(fHash(cell.x, seed) * 4.)];
   } else layer = F_UP[look * 6 + int(fHash(seed, look == 3 || look == 10 ? cell.x + 50. : cell.y + 7.) * 6.)];
-  vec2 k = vec2(1. / mw, 1. / st.y);
+  if (uStreetFacade > .5) mw = min(bay, F_STREET_WIDTH[layer]);
+  float u = clamp((uv.x - .5) * bay / mw + .5, .016, .984);
+  vec2 k = vec2(1. / mw, 1. / (uStreetFacade > .5 && f.y < st.x ? st.x : st.y));
   vec4 tm = textureGrad(uFacades, vec3(u, 1. - uv.y, float(layer)), fdx.xy * k, fdy.xy * k);
   vec3 t = tm.rgb;
   // Plaster is drawn neutral grey: give it the wall's colour, or on a two-tone house its

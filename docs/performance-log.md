@@ -1961,3 +1961,11 @@ trilinear filtering. Pixel 5, Medium, 60 s, no `&dev`, no touches, 31–32 °C:
 Within the noise, and the picture is the same, so the textures stay as they are. With the
 shadow filter and the lamp and mirror code, three of the four shading leads above came to
 little; what is left is the pattern (6.6 ms), which is the look itself.
+
+### Street-level façades on Vodičkova (23 November)
+
+From 50.0804883, 14.4239302, facing 247.6° on foot, desktop Chrome ran the original
+façades (`21da2fbe`) and the revised façades in three alternating pairs. WebGPU, High,
+1×, clear summer afternoon, eight seconds per run. Mean frame times were 7.33, 7.39
+and 7.76 ms before, and 7.50, 7.33 and 7.98 ms after. The average difference of
+0.11 ms was smaller than the variation between runs. Mobile performance is unmeasured.

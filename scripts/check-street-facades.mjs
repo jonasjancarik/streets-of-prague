@@ -22,7 +22,7 @@ const count = result.position.length / 3;
 for (const [key, size] of Object.entries({ normal: 3, color: 3, facade: 4, detail: 4, sky: 1 })) {
   assert.equal(result[key].length, count * size, key); assert.ok(result[key].every(Number.isFinite), key);
 }
-let front = 0, deep = 0, sill = 0, glass = 0;
+let front = 0, deep = 0, sill = 0, glass = 0, jambs = 0;
 for (let i = 0; i < count; i += 3) {
   let x = 0, y = 0;
   for (let k = i; k < i + 3; k++) {
@@ -32,9 +32,17 @@ for (let i = 0; i < count; i += 3) {
     assert.ok(Math.abs(Math.hypot(...result.normal.subarray(k * 3, k * 3 + 3)) - 1) < 1e-5, 'unit surface normal');
   }
   assert.ok(!(x > 5.001 && x < 6.999 && y < 2.999), 'no face closes the existing passage');
+  if (result.detail[i * 4 + 2] === F_SURFACE.reveal) {
+    const depths = [0, 1, 2].map(j => result.position[(i + j) * 3 + 2]);
+    const heights = [0, 1, 2].map(j => result.position[(i + j) * 3 + 1]);
+    if (Math.min(...depths) < -.08 && Math.max(...heights) - Math.min(...heights) > .45) {
+      jambs++;
+      assert.ok(Math.max(...depths) <= .0471, 'a tall jamb never projects out to sill depth');
+    }
+  }
   if (result.position[i * 3 + 2] === 0 && result.normal[i * 3 + 2] > .99) front++;
 }
-assert.ok(front && deep && sill && glass, 'front planes, actual recesses, projecting stone and panes');
+assert.ok(front && deep && sill && glass && jambs, 'front planes, actual recesses, projecting stone, straight jambs and panes');
 const blank = buffers.facade.slice(); for (let i = 3; i < blank.length; i += 4)blank[i] += 5;
 assert.equal(packStreetWalls(blank, [{ tris: [...tris] }]).length, 0, 'party walls excluded');
 assert.equal(streetModule(1 + .5 / 32768, 0, 0, 1) === 19, false, 'an inferred entrance never masquerades as an open tunnel');
@@ -77,3 +85,42 @@ for (let i = 0; i < shopWall.detail.length; i += 4) {
 }
 assert(shopPanes.length > 0 && shopPanes.every(([h, layer]) => h < 4.4 && (layer === 66 || layer === 71)));
 console.log('Ground-floor display panes stay within the authored shop windows.');
+
+// Buildings with equal period and composition can have different wall seeds
+// and storey fits around a corner. Their principal floors still belong together.
+const packed = (look, composition, wall = 0, fit = 0) =>
+  Math.fround((wall * 1024 + fit * 32 + look + (composition + .5) / 8) / 32768);
+const upper = (w, row, bays = 7) => Array.from({ length: bays }, (_, bay) => streetModule(w, bay, row, bays));
+for (const bays of [1, 2, 5, 6, 11]) for (let composition = 0; composition < 8; composition++) {
+  const w = packed(0, composition), first = upper(w, 1, bays);
+  assert.deepEqual(first, upper(packed(0, composition, 31, 17), 1, bays));
+  assert.deepEqual(first, first.toReversed(), 'balanced window hoods on even and odd fronts');
+  assert.equal(new Set(first).size, bays < 3 ? 1 : 2);
+  assert.equal(new Set(upper(w, 3, bays)).size, 1, 'a simpler upper storey');
+}
+for (const look of [3, 8, 10]) {
+  const w = packed(look, 1, 14);
+  assert.deepEqual(upper(w, 1), upper(w, 3), 'stacked modern windows and loggias');
+}
+const residential = Array.from({ length: 8 }, (_, bay) => streetModule(packed(1, 6), bay, 0, 8));
+assert.equal(residential.filter(layer => layer === 18).length, 1, 'a single residential entrance');
+assert.ok(residential.includes(21) && residential.includes(23) && residential.every(layer => [18, 21, 23].includes(layer)),
+  'an Old Town residential front has a barred window and sheltered plaster beside its portal');
+
+const awningWall = buildStreetWall({ ...buffers, facade: Float32Array.from(shopFacade, (v, i) =>
+  i % 4 === 3 ? (101 + .25) / 32768 : v) }, sky, tris);
+let canvas = 0, frame = 0, signs = 0;
+for (let i = 0; i < awningWall.detail.length; i += 4) {
+  const kind = awningWall.detail[i + 2], height = awningWall.facade[i + 1];
+  if (kind === F_SURFACE.shopPaint) frame++;
+  if (kind === F_SURFACE.shopSign) {
+    signs++;
+    assert.ok(awningWall.detail[i + 3] >= 0 && awningWall.detail[i + 3] < 4 && height < 4.4, 'a shop sign selects a display from the atlas');
+  }
+  if (kind !== F_SURFACE.canvas) continue;
+  canvas++;
+  assert.ok(height >= 2.24 && height < 4.4, 'fabric clears the pavement and the upper storeys');
+  assert.ok(awningWall.position[i / 4 * 3 + 2] <= .95, 'awning stays close to its shop');
+}
+assert.ok(canvas && frame && signs, 'a rectangular display receives a lettered fascia and awning');
+console.log('Verified window composition, vertically stacked bays and shop awning clearance.');
