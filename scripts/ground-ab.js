@@ -7,7 +7,9 @@
 // MODE: hide (no ground layers at all), basic (an unlit flat colour: what drawing the layers
 // costs before any shading), flat (lit, but no pattern, lamp light, mirror, normal or sky
 // darkening), noemissive (no lamp light or wet mirror), nonormal (no surface normals), noshadow
-// (no sun's shadow on the ground), nopattern (userData.flatten(): the pattern alone).
+// (no sun's shadow on the ground), noao (no darkening where less of the sky is seen), nocolor
+// (the plain layer colour: no pattern, hill shading, weathering or wet), nopattern
+// (userData.flatten(): the pattern alone).
 // The ground's depth-only meshes and the soft shading stay as they are.
 // (Standing still: tiles that arrive during the run keep their own materials.)
 window.__ab = async (on) => {
@@ -36,10 +38,14 @@ window.__ab = async (on) => {
       for (const k of ['side', 'depthWrite', 'depthTest', 'transparent', 'opacity', 'blending', 'stencilWrite', 'stencilRef', 'stencilFunc', 'stencilZPass', 'stencilWriteMask', 'polygonOffset', 'polygonOffsetFactor', 'polygonOffsetUnits']) b[k] = m[k];
       return b;
     }
+    // clone() leaves out the tile textures the graph reads from the material (src/webgpu.ts).
     const f = m.clone();
+    for (const k of ['raster', 'relief', 'sky', 'mask', 'photo']) { f[k + 'Map'] = m[k + 'Map']; f[k + 'Box'] = m[k + 'Box']; }
     if (MODE === 'flat') Object.assign(f, { colorNode: TSL.vec4(TSL.materialColor, 1), emissiveNode: null, normalNode: null, aoNode: null });
     if (MODE === 'noemissive') f.emissiveNode = null;
     if (MODE === 'nonormal') f.normalNode = null;
+    if (MODE === 'noao') f.aoNode = null;
+    if (MODE === 'nocolor') f.colorNode = TSL.vec4(TSL.materialColor, 1);
     return f;
   };
   for (const o of layers) {
