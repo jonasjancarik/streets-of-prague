@@ -227,6 +227,9 @@ async function runScene(browser, name, base = URL_BASE) {
   }
   // --hitches: recording starts now, before the player gets in and drives off.
   if (args.hitches) await page.evaluate(readFileSync(new URL('./bench-hitches.js', import.meta.url), 'utf8'));
+  // Keys must reach the game, not a text field: ?dev opens the developer panel with its
+  // place search focused, which keeps W and Shift to itself (the drive stood at 0 km/h).
+  await page.evaluate(() => { const a = document.activeElement; if (a && a !== document.body && a.blur) a.blur(); });
   await page.keyboard.press('KeyH'); // fold the help card away
   let seated = null;
   if (place.drive) {
@@ -249,6 +252,14 @@ async function runScene(browser, name, base = URL_BASE) {
   if (!args.hitches) {
     await page.waitForTimeout(args.settle !== undefined ? Number(args.settle) * 1000 : place.drive ? 3000 : 6000);
     if (args.settle === undefined) await page.waitForFunction(() => !window.__drive.world.busy, null, { timeout: 60000, polling: 200 }).catch(() => {});
+  }
+  if (place.drive && !args.hitches) {
+    // A drive that doesn't move measures a parked car: say so, and what has the keys.
+    const still = await page.evaluate(() => {
+      const c = window.__drive.car, a = document.activeElement;
+      return c && c.speed * 3.6 < 2 ? { kmh: Math.round(c.speed * 36) / 10, focus: a && a !== document.body ? `${a.tagName.toLowerCase()}${a.id ? '#' + a.id : ''}` : null } : null;
+    });
+    if (still) console.error(`[${name}] warning: the car stands at ${still.kmh} km/h after settling${still.focus ? ` (keys go to ${still.focus})` : ''}; this times a parked car, not a drive`);
   }
   if (args.eval) { const out = await page.evaluate(args.eval); if (out !== undefined) console.log(typeof out === "string" ? out : JSON.stringify(out, null, 1)); await page.waitForTimeout(1000); }
   if (args.shot) {

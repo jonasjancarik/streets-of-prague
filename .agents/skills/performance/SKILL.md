@@ -128,6 +128,10 @@ headless **Google Chrome** on the GPU at fixed places (`stand`, `drive`, `woods`
 - Before trusting a big speed-up, take a `--shot` (and run with `--extra "&dev"`,
   which prints shader compile errors). A shader that fails to compile draws
   nothing, and nothing is fast: a "3.8× faster" ground was really no ground.
+  `&dev` also opens the developer panel with its place search focused, which keeps
+  the keys from the game: the bench takes the focus off it before pressing any
+  (until 23 November a drive with `&dev` stood still at 0 km/h), and warns when a
+  drive's car stands still after settling. Check the `km/h` in a drive's result.
 - **Read the console lines the bench prints**, above the numbers. A WebGPU pipeline
   that fails (`Vertex input variable … exceeds the maximum (16)`, `Invalid
   RenderPipeline`) leaves its objects undrawn: fewer triangles, and a frame that looks

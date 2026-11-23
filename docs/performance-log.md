@@ -1764,3 +1764,18 @@ will be now uses the measured lag (frames without culling 31 % → 20–23 %), a
 cost less at their worst (560 → 43–69 ms) but not on average (about 8.5 ms a frame on
 the phone). Four more driving A/Bs: 12.7 %, 8.9 %, 8.3 % and 15.4 % quicker (28–33 °C).
 
+
+### The drive that stood still with `&dev` (23 November)
+
+The drive scene with `--extra "&dev"` stood at 0 km/h, on the Pixel 5 and on the M5
+alike: `?dev` opens the developer panel and focuses its place search, which stops the
+keys there (so typing a place doesn't drive the car), and the bench's Shift and W never
+reached the game. Stepping the simulation by hand drove the car, so the start place,
+getting in and lane assist were fine. `bench.mjs` now takes the focus off a text field
+before pressing keys, and warns when a drive's car stands still after settling (naming
+what has the keys).
+
+Pixel 5, Medium, tier pixel ratio (1.5×), first person, sedan, `&dev`, 45 s, no touches:
+6.9 fps both runs (29.4 °C and 30.1 → 31.2 °C), 30 km/h by lane assist from about 12 s
+to the end of timing. At 7 fps the game's step limit (0.05 s) runs the world at about a
+third of real time, so 30 km/h on the speedometer covered about 3 m a second.
