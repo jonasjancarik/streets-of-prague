@@ -1,5 +1,6 @@
 import { StreetHandling, ROLL_CENTRE } from './streetHandling.ts';
 import { STREET_QUALITY } from './streetQuality.ts';
+import { drivingSpec } from './driveTune.ts';
 import { busCabin, commercialCab } from './commercialCab.ts';
 import { twoWheelerStreet } from './twoWheelerStreet.ts';
 import * as THREE from 'three';
@@ -1911,7 +1912,8 @@ export class Car {
   update(dt: number, ctl: CarControl | null, grid: CarGrid, realistic = false) {
     if (grid.view) grid = grid.view(this);
     ctl = ctl || { throttle: 0, steer: 0, handbrake: false };
-    const S = this.spec, fx = Math.cos(this.h), fy = Math.sin(this.h);
+    // (Your own car takes the developer panel's handling multipliers, driveTune.ts.)
+    const S = this.mode === 'player' ? drivingSpec(this.spec) : this.spec, fx = Math.cos(this.h), fy = Math.sin(this.h);
     let slope = 0;
     if (grid.height) {
       const half = S.L / 2;
@@ -1921,10 +1923,10 @@ export class Car {
     const thrust = ctl.cap == null || ctl.throttle <= 0 ? ctl.throttle : Math.min(ctl.throttle, clamp((ctl.cap - (this.vx * fx + this.vy * fy)) / 2, 0, 1));
     if (realistic && this.mode === 'player' && S.cabin) {
       this.suspension ??= new StreetHandling(this.forwardSpeed, closeBodies.get(this.key)?.wheelbase ?? S.L * .62);
-      this.suspension.advance(this, ctl, 1 - weatherLoss, slope, dt);
+      this.suspension.advance(this, S, ctl, 1 - weatherLoss, slope, dt);
     } else {
       this.suspension = undefined;
-      this.arcadeVelocity(dt, ctl, thrust, fx, fy, slope, 1 - weatherLoss * (S.drive === 'awd' ? .6 : 1));
+      this.arcadeVelocity(S, dt, ctl, thrust, fx, fy, slope, 1 - weatherLoss * (S.drive === 'awd' ? .6 : 1));
     }
 
     // Substeps so a fast car can't skip through a thin wall.
@@ -1942,8 +1944,7 @@ export class Car {
     return impact;
   }
 
-  private arcadeVelocity(dt: number, ctl: CarControl, throttle: number, fx: number, fy: number, slope: number, road: number) {
-    const S = this.spec;
+  private arcadeVelocity(S: CarSpec, dt: number, ctl: CarControl, throttle: number, fx: number, fy: number, slope: number, road: number) {
     let vf = this.vx * fx + this.vy * fy;
     let vl = this.vx * fy - this.vy * fx;
     const fast = clamp(Math.abs(vf) / S.vmax, 0, 1);

@@ -831,6 +831,12 @@ The metro ride uses its overhead cutaway camera.
   while you hold Space. Release Space to return to the player.
   "Helicopter next to me" parks one on the nearest open ground (flown like the one on
   Palackého náměstí, see Playing).
+- **Driving sliders** (developer panel → Driving, `src/driveTune.ts`): multipliers on the
+  handling of whatever vehicle you drive: acceleration, top speed, brakes, grip, grip lost
+  at speed, fastest turning, turning circle, steering response, slowing when coasting, and
+  how much rain and snow matter. They work in both the top-down and the realistic
+  handling; 1× is the game as it ships. The values stay in this browser until Reset;
+  double-click a slider to put it back to 1×, and Copy values copies them all.
 - **VR** (`src/vr.ts`, an early version): play in a phone headset such as the
   Daydream View or a Cardboard, in Chrome on Android. Where the phone can show VR, the
   start screen has **Play in VR** and the settings' **Camera view** has a **VR** choice

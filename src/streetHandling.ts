@@ -1,12 +1,12 @@
 // A single-track model for the player's car. X is forward, lateral force is
 // positive to the left and positive yaw turns left. Forces below are per kg.
-import type { Car, CarControl } from './car.ts';
+import type { Car, CarControl, CarSpec } from './car.ts';
 
 const G = 9.81;
 export const ROLL_CENTRE = .44; // metres above the local road plane
 const clamp = (x: number, min: number, max: number) => Math.min(max, Math.max(min, x));
 
-type Vehicle = Pick<Car, 'spec' | 'h' | 'w' | 'vx' | 'vy' | 'braking' | 'skidFront' | 'skidBack'>;
+type Vehicle = Pick<Car, 'h' | 'w' | 'vx' | 'vy' | 'braking' | 'skidFront' | 'skidBack'>;
 
 export class StreetHandling {
   steer = 0; // front wheel angle, radians
@@ -24,11 +24,11 @@ export class StreetHandling {
     this.gearDirection = forward < -.25 ? -1 : 1;
   }
 
-  advance(car: Vehicle, ctl: CarControl, road: number, slope: number, dt: number) {
+  advance(car: Vehicle, spec: CarSpec, ctl: CarControl, road: number, slope: number, dt: number) {
     // Only the driven car pays for these small steps. Stable tyres and springs
     // at parking speed, even when the game is drawing at 20 or 30 fps.
     const steps = Math.ceil(dt * 120 - 1e-9);
-    for (let i = 0; i < steps; i++) this.step(car, ctl, road, slope, dt / steps);
+    for (let i = 0; i < steps; i++) this.step(car, spec, ctl, road, slope, dt / steps);
   }
 
   private steeringRange(speed: number, radius: number) {
@@ -42,8 +42,8 @@ export class StreetHandling {
     return clamp(angle / this.steeringRange(speed, radius), -1, 1);
   }
 
-  private step(c: Vehicle, ctl: CarControl, road: number, slope: number, dt: number) {
-    const s = c.spec, fx = Math.cos(c.h), fy = Math.sin(c.h);
+  private step(c: Vehicle, s: CarSpec, ctl: CarControl, road: number, slope: number, dt: number) {
+    const fx = Math.cos(c.h), fy = Math.sin(c.h);
     const forward = c.vx * fx + c.vy * fy, left = -c.vx * fy + c.vy * fx;
     const speed = Math.abs(forward), wb = this.wheelbase;
     const frontStatic = s.drive === 'rwd' ? .51 : s.drive === 'awd' ? .55 : .60;

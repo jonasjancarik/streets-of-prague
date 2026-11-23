@@ -12,6 +12,7 @@ import type { Testkit } from './testkit.ts';
 import { gunOn, setGun } from './pistol.ts';
 import { headingUpOn, setHeadingUp } from './headingup.ts';
 import { did } from './telemetry.ts';
+import { DRIVE_TUNE, DRIVE_TUNE_DEFAULT, type DriveTuneKey } from './driveTune.ts';
 
 export let watchTransitWhileWaiting = false;
 
@@ -186,6 +187,14 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
         </div>
         <div class="dev-note">Your changes stay in this browser until you press Reset.</div>
       </details>`)}
+    ${section('driving', 'Driving', `
+      <div class="dev-note">Changes how the vehicle you drive handles, whichever one it is. 1× is the game as it ships.</div>
+      <div id="dev-drive-rows"></div>
+      <div class="dev-row">
+        <button id="dev-drive-copy" title="Copies the values, to paste into a conversation">Copy values</button>
+        <button id="dev-drive-reset" title="Back to how the game ships">Reset</button>
+      </div>
+      <div class="dev-note">Your changes stay in this browser until you press Reset.</div>`)}
     <div id="dev-bench"></div>`;
   panel.style.maxHeight = 'calc(100vh - 32px)';
   panel.style.overflowY = 'auto';
@@ -211,6 +220,8 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
     #dev-mist summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
     #dev-mist .dev-time span { margin-left: auto; font-variant-numeric: tabular-nums; opacity: 0.8; }
     #dev-mist [hidden] { display: none; }
+    #dev-drive-rows .dev-time span { margin-left: auto; font-variant-numeric: tabular-nums; opacity: 0.8; }
+    #dev-drive-rows .dev-time.dev-changed { color: var(--accent); }
     #dev .dev-pass { color: #8fd18f; } #dev .dev-fail { color: #ff8f7a; }
     #dev-out { font-size: 12px; white-space: pre-wrap; max-height: 220px; overflow: auto; }`;
   document.head.appendChild(style);
@@ -329,6 +340,7 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
   };
   country.addEventListener('keydown', (ev) => { if (ev.code !== 'Backquote') ev.stopPropagation(); });
   setupMist($, weather, flash);
+  setupDriving($, flash);
   const time = $('dev-time') as HTMLInputElement;
   let dragging = false;
   time.oninput = () => { dragging = true; setTimeOfDay(+time.value * 60); };
@@ -564,6 +576,67 @@ function setupMist($: (id: string) => HTMLElement, weather: { get: () => string;
     MIST_MODE.value = 'sheets';
     try { localStorage.removeItem(MIST_KEY); } catch { /* storage is off */ }
     refresh();
+  };
+}
+
+// Sliders for the handling of the vehicle you drive (DRIVE_TUNE in driveTune.ts).
+const DRIVE_SLIDERS: { key: DriveTuneKey; label: string; title: string }[] = [
+  { key: 'accel', label: 'Acceleration', title: 'How quickly it picks up speed' },
+  { key: 'vmax', label: 'Top speed', title: 'The fastest it goes, and reversing too' },
+  { key: 'brake', label: 'Brakes', title: 'How hard it stops when you brake' },
+  { key: 'grip', label: 'Grip', title: 'Lower: it slides sideways more easily and keeps sliding longer' },
+  { key: 'fade', label: 'Less grip at speed', title: 'How much of its grip it loses near top speed (top-down driving)' },
+  { key: 'turn', label: 'Fastest turning', title: 'How fast it can swing round at speed (top-down driving)' },
+  { key: 'radius', label: 'Turning circle', title: 'Higher: wider turns at full lock' },
+  { key: 'response', label: 'Steering response', title: 'How quickly the steering follows your input' },
+  { key: 'drag', label: 'Slowing when coasting', title: 'How quickly it slows down when you let go of the gas' },
+  { key: 'weather', label: 'Rain and snow', title: 'How much a wet or snowy road costs grip; 0: none' },
+];
+const DRIVE_KEY = 'dev-driving';
+
+function setupDriving($: (id: string) => HTMLElement, flash: (el: HTMLElement, now: string, then: string) => void) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(DRIVE_KEY) ?? 'null') as Partial<Record<DriveTuneKey, number>> | null;
+    for (const s of DRIVE_SLIDERS) {
+      const v = saved?.[s.key];
+      if (typeof v === 'number' && Number.isFinite(v)) DRIVE_TUNE[s.key] = Math.max(0, Math.min(3, v));
+    }
+  } catch { /* nothing saved, or storage is off */ }
+  const save = () => { try { localStorage.setItem(DRIVE_KEY, JSON.stringify(DRIVE_TUNE)); } catch { /* storage is off */ } };
+  const rows = $('dev-drive-rows');
+  const refreshers: (() => void)[] = [];
+  for (const s of DRIVE_SLIDERS) {
+    const label = document.createElement('label');
+    label.className = 'dev-time';
+    label.title = s.title;
+    label.append(s.label);
+    const value = document.createElement('span');
+    const input = document.createElement('input');
+    Object.assign(input, { type: 'range', min: s.key === 'weather' ? '0' : '0.25', max: '3', step: '0.05' });
+    const refresh = () => {
+      input.value = String(DRIVE_TUNE[s.key]);
+      value.textContent = `${DRIVE_TUNE[s.key].toFixed(2)}×`;
+      label.classList.toggle('dev-changed', DRIVE_TUNE[s.key] !== 1);
+    };
+    input.oninput = () => { DRIVE_TUNE[s.key] = Number(input.value); refresh(); save(); };
+    input.onchange = () => did('dev: tuned the driving');
+    // A double-click puts this one back to 1×.
+    input.ondblclick = () => { DRIVE_TUNE[s.key] = 1; refresh(); save(); };
+    input.addEventListener('keydown', (ev) => { if (ev.code !== 'Backquote') ev.stopPropagation(); });
+    input.addEventListener('keyup', (ev) => ev.stopPropagation());
+    label.append(value, input);
+    rows.appendChild(label);
+    refreshers.push(refresh);
+  }
+  refreshers.forEach((r) => r());
+  $('dev-drive-copy').onclick = async () => {
+    await navigator.clipboard?.writeText(`DRIVE_TUNE = ${JSON.stringify(DRIVE_TUNE, null, 2)};`).catch(() => {});
+    flash($('dev-drive-copy'), 'Copied', 'Copy values');
+  };
+  $('dev-drive-reset').onclick = () => {
+    Object.assign(DRIVE_TUNE, DRIVE_TUNE_DEFAULT);
+    try { localStorage.removeItem(DRIVE_KEY); } catch { /* storage is off */ }
+    refreshers.forEach((r) => r());
   };
 }
 

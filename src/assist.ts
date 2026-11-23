@@ -1,6 +1,7 @@
 import { clamp } from './network.ts';
 import type { DriveEdge, DriveGraph, Polyline, RawStreetEdge } from './network.ts';
 import type { StreetHandling } from './streetHandling.ts';
+import { drivingSpec } from './driveTune.ts';
 
 interface AssistedCar {
   x: number; y: number; h: number; forwardSpeed: number;
@@ -130,7 +131,7 @@ export class LaneAssist {
     const alpha = turnOf(car.h, Math.atan2(target.y - car.y, target.x - car.x));
     const dist = Math.hypot(target.x - car.x, target.y - car.y) || 1;
     if (handling) {
-      const wheel = handling.steerForCurvature(2 * Math.sin(alpha) / dist, speed, car.spec.radius ?? 3.8);
+      const wheel = handling.steerForCurvature(2 * Math.sin(alpha) / dist, speed, drivingSpec(car.spec).radius ?? 3.8);
       return wheel * Math.sign(car.forwardSpeed || 1);
     }
     const yaw = (2 * Math.sin(alpha) * Math.max(speed, 1)) / dist;
