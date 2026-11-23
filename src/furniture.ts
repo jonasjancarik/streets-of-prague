@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { cutAway } from './shading.ts';
 import { sendInstances } from './gpu.ts';
-import { furnitureModels } from './furnitureModels.ts';
+import { furnitureAtlas, furnitureModels } from './furnitureModels.ts';
 import { furnitureOverview } from './furnitureOverview.ts';
 import type { FurnitureInstances } from './map/furniture.ts';
 
@@ -11,8 +11,7 @@ const mapMaterial = cutAway(new THREE.MeshStandardMaterial({ vertexColors: true,
 const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
 function prepareStreet() {
   const models = furnitureModels();
-  const map = new THREE.TextureLoader().load(import.meta.env.BASE_URL + 'furniture-surfaces.webp');
-  map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = 4;
+  const map = furnitureAtlas();
   const solid = cutAway(new THREE.MeshStandardMaterial({ map, vertexColors: true, roughness: 0.86 }), 'furniture');
   const shrub = cutAway(new THREE.MeshStandardMaterial({ map, vertexColors: true, roughness: 0.96, alphaTest: 0.42, side: THREE.DoubleSide }), 'furniture-leaves');
   const glass = cutAway(new THREE.MeshStandardMaterial({ color: '#abc5c4', opacity: 0.16, transparent: true, depthWrite: false,

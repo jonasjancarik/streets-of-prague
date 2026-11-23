@@ -1612,8 +1612,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   doesn't say where the tables stand or how many, so each place gets a row of two to
   six on the open ground nearest its point on the map, along the house, wherever a
   table fits clear of walls, roads and water; on a narrow pavement that may be one, or
-  none. All the tables are one instanced mesh, rewritten only when a place comes into
-  view or leaves. Nothing collides with them yet.
+  none. In first and third person the nearest tables have folding chairs on crossed
+  steel frames, wooden slats and supporting ribs under the parasol. Up to 24 settings
+  share two batches, one for the furniture and one for the coloured canvas. The
+  overhead view and distant tables share the original single mesh. Nothing collides
+  with them yet.
 - **Cars** are built the same way (`assets/cars/build.py` → `public/cars.glb`): one
   low-poly body per type (hatchback, saloon, estate, SUV, van, pickup, taxi, police), shaped for
   the view from above, where the bonnet, cabin, windows and roof show, with a little

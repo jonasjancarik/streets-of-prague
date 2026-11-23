@@ -146,6 +146,7 @@ import { PLACES as NAMED_PLACES } from './taxi.ts';
 import * as telemetry from './telemetry.ts';
 import { Birds, BIRDS } from './birds.ts';
 import { Terraces } from './terraces.ts';
+import { STREET_QUALITY } from './streetQuality.ts';
 import { Hitches } from './hitches.ts';
 import { benchPause } from './benchpause.ts';
 import type { Testkit } from './testkit.ts';
@@ -3026,7 +3027,8 @@ async function main() {
         inStreetCone(x - camPos.x, y + camPos.z, forwardX, forwardY, sinHalf, cosHalf, peopleMargin)))),
     eyes && weather.now.rain > .01 ? weatherFx.sheltered : undefined);
     birds.update(dt, Object.assign(birdsView, { x: camPos.x, y: -camPos.z, radius: viewRadius(), height: eyes ? 1000 : height, dark: sky.dark, rain: weather.now.rain, snow: weather.now.snow }));
-    terraces.update(dt, Object.assign(terraceView, { x: camPos.x, y: -camPos.z, radius: viewRadius(), day: season.day }));
+    terraces.update(dt, Object.assign(terraceView, { x: camPos.x, y: -camPos.z, radius: viewRadius(), day: season.day }),
+      fromStreet ? STREET_QUALITY.carReach : 0);
     police.render(ground, time.value, fromStreet ? camera.position : undefined);
     {
       const chasing = police.lit, engines = brigade.lit, rescue = ambulances.lit, carts = refuse.lit;

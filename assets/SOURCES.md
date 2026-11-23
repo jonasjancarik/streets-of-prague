@@ -5,6 +5,10 @@ and the map data its credits in the README.
 
 ## Made from code
 
+- The café folding chairs, slatted tables and square parasols are modelled in
+  `src/terraceFurniture.ts`. The furniture shares the park benches’ timber texture.
+  The visual reference is [Prague’s outdoor dining guide](https://kultivovana.praha.eu/files/manual_predzahradky_MHMP_digi.pdf).
+
 - `cars/build.py`, `trams/build.py`, `figures/build.py` build the cars, trams, people
   and bikes (`public/cars.glb`, `public/trams.glb`, `public/figures.glb`) in Blender
   from code. No outside models are used.

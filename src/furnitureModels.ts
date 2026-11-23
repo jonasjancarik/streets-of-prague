@@ -5,6 +5,15 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 type Swatch = readonly [number, number, number, number];
 type Point = [number, number, number];
 const plain: Swatch = [470, 445, 471, 446], stone: Swatch = [5, 135, 506, 244], leaf: Swatch = [1, 257, 254, 510];
+let atlas: THREE.Texture | undefined;
+export function furnitureAtlas() {
+  if (!atlas) {
+    atlas = new THREE.TextureLoader().load(import.meta.env.BASE_URL + 'furniture-surfaces.webp');
+    atlas.colorSpace = THREE.SRGBColorSpace;
+    atlas.anisotropy = 4;
+  }
+  return atlas;
+}
 function finish(g: THREE.BufferGeometry, color: string, patch: Swatch = plain) {
   const part = g.index ? g.toNonIndexed() : g, uv = part.attributes.uv;
   const c = new THREE.Color(color), rgb = new Float32Array(uv.count * 3);
@@ -15,18 +24,18 @@ function finish(g: THREE.BufferGeometry, color: string, patch: Swatch = plain) {
   }
   part.setAttribute('color', new THREE.BufferAttribute(rgb, 3)); return part;
 }
-const box = (w: number, h: number, d: number, x: number, y: number, z: number, color: string, patch?: Swatch) =>
+export const box = (w: number, h: number, d: number, x: number, y: number, z: number, color: string, patch?: Swatch) =>
   finish(new THREE.BoxGeometry(w, h, d).translate(x, y, z), color, patch);
-function join(parts: THREE.BufferGeometry[]) {
+export function join(parts: THREE.BufferGeometry[]) {
   const merged = mergeGeometries(parts)!; parts.forEach(p => p.dispose()); return merged;
 }
 // A turned casting; the profile may return down the inside of an open rim.
-function spun(profile: [number, number][], sides: number, color: string, patch?: Swatch, flat = false) {
+export function spun(profile: [number, number][], sides: number, color: string, patch?: Swatch, flat = false) {
   const g = new THREE.LatheGeometry(profile.map(([r, h]) => new THREE.Vector2(r, h)), sides).toNonIndexed();
   if (flat) g.computeVertexNormals();
   return finish(g, color, patch);
 }
-function rod(a: Point, b: Point, r: number, sides: number, color: string, end = r) {
+export function rod(a: Point, b: Point, r: number, sides: number, color: string, end = r) {
   const start = new THREE.Vector3(...a), delta = new THREE.Vector3(...b).sub(start);
   const g = new THREE.CylinderGeometry(end, r, delta.length(), sides);
   start.addScaledVector(delta, 0.5);
@@ -36,7 +45,7 @@ function rod(a: Point, b: Point, r: number, sides: number, color: string, end = 
 
 // Board length runs along X. The bevel catches the light along the slat. Each
 // board uses a different strip of grain, with tight sampling across its cut ends.
-function slat(w: number, h: number, d: number, tone: string, row: number) {
+export function slat(w: number, h: number, d: number, tone: string, row: number) {
   const y = h / 2, z = d / 2, b = 0.008, x = w / 2;
   const section = [[y - b, z], [y, z - b], [y, -z + b], [y - b, -z], [-y + b, -z], [-y, -z + b], [-y, z - b], [-y + b, z]];
   const pos: number[] = [], uv: number[] = [];

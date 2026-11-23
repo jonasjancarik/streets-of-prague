@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { dataUrl } from './data.ts';
 import { lampLit } from './lamps.ts';
 import { sendInstances } from './gpu.ts';
+import { furnitureAtlas } from './furnitureModels.ts';
+import { terraceFurniture } from './terraceFurniture.ts';
 
 // Tables under parasols outside the cafés, restaurants and pubs that have them, through
 // the warm months. Which places have tables outside is OpenStreetMap's word
@@ -19,6 +21,7 @@ export const TERRACES = {
   reach: 12, // m from the place's point on the map to look for open ground
   apart: 2.9, // m between two tables of a row
   most: 320, // tables drawn at once
+  detailed: 24, // closest tables with folding chairs and parasol frames at street level
   beyond: 30, // m past the edge of the view a place's tables are still drawn (their shadows reach in)
 };
 // A place's parasols are all one colour: canvas mostly, and what breweries hand out.
@@ -87,13 +90,16 @@ export class Terraces {
   places: Place[] = [];
   private shown = '';
   private wait = 0;
+  private detailReach = 0;
+  private close?: { furniture: THREE.InstancedMesh; cloth: THREE.InstancedMesh };
 
-  constructor(scene: THREE.Scene, area: string) {
+  constructor(private scene: THREE.Scene, area: string) {
     // (Lit by the street lamps like the lamp posts, with the same shader as theirs.)
     const material = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
     material.onBeforeCompile = (sh) => lampLit(sh);
     material.customProgramCacheKey = () => 'lamp-pole';
     this.mesh = new THREE.InstancedMesh(shape(), material, TERRACES.most);
+    this.mesh.name = 'Café terraces';
     this.mesh.setColorAt(0, PALETTE[0]);
     this.mesh.castShadow = this.mesh.receiveShadow = true;
     this.mesh.frustumCulled = false;
@@ -108,6 +114,27 @@ export class Terraces {
         if (Number.isFinite(x) && Number.isFinite(y)) this.places.push({ x, y, kind: kind | 0, tables: null });
       }
     }).catch(() => {});
+  }
+
+  private streetModels() {
+    if (this.close) return this.close;
+    const { furniture, cloth } = terraceFurniture();
+    const wood = this.mesh.material.clone();
+    wood.map = furnitureAtlas();
+    wood.side = THREE.FrontSide;
+    wood.onBeforeCompile = this.mesh.material.onBeforeCompile;
+    wood.customProgramCacheKey = this.mesh.material.customProgramCacheKey;
+    const frames = new THREE.InstancedMesh(furniture, wood, TERRACES.detailed);
+    const canvas = new THREE.InstancedMesh(cloth, this.mesh.material, TERRACES.detailed);
+    frames.name = 'Café folding chairs and parasol frames';
+    canvas.name = 'Café parasol canvas';
+    for (const mesh of [frames, canvas]) {
+      mesh.castShadow = mesh.receiveShadow = true;
+      mesh.frustumCulled = false;
+      mesh.count = 0;
+      this.scene.add(mesh);
+    }
+    return this.close = { furniture: frames, cloth: canvas };
   }
 
   // Where a place's tables stand: on the open ground nearest its point on the map, in a
@@ -142,13 +169,15 @@ export class Terraces {
     return new Float32Array(out);
   }
 
-  update(dt: number, view: TerraceView) {
+  update(dt: number, view: TerraceView, detailReach = 0) {
     if (view.day < TERRACES.from || view.day > TERRACES.to || !this.places.length) {
       this.mesh.visible = false;
+      if (this.close) this.close.furniture.visible = this.close.cloth.visible = false;
       this.shown = '';
       return;
     }
-    if ((this.wait -= dt) > 0 && this.shown) return;
+    if ((this.wait -= dt) > 0 && this.shown && detailReach === this.detailReach) return;
+    this.detailReach = detailReach;
     this.wait = 0.5;
     const reach = view.radius + TERRACES.beyond, near: Place[] = [];
     for (const p of this.places) {
@@ -157,19 +186,49 @@ export class Terraces {
       if (!p.tables && view.loaded(p.x, p.y)) p.tables = this.lay(p, view);
       if (p.tables?.length) near.push(p);
     }
-    const key = near.map((p) => `${p.x},${p.y}`).join(' ') || '-';
-    if (key === this.shown) return;
-    this.shown = key;
-    let n = 0;
-    for (const p of near) {
-      const colour = PALETTE[Math.floor(chance(p, 9) * PALETTE.length)], t = p.tables!;
-      for (let i = 0; i < t.length && n < TERRACES.most; i += 4) {
-        this.mesh.setMatrixAt(n, _m.compose(_p.set(t[i], t[i + 2], -t[i + 1]), _q.setFromAxisAngle(UP, t[i + 3]), _s));
-        this.mesh.setColorAt(n++, colour);
+    const candidates: { table: number; distance2: number }[] = [];
+    if (detailReach > 0) {
+      let table = 0;
+      for (const p of near) {
+        const t = p.tables!;
+        for (let i = 0; i < t.length && table < TERRACES.most; i += 4, table++) {
+          const distance2 = (t[i] - view.x) ** 2 + (t[i + 1] - view.y) ** 2;
+          if (distance2 < detailReach ** 2) candidates.push({ table, distance2 });
+        }
       }
     }
-    this.mesh.count = n;
-    this.mesh.visible = n > 0;
+    if (candidates.length > TERRACES.detailed) {
+      candidates.sort((a,b) => a.distance2 - b.distance2);
+      candidates.length = TERRACES.detailed;
+      candidates.sort((a,b) => a.table - b.table);
+    }
+    const detailed = new Set(candidates.map(c => c.table));
+    const key = near.map((p) => `${p.x},${p.y}`).join(' ') + '/' + [...detailed].join(',');
+    if (key === this.shown) return;
+    this.shown = key;
+    let far = 0, close = 0;
+    for (const p of near) {
+      const colour = PALETTE[Math.floor(chance(p, 9) * PALETTE.length)], t = p.tables!;
+      for (let i = 0; i < t.length && far + close < TERRACES.most; i += 4) {
+        _m.compose(_p.set(t[i], t[i + 2], -t[i + 1]), _q.setFromAxisAngle(UP, t[i + 3]), _s);
+        if (detailed.has(far + close)) {
+          const models = this.streetModels();
+          models.furniture.setMatrixAt(close, _m);
+          models.cloth.setMatrixAt(close, _m);
+          models.cloth.setColorAt(close++, colour);
+        } else {
+          this.mesh.setMatrixAt(far, _m);
+          this.mesh.setColorAt(far++, colour);
+        }
+      }
+    }
+    this.mesh.count = far;
+    this.mesh.visible = far > 0;
     sendInstances(this.mesh);
+    if (this.close) for (const mesh of [this.close.furniture, this.close.cloth]) {
+      mesh.count = close;
+      mesh.visible = close > 0;
+      sendInstances(mesh);
+    }
   }
 }
