@@ -7,6 +7,7 @@
 //     [--seconds 10] [--dpr 2 | tier (the graphics tier's own pixel ratio, as a player gets)] [--cpu 4] [--profile] [--weather clear] [--time 14:00]
 //     [--profile-load] [--load-progress] [--require-webgpu] [--init "js before loading"] [--runs 1] [--graphics high] [--extra "&osm"] [--eval "js after loading"] [--eval-after "js after timing"] [--json out.json] [--stack (page errors with their stack)]
 //     [--view overhead|first|third] [--handling classic|realistic] [--vehicle sedan (deterministic test car)] [--paced (normal display pacing)]
+//     [--android-socket chrome_devtools_remote_<pid> (found by itself)]
 //     [--settle 5 (seconds before timing, without waiting for streaming to stop)]
 //     [--browser chrome|chromium] [--angle metal|swiftshader (software, drawing like
 //     a desktop GPU that shades every covered pixel: for overdraw)]
@@ -75,7 +76,15 @@ function setUpAndroid(serial) {
   run('shell', 'wm', 'dismiss-keyguard');
   run('shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', 'about:blank', 'com.android.chrome');
   const devtools = String(args['android-port'] || 9333);
-  run('forward', `tcp:${devtools}`, 'localabstract:chrome_devtools_remote');
+  // Chrome listens on chrome_devtools_remote, or, when another process already holds that
+  // name (seen on a Pixel 11 Pro, where it never answered), on chrome_devtools_remote_<pid>.
+  let socket = args['android-socket'];
+  if (!socket) {
+    const pids = run('shell', 'pidof', 'com.android.chrome').split(/\s+/).filter(Boolean);
+    const unix = run('shell', 'cat', '/proc/net/unix');
+    socket = pids.map((p) => `chrome_devtools_remote_${p}`).find((n) => unix.includes(`@${n}\n`) || unix.endsWith(`@${n}`)) ?? 'chrome_devtools_remote';
+  }
+  run('forward', `tcp:${devtools}`, `localabstract:${socket}`);
   const model = run('shell', 'getprop', 'ro.product.model'), version = run('shell', 'getprop', 'ro.build.version.release');
   const temperature = () => { const m = run('shell', 'dumpsys', 'battery').match(/temperature: (\d+)/); return m ? Number(m[1]) / 10 : NaN; };
   console.log(`On ${model} (Android ${version}, ${serial}), battery at ${temperature()} °C`);
