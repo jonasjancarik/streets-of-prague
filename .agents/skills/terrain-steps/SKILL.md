@@ -431,8 +431,9 @@ steeper than VALLEY anywhere, which took steps over 1 m from 71 to 38.
   decks 3 m wide, one for each lane and askew as OSM draws them, the ground under them
   dug down to the LiDAR in pits, and the tram tracks and pavements between them left on
   ground at the street's height. An underpass that tram tracks cross stays a tunnel
-  (the build prints `under tram tracks:`); in November 2026 it was the only cutting in
-  the city with tracks within 30 m. `window.py` leaves the streets' levels in the tiles
+  (the build prints `under tram tracks:` for every short underpass with tracks over it,
+  ten in praha, cutting or not); in November 2026 it was the only cutting in the city
+  with tracks within 30 m. `window.py` leaves the streets' levels in the tiles
   as the city build wrote them, so after such a change the window's tiles still say
   "Národní on a bridge here" and paint the underpass's road on the ground: set `level`
   and `levels` by hand (as `layers.assemble` would) before believing the pictures.
@@ -441,6 +442,11 @@ steeper than VALLEY anywhere, which took steps over 1 m from 71 to 38.
   pavements on top of Národní. `pipeline/survey_skip.json` re-files those four polygons
   (`as`) as what the survey's level 1 has there. Not a rule: over an underpass turned
   into a cutting the level 1 surfaces belong on the bridges, not on the ground.
+  Rebuilding the one chunk's ground layer for it moved paved shapes by under 1 m² in
+  nearly every tile of the chunk, and the assembly then left 50 tiles without their
+  ground cover and 336 trees ("changed since their ground cover was made"): run
+  `ground_cover.py build praha` (87 tiles worked out, 75 s), assemble and
+  `tin_tiles.py --stale` again after a chunk rebuild.
 
 Tried and dropped: a terrace for every surveyed street well above or below the ground
 beside it (cliffs 12 m high under Letná); leaving the terrain model wherever the
