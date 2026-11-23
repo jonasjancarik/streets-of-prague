@@ -1780,6 +1780,54 @@ Pixel 5, Medium, tier pixel ratio (1.5×), first person, sedan, `&dev`, 45 s, no
 to the end of timing. At 7 fps the game's step limit (0.05 s) runs the world at about a
 third of real time, so 30 km/h on the speedometer covered about 3 m a second.
 
+## 23 November 2026 — the buildings drawn from a pool by the GPU (`?gpudraw`)
+
+Stage 1 of `docs/gpu-driven-drawing-plan.md` (branch `gpu-driven-drawing`, details and
+the picture checks there). Pixel 5, Medium at the tier's pixel ratio, first person
+standing on the Old Town Square, `--ab` on `gpuDraw.enabled`, 60 s, no touches:
+
+| | Off | On | |
+|---|---|---|---|
+| culler on in both, 25.4 °C | 73.6 ms, JS 38.1 ms | 97.7 ms, JS 40.8 ms | 33 % slower |
+| culler off in both, 27.8 °C | 92.1 ms, JS 43.1 ms | 104.4 ms, JS 42.2 ms | 13 % slower |
+
+No JavaScript is saved (it replaces only 12–16 draws a frame), and GPU time goes up even
+with the culler off. Drawing the pieces nearest first didn't remove that. With the culler
+on, the pool also loses the culler's occlusion. M5: 4.6 % quicker, within the noise. The
+stage's stop rule is met. Later, with the culler off: skipping the compute pass changed nothing (128.4 → 133.2 ms),
+and a pool with one piece per tile mesh (about 14 indirect calls) drew as fast as the old
+meshes (113.9 → 111.3 ms). So the loss is the ~1,100 indirect calls a frame at 8 × 8
+pieces, most of them drawing nothing, on a GPU-limited phone. With the pieces sorted
+nearest first the Adreno hung and Chrome's GPU process crashed in every run (3 of 3,
+none of 4 without).
+
+Later still (`gpuDraw.visibleOnly`: the CPU writes the visible pieces' arguments packed and
+calls them in a row, details in the plan doc). Pixel 5, charging, same scene: calling only
+the visible pieces against every slot with the culler off, 105.0 → 94.2 ms (10.3 %
+quicker). The pool against the culler alone: 76.4 → 78.5 ms, the same within the windows,
+against 33 % slower in the first run. No GPU crash in either. Calls at offsets with gaps or
+out of order had hung the Adreno every time. Note for indirect draws in three.js r187: a
+CPU change to `geometry.indirect` isn't uploaded unless the mesh gets a full refresh, so
+write it through `renderer.backend.updateAttribute`.
+
+Last (`gpuDraw.occlusion`: the culler's sweep verdicts applied to the pool's pieces): the pool
+against the culler alone, standing on the Old Town Square, 77.8 → 79.7 ms, the same. Stage 1's
+stop rule holds. Driving, once the bench's keys reached the game again (the `&dev` fix
+above): culler alone 158.2 ms, pool 164.4 ms, the same within the windows (4–10 against 5–8
+fps).
+
+A Pixel 11 Pro (23 November, evening) is limited by its GPU too, JavaScript about half the
+frame: the pool against the culler alone was about 5 % quicker standing (High: 35.9 →
+34.2 ms) and the same driving (47.5 → 47.3 ms).
+
+### The nearby people's ceiling on the Pixel 5 (23 November, afternoon)
+
+`--ab` on `lifeSize.enabled` (Rocketbox avatars against the instanced figures they replace),
+Medium at the tier's pixel ratio, standing on the Old Town Square, 60 s, no touches, 29.7 °C,
+no `&dev`: 54.0 ms against 53.8 ms a frame (JavaScript 25.5 and 24.2 ms). There's no gain to
+be had from instancing the avatars at Medium. The same scene with `&dev` took about 75 ms
+with 36 ms of JavaScript that day: **leave `&dev` out of phone timings.**
+
 ## 23 November 2026 — where the Pixel 5's GPU time goes on the ground
 
 `scripts/ground-ab.js` through `--ab`: every drawn tile's ground layers get a cheaper
