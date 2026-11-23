@@ -1,8 +1,9 @@
 // A coarser ground, for bench.mjs --ab: every drawn tile's ground layers built again by the
 // tile workers with longer triangle edges (STREET_QUALITY.groundFine: 2 m at Medium and up,
 // 4 m on Low and Lowest) and drawn instead of the tile's own while on. Set FINE (the coarser
-// edge in metres) and optionally FAR (only tiles whose box is at least FAR metres from the
-// eye; default 0, every tile) before the file. Building takes a while: --warmup 40.
+// edge in metres), or SET (the STREET_QUALITY values to build with, as { groundFlat: 8 }),
+// and optionally FAR (only tiles whose box is at least FAR metres from the eye; default 0,
+// every tile) before the file. Building takes a while: --warmup 40.
 //
 //   node scripts/bench.mjs ... --warmup 40 --ab "const FINE = 8; $(cat scripts/ground-lod-ab.js)"
 //
@@ -30,10 +31,10 @@ window.__ab = (on) => {
       const { STREET_QUALITY } = await import(url(/\/src\/streetQuality\.ts/));
       const { SKY_STEP } = await import(url(/\/src\/map\/skyView\.ts/));
       const tiles = [...W.loaded.values()].filter((t) => t.drawn?.surfaces);
-      const keep = STREET_QUALITY.groundFine;
-      STREET_QUALITY.groundFine = FINE;
+      const set = typeof SET === 'undefined' ? { groundFine: FINE } : SET, keep = { ...STREET_QUALITY };
+      Object.assign(STREET_QUALITY, set);
       let results;
-      try { results = await Promise.all(tiles.map((t) => W.meshJobs(t.k, t.source))); } finally { STREET_QUALITY.groundFine = keep; }
+      try { results = await Promise.all(tiles.map((t) => W.meshJobs(t.k, t.source))); } finally { Object.assign(STREET_QUALITY, keep); }
       const info = { tiles: tiles.length, theirs: 0, coarse: 0 };
       const built = { THREE, tiles: [] };
       tiles.forEach((tile, n) => {

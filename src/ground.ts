@@ -473,6 +473,31 @@ const street = <T>(build: () => T): T => { lies = STREET; try { return build(); 
 const onStreet = <T>(build: () => T): T => { lies = ON_STREET; try { return build(); } finally { lies = TERRAIN; } };
 const kerbDepth = (x: number, y: number, how = lies) => (!kerbField || how === TERRAIN ? 0 : how === STREET ? KERB_HEIGHT * streetDepth(kerbField, x, y) : dropAt(kerbField, x, y));
 const STEP_FINE = 2; // m between a layer's points along a step, so the cut follows its bends
+// Draping by error (STREET_QUALITY.groundFlat; docs/terrain-tin-plan.md): when set, the
+// ordinary ground's triangles may be this long (m), and an edge is split below it, down to
+// groundMax, only where the ground bends: the terrain or the kerbs' depth more than
+// FLAT_TOLERANCE off the straight line between its ends. The test reads positions only, so
+// every layer splits a shared border alike and no cracks open between them. 0: every edge
+// split down to groundMax, as before.
+let flatMax = 0;
+const FLAT_TOLERANCE = 0.03; // m
+function bender(pos: number[]) {
+  const H = groundHeight!, at = sideOf;
+  const heights = (x: number, y: number): [number, number, number] => {
+    const side = at ? at(x, y) : false;
+    return [H(x, y, side), kerbDepth(x, y, STREET), kerbDepth(x, y, ON_STREET)];
+  };
+  const cache: [number, number, number][] = [];
+  const of = (i: number) => (cache[i] ??= heights(pos[i * 3], -pos[i * 3 + 2]));
+  return (i: number, j: number) => {
+    const a = of(i), b = of(j), ax = pos[i * 3], ay = -pos[i * 3 + 2], bx = pos[j * 3], by = -pos[j * 3 + 2];
+    for (const t of [0.25, 0.5, 0.75]) {
+      const h = heights(ax + (bx - ax) * t, ay + (by - ay) * t);
+      for (let k = 0; k < 3; k++) if (Math.abs(h[k] - (a[k] + (b[k] - a[k]) * t)) > FLAT_TOLERANCE) return true;
+    }
+    return false;
+  };
+}
 const WALL_MIN = 0.03; // m: a step lower than this gets no wall
 
 function refineRoad(pos: number[], i: number, j: number, d2: number) {
@@ -489,12 +514,12 @@ function refineRoad(pos: number[], i: number, j: number, d2: number) {
 // The actual cuts follow every outline, including narrow enclosed terraces and
 // three levels meeting; triangle-corner labels alone cannot detect those cases.
 function cutAtSteps(pos: number[], idx: number[], extra: number[] | null, at: (x: number, y: number) => number,
-  refineRoads: ((i: number, j: number, d2: number) => boolean) | null) {
+  refineRoads: ((i: number, j: number, d2: number) => boolean) | null, max = groundMax) {
   const side: number[] = [];
   const sideAt = (i: number) => (side[i] ??= at(pos[i * 3], -pos[i * 3 + 2]));
   const crossesStep = (i: number, j: number, d2: number) => d2 > STEP_FINE * STEP_FINE && sideAt(i) !== sideAt(j);
   const refine = refineRoads ? (i: number, j: number, d2: number) => crossesStep(i, j, d2) || refineRoads(i, j, d2) : crossesStep;
-  idx = subdivide(pos, idx, extra, groundMax, refine);
+  idx = subdivide(pos, idx, extra, max, refine);
   return cutTerrainSteps(pos, idx, extra, at, stepIndex!);
 }
 
@@ -542,10 +567,17 @@ function finish(pos: number[], idx: number[], extra: number[] | null = null, ras
   if (groundHeight) {
     let side: number[] | null = null;
     const refineRaster = raster ? refineRasterRoad(pos, raster, groundHeight, sideOf) : null;
-    const refine = !afloat && (roadBoxes || refineRaster)
+    const road = !afloat && (roadBoxes || refineRaster)
       ? (i: number, j: number, d2: number) => refineRoad(pos, i, j, d2) || !!refineRaster?.(i, j, d2) : null;
-    if (sideOf && !afloat) ({ pos, idx, side, extra } = cutAtSteps(pos, idx, extra, sideOf, refine));
-    else idx = subdivide(pos, idx, extra, groundMax, refine);
+    let refine = road, max = groundMax;
+    if (flatMax > groundMax) {
+      // Longer edges, split where the ground bends (the road surfaces' finer spacing too).
+      const bends = bender(pos), fine2 = groundMax * groundMax;
+      refine = (i, j, d2) => (d2 > fine2 || (!!road && road(i, j, d2))) && bends(i, j);
+      max = flatMax;
+    }
+    if (sideOf && !afloat) ({ pos, idx, side, extra } = cutAtSteps(pos, idx, extra, sideOf, refine, max));
+    else idx = subdivide(pos, idx, extra, max, refine);
     if (groundBox) ({ pos, idx, extra, side } = conformTerrainEdges(pos, idx, extra, side, groundBox, STEP_FINE));
     for (let i = 0, k = 0; i < pos.length; i += 3, k++) pos[i + 1] = groundHeight(pos[i], -pos[i + 2], afloat ? WATER : side ? side[k] : false) - kerbDepth(pos[i], -pos[i + 2]);
   }
@@ -573,7 +605,7 @@ function finish(pos: number[], idx: number[], extra: number[] | null = null, ras
 //
 // `steps`: the terrain knows the steps in it (the tile's terraces; its water is in `d`),
 // so the layers are cut along them and the steps get walls (see `sideOf`).
-export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [], parkingZones = [], height = null, levels = null, steps = null, roadProfile, roadSurfaceBoxes, paint = true, rasterRoads = false, fine, kerbs = null }: {
+export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [], parkingZones = [], height = null, levels = null, steps = null, roadProfile, roadSurfaceBoxes, paint = true, rasterRoads = false, fine, flat = 0, kerbs = null }: {
   box: Bounds; edges?: GroundRoadEdge[]; buildings?: { rings: Point2[][] }[];
   parkingZones?: (string | null)[]; height?: HeightAt | null; levels?: GroundLevel[] | null; steps?: Terrace[] | null;
   // false: no lane lines (see TILE_LOOK in tiles.ts)
@@ -582,10 +614,12 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
   roadSurfaceBoxes?: Bounds[];
   rasterRoads?: boolean;
   fine?: number;
+  flat?: number; // m: draping by error (flatMax), 0 for off
   kerbs?: KerbDrop | null; // the tile's raised kerbs (kerbDrop.ts); `height` is the terrain's, without them
 }): GroundResult {
   paintRoads = paint;
   groundMax = fine ?? 8;
+  flatMax = flat;
   // The steps in the terrain: which side a point is on, and their outlines (stepEdges.ts).
   const sides = height ? stepSides(steps, d.areas.water ?? []) : null;
   const at: typeof sideOf = sides?.at ?? null, outlines = sides?.outlines ?? [];
@@ -646,6 +680,8 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
   // Bridge decks and tunnel floors keep their original TIN precision even when
   // the ordinary ground uses fewer triangles on a lower graphics tier.
   if (fine !== undefined) groundMax = Math.min(groundMax, 2);
+  const lowerFlat = flatMax;
+  flatMax = 0; // (the decks and tunnel floors as before)
   try {
     levels.forEach((l, k) => {
       const H = (x: number, y: number) => { const h = l.height(x, y); return Number.isNaN(h) ? T(x, y) : h; };
@@ -663,7 +699,7 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
         upper.push(...tunnelLayers(l.polys, box, masks[k], H, T, paintOn.get(k) || [], l.level));
       }
     });
-  } finally { groundHeight = null; groundMax = lowerFine; }
+  } finally { groundHeight = null; groundMax = lowerFine; flatMax = lowerFlat; }
   if (bores.length) {
     const index = new TunnelIndex(bores);
     for (const layer of lower) layer.outsideTunnel = splitTunnelEarth(layer.geometry, index);
