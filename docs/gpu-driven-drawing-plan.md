@@ -228,7 +228,8 @@ describe the new path.
 Stages 0 and 1 were built and measured on branch `gpu-driven-drawing`, which isn't merged:
 on the Pixel 5 the pool of buildings drawn by the GPU at best matched the CPU culler alone,
 standing and driving, so stage 1's stop rule held. The progress notes and the code are on
-that branch.
+that branch. On a Pixel 11 Pro, also limited by its GPU (JavaScript about half the
+frame), the pool was about 5 % quicker standing and the same driving.
 
 ### Stage 3 checked before building (23 November, afternoon)
 
