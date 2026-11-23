@@ -1927,3 +1927,21 @@ No saving: the four extra reads cost the phone nothing measurable, so the shadow
 the ground is the lookup itself (the shadow coordinates and the map read), not the filter.
 The single read also gives the large shadows across the square a slightly harder edge.
 PCF stays.
+
+### The lamp and mirror code by day (23 November, evening)
+
+By day the lamps' light and the puddle mirror are switched off by uniforms, but their code
+is still in the ground's shader, and on phone GPUs code that never runs can still cost
+(registers). `userData.day()` builds each ground material without it (the sheen and the
+water stay; by day the picture is the same, `LAMP_ON` and `MIRROR` both 0), and
+`scripts/ground-ab.js` 'day' swaps it in. Pixel 5, Medium, 60 s, no `&dev`, no touches,
+28–31 °C:
+
+| Place | Game's ground → without the lamp and mirror code |
+|---|---|
+| Old Town Square (`stand`) | 41.4 → 40.9 ms, 1.3 % |
+| Malá Strana (`strana`) | 43.7 → 42.0 ms, 3.9 % (windows overlapping) |
+
+So of the 4.0 ms the whole emissive part cost, the code that is off by day is at most
+about 1.5 ms. Not enough to swap the ground's shaders at dusk and dawn (each graph compiles
+on the main thread, 7–60 ms), so the game keeps one shader; the variant stays for tests.
