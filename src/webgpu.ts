@@ -383,8 +383,8 @@ function groundMaterial(
   m.color.copy(base.color);
   Object.assign(m, { side: base.side, depthWrite: base.depthWrite, depthTest: base.depthTest, transparent: base.transparent, opacity: base.opacity });
   const inputs = { relief, deck, photo, raster };
-  const shade = (n: N, pattern: number, seasonal = true) => {
-    const g = groundGraph(pattern, time, inputs, dig, sheltered, seasonal);
+  const shade = (n: N, pattern: number, seasonal = true, day = false) => {
+    const g = groundGraph(pattern, time, inputs, dig, sheltered, seasonal, day);
     Object.assign(n, {
       colorNode: g.color, aoNode: g.ao, emissiveNode: g.emissive, normalNode: g.normal,
       maskNode: g.mask, rasterMap: raster?.texture, rasterBox: raster && boxOf(raster.box),
@@ -396,6 +396,13 @@ function groundMaterial(
   m.userData.flatten = () => {
     const f = m.clone();
     shade(f, 0);
+    return f;
+  };
+  // The same ground without the lamps' light and the wet mirror (scripts/ground-ab.js 'day'):
+  // what their code costs while both are off.
+  m.userData.day = () => {
+    const f = m.clone();
+    shade(f, id, seasonal, true);
     return f;
   };
   if ([5, 6, 7, 12, 13, 14, 15].includes(id)) m.userData.summerGround = () => {
@@ -419,8 +426,8 @@ function heldMaterial(material: THREE.MeshLambertMaterial) {
   (material as unknown as MeshLambertNodeMaterial).positionNode = heldPosition;
   return material;
 }
-function groundGraph(id: number, time: { value: number }, { relief, deck, photo, raster }: GroundInputs, dig: boolean, sheltered: boolean, seasonal: boolean) {
-  const key = `${id} ${!!relief} ${!!relief?.sky} ${!!deck} ${!!deck?.mask} ${!!photo} ${!!raster} ${dig} ${sheltered} ${seasonal}`;
+function groundGraph(id: number, time: { value: number }, { relief, deck, photo, raster }: GroundInputs, dig: boolean, sheltered: boolean, seasonal: boolean, day = false) {
+  const key = `${id} ${!!relief} ${!!relief?.sky} ${!!deck} ${!!deck?.mask} ${!!photo} ${!!raster} ${dig} ${sheltered} ${seasonal} ${day}`;
   let byKey = groundGraphs.get(time);
   if (!byKey) groundGraphs.set(time, (byKey = new Map()));
   let graph = byKey.get(key);
@@ -437,9 +444,10 @@ function groundGraph(id: number, time: { value: number }, { relief, deck, photo,
     ao: relief?.sky ? skyAmbient(tileTexture('sky', vec2(positionWorld.x, positionWorld.z.negate())).r) : null,
     // Lamp light on the ground, and the wet ground's mirror of the sky and the lamps.
     emissive: Fn(() => {
-      const l = lampLight(slope ? positionWorld.add(vec3(slope.x, 0, slope.y).mul(6)) : positionWorld, normalView).toVar();
-      const sky = !isWater && !sheltered ? mirrorOf(g.a, timeOf(time)) : uSkyRef;
-      const e: N = g.rgb.mul(l).add(sky.add(l.mul(smoothstep(LAMP_MIRROR[0], LAMP_MIRROR[1], dot(l, vec3(0.3, 0.59, 0.11))).mul(0.85))).mul(g.a)).toVar();
+      const l = day ? vec3(0) : lampLight(slope ? positionWorld.add(vec3(slope.x, 0, slope.y).mul(6)) : positionWorld, normalView).toVar();
+      const sky = !isWater && !sheltered && !day ? mirrorOf(g.a, timeOf(time)) : uSkyRef;
+      const e: N = day ? uSkyRef.mul(g.a).toVar()
+        : g.rgb.mul(l).add(sky.add(l.mul(smoothstep(LAMP_MIRROR[0], LAMP_MIRROR[1], dot(l, vec3(0.3, 0.59, 0.11))).mul(0.85))).mul(g.a)).toVar();
       // Seen at a slant (from the street), wet ground mirrors far more than from above: the
       // sky low over the far end of the street, on what is wet enough to shine.
       if (!isWater && !sheltered) {

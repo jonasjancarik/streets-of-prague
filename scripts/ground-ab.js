@@ -11,7 +11,8 @@
 // darkening), noemissive (no lamp light or wet mirror), nonormal (no surface normals), noshadow
 // (no sun's shadow on the ground), noao (no darkening where less of the sky is seen), nocolor
 // (the plain layer colour: no pattern, hill shading, weathering or wet), nopattern
-// (userData.flatten(): the pattern alone).
+// (userData.flatten(): the pattern alone), day (userData.day(): the ground's own shading without
+// the code for the lamps' light and the wet mirror, which by day is switched off).
 // To tell the number of draws from the pixels they cover: collapse (basic, but every vertex
 // moved to one point: the same draws and vertices, no pixels), merged (the layers of every
 // tile as one unlit mesh: the same pixels, one draw, no stencil).
@@ -44,6 +45,7 @@ window.__ab = async (on) => {
   };
   const variant = (m, mode) => {
     if (mode === 'nopattern') return m.userData.flatten();
+    if (mode === 'day') return m.userData.day();
     if (mode === 'basic') return basic(m);
     if (mode === 'collapse') { const b = basic(m); b.positionNode = TSL.vec3(0, 0, 0); return b; }
     // clone() leaves out the tile textures the graph reads from the material (src/webgpu.ts).
