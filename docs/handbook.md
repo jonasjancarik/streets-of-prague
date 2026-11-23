@@ -1413,7 +1413,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   mapped tunnel way sets the ends of the roof, leaving the approaches open to daylight.
   The floor follows the map. Its headroom and finishes are inferred. From inside,
   the renderer omits just the pieces of the terrain mesh that enter the lane
-  (`src/map/tunnelInterior.ts`, `src/map/tunnelEarth.ts`).
+  (`src/map/tunnelInterior.ts`, `src/map/tunnelEarth.ts`). A tunnel's outer walls stop
+  half a metre under the ground over them, so an underpass only 5 m under its street
+  doesn't show their tops in it (`tunnelLayers` in `src/ground.ts`).
   A road can change levels partway along an edge. Traffic, buses and the developer
   tool that puts a car back on the road use the level at that point along the lane.
   A named deck or tunnel is used where the loaded tile has its surface and height.

@@ -1034,8 +1034,17 @@ function tunnelLayers(polys: Polygons, box: Bounds, mask: LevelMask, H: HeightAt
     if (geometry.index.length) out.push({ order: -695, geometry, tunnel: true, level, tunnelFinish: finish });
   }
   const q = quads();
+  // A wall stops under the ground that lies over it. An underpass 5 m under its street
+  // (Divadelní under Národní) had its walls' tops standing half a metre out of the
+  // street, across the tram tracks. Half a metre under, not flush: the carriageway is
+  // drawn a kerb's height below the terrain and the mesh isn't the terrain to the
+  // centimetre, and from inside the lining's soffit (tunnelInterior) is lower still.
+  const top = (p: Point2, h: number) => {
+    const t = T(p[0], p[1]);
+    return t > h + 1.2 ? Math.min(h + TUNNEL_H, t - 0.5) : h + TUNNEL_H;
+  };
   openSides(polys, box, mask, H, T, (a, b, ha, hb, ox, oy) => {
-    q.quad([b[0], hb, -b[1]], [a[0], ha, -a[1]], [a[0], ha + TUNNEL_H, -a[1]], [b[0], hb + TUNNEL_H, -b[1]], [-ox, 0, oy]);
+    q.quad([b[0], hb, -b[1]], [a[0], ha, -a[1]], [a[0], top(a, ha), -a[1]], [b[0], top(b, hb), -b[1]], [-ox, 0, oy]);
   });
   add(-699, joined(polygons([]), q), COLORS.tunnelWall, 'concrete');
   const inner = groundHeight;
