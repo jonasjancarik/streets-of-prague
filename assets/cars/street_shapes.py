@@ -56,10 +56,9 @@ class StreetCar(Car):
         return tuple(lerp(p, q, t) for p, q in zip(a[1:], b[1:]))
 
     def belt(self, x):
-        # The rising waist flows into the rear quarter, then drops into the tail lamp.
-        return self.station(x)[1] + self.rise * smooth((self.front_door - x) / 1.6) * smooth(
-            (x + self.end) / 0.50
-        )
+        # The waist climbs steadily from the front door to the rear wheel and stays
+        # there: the tail lamps and the plate are fitted that much higher (build.py).
+        return self.station(x)[1] + self.rise * smooth((self.front_door - x) / 1.6)
 
     def side_width(self, x, z):
         width, _, sill = self.station(x)
@@ -70,7 +69,8 @@ class StreetCar(Car):
         return (
             width
             - 0.093 * (1 - smooth(h / 0.31))
-            - 0.100 * smooth((h - 0.76) / 0.24) ** 1.5
+            # (a van's box stands straight up from its waist, without a car's rolled shoulder)
+            - (0.035 if self.kind == "van" else 0.100) * smooth((h - 0.76) / 0.24) ** 1.5
             - 0.033 * math.sin(math.pi * h) ** 2
             + 0.017 * shoulder
             - 0.008 * math.exp(-((min(abs(x - e) for e in self.shut_lines) / 0.011) ** 2)) * smooth(h / 0.15)
@@ -160,7 +160,7 @@ class StreetCar(Car):
             # plate and the slats on the centre band at their existing mount.
             e = smooth((abs(x) - self.end + 0.45) / 0.45)
             h = (z - self.station(x)[2]) / (self.belt(x) - self.station(x)[2])
-            return x - math.copysign(e * (0.083 * (1 - smooth(h / 0.30)) + 0.062 * smooth((h - 0.73) / 0.27)), x)
+            return x - math.copysign(e * (0.045 * (1 - smooth(h / 0.30)) + 0.062 * smooth((h - 0.73) / 0.27)), x)
 
         def face_x(x, z, q):
             # The centre of each bumper bows beyond the ends of the wings.
@@ -324,32 +324,34 @@ class StreetCar(Car):
         xb += 0.06 + 0.70 * (xa - self.front_door)
         xc += self.setback
 
+        long_roof = self.kind in ("estate", "suv", "police")
+        fall_front = 0.045 if tall else 0.06
+        fall_back = 0.04 if self.utility else 0.03 if long_roof else 0.07
+
         def rail(t):
-            arc = math.sin(math.pi * t)
             x = lerp(xb, xc, t)
-            w = wr + 0.046 + 0.046 * arc - 0.062 * (1 - smooth(t / 0.19)) - 0.064 * smooth((t - 0.72) / 0.28)
-            z = (
-                top
-                - 0.04
-                - (0.05 if tall else 0.085) * (1 - smooth(t / 0.30))
-                - (0.045 if self.utility else 0.084) * smooth((t - 0.70) / 0.30)
-            )
+            # Widest over the front seats, drawn in evenly to the windscreen and the
+            # tail: a pinch near either end shows as a notch above the pillar.
+            w = wr + 0.040 - 0.045 * (1 - t / 0.42) ** 2 if t < 0.42 else wr + 0.040 - 0.035 * ((t - 0.42) / 0.58) ** 2
+            z = top - 0.04 - fall_front * (1 - smooth(t / 0.38)) - fall_back * smooth((t - 0.55) / 0.45)
             return x, w, z
 
         def roof(t, q):
             x, w, z = rail(t)
             # Tight transverse radii along the drip rails blend into a broad crown.
             return (
-                x + (0.125 * (1 - t) ** 4 - 0.103 * t**4) * (1 - q * q),
+                x + (0.125 * (1 - t) ** 4 - (0.02 if self.utility else 0.103) * t**4) * (1 - q * q),
                 q * w,
                 z + self.roll * (1 - q**8) + 0.027 * (1 - q * q),
             )
 
         self.roof_point = roof
 
-        def sidepane(u, v, s):
-            x = lerp(xa, xd, u)
-            xx, ww, zz = rail(u)
+        def sidepane(low, high, v, s):
+            # From `low` of the way along the belt up to `high` of the way along the
+            # roof, in a straight line: that keeps every pillar straight.
+            x = lerp(xa, xd, low)
+            xx, ww, zz = rail(high)
             z = self.belt(x) - 0.006
             return (
                 lerp(x, xx, v),
@@ -388,9 +390,8 @@ class StreetCar(Car):
         rear_cut = (xa - xq) / (xa - xd) if xq is not None else 1
         # Meet the same lower door cut, while the B and C pillars lean back
         # only slightly at the header (the roof is much shorter than the belt).
-        top_b = (xb - (xm_top if xm_top is not None else xm)) / (xb - xc)
-        top_b = min(0.83, max(0.16, top_b))
-        top_q = min(0.92, max(top_b + 0.08, (xb - (xq - 0.06)) / (xb - xc))) if xq is not None else 1
+        top_b = min(0.83, max(0.16, (xb - (xm - (0.07 if tall else 0.10))) / (xb - xc)))
+        top_q = min(0.92, max(top_b + 0.08, (xb - (xq + 0.04)) / (xb - xc))) if xq is not None else 1
         sail = (xa - self.front_door) / (xa - xd)
         spans = [
             (0, sail, 0, 0.018, 0),
@@ -404,8 +405,7 @@ class StreetCar(Car):
             for lo, hi, lid0, lid1, door in spans:
 
                 def panel(u, v):
-                    along = lerp(lerp(lo, hi, u), lerp(lid0, lid1, u), v)
-                    return sidepane(along, v, s)
+                    return sidepane(lerp(lo, hi, u), lerp(lid0, lid1, u), v, s)
 
                 k = door + (s < 0) if door else 0
                 if hi == sail:
@@ -455,7 +455,7 @@ class StreetCar(Car):
             def lip(u, v):
                 q = u * 2 - 1
                 x, y, z = roof(1, q)
-                return (x - v * 0.112 * (1 - 0.65 * q**4), y, z - 0.006 + 0.013 * v - 0.016 * v * v)
+                return (x - v * 0.055 * (1 - 0.8 * q**4), y, z - 0.004 - 0.022 * v * v)
 
             self.patch("Paint", steps(16), steps(3), lip, Vector((0, 0, 1)))
             self.patch(
@@ -527,9 +527,16 @@ class StreetCar(Car):
         self.screen_layout = (self.cowl, self.roof_range[0], z0, top, e)
 
     def line(self, x0, x1, w, floor, belt, top, xb, xc, wr):
-        super().block(((x0 + x1) / 2, 0, floor), (x0 - x1, 2 * w - 0.06, 0.045), "Seat")
+        # The floor reaches the sills between the wheels and stays inside the tyres
+        # beside them, where it would show through the arches.
+        cuts = sorted({x0, x1, *(min(x0, max(x1, e)) for e in self.arch_ends)}, reverse=True)
+        for a, b in zip(cuts, cuts[1:]):
+            beside = any(abs((a + b) / 2 - axle) < self.arch for axle in self.axles)
+            if a - b > 0.001:
+                super().block(((a + b) / 2, 0, floor), (a - b, 2 * w - (0.50 if beside else 0.06), 0.045), "Seat")
         for x in [x0 - 0.06, x1 + 0.08]:
-            super().block((x, 0, (floor + belt) / 2), (0.055, 2 * w - 0.075, belt - floor), "Seat")
+            beside = any(abs(x - axle) < self.arch + 0.03 for axle in self.axles)
+            super().block((x, 0, (floor + belt) / 2), (0.055, 2 * w - (0.50 if beside else 0.075), belt - floor), "Seat")
         if self.kind == "van":
             super().block((x1 + 0.06, 0, (top + floor) / 2), (0.07, 2 * wr, top - floor), "Seat")
 
@@ -539,25 +546,32 @@ class StreetCar(Car):
         super().block(c, size, mat)
 
     def roof_rails(self, xb, xc, wr, roof):
+        # A low bar along each edge of the roof. It follows the roof a finger's width
+        # above it and comes down onto a foot at each end and one in the middle.
+        inset, clear = 0.80, 0.030
+
+        def along(t, side):
+            return Vector(self.roof_point(lerp(0.09, 0.90, t), side * inset))
+
         for side in (-1, 1):
 
             def cross(t, angle):
-                p = Vector(self.roof_point(lerp(0.07, 0.92, t), side * 0.89))
-                stand = 0.013 + 0.043 * math.sin(math.pi * t) ** 0.6
-                return (p.x, p.y + 0.024 * math.cos(angle), p.z + stand + 0.020 * math.sin(angle))
+                p = along(t, side)
+                stand = clear * smooth(t / 0.07) * smooth((1 - t) / 0.07)
+                return (p.x, p.y + 0.017 * math.cos(angle), p.z + 0.010 + stand + 0.011 * math.sin(angle))
 
             for i in range(8):
                 angle = math.tau * (i + 0.5) / 8
                 self.patch(
                     "Trim",
-                    steps(18),
+                    steps(24),
                     [math.tau * i / 8, math.tau * (i + 1) / 8],
                     cross,
                     Vector((0, math.cos(angle), math.sin(angle))),
                 )
-            for t in [0.07, 0.92]:
-                x, y, z = self.roof_point(t, side * 0.89)
-                super().block((x, y, z + 0.015), (0.12, 0.067, 0.035), "Trim")
+            for t in (0.09, 0.5, 0.91):
+                p = along(t, side)
+                super().block((p.x, p.y, p.z + clear / 2), (0.10, 0.030, clear + 0.016), "Trim")
 
     def roof_pressings(self, xa, nb, wr, height):
         for y in [-0.66, -0.22, 0.22, 0.66]:

@@ -614,13 +614,14 @@ def patrol_word(parent, word, width, ink, project):
 
 
 def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, r=0.31, lift=0.0, word=None,
-           sunroof=0.0, fin=True, factory=Car):
+           sunroof=0.0, fin=True, blunt=0.0, factory=Car):
     """A car: `rear` is 'hatch', 'sedan' or 'estate'; `bar` is where along the roof the
     light bar goes (the middle of `cabin` in src/car.ts, where src/police.ts flashes it).
     `r` is the wheel radius and `lift` how much higher the bonnet and sills sit (an SUV).
     `word` is written across the bonnet, and the stripe then turns into yellow and blue
     blocks on the front wings and behind the rear doors (the Czech police's colours).
     `sunroof` is the length of a glass panel in the roof, and `fin` an aerial at the back of it.
+    `blunt` is how much higher the nose stands (an SUV's tall, upright front).
 
     Seen from above (and from above at a slant, away from the middle of the screen) a
     car is its outline, its glass and how the light runs over it, so: corners rounded
@@ -632,10 +633,12 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, 
     w, n = W / 2, L / 2
     belt = 0.93 if H < 1.48 else 0.95 if H < 1.6 else 1.03
     boot = {"hatch": belt, "sedan": belt + 0.03, "estate": belt}[rear]
-    # The heights of the top and of the sill along the car: (x, top, sill).
+    # The heights of the top and of the sill along the car: (x, top, sill). The bonnet
+    # is convex: nearly level at the windscreen, turning down more and more to the nose.
     profile = [
-        (n, 0.7 + lift, 0.3 + lift), (n - 0.12, 0.76 + lift, 0.26 + lift), (n - 0.35, 0.8 + lift, 0.24 + lift),
-        (n - 0.8, 0.84 + lift, 0.22 + lift), (n - 1.25, belt - 0.01, 0.22 + lift), (n - 1.45, belt, 0.22 + lift),
+        (n, 0.73 + lift + blunt, 0.3 + lift), (n - 0.12, 0.8 + lift + blunt, 0.26 + lift),
+        (n - 0.35, 0.85 + lift + 0.8 * blunt, 0.24 + lift), (n - 0.8, 0.895 + lift + 0.4 * blunt, 0.22 + lift),
+        (n - 1.25, belt - 0.015, 0.22 + lift), (n - 1.45, belt, 0.22 + lift),
         (-n + 0.7, boot, 0.22 + lift), (-n + 0.3, boot, 0.24 + lift), (-n + 0.1, boot - 0.02, 0.27 + lift),
         (-n, boot - 0.06, 0.3 + lift),
     ]
@@ -692,7 +695,8 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, 
     c.mirrors(xa - 0.1, half(xa - 0.1), belt + 0.08, stalk=True)
     front, end = nb - 0.06, -nb + 0.06
     # (Placed by the width at the very end: the corners round off in front of the lamps.)
-    c.lamps(front, end, half(nb) - 0.17, half(-nb) - 0.15, 0.64 + lift, boot - 0.12,
+    lamp = 0.64 + lift + 0.8 * blunt
+    c.lamps(front, end, half(nb) - 0.17, half(-nb) - 0.15, lamp, boot - 0.12,
             plates=((n - 0.01, 0.42 + lift), (-n + 0.01, 0.46 + lift)))
     # (Tail lamps from above only on a saloon, with a boot behind the rear window.)
     shape.lamps(c, back=rear == "sedan")
@@ -710,7 +714,7 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, 
         patrol_bar(c, bar, H, W)
     if rails:
         c.roof_rails(xb, xc, wr, roof)
-    build_trim(name, shape, c, 0.64 + lift, boot - 0.12, material, MATS)
+    build_trim(name, shape, c, lamp, boot - 0.12 + getattr(c, "rise", 0), material, MATS)
     body = c.finish(name)
     if word:
         patrol_word(body, word, .92, "PatrolNavy",
@@ -730,9 +734,9 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, 
 def van(name="van", L=5.2, W=2.0, H=2.3, factory=Car):
     c = factory(name)
     w, n = W / 2, L / 2
-    belt = 1.05
+    belt = 1.2
     profile = [
-        (n, 0.8, 0.34), (n - 0.12, 0.88, 0.3), (n - 0.4, 0.96, 0.28),
+        (n, 0.96, 0.34), (n - 0.12, 1.05, 0.3), (n - 0.4, 1.15, 0.28),
         (n - 0.62, belt, 0.28), (-n + 0.2, belt, 0.28), (-n, belt, 0.32),
     ]
     # A short rounded nose, and a box behind that's square but for its corners.
@@ -756,10 +760,10 @@ def van(name="van", L=5.2, W=2.0, H=2.3, factory=Car):
     c.roof_pressings(xa, nb, w * .93, H)
     c.wheels(wheels, w, 0.34, 0.23)
     c.mirrors(xa - 0.05, half(xa - 0.05) + 0.03, belt + 0.1, stalk=True)
-    c.lamps(nb - 0.06, -nb + 0.06, half(nb) - 0.17, half(-nb) - 0.15, 0.72, 0.85,
+    c.lamps(nb - 0.06, -nb + 0.06, half(nb) - 0.17, half(-nb) - 0.15, 0.84, 0.95,
             plates=((n - 0.01, 0.45), (-n + 0.01, 0.48)))
     shape.lamps(c)
-    build_trim(name, shape, c, 0.72, 0.85, material, MATS)
+    build_trim(name, shape, c, 0.84, 0.95, material, MATS)
     return c.finish(name)
 
 
@@ -824,7 +828,7 @@ def build(factory=Car):
         passenger("hatch", 3.9, 1.75, 1.45, "hatch"),
         passenger("sedan", 4.6, 1.82, 1.45, "sedan", sunroof=0.5),
         passenger("estate", 4.7, 1.82, 1.5, "estate", rails=True),
-        passenger("suv", 4.65, 1.88, 1.65, "estate", rails=True, r=0.36, lift=0.07, sunroof=1.0),
+        passenger("suv", 4.65, 1.88, 1.65, "estate", rails=True, r=0.36, lift=0.07, sunroof=1.0, blunt=0.08),
         van(factory=factory),
         pickup(factory=factory),
         passenger("taxi", 4.6, 1.82, 1.45, "sedan", sign=True),

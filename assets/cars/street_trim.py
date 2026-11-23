@@ -92,9 +92,16 @@ def build_trim(name, shape, source, front_z, rear_z, material, materials):
         # The bumper is painted through to the wheel arch. A narrower dark valance
         # runs along its lower edge, where a real moulding meets the undertray.
         low = shape.stations[0 if end > 0 else -1][3] + .006
+        # The valance stops at the wheel arch: past it there is no body to lie on.
+        corner = (shape.nose if end > 0 else shape.tail)[0]
+        arch = max((end * x for x in getattr(source, "arch_ends", [])), default=0) + .02
+        turn = math.acos(max(0., min(1., 1 - (shape.nb - arch) / corner)))
+        edge = shape.half(end * shape.nb)
+        straight = edge / (edge + math.pi * sum(shape.nose if end > 0 else shape.tail) / 4)
+        reach = straight + (1 - straight) * turn / (math.pi / 2) if formed else 1
         for side in (-1, 1):
             normal = Vector((end, side, .12))
-            panels.patch("Trim" if formed else "RubStrip", 24, 2, lambda u, v: shell(end, side, u, low + v * .071, .012 if formed else .018), normal)
+            panels.patch("Trim" if formed else "RubStrip", 24, 2, lambda u, v: shell(end, side, u * reach, low + v * .071, .012 if formed else .018), normal)
             if end > 0:
                 first = .39 if utility else .41
                 last = .92 if name == "hatch" else .97

@@ -1608,7 +1608,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   camera. Inside 24 m the sculpted shell takes over when ready. Until then the car
   keeps its fitted wheels and original body. The new shells share those wheel mounts and
   door pivots. The hatchback has a short bonnet and a raked tailgate, the estate a longer
-  roof, and the SUV flared wheel openings. The pickup has a recessed, ribbed load bed.
+  roof, and the SUV flared wheel openings and a taller, blunter nose. The estate, the SUV
+  and the state police car carry low roof rails that follow the roof on three feet. The
+  van has a tall nose and a high waist under its cab windows. The pickup has a recessed,
+  ribbed load bed. The bonnet's profile and the van's waist come from `build.py`, so a
+  change there needs both files rebuilt.
   Both police liveries keep their markings and optional ram on the close body.
   Rebuild these bodies with `blender -b --factory-startup --python-exit-code 1 -P assets/cars/street_shapes.py`.
   The sedan uses its own generator (`assets/cars/sedan.py`). It has a recessed
