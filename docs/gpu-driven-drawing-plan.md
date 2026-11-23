@@ -222,3 +222,19 @@ describe the new path.
 - Cheaper shading per pixel and clustered lighting for many lamps.
 - VR on WebGPU (waiting on WebXR with WebGPU in Chrome, see webgpu-vr.md).
 - The nearby people's draws: worth fixing first and separately (see above).
+
+## Where this stands (23 November 2026)
+
+Stages 0 and 1 were built and measured on branch `gpu-driven-drawing`, which isn't merged:
+on the Pixel 5 the pool of buildings drawn by the GPU at best matched the CPU culler alone,
+standing and driving, so stage 1's stop rule held. The progress notes and the code are on
+that branch.
+
+### Stage 3 checked before building (23 November, afternoon)
+
+The ground costs the Pixel 5 about 26 ms of a 53 ms frame at Medium (performance log, 23
+November): about 19 ms shading and 9 ms drawing the layers at all. Of those 9 ms, the
+pixels are about 4 ms and the draws with their vertices about 5 ms, and the layers of every
+tile merged into one draw were no quicker than the 52 draws (35.1 → 37.1 ms). The ground's
+cost is in its triangles (6.1 M in the 13 tiles near the Old Town Square) and its shading,
+which merging draws doesn't touch, so stage 3 wouldn't pay on the phone either. Not built.

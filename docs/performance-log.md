@@ -1813,3 +1813,20 @@ the ground at Medium; the pattern's cost on phones.
 Two variants first failed to compile on the phone and looked like large savings:
 `Material.clone()` leaves out the tile textures the ground's graph reads from the material
 (`reliefMap`, `skyMap` and so on). Check the bench's console lines before trusting an A/B.
+
+Then the 9 ms of drawing the layers unlit, split (`collapse`: the same draws and vertices,
+every vertex moved to one point so no pixel is drawn; `merged`: every tile's layers as one
+unlit mesh, the same pixels in one draw, no stencil). Same scene and settings, 25–30 °C:
+
+| Pair (off → on) | Frame | |
+|---|---|---|
+| unlit layers → the same draws drawing no pixels | 36.4 → 32.2 ms | the pixels: 4.2 ms |
+| no layers → the draws drawing no pixels | 38.1 → 43.1 ms | the draws and their vertices: 5.0 ms |
+| unlit layers → one merged draw | 35.1 → 37.1 ms | 2 ms slower, windows overlapping |
+
+So the cost of the layers' draws is their vertices, not the number of draws: one draw with
+the same triangles was no quicker. Counted in the page (first person, Medium, the same
+place): 13 tiles drawn, 344 ground layers, 6.1 M triangles and 3.4 M vertices in them,
+311–621 thousand triangles a tile. A coarser ground for the farther tiles is the lead for
+that part, not fewer draws. (The run with no layers took 38.1 ms, against 26.5 ms in the
+first run: compare within a run, not across runs.)
