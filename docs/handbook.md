@@ -1613,8 +1613,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   van has a tall nose and a high waist under its cab windows. Each has an amber
   repeater on the front wings, red reflectors in the rear bumper and a tailpipe under
   it. The cars have a fuel flap on the right; those with a tailgate have a rear wiper and a
-  high brake light, and the van a pair of back doors with hinges. The pickup has a recessed,
-  ribbed load bed. The bonnet's profile and the van's waist come from `build.py`, so a
+  high brake light, and the van a pair of back doors with hinges. The pickup is a
+  full-size truck: a bonnet at chest height, a tall grille, a shallow band of glass and a
+  recessed, ribbed load bed. At street level the paint and glass mirror the street more
+  faintly and out of focus than from above (`CAR_REFLECT.street` in `src/car.ts`): a
+  sharp, bright street on every panel made smooth bodies look crumpled. The bonnet's profile and the van's waist come from `build.py`, so a
   change there needs both files rebuilt.
   Both police liveries keep their markings and optional ram on the close body.
   Rebuild these bodies with `blender -b --factory-startup --python-exit-code 1 -P assets/cars/street_shapes.py`.

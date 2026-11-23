@@ -775,13 +775,15 @@ def pickup(name="pickup", L=5.9, W=2.03, H=1.95, factory=Car):
     """A full-size American pickup (an F-150): a long bonnet, a crew cab and an open bed."""
     c = factory(name)
     w, n = W / 2, L / 2
-    belt, rail, r = 1.24, 1.2, 0.4
+    # A full-size truck stands tall: the bonnet at a grown man's chest, the glass a
+    # shallow band above a deep body, the sills well clear of the road.
+    belt, rail, r = 1.42, 1.38, 0.42
     profile = [
-        (n, 1.02, 0.44), (n - 0.15, 1.1, 0.42), (n - 0.5, 1.17, 0.4),
-        (n - 1.0, rail, 0.38), (-n + 0.1, rail, 0.38), (-n, rail - 0.05, 0.4),
+        (n, 1.24, 0.5), (n - 0.15, 1.31, 0.47), (n - 0.5, 1.36, 0.44),
+        (n - 1.0, rail, 0.42), (-n + 0.1, rail, 0.42), (-n, rail - 0.05, 0.44),
     ]
     # A blunt, square-shouldered nose, and a bed square at the back.
-    shape = Shape(n, w, profile, nose=(0.4, 0.26), tail=(0.06, 0.05), bow=0.01)
+    shape = Shape(n, w, profile, nose=(0.32, 0.2), tail=(0.06, 0.05), bow=0.01)
     half, nb = shape.half, shape.nb
     xa = n - 1.5
     xd = xa - 2.4
@@ -792,19 +794,19 @@ def pickup(name="pickup", L=5.9, W=2.03, H=1.95, factory=Car):
     c.body(shape.stations, wheels, r, doors=[(xa, xm, 1), (xm, xd + 0.08, 3)], cabin=(xa, xd + 0.05),
            crown=shape.bulge)
     shape.top = getattr(c, "deck_height", shape.top)
-    shape.bumpers(c, (0.44, 0.72), (0.46, 0.76))
+    shape.bumpers(c, (0.5, 0.8), (0.52, 0.84))
     c.cabin(belt, xa, xa - 0.65, xm, xd + 0.1, xd, w - 0.12, w * 0.8, H - 0.035, xm_top=xa - 1.15,
             edge=lambda x: half(x) - LID, crown=0.035, bow=(0.05, 0.0))
-    c.interior(xa - 0.01, xd + 0.05, w - 0.08, 0.6, belt - 0.02, H - 0.06, xa - 0.68, xd + 0.13, w * 0.8 - 0.03,
+    c.interior(xa - 0.01, xd + 0.05, w - 0.08, 0.76, belt - 0.02, H - 0.06, xa - 0.68, xd + 0.13, w * 0.8 - 0.03,
                [(xa - 0.65, s * w * 0.48, 0.55) for s in (1, -1)] + [(xm - 0.6, 0, W - 0.4)])
     c.screen(shape, xa, xa - 0.65, belt - 0.02, H - 0.035, half(xa) - LID - 0.03)
     c.wheels(wheels, w, r, 0.28)
     c.mirrors(xa - 0.1, half(xa - 0.1) + 0.02, belt + 0.1, stalk=True)
-    c.lamps(nb - 0.06, -nb + 0.06, half(nb) - 0.17, half(-nb) - 0.14, 0.86, 0.98,
-            plates=((n - 0.01, 0.6), (-n + 0.01, 0.62)))
+    c.lamps(nb - 0.06, -nb + 0.06, half(nb) - 0.17, half(-nb) - 0.14, 1.06, 1.14,
+            plates=((n - 0.01, 0.66), (-n + 0.01, 0.68)))
     shape.lamps(c, size=(0.14, 0.32))
     c.bed(shape, xd, rail)
-    build_trim(name, shape, c, 0.86, 0.98, material, MATS)
+    build_trim(name, shape, c, 1.06, 1.14, material, MATS)
     return c.finish(name)
 
 

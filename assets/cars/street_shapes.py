@@ -330,8 +330,9 @@ class StreetCar(Car):
                 )
 
         tall = self.utility
+        truck = self.kind == "pickup"
         top = lamp + (0.075 if tall else 0.055)
-        opening(-0.49, 0.49, top - (0.198 if tall else 0.128), top, 0.075, "DarkChrome", 3 if tall else 2)
+        opening(-0.49, 0.49, top - (0.34 if truck else 0.198 if tall else 0.128), top, 0.075, "DarkChrome", 5 if truck else 3 if tall else 2)
         opening(-0.56, 0.56, low + 0.008, low + (0.14 if tall else 0.133), 0.053, "RubStrip", 2)
         # A pair of cheek pockets bracket the lower mouth. Their angled inner
         # walls leave a painted bridge beneath each headlight.
@@ -566,10 +567,11 @@ class StreetCar(Car):
         rear = -self.end + 0.095
         width = self.station((rear + front) / 2)[0] - 0.13
         z = self.belt(front)
-        super().block(((front + rear) / 2, 0, 0.75), (front - rear, 2 * width, 0.080), "Trim")
+        floor = z - 0.54  # (a full-size bed is about half a metre deep)
+        super().block(((front + rear) / 2, 0, floor), (front - rear, 2 * width, 0.080), "Trim")
         for side in [-1, 1]:
             super().block(
-                ((front + rear) / 2, side * width, (z + 0.72) / 2), (front - rear, 0.055, z - 0.72), "Trim"
+                ((front + rear) / 2, side * width, (z + floor - 0.03) / 2), (front - rear, 0.055, z - floor + 0.03), "Trim"
             )
             super().block(
                 ((front + rear) / 2, side * (width + 0.05), z - 0.005), (front - rear, 0.13, 0.034), "Paint"
@@ -581,14 +583,14 @@ class StreetCar(Car):
                 lambda u, v: (
                     self.axles[1] + (0.49 + 0.10 * math.cos(v * math.pi / 2)) * math.cos(math.pi * u),
                     side * (width - 0.21 * math.sin(v * math.pi / 2)),
-                    0.755 + (0.21 + 0.05 * math.cos(v * math.pi / 2)) * math.sin(math.pi * u),
+                    floor + 0.005 + (0.21 + 0.05 * math.cos(v * math.pi / 2)) * math.sin(math.pi * u),
                 ),
                 Vector((0, -side, 0.5)),
             )
         for x in [front - 0.03, rear]:
-            super().block((x, 0, (z + 0.73) / 2), (0.055, 2 * width, z - 0.73), "Trim")
+            super().block((x, 0, (z + floor - 0.02) / 2), (0.055, 2 * width, z - floor + 0.02), "Trim")
         for i in range(-4, 5):
-            super().block(((front + rear) / 2, i * width / 5, 0.795), (front - rear - 0.11, 0.037, 0.021), "Trim")
+            super().block(((front + rear) / 2, i * width / 5, floor + 0.045), (front - rear - 0.11, 0.037, 0.021), "Trim")
         super().block((rear, 0, z - 0.008), (0.11, 2 * width + 0.08, 0.044), "Paint")
 
     def screen(self, shape, xa, xb, z0, top, e):
