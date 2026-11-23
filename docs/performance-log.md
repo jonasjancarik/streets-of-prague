@@ -1945,3 +1945,19 @@ water stay; by day the picture is the same, `LAMP_ON` and `MIRROR` both 0), and
 So of the 4.0 ms the whole emissive part cost, the code that is off by day is at most
 about 1.5 ms. Not enough to swap the ground's shaders at dusk and dawn (each graph compiles
 on the main thread, 7–60 ms), so the game keeps one shader; the variant stays for tests.
+
+### Mipmaps on the ground's tile textures (23 November, evening)
+
+One read of the sky-view texture cost the phone 4.2 ms above. It is one texel a metre
+(250 × 250 a tile) without mipmaps, as are the relief, road-coverage and deck-mask textures,
+so the far ground reads them scattered. `scripts/mip-ab.js` gives all four mipmaps and
+trilinear filtering. Pixel 5, Medium, 60 s, no `&dev`, no touches, 31–32 °C:
+
+| Place | Game's textures → with mipmaps |
+|---|---|
+| Old Town Square (`stand`, held near 30 fps) | 33.7 → 33.3 ms, 1.1 % |
+| Malá Strana (`strana`) | 44.3 → 43.6 ms, 1.5 % |
+
+Within the noise, and the picture is the same, so the textures stay as they are. With the
+shadow filter and the lamp and mirror code, three of the four shading leads above came to
+little; what is left is the pattern (6.6 ms), which is the look itself.
