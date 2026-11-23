@@ -1908,3 +1908,22 @@ million differ at Petřín and Malostranské náměstí, at eye height and from 
 them one-pixel lines where the ground meets a wall or a step. Building a tile's ground in
 the worker: median 133 → 171 ms on the M5 (the first version took 7 times as long; the
 test now answers each edge once). On by default on every tier (`groundFlat: 8`).
+
+### The sun's shadow read once (23 November, evening)
+
+Turning the ground's sun shadow off saved 5.1 ms above, so the next try was a cheaper
+lookup: three.js's `BasicShadowFilter` (one hardware-compared read) instead of the PCF
+filter every tier below Ultra uses (five reads in a rotated disc). `scripts/shadow-ab.js`
+swaps the filter on the sun's shadow for every lit material, not only the ground, and
+builds the materials again each switch (`--window 5 --warmup 10`). Pixel 5, Medium, 60 s,
+no `&dev`, no touches, 25–28 °C:
+
+| Place | PCF → one read |
+|---|---|
+| Old Town Square (`stand`, held at 30 fps) | 33.2 → 32.9 ms |
+| Malá Strana (`strana`) | 42.3 → 42.4 ms |
+
+No saving: the four extra reads cost the phone nothing measurable, so the shadow's cost on
+the ground is the lookup itself (the shadow coordinates and the map read), not the filter.
+The single read also gives the large shadows across the square a slightly harder edge.
+PCF stays.
