@@ -195,7 +195,12 @@ def _indexes():
 def _skipped(kinds):
     """kinds without the polygons survey_skip.json lists (each the one of its kind that
     holds its point). Says so when a listed place has no such polygon any more: the
-    survey may have been put right, and the entry can go."""
+    survey may have been put right, and the entry can go.
+
+    An entry with `as` isn't dropped but counted as that kind, on the ground: what the
+    survey has on level 1 over an underpass the game keeps as a tunnel. The survey's
+    ground there is the underpass's own floor, and its carriageway and pavements were
+    painted on the street above (Národní over Divadelní)."""
     places = json.loads(SKIP.read_text()) if SKIP.exists() else []
     out = dict(kinds)
     for place in places:
@@ -209,6 +214,9 @@ def _skipped(kinds):
         keep = np.ones(len(geoms), bool)
         keep[hit] = False
         out[place["kind"]] = (levels[keep], geoms[keep])
+        if place.get("as"):
+            to_levels, to_geoms = out.get(place["as"], (np.array([], dtype=np.int8), np.array([], dtype=object)))
+            out[place["as"]] = (np.concatenate([to_levels, np.zeros(len(hit), dtype=np.int8)]), np.concatenate([to_geoms, geoms[hit]]))
     return out
 
 

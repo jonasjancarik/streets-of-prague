@@ -7,5 +7,45 @@
    50.07418
   ],
   "why": "the survey of 30 September 2026 has one 4.4 ha carriageway with straight edges over the motorway, its ramps and the grass and trees between them, where IPR's photo shows a cloverleaf with grass inside; the map drew it all as asphalt"
+ },
+ {
+  "name": "Národní over Divadelní's underpass by the National Theatre: the south pavement",
+  "kind": "road",
+  "as": "pavement",
+  "at": [
+   14.413814,
+   50.081306
+  ],
+  "why": "the survey has the underpass's own floor as the ground here and the street over it on level 1; the game keeps the underpass as a tunnel, so the ground it paints is the street's, and the underpass's carriageway and pavements showed on top of Národní, across its pavements and tram tracks. As the survey's level 1 has this outline: pavement"
+ },
+ {
+  "name": "Národní over Divadelní's underpass by the National Theatre: the north pavement",
+  "kind": "road",
+  "as": "pavement",
+  "at": [
+   14.413764,
+   50.081504
+  ],
+  "why": "the survey has the underpass's own floor as the ground here and the street over it on level 1; the game keeps the underpass as a tunnel, so the ground it paints is the street's, and the underpass's carriageway and pavements showed on top of Národní, across its pavements and tram tracks. As the survey's level 1 has this outline: pavement"
+ },
+ {
+  "name": "Národní over Divadelní's underpass by the National Theatre: the carriageway's east strip",
+  "kind": "pavement",
+  "as": "road",
+  "at": [
+   14.413863,
+   50.081402
+  ],
+  "why": "the survey has the underpass's own floor as the ground here and the street over it on level 1; the game keeps the underpass as a tunnel, so the ground it paints is the street's, and the underpass's carriageway and pavements showed on top of Národní, across its pavements and tram tracks. As the survey's level 1 has this outline: carriageway"
+ },
+ {
+  "name": "Národní over Divadelní's underpass by the National Theatre: the carriageway's west strip",
+  "kind": "pavement",
+  "as": "road",
+  "at": [
+   14.413735,
+   50.081436
+  ],
+  "why": "the survey has the underpass's own floor as the ground here and the street over it on level 1; the game keeps the underpass as a tunnel, so the ground it paints is the street's, and the underpass's carriageway and pavements showed on top of Národní, across its pavements and tram tracks. As the survey's level 1 has this outline: carriageway"
  }
 ]

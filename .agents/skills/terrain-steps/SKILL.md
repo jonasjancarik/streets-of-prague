@@ -436,6 +436,11 @@ steeper than VALLEY anywhere, which took steps over 1 m from 71 to 38.
   as the city build wrote them, so after such a change the window's tiles still say
   "Národní on a bridge here" and paint the underpass's road on the ground: set `level`
   and `levels` by hand (as `layers.assemble` would) before believing the pictures.
+  The survey has such an underpass's own floor as the ground (level 0) and the street
+  over it on level 1, so the ground layer painted the underpass's carriageway and
+  pavements on top of Národní. `pipeline/survey_skip.json` re-files those four polygons
+  (`as`) as what the survey's level 1 has there. Not a rule: over an underpass turned
+  into a cutting the level 1 surfaces belong on the bridges, not on the ground.
 
 Tried and dropped: a terrace for every surveyed street well above or below the ground
 beside it (cliffs 12 m high under Letná); leaving the terrain model wherever the
