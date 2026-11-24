@@ -35,6 +35,7 @@ NEAR_LINE = 0.35  # m: grid samples this close to a step are on it, not on eithe
 SNAP = 0.01  # m: points closer than this are one
 DUP = 0.1  # m: a step this close all along to one already taken is the same wall
 MAX_SPLITS = 40  # rounds of splitting a step segment the triangulation misses at its midpoint
+END_JUMP, END_REACH = 2.0, 1.5  # m: a side of a step jumping this much this near its end is the lattice's mistake (build)
 
 
 def load(target: Path, k: str):
@@ -178,7 +179,27 @@ def build(target: Path, k: str, tol: float, loose: float | None = None):
             # (Every point with the run's two sides: its last is where the labels change,
             # and with its own labels a wall's last point had one side, the plain ground's.)
             run = run.copy()
+            # Such a point has one side's height for both: at a corner where an outline
+            # turns off (Divadelní's floor at the underpass's mouth), the street's floor
+            # took the street's on top, a spike 4–5 m high. It takes the heights of the
+            # nearest point that has the run's two sides.
+            own = (run[:, 4] == lr[0]) & (run[:, 5] == lr[1])
+            if own.any() and not own.all():
+                good = np.flatnonzero(own)
+                for i in np.flatnonzero(~own):
+                    j = good[np.argmin(np.abs(good - i))]
+                    run[i, 2], run[i, 3] = run[j, 2], run[j, 3]
             run[:, 4], run[:, 5] = lr
+            # One side jumping by more than END_JUMP within END_REACH of a run's end: the
+            # lattice's cell there has that side's corner on other ground (at Divadelní's
+            # mouth the plaza's top beside its wall read the street's height under it, the
+            # cell's only plain-ground corner). The end takes the height from past the jump.
+            for c in (2, 3):
+                for ends in (run, run[::-1]):
+                    along = np.r_[0, np.cumsum(np.hypot(*np.diff(ends[:, :2], axis=0).T))]
+                    jump = np.flatnonzero((np.abs(np.diff(ends[:, c])) > END_JUMP) & (along[1:] <= END_REACH))
+                    if len(jump) and len(ends) > jump[-1] + 2:
+                        ends[:jump[-1] + 1, c] = ends[jump[-1] + 1, c]
             kept = thin(run, tol)
             ids = [P.add(run[i, 0], run[i, 1], {lr[0]: run[i, 2], lr[1]: run[i, 3]}, 1) for i in kept]
             steps.append([run, kept, ids])

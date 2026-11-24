@@ -1335,3 +1335,16 @@ time to triangulate a tile, before `praha`.
   0.6 m). The first build's drive-through scenario passed: cars get through the Strahov
   tunnel both ways and past the main station. The mesh has 56.7 million triangles and
   no missing tiles. Pictures in `docs/evidence/tin/strahov` (local).
+
+- **24 November 2026: a wall's last sample at a corner.** Where a step's outline turns
+  off, the target's last sample along it has its own labels, one side's on both sides,
+  and with it one side's height for both. `tin.py` gave the sample the run's two sides
+  but kept that one height, so the other side's triangles at the corner rose or fell to
+  it: at Divadelní's mouths under Národní (`terrain_floors.json`), spikes 4–5 m high
+  standing up from the street's floor. Such a sample now takes the heights of the
+  nearest one with the run's own sides. And where a side jumps by more than `END_JUMP`
+  (2 m) within `END_REACH` (1.5 m) of a run's end, the end takes the height from past
+  the jump: there the lattice cell had that side's only corner on other ground (the
+  plaza's top beside its wall read the street's height under it). `tin_tiles.py
+  --stale` rebuilds only the meshes whose ground changed, so other tiles get both when
+  their meshes are next built.
