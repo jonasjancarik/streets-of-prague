@@ -125,6 +125,10 @@ libraries to `dist/licenses.txt`.
   by vonfleisch, [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/), the traffic
   [Prague Atmo Traffic from 5th floor](https://freesound.org/s/94309/) by aUREa,
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), the rest CC0.
+- Crash sounds: [Freesound](https://freesound.org), most of them CC0; the heavy metal
+  crash is [metal crash 4 heavy](https://freesound.org/s/121658/) by Halleck and the light
+  bumps [Soft Impact Foley on Side of 1990 Volvo 240 Sedan](https://freesound.org/s/636498/)
+  by j_soundeffects, both [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 - Recorded car engine (on the sound test page so far): three recordings of a
   [Hyundai Kona](https://freesound.org/s/845607/) by KVV_Audio,
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).

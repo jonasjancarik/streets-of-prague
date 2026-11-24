@@ -2,7 +2,7 @@ import type { Footing } from './map/footing.ts';
 import { clamp } from './network.ts';
 import { BOGIES, frontOf } from './trams.ts';
 import { AMBIENCE, ambienceGains, ambienceMuffle, sirenGain, SIREN_RANGE, PASSING, passingFalloff, passingNote, passingLevels, ROTORS, rotorFalloff, sourcePan, PASSAGE_SOUND, CRASH, crashMix, crashFalloff } from './soundmix.ts';
-import { playCrash } from './crashsound.ts';
+import { playCrash, CRASH_CLIPS } from './crashsound.ts';
 import type { Impact } from './impacts.ts';
 import type { EarRight, PassingKind } from './soundmix.ts';
 import { Radio, radioOn, setRadioSaved } from './radio.ts';
@@ -197,6 +197,7 @@ export class Sound {
   private duck!: GainNode; // DUCKED buses go through this to the master
   private crashed = new WeakMap<object, { t: number; v: number }>(); // each car's last crash heard
   private crashEnds: number[] = []; // when the crashes playing now die away
+  private crashClips: Record<string, AudioBuffer> = {}; // the crashes' recordings, as they come in
   noise!: AudioBuffer;
   clack!: AudioBuffer;
   clips: Record<string, AudioBuffer> = {};
@@ -326,6 +327,12 @@ export class Sound {
     })).then(() => {
       for (let i = 0; i < TRAM_VOICES; i++) this.voices.push(new TramVoice(this, this.buses.trams));
     }).catch((e) => console.warn('The tram sounds could not be loaded', e));
+    // The crashes' recordings; until they're in, crashes are made from noise.
+    for (const name of Object.keys(CRASH_CLIPS)) {
+      fetch(`audio/${name}.m4a`).then((r) => r.ok ? r.arrayBuffer() : Promise.reject(new Error(`${name}: ${r.status}`)))
+        .then((b) => ctx.decodeAudioData(b)).then((b) => { this.crashClips[name] = b; })
+        .catch((e) => console.warn('A crash sound could not be loaded', e));
+    }
     // And the city around you, once its recordings are in.
     Promise.all(Object.keys(AMBIENCE).map(async (name) => {
       const r = await fetch(`audio/amb-${name}.m4a`);
@@ -604,7 +611,7 @@ export class Sound {
     const pan = ctx.createStereoPanner();
     pan.pan.value = mine ? 0 : sourcePan(dx, dy, d, 30, this.right);
     pan.connect(this.buses.bangs);
-    const end = playCrash(ctx, pan, this.noise, m, loud, 12000 - Math.min(d, CRASH.range) * 60, t);
+    const end = playCrash(ctx, pan, this.noise, m, loud, 12000 - Math.min(d, CRASH.range) * 60, t, Math.random, this.crashClips);
     this.crashEnds.push(end);
     // The rest turned down under it for a moment, then back up.
     const dip = m.duck * loud;

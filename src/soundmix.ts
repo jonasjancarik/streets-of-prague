@@ -181,6 +181,8 @@ export const CRASH_KINDS = {
 export type CrashKind = keyof typeof CRASH_KINDS;
 
 export interface CrashMix {
+  kind: CrashKind; // what was hit, which picks the recording
+  hit: number; // the recorded hit's level, right by it
   thud: number; crunch: number; ring: number; glass: number; rustle: number; // levels, right by it
   hz: number; decay: number; dull: boolean;
   length: number; // s over which the crunch and the falling pieces spread
@@ -200,6 +202,8 @@ export function crashMix(speed: number, kind: CrashKind, mass = 1400): CrashMix 
   const pitch = clamp((1400 / Math.max(60, mass)) ** 0.15, 0.7, 1.45);
   const weight = clamp((mass / 1400) ** 0.2, 0.6, 1.4);
   return {
+    kind: CRASH_KINDS[kind] ? kind : 'wall',
+    hit: (0.3 + 0.7 * hard ** 0.8) * weight,
     thud: (0.12 + 0.5 * hard ** 0.7) * k.thud * weight,
     crunch: 0.55 * crunch * k.crunch * weight,
     ring: 0.12 * ring * k.ring,

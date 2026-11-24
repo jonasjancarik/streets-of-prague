@@ -24,13 +24,25 @@ come from Freesound's public previews of the recordings (192 kbps Ogg Vorbis).
 | `engine-idle.wav` | [Hyundai Kona, Engine Static Idle Exterior 01](https://freesound.org/s/845611/) | KVV_Audio | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | `engine-mid.wav` | [Hyundai Kona, Engine Static 2000Rpm Exterior 01](https://freesound.org/s/845607/) | KVV_Audio | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | `engine-high.wav` | [Hyundai Kona, Engine Static 3000Rpm Exterior 01](https://freesound.org/s/845609/) | KVV_Audio | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| `crash-car-1.m4a` | [Car Crash_EXT](https://freesound.org/s/346299/) | PauliusI | CC0 |
+| `crash-car-2.m4a` | [Car Crash_INT](https://freesound.org/s/346300/) | PauliusI | CC0 |
+| `crash-car-3.m4a` | [Car accident. Real. Interior.](https://freesound.org/s/449062/) | softwalls | CC0 |
+| `crash-mid.m4a` | [Car Crash](https://freesound.org/s/237375/) | squareal | CC0 |
+| `crash-heavy.m4a` | [metal crash 4 heavy](https://freesound.org/s/121658/) | Halleck | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| `crash-metal.m4a` | [metal_collision](https://freesound.org/s/386798/) | RichieMcMullen | CC0 |
+| `crash-plastic.m4a` | [S022_Plastic_Impact_Mono](https://freesound.org/s/385940/) | Pól | CC0 |
+| `bump-1.m4a`, `bump-2.m4a`, `bump-3.m4a` | [Soft Impact Foley on Side of 1990 Volvo 240 Sedan](https://freesound.org/s/636498/) | j_soundeffects | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| `bump-door.m4a` | [cardoorclose](https://freesound.org/s/123017/) | j1987 | CC0 |
+| `body-1.m4a` | [Body Wall Impact](https://freesound.org/s/344402/) | jawbutch | CC0 |
+| `body-2.m4a` | [Light Body thud (on clothing)](https://freesound.org/s/496187/) | JonasTisell | CC0 |
 
 The CC BY recordings are changed: the motor is its mid channel only, a stretch of it
 evened out to a steady level and made into a loop; the traffic is a stretch of it,
 its slow swell evened out, made into a loop; each crowd is six stretches of the two Old
 Town recordings played at once (so no words come through), its loud moments pulled
 back, its highs softened, with a short reverb, made into a loop; each engine clip is a
-stretch of its recording, evened out to a steady level and made into a loop.
+stretch of its recording, evened out to a steady level and made into a loop; the heavy
+metal crash and the bumps are short stretches of their recordings, faded out.
 
 
 ## Footsteps

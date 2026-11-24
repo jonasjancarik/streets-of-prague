@@ -63,6 +63,17 @@ SOURCES = {
     845611: "845/845611_12846320-hq.ogg",  # Hyundai Kona, engine idle, exterior (CC BY 4.0, KVV_Audio)
     845607: "845/845607_12846320-hq.ogg",  # Hyundai Kona, engine at 2000 rpm, exterior (CC BY 4.0, KVV_Audio)
     845609: "845/845609_12846320-hq.ogg",  # Hyundai Kona, engine at 3000 rpm, exterior (CC BY 4.0, KVV_Audio)
+    346299: "346/346299_3038712-hq.ogg",  # Car Crash_EXT, a Peugeot 406 into a Ford Ka (PauliusI)
+    346300: "346/346300_3038712-hq.ogg",  # Car Crash_INT, the same from inside the Peugeot (PauliusI)
+    449062: "449/449062_6070740-hq.ogg",  # Car accident. Real. Interior. (softwalls)
+    237375: "237/237375_1502374-hq.ogg",  # Car Crash (squareal)
+    121658: "121/121658_6281-hq.ogg",  # metal crash 4 heavy (CC BY 4.0, Halleck)
+    386798: "386/386798_7236624-hq.ogg",  # metal_collision (RichieMcMullen)
+    385940: "385/385940_7097737-hq.ogg",  # S022_Plastic_Impact_Mono, a rally car into a barrier (Pól)
+    636498: "636/636498_14030247-hq.ogg",  # Soft Impact Foley on Side of 1990 Volvo 240 Sedan (CC BY 4.0, j_soundeffects)
+    123017: "123/123017_367313-hq.ogg",  # cardoorclose (j1987)
+    344402: "344/344402_4986214-hq.ogg",  # Body Wall Impact (jawbutch)
+    496187: "496/496187_3910073-hq.ogg",  # Light Body thud (on clothing) (JonasTisell)
 }
 
 # name: (source, channel (None: both mixed, "stereo": both kept), start s, end s, kind, rate, high-pass Hz)
@@ -90,6 +101,21 @@ CLIPS = {
     "engine-idle": (845611, None, 10.0, 16.5, "engine", 32000, None),
     "engine-mid": (845607, None, 6.0, 12.5, "engine", 32000, None),
     "engine-high": (845609, None, 8.0, 14.5, "engine", 32000, None),
+    # Crashes (src/crashsound.ts): each cut from just before the blow to the last of the
+    # pieces settling. "crash-car" are real cars hitting each other.
+    "crash-car-1": (346299, None, 3.58, 6.0, "once", SR, None),
+    "crash-car-2": (346300, None, 3.58, 6.5, "once", SR, None),
+    "crash-car-3": (449062, None, 0.58, 2.4, "once", SR, None),  # clipped in the recording
+    "crash-mid": (237375, None, 0.38, 2.7, "once", SR, None),
+    "crash-heavy": (121658, None, 2.48, 4.6, "once", SR, None),
+    "crash-metal": (386798, None, 0.0, 2.6, "once", SR, None),
+    "crash-plastic": (385940, None, 0.0, 1.0, "once", SR, None),
+    "bump-1": (636498, None, 2.78, 3.15, "once", SR, None),
+    "bump-2": (636498, None, 4.05, 4.45, "once", SR, None),
+    "bump-3": (636498, None, 4.82, 5.25, "once", SR, None),
+    "bump-door": (123017, None, 0.18, 0.7, "once", SR, None),
+    "body-1": (344402, None, 0.26, 0.8, "once", SR, None),
+    "body-2": (496187, None, 0.02, 0.33, "once", SR, None),
 }
 
 
@@ -227,7 +253,9 @@ def walla(parts: list[tuple[int, float]], length: float) -> np.ndarray:
 
 
 def once(x: np.ndarray) -> np.ndarray:
-    fade_in, fade_out = int(SR * 0.01), int(SR * 0.3)
+    # The short hits (under a second) fade in faster, so the blow keeps its edge.
+    short = len(x) < SR
+    fade_in, fade_out = int(SR * (0.003 if short else 0.01)), int(SR * min(0.3, len(x) / SR * 0.4))
     x = x.copy()
     x[:fade_in] *= np.linspace(0, 1, fade_in)
     x[-fade_out:] *= np.linspace(1, 0, fade_out) ** 2
