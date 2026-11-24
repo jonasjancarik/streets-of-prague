@@ -77,6 +77,7 @@ PHOTO_SEARCH, PHOTO_MIN_LEAVES, PHOTO_MIN_RADIUS, PHOTO_TOP = 4.0, 8, 1.5, (3.0,
 PHOTO_MAX_LEAVES = 250  # m2: more leaves in one patch are a lawn or a wood, not one crown
 PHOTO_WIDER = 1.3  # the photo's crown is taken when it's this much wider than the models' one
 SEEN_CROWN = 0.6   # a tree too low to measure, with leaves on more than this share round it, has a crown the models miss
+DMR5G = "https://ags.cuzk.gov.cz/arcgis2/rest/services/dmr5g/ImageServer"  # ČÚZK's ground model, for past the edge of IPR's
 CRANE = 12.0       # m: IPR's model this much above ČÚZK's, where the photo shows no leaves, is a structure, not a crown
 LEAVES = 0.1       # the vegetation index above which the photo shows leaves (paving is about -0.2, dry grass 0, a shaded street tree 0.12)
 
@@ -107,6 +108,17 @@ def canopy(area, meta, t):
     try:
         dsm = gc.export(gc.DSM, "dsm_1m_wide", area, ext, RES, 1.0, fmt="tiff",
                         extra={"pixelType": "F32", "interpolation": "RSP_BilinearInterpolation"})[:, :, 0]
+        # Past the edge of IPR's models (outside the city) the game's terrain runs on flat at
+        # the last height it knows, up to 150 m under the real ground: the ČÚZK model is
+        # measured from ČÚZK's laser-scanned ground there instead.
+        outside = np.isnan(ipr) if ipr is not None else np.ones(dsm.shape, bool)
+        if outside.mean() > 0.01:
+            try:
+                bare = gc.export(DMR5G, "dmr5g_1m_wide", area, ext, RES, 1.0, fmt="tiff",
+                                 extra={"pixelType": "F32", "interpolation": "RSP_BilinearInterpolation"})[:, :, 0]
+                dtm = np.where(outside & (bare > 100) & (bare < 700), bare, dtm)
+            except Exception as e:  # noqa: BLE001
+                print(f"  no ČÚZK ground model for tile {t['i']}_{t['j']} ({e})", flush=True)
         cuzk = np.where(dsm > 100, dsm - dtm, np.nan)
     except Exception as e:  # noqa: BLE001
         print(f"  no ČÚZK surface model for tile {t['i']}_{t['j']} ({e})", flush=True)
