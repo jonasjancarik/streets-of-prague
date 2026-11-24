@@ -37,6 +37,10 @@ export function kindAt(x: number, y: number, district: string | null, water: boo
 // graphics want them. A shader that holds the texture itself (TSL) hears of the new one
 // through onStrips.
 export const STRIPS: { value: THREE.Texture } = { value: new THREE.DataTexture(new Uint8Array([0, 0, 0, 0]), 1, 1) };
+// Paint samples the atlas with a mip bias. If the first visible car compiles
+// before the image arrives, its stand-in must also provide a filtering sampler.
+STRIPS.value.minFilter = STRIPS.value.magFilter = THREE.LinearFilter;
+STRIPS.value.colorSpace = THREE.SRGBColorSpace;
 STRIPS.value.needsUpdate = true;
 export const STRIPS_ON = { value: 0 };
 const listeners: ((t: THREE.Texture) => void)[] = [];
