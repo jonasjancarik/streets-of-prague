@@ -85,7 +85,7 @@ const PARTS = ['Skin', 'Shirt', 'Sleeve', 'Trousers', 'Shoes', 'Hair'];
 
 interface ClipInfo { row: number; frames: number; duration: number; loop: boolean }
 export type UniformRole = 'dustman' | 'police' | 'medic' | 'fire';
-export interface Look { shirt: string; trousers: string; skin: string; hair: string; sleeves: boolean }
+export interface Look { shirt: string; trousers: string; skin: string; hair: string; sleeves: boolean; riderSeed?: number }
 export interface FigureKit {
   geometry: THREE.BufferGeometry;
   clips: Record<string, ClipInfo>;
@@ -94,7 +94,7 @@ export interface FigureKit {
   nrm: THREE.DataTexture;
   material: THREE.MeshLambertMaterial;
   depthMaterial: THREE.MeshDepthMaterial;
-  vehicles: { bike: () => THREE.BufferGeometry; moto: () => THREE.BufferGeometry };
+  vehicles: { bike: (bareCrank?: boolean) => THREE.BufferGeometry; moto: () => THREE.BufferGeometry };
 }
 
 // Where the jump clip leaves the ground and lands again, in seconds.
@@ -187,12 +187,17 @@ function vehicle(root: THREE.Object3D, name: string) {
   if (!node) throw new Error(`Missing ${name} in figures kit`);
   const meshes: THREE.Mesh[] = [];
   node.traverse((o) => { if (o instanceof THREE.Mesh) meshes.push(o); });
-  const COLOUR: Record<string, string> = { Tyre: '#141414', Metal: '#9aa0a6', Seat: '#1c1a19', Engine: '#43464b', Lamp: '#fff1c9' };
-  let cached: THREE.BufferGeometry | undefined;
-  return (): THREE.BufferGeometry => {
-    if (cached) return cached;
+  const COLOUR: Record<string, string> = { Tyre: '#141414', Metal: '#9aa0a6', Crank: '#9aa0a6', Seatpost: '#9aa0a6', Saddle: '#1c1a19', Pedal: '#1c1a19', Seat: '#1c1a19', Engine: '#43464b', Lamp: '#fff1c9' };
+  const cached: THREE.BufferGeometry[] = [];
+  return (bareCrank = false): THREE.BufferGeometry => {
+    const slot = Number(bareCrank);
+    if (cached[slot]) return cached[slot];
     const c = new THREE.Color(), red = new THREE.Color('#c0171d');
-    const geos = meshes.map((m) => {
+    const frame = bareCrank ? meshes.filter(m => {
+      const name = (Array.isArray(m.material) ? m.material[0] : m.material).name;
+      return name !== 'Crank' && name !== 'Pedal';
+    }) : meshes;
+    const geos = frame.map((m) => {
       const g = new THREE.BufferGeometry();
       g.setIndex(m.geometry.index);
       g.setAttribute('position', m.geometry.attributes.position.clone());
@@ -200,6 +205,13 @@ function vehicle(root: THREE.Object3D, name: string) {
       g.applyMatrix4(m.matrixWorld);
       g.scale(SCALE, SCALE, SCALE);
       const material = Array.isArray(m.material) ? m.material[0] : m.material;
+      // Fit the close saddle to the adult rigs. Shorten the exposed post
+      // about its socket, keeping the original frame and wheel dimensions.
+      if (bareCrank && material.name === 'Saddle') g.translate(0,-.055*SCALE,0);
+      if (bareCrank && material.name === 'Seatpost') {
+        const socket=.82*SCALE;
+        g.translate(0,-socket,0).scale(1,.3125,1).translate(0,socket,0);
+      }
       c.set(material.name === 'Paint' ? '#ffffff' : COLOUR[material.name] || '#777777');
       const p = g.attributes.position, col = new Float32Array(p.count * 3);
       // Lamps at the back are rear lights.
@@ -209,7 +221,8 @@ function vehicle(root: THREE.Object3D, name: string) {
       return g;
     });
     const g = mergeGeometries(geos);
-    cached = g;
+    g.userData.movingCranks = bareCrank && frame.length < meshes.length;
+    cached[slot] = g;
     return g;
   };
 }
@@ -443,6 +456,8 @@ function gaitAt(speed: number) {
 export class Anim {
   driverExit?: DriverExit;
   driverDonor?: number;
+  riderSeed?: number;
+  footDown = 0; // balance on the left shoe as a mounted two-wheeler stops
   clips: Record<string, ClipInfo>;
   name: string;
   t: number;

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import * as T from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { glbSkeleton, writeClips } from './format.mjs';
+import { fittedRidingClips } from './riding.mjs';
 
 const asset = (name) => new URL('../../public/' + name, import.meta.url);
 const bytes = fs.readFileSync(asset('figures.glb'));
@@ -64,6 +65,11 @@ for (const clip of source.animations) {
       dst.quaternion.copy(q);
       turns[n].push(...q.toArray());
     }
+  }
+  if (clip.name === 'bike' || clip.name === 'moto') {
+    const fitted = fittedRidingClips(clip.name,fps,pos,bones.map(({dst})=>dst.name),turns,asset);
+    clips.push(...fitted.clips); data.push(...fitted.data);
+    continue;
   }
   clips.push({ name: clip.name, fps, frames, joints: bones.map(({ dst }) => dst.name), still: [] });
   data.push(Int16Array.from(pos, (v) => Math.round(v * 1000)));

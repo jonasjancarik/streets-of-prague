@@ -99,6 +99,8 @@ def make_armature():
 COLOURS = {
     "Skin": (0.85, 0.66, 0.54), "Shirt": (0.3, 0.4, 0.55), "Sleeve": (0.3, 0.4, 0.55),
     "Trousers": (0.18, 0.2, 0.25), "Shoes": (0.08, 0.07, 0.07), "Hair": (0.2, 0.13, 0.08),
+    "Crank": (0.55, 0.56, 0.58), "Pedal": (0.09, 0.08, 0.08),
+    "Seatpost": (0.55, 0.56, 0.58), "Saddle": (0.09, 0.08, 0.08),
     "Paint": (0.7, 0.15, 0.12), "Tyre": (0.05, 0.05, 0.05), "Metal": (0.55, 0.56, 0.58),
     "Seat": (0.09, 0.08, 0.08), "Lamp": (1.0, 0.95, 0.8), "Engine": (0.25, 0.26, 0.28),
 }
@@ -343,18 +345,18 @@ def make_bike():
         rod(seat_top + Vector((0, 0, -0.03)), head_top, 0.02, "Paint"),
         rod(bb, head_bot, 0.023, "Paint"),
         rod(head_bot, head_top, 0.026, "Paint"),
-        rod(seat_top, B["saddle"] + Vector((0.03, 0, -0.03)), 0.012, "Metal"),
-        block(B["saddle"] + Vector((0, 0, -0.01)), (0.26, 0.1, 0.05), "Seat"),
+        rod(seat_top, B["saddle"] + Vector((0.03, 0, -0.03)), 0.012, "Seatpost"),
+        block(B["saddle"] + Vector((0, 0, -0.01)), (0.26, 0.1, 0.05), "Saddle"),
         rod(head_top, Vector((0.37, 0, 1.02)), 0.014, "Metal"),
         rod(Vector((0.37, -0.29, 1.03)), Vector((0.37, 0.29, 1.03)), 0.013, "Metal"),
         rod(Vector((0.37, -0.29, 1.03)), Vector((0.37, -0.2, 1.03)), 0.02, "Seat"),
         rod(Vector((0.37, 0.2, 1.03)), Vector((0.37, 0.29, 1.03)), 0.02, "Seat"),
         rod(bb + Vector((0, -0.07, 0)), bb + Vector((0, 0.07, 0)), 0.03, "Metal"),
-        # Cranks and pedals, level: the pedalling shows in the legs.
-        rod(bb + Vector((0, 0.07, 0)), bb + Vector((0.17, 0.08, 0)), 0.01, "Metal"),
-        rod(bb + Vector((0, -0.07, 0)), bb + Vector((-0.17, -0.08, 0)), 0.01, "Metal"),
-        block(bb + Vector((0.17, 0.11, 0)), (0.08, 0.06, 0.02), "Seat"),
-        block(bb + Vector((-0.17, -0.11, 0)), (0.08, 0.06, 0.02), "Seat"),
+        # The overhead model keeps these level. The street model replaces them with moving parts.
+        rod(bb + Vector((0, 0.07, 0)), bb + Vector((0.17, 0.08, 0)), 0.01, "Crank"),
+        rod(bb + Vector((0, -0.07, 0)), bb + Vector((-0.17, -0.08, 0)), 0.01, "Crank"),
+        block(bb + Vector((0.17, 0.11, 0)), (0.08, 0.06, 0.02), "Pedal"),
+        block(bb + Vector((-0.17, -0.11, 0)), (0.08, 0.06, 0.02), "Pedal"),
         # Mudguards and a lamp, so it reads as a town bike from above.
         block(Vector((B["rear"] - 0.04, 0, z + 0.33)), (0.4, 0.07, 0.015), "Paint"),
         block(Vector((B["front"] + 0.02, 0, z + 0.33)), (0.34, 0.07, 0.015), "Paint"),

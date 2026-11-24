@@ -80,6 +80,7 @@ interface Person {
   speed: number;
   seen: boolean;
   self: boolean;
+  mounted: boolean;
   yieldSlot: boolean;
   nozzle?: THREE.Mesh;
 }
@@ -88,7 +89,7 @@ interface Person {
 // doorway handoff and through later changes of renderer detail.
 const DRIVER_KINDS=['male-adult-13','female-adult-05'].map(name=>AVATARS.findIndex(([model])=>model===name));
 function appearance(fig: Figures, anim: Anim, group: number, id: number) {
-  return anim.driverDonor===undefined ? avatarIndex(fig.avatarSeed,group,id) : DRIVER_KINDS[anim.driverDonor];
+  return anim.driverDonor===undefined ? avatarIndex(anim.riderSeed ?? fig.avatarSeed,group,id) : DRIVER_KINDS[anim.driverDonor];
 }
 
 export class LifeSize {
@@ -174,7 +175,10 @@ export class LifeSize {
         for (const name of STANDING[sex]) kind.clips[name] = inPlace(byName[`${sex}_${name}`], hips)[0];
         const umbrella = (kind.clips.umbrella = inPlace(byName[`${sex}_${UMBRELLA[sex]}`], hips)[0]);
         kind.clips.arm = new THREE.AnimationClip('arm', umbrella.duration, umbrella.tracks.filter((t) => LEFT_ARM.test(t.name)));
-        for (const [name, clip] of Object.entries(this.figureActions)) {
+        for (const [name, base] of Object.entries(this.figureActions)) {
+          if (name.endsWith('Male')) continue;
+          const riding = name === 'bike' || name === 'moto' || name === 'bikeStand' || name === 'motoStand';
+          const clip = riding && sex === 'm' ? this.figureActions[name+'Male'] ?? base : base;
           // actions.mjs stores travel in units of the reference avatar's hip height.
           const position = clip.tracks[0].clone();
           for (let i = 0; i < position.values.length; i++) position.values[i] *= hips;
@@ -303,15 +307,16 @@ export class LifeSize {
       if (kind == null) return false;
       const next = key === this.nextCivilian;
       if (next) this.nextSeen = true;
-      const hold = role || anim.driverExit ? 0 : this.reserved + (this.nextCivilian && !next ? 1 : 0);
+      const hold = fig.self || role || anim.driverExit ? 0 : this.reserved + (this.nextCivilian && !next ? 1 : 0);
       if (!fig.self && this.live.size >= STREET_QUALITY.avatars - hold) {
-        if (role || anim.driverExit) this.waitingPriority++;
+        if (fig.self || role || anim.driverExit) this.waitingPriority++;
         else if (!this.nearestWaiting || d < this.nearestWaiting.distance) this.nearestWaiting = { key, distance: d };
         return false;
       }
       if (next) this.nextCivilian = undefined;
       p = this.take(kind);
       p.self = fig.self;
+      p.mounted = false;
       p.yieldSlot = false;
       p.pos.copy(pos);
       p.last.copy(pos);
@@ -334,20 +339,29 @@ export class LifeSize {
     matrix.decompose(_v, p.turn, _s);
     p.umbrella = umbrella;
     this.pose(p, anim);
+    const mounted = anim.name === 'bike' || anim.name === 'moto';
+    if (mounted !== p.mounted) {
+      p.mounted = mounted;
+      p.strideYaw = 0; p.speed = 0;
+      p.gaze?.release(); p.footing?.release();
+      // Mounting changes the contact points immediately. A walking leg
+      // blended into this pose for a few frames would pass through the frame.
+      for (const c in p.w) p.w[c] = p.want[c] ?? 0;
+    }
     p.seen = true;
     return true;
   }
   private ids_ = 0;
 
   // Gameplay can hold, restart or scrub an action, including the jump apex.
-  private setActionTime(p: Person, anim: Anim, name: string, time: number) {
+  private setActionTime(p: Person, anim: Anim, name: string, time: number, clock = name) {
     const clip = this.kinds[p.kind].clips[name];
     if (!p.actions[name]) {
       p.actions[name] = p.mixer.clipAction(clip).play();
       p.w[name] = p.want[name] = 0;
     }
     const len = clip.duration;
-    p.t[name] = anim.clips[name].loop ? ((time % len) + len) % len : Math.max(0, Math.min(time, len));
+    p.t[name] = anim.clips[clock].loop ? ((time % len) + len) % len : Math.max(0, Math.min(time, len));
   }
 
   // Which clips should show, from the figure's own animation.
@@ -371,6 +385,14 @@ export class LifeSize {
     if (this.figureActions[anim.name]) {
       this.setActionTime(p, anim, anim.name, anim.t);
       p.want[anim.name] = 1;
+      if (anim.name==='bike' || anim.name==='moto') {
+        const standing = anim.name+'Stand';
+        if (this.kinds[p.kind].clips[standing] && (anim.footDown>0 || p.w[standing]>0)) {
+          this.setActionTime(p,anim,standing,anim.t,anim.name);
+          p.want[standing]=anim.footDown;
+          p.want[anim.name]=1-anim.footDown;
+        }
+      }
       return;
     }
     if (anim.name === 'idle') { p.want[up ? 'umbrella' : p.rest] = 1; return; }
@@ -423,7 +445,7 @@ export class LifeSize {
     return {
       kind, root, mixer, actions, w, want, t, nozzle, phase: 0, strideSign: 1, strideYaw: 0, rest: k.standing[0], umbrella: -1,
       hand: root.getObjectByName('Bip01_L_Hand') ?? root, phone,
-      pos: new THREE.Vector3(), last: new THREE.Vector3(), turn: new THREE.Quaternion(), speed: 0, seen: false, self: false, yieldSlot: false,
+      pos: new THREE.Vector3(), last: new THREE.Vector3(), turn: new THREE.Quaternion(), speed: 0, seen: false, self: false, mounted: false, yieldSlot: false,
     };
   }
 
@@ -492,7 +514,7 @@ export class LifeSize {
         const dx = p.pos.x - p.last.x, dz = p.pos.z - p.last.z;
         const v = Math.hypot(dx, dz) / dt;
         const measured = Math.min(v,12);
-        if (p.self) {
+        if (p.self && !p.mounted) {
           // Feet brake with the body. Carrying the old forward cadence
           // through zero made the first backward step play much too fast.
           p.speed = Math.min(measured,p.speed+(measured-p.speed)*(1-Math.exp(-12*dt)));
@@ -579,7 +601,7 @@ export class LifeSize {
       else if (p.root.scale.x!==1) p.root.scale.setScalar(1);
       if (p.self && p.strideYaw) p.root.quaternion.multiply(_q.setFromAxisAngle(UP, p.strideYaw));
       p.root.quaternion.multiply(TURN);
-      if (p.self) {
+      if (p.self && !p.mounted) {
         const neutral = p.rest.startsWith('idle_neutral') ? p.w[p.rest] : 0;
         const freedom = Math.min(1, neutral + p.w.walk + p.w.jog + p.w.run);
         (p.gaze ??= new PlayerGaze(p.root)).apply(dt,camera,p.root,freedom);

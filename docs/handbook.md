@@ -1625,6 +1625,13 @@ record the measurements, merge decisions and pending landmark asset activation.
   river you return to where you jumped. Jump at a car that's standing still and you climb onto it and can
   walk over its bonnet, roof or boot and drop off the other side. If it drives off with
   you on top, you ride along until it goes faster than about 30 km/h and throws you off.
+  From street level, the player keeps their walking avatar on either vehicle. Nearby
+  traffic riders use the same close-avatar pool. Cyclists turn the cranks while
+  pedaling and hold their angle while coasting. A motorcyclist keeps both boots
+  on the pegs through a turn. Both riders put the left foot down at a stop.
+  The overhead camera uses the lightweight instanced figures. Rebuild the fitted
+  hand and foot motion with `node assets/rocketbox/actions.mjs`; the contact
+  check is `node scripts/check-riding-poses.mjs`.
 - **Shared bikes.** Rows of bikes use real station locations, but fictional operator
   names: Pedálek for the blue nextbike bikes and Šlapeto for the pink Rekola bikes
   (`src/bikeshare.ts`, `build_bikes.py` below). Taking one starts a rental,

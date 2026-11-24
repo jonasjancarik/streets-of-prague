@@ -331,6 +331,7 @@ export class Crowd {
     p.then = undefined;
     if (look) {
       p.look = look;
+      p.anim.riderSeed = look.riderSeed;
       this.fig.look(p.i, look);
     }
     return p;

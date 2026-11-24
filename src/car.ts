@@ -4,6 +4,7 @@ import { KEEP, STREET_QUALITY } from './streetQuality.ts';
 import { drivingSpec } from './driveTune.ts';
 import { busCabin, commercialCab } from './commercialCab.ts';
 import { twoWheelerStreet } from './twoWheelerStreet.ts';
+import { CycleCranks } from './cycleCranks.ts';
 import * as THREE from 'three';
 import { SeatedDrivers, passengerCabin } from './passengerCabin.ts';
 import { buildStreetWheels } from './streetWheels.ts';
@@ -368,7 +369,9 @@ function prepareFleetBody(type: string, box?: string): string | undefined {
   let g: THREE.BufferGeometry;
   if (spec?.two) {
     const bare = box ? cache.get(prepareFleetBody(type)!)! : undefined;
-    g = bare ? mergeGeometries([bare, boxGeometry(type, box!)]) : twoWheelerStreet(spec.two, carGeometry(type));
+    const frame = spec.two === 'bike' ? kit!.vehicles.bike(true) : carGeometry(type);
+    g = bare ? mergeGeometries([bare, boxGeometry(type, box!)]) : twoWheelerStreet(spec.two, frame);
+    g.userData.movingCranks = frame.userData.movingCranks === true;
   } else if (type === 'bus' || type === 'minibus') g = busGeometry(spec, true);
   else if (type === 'truck' || type === 'artic') g = truckGeometry(type, spec, true);
   else if (type === 'garbage') g = garbageGeometry(spec, true);
@@ -1643,6 +1646,7 @@ export class Car {
   entryDriver = false; // waits in the seat while the normal door interaction runs
   damage: number;
   touchDriving = false;
+  pedaling = false;
   rider: Look | null;
   lean: number;
   suspension?: StreetHandling;
@@ -1905,6 +1909,7 @@ export class Car {
     }
     const weatherLoss = this.driven ? (S.weather ?? 1) * Math.max(.25 * WET.value, .45 * SNOW.value * STREET_SNOW.value, .25 * SNOW.value) : 0;
     const thrust = ctl.cap == null || ctl.throttle <= 0 ? ctl.throttle : Math.min(ctl.throttle, clamp((ctl.cap - (this.vx * fx + this.vy * fy)) / 2, 0, 1));
+    if (S.two === 'bike') this.pedaling = thrust > .02 && !ctl.handbrake;
     if (realistic && this.mode === 'player' && S.cabin) {
       this.suspension ??= new StreetHandling(this.forwardSpeed, closeBodies.get(this.key)?.wheelbase ?? S.L * .62);
       this.suspension.advance(this, S, ctl, 1 - weatherLoss, slope, dt);
@@ -2208,6 +2213,12 @@ export class CarPool {
   groups: Map<string, Car[]>;
   dummy: THREE.Object3D;
   riders: Figures;
+  playerRider?: Figures;
+  // A packed draw slot changes as traffic enters and leaves the view. Track
+  // the occupant separately so two vehicles can even share the same look.
+  private riderIds = new WeakMap<Car,{look:Look; id:number}>();
+  private nextRider = 0;
+  private cranks?: CycleCranks;
   scale: THREE.Matrix4;
   life: THREE.Matrix4;
   m: THREE.Matrix4;
@@ -2239,6 +2250,7 @@ export class CarPool {
     this.groups = new Map();
     this.dummy = new THREE.Object3D();
     this.riders = new Figures(kit, 64);
+    this.riders.lifeSize = true;
     scene.add(this.riders.mesh);
     this.scale = new THREE.Matrix4().makeScale(SCALE, SCALE, SCALE);
     this.life = new THREE.Matrix4();
@@ -2433,6 +2445,7 @@ export class CarPool {
     this.closeCars.clear();
     this.departingCar=undefined;
     this.drivers?.begin();
+    this.cranks?.begin();
     for (const list of this.groups.values()) list.length = 0;
     for (const c of cars) {
       let key = this.renderKey(c.key);
@@ -2570,7 +2583,10 @@ export class CarPool {
         const on = night && !c.burnt && !(c.mode === 'loose' && c.speed < 0.5);
         const lamps = c.broken + (on ? 16 : 0) + (c.braking && c.mode !== 'loose' ? 64 : on ? 32 : 0) + AREA_STEP * this.areaOf(c) + DENT_STEP * c.dents;
         (m.geometry.getAttribute('paint') as THREE.InstancedBufferAttribute).setXYZW(slot, paint.r, paint.g, paint.b, lamps);
-        if (c.rider && riders < this.riders.capacity) this.ride(c, riders++, d.matrix, dt);
+        if (c.rider && this.ride(c,riders,d.matrix,dt,streetView)) riders++;
+        if (c.two === 'bike' && cache.get(k)?.userData.movingCranks) {
+          (this.cranks ??= new CycleCranks(this.scene)).add(d.matrix,c.anim ? c.anim.t/c.anim.duration : .25,FIGURE_SIZE.value);
+        }
         const ref = c.line?.ref.trim();
         if (ref && !c.burnt && (c.type === 'bus' || c.type === 'minibus')) {
           const at = BOARD_AT[c.type === 'minibus' ? 'minibus' : 'bus'];
@@ -2608,6 +2624,7 @@ export class CarPool {
     }
     this.drivers?.end();
     this.riders.commit(riders);
+    this.cranks?.end();
     for (let i = 0; i < this.boards.length; i++) this.boards[i].visible = i < nb;
   }
 
@@ -2637,13 +2654,36 @@ export class CarPool {
     c.lean += (want - c.lean) * Math.min(1, dt * 6);
   }
 
-  ride(c: Car, i: number, matrix: THREE.Matrix4, dt: number) {
-    if (!kit || !c.rider || !c.two) return;
-    c.anim = c.anim || new Anim(kit, c.two, Math.random());
-    // Pedal as fast as the bike goes: about 6 m a turn of the cranks.
-    c.anim.step(dt, c.two === 'bike' ? Math.max(0, c.forwardSpeed) / 6 : 1);
-    this.riders.look(i, c.rider);
-    this.riders.set(i, this.m.copy(matrix).multiply(this.scale), c.anim);
+  ride(c: Car, slot: number, matrix: THREE.Matrix4, dt: number, street = false) {
+    if (!kit || !c.rider || !c.two) return false;
+    if (slot>=this.riders.capacity && !(street && (c.mode==='player' || this.closeCars.has(c)))) return false;
+    c.anim ??= new Anim(kit,c.two,c.two === 'bike' ? kit.clips.bike.duration*.25 : 0);
+    const driving = c.mode === 'player';
+    c.anim.footDown = 1-THREE.MathUtils.smoothstep(c.speed,.15,1.6);
+    // A bicycle advances one crank revolution in six metres of driven travel.
+    // Coasting keeps both the shoes and cranks at their last angle.
+    const cadence = driving && !c.pedaling ? 0 : Math.max(0,c.forwardSpeed)/6;
+    c.anim.step(dt,c.two === 'bike' ? cadence*c.anim.duration : 1);
+    const at = this.m.copy(matrix).multiply(this.scale);
+    if (street && c!==VR_SEAT.car && (driving || this.closeCars.has(c))) {
+      if (driving && this.playerRider) {
+        // Reuse the player's claimed slot and wardrobe on mount and dismount.
+        c.anim.riderSeed = undefined;
+        if (this.playerRider.streetModel(0,at,c.anim)) return false;
+      } else {
+        let occupant = this.riderIds.get(c);
+        if (occupant?.look!==c.rider) {
+          occupant = {look:c.rider,id:this.nextRider++};
+          this.riderIds.set(c,occupant);
+        }
+        c.anim.riderSeed = c.rider.riderSeed ??= (occupant.id+1)*104729;
+        if (this.riders.streetModel(occupant.id,at,c.anim)) return false;
+      }
+    }
+    if (slot>=this.riders.capacity) return false;
+    this.riders.look(slot,c.rider);
+    this.riders.place(slot,at,c.anim);
+    return true;
   }
 }
 
