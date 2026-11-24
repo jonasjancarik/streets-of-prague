@@ -39,6 +39,7 @@ import { preparePeople, pickPerson } from './spawn.ts';
 import { PavementDrivers } from './pavement.ts';
 import { Bags } from './bags.ts';
 import { Crowd, Walker, nearestWalkable } from './people.ts';
+import { carriageways } from './carriageway.ts';
 import type { Pedestrian } from './people.ts';
 import { GetIn } from './getin.ts';
 import { Arrest } from './arrest.ts';
@@ -502,6 +503,10 @@ async function main() {
   Object.assign(WARDROBE, { cold: season.cold, warm: season.shares().summer });
   crowd = new Crowd(walk, grid, scene, seeded, PEOPLE, kit);
   crowd.footfall = footfall;
+  // The carriageways, parking bays and the trams' own bed: walkers keep to the pavement
+  // beside a street they walk along.
+  crowd.road = carriageways((x, y) => world.tileAt(x, y), (tile) => ({ box: tile.box,
+    polys: [...tile.roads, ...(tile.source.t.areas.parking ?? []), ...(tile.source.t.roads.trambed ?? [])] }));
   // Past the map's edge nobody counted the people: a little busier where houses stand.
   footfall.beyond = (x, y) => (world.builtUp.get(world.keyAt(x, y)) ?? 0) * BUILT_UP_BUSY;
   ride.passengers = new Passengers(trams, () => crowd, seeded);

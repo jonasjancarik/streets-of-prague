@@ -1593,6 +1593,19 @@ record the measurements, merge decisions and pending landmark asset activation.
   corners, step past parked cars and bikes in their way, leap out of the way of fast
   cars and get knocked over, then get up again (`src/people.ts`). Traffic and
   people live within about 330 m of the player.
+  Pedestrians step round each other too, keeping right when they meet someone; on a
+  path too narrow to pass they fall in behind someone slower, and when two meet in a
+  doorway one waits and then turns back. They spread across footpaths, squares and
+  pedestrian streets. A street the walking network follows down its middle (one without
+  a pavement mapped as a path of its own) is walked on its pavement, a little in from
+  the kerb, found from the map's carriageways (`src/carriageway.ts`) when people first
+  walk it. Where only the far side has one, they cross to it and stay there until it
+  ends. Without a pavement wide enough, they keep to the street's edge, as in an
+  old-town lane or a living street. Walls, buildings, fences and hedges stop them
+  however they move (a tree or a post in the way, they step round), and paths that
+  run on inside a building (an indoor corridor, a way through a block with no passage
+  open in the map) aren't walked. The `pedestrian-paths` scenario checks passing,
+  walls and pavements.
   When the game replenishes people and ordinary traffic, it prepares each nearby
   street's spawn weight once for that pass (`src/spawn.ts`). Cars still check the
   current traffic before each placement, and pavement-driving cars are gathered

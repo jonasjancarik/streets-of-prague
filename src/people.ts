@@ -28,6 +28,10 @@ export interface Pedestrian extends WalkSpot {
   dodge: number; dodgeTo: number;
   // How fast they're actually going (for the legs), m/s.
   pace: number;
+  // The fastest they may go for now (someone slower in front of them, with no way past), m/s.
+  cap: number;
+  // Seconds they've been trying to walk on with a wall or a fence in the way.
+  stuck: number;
   // Theirs for good, whichever slot they're drawn in (which umbrella they carry).
   serial: number;
   target?: WalkSpot & { x: number; y: number };
@@ -54,6 +58,27 @@ const GETUP = 1.25; // seconds of getting up at the end of lying on the ground
 const LOOK = 1.2;
 const CLEAR = 0.6; // m kept between a walker's middle and the side of whatever they pass
 const TURN = 5; // rad/s, the fastest a walker turns
+const PASS = 0.62; // m kept between two walkers' middles as they pass each other
+const MEET = 0.8; // the same for two coming towards each other
+const SHOULDERS = 0.55; // m: two walkers' middles closer than this are moved apart
+// What lies beside a footpath is looked at every STATION metres along it (see sides()),
+// out to at most FAR metres, and looked at again after STALE seconds.
+const STATION = 3, FAR = 14, STALE = 60;
+// A path that runs inside buildings for more than this share of its length (an indoor
+// corridor, a way through a block with no passage open in it) isn't walked.
+const INDOOR = 0.3;
+const PAVEMENT = 1.1; // m: the narrowest strip beside a carriageway people walk along as a pavement
+// People are bucketed in squares this many metres across to find who's near whom.
+const BUCKET = 3;
+const bucket = (i: number, j: number) => ((i * 73856093) ^ (j * 19349663)) & 4095;
+
+// What lies to either side of a footpath, at each station along it (right then left of
+// its direction): how far out the first wall, building or fence stands (`wall`), and on a
+// street walked without a pavement mapped of its own, how far out the carriageway ends
+// (`kerb`: -1 where a wall comes first, so there's no pavement), and where a path runs
+// along a hedge or a fence, how far out its side is (`from`). `inside`: the share of
+// the path itself that runs through buildings.
+interface Sides { at: number; wall: Float32Array; kerb: Float32Array; from: Float32Array; inside: number }
 
 const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(SCALE, SCALE, SCALE);
 const UP = new THREE.Vector3(0, 1, 0);
@@ -91,6 +116,30 @@ export class Crowd {
   segs: Map<string, WalkSegment[]>;
   footfall: Footfall | null = null;
   tick = 0;
+  // Whether a point is on a carriageway (see main.ts); without it, streets are walked
+  // along their edges as if they had no pavement.
+  road: ((x: number, y: number) => boolean) | null = null;
+  private sideCache = new Map<WalkEdge, Sides>();
+  private clock = 0;
+  private budget = 0; // how many more paths' sides may be looked at this step
+  // The lane's room across the path from the last lane() (metres out on their side),
+  // whether it's a pavement beside a carriageway and which side it's on (+1 right).
+  private lo = 0;
+  private hi = 0;
+  private pave = false;
+  private sign = 1;
+  // Everyone bucketed by where they stand, made again each step: heads[bucket] is the
+  // first person's number, links[n] the next one's (-1 at the end). Buckets are
+  // BUCKET metres square, hashed into 4096 (people far apart may share one).
+  private heads = new Int32Array(4096).fill(-1);
+  private links = new Int32Array(0);
+  // What's in the way, for avoid(): per span, its two sides across the path, whether
+  // it's already alongside and whether it's someone coming the other way.
+  private spans = new Float64Array(4 * 48);
+  private spanN = 0;
+  // Where avoid() looks from: across the path from where they walk now, how far ahead
+  // the nearest person is, the lane's room, and the path's point and directions there.
+  private way = { now: 0, ahead: Infinity, lo: 0, hi: 0, pave: false, sign: 1, bx: 0, by: 0, ux: 0, uy: 0, nx: 0, ny: 0 };
 
   constructor(walk: WalkGraph, grid: WalkGrid, scene: THREE.Scene, rng: () => number, count: number, kit: FigureKit) {
     this.walk = walk;
@@ -112,6 +161,9 @@ export class Crowd {
   // Footpath segments bucketed for nearest(); called again as more of the map loads.
   index(edges: WalkEdge[]) {
     for (const e of edges) {
+      // More of the map round it has loaded: look at what's beside it again when there's time.
+      const known = this.sideCache.get(e);
+      if (known) known.at = -Infinity;
       let acc = 0;
       for (let i = 0; i < e.pts.length - 1; i++) {
         const a = e.pts[i], b = e.pts[i + 1];
@@ -129,6 +181,7 @@ export class Crowd {
   // where the map hasn't loaded.
   forget(edges: WalkEdge[]) {
     for (const e of edges) {
+      this.sideCache.delete(e);
       for (let i = 0; i < e.pts.length - 1; i++) {
         const a = e.pts[i], b = e.pts[i + 1];
         const k = `${Math.floor((a[0] + b[0]) / 2 / this.cell)},${Math.floor((a[1] + b[1]) / 2 / this.cell)}`;
@@ -150,7 +203,7 @@ export class Crowd {
         for (let j = -R; j <= R; j++) {
           for (const s of this.segs.get(`${cx + i},${cy + j}`) || []) {
             const d = segDist(x, y, s.a, s.b);
-            if (d < bestD) {
+            if (d < bestD && !this.indoor(s.e, false)) {
               const dx = s.b[0] - s.a[0], dy = s.b[1] - s.a[1];
               const t = clamp(((x - s.a[0]) * dx + (y - s.a[1]) * dy) / (dx * dx + dy * dy || 1), 0, 1);
               bestD = d;
@@ -168,24 +221,23 @@ export class Crowd {
     if (this.people.length >= this.fig.capacity) {
       // Full: move someone who is out of the way instead.
       const p = this.people[Math.floor(r() * this.people.length)];
-      Object.assign(p, { e: at?.e || p.e, s: at?.s ?? p.s, state: 'walk', vx: 0, vy: 0, hurt: undefined, grave: undefined });
+      Object.assign(p, { e: at?.e || p.e, s: at?.s ?? p.s, state: 'walk', vx: 0, vy: 0, cap: Infinity, stuck: 0, hurt: undefined, grave: undefined });
       this.place(p);
       return p;
     }
     let e = at?.e, s = at?.s;
-    if (!e) {
-      let x = r() * this.totalLen;
-      for (const f of this.walk.edges) if ((x -= f.path.length) < 0) { e = f; break; }
-      e = e || this.walk.edges[0];
-      if (!e) throw new Error('No walkable edges are loaded');
+    // (Not inside a building, if a few tries find somewhere else.)
+    for (let tries = 0; !at?.e && tries < 4 && (!e || this.indoor(e, true)); tries++) {
+      e = this.anywhere();
       s = r() * e.path.length;
     }
+    if (!e) throw new Error('No walkable edges are loaded');
     const i = this.people.length;
     const p: Pedestrian = {
       i, e, s: s ?? 0, fwd: r() > 0.5, side: r() > 0.5 ? 1 : -1, lane: r(),
       speed: 1.1 + r() * 0.6, x: 0, y: 0, h: 0, vx: 0, vy: 0,
       state: 'walk', t: 0, pause: 0, z: 0, anim: new Anim(this.kit, 'walk', r() * 2), look: randomLook(r),
-      dodge: 0, dodgeTo: 0, pace: 0, serial: this.serial++,
+      dodge: 0, dodgeTo: 0, pace: 0, cap: Infinity, stuck: 0, serial: this.serial++,
     };
     this.fig.look(i, p.look);
     this.fig.mesh.count = this.people.length + 1;
@@ -206,32 +258,193 @@ export class Crowd {
     this.fig.mesh.count = this.people.length;
   }
 
-  // How far across the path someone keeps (to the right of its direction, in metres):
-  // near the edge of a street without a pavement of its own, anywhere across a
-  // footpath, a pedestrian street or a bridge.
-  lane(p: Pedestrian) {
-    return p.side * (p.e.side ? Math.max(0, p.e.side - p.lane * 0.6) : p.lane * Math.max(0, p.e.width / 2 - 0.4));
+  // What lies beside a path (see Sides), looked at once a minute at most, and only a few
+  // paths a step unless `now`; null if it hasn't been looked at yet.
+  sides(e: WalkEdge, now = false): Sides | null {
+    const known = this.sideCache.get(e);
+    if (known && (this.clock - known.at < STALE || (!now && this.budget <= 0))) return known;
+    if (!now && this.budget <= 0) return null;
+    this.budget--;
+    const len = e.path.length, n = Math.max(2, Math.round(len / STATION) + 1);
+    const m: Sides = known && known.wall.length === 2 * n ? known : { at: 0, wall: new Float32Array(2 * n), kerb: new Float32Array(2 * n), from: new Float32Array(2 * n), inside: 0 };
+    m.at = this.clock;
+    // A street walked without a pavement of its own: where its carriageway ends.
+    const street = e.side > 0 && !!this.road, far = Math.min(FAR, e.width / 2 + 6);
+    let solid = 0;
+    for (let i = 0; i < n; i++) {
+      const q = e.path.at((len * i) / (n - 1)), nx = Math.sin(q.ang), ny = -Math.cos(q.ang);
+      if (this.grid.at(q.x, q.y)) solid++;
+      const onRoad = street && this.road!(q.x, q.y), fenced = fences.blocks(q.x, q.y, 0.1, 0);
+      for (let k = 0; k < 2; k++) {
+        const sx = k ? -nx : nx, sy = k ? -ny : ny;
+        let wall = far, kerb = NaN, from = 0, out = !fenced;
+        for (let d = 0.25; d <= far; d += 0.25) {
+          const x = q.x + sx * d, y = q.y + sy * d, solid = this.grid.at(x, y) !== 0, fence = fences.blocks(x, y, 0.1, 0);
+          // (A path mapped along a hedge: out of it first, then on.)
+          if (!out && fence && !solid) { from = d; continue; }
+          out = true;
+          // (Past a tree or a post, not a fence: something under a metre across.)
+          if (solid && !fence && d + 1 <= far && this.thin(x, y, sx, sy)) continue;
+          if (solid || fence) { wall = d; break; }
+          if (onRoad && kerb !== kerb && !this.road!(x, y)) kerb = d;
+          if (kerb === kerb && d - kerb > 3.5) break; // pavement enough
+        }
+        // A wall before the kerb: no pavement. Neither within reach (the mouth of a
+        // side street, a car park): unknown, so as on either side of it along the street.
+        m.wall[2 * i + k] = wall;
+        m.from[2 * i + k] = from;
+        m.kerb[2 * i + k] = !onRoad ? NaN : kerb === kerb ? kerb : wall < far ? -1 : NaN;
+      }
+    }
+    // The unknown stations take the nearest known one's kerb (none: no pavement).
+    for (let k = 0; k < 2; k++) {
+      for (let i = 0; i < n; i++) {
+        if (m.kerb[2 * i + k] === m.kerb[2 * i + k]) continue;
+        let v = -1;
+        for (let j = 1; j < n; j++) {
+          const a = i - j >= 0 ? m.kerb[2 * (i - j) + k] : NaN, b = i + j < n ? m.kerb[2 * (i + j) + k] : NaN;
+          if (a === a && a >= 0) { v = a; break; }
+          if (b === b && b >= 0) { v = b; break; }
+          if (i - j < 0 && i + j >= n) break;
+        }
+        m.kerb[2 * i + k] = v;
+      }
+    }
+    m.inside = solid / n;
+    // A path in a wall, or one whose tile's walls haven't come yet (where nothing is
+    // loaded is solid too): looked at again in a few seconds.
+    if (solid) m.at = this.clock - STALE + 3;
+    this.sideCache.set(e, m);
+    return m;
+  }
+
+  // Whether what's solid at (x, y) is small, a tree or a post: open ground within a metre
+  // further out along (sx, sy), and three quarters of a metre to either side of it.
+  private thin(x: number, y: number, sx: number, sy: number) {
+    if (this.grid.at(x - sy * 0.75, y + sx * 0.75) || this.grid.at(x + sy * 0.75, y - sx * 0.75)) return false;
+    for (let d = 0.25; d <= 1; d += 0.25) if (!this.grid.at(x + sx * d, y + sy * d)) return true;
+    return false;
+  }
+
+  // A path mostly inside buildings, where nobody could see them or follow them.
+  indoor(e: WalkEdge, now: boolean) {
+    if (e.path.length < 2) return false;
+    const m = now ? this.sides(e, true) : this.sideCache.get(e);
+    return !!m && m.inside > INDOOR;
+  }
+
+  // How far across the path someone keeps (to the right of its direction, in metres) at
+  // `s` along it: on the pavement beside a street (crossing to the other one where theirs
+  // has none),
+  // near the edge of one without a pavement, anywhere across a footpath, a pedestrian
+  // street or a bridge; never into a wall or a fence. It leaves the room they have
+  // across their side in lo, hi and which side that is in `sign`.
+  lane(p: Pedestrian, s = p.s) {
+    const e = p.e, m = this.sides(e);
+    this.sign = p.side;
+    // (A street in walls all along: its tile's walls not come yet, as good as unknown.)
+    if (!m || (e.side && m.inside >= 1)) {
+      this.pave = false;
+      this.hi = e.side ? e.side : Math.max(0, e.width / 2 - 0.4);
+      this.lo = e.side ? Math.max(0, this.hi - 0.6) : 0;
+    } else {
+      const n = m.wall.length / 2, u = clamp(s / (e.path.length || 1), 0, 1) * (n - 1);
+      const i = Math.min(n - 2, Math.floor(u)), f = u - i, k = p.side > 0 ? 0 : 1;
+      this.room(e, m, i, f, k);
+      if (e.side && !this.pave) {
+        const { lo, hi } = this;
+        this.room(e, m, i, f, 1 - k);
+        // (Crossed over, they stay on that side until its pavement ends too, rather than
+        // back across wherever their own side has a stretch of pavement again.)
+        if (this.pave) this.sign = p.side = -p.side;
+        else { this.lo = lo; this.hi = hi; }
+      }
+    }
+    return this.sign * (this.lo + p.lane * (this.hi - this.lo));
+  }
+
+  // The room across one side (k: 0 right, 1 left) of a path between two stations (i and
+  // the next, f of the way), into lo, hi and pave.
+  private room(e: WalkEdge, m: Sides, i: number, f: number, k: number) {
+    let lo: number, hi: number;
+    const wall = m.wall[2 * i + k] * (1 - f) + m.wall[2 * i + 2 + k] * f;
+    const from = Math.max(m.from[2 * i + k], m.from[2 * i + 2 + k]);
+    // (A pavement at either station: one without, a kiosk in the way, say, isn't the end of it.)
+    const k0 = m.kerb[2 * i + k], k1 = m.kerb[2 * i + 2 + k];
+    const kerb = k0 >= 0 && k1 >= 0 ? k0 * (1 - f) + k1 * f : Math.max(k0, k1);
+    this.pave = false;
+    if (e.side && kerb >= 0 && wall - kerb >= PAVEMENT) {
+      // On the pavement, a little in from the kerb.
+      this.pave = true;
+      lo = kerb + 0.4;
+      hi = Math.max(lo, Math.min(wall - 0.35, kerb + 3.4));
+    } else if (e.side) {
+      hi = Math.max(0, Math.min(e.side, wall - 0.45));
+      lo = Math.max(0, hi - 0.6);
+    } else {
+      lo = 0;
+      hi = Math.max(0, Math.min(e.width / 2 - 0.4, wall - 0.35));
+    }
+    // Beside the hedge or fence the path runs along, not in it.
+    if (from) { lo = Math.max(lo, from + 0.35); hi = Math.max(hi, lo); }
+    this.lo = lo;
+    this.hi = hi;
   }
 
   // Where on their path someone is, `ahead` metres on, over in their lane (and round
-  // whatever they're stepping past), clear of buildings.
+  // whatever they're stepping past), clear of buildings and fences: a step aside that
+  // would end in one is made smaller, then the lane is.
   spot(p: Pedestrian, ahead = 0) {
-    const q = p.e.path.at(p.s + (p.fwd ? ahead : -ahead));
-    let off = this.lane(p) + p.dodge;
+    const s = p.s + (p.fwd ? ahead : -ahead), q = p.e.path.at(s);
+    let lane = this.lane(p, s), dodge = p.dodge;
     const nx = Math.sin(q.ang), ny = -Math.cos(q.ang);
-    let x = q.x + nx * off, y = q.y + ny * off;
-    for (let k = 0; k < 6 && this.grid.at(x, y); k++) {
-      off *= 0.6;
-      x = q.x + nx * off;
-      y = q.y + ny * off;
+    let x = q.x + nx * (lane + dodge), y = q.y + ny * (lane + dodge);
+    // (Walls only: the room in the lane already keeps clear of fences, and follow() checks
+    // them on every step.)
+    for (let k = 0; k < 6 && this.grid.at(x, y) !== 0; k++) {
+      if (Math.abs(dodge) > 0.05) dodge *= 0.5;
+      else lane *= 0.6;
+      x = q.x + nx * (lane + dodge);
+      y = q.y + ny * (lane + dodge);
     }
     return { x, y, ang: p.fwd ? q.ang : q.ang + Math.PI };
   }
 
-  // Put a person straight onto their edge (new, or moved).
+  // A path picked at random, by length.
+  private anywhere() {
+    let x = this.r() * this.totalLen, e: WalkEdge | undefined;
+    for (const f of this.walk.edges) if ((x -= f.path.length) < 0) { e = f; break; }
+    e = e || this.walk.edges[0];
+    if (!e) throw new Error('No walkable edges are loaded');
+    return e;
+  }
+
+  // Put a person straight onto their edge (new, or moved). On a path inside a building,
+  // onto the next one out of it, or failing that (a dead end in there), somewhere else.
   place(p: Pedestrian) {
+    if (this.indoor(p.e, true)) {
+      for (const o of this.walk.adj.get(p.s > p.e.path.length / 2 ? p.e.v : p.e.u) || []) {
+        if (o.e === p.e || this.indoor(o.e, true)) continue;
+        p.e = o.e;
+        p.fwd = o.fwd;
+        p.s = o.fwd ? 0 : o.e.path.length;
+        break;
+      }
+      for (let tries = 0; tries < 4 && this.indoor(p.e, true); tries++) {
+        p.e = this.anywhere();
+        p.s = this.r() * p.e.path.length;
+      }
+    }
+    p.stuck = 0;
+    p.cap = Infinity;
     p.dodge = p.dodgeTo = 0;
-    const q = this.spot(p);
+    let q = this.spot(p);
+    // (Where the path runs through a wall, a passage through a building, say: a little
+    // further along it or back, out of the wall.)
+    for (let k = 1, s = p.s; k <= 20 && this.blocked(q.x, q.y); k++) {
+      p.s = clamp(s + (k % 2 ? 1 : -1) * Math.ceil(k / 2), 0, p.e.path.length);
+      q = this.spot(p);
+    }
     p.x = q.x;
     p.y = q.y;
     p.h = q.ang;
@@ -242,47 +455,77 @@ export class Crowd {
   follow(p: Pedestrian, dt: number) {
     p.dodge += clamp(p.dodgeTo - p.dodge, -1.5 * dt, 1.5 * dt);
     const q = this.spot(p, LOOK), dx = q.x - p.x, dy = q.y - p.y, d = Math.hypot(dx, dy);
-    const step = p.pause > 0 ? 0 : Math.min(d, p.speed * dt * clamp(d / LOOK, 0.7, 1.5));
-    if (d > 0.01) {
+    const step = p.pause > 0 ? 0 : Math.min(d, Math.min(p.speed, p.cap) * dt * clamp(d / LOOK, 0.7, 1.5));
+    let moved = step;
+    if (d > 0.01 && step > 0) {
       let nx = p.x + (dx / d) * step, ny = p.y + (dy / d) * step;
-      // Cutting the corner of a building: back onto the path where they'd be without
-      // the shortcut, briskly. (Where the path itself goes through a building, through
-      // a passage, they go through with it.)
-      if (this.blocked(nx, ny) && !this.blocked(q.x, q.y)) {
+      // Never from open ground into a wall, a building or a fence (from inside one, out
+      // of it). Cutting a corner: back onto the path where they'd be without the
+      // shortcut, briskly; failing that, along the wall, or they stand.
+      if (this.blocked(nx, ny) && !this.blocked(p.x, p.y)) {
         const on = this.spot(p), bx = on.x - p.x, by = on.y - p.y, bd = Math.hypot(bx, by) || 1;
         const k = Math.min(1, Math.max(step, p.speed * dt * 2) / bd);
         nx = p.x + bx * k;
         ny = p.y + by * k;
+        if (this.blocked(nx, ny)) {
+          nx = p.x + (dx / d) * step;
+          ny = p.y + (dy / d) * step;
+          if (!this.blocked(nx, p.y)) ny = p.y;
+          else if (!this.blocked(p.x, ny)) nx = p.x;
+          else { nx = p.x; ny = p.y; }
+        }
+        moved = Math.hypot(nx - p.x, ny - p.y);
       }
+      p.stuck = moved < step * 0.3 ? p.stuck + dt : 0;
       p.x = nx;
       p.y = ny;
     }
-    p.pace = dt > 0 ? step / dt : 0;
+    p.pace = dt > 0 ? moved / dt : 0;
     // Face where they're going, turning at most TURN a second.
     const want = d > 0.05 ? Math.atan2(dy, dx) : q.ang;
     const off = Math.atan2(Math.sin(want - p.h), Math.cos(want - p.h));
     p.h += clamp(off * Math.min(1, dt * 8), -TURN * dt, TURN * dt);
   }
 
-  // Look a few metres ahead for parked cars and bikes on the path, and pick the nearest
-  // way past them (or back into their lane once past).
-  avoid(p: Pedestrian, near: Obstructions, player?: PersonOnFoot) {
+  // Something in the way, across the path from a to b (see spans).
+  private span(a: number, b: number, beside: boolean, oncoming: boolean) {
+    if (this.spanN * 4 >= this.spans.length) return;
+    const s = this.spans, k = this.spanN++ * 4;
+    s[k] = a; s[k + 1] = b; s[k + 2] = beside ? 1 : 0; s[k + 3] = oncoming ? 1 : 0;
+  }
+
+  // Whether `v` across the path is clear of everything in the way, and reached from
+  // `now` without stepping sideways through something they're passing.
+  private clear(v: number, now: number) {
+    const s = this.spans, lo = Math.min(v, now), hi = Math.max(v, now);
+    for (let k = 0; k < this.spanN * 4; k += 4) {
+      if (v > s[k] && v < s[k + 1]) return false;
+      if (s[k + 2] && s[k + 1] > lo && s[k] < hi) return false;
+    }
+    return true;
+  }
+
+  // Look a few metres ahead for what's in the way, parked cars and bikes, other people
+  // and the player, and pick the nearest way past (or back into their lane once past).
+  // Meeting someone, they keep right; with no way past, they fall in behind someone
+  // going their way or stop for a moment.
+  avoid(p: Pedestrian, near?: Obstructions, player?: PersonOnFoot) {
     const dir = p.fwd ? 1 : -1, q = p.e.path.at(p.s + dir * 1.5), base = p.e.path.at(p.s);
     const ux = Math.cos(q.ang) * dir, uy = Math.sin(q.ang) * dir, nx = Math.sin(q.ang), ny = -Math.cos(q.ang);
-    const lane = this.lane(p), now = lane + p.dodge;
-    // Across the path, what each thing blocks, and whether it's already alongside.
-    const spans: [number, number, boolean][] = [];
-    for (const o of near(p.x, p.y, 5)) {
+    const lane = this.lane(p), now = lane + p.dodge, lo = this.lo, hi = this.hi, pave = this.pave, sign = this.sign;
+    this.spanN = 0;
+    p.cap = Infinity;
+    if (near) for (const o of near(p.x, p.y, 5)) {
       if (o.kind !== 'car' || !o.car || Math.abs(o.car.vx) + Math.abs(o.car.vy) > 0.5) continue;
       if (o.z !== undefined && p.gz !== undefined && Math.abs(o.z - p.gz) > 3) continue;
       const ax = o.x - base.x, ay = o.y - base.y, along = ax * ux + ay * uy;
       if (along < -o.r - 0.5 || along > 4.5) continue;
       const lat = ax * nx + ay * ny, w = o.r + CLEAR;
-      spans.push([lat - w, lat + w, along < o.r + 1]);
+      this.span(lat - w, lat + w, along < o.r + 1, false);
     }
     // Leave shoulder room for someone walking towards us or crossing our path.
     // Predict briefly so a passer-by turns before reaching the first-person camera.
-    let personAhead = Infinity;
+    let personAhead = Infinity, blockAt = Infinity, blockPace = 0, blocker: Pedestrian | null = null;
     if (player && Math.abs(player.x - p.x) < 6 && Math.abs(player.y - p.y) < 6 &&
         Math.abs((player.gz ?? 0) - (p.gz ?? 0)) < 1.5) {
       const dx = player.x - base.x, dy = player.y - base.y;
@@ -291,36 +534,119 @@ export class Crowd {
         const time = clamp(along / closing, 0, .65);
         const side = dx * nx + dy * ny + time * (player.vx * nx + player.vy * ny);
         if (Math.min(Math.abs(side - lane), Math.abs(side - now)) < 1.05) {
-          spans.push([side - .98, side + .98, false]);
+          this.span(side - .98, side + .98, false, false);
           personAhead = along;
         }
       }
     }
-    const inside = (v: number) => spans.some(([a, b]) => v > a && v < b);
-    const open = (v: number) => {
-      if (Number.isFinite(personAhead)) {
-        // On a roadside pavement keep to this side of the kerb. On a path,
-        // use its width. A narrow doorway may only fit one person at a time.
-        if (p.e.side ? p.side * v < p.e.side - .85 || p.side * v > p.e.side + 1.3
-          : Math.abs(v) > Math.max(.4, p.e.width / 2 - .22)) return false;
+    // The other walkers near them: where each will be across the path by the time
+    // they meet (someone standing, or going their way more slowly, or coming the other
+    // way), and anyone already alongside.
+    const people = this.people, links = this.links, gz = p.gz ?? 0;
+    let pushX = 0, pushY = 0, held = false;
+    const i0 = Math.floor((p.x - 5) / BUCKET), i1 = Math.floor((p.x + 5) / BUCKET);
+    const j0 = Math.floor((p.y - 5) / BUCKET), j1 = Math.floor((p.y + 5) / BUCKET);
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+      for (let n = this.heads[bucket(i, j)]; n >= 0; n = links[n]) {
+        const o = people[n];
+        if (!o || o === p || Math.abs((o.gz ?? 0) - gz) > 1.5) continue;
+        // (How far ahead from where they are, so that of two going the same way only
+        // the one behind has the other ahead; across from the path.)
+        const dx = o.x - base.x, dy = o.y - base.y, along = (o.x - p.x) * ux + (o.y - p.y) * uy;
+        // Closer than shoulders allow (a crowd at a dead end, people put down on the same
+        // spot): a little apart, each their own way.
+        const ox = p.x - o.x, oy = p.y - o.y, od = Math.hypot(ox, oy);
+        if (od < SHOULDERS) {
+          const k = (SHOULDERS - od) * 0.5, a = od > 0.01 ? 0 : p.serial * 2.4;
+          pushX += od > 0.01 ? (ox / od) * k : Math.cos(a) * k;
+          pushY += od > 0.01 ? (oy / od) * k : Math.sin(a) * k;
+          // (Of two walking on as one, side by side in a passage, the later lets the other
+          // get ahead.)
+          if (p.serial > o.serial && along > -.1 && o.state === 'walk' && o.pace > .2) held = true;
+        }
+        if (along < -.3 || along > 5.5) continue;
+        const walking = o.state === 'walk', down = o.state === 'down';
+        const ovx = walking ? Math.cos(o.h) * o.pace : down ? 0 : o.vx, ovy = walking ? Math.sin(o.h) * o.pace : down ? 0 : o.vy;
+        const toward = ovx * ux + ovy * uy, closing = p.speed - toward, beside = along < .6;
+        if (!beside && (closing < .1 || along > Math.min(5.5, 1.2 + closing * 1.4))) continue;
+        const time = beside ? 0 : Math.min(1.2, along / closing);
+        // (Not for someone coming towards them: what they're doing across the path is
+        // stepping aside for us, and counting on it, each would step aside only half enough.)
+        const side = dx * nx + dy * ny + (toward < -.3 ? 0 : time * (ovx * nx + ovy * ny));
+        if (Math.abs(side - lane) > 1.4 && Math.abs(side - now) > 1.4) continue;
+        // (A little more room for someone coming the other way.)
+        const pass = toward < -.3 ? MEET : PASS;
+        this.span(side - pass, side + pass, beside, toward < -.3);
+        // (Someone alongside, or as good as on the same spot, is stepped away from, not
+        // waited for: two waiting for each other would wait for good.)
+        if (along < .3) continue;
+        if (along < personAhead) personAhead = along;
+        // In their way right now: how far ahead, and how fast it goes their way.
+        if (Math.abs(side - now) < PASS && along < blockAt) { blockAt = along; blockPace = toward; blocker = o; }
       }
-      for (const k of [1, 2.5]) if (this.blocked(base.x + ux * k + nx * v, base.y + uy * k + ny * v)) return false;
-      return true;
-    };
-    // Not by stepping sideways through whatever they're passing.
-    const reach = (v: number) => !spans.some(([a, b, beside]) => beside && b > Math.min(v, now) && a < Math.max(v, now));
-    const ok = (v: number) => !inside(v) && open(v) && reach(v);
-    if (ok(lane)) { p.dodgeTo = 0; return; }
-    // The way round nearest to where they're walking now, so they don't dither.
-    let best: number | null = null;
-    for (const [a, b] of spans) {
-      for (const v of [a - 0.01, b + 0.01]) if (ok(v) && (best === null || Math.abs(v - now) < Math.abs(best - now))) best = v;
     }
-    if (best !== null) p.dodgeTo = best - lane;
-    else if (personAhead < 1.8) p.pause = Math.max(p.pause, .25);
+    if (pushX || pushY) {
+      const x = p.x + pushX, y = p.y + pushY;
+      if (!this.blocked(x, y)) { p.x = x; p.y = y; }
+    }
+    if (held) p.pause = Math.max(p.pause, .3);
+    const w = this.way;
+    w.now = now; w.ahead = personAhead; w.lo = lo; w.hi = hi; w.pave = pave; w.sign = sign;
+    w.bx = base.x; w.by = base.y; w.ux = ux; w.uy = uy; w.nx = nx; w.ny = ny;
+    if (this.fits(p, lane)) { p.dodgeTo = 0; return; }
+    // The way round nearest to where they're walking now, so they don't dither; past
+    // someone coming the other way, on their own right (+ across the path, going forward).
+    // Off the pavement into the road only to get round a parked car, not round people.
+    const road = this.road, kerbside = !!road && !road(base.x + ux + nx * lane, base.y + uy + ny * lane);
+    let best = NaN, cost = Infinity, inRoad = false;
+    const s = this.spans;
+    for (let k = 0; k < this.spanN * 4; k += 4) {
+      for (let e = 0; e < 2; e++) {
+        const v = e ? s[k + 1] + 0.01 : s[k] - 0.01;
+        let c = Math.abs(v - now);
+        if (s[k + 3] && (e ? dir : -dir) < 0) c += 0.8;
+        const off = kerbside && road!(base.x + ux + nx * v, base.y + uy + ny * v);
+        if (off) c += 2;
+        if (c < cost && this.fits(p, v)) { cost = c; best = v; inRoad = off; }
+      }
+    }
+    // A tree, a post or a wall corner in their lane, nothing else: a step or two aside,
+    // to their right if they can.
+    for (let d = 0.5; best !== best && d <= 2; d += 0.5) {
+      if (this.fits(p, now + dir * d)) best = now + dir * d;
+      else if (this.fits(p, now - dir * d)) best = now - dir * d;
+    }
+    if (inRoad && blocker && blockAt < 1.6) best = NaN;
+    if (best === best) {
+      p.dodgeTo = best - lane;
+      // Still right behind someone while stepping round them: no faster than they go.
+      if (blockAt < 1) p.cap = Math.max(0, blockPace);
+    } else if (blocker && blockAt < 1.6) {
+      // No way past. Someone going their way: they fall in behind. Someone coming
+      // towards them or standing there: one of the two (the one who came out later)
+      // waits, and after a while turns back; the other stops short of them.
+      if (blockPace > .2) p.cap = blockPace * 0.95;
+      else if (p.serial > blocker.serial) { p.pause = Math.max(p.pause, .25); p.stuck += .1; }
+      else if (blockAt < .8) p.cap = 0;
+    } else if (personAhead < 1.8 && !blocker) p.pause = Math.max(p.pause, .25);
   }
 
-  blocked(x: number, y: number) { return this.grid.at(x, y) !== 0; }
+  // Whether `v` across the path is somewhere to step to (for avoid(), with `way` set):
+  // clear of what's in the way, no wall or fence a little way on, and with someone
+  // ahead, on this side of the kerb (on a path, within its width; a narrow doorway may
+  // only fit one person at a time).
+  private fits(p: Pedestrian, v: number) {
+    const w = this.way;
+    if (!this.clear(v, w.now)) return false;
+    if (w.ahead < Infinity) {
+      if (p.e.side ? w.sign * v < w.lo - .25 || w.sign * v > w.hi + (w.pave ? .3 : 1.3)
+        : Math.abs(v) > Math.max(.4, w.hi + .18)) return false;
+    }
+    return !this.blocked(w.bx + w.ux + w.nx * v, w.by + w.uy + w.ny * v) && !this.blocked(w.bx + w.ux * 2.5 + w.nx * v, w.by + w.uy * 2.5 + w.ny * v);
+  }
+
+  // A wall, a building or a fence (one they can't jump, `up` m off the ground).
+  blocked(x: number, y: number, up = 0) { return this.grid.at(x, y) !== 0 || fences.blocks(x, y, 0.15, up); }
 
   // Someone steps out of a car (a driver who's just been pulled out, say), looking
   // like `look` if given (the rider of a bike you've taken).
@@ -353,6 +679,17 @@ export class Crowd {
     }
     // Each walker looks ahead for things in the way a few times a second, not all at once.
     this.tick = (this.tick + 1) % 4;
+    this.clock += dt;
+    this.budget = 6;
+    // Who stands where, for avoid() to find the people near someone.
+    const people = this.people;
+    if (this.links.length < people.length) this.links = new Int32Array(Math.max(people.length, this.fig.capacity));
+    this.heads.fill(-1);
+    for (let n = 0; n < people.length; n++) {
+      const b = bucket(Math.floor(people[n].x / BUCKET), Math.floor(people[n].y / BUCKET));
+      this.links[n] = this.heads[b];
+      this.heads[b] = n;
+    }
     for (const p of this.people) {
       p.t -= dt;
       const exit=p.anim.driverExit;
@@ -389,12 +726,26 @@ export class Crowd {
       if (p.state === 'walk') {
         if (p.pause > 0) { p.pause -= dt; }
         else {
-          p.s += (p.fwd ? 1 : -1) * p.speed * dt;
+          // (Held up by a wall: their place on the path waits for them.)
+          if (p.stuck < 0.3) p.s += (p.fwd ? 1 : -1) * Math.min(p.speed, p.cap) * dt;
           if (p.s < 0 || p.s > p.e.path.length) this.turn(p);
           if (r() < dt * 0.02) p.pause = 1 + r() * 4;
         }
-        if (near && p.i % 4 === this.tick) this.avoid(p, near, player);
+        if (p.i % 4 === this.tick) {
+          // (On a path found to be inside a building once its walls came: out onto the
+          // next one, unseen in there.)
+          if (this.indoor(p.e, false)) this.place(p);
+          this.avoid(p, near, player);
+        }
         this.follow(p, dt);
+        if (p.stuck > 1.5) {
+          // No way on past a wall or a fence: out of sight, back onto the path (unless the
+          // path itself runs through the wall, a passage through a building, say); in
+          // sight, or then, they turn round.
+          const q = seen(p.x, p.y) ? null : this.spot(p);
+          if (q && !this.blocked(q.x, q.y)) this.place(p);
+          else { p.fwd = !p.fwd; p.stuck = 0; p.dodge = p.dodgeTo = 0; }
+        }
       } else if (p.state === 'flee' || p.state === 'down' || p.state === 'rejoin') {
         if (p.state === 'down') {
           const k = Math.exp(-4 * dt);
@@ -408,14 +759,18 @@ export class Crowd {
             p.state = 'walk';
             p.e = p.target.e;
             p.s = p.target.s;
+            p.stuck = 0;
+            p.cap = Infinity;
           } else {
             p.vx = (dx / d) * 1.8;
             p.vy = (dy / d) * 1.8;
           }
         }
-        const nx = p.x + p.vx * dt, ny = p.y + p.vy * dt;
-        if (!this.blocked(nx, p.y)) p.x = nx; else p.vx *= -0.3;
-        if (!this.blocked(p.x, ny)) p.y = ny; else p.vy *= -0.3;
+        // Off the path, walls and fences stop them too (unless they're already in one,
+        // or jump it).
+        const nx = p.x + p.vx * dt, ny = p.y + p.vy * dt, inWall = this.blocked(p.x, p.y, p.z);
+        if (inWall || !this.blocked(nx, p.y, p.z)) p.x = nx; else p.vx *= -0.3;
+        if (inWall || !this.blocked(p.x, ny, p.z)) p.y = ny; else p.vy *= -0.3;
         if (p.state !== 'down' && Math.hypot(p.vx, p.vy) > 0.3) p.h = Math.atan2(p.vy, p.vx);
         if (p.t < 0 && p.state === 'down' && p.then) {
           // Up again, and off at a run.
@@ -455,7 +810,8 @@ export class Crowd {
 
   turn(p: Pedestrian) {
     const node = p.s > p.e.path.length / 2 ? p.e.v : p.e.u;
-    const opts = (this.walk.adj.get(node) || []).filter((o) => o.e !== p.e);
+    // Not into a building, where the path runs on inside it: that's a dead end.
+    const opts = (this.walk.adj.get(node) || []).filter((o) => o.e !== p.e && !this.indoor(o.e, true));
     // Busier streets are likelier. A walk spreads people out more evenly than its
     // turns lean (it has to pass the quiet streets round a busy one), so the turns lean
     // harder, by pull^1.75: in a simulation that kept as many people a metre on each
@@ -470,6 +826,7 @@ export class Crowd {
     p.fwd = pick.fwd;
     p.s = p.fwd ? 0 : p.e.path.length;
     p.dodge = p.dodgeTo = 0;
+    p.stuck = 0;
   }
 
   // A gunshot at (x, y): everyone walking within r runs from it.
