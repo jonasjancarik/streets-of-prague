@@ -12,7 +12,7 @@ import { send, sendInstances } from './gpu.ts';
 // How strong the beams are (how dark it is × how hazy the air).
 export const BEAM_ON = { value: 0 };
 
-let beamBy: (() => THREE.Material) | null = null;
+let beamBy: ((search?: boolean) => THREE.Material) | null = null;
 export const setBeamShade = (f: typeof beamBy) => { beamBy = f; };
 let glintBy: (() => THREE.Material) | null = null;
 export const setGlintShade = (f: typeof glintBy) => { glintBy = f; };
@@ -25,12 +25,18 @@ interface Roof { x: number; y: number; h: number; spec: { L: number; W: number; 
 
 export class LightFx {
   private beams: THREE.InstancedMesh | null = null;
+  private searchlights: THREE.InstancedMesh | null = null;
+  private searchEyes = new THREE.InstancedBufferAttribute(new Float32Array(2 * 3), 3);
+  private searchSizes = new THREE.InstancedBufferAttribute(new Float32Array(2 * 3), 3);
+  private inverse = new THREE.Matrix4();
+  private localEye = new THREE.Vector3();
   private cuts: THREE.InstancedBufferAttribute | null = null;
   private glints: THREE.InstancedMesh | null = null;
   private dummy = new THREE.Object3D();
   private c = new THREE.Color();
   private eye: THREE.Vector3 | null = null;
   private nb = 0;
+  private ns = 0;
   private ng = 0;
 
   constructor(scene: THREE.Scene) {
@@ -42,8 +48,13 @@ export class LightFx {
     this.cuts = new THREE.InstancedBufferAttribute(new Float32Array(MAX_BEAMS), 1);
     cone.setAttribute('iCut', this.cuts);
     this.beams = new THREE.InstancedMesh(cone, beamBy(), MAX_BEAMS);
+    // Closed back faces keep the volume visible when the camera is inside it.
+    const search = new THREE.CylinderGeometry(1, 0.1, 1, 32, 1, false).rotateZ(-Math.PI / 2).translate(0.5, 0, 0);
+    search.setAttribute('iBeamEye', this.searchEyes);
+    search.setAttribute('iBeamSize', this.searchSizes);
+    this.searchlights = new THREE.InstancedMesh(search, beamBy(true), 2);
     this.glints = new THREE.InstancedMesh(new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2), glintBy(), MAX_GLINTS);
-    for (const m of [this.beams, this.glints]) {
+    for (const m of [this.beams, this.searchlights, this.glints]) {
       m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(m.instanceMatrix.count * 3), 3);
       m.count = 0;
       m.frustumCulled = false;
@@ -56,23 +67,32 @@ export class LightFx {
   // `wet`, `murk`: how wet the ground and how hazy the air (0..1).
   begin(eye: THREE.Vector3 | null, on: number, _wet: number, murk: number) {
     this.eye = this.beams ? eye : null;
-    this.nb = this.ng = 0;
+    this.nb = this.ns = this.ng = 0;
     BEAM_ON.value = on * (0.1 + 0.9 * Math.min(1, murk * 1.6));
     if (!this.eye) this.commit();
   }
 
   // A cone of light in the air from (x, y, z), `len` long and `wide` across at its end;
   // drawn only the first `reach` m, up to what stands in its way (Lamps.reach).
-  beam(x: number, y: number, z: number, dx: number, dy: number, len: number, wide: number, colour: THREE.Color, strength: number, dip = 0.04, reach = len) {
-    if (!this.eye || !this.beams || this.nb >= MAX_BEAMS || reach < 0.3) return;
+  beam(x: number, y: number, z: number, dx: number, dy: number, len: number, wide: number, colour: THREE.Color, strength: number, dip = 0.04, reach = len, search = false) {
+    const mesh = search ? this.searchlights : this.beams, index = search ? this.ns : this.nb;
+    if (!this.eye || !mesh || index >= mesh.instanceMatrix.count || reach < 0.3) return;
     const d = this.dummy, cut = Math.min(1, reach / len);
     d.position.set(x, z, -y);
     d.rotation.set(0, Math.atan2(dy, dx), -dip);
     d.scale.set(len * cut, wide * (0.1 + 0.9 * cut), wide * (0.1 + 0.9 * cut));
     d.updateMatrix();
-    this.beams.setMatrixAt(this.nb, d.matrix);
-    this.cuts!.setX(this.nb, cut);
-    this.beams.setColorAt(this.nb++, this.c.copy(colour).multiplyScalar(strength));
+    mesh.setMatrixAt(index, d.matrix);
+    if (search) {
+      this.localEye.copy(this.eye).applyMatrix4(this.inverse.copy(d.matrix).invert());
+      this.searchEyes.setXYZ(index, this.localEye.x, this.localEye.y, this.localEye.z);
+      this.searchSizes.setXYZ(index, d.scale.x, d.scale.y, d.scale.z);
+      this.ns++;
+    } else {
+      this.cuts!.setX(index, cut);
+      this.nb++;
+    }
+    mesh.setColorAt(index, this.c.copy(colour).multiplyScalar(strength));
   }
 
   private glint(x: number, y: number, z: number, ang: number, long: number, wide: number, colour: THREE.Color, strength: number) {
@@ -125,11 +145,13 @@ export class LightFx {
   }
 
   commit() {
-    for (const [m, n] of [[this.beams, this.nb], [this.glints, this.ng]] as [THREE.InstancedMesh | null, number][]) {
+    for (const [m, n] of [[this.beams, this.nb], [this.searchlights, this.ns], [this.glints, this.ng]] as [THREE.InstancedMesh | null, number][]) {
       if (!m) continue;
       m.count = n;
       sendInstances(m);
     }
     if (this.cuts) send(this.cuts, this.nb);
+    send(this.searchEyes, this.ns);
+    send(this.searchSizes, this.ns);
   }
 }

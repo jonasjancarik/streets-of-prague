@@ -1301,7 +1301,8 @@ export class Lamps {
       add(sp.tx, sp.ty, ground, 4, sp.x - sp.tx, sp.y - sp.ty, SEARCH_R, SEARCH_R, SEARCH, 2.4, up, -1, false);
       if (fx) {
         const dx = sp.tx - sp.x, dy = sp.ty - sp.y, run = Math.hypot(dx, dy) || 1;
-        fx.beam(sp.x, sp.y, sp.z, dx / run, dy / run, Math.hypot(run, up), SEARCH_R * 0.9, SEARCH, 1.2, Math.atan2(up, run));
+        const len = Math.hypot(run, up);
+        fx.beam(sp.x, sp.y, sp.z, dx / run, dy / run, len, SEARCH_R, SEARCH, 1.2, Math.atan2(up, run), len, true);
       }
     }
     this.fx.commit();

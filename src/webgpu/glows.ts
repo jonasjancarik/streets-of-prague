@@ -8,8 +8,8 @@
 import * as THREE from 'three';
 import { NodeMaterial } from 'three/webgpu';
 import {
-  Fn, If, abs, Discard, float, vec2, vec3, vec4, uv, texture, instanceIndex, attribute, uniform, renderGroup, instanceColor, positionGeometry, positionView, positionViewDirection, normalView, cameraViewMatrix,
-  cameraProjectionMatrix, positionWorld, smoothstep, mix, min, max, clamp, dot, sqrt, pow, fract, sin, cos, length, select, sRGBTransferEOTF, toneMappingExposure,
+  Fn, If, Loop, abs, Discard, float, vec2, vec3, vec4, uv, texture, instanceIndex, attribute, uniform, renderGroup, instanceColor, positionGeometry, positionView, positionViewDirection, normalView, cameraViewMatrix,
+  cameraProjectionMatrix, positionWorld, smoothstep, step, mix, min, max, clamp, dot, sqrt, pow, fract, sin, cos, length, select, sRGBTransferEOTF, toneMappingExposure,
 } from 'three/tsl';
 import { setGlows } from '../lamps.ts';
 import { pedestrianLens } from '../signalOptics.ts';
@@ -85,8 +85,36 @@ setGlows(() => additive(() => {
 // A cone is brightest where you look through the most of it: along its middle, fading to
 // nothing at its outline, and thinning out along its length.
 
-setBeamShade(() => {
+setBeamShade((search = false) => {
   const strength = follow(BEAM_ON);
+  if (search) {
+    const eye: N = attribute('iBeamEye', 'vec3').toVarying('vBeamEye');
+    const size: N = attribute('iBeamSize', 'vec3').toVarying('vBeamSize');
+    return additive(() => {
+      // Integrate soft light through the air, rather than lighting the cone's skin.
+      // Coordinates are in the unit cone; size restores metres for the optical depth.
+      const delta = positionGeometry.sub(eye), distance = length(delta);
+      const ray = delta.div(max(distance, 0.0001));
+      const inverse = vec3(1).div(step(0, ray).mul(2).sub(1).mul(max(abs(ray), vec3(0.00001))));
+      const a = vec3(0, -1, -1).sub(eye).mul(inverse);
+      const b = vec3(1, 1, 1).sub(eye).mul(inverse);
+      const near = min(a, b);
+      const enter = max(0, max(near.x, max(near.y, near.z)));
+      const stride = max(distance.sub(enter), 0).div(12);
+      const optical = float(0).toVar();
+      Loop(12, ({ i }) => {
+        const p = eye.add(ray.mul(enter.add(float(i).add(0.5).mul(stride))));
+        const radius = p.x.mul(0.98).add(0.02);
+        const radial = length(p.yz).div(max(radius, 0.02));
+        const density = smoothDown(1, 0.15, radial).pow(2)
+          .mul(smoothstep(0, 0.025, p.x)).mul(smoothDown(1.02, 0.92, p.x))
+          .div(p.x.mul(p.x).mul(3).add(1));
+        optical.addAssign(density.mul(stride).mul(length(ray.mul(size))));
+      });
+      const glow = optical.mul(0.065).clamp(0, 0.65).mul(strength);
+      return vec4(unmap(instanceColor.mul(glow), true), 1);
+    }, THREE.BackSide);
+  }
   // (Along the whole cone, of which a car in the way leaves only the first part drawn: lightfx.ts.)
   const t: N = positionGeometry.x.mul(attribute('iCut', 'float')).toVarying('vBeamT');
   const m = additive(() => {
