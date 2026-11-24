@@ -456,8 +456,8 @@ The metro ride uses its overhead cutaway camera.
 - **Car handling.** In first and third person and in VR, cars drive with **Realistic** handling by
   default; Settings → Car handling switches to **Classic**. The choice is remembered
   between games (`carHandling` in the browser's storage) and takes effect on the next driving step. It applies to the car, van
-  or pickup you drive, including taxis and patrol cars. Overhead driving, two-wheelers,
-  heavy vehicles and AI drivers use Classic.
+  or pickup you drive, including taxis and patrol cars. Overhead driving, heavy vehicles
+  and AI drivers use Classic; two-wheelers have their own handling (below).
   With Realistic selected, feed in the steering as you approach a bend. Braking or
   accelerating hard leaves the tyres less grip for turning. A short handbrake pull
   lets the tail step out. Release it and unwind the steering to catch the slide.
@@ -1735,13 +1735,33 @@ record the measurements, merge decisions and pending landmark asset activation.
   guide, or held up for 45 s, the group breaks up. Passers-by give way to a guide and to
   anyone standing in a group or at a stop.
 - **Bikes and motorbikes.** Cyclists and motorcyclists ride with the traffic, and bikes
-  and motorbikes stand on the pavements around you: E gets you on one, and it leans
-  into the turns. A collision that knocks a rider off or hits an unattended bike
+  and motorbikes stand on the pavements around you: E gets you on one. A collision that
+  knocks a rider off or hits an unattended bike
   leaves the bike lying on its side until someone gets on. Take one from someone
   riding it and they're pushed off (knocked down if it was going), then run. Hit
   something hard and you're thrown off (a motorbike takes a harder knock than a
   bicycle). Get out of anything doing more than about 15 km/h (car, bike or tram)
-  and you fall and get hurt. On foot,
+  and you fall and get hurt.
+- **Riding a bike or motorbike** (`src/twoWheel.ts`, in every view, for the one you ride;
+  riders in the traffic keep to their lanes as before). It turns by leaning: steering
+  asks for a lean and the rider takes a moment to get there, so turning in and swerving
+  lag a little, and at speed the turns are wide (a motorbike at 40 km/h, leaned 43°, goes
+  about 16 m round). At walking pace the handlebars steer it directly. The tyres' grip is
+  shared between leaning, braking and accelerating: the throttle eases off in a bend by
+  itself, but the brakes don't stand the bike up for you, so braking hard while still
+  steering into a bend slides it out from under you, and you slide along the road beside
+  it. Rain and snow take grip away, so it leans less (30° on a wet road instead of 43°),
+  and a shower starting mid-bend can slide it out. The brakes stop a motorbike from 50
+  km/h in about 11 m and a bicycle from 25 in about 5.5 m; the handbrake button is the
+  back brake alone, which skids. Braking hard down a street steeper than about 15 % sends
+  you over a bicycle's handlebars. A bicycle is pedalled at about 250 W: about 32 km/h on
+  the level, 19 up a 4 % street, 11 up 8 % and 8 up 12 %; downhill it coasts up to about
+  50. Stopped on a hill, the rider puts a foot down. Kerbs: a bump head-on, but riding
+  straight at one faster than about 22 km/h on a bicycle (36 on a motorbike), or at a
+  step much higher than a kerb, throws you over the bars; crossing one at a shallow angle
+  (under about 20° to its line) washes the front wheel out. The `bike-handling` scene
+  checks it. The developer panel's Grip, Steering response and Acceleration sliders also
+  set how far you can lean, how fast you lean, and how hard you pedal. On foot,
   Space jumps (not at a tram stop, where it waits for a tram); in the air, a car can't
   knock you over. Move towards a bridge parapet, roof edge or steep drop and jump. Press Space again
   (Jump on touch, A on a controller) during the fall to open a parachute. It stays

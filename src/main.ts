@@ -28,6 +28,7 @@ import { BusPilot } from './busPilot.ts';
 import type { BusPilotData } from './busPilot.ts';
 import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp, streetShare } from './network.ts';
 import { Car, TYPES, CarPool, VR_CAB, VR_GLASS, VR_SEAT, collideBodies, contact, loadCars, ordinaryCarBodies, useKit, variantName } from './car.ts';
+import type { Fall } from './twoWheel.ts';
 import { CarOutline } from './carOutline.ts';
 import { RestingCars } from './restingCars.ts';
 import { loadKit, FIGURE_SIZE, SCALE, WARDROBE, PEOPLE_SHADOWS, CAST_LAYER } from './figures.ts';
@@ -1476,17 +1477,21 @@ async function main() {
     c.tipped = (Math.abs(across) > 0.01 ? across : c.lean) < 0 ? -1 : 1;
   };
 
-  // A hard knock on a bike or motorbike throws you off it.
-  const throwOff = () => {
+  // A hard knock on a bike or motorbike throws you off it; so does riding it badly
+  // (twoWheel.ts): sliding out in a bend or on a kerb's edge, where you slide along the
+  // road beside it, or braking over the bars, where you fly on over the front.
+  const throwOff = (fall?: Fall) => {
     const c = inCar;
     if (!c) return;
-    telemetry.did('thrown off a bike');
+    // (Fallen, the bike has already slowed: you go on at the speed you had.)
+    const k = fall === 'over' ? 5 : fall ? 1.25 : 1, vx = c.vx * k, vy = c.vy * k;
+    c.fell = undefined;
+    telemetry.did(fall === 'over' ? 'went over the handlebars' : fall ? 'fell off a bike' : 'thrown off a bike');
     enterOrExit();
-    if (inCar !== c) tipBike(c, c.vx, c.vy);
-    hurt(Math.hypot(c.vx, c.vy) * 1.5);
-    walker.knock(c.vx * 0.6, c.vy * 0.6);
-    c.vx *= 0.4;
-    c.vy *= 0.4;
+    if (inCar !== c) tipBike(c, vx, vy);
+    hurt(Math.hypot(vx, vy) * (fall === 'slide' || fall === 'kerb' ? 0.8 : 1.5));
+    walker.knock(vx * (fall === 'over' ? 0.8 : 0.6), vy * (fall === 'over' ? 0.8 : 0.6));
+    if (!fall) { c.vx *= 0.4; c.vy *= 0.4; }
     shake = 0.8;
   };
 
@@ -2368,6 +2373,7 @@ async function main() {
       }
       if (hit > 6) { shake = Math.min(1.2, shake + hit * 0.04); hapticCrash(hit); }
       jolt = hit;
+      if (inCar.fell) throwOff(inCar.fell);
     } else if (!scripted && !arrest.active && !inHeli && !ride.on && !boats.me && !funicular.me && !ferries.me && !passenger()) {
       // In first person, looking round turns you: you walk the way you look.
       const eyes = !testkit?.cam && testkit?.eyes;

@@ -3,6 +3,7 @@ import { StreetHandling, ROLL_CENTRE } from './streetHandling.ts';
 import { KEEP, STREET_QUALITY } from './streetQuality.ts';
 import { drivingSpec } from './driveTune.ts';
 import { Rollover, SCRAPE, tripSpeed } from './rollover.ts';
+import { TwoWheel, type Fall } from './twoWheel.ts';
 import { busCabin, commercialCab } from './commercialCab.ts';
 import { twoWheelerStreet } from './twoWheelerStreet.ts';
 import { CycleCranks } from './cycleCranks.ts';
@@ -1677,6 +1678,10 @@ export class Car {
   rider: Look | null;
   lean: number;
   suspension?: StreetHandling;
+  // Ridden by you: the bicycle's or motorbike's own handling (twoWheel.ts), and how you
+  // last came off it (cleared by main.ts once it has thrown you).
+  wheels?: TwoWheel;
+  fell?: Fall;
   // Which side an unmounted bike fell onto.
   tipped?: -1 | 1;
   // A car or van rolling over, or lying where it stopped (rollover.ts); gone once it's
@@ -1986,12 +1991,25 @@ export class Car {
       }
     }
     const thrust = ctl.cap == null || ctl.throttle <= 0 ? ctl.throttle : Math.min(ctl.throttle, clamp((ctl.cap - (this.vx * fx + this.vy * fy)) / 2, 0, 1));
-    if (S.two === 'bike') this.pedaling = thrust > .02 && !ctl.handbrake;
-    if (realistic && this.mode === 'player' && S.cabin) {
+    if (S.two && this.mode === 'player') {
+      this.suspension = undefined;
+      this.wheels ??= new TwoWheel();
+      const fall = this.wheels.step(this, this.spec, S, ctl, thrust, 1 - weatherLoss, slope, dt, grid.height);
+      if (fall) {
+        this.fell = fall;
+        this.tipped = this.lean >= 0 ? 1 : -1;
+        // Over the bars the bike stops dead; sliding out it skids on along the road.
+        const keep = fall === 'over' ? 0.2 : 0.8;
+        this.vx *= keep;
+        this.vy *= keep;
+      }
+    } else if (realistic && this.mode === 'player' && S.cabin) {
+      this.wheels = undefined;
       this.suspension ??= new StreetHandling(this.forwardSpeed, closeBodies.get(this.key)?.wheelbase ?? S.L * .62);
       this.suspension.advance(this, S, ctl, 1 - weatherLoss, slope, dt);
     } else {
-      this.suspension = undefined;
+      this.suspension = this.wheels = undefined;
+      if (S.two === 'bike') this.pedaling = thrust > .02 && !ctl.handbrake;
       this.arcadeVelocity(S, dt, ctl, thrust, fx, fy, slope, 1 - weatherLoss * (S.drive === 'awd' ? .6 : 1));
     }
 
@@ -2762,6 +2780,8 @@ export class CarPool {
   // Lean into the turns (worked out from how fast the heading changes, so it works
   // for traffic too); a parked bike leans on its stand.
   lean(c: Car, dt: number) {
+    // (The one you ride leans as its handling says, twoWheel.ts.)
+    if (c.wheels && !c.tipped) { c.lastH = c.h; return; }
     const yaw = dt > 0 && c.lastH !== undefined ? Math.atan2(Math.sin(c.h - c.lastH), Math.cos(c.h - c.lastH)) / dt : 0;
     c.lastH = c.h;
     const want = c.tipped ? c.tipped * Math.PI / 2

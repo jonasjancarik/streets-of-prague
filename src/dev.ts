@@ -630,14 +630,14 @@ function setupMist($: (id: string) => HTMLElement, weather: { get: () => string;
 
 // Sliders for the handling of the vehicle you drive (DRIVE_TUNE in driveTune.ts).
 const DRIVE_SLIDERS: { key: DriveTuneKey; label: string; note: string }[] = [
-  { key: 'accel', label: 'Acceleration', note: 'Higher: it gets up to speed faster.' },
+  { key: 'accel', label: 'Acceleration', note: 'Higher: it gets up to speed faster. On a bicycle, how hard you pedal.' },
   { key: 'vmax', label: 'Top speed', note: 'The fastest it can go, forwards and in reverse.' },
   { key: 'brake', label: 'Brakes', note: 'Higher: it stops in a shorter distance.' },
-  { key: 'grip', label: 'Grip', note: 'Lower: it slides sideways more easily, and the slide lasts longer.' },
+  { key: 'grip', label: 'Grip', note: 'Lower: it slides sideways more easily, and the slide lasts longer. On a bike, how far you can lean and brake before it slides out.' },
   { key: 'fade', label: 'Less grip at speed', note: 'Higher: it loses more grip near top speed. Only when driving from above.' },
   { key: 'turn', label: 'Fastest turning', note: 'Higher: sharper turns at speed. Only when driving from above.' },
   { key: 'radius', label: 'Turning circle', note: 'Higher: wider turns at full lock, so tight corners get harder.' },
-  { key: 'response', label: 'Steering response', note: 'Higher: the wheels follow your steering sooner.' },
+  { key: 'response', label: 'Steering response', note: 'Higher: the wheels follow your steering sooner. On a bike, how quickly you lean it over.' },
   { key: 'drag', label: 'Slowing when coasting', note: 'Higher: it slows down faster when you let go of the gas.' },
   { key: 'weather', label: 'Rain and snow', note: 'How much a wet or snowy road takes away grip. 0×: none at all.' },
 ];
