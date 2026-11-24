@@ -75,6 +75,8 @@ up and packed by the scripts beside them. The prompts are kept with the sources.
 - **Street furniture surfaces** (`furniture/build.py` → `public/furniture-surfaces.webp`):
   authored timber grain, cast aggregate and public telephone lettering, with the leaf
   spray from `trees/leaf.webp` reused on small courtyard shrubs.
+- The close fence atlas (`furniture/fences.py` → `public/street-fences.webp`) uses the
+  same timber grain. Its wire, ironwork, folded steel slats and fittings are drawn to scale.
 - **Leaves, twigs, needles and bark** (`trees/leaf.webp`, `trees/twig.webp`,
   `trees/needle.webp`, `trees/bark.webp` → `public/street-trees.webp` and
   `public/bark.webp`): a spray of a broadleaf branch in leaf, the same bare in winter, a

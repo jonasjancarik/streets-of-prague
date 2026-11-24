@@ -50,7 +50,7 @@ import { fences, type FenceSection } from './fences.ts';
 import { stepEdges, type Crosser, type StepEdge } from './stepEdges.ts';
 import { byLevel, bridgeApproaches } from './roadLevels.ts';
 import type { RoadHint } from './roadLevels.ts';
-import { fenceMeshes } from './map/fences.ts';
+import { fenceCamera, fenceMeshes } from './map/fences.ts';
 import { streetHedges } from './streetHedges.ts';
 import { shedMesh } from './map/sheds.ts';
 import { furnitureMeshes, furnitureView, disposeFurniture } from './furniture.ts';
@@ -531,7 +531,11 @@ export class TileWorld {
   furnitureCamera(street: boolean) {
     if (this.streetFurniture === street) return;
     this.streetFurniture = street;
-    for (const tile of this.loaded.values()) furnitureView(tile.furniture, street);
+    for (const tile of this.loaded.values()) {
+      furnitureView(tile.furniture, street);
+      const panel = tile.fences.find(section => !section.hedge && !section.rail);
+      if (panel) fenceCamera(panel.mesh, street);
+    }
   }
 
   private passageRooms = new Map<Tile, PassageRoom>();
@@ -1682,7 +1686,7 @@ export class TileWorld {
       };
     });
     const walls = wallMesh(land.walls);
-    const fenceRows = fenceMeshes(land.fences);
+    const fenceRows = fenceMeshes(land.fences, this.streetFurniture);
     const sheds = shedMesh(land.sheds);
     const furniture = furnitureMeshes(land.furniture, this.streetFurniture);
     const statues = this.statueFixtures(onLevels, t.box);

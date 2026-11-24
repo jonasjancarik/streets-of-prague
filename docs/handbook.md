@@ -1753,7 +1753,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   brings its span wire down with it.
 - **Fences and hedges** (`src/fences.ts`, `src/map/fences.ts`): OSM's `barrier=fence` and
   `barrier=hedge` lines are cut into sections of up to 3 m, drawn as pickets between two
-  rails and as a leafy box (a tagged `height` is used, else 1.2 m and 1.5 m). A car
+  rails and as a leafy box (a tagged `height` is used, else 1.2 m and 1.5 m). From
+  the pavement, the garden fences show woven wire and tension strands, fasteners
+  on weathered boards, or painted iron bars. The street camera loads these finishes
+  into the existing fence panels. A car
   goes through a fence at more than about 5 km/h, and the section it hits lies down
   the way it was going (and stays down); a hedge takes 18 km/h, slower than that a car
   bounces off. On foot you can't walk through either, but you can jump a fence lower than

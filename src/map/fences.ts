@@ -300,7 +300,30 @@ function leaves() {
   return leafMap;
 }
 
-export function fenceMeshes({ fence, hedge, rail }: FenceBuffers) {
+let fineFence: Promise<THREE.Texture | null> | undefined, retryAt = 0;
+
+export function fenceCamera(mesh: THREE.Mesh, street: boolean) {
+  const material = mesh.material as THREE.MeshLambertMaterial;
+  mesh.userData.streetFence = street;
+  const set = (map: THREE.Texture, fine: boolean) => {
+    if (material.map === map) return;
+    material.map = map;
+    material.alphaTest = fine ? .19 : .5;
+    material.alphaToCoverage = fine;
+    material.needsUpdate = true;
+  };
+  if (!street) { set(pickets(), false); return; }
+  if (performance.now() < retryAt) return;
+  fineFence ??= new THREE.TextureLoader().loadAsync(import.meta.env.BASE_URL + 'street-fences.webp').then(map => {
+    map.wrapS = THREE.RepeatWrapping;
+    map.colorSpace = THREE.SRGBColorSpace;
+    map.anisotropy = 8;
+    return map;
+  }, () => { fineFence = undefined; retryAt = performance.now() + 60000; return null; });
+  void fineFence.then(map => { if (map && mesh.userData.streetFence) set(map, true); });
+}
+
+export function fenceMeshes({ fence, hedge, rail }: FenceBuffers, street = false) {
   const make = (a: FenceBuffers['fence'], material: THREE.Material, shadow: boolean) => {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(a.position, 3));
@@ -321,8 +344,11 @@ export function fenceMeshes({ fence, hedge, rail }: FenceBuffers) {
       .replace('#include <color_fragment>', `#include <color_fragment>
 diffuseColor.rgb *= uHedgeSeason * ${HEDGE_SHADE_GLSL};`);
   };
+  const panels = make(fence, new THREE.MeshLambertMaterial({ map: pickets(), alphaTest: .5 }), false);
+  panels.name = 'Garden fence panels';
+  if (street && fence.position.length) fenceCamera(panels, true);
   return {
-    fence: make(fence, new THREE.MeshLambertMaterial({ map: pickets(), alphaTest: 0.5 }), false),
+    fence: panels,
     hedge: make(hedge, hedgeMaterial, true),
     rail: make(rail, new THREE.MeshLambertMaterial({ map: barrier(), alphaTest: 0.5 }), false),
   };
