@@ -740,10 +740,10 @@ export class Crowd {
         this.follow(p, dt);
         if (p.stuck > 1.5) {
           // No way on past a wall or a fence: out of sight, back onto the path (unless the
-          // path itself runs through the wall, a passage through a building, say); in
-          // sight, or then, they turn round.
+          // path itself runs through the wall, a passage through a building, say, or
+          // they're on it already, held up by someone); in sight, or then, they turn round.
           const q = seen(p.x, p.y) ? null : this.spot(p);
-          if (q && !this.blocked(q.x, q.y)) this.place(p);
+          if (q && !this.blocked(q.x, q.y) && Math.hypot(q.x - p.x, q.y - p.y) > 0.3) this.place(p);
           else { p.fwd = !p.fwd; p.stuck = 0; p.dodge = p.dodgeTo = 0; }
         }
       } else if (p.state === 'flee' || p.state === 'down' || p.state === 'rejoin') {
