@@ -92,7 +92,7 @@ import type { Surface, HornKind, Rotor } from './audio.ts';
 import { tunnelFinishesView } from './tunnelFinish.ts';
 import { StreetIronwork } from './streetIronwork.ts';
 import { StreetPlates } from './streetPlates.ts';
-import { eyesFor, firstPersonOptions, initialView, inStreetCone, savePlayerView, vrSupported, WalkingGait, type Eyes, type PlayerView } from './streetView.ts';
+import { eyesFor, firstPersonOptions, initialView, inStreetCone, savePlayerView, shoulderFraming, vrSupported, WalkingGait, type Eyes, type PlayerView } from './streetView.ts';
 import { setupTouch } from './touch.ts';
 import { setupGamepad, padLabels, usingPad } from './gamepad.ts';
 import './credits.ts';
@@ -3215,11 +3215,11 @@ async function main() {
             if (grid.at(me.x - Math.cos(aim) * d, me.y - Math.sin(aim) * d)) { back = Math.max(0.6, d - 0.4); break; }
           }
         }
-        const up = 0.55 + back * 0.12;
+        const up = shoulderFraming.rise(back);
         const cx = me.x - Math.cos(aim) * back, cy = me.y - Math.sin(aim) * back;
         camera.position.set(cx, eyeH + up, -cy);
-        const ahead = 6;
-        camera.lookAt(me.x + Math.cos(aim) * ahead, eyeH - 0.25 + Math.tan(pitch) * (back + ahead), -(me.y + Math.sin(aim) * ahead));
+        const ahead = shoulderFraming.ahead;
+        camera.lookAt(me.x + Math.cos(aim) * ahead, eyeH - shoulderFraming.drop + Math.tan(pitch) * (back + ahead), -(me.y + Math.sin(aim) * ahead));
       } else {
         chased = null;
         const aim = me.h + yaw;

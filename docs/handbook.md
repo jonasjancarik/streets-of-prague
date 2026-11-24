@@ -786,7 +786,9 @@ The metro ride uses its overhead cutaway camera.
   first-person game: the mouse turns you, W/S walk the way you look and A/D step sideways (`t.eyes = { yaw, pitch }` in
   scripts). The left stick walks forward, back or sideways relative to the view. On a
   controller the right stick looks around. On a touchscreen, drag the street with your
-  free thumb. In first person each footfall follows the distance you actually cover.
+  free thumb. In open space the third-person camera shows your feet at its neutral
+  pitch. Next to a wall, the lens lowers toward your shoulder as it moves in.
+  In first person each footfall follows the distance you actually cover.
   Stone, grass, gravel and settled snow have different footfalls. A paved path across a
   lawn sounds like pavement, even while the grass on either side crunches under snow.
   The

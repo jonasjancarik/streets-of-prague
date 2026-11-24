@@ -1,5 +1,15 @@
 // Street cameras share the same look direction across mouse, touch and controller.
 export interface Eyes { yaw: number; pitch: number; still?: number; third?: boolean; onFoot?: boolean }
+// At full distance the camera sees the player's feet. When a wall brings it
+// in to shoulder distance, lower the lens with it so the head stays in view.
+export const shoulderFraming = {
+  ahead: 4,
+  drop: .55,
+  rise(back: number) {
+    const t = Math.max(0, Math.min(1, (back - .6) / 3));
+    return .035 + .79 * t * t * (3 - 2 * t);
+  },
+};
 // 'vr': through a phone in a headset (vr.ts). The page is then drawn with WebGL, which only
 // a page load can switch to (renderer.ts), so choosing it, or leaving it for good, reloads.
 export type PlayerView = 'overhead' | 'first' | 'third' | 'vr';
