@@ -865,7 +865,13 @@ The metro ride uses its overhead cutaway camera.
   first time the camera sees the sky. `assets/sky/clouds.py` bakes these views through
   a 230 m-deep volume. `Sky.update` works out the colours (`DOME` in `src/sky.ts`), and the
   haze takes the horizon's colour, so the far end of a street fades into the sky. The
-  broadleaf trees within about 150 m are drawn as a second model made to be stood under
+  Hradčany ridge and St Vitus remain visible beyond the nearby tiles in clear air.
+  Eight photographs from the 3D survey carry depth, so the cathedral, palace and
+  lower roofs shift against each other as you cross the river. At most two views
+  blend at once. The ridge fades in at a distance, out in thick mist, and yields
+  to the ordinary city as you approach it. Rebuild it with `uv run castle_horizon.py`
+  in `pipeline/`.
+  Broadleaf trees within about 150 m are drawn as a second model made to be stood under
   (`src/map/streetTree.ts`, `src/webgpu/streetTrees.ts`): a trunk with bark, boughs that
   fork, and at every branch end flat sprays of leaves (`public/street-trees.webp`, from
   `assets/trees/`), in the tree's own colour, turning and falling through the year to

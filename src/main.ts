@@ -13,6 +13,7 @@ import { setupPhoto } from './photo.ts';
 import { FramePhotos, captureFrame, png, thumbnail } from './frameCapture.ts';
 import { streetSurfaceView } from './streetSurface.ts';
 import { riverBanks } from './riverReflection.ts';
+import { CastleHorizon } from './castleHorizon.ts';
 import { wantCloudBank } from './cloudBank.ts';
 import { DOME_NODE } from './sky.ts';
 import { Streaks } from './streaks.ts';
@@ -339,6 +340,7 @@ async function main() {
 
   // The sun and the sky's light follow the clock (see Sky).
   const sky = new Sky(scene, renderer);
+  const castleHorizon = new CastleHorizon(scene,index.bbox_wgs84,index.iprRef ?? 180);
   sky.hemi.layers.enable(RIVER_MODEL_LAYER); sky.sun.layers.enable(RIVER_MODEL_LAYER);
   const sun = sky.sun;
   // How sharp the picture is and whether the costlier looks are on; Auto adapts.
@@ -3338,6 +3340,7 @@ async function main() {
       if (c.mesh.visible) c.body.nearCamera(fromStreet ? camera.position.distanceToSquared(c.mesh.position) : Infinity);
     }
     world.furnitureCamera(fromStreet, camera.position.x, camera.position.z);
+    castleHorizon.update(fromStreet && !vr?.active,camera,sky);
     world.passageCamera(fromStreet, camera.position.x, -camera.position.z);
     ironwork.update(fromStreet, camera.position, weather.now.wet);
     world.trees.street(fromStreet, free ? free.x : camera.position.x, free ? -free.y : camera.position.z);

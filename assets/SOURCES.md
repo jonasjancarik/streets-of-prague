@@ -42,6 +42,14 @@ surface from the river. The map supplies the water surface and shore distances.
 `pipeline/river_reflections.py` builds `public/vltava-banks.webp` and its
 geographic station list. [IPR Praha, 3D mesh, CC BY](https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model/3D-mesh).
 
+## Hradčany skyline
+
+`pipeline/castle_horizon.py` cuts the hill and palace from IPR Praha's 2023 survey.
+Blender renders eight colour and depth views, including the bearing from the middle
+of Charles Bridge. The visible surfaces become the small meshes and shared
+photographic atlas in `public/hradcany-horizon.glb`.
+[IPR Praha, 3D mesh, CC BY](https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model/3D-mesh).
+
 ## Made from code
 
 - The street pigeon is an original Blender mesh with vertex-coloured plumage.

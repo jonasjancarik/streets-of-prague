@@ -2020,3 +2020,11 @@ WebGPU Medium used a 392 × 745 canvas at 1×. The four alternating six-second
 windows per setting returned 34, 33, 33 and 34 fps before, and 34 fps in all
 four windows after. The photographs share one 2,048 × 1,024 atlas. The live
 boat and bridge reflection uses at most 256 pixels on its longer side on Medium.
+
+### Hradčany from Charles Bridge (24 November)
+
+Looking toward the castle from the bridge walkway, the far silhouette drew one
+3,921-triangle view. The Pixel 5 at WebGPU Medium and 1× resolution averaged
+49.9 ms with that draw hidden and 49.4 ms with it visible. Four alternating
+five-second windows measured 20 fps in each baseline window and 20, 21, 20 and
+20 fps with the skyline. The scene still runs at about 20 fps on this phone.
