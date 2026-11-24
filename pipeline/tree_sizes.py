@@ -20,6 +20,8 @@ under them (see young_woods.py); ČÚZK's older DMP 1G, made from summer photogr
 every crown whole. A tree that both read as lower than MIN_TOP gets a radius of 0: it was
 planted a few years ago (the game gives it a small crown); or -1 where the photo shows
 leaves all round it, a crown neither model sees (the game makes its size up, as before).
+Where IPR's model stands more than CRANE metres above ČÚZK's and the photo shows no
+leaves, ČÚZK's is taken: a crane, scaffolding or a new building is not a crown.
 
     uv run --group cover tree_sizes.py build praha              # every tile with a tree
     uv run --group cover tree_sizes.py build praha 50 52 59 61  # tiles i0 i1 j0 j1
@@ -75,6 +77,7 @@ PHOTO_SEARCH, PHOTO_MIN_LEAVES, PHOTO_MIN_RADIUS, PHOTO_TOP = 4.0, 8, 1.5, (3.0,
 PHOTO_MAX_LEAVES = 250  # m2: more leaves in one patch are a lawn or a wood, not one crown
 PHOTO_WIDER = 1.3  # the photo's crown is taken when it's this much wider than the models' one
 SEEN_CROWN = 0.6   # a tree too low to measure, with leaves on more than this share round it, has a crown the models miss
+CRANE = 12.0       # m: IPR's model this much above ČÚZK's, where the photo shows no leaves, is a structure, not a crown
 LEAVES = 0.1       # the vegetation index above which the photo shows leaves (paving is about -0.2, dry grass 0, a shaded street tree 0.12)
 
 
@@ -94,19 +97,20 @@ def canopy(area, meta, t):
     x0, y0, x1, y1 = t["box"]
     ext = {**t, "box": [x0 - MARGIN, y0 - MARGIN, x1 + MARGIN, y1 + MARGIN]}
     dtm = gc.terrain_wide(area, meta, t, ext, RES)
-    heights = []
+    ipr = cuzk = None
     if gc.DSM_SOURCE == "ipr":
         try:
             dsm = gc.ipr_dsm(area, ext, RES, cache=False)
-            heights.append(np.where(dsm > 100, dsm - dtm, np.nan))
+            ipr = np.where(dsm > 100, dsm - dtm, np.nan)
         except ValueError:  # (past the edge of IPR's model, which covers only the city)
             pass
     try:
         dsm = gc.export(gc.DSM, "dsm_1m_wide", area, ext, RES, 1.0, fmt="tiff",
                         extra={"pixelType": "F32", "interpolation": "RSP_BilinearInterpolation"})[:, :, 0]
-        heights.append(np.where(dsm > 100, dsm - dtm, np.nan))
+        cuzk = np.where(dsm > 100, dsm - dtm, np.nan)
     except Exception as e:  # noqa: BLE001
         print(f"  no ČÚZK surface model for tile {t['i']}_{t['j']} ({e})", flush=True)
+    heights = [h for h in (ipr, cuzk) if h is not None]
     if not heights:
         return None
     nd = np.fmax.reduce(heights) if len(heights) > 1 else heights[0]
@@ -132,6 +136,11 @@ def canopy(area, meta, t):
     except Exception as e:  # noqa: BLE001 - no photo: the crowns keep the game's colours
         print(f"  no photo for tile {t['i']}_{t['j']} ({e})", flush=True)
         rgb = None
+    if ipr is not None and cuzk is not None:
+        # A crane or scaffolding in IPR's model, standing far above ČÚZK's, with no leaves in
+        # the photo: not a crown (a 42 m crane by a tree in Polská was taken for its top).
+        leafless = np.isnan(rgb[:, :, 0]) if rgb is not None else True
+        nd = np.where((ipr > cuzk + CRANE) & leafless, cuzk, nd)
     return nd, ndimage.binary_dilation(built), ext["box"], rgb
 
 
