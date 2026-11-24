@@ -27,6 +27,10 @@ export class Passengers {
   private spawnT = 0;
   private boarding: Pedestrian[] = [];
   private v: TramVehicle | null = null;
+  // Whether people waiting at the stop (src/stopWaiting.ts) are still walking to its doors.
+  waitFor: (v: TramVehicle) => boolean = () => false;
+  // The tram whose doors are open.
+  get vehicle() { return this.doors ? this.v : null; }
 
   constructor(trams: Trams, private crowd: () => Crowd, private rng: () => number) {
     for (const line of trams.lines) {
@@ -129,6 +133,6 @@ export class Passengers {
       Object.assign(p, { state: 'flee', t: 2, vx: ((best.x - p.x) / bd) * 1.8, vy: ((best.y - p.y) / bd) * 1.8 });
       return true;
     });
-    if ((this.leaving === 0 && !this.boarding.length && this.timer > 3) || this.timer > 25) this.close();
+    if ((this.leaving === 0 && !this.boarding.length && !this.waitFor(v) && this.timer > 3) || this.timer > 25) this.close();
   }
 }

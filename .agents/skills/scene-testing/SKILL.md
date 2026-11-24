@@ -99,13 +99,15 @@ in compass degrees (0 north, 90 east), speeds in km/h.
 - `t.courier()`: the nearest delivery courier in traffic. `t.bags()`: the bag you carry and those
   lying about; `t.toBag()` stands you by one, `t.interact()` presses E on foot, `t.clearBags()`
   starts clean, `t.peopleNear(x, y, r)` lists the people round a spot (with how fast each walks).
-- Bus stops (`src/busWaiters.ts`): `t.busStops(r)` lists the stops near you (whether each sign
+- Bus stops (`src/stopWaiting.ts`): `t.busStops(r)` lists the stops near you (whether each sign
   is up), `t.busWaiting()` the people waiting at each stop near the view, `t.callBus()` sends a
-  bus to the nearest stop, `t.busPassengers()` counts who got on and off. The signs, and the
+  bus to the nearest stop, `t.busPassengers()` counts who got on and off. For tram stops and
+  the funicular's stations, `t.stopWaiting('tram' | 'funicular')` and
+  `t.busPassengers('tram' | 'funicular')`. The signs, and the
   people at them, come with frames drawn: loop `await t.frames()` after `t.go`.
   In a bus you drive, `t.pullUp()` puts it by the sign of the nearest stop near the view,
   standing, `t.busDoors()` is X (its doors), `t.busStand()` says whether they're open and
-  which stop the bus stands by. Scenarios `bus-stop-waiting`, `bus-doors`.
+  which stop the bus stands by. Scenarios `bus-stop-waiting`, `bus-doors`, `tram-stop-waiting`, `funicular-waiting`.
 - Tour groups (`src/tours.ts`): `t.tours()` lists them (`id`, `phase` talk or walk, the
   `sight` they're at, the `next` one, `size`, `spread` from the guide, `behind`: the furthest
   anyone is from their place, `group`: which way the group stands from the guide).

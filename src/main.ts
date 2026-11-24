@@ -34,7 +34,7 @@ import { loadKit, FIGURE_SIZE, SCALE, WARDROBE, PEOPLE_SHADOWS, CAST_LAYER } fro
 import { Culler } from './occlusion.ts';
 import { LifeSize } from './lifesize.ts';
 import { Traffic, trafficWanted, roadLoad, type TrafficAgent } from './traffic.ts';
-import { BusWaiting } from './busWaiters.ts';
+import { StopWaiting, busStanding, tramStanding, funicularStops, funicularStanding, type WaitStop } from './stopWaiting.ts';
 import { Tours } from './tours.ts';
 import { roadHint } from './roadLevels.ts';
 import { preparePeople, pickPerson } from './spawn.ts';
@@ -512,6 +512,7 @@ async function main() {
   // Past the map's edge nobody counted the people: a little busier where houses stand.
   footfall.beyond = (x, y) => (world.builtUp.get(world.keyAt(x, y)) ?? 0) * BUILT_UP_BUSY;
   ride.passengers = new Passengers(trams, () => crowd, seeded);
+  ride.passengers.waitFor = (v) => stopWaiting.boarding(v);
   const traffic = new Traffic(drive, scene, seeded, trafficWanted(clock.t));
   traffic.signals = signals;
   const busData = await busLines;
@@ -700,11 +701,53 @@ async function main() {
     },
   });
   let busStop: ReturnType<typeof busStops.at> | null = null;
-  // People waiting at the stops near you, getting on and off the buses (src/busWaiters.ts).
+  // People waiting at the bus and tram stops and the funicular's stations near you, getting
+  // on and off (src/stopWaiting.ts). Each stop is described once, as it first comes near.
   const onCarriageway = (x: number, y: number) => !!crowd!.road?.(x, y);
-  const busWaiting = new BusWaiting({
-    crowd: () => crowd!, stops: () => busStops.shown, buses: () => traffic.agents, offscreen, rng: seeded,
+  const waitStops: WaitStop[] = [], busWait = new Map<object, WaitStop>(), tramWait = new Map<object, WaitStop>();
+  const funicularWait = funicularStops(funicular);
+  const nearStops = () => {
+    waitStops.length = 0;
+    for (const s of busStops.shown) {
+      let w = busWait.get(s);
+      if (!w) busWait.set(s, w = { kind: 'bus', x: s.x, y: s.y, ang: s.ang, name: s.name, refs: [...new Set(s.lines.map((l) => l.line.ref))], along: [-11, 2.5], out: [0.5, 3.2] });
+      waitStops.push(w);
+    }
+    // (A tram is some 30 m long: people stand along more of the platform.)
+    for (const s of tramStops.signs) {
+      if (!s.shown) continue;
+      let w = tramWait.get(s);
+      if (!w) tramWait.set(s, w = { kind: 'tram', x: s.x, y: s.y, ang: s.ang, name: s.name, refs: [...new Set(s.routes.map((r) => r.ref))], along: [-22, 3], out: [0.4, 2.6] });
+      waitStops.push(w);
+    }
+    const cx = camPos.x, cy = -camPos.z, r = viewRadius() + 60;
+    for (const s of funicularWait) if (Math.abs(s.x - cx) < r && Math.abs(s.y - cy) < r) waitStops.push(s);
+    return waitStops;
+  };
+  const stopWaiting = new StopWaiting({
+    crowd: () => crowd!, stops: nearStops, offscreen, rng: seeded,
+    standing: (out) => {
+      for (const a of traffic.agents) {
+        const run = a.bus;
+        if (run && !run.lost && run.dwell > 0) out.push(busStanding(a.car, run.line.ref, run.stop >= run.line.stops.length - 1, () => { run.dwell = Math.max(run.dwell, 2); }));
+      }
+      const cx = camPos.x, cy = -camPos.z, r = viewRadius() + 100;
+      for (const v of trams.list) {
+        const mid = v.parts[1];
+        if (v.dwell > 0 && !v.driven && mid && Math.abs(mid.x - cx) < r && Math.abs(mid.y - cy) < r) out.push(tramStanding(v, true, () => { v.dwell = Math.max(v.dwell, 2); }));
+      }
+      // (The tram you drive: src/passengers.ts lets people off it.)
+      const mine = ride.passengers?.vehicle;
+      if (mine) out.push(tramStanding(mine, false, null));
+      for (const c of funicular.cars) {
+        if (c.stop === null || !c.line.open || !c.mesh.visible) continue;
+        const s = funicularStanding(c, funicularWait);
+        if (s) out.push(s);
+      }
+    },
     driving: () => inCar,
+    // (Counted with those getting on the tram you drive, for its panel.)
+    boarded: (key) => { if (ride.passengers && key === ride.passengers.vehicle) ride.passengers.on++; },
     busy: (x, y) => footfall.at(x, y), road: onCarriageway,
     // (The roads' busy hours stand in for the buses'.)
     demand: () => 0.15 + 0.85 * Math.sqrt(roadLoad(clock.t)),
@@ -2143,16 +2186,16 @@ async function main() {
   // a fare, "Weather: rain") goes in a card, so it doesn't stretch across the screen.
   // "Busted · fine…" gives both: the word big and the rest in the card under it.
   // X in a bus you drive: open the doors at a stop's sign (people get on and off, see
-  // src/busWaiters.ts), or shut them again.
+  // src/stopWaiting.ts), or shut them again.
   const isBus = (c: Car | null): c is Car => !!c && !c.burnt && (c.type === 'bus' || c.type === 'minibus');
-  const busAtStop = (c: Car | null) => isBus(c) && c.speed < 1 && !!busWaiting.stopBy(c);
+  const busAtStop = (c: Car | null) => isBus(c) && c.speed < 1 && !!stopWaiting.stopBy(c);
   const busDoorKey = () => {
     if (!isBus(inCar)) return;
-    if (busWaiting.doorsOpen(inCar)) { busWaiting.closeDoors(); return; }
-    const stop = busWaiting.stopBy(inCar);
+    if (stopWaiting.doorsOpen(inCar)) { stopWaiting.closeDoors(); return; }
+    const stop = stopWaiting.stopBy(inCar);
     if (!stop) { showBanner(t('Pull up by a bus stop’s sign to open the doors')); return; }
     if (inCar.speed > 0.3) { showBanner(t('Stop the bus to open the doors')); return; }
-    if (busWaiting.openDoors(inCar)) { telemetry.did('opened the bus doors'); showBanner(t('Doors open at {name}', { name: stop.name })); }
+    if (stopWaiting.openDoors(inCar)) { telemetry.did('opened the bus doors'); showBanner(t('Doors open at {name}', { name: stop.name })); }
   };
   // X in a police car, fire engine or ambulance: lights, then lights and siren, then off.
   const switchBeacon = (car: Car) => {
@@ -2311,7 +2354,7 @@ async function main() {
       inCar.touchDriving = touch.active;
       const upright = !inCar.roll;
       // (A bus stands still while its doors are open, and until they've shut.)
-      const doorsOpen = busWaiting.doorsOpen(inCar) || (isBus(inCar) && !!inCar.door && inCar.door[2] + inCar.door[3] > 0.02);
+      const doorsOpen = stopWaiting.doorsOpen(inCar) || (isBus(inCar) && !!inCar.door && inCar.door[2] + inCar.door[3] > 0.02);
       const hit = inCar.update(dt, { throttle: doorsOpen ? 0 : ctl.move, steer, handbrake: doorsOpen || ctl.brake, cap }, grid, realistic);
       // Rolling over (rollover.ts): each landing on a new corner knocks you about.
       if (inCar.roll) {
@@ -2463,7 +2506,7 @@ async function main() {
     if (inCar) threats.push(inCar);
     for (const c of movers) if (c.speed > 5) threats.push(c);
     for (const c of cops) if (c.speed > 5) threats.push(c);
-    busWaiting.update(dt);
+    stopWaiting.update(dt);
     tours.update(dt);
     crowd.update(dt, threats, carsOnly, (x, y) => !offscreen(x, y),
       gaitActive && !walker.flight && walker.z < .5 && walker.perch < .4 ? walker : undefined);
@@ -3553,7 +3596,7 @@ async function main() {
     } else if (inCar?.overturned) {
       hint = inCar.roll?.moving ? '' : touch.active ? t('Overturned') : t('Overturned · <b>E</b> get out');
     } else if (inCar) {
-      if (busAtStop(inCar)) hint = touch.active ? '' : busWaiting.doorsOpen(inCar) ? t('<b>X</b> close the doors') : t('<b>X</b> open the doors · <b>E</b> get out');
+      if (busAtStop(inCar)) hint = touch.active ? '' : stopWaiting.doorsOpen(inCar) ? t('<b>X</b> close the doors') : t('<b>X</b> open the doors · <b>E</b> get out');
       else if (!assisted) hint = touch.active ? '' : inCar.type === 'fire' ? t('<b>E</b> get out · <b>F</b> water cannon · <b>X</b> blue lights · <b>Shift</b> lane assist') : inCar.type === 'ambulance' || inCar.type === 'police' ? t('<b>E</b> get out · <b>X</b> blue lights · <b>Shift</b> lane assist') : t(inCar.two ? '<b>E</b> get off · <b>Shift</b> lane assist' : '<b>E</b> get out · <b>Shift</b> lane assist');
       // While the assist is on, the panel stays empty so it doesn't grow.
     }
@@ -3766,7 +3809,7 @@ async function main() {
   });
 
   window.__drive = {
-    culler, hitches, tilePrograms, birds, birdsView, lifeSize, scene, camera, traffic, crowd, busWaiting, tours, loose, restingByCar, restingIndex, get resting() { return resting; }, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, refuse, health, fires, trams, ride, taxi, clock, board, busStops, busRide, metro, funicular, ferries, graphics, sound, weather, lamps, sky, skids, bikeShare, carPool, spawnWork, bags,
+    culler, hitches, tilePrograms, birds, birdsView, lifeSize, scene, camera, traffic, crowd, stopWaiting, tours, loose, restingByCar, restingIndex, get resting() { return resting; }, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, refuse, health, fires, trams, ride, taxi, clock, board, busStops, busRide, metro, funicular, ferries, graphics, sound, weather, lamps, sky, skids, bikeShare, carPool, spawnWork, bags,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,
@@ -3794,7 +3837,7 @@ async function main() {
     steps: (x, y, r) => world.stepEdgesNear(x, y, r), ground: (x, y) => world.terrainAt(x, y), levelAt: (x, y, l) => world.levelAt(x, y, l),
     streets: drive, countryside: () => !!world.country?.box, place: () => $('district').textContent || null, taxi,
     builtMap: (x, y) => !pastMap(x, y) && world.available.has(world.keyAt(x, y)),
-    grid, boats, ferries, pid, inspector, wallet, police, health, clock, fires, brigade, ambulances, refuse, hurtNearest, switchBeacon, traffic, crowd, rng: seeded, bags, busWaiting, tours, busStops, busDoorKey,
+    grid, boats, ferries, pid, inspector, wallet, police, health, clock, fires, brigade, ambulances, refuse, hurtNearest, switchBeacon, traffic, crowd, rng: seeded, bags, stopWaiting, tours, busStops, busDoorKey,
     missions, satnav, standing: repute, cannon: (on) => { cannonHeld = on; }, tram: { ride, list: () => trams.list, clearRun: (vehicle) => {
       const mid = vehicle.parts[1];
       if (!world.tileAt(mid.x, mid.y)?.drawn) return false;

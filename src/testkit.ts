@@ -19,7 +19,7 @@ import type { Brigade } from './brigade.ts';
 import type { Ambulances } from './ambulance.ts';
 import type { Refuse } from './refuse.ts';
 import type { Pedestrian } from './people.ts';
-import type { BusWaiting } from './busWaiters.ts';
+import type { StopWaiting, StopKind } from './stopWaiting.ts';
 import type { Tours } from './tours.ts';
 import type { BusStops } from './busstops.ts';
 import type { Traffic } from './traffic.ts';
@@ -120,7 +120,7 @@ interface Game {
   viewRadius: () => number;
   offscreen: (x: number, y: number) => boolean;
   canvas: HTMLElement; fov: number;
-  busWaiting: BusWaiting; tours: Tours; busStops: BusStops; busDoorKey: () => void;
+  stopWaiting: StopWaiting; tours: Tours; busStops: BusStops; busDoorKey: () => void;
   wallet: Wallet; police: Police; health: Health; clock: Clock; fires: Fires; brigade: Brigade; ambulances: Ambulances; refuse: Refuse; traffic: Traffic; crowd: { people: { state: string; x: number; y: number; pace: number }[] }; hurtNearest: (grave?: boolean) => Pedestrian | null; switchBeacon: (c: Car) => void;
   weather: { set: (k: Kind | 'auto') => void; kind: () => string };
   season: { set: (when: string | number) => void; date: () => string };
@@ -645,14 +645,16 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       return c;
     },
 
-    // The bus stops near the view and the people waiting at each (src/busWaiters.ts):
-    // how many it wants and has, how many are walking to a bus's doors, the line of the bus
-    // standing there, and how far the stop is from you (m).
-    busWaiting() {
+    // The stops of a kind (bus, tram or funicular) near the view and the people waiting at
+    // each (src/stopWaiting.ts): how many it wants and has, how many are walking to a
+    // vehicle's doors, the line of the vehicle standing there, and how far the stop is from
+    // you (m). busWaiting(): the bus stops.
+    stopWaiting(kind: StopKind) {
       const m = g.me(), at = (x: number, y: number): Point2 => { const [lon, lat] = g.toLonLat(x, y); return [round(lat, 5), round(lon, 5)]; };
-      return g.busWaiting.report().map(({ stop, people, ...q }) => ({ ...q, at: at(stop.x, stop.y), away: round(Math.hypot(stop.x - m.x, stop.y - m.y)),
+      return g.stopWaiting.report().filter((q) => q.kind === kind).map(({ stop, people, ...q }) => ({ ...q, at: at(stop.x, stop.y), away: round(Math.hypot(stop.x - m.x, stop.y - m.y)),
         people: people.map((p) => ({ at: at(p.x, p.y), ref: p.ref, pace: round(p.pace, 2) })) }));
     },
+    busWaiting() { return this.stopWaiting('bus'); },
     // The bus stops within `r` m of you, nearest first: name, where, whether its sign is up.
     busStops(r = 300) {
       const m = g.me();
@@ -661,14 +663,14 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
         return { name: s.name, at: [round(lat, 5), round(lon, 5)] as Point2, heading: round(deg(s.ang)), placed: s.placed, shown: s.shown, away: round(Math.hypot(s.x - m.x, s.y - m.y)), lines: [...new Set(s.lines.map((l) => l.line.ref))] };
       });
     },
-    // How many have got on and off buses since the game started.
-    busPassengers() { return { boarded: g.busWaiting.boarded, alighted: g.busWaiting.alighted }; },
+    // How many have got on and off buses (or trams, or the funicular) since the game started.
+    busPassengers(kind: StopKind = 'bus') { return { boarded: g.stopWaiting.boarded[kind], alighted: g.stopWaiting.alighted[kind] }; },
     // Puts the bus you drive by the sign of the nearest stop in view, at the kerb, facing the
     // way its buses go, standing. The stop's name, or null without one (or a clear spot).
     pullUp(r = 80) {
       const c = g.car(), m = g.me();
       if (!c) throw new Error('Not in a car');
-      const stops = g.busWaiting.report().map((q) => q.stop).sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y)).filter((o) => Math.hypot(o.x - m.x, o.y - m.y) < r);
+      const stops = g.stopWaiting.report().filter((q) => q.kind === 'bus').map((q) => q.stop).sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y)).filter((o) => Math.hypot(o.x - m.x, o.y - m.y) < r);
       for (const s of stops) {
         const h = s.ang, cs = Math.cos(h), sn = Math.sin(h);
         // (The pavement is on the right; the bus's front a metre short of the sign.)
@@ -686,7 +688,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     },
     // X in the bus you drive; then whether its doors are open, and the stop it stands by.
     busDoors() { g.busDoorKey(); return this.busStand(); },
-    busStand() { const c = g.car(); return { open: g.busWaiting.doorsOpen(c), stop: c ? g.busWaiting.stopBy(c)?.name ?? null : null }; },
+    busStand() { const c = g.car(); return { open: g.stopWaiting.doorsOpen(c), stop: c ? g.stopWaiting.stopBy(c)?.name ?? null : null }; },
     // Calls a bus to the stop nearest you within `r` m, as standing at it does; its name, or null.
     callBus(r = 60) {
       const m = g.me(), s = g.busStops.near(m.x, m.y, r).filter((o) => o.placed).sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y))[0];

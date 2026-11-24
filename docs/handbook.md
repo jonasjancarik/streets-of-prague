@@ -1290,7 +1290,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   headlights), and what stands more than about 3 m above the lit ground (a tree's crown
   over a parked car, the wall behind a van in someone's headlights) takes its light
   from that copy instead. On High and Ultra the headlights' cones in the air stop at
-  the first car in their way. The lamps come on at dusk (earlier under heavy cloud),
+  the first car in their way. Helicopter searchlights use a separate soft volume,
+  sampled through the air so the beam remains visible from inside it in first and
+  third person. Their daytime ground glow fades smoothly at the edges.
+  The lamps come on at dusk (earlier under heavy cloud),
   and a share of the windows is lit by the hour, most in the evening.
 - **Tiles.** The map streams in 250 m tiles (`src/tiles.ts`) around the camera. Each
   tile has its own ground, buildings, tree-page leases, collision grid, parked cars and piece of
@@ -1670,15 +1673,25 @@ record the measurements, merge decisions and pending landmark asset activation.
   sights, schools and pedestrian streets, how many buses, trams, trains and metro
   trains leave each stop on a weekday, and a short hand-made list of the places
   tourists crowd.
-- **People waiting at bus stops** (`src/busWaiters.ts`, `scenarios/bus-stop-waiting.ts`).
-  At the stops near you a few people stand round the sign, facing the street, some on their
+- **People waiting at stops** (`src/stopWaiting.ts`; `scenarios/bus-stop-waiting.ts`,
+  `tram-stop-waiting.ts`, `funicular-waiting.ts`). At the bus and tram stops and the
+  funicular's stations near you a few people stand round the sign, facing the street, some on their
   phones: more where more lines stop, on busier streets and at the busy hours (nobody
   publishes how many wait at a stop, so the roads' hourly load from TSK's counts stands in
   for it). Passers-by stop to wait one at a time; a stop that comes into view already has
   its people. When a bus pulls up, a few get off at its doors (more at a busy stop, at the
   busy hours and at the end of the line) and those waiting for its line walk to the nearest
   door and get in; the bus waits until they have, up to 25 s. Some give up after a while
-  and walk on.
+  and walk on. Trams work the same way: people stand along the platform behind the sign
+  (a tram is some 30 m long), get off at a door of each section and get on at the nearest
+  one, and the tram waits for them. On the Petřín funicular (and the NH hotel's) they stand
+  on either side of the track at each station, wherever there's ground (OSM doesn't say
+  which side the platform is on), and nobody waits out of hours. The cars keep to the
+  clock, so they don't wait for anyone. Three times as many wait for Petřín's as the
+  street's busy hours would say, and half as many for the hotel's: a guess, as nobody
+  counts them. On a tram you drive, `src/passengers.ts` lets people off and brings
+  passers-by over; the people waiting for its line get on too, and the doors stay open
+  until they have.
   A bus you drive does the same: pull up with its front by a stop's sign, stand still and
   press **X** (the Doors button on a touch screen) to open the doors. A few passengers get
   off, more at the end of its line (when the stop's name is the one on its display), and
