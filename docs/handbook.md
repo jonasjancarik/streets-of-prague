@@ -2012,7 +2012,21 @@ record the measurements, merge decisions and pending landmark asset activation.
 - **Tram tracks** are OSM's `railway=tram` ways, including those mapped on the same way
   as a street or a bus lane (`highway=busway` or `service` with `railway=tram`, as on
   Lidická and round Anděl: about 300 ways across Prague): `pipeline/osm_area.py` takes
-  the track from a way before deciding what kind of street it is.
+  the track from a way before deciding what kind of street it is. Where they lie comes
+  from the technical map: `pipeline/di_tracks.py` moves each OSM node on a tram track
+  onto the nearest surveyed track axis that runs the same way and is nearer to that
+  track than to its neighbour (at most 3.2 m). OSM traces the tracks from aerial
+  photos: half its track nodes in Prague move by 0.1 m or less, one in ten by more
+  than 0.4 m, and in Újezd one moved 2.7 m, off the kerb it ran into. The tiles' rails (`osm_area.py`) and the
+  lines the trams run along (`build_lines.py`) move the same nodes the same way, so a
+  tram stays on its drawn track and the lines still share their points at the switches.
+  The network, switches, bridges and tunnels stay OSM's. Where the survey has no axis
+  (about 2% of Prague's track nodes, mostly the newest lines), OSM's position is kept.
+  The railways and Petřín's funicular move the same way onto their own surveyed axes
+  (a node only ever goes to an axis of its own kind): about three in four railway nodes
+  in Prague, median 0.12 m, with the rest in yards and depots the survey leaves out,
+  and the funicular by up to 0.5 m. Hlavní nádraží's tracks (`station_tracks.py`) move
+  with them. `uv run di_tracks.py` reports how far each kind moved.
 - **Overhead wires** (`src/wires.ts`) are built with each tile over its tram tracks: a
   contact wire 5.6 m above every track, where the pantographs reach, and every 30 m or so
   a span wire across the tracks, anchored to a building front when one is within 11 m
@@ -2605,6 +2619,17 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   lines out. `?nostepedges` turns the edges off.
   Straight outdoor stairways with a usable ground profile get concrete treads
   and visible nosings from their mapped walk edges (`src/map/stairs.ts`).
+  Where the technical map surveys a flight, it is drawn from the survey instead, and
+  flights OpenStreetMap lacks are drawn too (`pipeline/dtm_stairs.py`): the stairway
+  outline (ZPS polygons, Schodiště) gets heights from its surveyed edges (ZPS lines,
+  Hranice schodiště), a plane fitted to them gives the way it climbs, and the outline is
+  cut straight across into treads of about 16 cm risers, with the flat ends left as
+  landings. Flights that bend, branch or don't fit one plane are left out, as are sills
+  under 12 cm, and the mapped stairs stay where no surveyed flight covers them. The
+  game's terrain is smoother than the survey, so each flight is shifted to follow the
+  ground under it, averaged over a few treads so the risers stay even. The flights are
+  only drawn: walking still follows the ground. Ground tiles carry them as `flights`
+  (top height and outline of each tread, and the nosing lines).
   Walking follows the smooth profile beneath the treads. A flight drawn in the map over
   the top of a wall beside it keeps to its own side of the wall (narrower, `WALL`), and up
   to 3.5 m at each end, a third of a short flight, may be left to the landing where the
@@ -2670,6 +2695,12 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   `fetch_sources.py`, into `pipeline/.cache/dtm/ZPS_KR/`. The terrain's survey heights
   (`dtm_heights.py`) and the walls (`dtm_walls.py`) read it; without it the terrain
   has no quay or retaining walls and the streets aren't levelled from their kerbs.
+  The surveyed tram track axes are in another set, transport infrastructure (DI, JVF,
+  57 districts, about 31 MB): `build_tiles.py` downloads what's new into
+  `pipeline/.cache/dtm/DI/` alongside set 2, and `di_tracks.py` keeps the matched track
+  moves in `moves.pkl` there until the OSM extract or the DI files change. A new DI
+  file rebuilds the ground and the streets; rebuild the lines (`build_lines.py`) with
+  them.
 - **IPR.** `ipr_buildings.py` and `ipr_terrain.py` download the SMO-5 sheets they need
   (2.5 × 2 km, about 150 MB each for buildings) into `pipeline/.cache/ipr/` from IPR's
   ArcGIS Online catalogue. Sheets come in blocks of 10 × 10 named after a town, and the

@@ -1,6 +1,7 @@
 """Validated, per-layer chunk completion records for opt-in map build resume."""
 
 import build_cache
+import di_tracks
 import dtm
 import dtm_walls
 import ipr_trees
@@ -23,6 +24,7 @@ def inputs(area, meta, wanted, source, settings):
             extra = {**osm, "settings": {k: v for k, v in settings.items() if k != "road_tolerance" or name == "ground"}}
         if name in ("ground", "streets"):
             extra["dtm"] = [build_cache.identity(p) for p in sorted(dtm.PACKAGES.glob("*.zip"))]
+            extra["di"] = [build_cache.identity(p) for p in di_tracks.local()]
         if name == "ground":
             extra["dtm_lines"] = [build_cache.identity(p) for p in sorted(dtm_walls.LINES.glob("*.zip"))]
             extra["trees"] = build_cache.identity(ipr_trees.CACHE)

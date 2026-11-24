@@ -41,6 +41,7 @@ from pathlib import Path
 
 import osmnx as ox
 from pyproj import Transformer
+import numpy as np
 import shapely
 from shapely import STRtree
 from shapely.geometry import LineString, Polygon, box
@@ -48,7 +49,9 @@ from shapely.geometry import LineString, Polygon, box
 from kerbs import NO_PARKING, bridge_ends, estimate, narrowest
 import build_cache
 import chunk_cache
+import di_tracks
 import dtm
+import dtm_stairs
 import dtm_walls
 import ipr_trees
 import lanes
@@ -385,6 +388,10 @@ def build_chunk(job):
         survey_tree = STRtree([ln for _, _, ln in surveyed]) if surveyed else None
         open_ground = dtm_walls.openings(x) if surveyed else None
         survey_m = [0.0, 0.0, 0.0]
+        # The survey's outdoor stairs, tread by tread (dtm_stairs.py), each in the tile
+        # that holds the middle of its first tread.
+        flights = dtm_stairs.survey(bbox, tf.transform)
+        flight_xy = shapely.points([np.reshape(f["t"][0][1:], (-1, 2)).mean(axis=0) for f in flights]) if flights else None
         layer = {}
         for (i, j), bx in boxes.items():
             t = {}
@@ -411,6 +418,7 @@ def build_chunk(job):
                           for p in (x["plots"][k] for k in shapely.contains(bx, plot_xy).nonzero()[0])] if plot_xy is not None else []
             t["patches"] = {k: v for k, g in x["patches"].items() if (v := [_rings(p) for p in _polys(g.intersection(bx)) if p.area > 0.2])}
             t["sheds"] = [x["sheds"][k] for k in shapely.contains(bx, shed_xy).nonzero()[0]] if shed_xy is not None else []
+            t["flights"] = [flights[k] for k in shapely.contains(bx, flight_xy).nonzero()[0]] if flight_xy is not None else []
             if any(t.values()):
                 layer[f"{i}_{j}"] = t
         out["ground"] = {"tiles": layer, "rails": rails}
@@ -562,9 +570,16 @@ def main() -> None:
             print(f"dtm: couldn't look for a newer map ({e}); using the one here")
         dtm.surfaces()
         dtm.covered([14.42], [50.08])  # (and where the survey reaches at all, kept for the workers)
+        # The surveyed tram track axes (di_tracks.py), and where OSM's tracks move to.
+        try:
+            di_tracks.download()
+        except OSError as e:
+            print(f"di_tracks: couldn't look for a newer map ({e}); using the one here")
+        di_tracks.moved()
     if "ground" in wanted:
         if any(dtm_walls.LINES.glob("*.zip")):
             dtm_walls.lines()
+            dtm_stairs.stairs()  # (read once here rather than in every worker)
         ipr_trees.download()
 
     settings = {"margin": MARGIN, "road_tolerance": ROAD_TOLERANCE, "parsed_version": PARSED_VERSION}

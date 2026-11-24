@@ -18,7 +18,7 @@ import { coverGeometry } from './map/utility.ts';
 import type { UtilityMark } from './map/utility.ts';
 import type { StationTracks } from './stationTracks.ts';
 import { KERB_HEIGHT, dropAt, streetDepth, type KerbDrop } from './kerbDrop.ts';
-import { stairGeometry, type MappedStair } from './map/stairs.ts';
+import { joinArrays, stairGeometry, surveyedStairGeometry, type MappedStair, type SurveyedStair } from './map/stairs.ts';
 import { splitQuietWater } from './map/waterBody.ts';
 
 export interface GroundTileData {
@@ -35,6 +35,8 @@ export interface GroundTileData {
   marks?: Point2[][];
   utility?: UtilityMark[]; // surveyed covers and drains (pipeline/ipr_utility.py)
   stairs?: MappedStair[];
+  flights?: SurveyedStair[]; // the technical map's stairs (pipeline/dtm_stairs.py), drawn in place of OSM's they cover
+  ref?: number; // the game's zero in m a.s.l., for the flights' heights
 }
 export interface LevelMask { level: number; w: number; h: number; cells: Uint8Array; box: Bounds }
 // `ms` and `triangles`: what the tile's ground cost to build (dev panel and the TIN plan's baseline).
@@ -1358,9 +1360,13 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     // Manhole covers and storm drains: all of the tile's in one mesh.
     const street0 = groundHeight;
     add(coverGeometry(d.utility || [], edges.map((e) => e.pts), street0 ? (x, y) => street0(x, y) - kerbDepth(x, y, ON_STREET) : () => 0), COLORS.iron);
-    if (groundHeight && d.stairs?.length) {
+    if (groundHeight && (d.stairs?.length || (d.flights?.length && d.ref != null))) {
       const blocked = onPolygons([...(R.road ?? []), ...(R.sett ?? []), ...(A.water ?? []), ...buildings.map((b) => b.rings)]);
-      const stairs = stairGeometry(d.stairs, box, groundHeight, blocked);
+      let stairs = stairGeometry(d.stairs ?? [], box, groundHeight, blocked);
+      if (d.flights?.length && d.ref != null) {
+        const surveyed = surveyedStairGeometry(d.flights, d.ref, groundHeight);
+        stairs = { body: joinArrays(stairs.body, surveyed.body), edges: joinArrays(stairs.edges, surveyed.edges) };
+      }
       add(stairs.body, COLORS.slab, 'concrete');
       add(stairs.edges, COLORS.kerb, 'concrete');
     } else order += 2;

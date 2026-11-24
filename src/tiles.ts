@@ -16,7 +16,7 @@ import { difference } from 'polyclip-ts';
 import { Geo, Grid, rng, hash, clipLine, centroid } from './map/geo.ts';
 import { wallMesh } from './map/buildings.ts';
 import { TreePool } from './trees.ts';
-import { bridgeStairRails, groundStairs, stairLandings } from './map/stairs.ts';
+import { bridgeStairRails, groundStairs, notSurveyed, stairLandings } from './map/stairs.ts';
 import { powerMesh, readPowerGrid, type PowerGrid } from './map/powerGrid.ts';
 import { Surfaces, tunnelDepthMesh, disposeTileMaterial } from './surface.ts';
 import { buildTin, decodeTin, tinGrid, tinNearSteps, tinSampler, TIN_FORMAT, type TinFile, type TinMesh } from './tin.ts';
@@ -1771,7 +1771,7 @@ export class TileWorld {
       shares: new Map((t.sections ?? []).map((s) => [s.code, s.share])), inside, height: shade?.sample,
       obstacles: (function* () {
         yield* land.trunkCells.values();
-        yield* stairLandings(groundStairs(t.walk));
+        yield* stairLandings(notSurveyed(groundStairs(t.walk), t.flights));
         yield* parkingAisles(t.walk ?? [], t.drive ?? [], t.lots?.map((lot) => lot.rings) ?? t.areas.parking ?? []);
       })(),
       // No parking inside passages, or at a bus stop.
@@ -1834,7 +1834,7 @@ export class TileWorld {
     return Promise.all([
       w.run('ground', {
         d: { areas: withPatches(t), roads: t.roads, rails: t.rails, deckRails: t.deckRails, bridgeTracks: t.bridgeTracks, station, weirs: t.weirs, crossings: TILE_LOOK.roadPaint ? t.crossings : [], marks: t.marks, utility: t.utility,
-          stairs: groundStairs(t.walk).map(({ pts, width }) => ({ pts, width })) },
+          stairs: notSurveyed(groundStairs(t.walk), t.flights).map(({ pts, width }) => ({ pts, width })), flights: t.flights, ref: this.ref },
         paint: TILE_LOOK.roadPaint, fine: STREET_QUALITY.groundFine, flat: STREET_QUALITY.groundFlat, rasterRoads: !this.ortho && !!s.ground && roadRasterEnabled(), box: s.bounds, edges: s.clipped, buildings: s.standing, parkingZones: s.parkingZones, ground: s.ground, levels: s.levels,
       }),
       buffer ? w.run('ipr', { buffer, box: t.box, absolute: this.index.iprRef != null, passages: tileOpenings(t), ground: s.ground, bbox: this.index.bbox_wgs84, hide: s.hide, clutter: ROOF_CLUTTER.value > 0.5, footprints: s.footprints }, [buffer]) : null,

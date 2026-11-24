@@ -6,6 +6,127 @@ import type { GroundLayer } from '../surface.ts';
 import type { RawStreetEdge } from '../network.ts';
 
 export interface MappedStair { pts: Point2[]; width: number }
+// A flight of stairs as the technical map has it (pipeline/dtm_stairs.py): its treads,
+// each [height of the top in m a.s.l., x0, y0, x1, y1, …] round its outline, and the
+// front edges of the treads, each [height, x0, y0, …] along the edge.
+export interface SurveyedStair { t: number[][]; n: number[][] }
+
+const pairs = (flat: number[]): Point2[] => {
+  const out: Point2[] = [];
+  for (let i = 1; i + 1 < flat.length; i += 2) out.push([flat[i], flat[i + 1]]);
+  return out;
+};
+
+function nearRing([x, y]: Point2, ring: Point2[], reach: number) {
+  let inside = false, best = Infinity;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [ax, ay] = ring[j], [bx, by] = ring[i];
+    if ((by > y) !== (ay > y) && x < ((ax - bx) * (y - by)) / (ay - by) + bx) inside = !inside;
+    const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+    const t = l2 ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2)) : 0;
+    best = Math.min(best, Math.hypot(x - ax - dx * t, y - ay - dy * t));
+  }
+  return inside || best <= reach;
+}
+
+// OSM's stairs that a surveyed flight already draws, left out: the middle of the line
+// on the flight or within a metre of it.
+export function notSurveyed(stairs: MappedStair[], flights: SurveyedStair[] = []): MappedStair[] {
+  if (!flights.length) return stairs;
+  const rings = flights.flatMap((f) => f.t.map(pairs));
+  return stairs.filter(({ pts }) => {
+    if (pts.length < 2) return true;
+    let total = 0;
+    for (let i = 1; i < pts.length; i++) total += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    let left = total / 2, mid = pts[0];
+    for (let i = 1; i < pts.length; i++) {
+      const l = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+      if (l >= left) { const f = l ? left / l : 0; mid = [pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * f, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * f]; break; }
+      left -= l;
+    }
+    return !rings.some((r) => nearRing(mid, r, 1));
+  });
+}
+
+// The surveyed flights' treads: each tread a block from the ground (or a step below its
+// top) up to its surveyed height, `ref` the game's zero in m a.s.l.; the front edges as
+// thin strips on top. Heights are the survey's, not moved onto the terrain.
+export function surveyedStairGeometry(flights: SurveyedStair[], ref: number, height: (x: number, y: number) => number) {
+  const mesh = () => ({ position: [] as number[], normal: [] as number[], index: [] as number[] });
+  const body = mesh(), edges = mesh();
+  // A face from points [x, height, y] (plan y), turned to face `n` ([x, up, y]).
+  const face = (m: ReturnType<typeof mesh>, pts: [number, number, number][], n: [number, number, number]) => {
+    const i = m.position.length / 3;
+    for (const [x, h, y] of pts) { m.position.push(x, h, -y); m.normal.push(n[0], n[1], -n[2]); }
+    const [a, b, c] = pts;
+    const u = [b[0] - a[0], b[1] - a[1], -(b[2] - a[2])], v = [c[0] - a[0], c[1] - a[1], -(c[2] - a[2])];
+    const cross = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+    const flip = cross[0] * n[0] + cross[1] * n[1] - cross[2] * n[2] < 0;
+    for (let k = 1; k + 1 < pts.length; k++) m.index.push(...(flip ? [i, i + k + 1, i + k] : [i, i + k, i + k + 1]));
+  };
+  for (const flight of flights) {
+    // The game's terrain is smoother than the survey, so a flight drawn at its surveyed
+    // heights floats over the ground in places and sinks into it in others. Each tread is
+    // lifted or lowered by how far the ground under its back edge is from it, averaged
+    // over its neighbours so the risers stay as even as the survey has them, and never
+    // left below the ground.
+    const rings = flight.t.map(pairs);
+    const need = flight.t.map((tread, k) => {
+      let g = -Infinity;
+      for (const [x, y] of rings[k]) { const h = height(x, y); if (Number.isFinite(h)) g = Math.max(g, h); }
+      return Number.isFinite(g) ? g + 0.02 - (tread[0] - ref) : 0;
+    });
+    const lift = need.map((_, k) => {
+      let sum = 0, n = 0;
+      for (let j = Math.max(0, k - 2); j <= Math.min(need.length - 1, k + 2); j++) { sum += need[j]; n++; }
+      return Math.max(sum / n, need[k]);
+    });
+    const tops = flight.t.map((tread, k) => tread[0] - ref + lift[k]);
+    const liftAt = (h: number) => {
+      let best = 0, d = Infinity;
+      flight.t.forEach((tread, k) => { const e = Math.abs(tread[0] - ref - h); if (e < d) { d = e; best = lift[k]; } });
+      return best;
+    };
+    for (let k = 0; k < flight.t.length; k++) {
+      const ring = rings[k];
+      if (ring.length < 3) continue;
+      const top = tops[k];
+      let area = 0;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) area += ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
+      const ccw = area > 0;
+      const tris = THREE.ShapeUtils.triangulateShape(ring.map(([x, y]) => new THREE.Vector2(x, y)), []);
+      for (const [a, b, c] of tris) face(body, [a, b, c].map((k) => [ring[k][0], top, ring[k][1]] as [number, number, number]), [0, 1, 0]);
+      const bottom = ring.map(([x, y]) => { const g = height(x, y); return Math.min(Number.isFinite(g) ? g : top - 0.3, top - 0.2); });
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const [ax, ay] = ring[j], [bx, by] = ring[i], l = Math.hypot(bx - ax, by - ay);
+        if (l < 1e-3) continue;
+        const nx = (ccw ? by - ay : ay - by) / l, ny = (ccw ? ax - bx : bx - ax) / l;
+        face(body, [[ax, top, ay], [bx, top, by], [bx, bottom[i], by], [ax, bottom[j], ay]], [nx, 0, ny]);
+      }
+    }
+    for (const nose of flight.n) {
+      const line = pairs(nose), h = nose[0] - ref + liftAt(nose[0] - ref) + 0.004;
+      for (let i = 1; i < line.length; i++) {
+        const [ax, ay] = line[i - 1], [bx, by] = line[i], l = Math.hypot(bx - ax, by - ay);
+        if (l < 1e-3) continue;
+        const ox = (-(by - ay) / l) * 0.03, oy = ((bx - ax) / l) * 0.03;
+        face(edges, [[ax + ox, h, ay + oy], [bx + ox, h, by + oy], [bx - ox, h, by - oy], [ax - ox, h, ay - oy]], [0, 1, 0]);
+      }
+    }
+  }
+  const finish = ({ position, normal, index }: ReturnType<typeof mesh>) =>
+    ({ position: new Float32Array(position), normal: new Float32Array(normal), index: new Uint32Array(index) });
+  return { body: finish(body), edges: finish(edges) };
+}
+
+type Arrays = { position: Float32Array; normal: Float32Array; index: Uint32Array };
+export function joinArrays(a: Arrays, b: Arrays): Arrays {
+  const offset = a.position.length / 3, index = new Uint32Array(a.index.length + b.index.length);
+  index.set(a.index);
+  for (let i = 0; i < b.index.length; i++) index[a.index.length + i] = b.index[i] + offset;
+  const cat = (x: Float32Array, y: Float32Array) => { const o = new Float32Array(x.length + y.length); o.set(x); o.set(y, x.length); return o; };
+  return { position: cat(a.position, b.position), normal: cat(a.normal, b.normal), index };
+}
 
 export function groundStairs(ways: RawStreetEdge[] = []): MappedStair[] {
   return ways.filter((e) => e.hw === 'steps' && !e.bridge && !e.tunnel && !e.level && !e.levels);

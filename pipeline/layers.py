@@ -54,11 +54,11 @@ CHUNKED = ("buildings", "ground", "streets", "parking")
 # What a tile has when a layer has nothing there, in the order the tile JSON lists it.
 EMPTY = {
     "buildings": {"buildings": []},
-    "ground": {"areas": {}, "lots": [], "roads": {}, "walls": [], "fences": [], "rails": [], "passages": [], "weirs": [], "crossings": [], "marks": [], "trees": [], "drives": [], "plots": [], "patches": {}, "sheds": []},
+    "ground": {"areas": {}, "lots": [], "roads": {}, "walls": [], "fences": [], "rails": [], "passages": [], "weirs": [], "crossings": [], "marks": [], "trees": [], "drives": [], "plots": [], "patches": {}, "sheds": [], "flights": []},
     "streets": {"drive": [], "walk": []},
     "parking": {"sections": []},
 }
-ORDER = ["areas", "lots", "roads", "buildings", "walls", "fences", "rails", "passages", "weirs", "crossings", "marks", "trees", "drives", "plots", "patches", "sheds", "drive", "walk", "sections"]
+ORDER = ["areas", "lots", "roads", "buildings", "walls", "fences", "rails", "passages", "weirs", "crossings", "marks", "trees", "drives", "plots", "patches", "sheds", "flights", "drive", "walk", "sections"]
 
 
 def gzip_bytes(raw: bytes) -> bytes:

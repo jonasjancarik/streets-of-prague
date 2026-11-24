@@ -54,12 +54,12 @@ def key(value):
 PIPELINE = Path(__file__).resolve().parent
 OSM = {"build_tiles.py": (), "osm_area.py": (), "roofs.py": (), "sports.py": (),
        "layers.py": ("FORMAT", "chunk_tiles", "tile_box", "dumps", "write", "chunk_path")}
-SURVEY = {"dtm.py": (), "survey_skip.json": (), "kerbs.py": (), "lanes.py": (), "worn_paths.py": ()}
+SURVEY = {"dtm.py": (), "di_tracks.py": (), "survey_skip.json": (), "kerbs.py": (), "lanes.py": (), "worn_paths.py": ()}
 IPR_OUTPUT = {"layers.py": ("FORMAT", "tiles", "write_layer", "begin_layer", "write_bin", "remove_bin")}
 PROJECTION = ("krovak_to_local",)
 CODE = {
     "buildings": OSM,
-    "ground": {**OSM, **SURVEY, "dtm_walls.py": (), "ipr_trees.py": (), "ipr_open.py": (),
+    "ground": {**OSM, **SURVEY, "dtm_walls.py": (), "dtm_stairs.py": (), "ipr_trees.py": (), "ipr_open.py": (),
                "barriers.py": (), "pavements.py": (), "plots.py": (), "verges.py": ()},
     "streets": {**OSM, **SURVEY, "structures.py": ("structure_ways",)},
     "parking": {"build_tiles.py": (), "osm_area.py": ("OUT", "AREAS", "_polys", "_rings"),

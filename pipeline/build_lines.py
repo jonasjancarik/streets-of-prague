@@ -36,6 +36,7 @@ import requests
 from pyproj import Transformer
 from shapely.geometry import LineString, Point, box
 
+import di_tracks
 from osm_area import AREAS, OUT
 
 CACHE = Path(__file__).parent / ".cache" / "osm"
@@ -219,6 +220,12 @@ def main(area: str = "centrum") -> None:
     )
     wide = (w - MARGIN, s - MARGIN, e + MARGIN, n + MARGIN)
     nodes, ways, rels = load_pbf(wide) if PBF.exists() else load_overpass(wide)
+    # The tracks onto their surveyed axes, the same nodes the tiles' rails move (di_tracks.py).
+    moves = di_tracks.moved(nodes, ways) if not PBF.exists() else di_tracks.moved()
+    for k, (lon, lat, *rest) in nodes.items():
+        m = moves.get(di_tracks.key(lon, lat))
+        if m:
+            nodes[k] = (*m, *rest)
     # Whole lines: every tram track in Prague's box, not only the area's.
     pw, ps, pe, pn = AREAS["praha"]
     xy = {k: tf.transform(lon, lat) for k, (lon, lat, *_) in nodes.items() if pw - MARGIN < lon < pe + MARGIN and ps - MARGIN < lat < pn + MARGIN}

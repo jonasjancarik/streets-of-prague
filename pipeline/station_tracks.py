@@ -11,6 +11,7 @@ from shapely import make_valid, union_all
 from shapely.geometry import LineString, box, shape
 from shapely.ops import transform
 
+import di_tracks
 from bridge_surface_preview import local_crs
 from layers import write
 from osm_area import _coords, _lines, _polys, _rings
@@ -54,9 +55,12 @@ def build(index, features, bridge, tiles_dir):
     project = Transformer.from_crs("EPSG:4326", local_crs(index), always_xy=True).transform
     limits = transform(project, box(*STATION))
     rails, raised, platforms = [], [], []
+    moves = di_tracks.moved()  # the tracks onto their surveyed axes, as in the tiles
     for feature in features:
         tags = feature["properties"]
         geom = shape(feature["geometry"])
+        if tags.get("railway") == "rail" and moves:
+            geom = di_tracks.move_lines(geom, moves)
         if (tags.get("railway") == "rail" and geom.geom_type == "LineString"
                 and tags.get("tunnel", "no") == "no"
                 and tags.get("covered", "no") == "no" and not tags.get("layer", "").startswith("-")):

@@ -23,6 +23,7 @@ from shapely.geometry import LineString, MultiLineString, MultiPolygon, Point, P
 from shapely.ops import unary_union
 
 import barriers
+import di_tracks
 import dtm
 import lanes
 import pavements
@@ -275,6 +276,14 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         chosen = [k for k, row in enumerate(rows) if col(row, "building") or col(row, "building:part")
                   or on_roof(col(row, "highway"), lambda t, row=row: col(row, t))]
         geoms, rows = np.asarray(geoms, dtype=object)[chosen], [rows[k] for k in chosen]
+    else:
+        # The tram, railway and funicular tracks onto their surveyed axes (di_tracks.py),
+        # still in WGS84, where build_lines moves the same nodes for the trams' lines.
+        tracks = [k for k, row in enumerate(rows) if col(row, "railway") in di_tracks.TAGS]
+        moves = di_tracks.moved() if tracks else {}
+        if moves:
+            geoms = np.asarray(geoms, dtype=object).copy()
+            geoms[tracks] = di_tracks.move_lines(geoms[tracks], moves)
     geoms = shapely.transform(geoms, lambda c: np.column_stack(tf.transform(c[:, 0], c[:, 1])))
     timer.lap("project")
     # The carriageways of the streets on a building's roof (on_roof), which a building on
