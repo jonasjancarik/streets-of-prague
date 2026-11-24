@@ -8,6 +8,7 @@ import type { LifeSize as Avatars } from './rocketbox.ts';
 
 export class LifeSize {
   enabled = true;
+  playerSeed?: number;
   freeAfter = 120; // seconds out of first person (shorter in tests)
   private avatars: Avatars | null = null;
   private importing = false;
@@ -23,7 +24,7 @@ export class LifeSize {
     if (wanted && !this.avatars && !this.importing) {
       this.importing = true;
       void import('./rocketbox.ts').then(
-        (m) => { this.avatars = new m.LifeSize(this.scene, this.renderer); },
+        (m) => { this.avatars = new m.LifeSize(this.scene, this.renderer, this.playerSeed); },
         (e) => console.warn('Life-size people could not load', e),
       ).finally(() => { this.importing = false; });
     }

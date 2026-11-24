@@ -69,6 +69,8 @@ interface Person {
   want: Record<string, number>;
   t: Record<string, number>; // seconds into each clip that isn't a gait
   phase: number; // through a stride, 0 to 1
+  strideSign: number;
+  strideYaw: number; // player's body relative to the direction of the street camera
   rest: string; // the way they're standing about now
   umbrella: number; // the serial number of the umbrella they have up, or -1
   hand: THREE.Object3D; // the left, for the umbrella
@@ -107,7 +109,7 @@ export class LifeSize {
   private renderer: unknown;
   private umbrellas = new THREE.InstancedMesh(gripped(umbrellaShape()), umbrellaMaterial(), MOST);
 
-  constructor(scene: THREE.Scene, renderer: unknown) {
+  constructor(scene: THREE.Scene, renderer: unknown, private playerSeed?: number) {
     this.renderer = renderer;
     this.group.name = 'rocketbox';
     scene.add(this.group);
@@ -126,11 +128,17 @@ export class LifeSize {
       ktx2 = new KTX2Loader().setTranscoderPath('rocketbox/');
       ktx2.detectSupport(this.renderer as never);
       const loader = new GLTFLoader().setKTX2Loader(ktx2).setMeshoptDecoder(MeshoptDecoder);
-      const [byName, figureActions] = await Promise.all(['clips', 'actions'].map(async (file) =>
-        readClips(await (await fetch(`rocketbox/${file}.bin`)).arrayBuffer())));
-      this.figureActions = figureActions;
+      const animations = Promise.all(['clips', 'actions'].map(async (file) =>
+        readClips(await (await fetch(`rocketbox/${file}.bin`)).arrayBuffer()))).then(([clips, actions]) => {
+        this.figureActions = actions;
+        return clips;
+      });
+      // Fetch the player's mesh alongside the clips. In the over-the-shoulder
+      // view it fills the foreground while the crowd is still coming in.
+      const player = this.playerSeed === undefined ? -1 : this.playerSeed % AVATARS.length;
       const loads = AVATARS.map(async ([name, sex], avatar) => {
-        const g = await loader.loadAsync(`rocketbox/${name}.glb`);
+        const fetchModel = () => loader.loadAsync(`rocketbox/${name}.glb`);
+        const [byName, g] = await Promise.all([animations, avatar === player ? fetchModel() : animations.then(fetchModel)]);
         g.scene.traverse((o) => {
           if (!(o instanceof THREE.SkinnedMesh)) return;
           // (175 face shapes we never use: each would cost every vertex every frame.)
@@ -149,7 +157,7 @@ export class LifeSize {
         for (const name of STANDING[sex]) kind.clips[name] = inPlace(byName[`${sex}_${name}`], hips)[0];
         const umbrella = (kind.clips.umbrella = inPlace(byName[`${sex}_${UMBRELLA[sex]}`], hips)[0]);
         kind.clips.arm = new THREE.AnimationClip('arm', umbrella.duration, umbrella.tracks.filter((t) => LEFT_ARM.test(t.name)));
-        for (const [name, clip] of Object.entries(figureActions)) {
+        for (const [name, clip] of Object.entries(this.figureActions)) {
           // actions.mjs stores travel in units of the reference avatar's hip height.
           const position = clip.tracks[0].clone();
           for (let i = 0; i < position.values.length; i++) position.values[i] *= hips;
@@ -279,6 +287,8 @@ export class LifeSize {
       p.pos.copy(pos);
       p.last.copy(pos);
       p.speed = 0;
+      p.strideSign = 1;
+      p.strideYaw = 0;
       p.phase = anim.phase;
       const k = this.kinds[p.kind];
       p.rest = k.standing[(gid * 31 + id * 17) % k.standing.length];
@@ -370,7 +380,7 @@ export class LifeSize {
     }
     this.group.add(root);
     return {
-      kind, root, mixer, actions, w, want, t, nozzle, phase: 0, rest: k.standing[0], umbrella: -1,
+      kind, root, mixer, actions, w, want, t, nozzle, phase: 0, strideSign: 1, strideYaw: 0, rest: k.standing[0], umbrella: -1,
       hand: root.getObjectByName('Bip01_L_Hand') ?? root, phone,
       pos: new THREE.Vector3(), last: new THREE.Vector3(), turn: new THREE.Quaternion(), speed: 0, seen: false, self: false, yieldSlot: false,
     };
@@ -413,8 +423,29 @@ export class LifeSize {
       const k = this.kinds[p.kind];
       // How fast they're going, from how far they moved: the feet keep pace with the ground.
       if (dt > 0) {
-        const v = Math.hypot(p.pos.x - p.last.x, p.pos.z - p.last.z) / dt;
+        const dx = p.pos.x - p.last.x, dz = p.pos.z - p.last.z;
+        const v = Math.hypot(dx, dz) / dt;
         p.speed += (Math.min(v, 12) - p.speed) * Math.min(1, dt * 8);
+        if (p.self) {
+          // On A/D the camera still looks ahead, but the player's feet must
+          // step along the pavement. On S the feet track the ground backwards.
+          // Hysteresis keeps a near-sideways diagonal from reversing each frame.
+          let yaw = 0;
+          if (p.want.walk + p.want.jog + p.want.run > 0) {
+            yaw = p.strideYaw;
+            if (v > .12) {
+              const step = _v.set(dx, 0, dz).applyQuaternion(_q.copy(p.turn).invert());
+              const forward = step.x / (v * dt);
+              if (forward < -.32) p.strideSign = -1;
+              else if (forward > -.10) p.strideSign = 1;
+              yaw = Math.atan2(-step.z * p.strideSign, step.x * p.strideSign);
+            }
+          } else if (!p.want[p.rest] && !p.want.umbrella) {
+            // A jump, fall or door action is posed in the gameplay heading.
+            p.strideYaw = 0;
+          }
+          p.strideYaw += THREE.MathUtils.clamp(yaw - p.strideYaw, -9 * dt, 9 * dt);
+        }
       }
       p.last.copy(p.pos);
       // Done with one way of standing, they go on to another (the last fades out as it ends).
@@ -432,7 +463,10 @@ export class LifeSize {
         if (p.w[c] < 0.01 && p.want[c] === 0) p.w[c] = 0; // (a clip at no weight isn't worked out at all)
         if (c in k.stride) { stride += k.stride[c as Move] * p.w[c]; sum += p.w[c]; }
       }
-      if (sum > 0.01) p.phase = (p.phase + (p.speed * dt) / (stride / sum)) % 1;
+      if (sum > .01) {
+        const phase = p.phase + (p.strideSign * p.speed * dt) / (stride / sum);
+        p.phase = phase - Math.floor(phase);
+      }
       let phone = 0;
       for (const c in p.w) {
         const a = p.actions[c], len = a.getClip().duration;
@@ -449,7 +483,9 @@ export class LifeSize {
       if (p.nozzle) p.nozzle.visible = (p.w.hose ?? 0) + (p.w.hosewalk ?? 0) > 0.5;
       p.mixer.update(0);
       p.root.position.copy(p.pos);
-      p.root.quaternion.copy(p.turn).multiply(TURN);
+      p.root.quaternion.copy(p.turn);
+      if (p.self && p.strideYaw) p.root.quaternion.multiply(_q.setFromAxisAngle(UP, p.strideYaw));
+      p.root.quaternion.multiply(TURN);
       if (p.umbrella >= 0 && held < MOST) {
         // In the left hand, leant in over the head, each a little their own way.
         p.root.updateMatrixWorld(true);
@@ -470,6 +506,7 @@ export class LifeSize {
 const _p = new THREE.Vector3(), _v = new THREE.Vector3(), _s = new THREE.Vector3();
 const _q = new THREE.Quaternion(), _tilt = new THREE.Quaternion(), _m = new THREE.Matrix4();
 const AHEAD = new THREE.Vector3(1, 0, 0);
+const UP = new THREE.Vector3(0, 1, 0);
 // A phone: 7 by 14.5 cm, dark glass. In the hand's own axes the fingers point along +x and
 // the palm faces +y.
 const PHONE = new THREE.BoxGeometry(0.145, 0.008, 0.07);

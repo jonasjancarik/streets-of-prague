@@ -559,6 +559,7 @@ async function main() {
 
   // ---- Player ------------------------------------------------------------
   const walker = new Walker(grid, kit, world, (helicopter) => showBanner(t(helicopter ? 'Back on dry land' : 'Back where you jumped after a splash')), (points) => hurt(points));
+  lifeSize.playerSeed = walker.fig.avatarSeed;
   scene.add(walker.mesh);
   // A courier's bag you've picked up rides on your back.
   const bags = new Bags(scene, (x, y) => ground(x, y));
