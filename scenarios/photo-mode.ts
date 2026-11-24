@@ -27,6 +27,41 @@ export default {
     t.check('the hour follows its slider', t.probe().time === '19:30', t.probe().time);
     t.check('the camera tilts with its slider', Math.abs((t.cam?.tilt ?? 0) - 40) < 0.5, `tilt ${t.cam?.tilt}`);
     await t.shot('photo-mode');
+    // A slow WebGPU warm-up can still have its working framebuffer bound. Check
+    // the next display draw and the actual PNG produced by the Save button.
+    const { renderer } = window.__drive as { renderer: {
+      domElement: HTMLCanvasElement; _getFrameBufferTarget?: () => unknown;
+      getRenderTarget(): unknown; setRenderTarget(target: unknown): void;
+    } };
+    const working = renderer._getFrameBufferTarget?.();
+    if (working) {
+      renderer.setRenderTarget(working);
+      await t.frames(4);
+      t.check('the next frame draws to the display', renderer.getRenderTarget() === null);
+    }
+    const original = HTMLAnchorElement.prototype.click;
+    let timeout = 0;
+    try {
+      const file = new Promise<Blob>((resolve, reject) => {
+        timeout = window.setTimeout(() => reject(Error('No saved picture')), 30000);
+        HTMLAnchorElement.prototype.click = function () {
+          if (!this.download.startsWith('streets-of-prague-')) return original.call(this);
+          void fetch(this.href).then(r => r.blob()).then(resolve, reject);
+        };
+      });
+      bar!.querySelector<HTMLButtonElement>('button.go')!.click();
+      const blob = await file, bitmap = await createImageBitmap(blob);
+      try {
+        const source = renderer.domElement;
+        t.check('the saved PNG has the full canvas dimensions', blob.type === 'image/png' && bitmap.width === source.width && bitmap.height === source.height);
+        const probe = document.createElement('canvas'); probe.width = probe.height = 16;
+        const ctx = probe.getContext('2d')!;
+        ctx.drawImage(bitmap, 0, 0, 16, 16);
+        const data = ctx.getImageData(0, 0, 16, 16).data;
+        const red = data.filter((_, i) => i % 4 === 0);
+        t.check('the file contains the rendered city', data[3] > 0 && Math.max(...red) - Math.min(...red) > 12);
+      } finally { bitmap.close(); }
+    } finally { clearTimeout(timeout); HTMLAnchorElement.prototype.click = original; }
     key('Escape');
     await t.frames();
     t.check('the screen is back', !document.body.classList.contains('photo'));

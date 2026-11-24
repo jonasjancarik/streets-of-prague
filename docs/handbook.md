@@ -278,7 +278,8 @@ below, or with the WebGL renderer.
 Photo mode (<kbd>C</kbd>, `src/photo.ts`) stops the game, clears the screen of everything
 but the picture and frees the camera: drag to move, scroll to zoom, right-drag or the
 sliders to tilt and turn, and a slider for the hour. "Save picture" downloads the canvas at
-its full size as a PNG; <kbd>H</kbd> hides the bar; <kbd>C</kbd> or <kbd>Esc</kbd> goes
+its full size as a PNG. The button waits for the phone to finish encoding the picture.
+<kbd>H</kbd> hides the bar. <kbd>C</kbd> or <kbd>Esc</kbd> goes
 back, and the clock returns to what it was. It is the developer panel's free camera
 (`t.cam`) with the game paused. WebGL keeps MSAA on at every tier because it cannot change
 that without a new renderer.

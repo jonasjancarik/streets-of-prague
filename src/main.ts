@@ -10,6 +10,7 @@ import { renderMirror } from './mirror.ts';
 import { renderProbe } from './probe.ts';
 import { POST, drawPost, motionBlurFull, motionBlurOn } from './post.ts';
 import { setupPhoto } from './photo.ts';
+import { FramePhotos, captureFrame, png, thumbnail } from './frameCapture.ts';
 import { streetSurfaceView } from './streetSurface.ts';
 import { wantCloudBank } from './cloudBank.ts';
 import { DOME_NODE } from './sky.ts';
@@ -2840,33 +2841,11 @@ async function main() {
   let starsWas = 0;
   const playingAs = (): telemetry.Mode => (ride.on || busRide.on ? 'tram' : taxi.riding ? 'taxi' : inCar ? 'car' : inHeli || boats.me || funicular.me || metro.active ? 'other' : 'foot');
 
-  const grab: ((picture: string | null) => void)[] = [];
-  const takePicture = () => {
-    try {
-      const from = renderer.domElement, scale = Math.min(1, 1280 / from.width);
-      const to = document.createElement('canvas');
-      to.width = Math.round(from.width * scale);
-      to.height = Math.round(from.height * scale);
-      const draw = to.getContext('2d')!;
-      draw.globalCompositeOperation = 'copy'; // the canvas has an alpha channel that must not show through
-      draw.drawImage(from, 0, 0, to.width, to.height);
-      return to.toDataURL('image/jpeg', 0.72);
-    } catch { return null; }
-  };
-  setScreenshot(() => new Promise((resolve) => { grab.push(resolve); setTimeout(() => resolve(null), 2000); }));
-  // The whole canvas as a PNG, for photo mode: copied in the task that drew the frame, as above.
-  const grabFull: ((picture: Blob | null) => void)[] = [];
-  const takeFull = (done: (picture: Blob | null) => void) => {
-    try {
-      const from = renderer.domElement, to = document.createElement('canvas');
-      to.width = from.width;
-      to.height = from.height;
-      const draw = to.getContext('2d')!;
-      draw.globalCompositeOperation = 'copy';
-      draw.drawImage(from, 0, 0);
-      to.toBlob(done, 'image/png');
-    } catch { done(null); }
-  };
+  const pictures = new FramePhotos();
+  setScreenshot(async () => {
+    const frame = await pictures.next(2000);
+    try { return frame ? thumbnail(frame) : null; } catch { return null; }
+  });
   let soundHeld = false;
   // What makes the frames over 100 ms long, for the statistics: shader builds are new
   // node builder states (WebGPU) or programs (WebGL).
@@ -3648,6 +3627,10 @@ async function main() {
         return;
       }
       POST.night = sky.dark; POST.wet = weather.now.wet;
+      // On a slow GPU the shader warm-up can leave its offscreen framebuffer
+      // bound. Draw this view to the display, including the passes which save
+      // and restore the current target. The headset owns its target above.
+      renderer.setRenderTarget(null);
       const probed = renderProbe(renderer, scene, camPos.x, camGround, camPos.z, carPool.allMeshes());
       if (renderMirror(renderer, scene, camera, camGround, weather.now.wet) || probed) {
         scene.matrixWorldAutoUpdate = false;
@@ -3659,8 +3642,7 @@ async function main() {
     graphics.rendered(began, (ms) => hitches.gpu(timed, ms));
     // A picture of the frame just drawn, asked for by the feedback form: the canvas can only
     // be read in the task that drew it.
-    if (grab.length) { const picture = takePicture(); for (const done of grab.splice(0)) done(picture); }
-    for (const done of grabFull.splice(0)) takeFull(done);
+    if (pictures.requested) pictures.drawn(captureFrame(renderer.domElement));
   });
 
   window.__drive = {
@@ -3729,7 +3711,10 @@ async function main() {
   photo = setupPhoto({
     kit: testkit, canvas: renderer.domElement,
     ready: () => !settingsPanel.open && !mapOpen() && !metro.active && !dialog.active && !arrest.active && !testkit!.cam && !testkit!.eyes,
-    capture: () => new Promise((resolve) => { grabFull.push(resolve); setTimeout(() => resolve(null), 3000); }),
+    capture: async () => {
+      const frame = await pictures.next(3000);
+      return frame ? png(frame) : null;
+    },
   });
   // ?fps starts in first person, as the developer panel's First person box does; ?tps in third person.
   testkit.eyes = eyesFor(vr ? 'overhead' : startView); // (VR: from above until the headset goes on)
