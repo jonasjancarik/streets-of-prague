@@ -169,13 +169,18 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     return v === 1 ? -1 : v === 0 ? 0 : v - 1;
   };
 
+  const TALLEST_TREE = 40; // m
   const trees: Tree[] = []; // [x, y, radius, kind, height (1 for the usual)]
   const r = rng(42);
   // The surveyed trees (IPR's and OSM's), with which kind they are when it's known.
   const real = new Map<number, number[]>(); // (indices into `trees`, by REAL_CELL)
   const REAL_CELL = 16;
-  for (const [x, y, k, top, radius, ...rest] of d.trees) {
+  for (const [x, y, k, surveyedTop, radius, ...rest] of d.trees) {
     const kind = k === 1 ? CONIFER : k === 2 ? 2 : 1;
+    // Prague's tallest trees are under 40 m. Above that the surface models measured
+    // something else (a crane, a mast, a tower), and the crown's width with it: such a
+    // tree gets a made-up size, like one that wasn't measured.
+    const top = surveyedTop !== undefined && surveyedTop <= TALLEST_TREE ? surveyedTop : undefined;
     if (top !== undefined && radius !== undefined && radius > 0) {
       trees.push([x, y, Math.min(Math.max(radius, 1.5), kind === 1 ? 9 : 5), kind, 1, false, top,
         rest.length === OUTLINE + 3 ? rest.slice(OUTLINE) : undefined, rest.length >= OUTLINE ? rest.slice(0, OUTLINE) : undefined]);
