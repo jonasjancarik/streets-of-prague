@@ -619,6 +619,8 @@ async function main() {
   // Where the vehicle was when you last turned the view: it swings back behind the vehicle
   // only once that has moved a couple of metres, so a view turned while standing stays put.
   let lookedFrom: { v: object; x: number; y: number } | null = null;
+  // A tram you ride or drive, as the third-person camera follows it (main loop).
+  const tramFollowed = { x: 0, y: 0, h: 0, vx: 0, vy: 0 };
   // The vehicle that view follows from behind, and the heading it looks along (lagging the vehicle's).
   let chased: { h: number } | null = null, chaseH = 0;
   // The chase camera and third person's camera over your shoulder (followCamera.ts); the
@@ -3231,11 +3233,21 @@ async function main() {
       const base = inHeli ? inHeli.z : (deep && body ? body.gz ?? 0 : ground(me.x, me.y, body)) + (inCar ? 0 : walker.z + walker.perch + 1.75);
       eyeH += (base - eyeH) * (Math.abs(base - eyeH) > 5 ? 1 : Math.min(1, dt * 12));
       const headset = !!vr?.active;
+      // Riding or driving a tram or a bus, third person follows it as the chase camera
+      // follows a car (first person stays in your seat).
+      const tramOn = !vehicle && eyes.third && ride.on ? ride.v : null;
+      const busOn = !vehicle && eyes.third && busRide.on ? busRide.a?.car ?? null : null;
+      if (tramOn) {
+        // (Its front section: the camera hangs above the middle one, looking down the track.)
+        const p = tramOn.parts[2];
+        Object.assign(tramFollowed, { x: p.x, y: p.y, h: p.ang, vx: Math.cos(p.ang) * tramOn.speed, vy: Math.sin(p.ang) * tramOn.speed });
+      }
+      const carried = vehicle || busOn || (tramOn ? tramFollowed : null);
       // (Taken again while you turn it and just after.)
-      if (vehicle && (eyes.still ?? 1) <= 0.4 || lookedFrom?.v !== vehicle) lookedFrom = vehicle ? { v: vehicle, x: vehicle.x, y: vehicle.y } : null;
-      const moved = !!vehicle && !!lookedFrom && Math.hypot(vehicle.x - lookedFrom.x, vehicle.y - lookedFrom.y) > 2;
-      if (vehicle && !moved) eyes.still = (eyes.still ?? 1) + dt; // standing: the view stays where you turned it
-      else if (vehicle && !headset) follow.recentre(eyes, dt);
+      if (carried && (eyes.still ?? 1) <= 0.4 || lookedFrom?.v !== carried) lookedFrom = carried ? { v: carried, x: carried.x, y: carried.y } : null;
+      const moved = !!carried && !!lookedFrom && Math.hypot(carried.x - lookedFrom.x, carried.y - lookedFrom.y) > 2;
+      if (carried && !moved) eyes.still = (eyes.still ?? 1) + dt; // standing: the view stays where you turned it
+      else if (carried && !headset) follow.recentre(eyes, dt);
       else if (vehicle) {
         // Let go of the mouse and the chase camera swings back behind the vehicle, soon
         // and quickly, so you aren't left driving with the view turned aside.
@@ -3248,14 +3260,15 @@ async function main() {
       }
       const yaw = THREE.MathUtils.degToRad(eyes.yaw), pitch = THREE.MathUtils.degToRad(eyes.pitch);
       camera.up.set(0, 1, 0);
-      if (vehicle && !headset) {
+      if (carried && !headset) {
         // Like a driving game's chase camera: high enough to see the road over the roof,
         // the car in the lower third of the picture, swinging round after it as it turns.
         // A wall behind the car brings it in (not in a tunnel or under a bridge).
         const floor = inHeli ? inHeli.z : deep && body ? body.gz ?? 0 : ground(me.x, me.y, body);
-        const open = !!inCar && !deep && !(body && world.covered(body));
-        follow.chase(dt, vehicle, {
-          ground: floor, len: inCar ? inCar.spec.L : 14, tall: inCar ? inCar.spec.H : 4, car: !!inCar,
+        const open = !inHeli && !deep && !(body && world.covered(body));
+        const big = inCar ?? busOn;
+        follow.chase(dt, carried, {
+          ground: floor, len: big ? big.spec.L : tramOn ? 10.2 : 14, tall: big ? big.spec.H : tramOn ? 3.6 : 4, car: !inHeli, tram: !!tramOn,
           forwardSpeed: inCar ? inCar.forwardSpeed : 0, slide: !!inCar?.suspension, yaw, pitch,
           blocked: open ? (x, y) => !!grid.at(x, y) : undefined,
         }, camera);

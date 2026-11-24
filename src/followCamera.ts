@@ -37,6 +37,9 @@ export interface Followed { x: number; y: number; h: number; vx: number; vy: num
 export interface ChaseOptions {
   ground: number; // the road under the vehicle (the helicopter: its height)
   len: number; tall: number; car: boolean;
+  // Following a tram's front section: the camera hangs high above the sections behind it
+  // (a camera behind a 31 m tram would see only its back).
+  tram?: boolean;
   forwardSpeed: number;
   slide: boolean; // whether the car has the street handling, which lets it slide
   yaw: number; pitch: number; // looking round, in radians
@@ -49,7 +52,9 @@ export interface FootOptions {
 }
 
 // Driving: how far behind and above the car (metres), and how the view widens with speed.
-const CAR_BACK = 5.5, CAR_UP = 1.9, HELI_BACK = 10, HELI_UP = 4;
+const CAR_BACK = 5.5, CAR_UP = 1.9, HELI_BACK = 10, HELI_UP = 4, TRAM_BACK = 10, TRAM_UP = 4.5;
+// Long vehicles (buses, lorries) get the camera a little higher, to see the road over their roofs.
+const LONG_UP = 0.2;
 const FOV = 55, FOV_FAST = 7, STRETCH = 1.2; // up to 7° wider and 1.2 m further back by 100 km/h
 // On foot: a few metres back, a little above the head and a little to the right of it.
 const FOOT_BACK = 3.6, SHOULDER = 0.35;
@@ -117,7 +122,7 @@ export class FollowCamera {
     // fades in from walking pace, so starting off or stopping doesn't flick the view.)
     const sliding = o.slide ? THREE.MathUtils.smoothstep(o.forwardSpeed, 2, 5) : 0;
     const slip = sliding > 0 ? clamp(turnOf(v.h, Math.atan2(v.vy, v.vx)), -.85, .85) * sliding : 0;
-    const back0 = o.len / 2 + (o.car ? CAR_BACK : HELI_BACK);
+    const back0 = o.len / 2 + (o.tram ? TRAM_BACK : o.car ? CAR_BACK : HELI_BACK);
     if (fresh) {
       // (A new vehicle, or after a teleport, starts straight behind it.)
       this.chased = v;
@@ -139,7 +144,7 @@ export class FollowCamera {
     const fast = o.car ? clamp((speed - .15) / (28 - .15), 0, 1) : 0;
     this.wide.to(fast, dt);
     if (fast === 0 && this.wide.x < .0001 && Math.abs(this.wide.v) < .001) this.wide.reset(0);
-    const up = o.tall + (o.car ? CAR_UP : HELI_UP);
+    const up = o.tall + (o.tram ? TRAM_UP : o.car ? CAR_UP + LONG_UP * Math.max(0, o.len - 6) : HELI_UP);
     let back = back0 + STRETCH * this.wide.x;
     const aim = h + o.yaw;
     const ca = Math.cos(aim), sa = Math.sin(aim);
