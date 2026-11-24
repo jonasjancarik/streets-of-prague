@@ -111,11 +111,21 @@ export function busCabin(builder: Builder, L: number, W: number, small: boolean,
     add(strut([front + .012, sill + .02, side * .68], [front + .012, sill + .39, side * .22], .016), rubber, 0, 0, 0);
     add(strut([front + .014, sill + .39, side * .22], [front + .014, sill + .5, side * .86], .021), rubber, 0, 0, 0);
   }
+  // Each door is two glazed leaves that swing in about their outer edges (as on the
+  // Citaros in PID's fleet; the shader turns them, see Car.passengerDoors): the back leaf
+  // in slot 4, the front one in slot 3, which turn opposite ways.
   for (const d of doors) {
-    for (const dx of [-.62, 0, .62]) box(rubber, d + dx - .025, d + dx + .025, .42, top, .075, z);
-    glassAt([d - .6, .46, z], [d + .6, .46, z], [d + .6, top - .04, z], [d - .6, top - .04, z]);
+    for (const dx of [-.62, .62]) box(rubber, d + dx - .025, d + dx + .025, .42, top, .075, z);
     box('#d5a62e', d - .62, d + .62, .44, .48, .12, z - .06);
-    box(rubber, d - .61, d + .61, .98, 1.02, .06, z);
+    for (const leaf of [-1, 1]) {
+      const hx = d + leaf * .58, hinge = [hx, z, leaf < 0 ? 4 : 3];
+      const hung = (g: THREE.BufferGeometry) => { g.userData.hinge = hinge; return g; };
+      const a = Math.min(d, hx), b = Math.max(d, hx);
+      add(hung(pane([a, .5, z], [b, .5, z], [b, top - .06, z], [a, top - .06, z])), glass, 0, 0, 0);
+      add(hung(new THREE.BoxGeometry(.04, top - .48, .07)), rubber, d + leaf * .02, (top + .48) / 2, z); // the seal where they meet
+      add(hung(new THREE.BoxGeometry(b - a, .04, .06)), rubber, (a + b) / 2, 1.0, z); // the rail across
+      add(hung(new THREE.BoxGeometry(b - a, .05, .06)), rubber, (a + b) / 2, .48, z); // and the bottom edge
+    }
   }
   drivingPosition(builder, L - 1.07, 1.00, -W * .25, L - .10, top);
 }

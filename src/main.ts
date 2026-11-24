@@ -2310,8 +2310,8 @@ async function main() {
       const cap = assisted ? (assist.limit ?? 50) / 3.6 : null;
       inCar.touchDriving = touch.active;
       const upright = !inCar.roll;
-      // (A bus stands still while its doors are open.)
-      const doorsOpen = busWaiting.doorsOpen(inCar);
+      // (A bus stands still while its doors are open, and until they've shut.)
+      const doorsOpen = busWaiting.doorsOpen(inCar) || (isBus(inCar) && !!inCar.door && inCar.door[2] + inCar.door[3] > 0.02);
       const hit = inCar.update(dt, { throttle: doorsOpen ? 0 : ctl.move, steer, handbrake: doorsOpen || ctl.brake, cap }, grid, realistic);
       // Rolling over (rollover.ts): each landing on a new corner knocks you about.
       if (inCar.roll) {

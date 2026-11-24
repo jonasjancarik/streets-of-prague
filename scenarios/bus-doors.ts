@@ -25,6 +25,7 @@ export default {
     await t.camera({ at: t.where(), height: 26, tilt: 0 });
     for (let i = 0; i < 4; i++) await t.frames();
     await t.shot('bus-doors-open');
+    t.check('its door leaves swing in', (car.door?.[2] ?? 0) > 0 && (car.door?.[3] ?? 0) > 0, `${car.door?.[2]?.toFixed(2)} rad`);
     await t.camera(null);
     // The bus holds still with the doors open, even with the pedal down.
     const at = t.where();

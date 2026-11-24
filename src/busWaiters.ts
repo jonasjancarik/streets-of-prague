@@ -92,7 +92,7 @@ export class BusWaiting {
     const mine = this.mine;
     if (mine) {
       // (Doors shut by themselves once nobody is left to get on or off, or when you get out.)
-      if (mine.done || this.w.driving() !== mine.car || mine.car.speed > 1) this.mine = null;
+      if (mine.done || this.w.driving() !== mine.car || mine.car.speed > 1) this.closeDoors();
       else {
         const s = this.stopBy(mine.car);
         const line = mine.car.line;
@@ -180,7 +180,8 @@ export class BusWaiting {
     });
     // (The driver waits for them, for a while.)
     const busy = (boarding || q.leaving > 0) && this.clock - q.arrived < WAITING.hold;
-    if (busy && a.agent) a.agent.bus!.dwell = Math.max(a.agent.bus!.dwell, 0.8);
+    // (Held above the second and a half in which its doors shut.)
+    if (busy && a.agent) a.agent.bus!.dwell = Math.max(a.agent.bus!.dwell, 2);
     // (Yours: the doors shut once all are on and off, after a few seconds at least.)
     if (!a.agent && this.mine?.car === c && !busy && this.clock - q.arrived > 3) this.mine.done = true;
   }
@@ -203,9 +204,13 @@ export class BusWaiting {
   openDoors(c: Car) {
     if (this.mine || c.speed > 0.3 || !this.stopBy(c)) return false;
     this.mine = { car: c, since: this.clock, done: false };
+    c.passengerDoors(true);
     return true;
   }
-  closeDoors() { this.mine = null; }
+  closeDoors() {
+    this.mine?.car.passengerDoors(false);
+    this.mine = null;
+  }
   doorsOpen(c: Car | null) { return !!c && this.mine?.car === c && !this.mine.done; }
 
   // How many wait at the stop: more lines, a busier street and a busier hour, more people.

@@ -622,8 +622,10 @@ export class Traffic {
         const relative = schedule ? clock - schedule.start : 0;
         if (run.dwell > 0) {
           target = 0;
-          run.dwell = schedule && relative < schedule.departures[run.stop]
-            ? Math.max(1, run.dwell - dt) : run.dwell - dt;
+          // (The doors stay open while it stands there, and shut in its last second and a half.)
+          const early = !!schedule && relative < schedule.departures[run.stop];
+          run.dwell = early ? Math.max(1, run.dwell - dt) : run.dwell - dt;
+          c.passengerDoors(run.dwell > 1.6 || early);
           if (run.dwell <= 0) run.stop++;
         } else if (stop && !run.away) {
           // (The front of the bus pulls up by the stop's sign.)

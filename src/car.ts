@@ -569,6 +569,9 @@ function bodyGeometry(type: string, box?: string, closeCar = false,
 export interface Door { n: number; side: number; front: number; back: number; real: boolean }
 const DOORS = new Map<string, Door[]>();
 export const DOOR_OPEN = 1.1; // radians a door swings out
+// A bus's passenger doors: each has two leaves that swing in (slots 3 and 4 of the door
+// swing, which a bus's cab doors don't use), slower than a car door.
+const BUS_DOOR_OPEN = 1.45, BUS_DOOR_SPEED = 1.15; // radians, radians a second
 const DOOR_SPEED = 5.5; // radians a second
 function doorsOf(type: string) {
   let doors = DOORS.get(type);
@@ -601,6 +604,10 @@ function boxBuilder(paintColour?: string, serviceAtlas?: 'ambulance' | 'fire') {
     for (let i = 0; i < col.length; i += 3) col.set([c.r, c.g, c.b], i);
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
     g.setAttribute('painted', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(colour === paintColour ? 1 : 0), 1));
+    // A door leaf carries its hinge (x, z) and slot (see the door swing in the car shader).
+    const hinge = new Float32Array(g.attributes.position.count * 3), hung = g.userData.hinge as [number, number, number] | undefined;
+    if (hung) for (let i = 0; i < hinge.length; i += 3) hinge.set(hung, i);
+    g.setAttribute('hinge', new THREE.BufferAttribute(hinge, 3));
     if (colour === HEADLAMP || colour === TAIL_LAMP) markLamp(g, colour === HEADLAMP);
     const target = g.userData.cabWindow ? windows : parts;
     if (serviceAtlas === 'fire') {
@@ -1775,6 +1782,14 @@ export class Car {
     this.door[3 + n] = on ? DOOR_OPEN : 0;
   }
 
+  // A bus's passenger doors (busCabin), all of them at once.
+  passengerDoors(on: boolean) {
+    if (!on && !this.door) return;
+    this.door ||= new Float32Array(8);
+    this.door[6] = this.door[7] = on ? BUS_DOOR_OPEN : 0;
+  }
+  private get bus() { return this.type === 'bus' || this.type === 'minibus'; }
+
   // How far open door n is, 0 to 1.
   ajar(n: number) { return this.door ? this.door[n - 1] / DOOR_OPEN : 0; }
 
@@ -1787,9 +1802,9 @@ export class Car {
     let open = 0;
     for (let i = 0; i < 4; i++) {
       if (this.speed > 1.5 && !(this.mode === 'police' && !this.crew)) d[4 + i] = 0;
-      const was = d[i];
-      d[i] += clamp(d[4 + i] - d[i], -DOOR_SPEED * dt, DOOR_SPEED * dt);
-      if (was > 0 && d[i] <= 0) Car.onShut?.(this);
+      const was = d[i], leaf = i > 1 && this.bus, rate = leaf ? BUS_DOOR_SPEED : DOOR_SPEED;
+      d[i] += clamp(d[4 + i] - d[i], -rate * dt, rate * dt);
+      if (was > 0 && d[i] <= 0 && !leaf) Car.onShut?.(this);
       open += d[i] + d[4 + i];
     }
     if (!open) this.door = undefined;

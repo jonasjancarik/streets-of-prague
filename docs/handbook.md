@@ -1684,7 +1684,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   off, more at the end of its line (when the stop's name is the one on its display), and
   the people waiting for its number get on; a bus without a line only lets people off. It
   can't move off with the doors open; they shut by themselves once nobody is left to get on
-  or off, or press X again (`scenarios/bus-doors.ts`).
+  or off, or press X again (`scenarios/bus-doors.ts`). Close up (first and third person) each
+  door's two glazed leaves swing in about their outer edges, as on the Citaros in PID's
+  fleet, over about a second (`Car.passengerDoors`, slots 3 and 4 of the car door swing,
+  which a bus's cab doors don't use); traffic buses open them while they stand at a stop and
+  shut them in their last second and a half there. From above the doors don't move.
 - **Tour groups** (`src/tours.ts`, `scenarios/tour-group.ts`). By day (most from about
   10:00 to 18:30, fewer in heavy rain and on lower crowd settings) up to three guided groups
   go round the sights near you: the Orloj, the Týn church, Charles Bridge, the Lennon Wall,
