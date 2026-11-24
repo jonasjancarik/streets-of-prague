@@ -2978,7 +2978,12 @@ async function main() {
     return r._nodes?.nodeBuilderCache?.size ?? r.info?.programs?.length ?? 0;
   });
   let joinedWas = 0;
-  renderer.setAnimationLoop((now) => {
+  renderer.setAnimationLoop((now, xrFrame?: unknown) => {
+    // In the headset, frames come from the headset. Entering VR from the start screen
+    // happens before this loop is set, and setting it then restarts three.js's ordinary
+    // page loop too; VR runs the page's frame requests inside its own frame, so that loop
+    // would run the whole game again inside each headset frame, over and over.
+    if (vr?.active && !xrFrame) return;
     if (benchPause.paused) { last = now; return; } // a benchmark elsewhere on this machine (dev only)
     const began = performance.now();
     hitches.begin(now - last);
