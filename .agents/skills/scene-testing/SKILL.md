@@ -255,8 +255,10 @@ one in real time, "Run all" lists which pass.
 
 - A car put down touching another stops dead in its first step (it's pushed apart).
   `t.aimAt` and `t.car` check for that; do the same if you place cars by hand.
-- Crashing a car doesn't hurt the driver. Only shots, explosions and being thrown off a
-  bike or motorbike do (`hurt` in `src/main.ts`), so don't test for health after a crash.
+- Crashing a car doesn't hurt the driver. Only shots, explosions, being thrown off a
+  bike or motorbike and rolling over do (`hurt` in `src/main.ts`), so don't test for
+  health after an ordinary crash. A car's `roll` (`src/rollover.ts`) says whether it is
+  rolling or lying on its side or roof; scenario `rollover`.
 - Tiles near where you go are loaded by `t.go` / `t.camera({ at })`; far from you,
   traffic and people aren't spawned, so the free camera shows empty streets away from
   the player.

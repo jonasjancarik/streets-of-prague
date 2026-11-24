@@ -333,6 +333,8 @@ export const CS: Record<string, string> = {
   '<b>Space</b> climb · <b>Shift</b> down · land to get out': '<b>Mezerník</b> stoupat · <b>Shift</b> klesat · vystoupíš po přistání',
   '<b>E</b> get off · <b>Shift</b> lane assist': '<b>E</b> sesednout · <b>Shift</b> asistent jízdního pruhu',
   '<b>E</b> get out · <b>Shift</b> lane assist': '<b>E</b> vystoupit · <b>Shift</b> asistent jízdního pruhu',
+  'Overturned': 'Převrácené auto',
+  'Overturned · <b>E</b> get out': 'Převrácené auto · <b>E</b> vylézt ven',
   '<b>W</b>/<b>S</b> pedal · <b>A</b>/<b>D</b> turn · <b>E</b> get out by the bank': '<b>W</b>/<b>S</b> šlapat · <b>A</b>/<b>D</b> zatáčet · <b>E</b> vystoupit u břehu',
   'The streets ahead are still loading': 'Ulice před vámi se ještě načítají',
   '{n}× speed': '{n}× rychleji',

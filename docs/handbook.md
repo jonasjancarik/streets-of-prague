@@ -460,6 +460,18 @@ The metro ride uses its overhead cutaway camera.
   The two-axle model and damped springs are in `src/streetHandling.ts`.
   Run `node scripts/check-street-handling.mjs` to compare launches, stops and cornering
   on a flat test road. The `street-handling` scene checks the driving modes in-game.
+- **Rollovers** (`src/rollover.ts`). A car, van, bus or lorry rolls over when its
+  wheels are stopped while it slides sideways: up a kerb at about 21 km/h across (a van
+  at about 17; in practice in a handbrake slide, since the tyres soon scrub off any
+  other sideways slide), into a wall or post at about 38 km/h across, or hit hard in
+  the side by another vehicle (a bus at 60 km/h tips a saloon; a saloon at 40 doesn't).
+  The car's cross-section then turns about whichever corner is on the road, and it comes
+  to rest on its wheels again, on its side or on its roof, a little further across.
+  Each landing on a new corner is heard, shakes the view and hurts you a little.
+  Nobody drives or gets into an overturned car; you climb out with E, without the door.
+  Only your own car and cars nobody drives can roll: traffic hit hard leaves the traffic
+  first, while police cars and the fire brigade never roll. Two-wheelers fall over as
+  before. The `rollover` scene checks it.
 - In the car, holding Shift is lane assist (`src/assist.ts`): it steers along your
   lane, and A/D then pick the turn at the next junction instead of steering. It also
   keeps you to the street's speed limit (OSM `maxspeed`, else 50 km/h in town, 70 on

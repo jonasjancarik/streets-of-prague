@@ -1243,7 +1243,8 @@ async function main() {
       // Out onto what the car is on (a bridge's deck, not the ground under it).
       Object.assign(walker, { x: c.x, y: c.y, _tx: c.x, _ty: c.y, level: world.track(c), gz: c.gz });
       // Through the door (leaveCar follows, once it's open), or straight out.
-      if (!quick && getIn.exit(c)) return;
+      // (Out of one on its side or roof you climb, with no door to open.)
+      if (!quick && !c.overturned && getIn.exit(c)) return;
       const vx = c.vx, vy = c.vy;
       leaveCar(c);
       if (!quick) fallOut(vx, vy);
@@ -1289,7 +1290,7 @@ async function main() {
     }
     let best = null, bestD = Infinity;
     for (const c of allCars()) {
-      if (c.burnt || apartOnFoot(c) || (only && c !== only)) continue;
+      if (c.burnt || c.overturned || apartOnFoot(c) || (only && c !== only)) continue;
       const d = c.gap(walker.x, walker.y);
       if (d < bestD) { bestD = d; best = c; }
     }
@@ -2269,7 +2270,13 @@ async function main() {
       // Keeping to the lane, you keep to the speed limit too.
       const cap = assisted ? (assist.limit ?? 50) / 3.6 : null;
       inCar.touchDriving = touch.active;
+      const upright = !inCar.roll;
       const hit = inCar.update(dt, { throttle: ctl.move, steer, handbrake: ctl.brake, cap }, grid, realistic);
+      // Rolling over (rollover.ts): each landing on a new corner knocks you about.
+      if (inCar.roll) {
+        if (upright) telemetry.did('rolled a car over');
+        if (inCar.roll.moving && hit > 4) hurt(hit * 0.6);
+      }
       if (hit > 6) { shake = Math.min(1.2, shake + hit * 0.04); hapticCrash(hit); }
       jolt = hit;
     } else if (!scripted && !arrest.active && !inHeli && !ride.on && !boats.me && !funicular.me && !ferries.me && !passenger()) {
@@ -3452,7 +3459,7 @@ async function main() {
     const station = streetLevel && !inCar && !inHeli && !ride.on && !metro.active ? metro.near(walker.x, walker.y) : null;
     const gap = (c: Car) => c.gap(walker.x, walker.y);
     const enterable = streetLevel && !inCar && !inHeli && !ride.on
-      ? [...carsNear(walker.x, walker.y, 5)].filter((c) => gap(c) < 1.8 && !c.burnt && !apartOnFoot(c)).sort((a, b) => gap(a) - gap(b))[0]
+      ? [...carsNear(walker.x, walker.y, 5)].filter((c) => gap(c) < 1.8 && !c.burnt && !c.overturned && !apartOnFoot(c)).sort((a, b) => gap(a) - gap(b))[0]
       : undefined;
     const boat = !inCar && !inHeli && !ride.on && !boats.me ? boats.near(walker.x, walker.y, world.groundFor(walker, walker.x, walker.y) + walker.z + walker.perch) : null;
     const onFoot = streetLevel && !inCar && !inHeli && !ride.on && !metro.active && !boats.me && !passenger();
@@ -3476,6 +3483,8 @@ async function main() {
       if (inHeli.canBailOut && !touch.active) hint += ' · ' + t('<b>E</b> jump out');
     } else if (walker.flight && !walker.flight.open) {
       hint = touch.active ? t('Tap Jump to open your parachute') : t('Press <b>Space</b> to open your parachute');
+    } else if (inCar?.overturned) {
+      hint = inCar.roll?.moving ? '' : touch.active ? t('Overturned') : t('Overturned · <b>E</b> get out');
     } else if (inCar) {
       if (!assisted) hint = touch.active ? '' : inCar.type === 'fire' ? t('<b>E</b> get out · <b>F</b> water cannon · <b>X</b> blue lights · <b>Shift</b> lane assist') : inCar.type === 'ambulance' || inCar.type === 'police' ? t('<b>E</b> get out · <b>X</b> blue lights · <b>Shift</b> lane assist') : t(inCar.two ? '<b>E</b> get off · <b>Shift</b> lane assist' : '<b>E</b> get out · <b>Shift</b> lane assist');
       // While the assist is on, the panel stays empty so it doesn't grow.

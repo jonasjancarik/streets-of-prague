@@ -2,6 +2,7 @@ import { GLYPHS, letteringGeometry } from './vehicleLettering.ts';
 import { StreetHandling, ROLL_CENTRE } from './streetHandling.ts';
 import { KEEP, STREET_QUALITY } from './streetQuality.ts';
 import { drivingSpec } from './driveTune.ts';
+import { Rollover, SCRAPE, tripSpeed } from './rollover.ts';
 import { busCabin, commercialCab } from './commercialCab.ts';
 import { twoWheelerStreet } from './twoWheelerStreet.ts';
 import { CycleCranks } from './cycleCranks.ts';
@@ -75,7 +76,8 @@ export interface CarGrid {
   trunkAt?: (x: number, y: number) => TreeTrunk | undefined;
 }
 // (`upset`: told of the turn a blow gave it, `dw`, landing (rx, ry) from its middle; see Car.upset.)
-export interface Body { x: number; y: number; vx: number; vy: number; w?: number; upset?(rx: number, ry: number, dw: number): void }
+// (`jolted`: told of the change of speed (m/s) a blow gave it, for a rollover; see Car.jolted.)
+export interface Body { x: number; y: number; vx: number; vy: number; w?: number; upset?(rx: number, ry: number, dw: number): void; jolted?(dvx: number, dvy: number): void }
 
 // Arcade top-down car handling: grip on the long axis, lateral slip that decays
 // (much slower with the handbrake), bounces off walls against the collision grid.
@@ -1652,6 +1654,9 @@ export class Car {
   suspension?: StreetHandling;
   // Which side an unmounted bike fell onto.
   tipped?: -1 | 1;
+  // A car or van rolling over, or lying where it stopped (rollover.ts); gone once it's
+  // back on its wheels.
+  roll?: Rollover;
   r: number;
   offsets: number[];
   samples: Point2[];
@@ -1797,6 +1802,28 @@ export class Car {
   // car clipping your back corner) it swings the tail out faster than the back tyres can
   // hold it, and the car spins on for a moment (`spin`, arcadeVelocity). Not a bike or a
   // motorbike, nor a bus or a lorry, nor a car nobody drives (that one turns freely anyway).
+  // On its side or its roof: nobody drives it or gets into it.
+  get overturned() { return !!this.roll && (this.roll.moving || this.roll.face !== 'wheels'); }
+  // Rollovers are for four wheels, and only for your car and the ones nobody drives (a car
+  // in traffic that's been hit leaves the traffic first; the police and the fire brigade
+  // don't know what to do with one on its roof).
+  private get canRoll() { return !this.two && (this.mode === 'player' || this.mode === 'loose'); }
+  // Tips it over: the roof thrown to its left (side +1) or right (−1) by a trip that
+  // stopped `speed` m/s of sideways slide.
+  tip(side: number, speed: number) {
+    if (this.roll) this.roll.push(this.spec, side, speed);
+    else this.roll = new Rollover(this.spec, side, speed);
+    this.suspension = undefined;
+    this.spin = 0;
+  }
+  // A blow from another vehicle changed its speed by (dvx, dvy): pushed sideways hard
+  // enough, the tyres hold the bottom while the body goes on over them.
+  jolted(dvx: number, dvy: number) {
+    if (!this.canRoll) return;
+    const across = -dvx * Math.sin(this.h) + dvy * Math.cos(this.h), need = tripSpeed(this.spec);
+    if (Math.abs(across) > 2 * need || (this.roll && Math.abs(across) > need)) this.tip(Math.sign(across), Math.abs(across) * 0.6);
+  }
+
   upset(rx: number, ry: number, dw: number) {
     if (!this.driven || this.two || this.spec.heavy || Math.abs(dw) < SPIN.from) return;
     if (rx * Math.cos(this.h) + ry * Math.sin(this.h) > -this.spec.L * 0.15) return;
@@ -1899,6 +1926,7 @@ export class Car {
   // above it the car eases down, as if you'd lifted off and touched the brake.
   update(dt: number, ctl: CarControl | null, grid: CarGrid, realistic = false) {
     if (grid.view) grid = grid.view(this);
+    if (this.roll) return this.rolling(dt, grid);
     ctl = ctl || { throttle: 0, steer: 0, handbrake: false };
     // (Your own car takes the developer panel's handling multipliers, driveTune.ts.)
     const S = this.mode === 'player' ? drivingSpec(this.spec) : this.spec, fx = Math.cos(this.h), fy = Math.sin(this.h);
@@ -1908,6 +1936,20 @@ export class Car {
       slope = (grid.height(this.x + fx * half, this.y + fy * half) - grid.height(this.x - fx * half, this.y - fy * half)) / S.L;
     }
     const weatherLoss = this.driven ? (S.weather ?? 1) * Math.max(.25 * WET.value, .45 * SNOW.value * STREET_SNOW.value, .25 * SNOW.value) : 0;
+    // Sliding sideways up a kerb (or a step in the ground) fast enough trips it over.
+    const tripAt = this.canRoll ? tripSpeed(S) : Infinity;
+    const across = -this.vx * fy + this.vy * fx;
+    if (grid.height && Math.abs(across) > tripAt) {
+      const side = Math.sign(across), lx = -fy * side, ly = fx * side, out = S.W / 2 + 0.25, here = grid.height(this.x, this.y);
+      let rise = 0;
+      for (const a of [-S.L / 3, 0, S.L / 3]) rise = Math.max(rise, grid.height(this.x + fx * a + lx * out, this.y + fy * a + ly * out) - here);
+      if (rise > 0.07 && rise < 0.8) {
+        this.vx += fy * across;
+        this.vy -= fx * across;
+        this.tip(side, Math.abs(across));
+        return this.rolling(dt, grid);
+      }
+    }
     const thrust = ctl.cap == null || ctl.throttle <= 0 ? ctl.throttle : Math.min(ctl.throttle, clamp((ctl.cap - (this.vx * fx + this.vy * fy)) / 2, 0, 1));
     if (S.two === 'bike') this.pedaling = thrust > .02 && !ctl.handbrake;
     if (realistic && this.mode === 'player' && S.cabin) {
@@ -1921,6 +1963,18 @@ export class Car {
     // Substeps so a fast car can't skip through a thin wall.
     const escape = this.mode === 'player' && grid.trunkAt ? (this.treeEscape ??= new TreeEscape()) : undefined;
     escape?.begin(this, !ctl.handbrake && Math.abs(thrust) >= .2 ? Math.sign(thrust) : 0);
+    const before = -this.vx * Math.sin(this.h) + this.vy * Math.cos(this.h);
+    const impact = this.move(dt, grid);
+    escape?.end(this, dt);
+    // Sliding sideways into a post or a wall: stopped hard enough, it goes over.
+    const stopped = -this.vx * Math.sin(this.h) + this.vy * Math.cos(this.h) - before;
+    if (before * stopped < 0 && Math.abs(stopped) > 1.8 * tripAt) this.tip(Math.sign(before), Math.abs(stopped) * 0.7);
+    return impact;
+  }
+
+  // Moves it on by its speed, against posts, fences and walls. Returns the hardest blow.
+  private move(dt: number, grid: CarGrid) {
+    // Substeps so a fast car can't skip through a thin wall.
     const steps = Math.max(1, Math.ceil((this.speed * dt) / 0.25));
     let impact = 0, struck: ImpactKind = 'wall';
     for (let i = 0; i < steps; i++) {
@@ -1931,11 +1985,33 @@ export class Car {
       if (fence > impact) { impact = fence; struck = fences.struck; }
       if (wall > impact) { impact = wall; struck = 'wall'; }
     }
-    escape?.end(this, dt);
     this.sync();
     // Heard (src/impacts.ts), whoever's car it is.
     crash(this, null, impact, struck, this.x, this.y, this.spec.mass);
     return impact;
+  }
+
+  // Rolling over, or lying on its side or roof: no driving, the body scraping along the
+  // road until it stops. Back on its wheels, it drives again.
+  private rolling(dt: number, grid: CarGrid) {
+    const r = this.roll!;
+    const speed = this.speed, keep = speed > 0 ? Math.max(0, speed - (r.face === 'wheels' && !r.moving ? 2 : SCRAPE) * dt) / speed : 0;
+    this.vx *= keep;
+    this.vy *= keep;
+    this.w *= Math.exp(-3 * dt);
+    this.h += this.w * dt;
+    this.braking = false;
+    this.skidBack = this.skidFront = 0;
+    const { across, landing } = r.step(dt);
+    this.x += -Math.sin(this.h) * across;
+    this.y += Math.cos(this.h) * across;
+    this.lean = -r.angle;
+    if (landing > 0.5) {
+      this.takeImpactDamage(landing * 2);
+      crash(this, null, landing * 2.2, 'car', this.x, this.y, this.spec.mass);
+    }
+    if (!r.moving && r.face === 'wheels') { this.roll = undefined; this.lean = 0; }
+    return Math.max(this.move(dt, grid), landing * 2.2);
   }
 
   private arcadeVelocity(S: CarSpec, dt: number, ctl: CarControl, throttle: number, fx: number, fy: number, slope: number, road: number) {
@@ -2491,10 +2567,10 @@ export class CarPool {
       list.forEach((c, i) => {
         const m = pages[Math.floor(i / CarPool.pageCapacity)];
         const slot = i % CarPool.pageCapacity;
-        const keep = height && terrain !== undefined && !c.two && c.mode === 'loose';
+        const keep = height && terrain !== undefined && !c.two && c.mode === 'loose' && !c.roll?.moving;
         const was = keep ? this.placings.get(c) : undefined;
         const suspension = streetView && c.mode === 'player' ? c.suspension : undefined;
-        const axleFit = (k === STREET_SEDAN || (suspension && k.endsWith('|street-wheels'))) && !c.tipped ? closeBodies.get(c.key) : undefined;
+        const axleFit = (k === STREET_SEDAN || (suspension && k.endsWith('|street-wheels'))) && !c.tipped && !c.roll ? closeBodies.get(c.key) : undefined;
         let twist = 0;
         if (was && (was.wheelTwist !== undefined) === !!axleFit && placed(was, c, height!, terrain!)) {
           d.matrix.fromArray(was.m); twist = was.wheelTwist ?? 0;
@@ -2524,6 +2600,7 @@ export class CarPool {
             d.rotation.set(-c.lean, c.h, 0, 'YZX');
           }
           if (c.tipped) d.position.y += Math.abs(Math.sin(c.lean)) * c.spec.W / 2;
+          else if (c.roll) d.position.y += c.roll.lift;
           d.updateMatrix();
           // Noted after the ground was sampled, which tracks the car (level, gz, …).
           if (keep) {
@@ -2716,6 +2793,8 @@ export function collideBodies(a: Body, ca: Point2[], ra: number, ia: number, b: 
   a.vy -= j * ia * ny;
   b.vx += j * ib * nx;
   b.vy += j * ib * ny;
+  a.jolted?.(-j * ia * nx, -j * ia * ny);
+  b.jolted?.(j * ib * nx, j * ib * ny);
   for (const [body, inv, sign] of [[a, ia, -1], [b, ib, 1]] as [Body, number, number][]) {
     if (!inv || body.w === undefined) continue;
     const rx = best.px - body.x, ry = best.py - body.y;
