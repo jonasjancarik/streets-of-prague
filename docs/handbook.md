@@ -265,13 +265,17 @@ is tinted one way and the light end another, colours are made a little stronger 
 and the middle steepened. Broad daylight is close to neutral; a low sun has warmer
 lights over cooler shade; dusk and dawn are bluer; night is blue in the dark with warm
 lamplight; under cloud, in rain, snow or mist the colours are weaker and flatter. All
-within a few per cent. `?look=off` leaves it out.
+within a few per cent. `?look=off` leaves it out. The developer panel's Picture tab has
+sliders for trying other amounts (`GRADE_TUNE` in `src/grade.ts`): Brightness (the
+exposure), Mood of the hour (how strongly the look is laid on), Colour and Contrast. All
+but Brightness work through the look, so they need WebGPU.
 
 On High and Ultra the frame goes through one more pass (`src/webgpu/post.ts`, three.js's
 `RenderPipeline`): the scene is drawn to a target of its own, what is brighter than a
 threshold spills light round itself (bloom: by day only glints and the brightest plaster,
 at night the lamps' pools, lit windows and headlights), then the tone curve runs and the
-corners are darkened a little. The bloom's first copy is a quarter of the picture's width.
+corners are darkened a little (by up to 16%; the Picture tab's Dark corners slider,
+`VIGNETTE_TUNE` in `src/post.ts`, scales that). The bloom's first copy is a quarter of the picture's width.
 `?post=on|off` overrides the tier for one visit.
 
 Driving faster than about 20 km/h in first or third person, that pass also blurs the picture
@@ -282,8 +286,8 @@ before and reads the picture eight times along that line. Your own vehicle and t
 far ahead stay sharp, and turning the camera blurs nothing. Other traffic is smeared as
 if it stood still, so a car keeping pace beside you is blurred too. It can be turned off
 in Settings (Motion blur when driving); `?motionblur=off` does so for one visit and
-`=full` gives its full strength at any speed. The developer panel's Driving section has a
-Motion blur strength slider (0× to 4×, `BLUR_TUNE` in `src/post.ts`) for trying other
+`=full` gives its full strength at any speed. The developer panel's Picture tab has a
+Motion blur slider (0× to 4×, `BLUR_TUNE` in `src/post.ts`) for trying other
 amounts. Not on foot, from above, on Medium and
 below, or with the WebGL renderer.
 
@@ -846,7 +850,9 @@ The metro ride uses its overhead cutaway camera.
   (stood still and empty for 6 seconds, it's given up on); 45 m behind, he gives up
   and walks off. Hitting a dustman with your car knocks him over, as it
   does anyone else (`src/refuse.ts`, `scenarios/dustcart.ts`).
-- **Developer panel**: press <kbd>`</kbd> (or add `?dev`). Type a street for instant
+- **Developer panel**: press <kbd>`</kbd> (or add `?dev`). The search sits on top; below
+  it are five tabs (Place, World, Picture, Driving, Testing), and the browser remembers
+  the last one opened. Type a street for instant
   matches from the area's `names.json`, press Enter to look up a full address on
   OpenStreetMap's Nominatim, paste coordinates or a Google Maps / Mapy.cz link, or pick
   a spot on an OpenStreetMap map (right-click there copies its coordinates); the game

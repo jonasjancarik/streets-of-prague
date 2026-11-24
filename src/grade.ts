@@ -33,6 +33,11 @@ export const GRADE = {
 export const LOOK_ON = new URLSearchParams(globalThis.location?.search ?? '').get('look') !== 'off';
 export interface Look { shadow: [number, number, number]; light: [number, number, number]; sat: number; contrast: number }
 export const LOOK: Look = { shadow: [1, 1, 1], light: [1, 1, 1], sat: 1, contrast: 0 };
+// Adjustments from the developer panel (dev.ts), 1 (and 0 for the contrast) as the game
+// ships: the exposure, how strongly the hour's look is laid on, and the saturation and
+// contrast on top of it. All but the exposure need the look (WebGPU).
+export const GRADE_TUNE = { exposure: 1, look: 1, sat: 1, contrast: 0 };
+export const GRADE_TUNE_DEFAULT = { ...GRADE_TUNE };
 // Broad daylight, the low sun's hour, dusk and dawn's blue, night under the lamps, and a
 // clouded sky (rain, snow, mist: `dull`). Kept within a few per cent: a mood, not a filter.
 const LOOKS: Record<'day' | 'golden' | 'blue' | 'night' | 'dull', Look> = {
@@ -57,6 +62,10 @@ export function lookAt(deg: number, dull: number) {
   const mix = (get: (l: Look) => number) => weights.reduce((sum, [l, w]) => sum + get(l) * w, 0) * (1 - flat) + get(LOOKS.dull) * flat;
   for (let i = 0; i < 3; i++) { LOOK.shadow[i] = mix((l) => l.shadow[i]); LOOK.light[i] = mix((l) => l.light[i]); }
   LOOK.sat = mix((l) => l.sat); LOOK.contrast = mix((l) => l.contrast);
+  const k = GRADE_TUNE.look;
+  for (let i = 0; i < 3; i++) { LOOK.shadow[i] = 1 + (LOOK.shadow[i] - 1) * k; LOOK.light[i] = 1 + (LOOK.light[i] - 1) * k; }
+  LOOK.sat = (1 + (LOOK.sat - 1) * k) * GRADE_TUNE.sat;
+  LOOK.contrast = Math.max(-0.5, LOOK.contrast * k + GRADE_TUNE.contrast);
   return LOOK;
 }
 

@@ -10,7 +10,7 @@ import type { WebGPURenderer } from 'three/webgpu';
 import { Fn, If, pass, renderOutput, uniform, uv, vec2, vec3, vec4, length, smoothstep, float, dot, min, max, abs, cross, fract, screenCoordinate } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { ao } from 'three/addons/tsl/display/GTAONode.js';
-import { BLUR_TUNE, POST, setPost } from '../post.ts';
+import { BLUR_TUNE, POST, VIGNETTE_TUNE, setPost } from '../post.ts';
 import type { N } from './common.ts';
 
 // Bloom by day and at night: [strength, radius, threshold], the threshold in the picture's
@@ -19,6 +19,8 @@ import type { N } from './common.ts';
 // lit windows and headlights do.
 const DAY = [0.22, 0.55, 1.35], NIGHT = [0.4, 0.7, 0.55];
 const VIGNETTE = 0.16;
+// (Read each frame: the developer panel can change it.)
+const vignette: N = uniform(VIGNETTE);
 const AO = 0.8; // how much of the ambient shading is taken
 // The bloom's first copy, as a share of the picture's width (three.js's own choice is a half: a
 // quarter is blurred enough not to show, and a quarter of the pixels to fill).
@@ -104,7 +106,7 @@ export function makePost(renderer: WebGPURenderer) {
     glow.setResolutionScale(BLOOM_SCALE);
     const lit: N = renderOutput(colour.add(glow));
     const p: N = uv().sub(0.5).mul(vec2(1, 0.85));
-    const shade: N = float(1).sub(smoothstep(0.38, 0.82, length(p)).mul(uniform(VIGNETTE)));
+    const shade: N = float(1).sub(smoothstep(0.38, 0.82, length(p)).mul(vignette));
     pipeline = new RenderPipeline(renderer, vec4(lit.rgb.mul(shade), 1) as any);
     pipeline.outputColorTransform = false;
   };
@@ -114,6 +116,7 @@ export function makePost(renderer: WebGPURenderer) {
     const exposure = Math.max(Math.abs(renderer.toneMappingExposure), 0.01);
     glow.strength.value = mixed(0) * (1 + 0.25 * POST.wet * k);
     glow.radius.value = mixed(1);
+    vignette.value = Math.min(1, VIGNETTE * VIGNETTE_TUNE.strength);
     glow.threshold.value = mixed(2) / exposure;
     camera.updateMatrixWorld();
     speed.fromArray(POST.going);

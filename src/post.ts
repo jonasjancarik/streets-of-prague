@@ -48,6 +48,8 @@ export const motionBlurFull = blurAsked === 'full';
 // How strong the blur is, for trying it out (dev panel, Driving): 1 is the game as it ships;
 // 2 smears twice as far.
 export const BLUR_TUNE = { strength: 1 };
+// How dark the corners get, as a multiple of what the game ships with (dev.ts).
+export const VIGNETTE_TUNE = { strength: 1 };
 export function setMotionBlur(enabled: boolean) {
   blurOn = enabled;
   try { localStorage.setItem('motionBlur', enabled ? 'on' : 'off'); } catch { /* not saved */ }
