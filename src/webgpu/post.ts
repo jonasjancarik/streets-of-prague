@@ -10,7 +10,7 @@ import type { WebGPURenderer } from 'three/webgpu';
 import { Fn, If, pass, renderOutput, uniform, uv, vec2, vec3, vec4, length, smoothstep, float, dot, min, max, distance, fract, screenCoordinate } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { ao } from 'three/addons/tsl/display/GTAONode.js';
-import { POST, setPost } from '../post.ts';
+import { BLUR_TUNE, POST, setPost } from '../post.ts';
 import type { N } from './common.ts';
 
 // Bloom by day and at night: [strength, radius, threshold], the threshold in the picture's
@@ -29,14 +29,15 @@ const BLOOM_SCALE = 0.25;
 // is left out, so looking round stays sharp; other traffic is smeared as if it stood still. `SHUTTER`:
 // how long it is open (s), at full strength; `REACH`: the longest smear, as a share of the
 // picture's height; `TAPS`: how many times the picture is read along it.
-const SHUTTER = 0.009, REACH = 0.03, TAPS = 8;
+// (Both are scaled by BLUR_TUNE.strength, from the dev panel.)
+const SHUTTER = 0.016, REACH = 0.045, TAPS = 8;
 
 export function makePost(renderer: WebGPURenderer) {
   let pipeline: RenderPipeline | null = null, of: THREE.Scene | null = null, by: THREE.Camera | null = null;
   let glow: N = null;
   // The camera's travel while the shutter is open, as the camera sees it; the player's vehicle
   // there (its reach in w); the picture's width over its height.
-  const travel: N = uniform(new Vector3()), player: N = uniform(new Vector4(0, 0, 0, -1)), aspect: N = uniform(1), minSmear: N = uniform(0);
+  const travel: N = uniform(new Vector3()), player: N = uniform(new Vector4(0, 0, 0, -1)), aspect: N = uniform(1), minSmear: N = uniform(0), reach: N = uniform(REACH);
   const speed = new Vector3();
   const build = (scene: THREE.Scene, camera: THREE.Camera) => {
     pipeline?.dispose();
@@ -74,7 +75,7 @@ export function makePost(renderer: WebGPURenderer) {
           const keep: N = smoothstep(player.w, player.w.add(1.5), distance(here, player.xyz));
           const smear: N = was.sub(at).mul(keep).toVar();
           // (Behind the camera the sums turn over: nothing there is in the picture anyway.)
-          smear.mulAssign(min(1, float(REACH).div(max(length(smear.mul(vec2(aspect, 1))), 1e-5))).mul(clip.w.greaterThan(0.05).select(1, 0)));
+          smear.mulAssign(min(1, reach.div(max(length(smear.mul(vec2(aspect, 1))), 1e-5))).mul(clip.w.greaterThan(0.05).select(1, 0)));
           // The sky, distant scenery and the protected player's car usually move
           // less than a third of a pixel. Keep the original sample there instead
           // of reading the same texel eight more times (also in bloom's input).
@@ -109,7 +110,8 @@ export function makePost(renderer: WebGPURenderer) {
     speed.fromArray(POST.going);
     if (POST.blur > 0.001) {
       // (Turned into the camera's own axes: its rotation alone, its place left out.)
-      travel.value.copy(speed).transformDirection(camera.matrixWorldInverse).multiplyScalar(speed.length() * SHUTTER * POST.blur);
+      travel.value.copy(speed).transformDirection(camera.matrixWorldInverse).multiplyScalar(speed.length() * SHUTTER * POST.blur * BLUR_TUNE.strength);
+      reach.value = REACH * BLUR_TUNE.strength;
       player.value.set(POST.car[0], POST.car[1], POST.car[2], 1).applyMatrix4(camera.matrixWorldInverse).setW(POST.car[3]);
       aspect.value = (camera as THREE.PerspectiveCamera).aspect || 1;
       minSmear.value = (.35 / Math.max(1, renderer.domElement.height)) ** 2;

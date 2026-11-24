@@ -14,8 +14,8 @@ export const POST = {
   wet: 0,
   // A trial (?ao): ambient shading from the picture's depth (webgpu/post.ts).
   ao: new URLSearchParams(globalThis.location?.search ?? '').has('ao'),
-  // Motion blur while driving, seen from the street: how much of it (0 below 30 km/h, 1 from
-  // about 100), and the player's vehicle, which keeps sharp (its middle and reach, in the scene's
+  // Motion blur while driving, seen from the street: how much of it (0 below about 20 km/h, 1 from
+  // about 60), and the player's vehicle, which keeps sharp (its middle and reach, in the scene's
   // coordinates; a reach below 0 for none).
   blur: 0,
   // Which way and how fast that vehicle goes (m/s, in the scene's coordinates): the camera goes with it.
@@ -43,6 +43,9 @@ try { blurOn = localStorage.getItem('motionBlur') !== 'off'; } catch { /* no sto
 const blurAsked = new URLSearchParams(globalThis.location?.search ?? '').get('motionblur');
 export const motionBlurOn = () => blurOn && blurAsked !== 'off';
 export const motionBlurFull = blurAsked === 'full';
+// How strong the blur is, for trying it out (dev panel, Driving): 1 is the game as it ships;
+// 2 smears twice as far.
+export const BLUR_TUNE = { strength: 1 };
 export function setMotionBlur(enabled: boolean) {
   blurOn = enabled;
   try { localStorage.setItem('motionBlur', enabled ? 'on' : 'off'); } catch { /* not saved */ }

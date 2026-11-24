@@ -274,14 +274,17 @@ at night the lamps' pools, lit windows and headlights), then the tone curve runs
 corners are darkened a little. The bloom's first copy is a quarter of the picture's width.
 `?post=on|off` overrides the tier for one visit.
 
-Driving faster than 30 km/h in first or third person, that pass also blurs the picture
-along the way the street moves across it (full strength from about 100 km/h): from the
+Driving faster than about 20 km/h in first or third person, that pass also blurs the picture
+along the way the street moves across it (full strength from about 60 km/h, as if the
+shutter were open for 16 ms; the longest smear is 4.5 % of the picture's height): from the
 picture's depth and the vehicle's speed it works out where each point was a moment
 before and reads the picture eight times along that line. Your own vehicle and the road
 far ahead stay sharp, and turning the camera blurs nothing. Other traffic is smeared as
 if it stood still, so a car keeping pace beside you is blurred too. It can be turned off
 in Settings (Motion blur when driving); `?motionblur=off` does so for one visit and
-`=full` gives its full strength at any speed. Not on foot, from above, on Medium and
+`=full` gives its full strength at any speed. The developer panel's Driving section has a
+Motion blur strength slider (0× to 4×, `BLUR_TUNE` in `src/post.ts`) for trying other
+amounts. Not on foot, from above, on Medium and
 below, or with the WebGL renderer.
 
 Photo mode (<kbd>C</kbd>, `src/photo.ts`) stops the game, clears the screen of everything

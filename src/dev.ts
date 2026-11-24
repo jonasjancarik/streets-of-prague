@@ -13,6 +13,7 @@ import { gunOn, setGun } from './pistol.ts';
 import { headingUpOn, setHeadingUp } from './headingup.ts';
 import { did } from './telemetry.ts';
 import { DRIVE_TUNE, DRIVE_TUNE_DEFAULT, type DriveTuneKey } from './driveTune.ts';
+import { BLUR_TUNE } from './post.ts';
 
 export let watchTransitWhileWaiting = false;
 
@@ -194,7 +195,11 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
         <button id="dev-drive-copy" title="Copies the values, to paste into a conversation">Copy values</button>
         <button id="dev-drive-reset" title="Back to how the game ships">Reset</button>
       </div>
-      <div class="dev-note">Your changes stay in this browser until you press Reset.</div>`)}
+      <div class="dev-note">Your changes stay in this browser until you press Reset.</div>
+      <label class="dev-time" id="dev-blur-row" title="Seen from the street, on High and Ultra">Motion blur strength
+        <span id="dev-blur-value"></span><input id="dev-blur" type="range" min="0" max="4" step="0.05" />
+      </label>
+      <div class="dev-note dev-drive-note">How far the picture smears when you drive fast. 1× is the game as it ships. Double-click to put it back. It stays in this browser.</div>`)}
     <div id="dev-bench"></div>`;
   panel.style.maxHeight = 'calc(100vh - 32px)';
   panel.style.overflowY = 'auto';
@@ -220,6 +225,8 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
     #dev-mist summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
     #dev-mist .dev-time span { margin-left: auto; font-variant-numeric: tabular-nums; opacity: 0.8; }
     #dev-mist [hidden] { display: none; }
+    #dev-blur-row span { margin-left: auto; font-variant-numeric: tabular-nums; opacity: 0.8; }
+    #dev-blur-row.dev-changed { color: var(--accent); }
     #dev-drive-rows .dev-time span { margin-left: auto; font-variant-numeric: tabular-nums; opacity: 0.8; }
     #dev-drive-rows .dev-time.dev-changed { color: var(--accent); }
     #dev-drive-rows .dev-drive-note { margin: -2px 0 8px; font-size: 11px; opacity: 0.65; }
@@ -342,6 +349,7 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
   country.addEventListener('keydown', (ev) => { if (ev.code !== 'Backquote') ev.stopPropagation(); });
   setupMist($, weather, flash);
   setupDriving($, flash);
+  setupBlur($);
   const time = $('dev-time') as HTMLInputElement;
   let dragging = false;
   time.oninput = () => { dragging = true; setTimeOfDay(+time.value * 60); };
@@ -643,6 +651,29 @@ function setupDriving($: (id: string) => HTMLElement, flash: (el: HTMLElement, n
     try { localStorage.removeItem(DRIVE_KEY); } catch { /* storage is off */ }
     refreshers.forEach((r) => r());
   };
+}
+
+// The motion blur's strength (BLUR_TUNE in post.ts), kept in this browser.
+const BLUR_KEY = 'dev-motion-blur';
+function setupBlur($: (id: string) => HTMLElement) {
+  try {
+    const v = Number(localStorage.getItem(BLUR_KEY) ?? 'NaN');
+    if (Number.isFinite(v)) BLUR_TUNE.strength = Math.max(0, Math.min(4, v));
+  } catch { /* nothing saved, or storage is off */ }
+  const input = $('dev-blur') as HTMLInputElement, value = $('dev-blur-value'), row = $('dev-blur-row');
+  const set = (v: number) => {
+    BLUR_TUNE.strength = v;
+    input.value = String(v);
+    value.textContent = `${+v.toFixed(2)}×`;
+    row.classList.toggle('dev-changed', v !== 1);
+    try { if (v === 1) localStorage.removeItem(BLUR_KEY); else localStorage.setItem(BLUR_KEY, String(v)); } catch { /* storage is off */ }
+  };
+  input.oninput = () => set(Number(input.value));
+  input.onchange = () => did('dev: tuned the motion blur');
+  input.ondblclick = () => set(1);
+  input.addEventListener('keydown', (ev) => { if (ev.code !== 'Backquote') ev.stopPropagation(); });
+  input.addEventListener('keyup', (ev) => ev.stopPropagation());
+  set(BLUR_TUNE.strength);
 }
 
 function setupBench(kit: Testkit, $: (id: string) => HTMLElement) {
