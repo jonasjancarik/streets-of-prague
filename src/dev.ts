@@ -188,7 +188,7 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
         <div class="dev-note">Your changes stay in this browser until you press Reset.</div>
       </details>`)}
     ${section('driving', 'Driving', `
-      <div class="dev-note">Changes how the vehicle you drive handles, whichever one it is. 1× is the game as it ships.</div>
+      <div class="dev-note">Changes how the vehicle you drive handles, whichever one it is. 1× is the game as it ships. Double-click a slider to put it back to 1×.</div>
       <div id="dev-drive-rows"></div>
       <div class="dev-row">
         <button id="dev-drive-copy" title="Copies the values, to paste into a conversation">Copy values</button>
@@ -222,6 +222,7 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
     #dev-mist [hidden] { display: none; }
     #dev-drive-rows .dev-time span { margin-left: auto; font-variant-numeric: tabular-nums; opacity: 0.8; }
     #dev-drive-rows .dev-time.dev-changed { color: var(--accent); }
+    #dev-drive-rows .dev-drive-note { margin: -2px 0 8px; font-size: 11px; opacity: 0.65; }
     #dev .dev-pass { color: #8fd18f; } #dev .dev-fail { color: #ff8f7a; }
     #dev-out { font-size: 12px; white-space: pre-wrap; max-height: 220px; overflow: auto; }`;
   document.head.appendChild(style);
@@ -580,18 +581,20 @@ function setupMist($: (id: string) => HTMLElement, weather: { get: () => string;
 }
 
 // Sliders for the handling of the vehicle you drive (DRIVE_TUNE in driveTune.ts).
-const DRIVE_SLIDERS: { key: DriveTuneKey; label: string; title: string }[] = [
-  { key: 'accel', label: 'Acceleration', title: 'How quickly it picks up speed' },
-  { key: 'vmax', label: 'Top speed', title: 'The fastest it goes, and reversing too' },
-  { key: 'brake', label: 'Brakes', title: 'How hard it stops when you brake' },
-  { key: 'grip', label: 'Grip', title: 'Lower: it slides sideways more easily and keeps sliding longer' },
-  { key: 'fade', label: 'Less grip at speed', title: 'How much of its grip it loses near top speed (top-down driving)' },
-  { key: 'turn', label: 'Fastest turning', title: 'How fast it can swing round at speed (top-down driving)' },
-  { key: 'radius', label: 'Turning circle', title: 'Higher: wider turns at full lock' },
-  { key: 'response', label: 'Steering response', title: 'How quickly the steering follows your input' },
-  { key: 'drag', label: 'Slowing when coasting', title: 'How quickly it slows down when you let go of the gas' },
-  { key: 'weather', label: 'Rain and snow', title: 'How much a wet or snowy road costs grip; 0: none' },
+const DRIVE_SLIDERS: { key: DriveTuneKey; label: string; note: string }[] = [
+  { key: 'accel', label: 'Acceleration', note: 'Higher: it gets up to speed faster.' },
+  { key: 'vmax', label: 'Top speed', note: 'The fastest it can go, forwards and in reverse.' },
+  { key: 'brake', label: 'Brakes', note: 'Higher: it stops in a shorter distance.' },
+  { key: 'grip', label: 'Grip', note: 'Lower: it slides sideways more easily, and the slide lasts longer.' },
+  { key: 'fade', label: 'Less grip at speed', note: 'Higher: it loses more grip near top speed. Only when driving from above.' },
+  { key: 'turn', label: 'Fastest turning', note: 'Higher: sharper turns at speed. Only when driving from above.' },
+  { key: 'radius', label: 'Turning circle', note: 'Higher: wider turns at full lock, so tight corners get harder.' },
+  { key: 'response', label: 'Steering response', note: 'Higher: the wheels follow your steering sooner.' },
+  { key: 'drag', label: 'Slowing when coasting', note: 'Higher: it slows down faster when you let go of the gas.' },
+  { key: 'weather', label: 'Rain and snow', note: 'How much a wet or snowy road takes away grip. 0×: none at all.' },
 ];
+// The sliders run from 0.1× to 10× on a log scale (1× in the middle); rain and snow from 0× to 5×.
+const DRIVE_MAX = 10;
 const DRIVE_KEY = 'dev-driving';
 
 function setupDriving($: (id: string) => HTMLElement, flash: (el: HTMLElement, now: string, then: string) => void) {
@@ -599,7 +602,7 @@ function setupDriving($: (id: string) => HTMLElement, flash: (el: HTMLElement, n
     const saved = JSON.parse(localStorage.getItem(DRIVE_KEY) ?? 'null') as Partial<Record<DriveTuneKey, number>> | null;
     for (const s of DRIVE_SLIDERS) {
       const v = saved?.[s.key];
-      if (typeof v === 'number' && Number.isFinite(v)) DRIVE_TUNE[s.key] = Math.max(0, Math.min(3, v));
+      if (typeof v === 'number' && Number.isFinite(v)) DRIVE_TUNE[s.key] = Math.max(s.key === 'weather' ? 0 : 0.1, Math.min(DRIVE_MAX, v));
     }
   } catch { /* nothing saved, or storage is off */ }
   const save = () => { try { localStorage.setItem(DRIVE_KEY, JSON.stringify(DRIVE_TUNE)); } catch { /* storage is off */ } };
@@ -608,24 +611,26 @@ function setupDriving($: (id: string) => HTMLElement, flash: (el: HTMLElement, n
   for (const s of DRIVE_SLIDERS) {
     const label = document.createElement('label');
     label.className = 'dev-time';
-    label.title = s.title;
     label.append(s.label);
     const value = document.createElement('span');
     const input = document.createElement('input');
-    Object.assign(input, { type: 'range', min: s.key === 'weather' ? '0' : '0.25', max: '3', step: '0.05' });
+    const linear = s.key === 'weather';
+    Object.assign(input, linear ? { type: 'range', min: '0', max: '5', step: '0.05' } : { type: 'range', min: '-1', max: '1', step: '0.01' });
+    const toTune = (x: number) => (linear ? x : +(10 ** x).toPrecision(2));
+    const toInput = (v: number) => (linear ? v : Math.log10(Math.max(0.1, v)));
     const refresh = () => {
-      input.value = String(DRIVE_TUNE[s.key]);
-      value.textContent = `${DRIVE_TUNE[s.key].toFixed(2)}×`;
+      input.value = String(toInput(DRIVE_TUNE[s.key]));
+      value.textContent = `${+DRIVE_TUNE[s.key].toFixed(2)}×`;
       label.classList.toggle('dev-changed', DRIVE_TUNE[s.key] !== 1);
     };
-    input.oninput = () => { DRIVE_TUNE[s.key] = Number(input.value); refresh(); save(); };
+    input.oninput = () => { DRIVE_TUNE[s.key] = toTune(Number(input.value)); refresh(); save(); };
     input.onchange = () => did('dev: tuned the driving');
     // A double-click puts this one back to 1×.
     input.ondblclick = () => { DRIVE_TUNE[s.key] = 1; refresh(); save(); };
     input.addEventListener('keydown', (ev) => { if (ev.code !== 'Backquote') ev.stopPropagation(); });
     input.addEventListener('keyup', (ev) => ev.stopPropagation());
     label.append(value, input);
-    rows.appendChild(label);
+    rows.append(label, Object.assign(document.createElement('div'), { className: 'dev-note dev-drive-note', textContent: s.note }));
     refreshers.push(refresh);
   }
   refreshers.forEach((r) => r());

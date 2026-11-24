@@ -924,7 +924,10 @@ The metro ride uses its overhead cutaway camera.
   handling of whatever vehicle you drive: acceleration, top speed, brakes, grip, grip lost
   at speed, fastest turning, turning circle, steering response, slowing when coasting, and
   how much rain and snow matter. They work in both the top-down and the realistic
-  handling; 1× is the game as it ships. The values stay in this browser until Reset;
+  handling; 1× is the game as it ships. Each slider runs from 0.1× to 10× on a log scale
+  (rain and snow from 0× to 5×) and says in a line what it does. Your own car's steering
+  answers three times as fast as the specs in `car.ts` give (`BASE` in `driveTune.ts`);
+  that is the Steering response slider's 1×. The values stay in this browser until Reset;
   double-click a slider to put it back to 1×, and Copy values copies them all.
 - **VR** (`src/vr.ts`, an early version): play in a phone headset such as the
   Daydream View or a Cardboard, in Chrome on Android. Where the phone can show VR, the
