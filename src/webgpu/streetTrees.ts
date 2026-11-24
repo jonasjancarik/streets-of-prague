@@ -109,7 +109,9 @@ function material() {
   // mixed: leaves, bare twigs, or a conifer's bough.)
   const needles: N = step(part.y, BOUGH + 0.5);
   const column: N = mix(leafy().oneMinus(), 2, needles);
-  const picture: N = Fn(() => sprays.sample(vec2(card.x.mul(0.96).add(0.02).add(column).div(3), card.y.oneMinus())));
+  // The atlas stems are at v=0, where each card joins the wood. TextureLoader
+  // already flips the image on upload; another flip would attach the twig tips.
+  const picture: N = Fn(() => sprays.sample(vec2(card.x.mul(0.96).add(0.02).add(column).div(3), card.y)));
   m.maskShadowNode = part.x.greaterThan(0.5).or((picture() as N).a.greaterThan(mix(0.35, 0.55, leafy().oneMinus())).and(leafy().greaterThan(0.5).or(fract(part.z.mul(7.13)).greaterThanEqual(0.4))));
 
   m.setupDiffuseColor = function (builder: N) {

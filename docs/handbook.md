@@ -897,8 +897,10 @@ The metro ride uses its overhead cutaway camera.
   (`src/map/streetTree.ts`, `src/webgpu/streetTrees.ts`): a trunk with bark, boughs that
   fork, and at every branch end flat sprays of leaves (`public/street-trees.webp`, from
   `assets/trees/`), in the tree's own colour, turning and falling through the year to
-  leave bare twigs. Bark grain follows each bough around its bends. Thick trunks
-  broaden at the roots, and the younger branches taper into smoother twigs.
+  leave bare twigs. Each spray attaches by the stem at the bottom of its atlas image,
+  with its tips pointing away from the wood. Bark grain follows each bough around
+  its bends. Thick trunks broaden at the roots, and the younger branches taper into
+  smoother twigs.
   The tree pool divides each page by distance to the camera and reuses both instance
   buffers as you walk. A tree keeps its model for another six metres at the changeover
   so standing near it does not make it switch back and forth (`TreePool.street`).
