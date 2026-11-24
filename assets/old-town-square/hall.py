@@ -130,15 +130,18 @@ def build(m, survey):
             (13.02, 0.54),
             (14.47, 0.38),
             (14.65, 0.47),
-            (16.45, 0.09),
-            (16.65, 0.04),
+            (19.45, 0.09),
+            (19.75, 0.04),
         ],
         "copper",
         4,
         math.pi / 4,
     )
     # Lower chapel range and its two tall lancets, beside the projecting bay.
-    panel(m, 3.66, 8.18, -6.46, -0.14, 16.40, "chapel-front")
+    panel(m, 3.66, 8.18, -6.46, -0.14, 5.80, "chapel-front", (0.04, 0.70, 0.94, 0.99))
+    panel(m, 3.66, 8.18, -6.46, 5.80, 16.40, "hall-masonry")
+    panel(m, 4.88, 6.88, -6.55, 6.45, 13.64, "chapel-window")
+    m.box(4.70, -6.66, 7.05, -6.30, 6.28, 6.49, "carving")
     east_x = 8.30
     for ya, yb in [(-6.4, -2.3), (1.24, 5.55), (5.55, 10.98)]:
         a, b = np.array([east_x, ya]), np.array([east_x, yb])

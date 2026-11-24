@@ -4,8 +4,15 @@ import math
 import numpy as np
 from craft import at, edges, lathe, rod, finial, rect, drum, band, panel, shell
 
-TYN_PANELS = ("tyn-belfry", "tyn-gable", "tyn-tracery")
-NICHOLAS_PANELS = ("nicholas-portal", "nicholas-tower", "nicholas-bell", "nicholas-bay", "pediment")
+TYN_PANELS = ("tyn-belfry", "tyn-lower", "tyn-gable", "tyn-tracery")
+NICHOLAS_PANELS = (
+    "nicholas-portal",
+    "nicholas-tower",
+    "nicholas-bell",
+    "nicholas-bay",
+    "nicholas-drum",
+    "pediment",
+)
 
 
 def tyn(m, survey):
@@ -92,7 +99,7 @@ def tyn(m, survey):
     # permanently shaded portion of the aerial bake with continuous stone bays.
     front_y = -16.52
     for cx, w in [(-9.29, 9.43), (10.63, 9.94)]:
-        panel(m, cx - w / 2, cx + w / 2, front_y, 15.8, 35.25, "tyn-belfry")
+        panel(m, cx - w / 2, cx + w / 2, front_y, 15.8, 35.25, "tyn-lower")
         for xx in (cx - w * 0.45, cx + w * 0.45):
             band(m, xx, front_y + 0.15, 0.62, 0.75, 16.1, 18.6, "sandstone")
         band(m, cx, front_y + 0.2, w + 0.2, 0.72, 33.8, 0.32)
@@ -149,7 +156,7 @@ def nicholas(m, survey):
         outward *= 0.055 / np.linalg.norm(outward)
         m.face(
             [at(a + outward, 21.55), at(b + outward, 21.55), at(b + outward, 30.88), at(a + outward, 30.88)],
-            "nicholas-bell",
+            "nicholas-drum" if outward[1] < -0.05 else "nicholas-bell",
             [(0.02, 0.98), (0.98, 0.98), (0.98, 0.01), (0.02, 0.01)],
         )
         for t in [0.07, 0.93]:
@@ -258,11 +265,21 @@ def nicholas(m, survey):
             16,
             math.pi / 8,
         )
-        # Open lantern: sky is visible through its upper arcade.
-        for a in np.arange(8) * math.pi / 4:
-            xx = x + 1.99 * math.cos(a)
-            yy = y + 1.99 * math.sin(a)
-            lathe(m, xx, yy, [(35.69, 0.28), (36.0, 0.33), (39.5, 0.22), (39.79, 0.36)], "seam", 8)
+        # The copper lanterns have eight open round-headed arches.
+        lantern = np.array(
+            [(x + 2.18 * math.cos(a), y + 2.18 * math.sin(a)) for a in np.arange(8) * math.pi / 4]
+        )
+        for a, b in edges(lantern):
+            lathe(m, *a, [(35.69, 0.28), (36.0, 0.34), (39.0, 0.24), (39.70, 0.37)], "seam", 8)
+            for f, g in zip(np.linspace(0, 1, 9), np.linspace(0, 1, 9)[1:]):
+                p, q = a + (b - a) * f, a + (b - a) * g
+                zp = 38.48 + 0.70 * math.sin(f * math.pi)
+                zq = 38.48 + 0.70 * math.sin(g * math.pi)
+                face = [at(p, zp), at(q, zq), at(q, 39.77), at(p, 39.77)]
+                m.face(face, "seam")
+                m.face(face[::-1], "copper")
+                rod(m, face[0], face[1], 0.075, "copper", 6)
+        m.face([at(p, 39.78) for p in lantern[::-1]], "seam")
         lathe(
             m,
             x,
