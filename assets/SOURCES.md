@@ -3,6 +3,22 @@
 Sounds have their own list in [`public/audio/SOURCES.md`](../public/audio/SOURCES.md),
 and the map data its credits in the README.
 
+## Jan Hus Memorial
+
+The model reconstructs Ladislav Šaloun’s memorial on Old Town Square. Its height
+and placement follow the IPR Praha survey and its steps follow the OpenStreetMap
+footprint. The figures and pedestal are modelled in `jan-hus/build.py`. The
+photographs below were cropped, recoloured and wrapped onto the sculpture.
+The resulting model and atlas are licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+
+| Atlas input for `--photos` | Photograph |
+| --- | --- |
+| `plate.jpg` | Anonymous plate in Matějček and Wirth, *Modern and Contemporary Czech Art* (1924), public domain. [Standing figure and granite relief](https://commons.wikimedia.org/wiki/File:The_Jan_Hus_Monument_at_Prague.jpg) |
+| `exiles.jpg` | Wisniowy, public domain. [Western group](https://commons.wikimedia.org/wiki/File:Pomnik_jana_husa_wisnia6522.JPG) |
+| `chalice.jpg` | Enfo, [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/). [Eastern group](https://commons.wikimedia.org/wiki/File:046_Starom%C4%9Bstsk%C3%A9_N%C3%A1m%C4%9Bst%C3%AD,_monument_a_Jan_Hus.jpg) |
+| `reverse.jpg` | VasuVR, [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). [Rear figures and dedication, left stereograph](https://commons.wikimedia.org/wiki/File:PCZ828_18_Praha_D_Old_Town_hall_square_Jan_Hus_monument_2_back_3D.jpg) |
+| `face.jpg` | Kawon Kez Sel, [CC0](https://creativecommons.org/publicdomain/zero/1.0/). [Hus’s face](https://commons.wikimedia.org/wiki/File:Jan_Hus_Monument_(zoomed_detail),_Prague,_August_2025.jpg) |
+
 ## National Theatre
 
 The building plan and roof heights follow IPR Praha’s city model. The texture of the

@@ -5,7 +5,7 @@ import { reachPassages, type OpenPassage } from './map/passageOpenings.ts';
 import { StreetFacades } from './streetFacades.ts';
 import { roofLookup, ROOFTOP } from './roofSurface.ts';
 import { dataUrl } from './data.ts';
-import { nationalTheatre } from './nationalTheatre.ts';
+import { customLandmark } from './customLandmark.ts';
 import * as telemetry from './telemetry.ts';
 import * as THREE from 'three';
 import { STREET_QUALITY } from './streetQuality.ts';
@@ -1849,10 +1849,10 @@ export class TileWorld {
     const models = Promise.all(s.marks.filter((l) => l.home === k).map((l) => {
       if (!this.landmarkModels.has(l.name)) {
         const photo = () => landmarkModel(dataUrl(this.area, l.file), l.plain);
-        const model = l.name === 'divadlo' ? nationalTheatre(this.index).catch((e) => {
-          console.warn('Using the survey model for the National Theatre', e);
+        const model = customLandmark(l.name, this.index)?.catch((e) => {
+          console.warn(`Using the survey model for ${l.name}`, e);
           return photo();
-        }) : photo();
+        }) ?? photo();
         this.landmarkModels.set(l.name, model.catch((e) => {
           console.warn(`Landmark ${l.name} could not be loaded`, e);
           return null;

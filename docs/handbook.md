@@ -1337,7 +1337,7 @@ record the measurements, merge decisions and pending landmark asset activation.
   renderer checks and seasonal screenshots. Run `node scripts/check-tree-pool.mjs
   --url http://localhost:5191/` for the existing reuse and shader-preparation checks;
   add `--full-shadows` to check the original detailed mode.
-- **Landmarks** (so far Mánes with Šítkovská vodárenská věž, the Týn Church, the Old Town Hall with its tower, St Nicholas at Old Town Square, the Jan Hus memorial and the Marian column on the square (monuments: the mesh as it is, see below), the National Theatre, the Rudolfinum, the Municipal House with the Powder Tower, House Okamura in Břevnov, and the Dancing House, which is the mesh as it is, since the city model has it as a plain prism without the legs you walk between) are cut out of IPR's
+- **Landmarks** (so far Mánes with Šítkovská vodárenská věž, the Týn Church, the Old Town Hall with its tower, St Nicholas at Old Town Square, the Jan Hus memorial and the Marian column on the square, the National Theatre, the Rudolfinum, the Municipal House with the Powder Tower, House Okamura in Břevnov, and the Dancing House, which is the mesh as it is, since the city model has it as a plain prism without the legs you walk between) are cut out of IPR's
   photorealistic 3D model instead: a textured mesh of the whole city from oblique aerial
   photographs (summer 2023, about 5 cm/px), published as an I3S scene layer.
   The National Theatre uses the same custom model in top-down, first-person and
@@ -1351,6 +1351,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   repository root. It reads the cached Prague theatre survey from
   `pipeline/.cache/landmarks/praha/divadlo.mesh.glb`, produced by
   `uv run landmarks.py praha divadlo` in `pipeline/`.
+  The Jan Hus Memorial uses a custom model in all views. The bronze groups, stepped
+  granite base and carved inscriptions share one texture atlas. The model follows
+  the existing solid footprint in both Prague maps. If the custom file fails to
+  load, the tile uses its original survey mesh. Rebuild the app asset from the
+  checked-in atlas with `uv run --project pipeline python assets/jan-hus/build.py`.
   At St Nicholas on Malostranské náměstí the copper dome, lantern and belfry follow
   horizontal sections of that survey. The fitted roofs join the original drums and
   share the church's baked texture. Rebuild either area's model with

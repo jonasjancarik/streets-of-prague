@@ -44,7 +44,7 @@ Commit the editable sources and exported app asset together. Area-specific
 survey GLBs under `public/data/` are generated map data.
 
 For placement, choose a geographic origin, a second point along the model's
-positive X axis and a surveyed base elevation. The [theatre loader](../../../../src/nationalTheatre.ts)
+positive X axis and a surveyed base elevation. The [custom landmark loader](../../../../src/customLandmark.ts)
 projects both points into the active map's grid, uses their direction for
 rotation, maps north to negative world Z, and subtracts the area's `iprRef`
 from the base elevation. The default full-city dataset (`praha`) and the optional
