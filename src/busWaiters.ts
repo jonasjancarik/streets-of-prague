@@ -109,8 +109,11 @@ export class BusWaiting {
       });
       this.buses(q, crowd);
       if (this.clock > q.wantAt) {
+        // (A stop that came into the scene before the ground round it had loaded found
+        // nowhere to stand: look again.)
+        if (!q.spots.length) q.spots = this.spots(q.stop);
         q.want = this.wanted(q);
-        q.wantAt = this.clock + 20 + this.w.rng() * 20;
+        q.wantAt = this.clock + (q.spots.length ? 20 + this.w.rng() * 20 : 2);
       }
       if (q.waiters.length < q.want && this.clock > q.next) {
         const hidden = this.w.offscreen(q.stop.x, q.stop.y);
@@ -215,7 +218,7 @@ export class BusWaiting {
   private open(s: BusStop): Queue {
     const q: Queue = { stop: s, refs: [...new Set(s.lines.map((l) => l.line.ref))], spots: this.spots(s), waiters: [], want: 0, wantAt: 0, next: 0, seen: 0, bus: null, arrived: 0, leaving: 0, leaveAt: 0 };
     q.want = this.wanted(q);
-    q.wantAt = this.clock + 20 + this.w.rng() * 20;
+    q.wantAt = this.clock + (q.spots.length ? 20 + this.w.rng() * 20 : 2);
     return q;
   }
 
