@@ -26,6 +26,10 @@ export function stairLandings(stairs: MappedStair[]) {
 // The walk graph has the line of a flight; its landings supply the rise. Keep the
 // treads slightly above the continuous ground used for walking. Defer stairs with
 // turns, tile seams, or uneven banks until there is a surveyed profile for them.
+// m: a point across a flight this far off its middle is a wall beside it; the most the
+// ground may lean across the treads; how much of each end may be left to the landing.
+const WALL = 1, LEAN = 0.22, LANDING = 3.5;
+
 export function stairGeometry(stairs: MappedStair[], box: Bounds, height: (x: number, y: number) => number,
   blocked: (x: number, y: number) => boolean): { body: GroundLayer['geometry']; edges: GroundLayer['geometry'] } {
   const mesh = () => ({ position: [] as number[], normal: [] as number[], index: [] as number[] });
@@ -43,24 +47,56 @@ export function stairGeometry(stairs: MappedStair[], box: Bounds, height: (x: nu
     if (length < 1.5 || length > 30) continue;
     const ux = (b[0] - a[0]) / length, uy = (b[1] - a[1]) / length;
     if (pts.some(([x, y]) => Math.abs((y - a[1]) * ux - (x - a[0]) * uy) > 0.2)) continue;
-    const half = Math.min(width / 2, 2.5);
-    const point = (s: number, w: number): Point2 => [a[0] + ux * s - uy * w, a[1] + uy * s + ux * w];
+    const line = (s: number, w: number): Point2 => [a[0] + ux * s - uy * w, a[1] + uy * s + ux * w];
     const samples = Math.ceil(length * 5);
-    const sections: { s: number; left: Point2; right: Point2; lo: number; hi: number }[] = [];
+    // A flight drawn along a retaining wall's top (beside Divadelní's ramp down under
+    // Národní) reaches over it by a metre in the map: the flight keeps to its own side,
+    // where no point across it is a wall's height off its middle.
+    let left = Math.min(width / 2, 2.5), right = left;
+    for (let i = 0; i <= samples; i++) {
+      const s = i * length / samples, mid = height(...line(s, 0));
+      for (const side of [1, -1]) {
+        for (let w = 0.25; w <= (side > 0 ? left : right) + 1e-6; w += 0.25) {
+          if (Math.abs(height(...line(s, side * w)) - mid) > WALL) {
+            if (side > 0) left = w - 0.25; else right = w - 0.25;
+            break;
+          }
+        }
+      }
+    }
+    if (left + right < 1) continue;
+    const shift = (left - right) / 2, half = (left + right) / 2;
+    const ax = a[0] - uy * shift, ay = a[1] + ux * shift;
+    const point = (s: number, w: number): Point2 => [ax + ux * s - uy * w, ay + uy * s + ux * w];
+    type Section = { s: number; left: Point2; right: Point2; lo: number; hi: number; ok: boolean };
+    const raw: Section[] = [];
     for (let i = 0; i <= samples; i++) {
       const s = i * length / samples;
       const left = point(s, half), right = point(s, -half), middle = point(s, 0);
-      if ([left, right, middle].some(([x, y]) => x <= box[0] || x >= box[2] || y <= box[1] || y >= box[3] || blocked(x, y))) break;
+      if ([left, right, middle].some(([x, y]) => x <= box[0] || x >= box[2] || y <= box[1] || y >= box[3])) break;
       const heights = [height(...left), height(...middle), height(...right)];
       const lo = Math.min(...heights), hi = Math.max(...heights);
-      if (!Number.isFinite(hi) || hi - lo > 0.22 || (sections.length && hi < sections[sections.length - 1].hi - 0.08)) break;
-      sections.push({ s, left, right, lo, hi: Math.max(hi, sections[sections.length - 1]?.hi ?? hi) });
+      raw.push({ s, left, right, lo, hi, ok: Number.isFinite(hi) && hi - lo <= LEAN && ![left, right, middle].some(([x, y]) => blocked(x, y)) });
     }
-    if (sections.length !== samples + 1) continue;
-    const start = sections[0], end = sections[sections.length - 1], rise = end.hi - start.hi;
-    if (rise < 0.3 || rise / length > 0.8) continue;
+    if (raw.length !== samples + 1) continue;
+    // The last metres at either end may run onto a street or lean with the ground round
+    // the landing: the treads stop short of them, and the ground there is the landing.
+    const mid = raw.length >> 1;
+    let i0 = mid, i1 = mid;
+    while (i0 > 0 && raw[i0 - 1].ok) i0--;
+    while (i1 < raw.length - 1 && raw[i1 + 1].ok) i1++;
+    if (!raw[mid].ok || raw[i0].s > Math.min(LANDING, length / 3) || raw[i1].s < length - Math.min(LANDING, length / 3)) continue;
+    const sections: Section[] = [];
+    for (const section of raw.slice(i0, i1 + 1)) {
+      const last = sections[sections.length - 1];
+      if (last && section.hi < last.hi - 0.08) break;
+      sections.push({ ...section, hi: Math.max(section.hi, last?.hi ?? section.hi) });
+    }
+    if (sections.length !== i1 - i0 + 1) continue;
+    const start = sections[0], end = sections[sections.length - 1], rise = end.hi - start.hi, run = end.s - start.s;
+    if (rise < 0.3 || rise / run > 0.8) continue;
     const count = Math.max(2, Math.round(rise / 0.17));
-    if (count > 60 || length / count < 0.2 || length / count > 0.85) continue;
+    if (count > 60 || run / count < 0.2 || run / count > 0.85) continue;
     let previous = start, top = start.hi;
     for (let k = 1; k <= count; k++) {
       const target = start.hi + rise * k / count;
