@@ -659,7 +659,9 @@ The metro ride uses its overhead cutaway camera.
   nearer front door, it opens, you duck in and it shuts behind you; E again and you
   get out the same way (on the other side if the driver's door is against a wall).
   The player reaches for the handle on the chosen side before the door swings.
-  The driver remains visible until they leave. On the way in, the player leads
+  A departing driver keeps the clothes and seated pose seen through the glass and
+  rises through the open door. If the driver’s side is blocked, the player waits
+  for them to clear the passenger door before sitting down. On the way in, the player leads
   with one knee and ducks below the roof while the shoulder camera stays outside.
   Taking a car with someone at the wheel: from the driver's side you reach in and
   haul them out onto the road, from the other side they get out of their own door

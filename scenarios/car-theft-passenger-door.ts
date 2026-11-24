@@ -1,45 +1,34 @@
+import type { Walker, Crowd } from '../src/people.ts';
 import type { Scenario } from '../src/testkit.ts';
 
 export default {
-  title: 'Stealing a car through the passenger door gets its driver out, even with a wall at their own door',
+  title: 'A driver clears a shared passenger door before the player gets in',
   async run(t) {
-    await t.go([50.06571, 14.4303], { heading: 198 });
-    t.time('21:18');
-    t.weather('clear');
-    t.set({ money: 10000, stars: 0, health: 100 });
-    // Cars in traffic, one after another, until a theft through the passenger's door has played.
-    let tries = 0, done = false;
-    while (!done && tries++ < 12) {
-      // (One that is slow, at a crossing or in a queue: a car going fast has no door to be got into.)
-      let v = t.trafficCar(true);
-      for (let i = 0; (!v || v.speed > 2) && i < 120; i++) { await t.wait(1); v = t.trafficCar(true); }
-      if (!v || v.speed > 2) { t.check('a slow car in traffic nearby', false); return; }
-      const car = v;
-      // The driver's own side is walled in (a building, a fence), so the passenger's door is the way in.
-      const unwall = t.wallBeside(car, 1);
-      t.toDoor(car, 2, 0.55);
-      // Where someone stands, across the car from its driver's door: inside the wall there.
-      const c = Math.cos(car.h), s = Math.sin(car.h), W = car.spec.W;
-      const inWall = (people: { x: number; y: number }[]) => people.filter((p) => {
-        const left = (p.y - car.y) * c - (p.x - car.x) * s, along = (p.x - car.x) * c + (p.y - car.y) * s;
-        return left > W / 2 + 0.2 && left < W / 2 + 3.2 && Math.abs(along) < 2.5;
-      });
-      const around = t.peopleNear(car.x, car.y, 6), before = around.length, walled = inWall(around).length;
-      t.press();
-      await t.wait(0.6);
-      const people = t.peopleNear(car.x, car.y, 6);
-      if (t.driven(car)) { unwall(); continue; } // (E found no door to go to: try another car)
-      done = true;
-      t.check('the driver is out', people.length > before, `${before} -> ${people.length} people about it`);
-      // (Passers-by already there before the theft don't count: only whoever came out of the car.)
-      const stuck = inWall(people);
-      t.check('nobody is stuck in the wall beside the driver\'s door', stuck.length <= walled, `${walled} -> ${JSON.stringify(stuck)}`);
-      await t.wait(3);
-      unwall();
-      t.check('the car is yours', t.probe().car?.type === car.type, t.where().mode);
-      t.check('nobody is driving it for you', !t.driven(car));
-      t.exit();
-    }
-    t.check('a theft played', done, `${tries} cars tried`);
+    const square: [number,number]=[50.08747,14.42108];
+    await t.go(square,{heading:90});
+    t.time('21:18'); t.weather('clear'); t.set({money:10000,stars:0,health:100});
+    const {walker,crowd}=window.__drive as {walker:Walker; crowd:Crowd};
+    const sedan=()=>t.trafficAgents().find(a=>a.car.type==='sedan')?.car;
+    let car=sedan();
+    for (let i=0;!car && i<40;i++) {await t.wait(.5);car=sedan();}
+    if (!t.check('an occupied sedan is available',!!car) || !car) return;
+    // Keep the original occupied car and normal E interaction. Stage it
+    // stopped so the outcome does not depend on a traffic light or queue.
+    const [x,y]=t.toLocal(square);
+    Object.assign(car,{x,y,h:.35,vx:0,vy:0,w:0,level:0});
+    t.toDoor(car,2,0);
+    const original=new Set(crowd.people), unwall=t.wallBeside(car,1);
+    try {
+      t.press(); await t.wait(.42);
+      const driver=crowd.people.find(p=>!original.has(p)&&Math.hypot(p.x-car.x,p.y-car.y)<6);
+      t.check('the driver leaves while the player holds the door',!!driver && !car.entryDriver && walker.anim.name==='latchRight');
+      if (driver) {
+        const side=(driver.y-car.y)*Math.cos(car.h)-(driver.x-car.x)*Math.sin(car.h);
+        t.check('the driver is outside on the clear passenger side',side < -car.spec.W/2,{side});
+      }
+      await t.wait(1.6);
+      t.check('the player takes the seat',t.where().mode==='car' && t.probe().car?.type===car.type);
+      t.check('traffic has released the car',!t.driven(car));
+    } finally {unwall();if(t.where().mode==='car')t.exit();}
   },
 } satisfies Scenario;

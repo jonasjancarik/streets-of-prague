@@ -2325,6 +2325,16 @@ export class CarPool {
   private streetView = false;
   private closeCars = new Map<Car, string>();
   private closeBefore = new Map<Car, string>(); // (the last frame's, for KEEP)
+  private departingCar?: Car;
+  private departingSeat = new THREE.Matrix4();
+  private departingDonor = 0;
+  driverAtDoor(c: Car) {
+    return c === this.departingCar ? {seat:this.departingSeat, donor:this.departingDonor} : null;
+  }
+  private rememberDriver(c: Car, donor: number, seat?: THREE.Matrix4) {
+    if (!c.entryDriver || !seat) return;
+    this.departingCar=c; this.departingDonor=donor; this.departingSeat.copy(seat);
+  }
   private wheelTravel = new WeakMap<Car, { x: number; y: number; angle: number; plate: number }>();
   private renderKey(key: string) {
     if (this.streetView) {
@@ -2421,6 +2431,7 @@ export class CarPool {
     }
     [this.closeBefore, this.closeCars] = [this.closeCars, this.closeBefore];
     this.closeCars.clear();
+    this.departingCar=undefined;
     this.drivers?.begin();
     for (const list of this.groups.values()) list.length = 0;
     for (const c of cars) {
@@ -2541,10 +2552,14 @@ export class CarPool {
             const l = fit.layout, pelvis = l[3] + 0.205;
             VR_SEAT.eye.set(l[9] - 0.06, Math.min(pelvis + 0.74, l[5] - 0.1), -l[10]).applyMatrix4(d.matrix);
             VR_SEAT.frame = VR_SEAT.frames;
-          } else if (occupied && fit.layout) this.drivers?.put(fit.layout, travel.plate, c.type === 'police' && c.mode !== 'player', d.matrix);
+          } else if (occupied && fit.layout) {
+            const seat=this.drivers?.put(fit.layout,travel.plate,c.type==='police' && c.mode!=='player',d.matrix);
+            if (c.entryDriver) this.rememberDriver(c,travel.plate%2,seat);
+          }
         }
         if (driverSeat && (c.mode !== 'loose' || c.entryDriver) && c !== VR_SEAT.car) {
-          this.drivers?.putAt(driverSeat[0], driverSeat[1], driverSeat[2], driverSeat[3], 0, false, d.matrix);
+          const seat=this.drivers?.putAt(driverSeat[0],driverSeat[1],driverSeat[2],driverSeat[3],0,false,d.matrix);
+          if (c.entryDriver) this.rememberDriver(c,0,seat);
         }
         if (under && !c.two && shaded < UNDER.most) {
           under.setMatrixAt(shaded++, this.m.copy(suspension ? this.springGround : d.matrix).multiply(this.life.makeScale(c.spec.L, 1, c.spec.W)));

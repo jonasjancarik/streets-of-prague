@@ -1,3 +1,4 @@
+import type { DriverExit } from './driverExit.ts';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -440,6 +441,8 @@ function gaitAt(speed: number) {
 // it's fading out of. On the move, the two are instead neighbouring gaits, mixed by
 // speed.
 export class Anim {
+  driverExit?: DriverExit;
+  driverDonor?: number;
   clips: Record<string, ClipInfo>;
   name: string;
   t: number;

@@ -55,7 +55,7 @@ const TURN = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0),
 
 // The clips by name: the gaits, the ways of standing, 'umbrella' (standing with one) and
 // 'arm' (just its left arm).
-interface Kind { template: THREE.Object3D; clips: Record<string, THREE.AnimationClip>; stride: Record<Move, number>; contactPhase: number; standing: string[]; uniform?: THREE.MeshStandardMaterial; role?: UniformRole }
+interface Kind { seatedHips: THREE.Vector3; template: THREE.Object3D; clips: Record<string, THREE.AnimationClip>; stride: Record<Move, number>; contactPhase: number; standing: string[]; uniform?: THREE.MeshStandardMaterial; role?: UniformRole }
 interface Person {
   kind: number;
   root: THREE.Object3D;
@@ -69,6 +69,7 @@ interface Person {
   strideYaw: number; // player's body relative to the direction of the street camera
   gaze?: PlayerGaze;
   footing?: PlayerFooting;
+  exit?: Anim['driverExit'];
   rest: string; // the way they're standing about now
   umbrella: number; // the serial number of the umbrella they have up, or -1
   hand: THREE.Object3D; // the left, for the umbrella
@@ -81,6 +82,13 @@ interface Person {
   self: boolean;
   yieldSlot: boolean;
   nozzle?: THREE.Mesh;
+}
+
+// Same two donors as assets/cars/build.py. Keep the identity after the
+// doorway handoff and through later changes of renderer detail.
+const DRIVER_KINDS=['male-adult-13','female-adult-05'].map(name=>AVATARS.findIndex(([model])=>model===name));
+function appearance(fig: Figures, anim: Anim, group: number, id: number) {
+  return anim.driverDonor===undefined ? avatarIndex(fig.avatarSeed,group,id) : DRIVER_KINDS[anim.driverDonor];
 }
 
 export class LifeSize {
@@ -102,7 +110,7 @@ export class LifeSize {
   private on = false;
   private cam = new THREE.Vector3();
   private reach = STREET_QUALITY.avatarReach;
-  private waitingCrew = 0;
+  private waitingPriority = 0;
   private nearestWaiting?: { key: string; distance: number };
   private nextCivilian?: string;
   private nextSeen = false;
@@ -124,7 +132,7 @@ export class LifeSize {
       if (this.claim(fig, id, matrix, anim, umbrella)) return true;
       if (fig.self || fig.lifeSize !== true || umbrella >= 0) return false;
       const gid = this.ids.get(fig);
-      return gid !== undefined && this.middle.offer(avatarIndex(fig.avatarSeed, gid, id), id, matrix, anim);
+      return gid !== undefined && this.middle.offer(appearance(fig,anim,gid,id), id, matrix, anim);
     };
   }
 
@@ -159,7 +167,7 @@ export class LifeSize {
           o.userData.cullRadius = 1.3; // (round the hips, for leaving out those the buildings hide: occlusion.ts)
         });
         const hips = g.scene.getObjectByName('Bip01')?.position.y ?? 0.9;
-        const kind: Kind = { template: g.scene, clips: {}, stride: {} as Kind['stride'], contactPhase: sex === 'm' ? .97 : .425, standing: STANDING[sex] };
+        const kind: Kind = { seatedHips:new THREE.Vector3(), template: g.scene, clips: {}, stride: {} as Kind['stride'], contactPhase: sex === 'm' ? .97 : .425, standing: STANDING[sex] };
         for (const move of GAITS) [kind.clips[move], kind.stride[move]] = inPlace(byName[`${sex}_${CLIPS[move]}`], hips);
         for (const name of STANDING[sex]) kind.clips[name] = inPlace(byName[`${sex}_${name}`], hips)[0];
         const umbrella = (kind.clips.umbrella = inPlace(byName[`${sex}_${UMBRELLA[sex]}`], hips)[0]);
@@ -169,6 +177,12 @@ export class LifeSize {
           const position = clip.tracks[0].clone();
           for (let i = 0; i < position.values.length; i++) position.values[i] *= hips;
           kind.clips[name] = new THREE.AnimationClip(name, clip.duration, [position, ...clip.tracks.slice(1)]);
+        }
+        const seated=kind.clips.getin?.tracks[0];
+        if (seated) {
+          kind.seatedHips.fromArray(seated.values,seated.values.length-3);
+          const parent=g.scene.getObjectByName('Bip01')?.parent;
+          if (parent) { parent.updateWorldMatrix(true,false); kind.seatedHips.applyMatrix4(parent.matrixWorld); }
         }
         this.baseKinds[avatar] = this.kinds.push(kind) - 1;
         this.spare.push([]);
@@ -276,20 +290,20 @@ export class LifeSize {
     if (d < STREET_QUALITY.avatarReach + SLACK && !fig.self) this.offered.push(d);
     let gid = this.ids.get(fig);
     if (gid === undefined) this.ids.set(fig, (gid = this.ids_++));
-    const key = `${gid}:${id}`;
+    const key = anim.driverDonor===undefined ? `${gid}:${id}` : `${gid}:${id}:driver${anim.driverDonor}`;
     let p = this.live.get(key);
     if (p?.yieldSlot) return false;
     if (!p) {
       // (Not someone the camera is inside; you, though, always: see Figures.self.)
-      if (!fig.self && (d > this.reach || d < .30)) return false;
+      if (!fig.self && (d > (anim.driverExit ? STREET_QUALITY.avatarReach : this.reach) || d < .30)) return false;
       const role = typeof fig.lifeSize === 'string' ? fig.lifeSize : undefined;
-      const kind = role ? this.uniformKind(role, id) : this.baseKinds[avatarIndex(fig.avatarSeed, gid, id)];
+      const kind = role ? this.uniformKind(role, id) : this.baseKinds[appearance(fig,anim,gid,id)];
       if (kind == null) return false;
       const next = key === this.nextCivilian;
       if (next) this.nextSeen = true;
-      const hold = role ? 0 : this.reserved + (this.nextCivilian && !next ? 1 : 0);
+      const hold = role || anim.driverExit ? 0 : this.reserved + (this.nextCivilian && !next ? 1 : 0);
       if (!fig.self && this.live.size >= STREET_QUALITY.avatars - hold) {
-        if (role) this.waitingCrew++;
+        if (role || anim.driverExit) this.waitingPriority++;
         else if (!this.nearestWaiting || d < this.nearestWaiting.distance) this.nearestWaiting = { key, distance: d };
         return false;
       }
@@ -335,6 +349,17 @@ export class LifeSize {
 
   // Which clips should show, from the figure's own animation.
   private pose(p: Person, anim: Anim) {
+    this.targets(p,anim);
+    p.exit=anim.driverExit;
+    if (!p.exit || !this.figureActions.getin) return;
+    const takeover=p.exit.standingWeight;
+    for (const c in p.want) p.want[c]*=takeover;
+    const clip=this.kinds[p.kind].clips.getin;
+    this.setActionTime(p,anim,'getin',clip.duration*p.exit.seatedPhase);
+    p.want.getin=1-takeover;
+  }
+
+  private targets(p: Person, anim: Anim) {
     for (const c in p.want) p.want[c] = 0;
     const up = p.umbrella >= 0;
     if (anim.from && anim.w > 0 && this.figureActions[anim.from] && anim.from !== anim.name) {
@@ -416,14 +441,14 @@ export class LifeSize {
     // A nearby responder can arrive after all slots are held by civilians.
     // Give the farthest civilians back to their instanced figures on the next
     // claim, reserving the released slots until the waiting crew can take them.
-    this.reserved = this.waitingCrew;
-    if (this.waitingCrew) {
+    this.reserved = this.waitingPriority;
+    if (this.waitingPriority) {
       const present = [...this.live.values()].filter(p => p.seen);
-      const need = Math.max(0, present.length + this.waitingCrew - limit);
-      const civilians = present.filter(p => !p.self && !this.kinds[p.kind].role)
+      const need = Math.max(0, present.length + this.waitingPriority - limit);
+      const civilians = present.filter(p => !p.self && !p.exit && !this.kinds[p.kind].role)
         .sort((a, b) => b.pos.distanceToSquared(this.cam) - a.pos.distanceToSquared(this.cam));
       for (let i = 0; i < Math.min(need, civilians.length); i++) civilians[i].yieldSlot = true;
-      this.waitingCrew = 0;
+      this.waitingPriority = 0;
     }
     if (this.reserved || !this.nextSeen) this.nextCivilian = undefined;
     this.nextSeen = false;
@@ -435,7 +460,7 @@ export class LifeSize {
       let beyond = (this.nearestWaiting.distance + 1.75) ** 2;
       for (const p of this.live.values()) {
         if (!p.seen || p.yieldSlot) { free = true; continue; }
-        if (p.self || this.kinds[p.kind].role) continue;
+        if (p.self || p.exit || this.kinds[p.kind].role) continue;
         const d2 = (p.pos.x - this.cam.x) ** 2 + (p.pos.z - this.cam.z) ** 2;
         if (d2 > beyond) { beyond = d2; farthest = p; }
       }
@@ -547,6 +572,8 @@ export class LifeSize {
       p.mixer.update(0);
       p.root.position.copy(p.pos);
       p.root.quaternion.copy(p.turn);
+      if (p.exit) p.exit.place(p.root,k.seatedHips,TURN);
+      else if (p.root.scale.x!==1) p.root.scale.setScalar(1);
       if (p.self && p.strideYaw) p.root.quaternion.multiply(_q.setFromAxisAngle(UP, p.strideYaw));
       p.root.quaternion.multiply(TURN);
       if (p.self) {

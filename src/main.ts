@@ -1,3 +1,4 @@
+import { DriverExit } from './driverExit.ts';
 import { ROOFTOP } from './roofSurface.ts';
 import { headingUpOn } from './headingup.ts';
 import { FollowCamera } from './followCamera.ts';
@@ -1127,10 +1128,10 @@ async function main() {
     walker.mesh.visible = false;
   };
   // Whoever was driving the car you're taking, waiting for the door to open on them.
-  let evicting: ((pulled: boolean) => void) | null = null;
+  let evicting: ((pulled: boolean) => boolean) | null = null;
   const getIn = new GetIn({
     walker,
-    evict: (_car, pulled) => { evicting?.(pulled); evicting = null; },
+    evict: (_car, pulled) => { const shared = evicting?.(pulled); evicting = null; return shared; },
     seated: (car) => { evicting?.(false); evicting = null; takeSeat(car); },
     left: (car, at) => leaveCar(car, at),
   });
@@ -1343,6 +1344,14 @@ async function main() {
         if (door) back -= 1.1;
       }
       const p = crowd.spawnAt(car.x + lx * off + fx * back, car.y + ly * off + fy * back, car.rider || undefined);
+      const held = door && getIn.active && !car.two ? carPool.driverAtDoor(car) : null;
+      const side=lx*(-Math.sin(car.h))+ly*Math.cos(car.h)>0 ? 1 : -1;
+      if (held) {
+        const opening=car.doors.find(d=>d.n<=2 && d.side===side) ?? door!;
+        const [x,y]=car.beside(opening,.06);
+        p.anim.driverDonor=held.donor;
+        p.anim.driverExit=new DriverExit(held.seat,x,y,pulled);
+      }
       // A courier leaves the bag behind, on the ground by the bike.
       if (box) bags.drop(car.x + lx * (car.spec.W / 2 + 0.35) - fx * 0.4, car.y + ly * (car.spec.W / 2 + 0.35) - fy * 0.4, box, car.h);
       if (car.two && car.speed > 2) {
@@ -1353,6 +1362,7 @@ async function main() {
         p.then = [lx * 4 - fx * 3, ly * 4 - fy * 3];
       } else Object.assign(p, { state: 'flee', t: 2, vx: lx * 5, vy: ly * 5 });
       police.crime('carjack', car.x, car.y);
+      return door?.side===side;
     };
     const driver = !!agent && !cop;
     if (door) {

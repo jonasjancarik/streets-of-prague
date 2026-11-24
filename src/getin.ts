@@ -1,3 +1,4 @@
+import { DRIVER_STAND } from './driverExit.ts';
 import { SCALE } from './figures.ts';
 import type { Car, Door } from './car.ts';
 import { locomote, type Walker } from './people.ts';
@@ -19,7 +20,7 @@ interface Hooks {
   walker: Walker;
   // Whoever is at the wheel leaves, as the door opens on them: `pulled` out by you, or
   // by themselves.
-  evict(car: Car, pulled: boolean): void;
+  evict(car: Car, pulled: boolean): boolean | void; // true when both people use this door
   // You're in the seat: the car is yours.
   seated(car: Car): void;
   // Your door is open: you're on foot from here, the car left where it stands.
@@ -27,7 +28,7 @@ interface Hooks {
 }
 
 type Play =
-  | { kind: 'in'; car: Car; door: Door; phase: 'walk' | 'open' | 'pull' | 'sit'; t: number; driver: boolean; from: Point2; h0: number }
+  | { kind: 'in'; car: Car; door: Door; phase: 'walk' | 'open' | 'pull' | 'sit'; t: number; driver: boolean; sharedDoor?: boolean; from: Point2; h0: number }
   | { kind: 'out'; car: Car; door: Door; phase: 'open' | 'rise'; t: number };
 
 const ease = (u: number) => u * u * (3 - 2 * u);
@@ -165,13 +166,13 @@ export class GetIn {
         if (p.driver && door.n !== 1) {
           car.open(1);
           p.driver = car.entryDriver = false;
-          this.o.evict(car, false);
+          p.sharedDoor=this.o.evict(car,false)===true;
         }
       } else if (!opening && p.driver && p.t >= .30) {
         p.driver = car.entryDriver = false;
         this.o.evict(car, true);
       }
-      if (p.t >= duration) {
+      if (p.t >= (p.sharedDoor ? LATCH + DRIVER_STAND : duration)) {
         if (opening && p.driver) {
           p.phase = 'pull'; p.t = 0;
           a.play('pull', true, .09);

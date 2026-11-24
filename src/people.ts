@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { clamp, segDist } from './network.ts';
-import { Figures, Anim, SCALE, randomLook, jumpHeight } from './figures.ts';
+import { Figures, Anim, FIGURE_SIZE, SCALE, randomLook, jumpHeight } from './figures.ts';
 import type { FigureKit, Look } from './figures.ts';
 import type { WalkEdge, WalkGraph } from './network.ts';
 import type { Footfall } from './footfall.ts';
@@ -57,6 +57,9 @@ const TURN = 5; // rad/s, the fastest a walker turns
 
 const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(SCALE, SCALE, SCALE);
 const UP = new THREE.Vector3(0, 1, 0);
+const _doorRoot = new THREE.Object3D(), IDENTITY = new THREE.Quaternion();
+// Hip height .96 m plus the authored last frame of getin, in figure axes.
+const SEATED_FIGURE_HIPS = new THREE.Vector3(-.06,.46,0);
 const _m = new THREE.Matrix4();
 
 // Standing, or walking to running, for someone on their feet going at `speed`
@@ -82,6 +85,7 @@ export class Crowd {
   fig: Figures;
   umbrellas: Umbrellas;
   private serial = 0;
+  private exitPose?: Anim;
   totalLen: number;
   cell: number;
   segs: Map<string, WalkSegment[]>;
@@ -350,6 +354,11 @@ export class Crowd {
     this.tick = (this.tick + 1) % 4;
     for (const p of this.people) {
       p.t -= dt;
+      const exit=p.anim.driverExit;
+      if (exit) {
+        exit.elapsed+=dt;
+        if (exit.elapsed>=exit.duration) p.anim.driverExit=undefined;
+      }
       if (p.hurt !== undefined) {
         // Lying there until seen to, or until it's been too long to wait for anyone.
         if (p.state !== 'down' || (p.hurt += dt) > HURT_FOR) this.revive(p);
@@ -509,7 +518,20 @@ export class Crowd {
       // the remaining walkers into this batch, including in the shadow pass.
       if (this.fig.streetModel(p.i, m, p.anim, up ? p.serial : -1)) continue;
       this.fig.wear(n, p.i);
-      this.fig.place(n, m, p.anim);
+      let pose=p.anim;
+      const exit=pose.driverExit;
+      if (exit && FIGURE_SIZE.value<SCALE) {
+        // A full avatar pool can need a frame to release a slot. The small
+        // figure follows the same door path until the matching rig takes it.
+        _doorRoot.position.copy(_p); _doorRoot.quaternion.copy(_q); _doorRoot.scale.setScalar(1);
+        exit.place(_doorRoot,SEATED_FIGURE_HIPS,IDENTITY);
+        m.compose(_doorRoot.position,_doorRoot.quaternion,_doorRoot.scale);
+        const small=this.exitPose ??= new Anim(this.kit,'getin');
+        small.t=small.duration*exit.seatedPhase;
+        small.from=pose.name; small.ft=pose.t; small.w=exit.standingWeight;
+        pose=small;
+      }
+      this.fig.place(n,m,pose);
       if (up) this.umbrellas.put(p.serial, _p, p.h, p.anim.phase, Math.min(1, p.pace / 1.2));
       n++;
     }
