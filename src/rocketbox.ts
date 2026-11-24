@@ -104,6 +104,9 @@ export class LifeSize {
   private cam = new THREE.Vector3();
   private reach = REACH;
   private waitingCrew = 0;
+  private nearestWaiting?: { key: string; distance: number };
+  private nextCivilian?: string;
+  private nextSeen = false;
   private reserved = 0;
   private offered: number[] = []; // how far off this frame's candidates were
   private renderer: unknown;
@@ -273,14 +276,19 @@ export class LifeSize {
     if (p?.yieldSlot) return false;
     if (!p) {
       // (Not someone the camera is inside; you, though, always: see Figures.self.)
-      if (!fig.self && (d > this.reach || d < 1)) return false;
+      if (!fig.self && (d > this.reach || d < .30)) return false;
       const role = typeof fig.lifeSize === 'string' ? fig.lifeSize : undefined;
       const kind = role ? this.uniformKind(role, id) : this.baseKinds[(fig.avatarSeed ?? (gid * 7919 + id * 104729)) % AVATARS.length];
       if (kind == null) return false;
-      if (!fig.self && this.live.size >= STREET_QUALITY.avatars - (role ? 0 : this.reserved)) {
+      const next = key === this.nextCivilian;
+      if (next) this.nextSeen = true;
+      const hold = role ? 0 : this.reserved + (this.nextCivilian && !next ? 1 : 0);
+      if (!fig.self && this.live.size >= STREET_QUALITY.avatars - hold) {
         if (role) this.waitingCrew++;
+        else if (!this.nearestWaiting || d < this.nearestWaiting.distance) this.nearestWaiting = { key, distance: d };
         return false;
       }
+      if (next) this.nextCivilian = undefined;
       p = this.take(kind);
       p.self = fig.self;
       p.yieldSlot = false;
@@ -411,6 +419,26 @@ export class LifeSize {
       for (let i = 0; i < Math.min(need, civilians.length); i++) civilians[i].yieldSlot = true;
       this.waitingCrew = 0;
     }
+    if (this.reserved || !this.nextSeen) this.nextCivilian = undefined;
+    this.nextSeen = false;
+    if (this.nearestWaiting && !this.nextCivilian && !this.reserved) {
+      // Draw order follows the crowd storage, so a six-metre walker can arrive
+      // after all slots were taken by people across the square. Hold the slot
+      // for this particular walker until the old avatar is released next frame.
+      let free = this.live.size < limit, farthest: Person | undefined;
+      let beyond = (this.nearestWaiting.distance + 1.75) ** 2;
+      for (const p of this.live.values()) {
+        if (!p.seen || p.yieldSlot) { free = true; continue; }
+        if (p.self || this.kinds[p.kind].role) continue;
+        const d2 = (p.pos.x - this.cam.x) ** 2 + (p.pos.z - this.cam.z) ** 2;
+        if (d2 > beyond) { beyond = d2; farthest = p; }
+      }
+      if (free || farthest) {
+        if (!free && farthest) farthest.yieldSlot = true;
+        this.nextCivilian = this.nearestWaiting.key;
+      }
+    }
+    this.nearestWaiting = undefined;
     let held = 0;
     for (const [key, p] of this.live) {
       if (!p.seen || !this.on) {

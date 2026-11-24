@@ -1563,6 +1563,8 @@ record the measurements, merge decisions and pending landmark asset activation.
   Each person switches to their detailed model when it finishes loading. If one model
   is missing or slow, other people can still appear, including uniformed crews whose
   base model and outfit are ready.
+  In a crowd, a nearer walker can take a detailed model's place from a civilian farther
+  away. Walkers at similar distances keep their models as they pass one another.
   The player's model starts loading alongside the animation clips. The player gets
   a random avatar each session and keeps it when switching between
   first and third person, including after the detailed models are freed and reloaded.
