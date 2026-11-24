@@ -20,6 +20,7 @@ from scipy.ndimage import distance_transform_edt, gaussian_filter, label
 from scipy.spatial import Delaunay
 from skimage.measure import find_contours
 
+from castle_lighting import footprints, night_tile
 from landmarks import BLENDER, write_glb
 from photomesh import fetch, nodes_over, triangles
 
@@ -27,12 +28,12 @@ ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT / "pipeline/.cache/hradcany-horizon"
 ORIGIN = (14.40052, 50.09077)
 DATUM = 180
+LOCAL = CRS.from_proj4(f"+proj=tmerc +lon_0={ORIGIN[0]} +lat_0={ORIGIN[1]} +ellps=WGS84 +units=m")
 
 
 def survey():
-    local = CRS.from_proj4(f"+proj=tmerc +lon_0={ORIGIN[0]} +lat_0={ORIGIN[1]} +ellps=WGS84 +units=m")
-    mercator = Transformer.from_crs(local, "EPSG:3857", always_xy=True)
-    back = Transformer.from_crs("EPSG:3857", local, always_xy=True)
+    mercator = Transformer.from_crs(LOCAL, "EPSG:3857", always_xy=True)
+    back = Transformer.from_crs("EPSG:3857", LOCAL, always_xy=True)
     corners = np.array([mercator.transform(x, y) for x in (-700,640) for y in (-410,300)])
     cx, cy = mercator.transform(0, 0)
     hill = nodes_over((*corners.min(0), *corners.max(0)), 13)
@@ -62,7 +63,7 @@ def smooth(low, high, x):
     return t*t*(3-2*t)
 
 
-def depth_view(i, camera, atlas):
+def depth_view(i, camera, atlas, night, areas):
     image = np.asarray(Image.open(CACHE / f"colour-{i}.png").convert("RGBA"))
     depth = np.asarray(Image.open(CACHE / f"depth-{i}.png"), dtype=float)*4096/65535
     height, width = depth.shape
@@ -119,6 +120,9 @@ def depth_view(i, camera, atlas):
     tile = Image.fromarray(rgba[y0:y1,x0:x1]).resize((1018,250),Image.Resampling.LANCZOS)
     ax, ay = i%2*1024+3, i//2*256+3
     atlas.paste(tile,(ax,ay))
+    # Half-resolution evening texture shares the day geometry and UVs.
+    light = night_tile(areas,world,eye,rgba,(x0,y0,x1,y1))
+    night.paste(light,(i%2*512+1,i//2*128+1))
     uv = np.column_stack(((ax+.5+(pixels[:,0]+.5-x0)/(x1-x0)*1017)/2048,
                           (ay+.5+(pixels[:,1]+.5-y0)/(y1-y0)*249)/1024))
     used, indices = np.unique(faces.ravel(), return_inverse=True)
@@ -171,12 +175,19 @@ def write_horizon(path, cameras, meshes, atlas):
                      + header + struct.pack("<II",len(blob),0x004E4942) + blob)
 
 
+def pack():
+    cameras = json.loads((CACHE / "views.json").read_text())
+    atlas = Image.new("RGBA",(2048,1024),(130,133,129,0))
+    night = Image.new("RGBA",(1024,512))
+    areas = footprints(LOCAL,ROOT / "pipeline/.cache/osm/praha.osm.pbf")
+    meshes = [depth_view(i,camera,atlas,night,areas) for i,camera in enumerate(cameras)]
+    write_horizon(ROOT / "public/hradcany-horizon.glb", cameras, meshes, atlas)
+    night.save(ROOT / "public/hradcany-lights.webp","WEBP",quality=90,method=6)
+    print("Triangles per view:", [len(indices)//3 for _,_,indices in meshes])
+
+
 if __name__ == "__main__":
     CACHE.mkdir(parents=True, exist_ok=True)
     survey()
     subprocess.run([BLENDER,"-b","--factory-startup","-P",str(Path(__file__).with_name("castle_horizon_bake.py")),"--",str(CACHE)],check=True)
-    cameras = json.loads((CACHE / "views.json").read_text())
-    atlas = Image.new("RGBA",(2048,1024),(130,133,129,0))
-    meshes = [depth_view(i,camera,atlas) for i,camera in enumerate(cameras)]
-    write_horizon(ROOT / "public/hradcany-horizon.glb", cameras, meshes, atlas)
-    print("Triangles per view:", [len(indices)//3 for _,_,indices in meshes])
+    pack()

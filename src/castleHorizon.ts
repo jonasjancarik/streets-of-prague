@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import proj4 from 'proj4';
+import { FLOOD_ON } from './lamps.ts';
 import type { Bounds } from './map/geo.ts';
 import type { Sky } from './sky.ts';
 
@@ -13,6 +14,9 @@ const step = THREE.MathUtils.smoothstep;
 export class CastleHorizon {
   private model?: THREE.Group;
   private views: THREE.Mesh<THREE.BufferGeometry,THREE.MeshBasicMaterial>[] = [];
+  private lamps: THREE.Mesh<THREE.BufferGeometry,THREE.MeshBasicMaterial>[] = [];
+  private loadingLights = false;
+  private retryLightsAt = 0;
   private bearings: number[] = [];
   private loading = false;
   private retryAt = 0;
@@ -60,6 +64,27 @@ export class CastleHorizon {
     finally { this.loading = false; }
   }
 
+  private async loadLights() {
+    this.loadingLights = true;
+    try {
+      const map = await new THREE.TextureLoader().loadAsync(import.meta.env.BASE_URL+'hradcany-lights.webp');
+      map.colorSpace = THREE.SRGBColorSpace;
+      map.flipY = false; // The atlas shares the GLB's top-left UV origin.
+      for (const view of this.views) {
+        const material = new THREE.MeshBasicMaterial({ map, fog: false, transparent: true, depthWrite: false,
+          side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
+        material.forceSinglePass = true;
+        const lamps = new THREE.Mesh(view.geometry,material);
+        lamps.name = 'Castle floodlights';
+        lamps.visible = false;
+        lamps.renderOrder = -18;
+        view.add(lamps);
+        this.lamps.push(lamps);
+      }
+    } catch { this.retryLightsAt = performance.now()+60000; }
+    finally { this.loadingLights = false; }
+  }
+
   update(street: boolean, camera: THREE.PerspectiveCamera, sky: Sky) {
     if (!this.at || !street) { if (this.model) this.model.visible = false; return; }
     const dx = camera.position.x-this.at.x, dz = camera.position.z-this.at.z;
@@ -88,6 +113,10 @@ export class CastleHorizon {
     this.light.r += sun.color.r*sun.intensity*.105;
     this.light.g += sun.color.g*sun.intensity*.105;
     this.light.b += sun.color.b*sun.intensity*.105;
+    const lighting = sky.dark*FLOOD_ON.value;
+    if (lighting > .01 && !this.lamps.length && !this.loadingLights && performance.now() >= this.retryLightsAt) {
+      void this.loadLights();
+    }
     for (let i=0;i<this.views.length;i++) {
       const view = this.views[i], opacity = i===a ? first : i===b ? second : 0;
       view.visible = opacity > .003;
@@ -95,6 +124,12 @@ export class CastleHorizon {
       view.renderOrder = i===a ? -20 : -19;
       view.material.opacity = opacity;
       view.material.color.copy(this.light);
+      const lamps = this.lamps[i];
+      if (lamps) {
+        // Additive exposures mix linearly even where the two ridge views overlap.
+        lamps.material.opacity = lighting*(i===a ? strength-second : second);
+        lamps.visible = lamps.material.opacity > .004;
+      }
     }
   }
 }

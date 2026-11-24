@@ -868,8 +868,11 @@ The metro ride uses its overhead cutaway camera.
   Hradčany ridge and St Vitus remain visible beyond the nearby tiles in clear air.
   Eight photographs from the 3D survey carry depth, so the cathedral, palace and
   lower roofs shift against each other as you cross the river. At most two views
-  blend at once. The ridge fades in at a distance, out in thick mist, and yields
-  to the ordinary city as you approach it. Rebuild it with `uv run castle_horizon.py`
+  blend at once. In the evening the southern palace front, St Vitus and St George's
+  towers share the city's monument lighting and fade out after midnight. A separate
+  67 KiB atlas loads only when those lights come into view. The ridge fades in at
+  a distance, out in thick mist, and yields to the ordinary city as you approach it.
+  Rebuild it with `uv run castle_horizon.py`
   in `pipeline/`.
   Broadleaf trees within about 150 m are drawn as a second model made to be stood under
   (`src/map/streetTree.ts`, `src/webgpu/streetTrees.ts`): a trunk with bark, boughs that

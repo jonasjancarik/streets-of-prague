@@ -24,6 +24,17 @@ export default {
       while (!ridge()?.visible && performance.now()<until) await t.frames(3);
       const shown=ridge()?.children.filter(v=>v.visible) ?? [];
       t.check('one or two depth views draw the distant ridge', !!ridge()?.visible && shown.length>=1 && shown.length<=2, { draws: shown.length });
+      const lamps = () => ridge()?.children.filter(v=>v.visible && v.getObjectByName('Castle floodlights')?.visible).length ?? 0;
+      t.check('daylight needs only the ordinary survey view', lamps()===0);
+      t.time('22:15');
+      const night=performance.now()+25000;
+      while (!lamps() && performance.now()<night) await t.frames(3);
+      const visibleAtNight = ridge()?.children.filter(v=>v.visible).length ?? 0;
+      t.check('the palace and cathedral light up in the evening', visibleAtNight>0 && lamps()===visibleAtNight,
+        { ridgeViews: visibleAtNight, litViews: lamps() });
+      t.time('00:30'); await t.frames(5);
+      t.check('the ridge stays visible after the monument lights go out', !!ridge()?.visible && !lamps());
+      t.time('15:30');
       t.eyes=null; await t.frames(6);
       t.check('normal overhead zoom retires the ridge', !ridge()?.visible);
       t.weather('mist'); t.eyes={yaw:0,pitch:4}; await t.frames(15);

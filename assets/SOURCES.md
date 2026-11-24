@@ -51,8 +51,13 @@ geographic station list. [IPR Praha, 3D mesh, CC BY](https://geoportalpraha.cz/d
 `pipeline/castle_horizon.py` cuts the hill and palace from IPR Praha's 2023 survey.
 Blender renders eight colour and depth views, including the bearing from the middle
 of Charles Bridge. The visible surfaces become the small meshes and shared
-photographic atlas in `public/hradcany-horizon.glb`.
-[IPR Praha, 3D mesh, CC BY](https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model/3D-mesh).
+photographic atlas in `public/hradcany-horizon.glb`. The evening atlas uses
+OpenStreetMap building footprints and the photographed surface directions to
+pick out the southern palace front, St Vitus and the towers of St George.
+The lighting pattern follows the castle's architectural lighting brief.
+[IPR Praha, 3D mesh, CC BY](https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model/3D-mesh),
+[OpenStreetMap contributors, ODbL](https://www.openstreetmap.org/copyright)
+and [Prague Castle lighting brief](https://cceamoba.cz/media/pages/souteze/sph/76ac71dda2-1767975363/sph-p.01-outline-brief.pdf).
 
 ## Made from code
 
