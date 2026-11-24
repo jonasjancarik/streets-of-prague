@@ -10,7 +10,7 @@ export default {
     await t.onFoot();
     await t.go([50.08663, 14.41027]);
     const game = window.__drive as {
-      scene: THREE.Scene;
+      scene: THREE.Scene; graphics: { tier: string };
       walker: { x: number; y: number; gz: number; h: number; level: number; sync(): void };
       world: { charles: Bridge; lowestBridge(x: number, y: number): { h: number; level: number } | null };
       lamps: {
@@ -39,6 +39,18 @@ export default {
       bronze.traverse(o => { if ((o as THREE.Mesh).isMesh) parts.push(o as THREE.Mesh); });
       t.check('figure, five stars and reliefs share a single mesh', parts.length === 1);
       t.check('the vaults are visible from the street', stonework()?.visible === true);
+      const closeLights = () => {
+        const batches: THREE.InstancedMesh[] = [];
+        game.scene.traverse(o=>{
+          if (o.visible && o.name.startsWith('Close gas lantern ')) batches.push(o as THREE.InstancedMesh);
+        });
+        return batches;
+      };
+      if (!['lowest','low'].includes(game.graphics.tier)) {
+        const lights=closeLights(), lamps=lights.reduce((n,m)=>n+m.count,0);
+        t.check('nearby gas lanterns have clear panes and keep their instance budget',
+          lamps>0 && lamps<=20 && lights.every(m=>m.geometry.groups.length===2), { lamps });
+      }
       const { lamps } = game;
       let checked = 0, worstOffset = 0;
       for (const [index, lamp] of lamps.parapetLamps) {
@@ -52,6 +64,7 @@ export default {
       t.eyes = null; await t.frames(5);
       t.check('the full original tile draw returns overhead', !model() && tile.geometry.drawRange.count >= complete);
       t.check('the additional arch meshes retire overhead', stonework()?.visible === false);
+      t.check('the close lanterns retire overhead', closeLights().length === 0);
     } finally { t.eyes = null; t.paused = paused; }
   },
 } satisfies Scenario;

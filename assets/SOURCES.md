@@ -34,6 +34,10 @@ follow the distances between the mapped piers. The packed source is
 [OpenStreetMap contributors, ODbL](https://www.openstreetmap.org/copyright)
 and [Charles Bridge, Prague City Tourism](https://prague.eu/en/objevujte/charles-bridge-karluv-most/).
 
+The street-level gas lanterns are original models of the cast frame, glazing and
+burner assembly. The lighting contractor's Prague installation was a visual
+reference. [BRAUN Lighting Solutions, Charles Bridge and Prague Old Town](https://braun.lighting/wp-content/themes/braun/pdf.php?id=3229).
+
 ## Vltava reflections
 
 The bank panoramas use IPR Praha's summer 2023 photorealistic mesh, cropped to

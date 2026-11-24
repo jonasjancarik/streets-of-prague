@@ -1507,7 +1507,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   the river under the arches are left out. `?nostatues` leaves out the statues and
   piers, keeps the deck as OSM has it and the lamps as the survey has them.
   Once the tile is drawn, each gas lantern sits at the height and centre of the
-  coping beneath it. At street level the wall shows courses of sandstone and
+  coping beneath it. On Medium and above, up to twenty nearby gas posts and wall
+  brackets show their brass burners, clear glass and individual mantles. At dusk
+  the mantles light up inside the iron frames. Beyond 40 m the lamps use their
+  simpler heads. At street level the wall shows courses of sandstone and
   separate coping stones. The pedestrian deck is paved with granite setts.
   From the river and Kampa the sixteen vaults are open from one side to the other,
   with wedge-shaped arch stones, a coursed soffit and cutwaters reaching the water.

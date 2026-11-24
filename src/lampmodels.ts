@@ -26,7 +26,23 @@ const part = (g: Part, colour: string, at: [number, number, number] = [0, 0, 0],
   return g.index ? g.toNonIndexed() : g;
 };
 const merge = (parts: Part[]) => {
-  const g = mergeGeometries(parts.map((p) => { p.deleteAttribute('uv'); return p; }), false);
+  const panes = parts.filter(p=>p.userData.pane);
+  const solid = panes.length ? parts.filter(p=>!p.userData.pane) : parts;
+  const ordered = panes.length ? [...solid,...panes] : parts;
+  for (const p of ordered) {
+    p.deleteAttribute('uv');
+    if (panes.length) {
+      const uv = new Float32Array(p.getAttribute('position').count*2);
+      for (let i=0;i<uv.length;i+=2) { uv[i]=p.userData.mantle ? .75 : .25; uv[i+1]=.5; }
+      p.setAttribute('uv',new THREE.BufferAttribute(uv,2));
+    }
+  }
+  const g = mergeGeometries(ordered, false);
+  if (panes.length) {
+    const count = solid.reduce((sum,p)=>sum+p.getAttribute('position').count,0);
+    g.addGroup(0,count,0);
+    g.addGroup(count,g.getAttribute('position').count-count,1);
+  }
   parts.forEach((p) => p.dispose());
   return g;
 };
@@ -36,7 +52,8 @@ const ball = (r: number) => new THREE.SphereGeometry(r, 8, 6);
 
 // A hexagonal glass lantern standing on `y`, its middle over (x, z): a base, six corner
 // bars round glass, a cap and a finial. `s` scales the whole.
-function lantern(x: number, y: number, z: number, s = 1): Part[] {
+function lantern(x: number, y: number, z: number, s = 1, detailed = false): Part[] {
+  if (detailed) return streetLantern(x,y,z,s);
   const out: Part[] = [];
   const h = 0.5 * s, rb = 0.115 * s, rt = 0.165 * s;
   out.push(part(cyl(rb * 1.1, rb * 0.8, 0.05 * s, 6), IRON, [x, y + 0.025 * s, z]));
@@ -54,6 +71,50 @@ function lantern(x: number, y: number, z: number, s = 1): Part[] {
   out.push(part(cyl(0.02 * s, 0.03 * s, 0.05 * s, 6), IRON, [x, y + 0.29 * s + h, z]));
   out.push(part(ball(0.022 * s), IRON, [x, y + 0.33 * s + h, z]));
   return out;
+}
+
+// A clear lantern at pedestrian height. The four small mantles share the
+// ironwork draw; only the six panes need a transparent pass.
+function streetLantern(x: number, y: number, z: number, scale: number) {
+  const pieces: Part[] = [];
+  const ring = (rt: number, rb: number, h: number, y: number, colour = IRON, sides = 6) =>
+    pieces.push(part(cyl(rt,rb,h,sides),colour,[0,y,0]));
+  const rod = (a: THREE.Vector3, b: THREE.Vector3, r: number, colour: string) => {
+    const axis = b.clone().sub(a), length = axis.length();
+    const shape = cyl(r,r,length,5).applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),axis.normalize()));
+    pieces.push(part(shape,colour,a.clone().lerp(b,.5).toArray()));
+  };
+  ring(.128,.095,.043,.0215);
+  ring(.127,.132,.018,.052,IRON_LIGHT);
+  const glass=part(new THREE.CylinderGeometry(.164,.112,.49,6,1,true), '#d3e0df',[0,.305,0]);
+  glass.userData.pane=true; pieces.push(glass);
+  for (let j=0;j<6;j++) {
+    const angle=j*Math.PI/3, dx=Math.sin(angle), dz=Math.cos(angle);
+    rod(new THREE.Vector3(dx*.117,.058,dz*.117),new THREE.Vector3(dx*.169,.557,dz*.169),.0074,IRON_LIGHT);
+  }
+  ring(.181,.170,.026,.557);
+  ring(.194,.181,.016,.577,IRON_LIGHT);
+  ring(.087,.192,.104,.637);
+  ring(.071,.087,.025,.701,IRON_LIGHT);
+  ring(.055,.058,.065,.739);
+  ring(.077,.069,.021,.777,IRON_LIGHT);
+  ring(.014,.074,.060,.817);
+  pieces.push(part(ball(.018),IRON,[0,.859,0]));
+  const brass='#83754e';
+  ring(.018,.043,.072,.100,brass,8);
+  ring(.013,.016,.252,.257,brass,8);
+  ring(.042,.038,.043,.374,'#595d4f',8);
+  const mantle = [[0,0],[.017,.007],[.025,.028],[.024,.064],[.015,.081],[.012,.090]].map(([r,h])=>new THREE.Vector2(r,h));
+  for (let j=0;j<4;j++) {
+    const angle=.29+j*Math.PI/2, dx=.055*Math.cos(angle), dz=.055*Math.sin(angle);
+    rod(new THREE.Vector3(0,.385,0),new THREE.Vector3(dx,.385,dz),.009,brass);
+    pieces.push(part(cyl(.015,.014,.026,6),'#766d53',[dx,.371,dz]));
+    const sock=part(new THREE.LatheGeometry(mantle,7),'#e9ddbb',[dx,.272,dz]);
+    sock.userData.mantle=true; pieces.push(sock);
+  }
+  const hook = part(new THREE.TorusGeometry(.027,.005,4,10),brass,[.112,.094,0]);
+  pieces.push(hook);
+  return pieces.map(p=>p.scale(scale,scale,scale).translate(x,y,z));
 }
 
 // A strut under an arm, from the post out to the arm's end (the arm along +z).
@@ -78,7 +139,7 @@ function ironPost(top: number, r = 0.075): Part[] {
 
 // Two lanterns on arms across the top of an iron post (the arms lie along z, over the
 // street's edge). Light at the lanterns' middles.
-export function gasPair(): Part {
+export function gasPair(detailed = false): Part {
   const top = 3.3, out = ironPost(top);
   out.push(part(new THREE.CapsuleGeometry(0.05, 0.06, 2, 6), IRON, [0, top + 0.06, 0]));
   out.push(part(ball(0.07), IRON, [0, top + 0.19, 0], [0.85, 1.25, 0.85]));
@@ -86,37 +147,37 @@ export function gasPair(): Part {
   out.push(part(box(0.04, 0.05, 1.3), IRON, [0, top + 0.03, 0]));
   for (const f of [-1, 1]) {
     out.push(strut(top, 0.6, f));
-    out.push(...lantern(0, top + 0.05, 0.6 * f, 1.2));
+    out.push(...lantern(0, top + 0.05, 0.6 * f, 1.2, detailed));
     out.push(part(cyl(0.02, 0.02, 0.1, 6), IRON, [0, top + 0.02, 0.6 * f]));
   }
   return merge(out);
 }
 
 // A single lantern on a shorter iron post, the lantern above the post's head.
-export function gasSingle(): Part {
+export function gasSingle(detailed = false): Part {
   const top = 3.0, out = ironPost(top, 0.06);
   out.push(part(ball(0.06), IRON_LIGHT, [0, top + 0.02, 0], [1.2, 0.9, 1.2]));
   out.push(part(cyl(0.05, 0.08, 0.09, 8), IRON, [0, top + 0.09, 0]));
-  out.push(...lantern(0, top + 0.13, 0, 1.3));
+  out.push(...lantern(0, top + 0.13, 0, 1.3, detailed));
   return merge(out);
 }
 
 // A lantern on a slim iron post standing on a bridge's parapet (its top `lift` m up), as
 // on Charles Bridge. Light at the lantern's middle, `lift` + 3.1 m up.
-export function parapetLantern(lift: number): Part {
+export function parapetLantern(lift: number, detailed = false): Part {
   const top = 2.6, out: Part[] = [];
   out.push(part(cyl(0.13, 0.15, 0.12, 8), IRON, [0, 0.06, 0]));
   out.push(part(cyl(0.08, 0.11, 0.5, 8), IRON, [0, 0.37, 0]));
   out.push(part(cyl(0.05, 0.065, top - 0.6, 10), IRON, [0, (top + 0.6) / 2, 0]));
   out.push(part(cyl(0.085, 0.085, 0.04, 8), IRON_LIGHT, [0, top - 0.1, 0]));
   out.push(part(cyl(0.05, 0.08, 0.09, 8), IRON, [0, top + 0.04, 0]));
-  out.push(...lantern(0, top + 0.08, 0, 1.4));
+  out.push(...lantern(0, top + 0.08, 0, 1.4, detailed));
   out.forEach((p) => p.translate(0, lift, 0));
   return merge(out);
 }
 
 // A lantern on a scrolled bracket sticking out of a wall (the wall at x = 0), 4.5 m up.
-export function wallLantern(): Part {
+export function wallLantern(detailed = false): Part {
   const out: Part[] = [];
   out.push(part(box(0.05, 0.4, 0.12), IRON, [0.025, 0, 0]));
   out.push(part(box(0.55, 0.035, 0.035), IRON, [0.3, 0.06, 0]));
@@ -124,7 +185,7 @@ export function wallLantern(): Part {
   brace.rotateZ(Math.PI / 4);
   out.push(part(brace, IRON_LIGHT, [0.2, -0.12, 0]));
   out.push(part(cyl(0.02, 0.02, 0.12, 6), IRON, [0.55, 0.12, 0]));
-  out.push(...lantern(0.55, 0.18, 0, 1.2));
+  out.push(...lantern(0.55, 0.18, 0, 1.2, detailed));
   out.forEach((p) => p.translate(0, 4.2, 0));
   return merge(out);
 }

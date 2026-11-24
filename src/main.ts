@@ -3361,6 +3361,7 @@ async function main() {
       lightOpt.wet = weather.now.wet;
       lightOpt.murk = sky.murk;
       floodlightsAt(clock.t % 86400);
+      lamps.street(fromStreet && !vr?.active && graphics.tier !== 'lowest' && graphics.tier !== 'low');
       lamps.update(camPos.x, -camPos.z, viewRadius() + 10, sky.dark, drawn, ground, now, trams.list, lightOpt);
     }
     signals.street(fromStreet);

@@ -2,7 +2,8 @@ import type { CarSpec } from './car.ts';
 import { dataUrl } from './data.ts';
 import * as THREE from 'three';
 import { nearestRailFoot, type RailSegment } from './bridgeStone.ts';
-import { mirrored, mirroredGlow } from './mirror.ts';
+import { CloseLanterns } from './closeLanterns.ts';
+import { mirrored, mirroredGlow, RIVER_MODEL_LAYER } from './mirror.ts';
 import { fetchBinary } from './terrain.ts';
 import { CLOUD, CLOUD_MAP, CLOUD_GLSL } from './clouds.ts';
 import { posts, fall, type Post } from './posts.ts';
@@ -152,14 +153,14 @@ const PAIRED_CABLE = 9; // two adjacent survey records, both rendered as ordinar
 // The models (lampmodels.ts) and where their lights are (x along the arm, y, z across it).
 // A kind's lamps take one by hash: the Old Town has big two-lantern gas posts and small
 // single lanterns both.
-const MODELS = [
+const MODELS: { make: () => THREE.BufferGeometry; detailed?: () => THREE.BufferGeometry; glows: number[][] }[] = [
   { make: () => armLamp(7.5), glows: [[1.68, 7.62, 0]] },
-  { make: gasPair, glows: [[0, 3.7, 0.6], [0, 3.7, -0.6]] },
-  { make: gasSingle, glows: [[0, 3.5, 0]] },
-  { make: wallLantern, glows: [[0.55, 4.7, 0]] },
+  { make: gasPair, detailed: () => gasPair(true), glows: [[0, 3.7, 0.6], [0, 3.7, -0.6]] },
+  { make: gasSingle, detailed: () => gasSingle(true), glows: [[0, 3.5, 0]] },
+  { make: wallLantern, detailed: () => wallLantern(true), glows: [[0.55, 4.7, 0]] },
   { make: () => globeLamp(5.5), glows: [[0, 5.5, 0]] },
   { make: () => hungLamp(6.3), glows: [[0, 6.25, 0]] },
-  { make: () => parapetLantern(PARAPET), glows: [[0, PARAPET + 3.1, 0]] },
+  { make: () => parapetLantern(PARAPET), detailed: () => parapetLantern(PARAPET,true), glows: [[0, PARAPET + 3.1, 0]] },
 ];
 const modelOf = (kind: number, i: number) => kind === 0 ? 0 : kind === 2 ? (hash(i + 7) < 0.5 ? 1 : 2) : kind === 1 ? 3 : kind === 3 ? 4 : kind === HUNG ? 5 : kind === ON_PARAPET ? 6 : -1;
 // Streets to turn lamps towards: their segments in a grid (x0, y0, x1, y1 each).
@@ -400,6 +401,11 @@ export class Lamps {
   private colour: THREE.InstancedBufferAttribute; // (and the height of the light over the ground)
   private view = { value: new THREE.Vector4() };
   private models: THREE.InstancedMesh[] = [];
+  private closeLanterns = new CloseLanterns();
+  street(on: boolean) {
+    if (this.closeLanterns.street === on) return;
+    this.closeLanterns.street = on; this.nearAt.x = Infinity;
+  }
   private streets = new Map<number, Map<string, number[]>>();
   private facing = new Map<number, number>(); // a lamp → the way (radians) its arm points
   glows: THREE.InstancedMesh; // (read by the streaks, streaks.ts)
@@ -565,8 +571,9 @@ export class Lamps {
     const poleMaterial = new THREE.MeshLambertMaterial({ vertexColors: true });
     poleMaterial.onBeforeCompile = (sh) => lampLit(sh);
     poleMaterial.customProgramCacheKey = () => 'lamp-pole';
-    this.models = MODELS.map((m) => {
+    this.models = MODELS.map((m, index) => {
       const mesh = mirrored(new THREE.InstancedMesh(m.make(), poleMaterial, MAX_POLES));
+      if (index === modelOf(ON_PARAPET,0)) mesh.layers.enable(RIVER_MODEL_LAYER);
       mesh.count = 0;
       mesh.frustumCulled = false;
       return mesh;
@@ -941,7 +948,8 @@ export class Lamps {
     if (this.near.length > MAX_LIGHTS - 400) this.near.length = MAX_LIGHTS - 400;
     // Poles and heads: they stay put until the next gathering.
     const d = this.dummy;
-    const used = this.models.map(() => 0);
+    const used = this.models.map(() => 0), shown = this.models.map(() => 0);
+    this.closeLanterns.begin();
     let g = 0, c = 0;
     const cable = this.cables.geometry.getAttribute('position') as THREE.BufferAttribute;
     for (const i of this.near) {
@@ -976,7 +984,8 @@ export class Lamps {
         addSpan(walls[2], walls[3], z + ANCHOR, px, py, otherHead);
       }
       const m = modelOf(this.kind[i], this.seeds[i]);
-      if (m >= 0 && used[m] < MAX_POLES) {
+      if (m >= 0 && shown[m] < MAX_POLES) {
+        shown[m]++;
         const ang = this.face(i, lx, ly), co = Math.cos(ang), si = Math.sin(ang);
         d.position.set(lx, z, -ly);
         d.rotation.set(0, ang, 0);
@@ -988,17 +997,21 @@ export class Lamps {
           d.quaternion.premultiply(this.tilt.setFromAxisAngle(this.axis.set(-Math.sin(fa), 0, -Math.cos(fa)), over));
         }
         d.updateMatrix();
-        this.models[m].setMatrixAt(used[m]++, d.matrix);
+        const close = !post?.down && this.closeLanterns.add(m,MODELS[m].detailed,d.matrix,this.models[m],(lx-x)**2+(ly-y)**2);
+        if (!close) this.models[m].setMatrixAt(used[m]++, d.matrix);
         d.rotation.set(0, 0, 0);
         if (post?.down) continue; // (and its light is out)
         for (const [gx, gy, gz] of MODELS[m].glows) {
           if (g >= this.glows.instanceMatrix.count) break;
           // (a local x along the arm is (cos, -sin) in world x, z; z across it, (sin, cos).)
           d.position.set(lx + gx * co + gz * si, z + gy, -ly - gx * si + gz * co);
-          d.scale.set(GLOW, 1, GLOW);
+          // A detailed lantern has luminous mantles of its own. Keep the small
+          // halo around the glass without washing out its frame from below.
+          const halo = close ? GLOW*.56 : GLOW;
+          d.scale.set(halo, 1, halo);
           d.updateMatrix();
           this.glows.setMatrixAt(g, d.matrix);
-          this.glows.setColorAt(g++, this.c.copy(colourOf(this.kind[i], this.seeds[i])).multiplyScalar(k.glow * 2));
+          this.glows.setColorAt(g++, this.c.copy(colourOf(this.kind[i], this.seeds[i])).multiplyScalar(k.glow * (close ? 1.05 : 2)));
         }
       } else if (k.glow && g < this.glows.instanceMatrix.count) {
         d.position.set(lx, z + k.head, -ly);
@@ -1009,6 +1022,7 @@ export class Lamps {
       }
     }
     this.models.forEach((mesh, m) => { mesh.count = used[m]; sendInstances(mesh); });
+    this.closeLanterns.finish();
     send(cable, c * 2);
     this.cables.geometry.setDrawRange(0, c * 2);
     this.heads = g;
@@ -1126,6 +1140,7 @@ export class Lamps {
     box?: [number, number]; streetView?: boolean; flashing?: Flashing[]; spots?: Spot[]; time?: number; blocks?: (put: Block) => void; eye?: THREE.Vector3; wet?: number; murk?: number;
   } = {}) {
     LAMP_ON.value = on;
+    this.closeLanterns.lit(on);
     if (this.target.width !== LAMP_SIZE.value) {
       this.target.setSize(LAMP_SIZE.value, LAMP_SIZE.value);
       this.targetHigh.setSize(LAMP_SIZE.value, LAMP_SIZE.value);
