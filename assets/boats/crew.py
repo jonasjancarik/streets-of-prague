@@ -66,6 +66,7 @@ def build():
     bpy.ops.export_scene.gltf(filepath=str(ROOT / "public/cruiser-occupants.glb"),
                               use_selection=True, export_format="GLB", export_materials="NONE",
                               export_vertex_color="ACTIVE", export_active_vertex_color_when_no_material=True,
+                              export_meshopt_compression_enable=True, export_meshopt_extension="EXT_meshopt_compression",
                               export_animations=False, export_texcoords=False)
     print("Cabin triangles:",len(crew.data.polygons))
 

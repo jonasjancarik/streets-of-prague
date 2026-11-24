@@ -1,19 +1,26 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { STREET_QUALITY, streetNear } from './streetQuality.ts';
 import { StreetVehicleMesh } from './vehicleFittings.ts';
 
 // The five seated figures share one mesh across the sightseeing boats. Their
 // local positions are baked against the wheel and the saloon tables.
 const cloth = new THREE.MeshLambertMaterial({ vertexColors: true });
-let people: Promise<THREE.BufferGeometry> | undefined;
+let people: Promise<THREE.Mesh> | undefined;
 function cabinPeople() {
-  return people ??= new GLTFLoader().loadAsync(import.meta.env.BASE_URL+'cruiser-occupants.glb').then(({scene}) => {
-    const cabin = scene.children.find((node): node is THREE.Mesh => node instanceof THREE.Mesh);
+  return people ??= new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(import.meta.env.BASE_URL+'cruiser-occupants.glb').then(({scene}) => {
+    const cabin = scene.getObjectByProperty('isMesh',true) as THREE.Mesh | undefined;
     if (!cabin?.geometry.hasAttribute('color')) throw Error('Missing cruise cabin occupants');
     const original = cabin.material;
     for (const material of Array.isArray(original) ? original : [original]) material.dispose();
-    return cabin.geometry;
+    cabin.updateWorldMatrix(true,false);
+    const template=new THREE.Mesh(cabin.geometry,cloth);
+    template.name='Cruiser occupants';
+    template.matrix.copy(cabin.matrixWorld);
+    template.matrixAutoUpdate=false;
+    template.receiveShadow=true;
+    return template;
   }).catch(error => { people=undefined; throw error; });
 }
 
@@ -33,10 +40,7 @@ export class SightseeingBoat extends StreetVehicleMesh {
   private async loadPeople() {
     this.loading=true;
     try {
-      const mesh = new THREE.Mesh(await cabinPeople(),cloth);
-      mesh.name='Cruiser occupants';
-      mesh.matrixAutoUpdate=false;
-      mesh.receiveShadow=true;
+      const mesh = (await cabinPeople()).clone(false);
       mesh.visible=this.near;
       this.add(mesh);
       this.occupants=mesh;
