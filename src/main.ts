@@ -3343,7 +3343,7 @@ async function main() {
     castleHorizon.update(fromStreet && !vr?.active,camera,sky);
     world.passageCamera(fromStreet, camera.position.x, -camera.position.z);
     ironwork.update(fromStreet, camera.position, weather.now.wet);
-    world.trees.street(fromStreet, free ? free.x : camera.position.x, free ? -free.y : camera.position.z);
+    world.trees.street(fromStreet, free ? free.x : camera.position.x, free ? -free.y : camera.position.z, eyes && !vr?.active ? camera : undefined);
     streetHedges.street(fromStreet, free ? free.x : camera.position.x, free ? free.y : -camera.position.z);
     streetGrass.street(fromStreet && !underway, free ? free.x : camera.position.x, free ? free.y : -camera.position.z, grassGround, world.terrainRevision + world.joined);
     world.trees.canopy(true, fromStreet);

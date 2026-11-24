@@ -28,8 +28,8 @@ try {
   const simpleRim = p.mesh.geometry.userData.simpleShadowRange;
   assert(simpleRim.count < fullRim.count);
   assert.deepEqual(p.mesh.geometry.drawRange, simpleRim, 'distant crowns use the simpler rim');
-  const camera = new THREE.PerspectiveCamera();
-  p.mesh.onBeforeShadow(null, null, null, camera);
+  const sunCamera = new THREE.PerspectiveCamera();
+  p.mesh.onBeforeShadow(null, null, null, sunCamera);
   p.mesh.onAfterShadow();
   assert.deepEqual(p.mesh.geometry.drawRange, simpleRim, 'the shadow pass restores the distant main draw');
   assert.deepEqual(rows(street),original.slice(0,2));
@@ -57,5 +57,20 @@ try {
   assert.equal(p.street.instanceMatrix,matrices,'reuse keeps the GPU buffer');
   assert.deepEqual(rows(p.street).map(r=>r[12]),[55]);
   assert.deepEqual(rows(p.mesh).map(r=>r[12]),[800]);
-  console.log('Individual tree ranges, packing, stable uploads, overhead restoration and tile reuse passed');
+  pool.remove('other');
+  const [direction] = pool.add('direction', data([-114,-36,24,141]));
+  const camera = new THREE.PerspectiveCamera(60,1.65,.1,800);
+  camera.position.set(0,2,0); camera.lookAt(100,2,0);
+  pool.street(true,0,0,camera);
+  assert.deepEqual(rows(direction.street).map(r=>r[12]),[-36,24,141], 'nearby casters remain detailed behind the player');
+  assert.deepEqual(rows(direction.mesh).map(r=>r[12]),[-114], 'the far off-screen tree retains a crown');
+  const uploads = direction.street.instanceMatrix.version;
+  camera.lookAt(100,2,4); pool.street(true,0,0,camera);
+  assert.equal(direction.street.instanceMatrix.version,uploads,'small head turns reuse the packed instances');
+  camera.lookAt(-100,2,0); pool.street(true,0,0,camera);
+  assert.deepEqual(rows(direction.street).map(r=>r[12]),[-114,-36,24], 'turning makes the other distant tree detailed');
+  camera.lookAt(0,100,0); pool.street(true,0,0,camera);
+  assert.deepEqual(rows(direction.street).map(r=>r[12]),[-114,-36,24,141], 'looking into the canopy restores the full circle');
+  pool.street(false); assert.deepEqual(rows(direction.mesh).map(r=>r[12]),[-114,-36,24,141]);
+  console.log('Individual ranges, view direction, stable uploads, overhead restoration and tile reuse passed');
 } finally { STREET_TREES.individual=true; pool.dispose(); }

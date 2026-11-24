@@ -2028,3 +2028,18 @@ Looking toward the castle from the bridge walkway, the far silhouette drew one
 49.9 ms with that draw hidden and 49.4 ms with it visible. Four alternating
 five-second windows measured 20 fps in each baseline window and 20, 21, 20 and
 20 fps with the skyline. The scene still runs at about 20 fps on this phone.
+
+### Turning among the trees at Petřín (24 November)
+
+The street camera keeps the detailed boughs near it and across a wider angle
+than the screen. At the fixed Petřín pose this reduced the detailed desktop
+instances from 1,764 to 853 and their triangles from 2.60 to 1.24 million.
+All 911 trees switched behind or outside the camera retained a crown. None of
+their tested crown spheres intersected the visible frustum.
+
+On Pixel 5 Medium, 392 × 745 at 1×, four alternating five-second windows per
+setting averaged 90.1 ms per frame with the circular selection and 79.0 ms with
+the directional selection. In a second run sweeping the view through 220°,
+the corresponding times were 170.4 and 135.0 ms. The turning view still
+averaged only 7.4 fps. Normal overhead zoom restores the original pages, and
+looking steeply up, the free camera and the headset keep the circular selection.

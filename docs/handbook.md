@@ -882,6 +882,10 @@ The metro ride uses its overhead cutaway camera.
   so standing near it does not make it switch back and forth (`TreePool.street`).
   Farther away, each broadleaf tuft uses eight points around its rim. From above
   it has its original outline again.
+  With a level street camera, distant trees behind the player use those crowns
+  too. Nearby trees stay detailed on every side for their shadows. Turning
+  reveals the boughs ahead, and looking steeply into the canopy restores the
+  full circle of street trees.
   Shrubs there are a body of the same sprays, and
   conifers get whorls of spruce boughs laid over their plain tiers (`canopyGeometry`,
   `coniferGeometry`; `TreePool.canopy`). On High and Ultra the view from above has them too: sprays

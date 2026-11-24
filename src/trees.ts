@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { STREET_QUALITY } from './streetQuality.ts';
+import { inStreetCone } from './streetView.ts';
 import { send } from './gpu.ts';
 import { distantTreeCrown, treePageFactory, OUTLINE, type TreeInstances } from './map/vegetation.ts';
 import { streetTreeGeometry, canopyGeometry, coniferGeometry } from './map/streetTree.ts';
@@ -10,7 +11,7 @@ type PerKind = readonly [number, number, number, number];
 const KINDS = [0, 1, 2, 3] as const;
 const OUTLINE_ATTRIBUTES = ['outlineA', 'outlineB'] as const; // (OUTLINE = 8: four in each)
 type Source = { trees: TreeInstances; from: number; count: number };
-type Selection = { mask: Uint8Array; x: number; z: number; individual: boolean };
+type Selection = { mask: Uint8Array; x: number; z: number; individual: boolean; view: number };
 type Page = {
   mesh: THREE.InstancedMesh; kind: TreeKind; owner: string | null;
   street?: THREE.InstancedMesh; canopy?: THREE.InstancedMesh;
@@ -35,7 +36,7 @@ export const setStreetTreeMaterial = (make: () => THREE.Material, ready: { value
 // there might be a nearby tree in it.
 const STREET_REACH = 150;
 // (For measuring: false keeps the top-down crowns in first person too.)
-export const STREET_TREES = { value: true, individual: true, farRims: true };
+export const STREET_TREES = { value: true, individual: true, farRims: true, directional: true };
 // Whether crowns seen from above get their sprays of leaves (High and Ultra).
 export const CANOPY_LEAVES = { value: false };
 // 1 while they are drawn (from above, on Ultra, their pictures loaded): the tufts under them
@@ -197,7 +198,27 @@ export class TreePool {
   private streetLods = new Map<number, THREE.BufferGeometry[]>();
   private streetMade: THREE.Material | null = null;
   private streetOn = false;
-  street(on: boolean, x = 0, z = 0) {
+  private facing = new THREE.Vector3();
+  private treeView = { active:false, x:0, z:0, half:0, sin:0, cos:0, revision:0 };
+
+  private aimTrees(camera?: THREE.PerspectiveCamera) {
+    const view=this.treeView;
+    if (camera && STREET_TREES.directional && STREET_TREES.individual) {
+      camera.getWorldDirection(this.facing);
+      // At a steep pitch crowns above or below the player can fill the screen.
+      // Use the complete circle there, and in the free camera and headset.
+      if (Math.abs(this.facing.y)<.42) {
+        const length=Math.hypot(this.facing.x,this.facing.z), x=this.facing.x/length, z=this.facing.z/length;
+        const half=Math.min(Math.PI*.5,Math.atan(Math.tan(camera.fov*Math.PI/360)*camera.aspect)+.23);
+        if (view.active && x*view.x+z*view.z>.986 && Math.abs(half-view.half)<.025) return;
+        Object.assign(view,{active:true,x,z,half,sin:Math.sin(half),cos:Math.cos(half)});
+        view.revision++; return;
+      }
+    }
+    if (view.active) { view.active=false; view.revision++; }
+  }
+
+  street(on: boolean, x = 0, z = 0, camera?: THREE.PerspectiveCamera) {
     on &&= STREET_TREES.value;
     if (!on && !this.streetOn) return;
     this.streetOn = on;
@@ -208,6 +229,7 @@ export class TreePool {
     if (on && !this.streetLods.has(detail)) this.streetLods.set(detail, [streetTreeGeometry(5, 9, 3, detail), streetTreeGeometry(9, 13, 3, detail)]);
     if (on) this.streetShapes = this.streetLods.get(detail)!;
     const ready = on && !!this.streetMade && streetReady.value;
+    this.aimTrees(ready ? camera : undefined);
     for (const page of this.pages) {
       if (page.kind !== 0 && page.kind !== 3) continue;
       distantTreeCrown(page.mesh, ready && !!page.source && STREET_TREES.individual && STREET_TREES.farRims);
@@ -241,11 +263,13 @@ export class TreePool {
   }
 
   private selectStreetTrees(page: Page, source: Source, x: number, z: number) {
-    const pick = page.selection ??= { mask: new Uint8Array(this.capacity[page.kind]), x: Infinity, z: 0, individual: true };
+    const pick = page.selection ??= { mask: new Uint8Array(this.capacity[page.kind]), x: Infinity, z: 0, individual: true, view: -1 };
     const individual = STREET_TREES.individual;
     const reuse = Number.isFinite(pick.x) && pick.individual === individual;
-    if (reuse && (pick.x - x) ** 2 + (pick.z - z) ** 2 < 36) return;
+    const view=this.treeView;
+    if (reuse && pick.view===view.revision && (pick.x - x) ** 2 + (pick.z - z) ** 2 < 36) return;
     pick.x = x; pick.z = z; pick.individual = individual;
+    pick.view = view.revision;
     const matrices = source.trees.matrices;
     let near = 0, changed = !reuse;
     for (let i = 0; i < source.count; i++) {
@@ -253,7 +277,12 @@ export class TreePool {
       const dx = matrices[at + 12] - x, dz = matrices[at + 14] - z;
       const radius = Math.sqrt(Math.max(matrices[at] ** 2 + matrices[at + 2] ** 2, matrices[at + 8] ** 2 + matrices[at + 10] ** 2));
       const limit = STREET_REACH + radius + (reuse && pick.mask[i] ? 6 : 0);
-      const close = (!individual || dx * dx + dz * dz <= limit * limit) ? 1 : 0;
+      const d2=dx*dx+dz*dz;
+      // Nearby off-screen boughs can cast into view. More distant trees behind
+      // the camera still draw their ordinary surveyed crown and its shadow.
+      const detailed = !view.active || d2 <= (58+radius)**2 ||
+        inStreetCone(dx,dz,view.x,view.z,view.sin,view.cos,22+radius+(pick.mask[i]?6:0));
+      const close = !individual || (d2 <= limit*limit && detailed) ? 1 : 0;
       if (pick.mask[i] !== close) changed = true;
       pick.mask[i] = close; near += close;
     }
