@@ -134,8 +134,11 @@ export class FollowCamera {
     // car doesn't twist far across the picture in a fast bend.
     const h = this.heading.turn(v.h + .55 * this.slip, dt, 5 + clamp(speed / 10, 0, 2.5));
     this.height.to(o.ground, dt);
-    const fast = o.car ? clamp(speed / 28, 0, 1) : 0;
+    // Tyre settling can move a parked car a few centimetres per second. Hold
+    // the parked framing through that movement and reach full width at 28 m/s.
+    const fast = o.car ? clamp((speed - .15) / (28 - .15), 0, 1) : 0;
     this.wide.to(fast, dt);
+    if (fast === 0 && this.wide.x < .0001 && Math.abs(this.wide.v) < .001) this.wide.reset(0);
     const up = o.tall + (o.car ? CAR_UP : HELI_UP);
     let back = back0 + STRETCH * this.wide.x;
     const aim = h + o.yaw;
