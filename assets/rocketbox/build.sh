@@ -20,7 +20,13 @@ male-adult-01 male-adult-04 male-adult-07 male-adult-10 male-adult-13 male-adult
 business-female-02 business-male-03"
 HF=https://huggingface.co/datasets/codepawl/rocketbox-avatars-glb/resolve/main/lods
 for a in $AVATARS; do
-  [ -s "$out/$a.glb" ] || curl -sfL -o "$out/$a.glb" "$HF/$a/${a}_lod1.glb"
+  [ -s "$out/$a.glb" ] && continue
+  if [[ "$a" == male-adult-07 ]]; then
+    curl -sfL -o "$work/$a.glb" "$HF/$a/${a}_lod1.glb"
+    node "$here/overshirt/build.mjs" "$work/$a.glb" "$out/$a.glb"
+  else
+    curl -sfL -o "$out/$a.glb" "$HF/$a/${a}_lod1.glb"
+  fi
 done
 
 # Service uniforms reuse the civilian rigs. Rebuilding missing textures

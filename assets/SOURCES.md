@@ -122,7 +122,12 @@ window atlas. [OpenStreetMap contributors, ODbL](https://www.openstreetmap.org/c
   (half the triangles, KTX2 textures), and the library's own walk, slow run and run clips,
   and a few of its standing ones (waiting, looking round, on the phone, under an umbrella). `rocketbox/build.sh` downloads them and converts the clips with `rocketbox/clips.mjs`
   onto the avatars' bone axes (a straight Blender conversion bent the knees backwards); the
-  licence goes with them (`rocketbox/LICENSE.md`). The middle-distance crowd uses
+  licence goes with them (`rocketbox/LICENSE.md`). For male-adult-07, the navy overshirt,
+  charcoal trousers, trainers and short-haired face use two ImageGen edits of the
+  original UV atlases. The editable images are in `rocketbox/overshirt/`. Its
+  `build.mjs` takes the original LOD1 GLB and an output path. It runs Blender to fit
+  the clothing and shoe soles to the existing rig, then uses Pillow, NumPy, SciPy and
+  Basis Universal to align the face and pack the mipmapped textures. The middle-distance crowd uses
   the same fourteen source meshes, diffuse maps and motions. `rocketbox/crowd.mjs`
   simplifies them and bakes their poses, and `rocketbox/crowd_atlas.py` packs the
   diffuse maps into one texture. The seated occupants in

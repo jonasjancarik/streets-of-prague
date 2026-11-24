@@ -1720,6 +1720,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   Each person switches to their detailed model when it finishes loading. If one model
   is missing or slow, other people can still appear, including uniformed crews whose
   base model and outfit are ready.
+  The civilian in the navy overshirt wears the same outfit on foot, on a bicycle and
+  on a motorbike. Up close, the fabric weave and bevelled trainer soles are visible.
+  The lighter street model carries the same face and outfit in the shared crowd atlas.
   In a crowd, a nearer walker can take a detailed model's place from a civilian farther
   away. Walkers at similar distances keep their models as they pass one another.
   On Medium and above, ordinary walkers farther down the street wear those same
