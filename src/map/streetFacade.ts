@@ -530,7 +530,9 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
     return false;
   }
   if (width >= 4) for (const end of [0, 1]) {
-    for (const inset of [.58, .95, 1.45, 2.05]) {
+    // On a wide bay the first doorway or window can occupy every position
+    // near the corner. Try the plaster pier between it and the next bay too.
+    for (const inset of [.58, .95, 1.45, 2.05, Math.min(4.5, bay)]) {
       if (inset >= width / 2) break;
       if ([2.75, 3.1, 2.4, 3.55].some(h => mount(end ? width - inset : inset, h))) break;
     }

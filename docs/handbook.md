@@ -316,7 +316,8 @@ ambulance, the red and blue flashes are visible on both the roof and the grille.
 Near a junction of named streets, look up for Prague’s red enamel street plates.
 The name follows the street parallel to the wall. The smaller line gives the
 cadastral area and the Prague 1–10 borough from RÚIAN. The game infers a mounting
-point on clear plaster near the corner. The curved face, proportions and enamel
+point on clear plaster near the corner. When a wide opening fills the end of the
+wall, the plate can sit on the plaster between the first two bays. The curved face, proportions and enamel
 border follow the examples in [IPR’s Pražský uličník](https://prazskyulicnik.az.iprpraha.cz/clanky/vyvoj-oznaceni-ulic-v-terenu).
 The map supplies the names, while individual sign positions are approximate.
 
