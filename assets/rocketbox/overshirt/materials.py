@@ -39,6 +39,17 @@ def outfit():
     # Woven diagonals in the material response break up the broad painted folds at eye height.
     weave = np.sin((x + 2*y) * (2*np.pi/7)) * np.cos((2*x-y) * (2*np.pi/11))
     colour = pad_islands(rgb).astype(np.float32)
+    # The neckline is modelled in 3D. Replace the two photographed collar points
+    # on the upper fronts with a piece of the same twill from above the pockets.
+    # Keep the central ribbing for the tee's separate neckline island.
+    front = np.abs(u - .5)
+    collar = np.clip((front - .020) / .008, 0, 1) * np.clip((.098 - front) / .012, 0, 1)
+    collar *= np.clip((v - .419) / .008, 0, 1) * np.clip((.525 - v) / .011, 0, 1)
+    iy, ix = np.nonzero(collar)
+    swatch_u = np.where(u[iy,ix] < .5, u[iy,ix] - .052, u[iy,ix] + .052)
+    swatch_v = .502 + (v[iy,ix] - .419) * .62
+    swatch = colour[(size*swatch_v).astype(int), (size*swatch_u).astype(int)]
+    colour[iy,ix] += (swatch - colour[iy,ix]) * collar[iy,ix,None]
     colour += (cloth * weave * .90)[:, :, None]
     # Shoe sidewalls use a dedicated strip in the empty space between the shoe islands.
     sole = (u > .477) & (u < .523) & (v > .927) & (v < .995)
