@@ -1804,10 +1804,11 @@ export class Car {
   // motorbike, nor a bus or a lorry, nor a car nobody drives (that one turns freely anyway).
   // On its side or its roof: nobody drives it or gets into it.
   get overturned() { return !!this.roll && (this.roll.moving || this.roll.face !== 'wheels'); }
-  // Rollovers are for four wheels, and only for your car and the ones nobody drives (a car
-  // in traffic that's been hit leaves the traffic first; the police and the fire brigade
-  // don't know what to do with one on its roof).
-  private get canRoll() { return !this.two && (this.mode === 'player' || this.mode === 'loose'); }
+  // Rollovers are for four wheels: any car, van or bus but one still in the traffic (hit
+  // hard enough, it leaves the traffic first). A police car, fire engine or ambulance
+  // that rolls is out of action, its crew left belted in (police.ts, brigade.ts,
+  // ambulance.ts).
+  private get canRoll() { return !this.two && this.mode !== 'traffic'; }
   // Tips it over: the roof thrown to its left (side +1) or right (−1) by a trip that
   // stopped `speed` m/s of sideways slide.
   tip(side: number, speed: number) {

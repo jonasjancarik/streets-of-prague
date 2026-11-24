@@ -444,10 +444,10 @@ export class Brigade {
     }
     for (const e of this.engines) {
       const c = e.car;
-      if (!e.wrecked && c.damage > WRECKED) e.wrecked = true;
+      if (!e.wrecked && (c.damage > WRECKED || c.roll)) e.wrecked = true;
       let ctl = null;
       if (!e.wrecked) ctl = this.drive(e, dt);
-      else c.mode = 'loose';
+      else if (!c.roll) c.mode = 'loose'; // (rolled over, its crew stays belted in)
       c.update(dt, ctl, o.grid);
       const d = Math.hypot(c.x - me.x, c.y - me.y), waiting = this.crew.some((f) => f.engine === e);
       e.gone = !waiting && o.offscreen(c.x, c.y) && (e.wrecked ? d > 120 : d > 250 && (e.phase === 'leave'));

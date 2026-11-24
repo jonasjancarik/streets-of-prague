@@ -471,9 +471,12 @@ The metro ride uses its overhead cutaway camera.
   to rest on its wheels again, on its side or on its roof, a little further across.
   Each landing on a new corner is heard, shakes the view and hurts you a little.
   Nobody drives or gets into an overturned car; you climb out with E, without the door.
-  Only your own car and cars nobody drives can roll: traffic hit hard leaves the traffic
-  first, while police cars and the fire brigade never roll. Two-wheelers fall over as
-  before. The `rollover` scene checks it.
+  Any car, van or bus can roll except one still in the traffic, which leaves the traffic
+  when it's hit hard. A police car, fire engine or ambulance that rolls is out of action
+  for good: it drops out of the chase or the call, its lights go out, and its crew stays
+  belted in rather than climbing out (at street level the windows read as dark, so you
+  can't see them). Two-wheelers fall over as before. The `rollover` and
+  `police-rollover` scenes check it.
 - In the car, holding Shift is lane assist (`src/assist.ts`): it steers along your
   lane, and A/D then pick the turn at the next junction instead of steering. It also
   keeps you to the street's speed limit (OSM `maxspeed`, else 50 km/h in town, 70 on

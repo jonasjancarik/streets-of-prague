@@ -438,10 +438,10 @@ export class Ambulances {
     }
     for (const r of this.rigs) {
       const c = r.car;
-      if (!r.wrecked && c.damage > WRECKED) r.wrecked = true;
+      if (!r.wrecked && (c.damage > WRECKED || c.roll)) r.wrecked = true;
       let ctl = null;
       if (!r.wrecked) ctl = this.drive(r, dt);
-      else c.mode = 'loose';
+      else if (!c.roll) c.mode = 'loose'; // (rolled over, its crew stays belted in)
       c.update(dt, ctl, o.grid);
       const d = Math.hypot(c.x - me.x, c.y - me.y), waiting = this.crew.some((m) => m.rig === r);
       r.gone = !waiting && o.offscreen(c.x, c.y) && (r.wrecked ? d > 120 : d > 250 && r.phase === 'leave');

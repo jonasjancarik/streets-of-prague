@@ -298,9 +298,9 @@ export class Police {
   }
 
   // `car`: the police car that was hit, if any; its crew gets out and comes after you,
-  // wrecked or not.
+  // wrecked or not (but not out of one the blow has rolled over: they stay belted in).
   crime(kind: keyof typeof POINTS, x: number, y: number, car?: Car) {
-    if (kind === 'hitCop' && car?.crew) {
+    if (kind === 'hitCop' && car?.crew && !car.roll) {
       this.getOut(car);
       // A patrol riding along with the traffic has no one to drive it once its officer is
       // out (the traffic would carry on with an empty car, the door open): it joins the
@@ -969,7 +969,7 @@ export class Police {
 
     for (const p of this.cars) {
       const c = p.car;
-      if (!p.wrecked && c.damage > WRECKED) p.wrecked = true;
+      if (!p.wrecked && (c.damage > WRECKED || c.roll)) p.wrecked = true;
       let ctl = null;
       if (p.block && !p.wrecked) {
         // Parked across the road, the handbrake on, nobody at the wheel: once it's knocked
@@ -978,7 +978,8 @@ export class Police {
         ctl = BRAKED;
       } else if (!p.wrecked && !p.calm) ctl = this.chase(p, dt, goal);
       else if (!p.wrecked) ctl = { throttle: c.forwardSpeed > 0.3 ? -1 : 0, steer: 0, handbrake: false };
-      if (p.wrecked) c.mode = 'loose';
+      // (Rolled over, it keeps its crew, belted in their seats.)
+      if (p.wrecked && !c.roll) c.mode = 'loose';
       c.update(dt, ctl, this.grid);
       const d = Math.hypot(c.x - me.x, c.y - me.y);
       const waiting = this.officers.some((o) => o.car === c);
