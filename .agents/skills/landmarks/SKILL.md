@@ -5,13 +5,14 @@ description: Build and repair Streets of Prague landmarks, including custom arch
 
 # Streets of Prague landmarks
 
-Each map's `landmarks.json` identifies the tile that draws a landmark and the
+Each map area's `landmarks.json` identifies the tile that draws a landmark and the
 footprint where ordinary buildings give way. When the city model has the right
 shape, the survey bake below preserves photographed surface detail.
 
 For a custom replacement, or when the survey loses a distinctive roofline or
 fills in an open arcade, follow the [custom model workflow](references/custom-models.md).
-It uses the National Theatre to show how one authored asset fits both Prague maps.
+It uses the National Theatre to show how one model works at top-down driving zoom
+and close up in first and third person.
 
 `pipeline/landmarks.py` cuts IPR's photorealistic mesh (aerial photographs,
 summer 2023, ~5 cm/px, CC BY, a public I3S layer) around the building's OSM footprint,

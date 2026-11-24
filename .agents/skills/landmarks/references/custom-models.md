@@ -1,14 +1,16 @@
 # Custom landmark models
 
-The National Theatre (`divadlo`) uses one authored GLB in both Prague maps.
+The National Theatre (`divadlo`) uses the same model in top-down, first-person
+and third-person views.
 Its existing landmark entry still determines which tile loads it. The survey
 bake remains available as a fallback and for comparisons.
 
 ## Shape and surface detail
 
-Before replacing the model, save views at normal driving zoom and at pedestrian
-eye height. Choose a street angle that shows what needs to change, such as
-daylight through a carriage porch. Record the camera position, heading, zoom
+Before replacing the model, capture its silhouette at normal top-down driving
+zoom. Use first person to inspect openings at eye height and third person to
+see their scale beside the player. Pick a street angle that shows what needs
+to change, such as daylight through a carriage porch. Record the camera position, heading, zoom
 or pitch, time and weather so you can repeat each shot.
 
 Take the plan and roof heights from IPR's city model. Horizontal sections at the
@@ -45,8 +47,9 @@ For placement, choose a geographic origin, a second point along the model's
 positive X axis and a surveyed base elevation. The [theatre loader](../../../../src/nationalTheatre.ts)
 projects both points into the active map's grid, uses their direction for
 rotation, maps north to negative world Z, and subtracts the area's `iprRef`
-from the base elevation. This puts the same model beside the correct pavement
-in `praha` and `centrum`.
+from the base elevation. The default full-city dataset (`praha`) and the optional
+historic-centre dataset (`centrum`) have different grid origins. Projecting the
+anchors keeps the model beside the same pavement in either dataset.
 
 Keep the authored normals when applying the game's cutaway material and shadows.
 The ordinary photo loader points every normal upward because its textures already
@@ -63,17 +66,19 @@ loader includes that way's rings in the footprint used to hide overlapping build
 Repeat the baseline shots and compare them side by side. Inspect the silhouette
 from a distance, the entrance at eye height and the materials after dark. A
 successful fallback can hide an asset-loading error. For example, this
-[scene runner](../../scene-testing/SKILL.md) check visits the theatre on the
-centre map and checks whether the authored mesh loaded.
+[scene runner](../../scene-testing/SKILL.md) check visits the theatre in the
+default full-city game and confirms that the authored mesh loaded.
 
 ```sh
-node scripts/scene.mjs eval --fresh --extra '&area=centrum&renderer=webgl' \
+node scripts/scene.mjs eval --fresh \
   "await t.go([50.08148,14.41290]); const m = await window.__drive.world.landmarkModels.get('divadlo'); return !!m?.getObjectByName('Národní_divadlo')"
 ```
 
-Expect `true`. Check placement on each map that contains the landmark, including
-the default WebGPU view. Look through each open porch for leftover walls and
-check `world.rooftopAt(x, y)` at a surveyed roof point. A visual opening also
+Expect `true`. When changing placement, also run the check with
+`--extra '&area=centrum'` to exercise the historic-centre grid. For material
+changes, compare the default WebGPU renderer with `?renderer=webgl`. Look
+through each open porch for leftover walls and check `world.rooftopAt(x, y)`
+at a surveyed roof point. A visual opening also
 needs a mapped passage for the player to walk through it.
 
 Compare triangles, draw calls per pass, GLB bytes and atlas dimensions. The
