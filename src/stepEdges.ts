@@ -44,6 +44,32 @@ export function stepSides(steps: Terrace[] | null | undefined, mapWater: Polygon
   return { at, outlines: [...water, ...terraces.flatMap((t) => t.polys)], owners };
 }
 
+// m of a way before it goes on into a tunnel that crosses no step (see tiles.ts, crossers).
+export const INTO_TUNNEL = 4;
+
+// A way's line without its last `cut` m at each end that lies on one of `ends` (a
+// tunnel's ends): the pieces left, none if nothing is.
+export function shortenInto(pts: Point2[], ends: Point2[], cut: number): Point2[][] {
+  const on = (p: Point2) => ends.some((q) => Math.hypot(p[0] - q[0], p[1] - q[1]) < 0.5);
+  let line = pts;
+  const trim = (l: Point2[]) => {
+    // (From the line's start.)
+    let left = cut;
+    for (let i = 0; i < l.length - 1; i++) {
+      const [ax, ay] = l[i], [bx, by] = l[i + 1], d = Math.hypot(bx - ax, by - ay);
+      if (d >= left) {
+        const u = d ? left / d : 0;
+        return [[ax + (bx - ax) * u, ay + (by - ay) * u] as Point2, ...l.slice(i + 1)];
+      }
+      left -= d;
+    }
+    return [];
+  };
+  if (on(line[0])) line = trim(line);
+  if (line.length > 1 && on(line[line.length - 1])) line = trim([...line].reverse()).reverse();
+  return line.length > 1 ? [line] : [];
+}
+
 // Whether an edge of the outline of `own` with the sides `left` and `right` is drawn from
 // another outline (see stepSides).
 export const shared = (own: number, left: number, right: number) => (left === own || right === own) && Math.max(left, right) !== own;

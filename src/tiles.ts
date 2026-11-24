@@ -5,6 +5,7 @@ import { reachPassages, type OpenPassage } from './map/passageOpenings.ts';
 import { StreetFacades } from './streetFacades.ts';
 import { roofLookup, ROOFTOP } from './roofSurface.ts';
 import { dataUrl } from './data.ts';
+import { nationalTheatre } from './nationalTheatre.ts';
 import * as telemetry from './telemetry.ts';
 import * as THREE from 'three';
 import { STREET_QUALITY } from './streetQuality.ts';
@@ -47,7 +48,7 @@ import { overheadWires } from './wires.ts';
 import { stopLines } from './map/stopShelters.ts';
 import { posts, type Post } from './posts.ts';
 import { fences, type FenceSection } from './fences.ts';
-import { stepEdges, type Crosser, type StepEdge } from './stepEdges.ts';
+import { stepEdges, shortenInto, INTO_TUNNEL, type Crosser, type StepEdge } from './stepEdges.ts';
 import { byLevel, bridgeApproaches } from './roadLevels.ts';
 import type { RoadHint } from './roadLevels.ts';
 import { fenceCamera, fenceMeshes } from './map/fences.ts';
@@ -1655,10 +1656,16 @@ export class TileWorld {
     // (And a bridge's ends: the last metres of the street before it are a flat terrace,
     // pipeline/structures.py's pads, a step over the ground under the bridge, which the
     // street goes on across onto the deck.)
+    // (Not the last INTO_TUNNEL m of a way that goes on into a tunnel: it passes under
+    // the step there, through the opening in its wall, and the parapet above stays.
+    // Divadelní's mouths under Národní; the tunnel's level lets you through below.)
+    const walks = this.walkBy.get(k) || [];
+    const tunnelEnds = [...clipped, ...walks].filter((e) => e.tunnel && e.pts.length > 1).flatMap((e) => [e.pts[0], e.pts[e.pts.length - 1]]);
+    const short = (pts: Point2[]) => tunnelEnds.length ? shortenInto(pts, tunnelEnds, INTO_TUNNEL) : [pts];
     const crossers = [
-      ...clipped.filter((e) => !e.bridge && !e.tunnel).map((e) => ({ pts: e.pts, half: e.width / 2 + 2.5, hw: 'drive' })),
+      ...clipped.filter((e) => !e.bridge && !e.tunnel).flatMap((e) => short(e.pts).map((pts) => ({ pts, half: e.width / 2 + 2.5, hw: 'drive' }))),
       ...edges.flatMap((e) => bridgeApproaches(e).map((pts) => ({ pts, half: e.width / 2 + 2.5, hw: 'drive' }))),
-      ...(this.walkBy.get(k) || []).filter((e) => !e.bridge && !e.tunnel).flatMap((e) => clipLine(e.pts, t.box).map((pts) => ({ pts, half: Math.max(1.5, e.width / 2 + 0.5), hw: e.hw }))),
+      ...walks.filter((e) => !e.bridge && !e.tunnel).flatMap((e) => clipLine(e.pts, t.box).flatMap(short).map((pts) => ({ pts, half: Math.max(1.5, e.width / 2 + 0.5), hw: e.hw }))),
     ];
     // (A monument that is no building on the map stands in the way like one.)
     const outlines = [...t.buildings.filter(grounded).map((b) => ({ rings: b.rings })), ...marks.filter((l) => l.solid).flatMap((l) => l.polygons.map((rings) => ({ rings })))];
@@ -1835,7 +1842,12 @@ export class TileWorld {
     // The landmarks drawn with this tile (each with one tile only, where it mostly is).
     const models = Promise.all(s.marks.filter((l) => l.home === k).map((l) => {
       if (!this.landmarkModels.has(l.name)) {
-        this.landmarkModels.set(l.name, landmarkModel(dataUrl(this.area, `${l.file}`), l.plain).catch((e) => {
+        const photo = () => landmarkModel(dataUrl(this.area, l.file), l.plain);
+        const model = l.name === 'divadlo' ? nationalTheatre(this.index).catch((e) => {
+          console.warn('Using the survey model for the National Theatre', e);
+          return photo();
+        }) : photo();
+        this.landmarkModels.set(l.name, model.catch((e) => {
           console.warn(`Landmark ${l.name} could not be loaded`, e);
           return null;
         }));

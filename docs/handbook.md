@@ -2457,7 +2457,10 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   solid in the tile's collision grid, with a low parapet; a quay less than 2.5 m above
   the water has none, the water stops you there). The edge is open over the width of
   each street, path or stairs on the ground that crosses it, and at each end of a bridge
-  (the flat terrace before it is a step over the ground under the deck). `node
+  (the flat terrace before it is a step over the ground under the deck). A street or path
+  that runs on into a tunnel opens no gap for its last 4 m (`INTO_TUNNEL`): it passes
+  under the step through the tunnel's mouth, so the parapet runs on over the mouth as a
+  railing (Divadelní under Národní; the tunnel's level lets you through below). `node
   scripts/check-step-edges.mjs <area>` counts the edges and lists the car streets that
   cross the highest drops (places where the terrain or the map is wrong), how many
   metres of parapet have a top that jumps from the metres either side of it (a sawtooth
@@ -2467,7 +2470,11 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   lines out. `?nostepedges` turns the edges off.
   Straight outdoor stairways with a usable ground profile get concrete treads
   and visible nosings from their mapped walk edges (`src/map/stairs.ts`).
-  Walking follows the smooth profile beneath the treads. At the south end of
+  Walking follows the smooth profile beneath the treads. A flight drawn in the map over
+  the top of a wall beside it keeps to its own side of the wall (narrower, `WALL`), and up
+  to 3.5 m at each end, a third of a short flight, may be left to the landing where the
+  ground leans across it (`LANDING`): the stairs beside Divadelní's ramp down under
+  Národní. At the south end of
   Štefánikův most, the lower sidewalk joins two flights of stairs beneath the road.
   The DTM ZPS transport edges run from 187.0 to 186.7 m Bpv. The walker and the rendered
   terrain use those landings. The two mapped stairways have a handrail along the
