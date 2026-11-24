@@ -145,6 +145,8 @@ const AVAS_NOTES: [ratio: number, level: number][] = [[1, 1], [1.004, 0.7], [1.5
 const AVAS_PULSE = [1.2, 0.08]; // pulses a second standing, and more per km/h
 const BLIP = 0.25; // s a downshift's blip of throttle lasts
 const SMOOTH = 0.06; // s: how quickly a sound follows what it's following
+// The recorded door shutting, as loud as the made-up one was (measured with bangs.mjs).
+const DOOR_LEVEL = 0.66;
 const LOOPS = ['roll', 'motor', 'squeal'], ONCE = ['bell-1', 'bell-2', 'bell-3', 'depart-1', 'depart-2', 'arrive'];
 const MOTOR_SPEED = 12; // m/s at which the recorded whine plays at its own pitch
 const BRAKE = 1.2; // m/s²: a tram braking for a stop (as in trams.ts)
@@ -536,13 +538,24 @@ export class Sound {
     thump.stop(t + 0.16);
   }
 
-  // A car door shutting d m away, dx of it to the east: a dull thud and the latch catching.
+  // A car door shutting d m away, dx of it to the east: a recording of one (bump-door,
+  // also a crash's slow bump), a little higher or lower each time, its highs going with
+  // distance. Until it has loaded, a dull thud and the latch catching made from noise.
   doorShut(d: number, dx: number, dy = 0) {
     const ctx = this.ctx;
     if (!ctx || ctx.state !== 'running' || !this.on || d > 80) return;
     const t = ctx.currentTime, loud = 10 / (10 + d), pan = ctx.createStereoPanner();
     pan.pan.value = sourcePan(dx, dy, d, 30, this.right);
     pan.connect(this.buses.bangs);
+    const clip = this.crashClips['bump-door'];
+    if (clip) {
+      const src = ctx.createBufferSource(), air = filter(ctx, 'lowpass', 12000 - d * 110), g = gain(ctx, loud * DOOR_LEVEL);
+      src.buffer = clip;
+      src.playbackRate.value = 0.92 + Math.random() * 0.16;
+      src.connect(air).connect(g).connect(pan);
+      src.start(t);
+      return;
+    }
     const thump = ctx.createOscillator(), tg = gain(ctx, 0);
     thump.frequency.setValueAtTime(170, t);
     thump.frequency.exponentialRampToValueAtTime(62, t + 0.1);

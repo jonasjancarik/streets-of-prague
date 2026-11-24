@@ -83,7 +83,7 @@ try {
     for (const [name, fn, a] of refs) {
       const ctx = new OfflineAudioContext(1, SR * LEN, SR);
       const live = new Proxy(ctx, { get: (t, k) => k === 'state' ? 'running' : k === 'currentTime' ? 0.05 : (typeof t[k] === 'function' ? t[k].bind(t) : t[k]) });
-      Sound.prototype[fn].call({ ctx: live, on: true, noise: noiseOf(ctx), right: null, buses: { bangs: ctx.destination } }, ...a);
+      Sound.prototype[fn].call({ ctx: live, on: true, noise: noiseOf(ctx), right: null, buses: { bangs: ctx.destination }, crashClips: clips }, ...a);
       out.push([`(${name})`, measure(await ctx.startRendering())]);
     }
     return out;

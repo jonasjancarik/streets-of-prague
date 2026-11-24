@@ -79,7 +79,8 @@ difference.
   Chrome on the dev server's origin (seconds, the game isn't loaded) and prints its
   loudest 400 ms (LUFS) and peak; `--wav` also writes each one out for the user to
   play; `--noclips` leaves out the recordings. Measured: a car crash at 5 km/h -32,
-  10 km/h -28, 30 km/h -19, 55 km/h -16; a door shut -28.9, a gunshot -21.4, a car
+  10 km/h -28, 30 km/h -19, 55 km/h -16; a door shut -29 (the recorded `bump-door`,
+  `DOOR_LEVEL` in `src/audio.ts`), a gunshot -21.4, a car
   blowing up -11.9.
 - **Crashes are recordings** (`CRASH_CLIPS` and `PICK` in `src/crashsound.ts`: which
   recording for what was hit and how hard, and each one's level, evened out by
