@@ -320,6 +320,10 @@ headlamps have reflectors behind clear covers, with the beam starting at the lam
 glass and painted metal should respond differently to the same light. Use local service
 colours and markings for recognition. Leave manufacturer badges off or invent one.
 
+Car body panels render from both sides, and a closed dark underside fills the floor
+and engine bay in both close and distant models, so rolled cars do not reveal the street
+through their bodywork. Windows retain their separate glass treatment.
+
 **Choosing the model.** Use one model when it looks right in both views. If a close-up needs
 a cab interior or recessed lights, put that geometry on a separate street model so the
 overhead view stays light. Both versions of a vehicle should agree on its footprint,

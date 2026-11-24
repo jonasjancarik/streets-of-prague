@@ -554,6 +554,18 @@ function bodyGeometry(type: string, box?: string, closeCar = false,
   if (closeCar) parts.push(...buildStreetWheels(coachwork ? 'sport-sedan' : type, base.userData.wheelMounts));
   else DOORS.set(type, doors.sort((a, b) => a.n - b.n));
   if (layout && !coachwork) parts.push(...passengerCabin(type, layout));
+  // Blender's shell omits its bottom faces. Keep a closed floor below the cabin
+  // and engine bay, including on the distant body used by overturned wrecks.
+  const { L, W } = TYPES[accessoryBody];
+  const floor = (base.userData.cabinLayout as number[] | undefined)?.[3] ?? 0.36;
+  const underside = new THREE.BoxGeometry(L - 0.32, 0.08, W - 0.30);
+  underside.deleteAttribute('uv');
+  underside.translate(0, floor - 0.06, 0);
+  const count = underside.attributes.position.count;
+  underside.setAttribute('color', new THREE.BufferAttribute(new Float32Array(count * 3).fill(0.012), 3));
+  underside.setAttribute('painted', new THREE.BufferAttribute(new Float32Array(count), 1));
+  underside.setAttribute('hinge', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+  parts.push(underside);
   if (!glazing.length) return mergeGeometries(parts);
   const result = mergeGeometries(parts.concat(glazing));
   const solid = parts.reduce((sum, g) => sum + g.index!.count, 0);
@@ -1275,7 +1287,7 @@ export const LAMP_GLOW = 1.6;
 // Painted metal, not matte: the sun catches the roof, the bonnet and the windscreen as they
 // tilt towards it (CAR_PAINT), on top of the gloss below.
 export const CAR_PAINT = { specular: 0.22, shininess: 45 };
-const material = new THREE.MeshPhongMaterial({ vertexColors: true, specular: new THREE.Color().setScalar(CAR_PAINT.specular), shininess: CAR_PAINT.shininess });
+const material = new THREE.MeshPhongMaterial({ vertexColors: true, side: THREE.DoubleSide, specular: new THREE.Color().setScalar(CAR_PAINT.specular), shininess: CAR_PAINT.shininess });
 // The bodies are open shells, not closed solids. three.js draws only the back faces into the
 // shadow map by default, so the roof and bonnet (front faces from the sun) cast nothing and
 // the shadow comes out as a hollow outline.
@@ -1580,7 +1592,7 @@ coachGlass.onBeforeCompile = (sh, renderer) => {
 };
 const coachPaint = new THREE.MeshPhysicalMaterial({
   vertexColors: true, roughness: .42, metalness: .30, clearcoat: .86, clearcoatRoughness: .18,
-  shadowSide: THREE.DoubleSide,
+  side: THREE.DoubleSide, shadowSide: THREE.DoubleSide,
 });
 coachPaint.customProgramCacheKey = () => 'cars-coachwork';
 coachPaint.onBeforeCompile = (sh, renderer) => {
