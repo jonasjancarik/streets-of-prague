@@ -16,18 +16,27 @@ export type PlayerView = 'overhead' | 'first' | 'third' | 'vr';
 
 export type CarHandling = 'classic' | 'realistic';
 export interface FirstPersonOptions { handling: CarHandling; fov: number; sensitivity: number; motion: 'device' | 'steady' | 'gentle'; vrShortView: boolean }
-export const firstPersonOptions: FirstPersonOptions = { fov: 55, sensitivity: 100, motion: 'device', handling: 'classic', vrShortView: false };
+export const firstPersonOptions: FirstPersonOptions = { fov: 55, sensitivity: 100, motion: 'device', handling: 'realistic', vrShortView: false };
 export function setFirstPersonOptions(pick: Partial<FirstPersonOptions>, save = true) {
   if (typeof pick.vrShortView === 'boolean') firstPersonOptions.vrShortView = pick.vrShortView;
-  if (pick.handling === 'classic' || pick.handling === 'realistic') firstPersonOptions.handling = pick.handling;
+  if (pick.handling === 'classic' || pick.handling === 'realistic') {
+    firstPersonOptions.handling = pick.handling;
+    if (save) try { localStorage.setItem(HANDLING_KEY, pick.handling); } catch { /* optional */ }
+  }
   if (typeof pick.fov === 'number' && Number.isFinite(pick.fov))
     firstPersonOptions.fov = Math.round(Math.min(80, Math.max(45, pick.fov)));
   if (typeof pick.sensitivity === 'number' && Number.isFinite(pick.sensitivity))
     firstPersonOptions.sensitivity = Math.round(Math.min(200, Math.max(25, pick.sensitivity)));
   if (pick.motion === 'device' || pick.motion === 'steady' || pick.motion === 'gentle') firstPersonOptions.motion = pick.motion;
-  if (save) try { localStorage.setItem('firstPersonOptions', JSON.stringify(firstPersonOptions)); } catch { /* optional */ }
+  if (save) try { const { handling: _, ...rest } = firstPersonOptions; localStorage.setItem('firstPersonOptions', JSON.stringify(rest)); } catch { /* optional */ }
 }
-try { setFirstPersonOptions(JSON.parse(localStorage.getItem('firstPersonOptions') || '{}') ?? {}, false); } catch { /* defaults */ }
+// The handling is kept under a key of its own: until Realistic became the default, every
+// saved set of options held 'classic', picked or not, so the old copy of it is left unread.
+const HANDLING_KEY = 'carHandling';
+try {
+  const { handling: _, ...rest } = (JSON.parse(localStorage.getItem('firstPersonOptions') || '{}') ?? {}) as Partial<FirstPersonOptions>;
+  setFirstPersonOptions({ ...rest, handling: (localStorage.getItem(HANDLING_KEY) ?? undefined) as CarHandling | undefined }, false);
+} catch { /* defaults */ }
 
 export function lookAround(eyes: Eyes, right: number, down: number) {
   const scale = eyes.onFoot ? firstPersonOptions.sensitivity / 100 : 1;

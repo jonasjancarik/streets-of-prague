@@ -271,7 +271,7 @@ export function setupSettings({ sound, graphics, weather, saves, cameraChoice }:
   refresh.push(() => { motion.value = firstPersonOptions.motion; });
   const handlingRow = row<CarHandling>('Car handling', [
     { id: 'classic', label: () => t('Classic') },
-    { id: 'realistic', label: () => t('Realistic (experimental)') },
+    { id: 'realistic', label: () => t('Realistic') },
   ], () => firstPersonOptions.handling, handling => setFirstPersonOptions({ handling }));
   const handlingNote = el('p', 'settings-note', handlingRow);
   relabel.push(() => { handlingNote.textContent = t('Realistic handling gives cars, vans and pickups more gradual acceleration, longer stops and body roll in first and third person.'); });

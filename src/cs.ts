@@ -77,7 +77,7 @@ export const CS: Record<string, string> = {
   'Click the street to look around with the mouse. Esc releases it.': 'Kliknutím do ulice zapneš rozhlížení myší. Klávesou Esc myš uvolníš.',
   'Car handling': 'Jízdní model',
   'Classic': 'Klasický',
-  'Realistic (experimental)': 'Realistický (experimentální)',
+  'Realistic': 'Realistický',
   'Realistic handling gives cars, vans and pickups more gradual acceleration, longer stops and body roll in first and third person.': 'Při pohledu z první nebo třetí osoby s realistickým jízdním modelem osobní auta, dodávky a pickupy zrychlují pozvolněji, mají delší brzdnou dráhu a v zatáčkách se naklánějí.',
   'First-person controls': 'Ovládání z první osoby',
   'Field of view': 'Zorné pole',

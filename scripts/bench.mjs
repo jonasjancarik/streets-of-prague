@@ -196,7 +196,7 @@ async function runScene(browser, name, base = URL_BASE) {
   page.on('console', (m) => { if (closing) return; if (m.type() === 'info' && m.text().startsWith('Renderer:')) console.log(`[${name}] ${m.text()}`); if (m.type() === 'error' && !errors.includes(m.text())) { errors.push(m.text()); console.error(`[${name}] console:`, m.text().slice(0, 3000)); } });
   const view = args.view === 'first' ? '&fps' : args.view === 'third' ? '&tps' : '';
   const q = `?start=${place.start}${args.dpr === 'tier' ? '' : `&dpr=${DPR}`}&graphics=${args.graphics || 'high'}&time=${args.time || '14:00'}&go&day=wed&weather=${args.weather || 'clear'}${view}${args.extra || ''}`;
-  if (args.handling) await page.addInitScript((handling) => localStorage.setItem('firstPersonOptions', JSON.stringify({ handling })), args.handling);
+  if (args.handling) await page.addInitScript((handling) => localStorage.setItem('carHandling', handling), args.handling);
   // --profile-load: the CPU profile of loading, up to the game starting.
   const loadCdp = args['profile-load'] ? await ctx.newCDPSession(page) : null;
   if (loadCdp) { await loadCdp.send('Profiler.enable'); await loadCdp.send('Profiler.setSamplingInterval', { interval: 200 }); await loadCdp.send('Profiler.start'); }
