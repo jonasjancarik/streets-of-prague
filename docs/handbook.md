@@ -1112,7 +1112,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   tenements' windows and portals, after a neo-Renaissance house in Mělnická), and are
   cut and packed by `assets/facades/build_atlas.py`. Phones and tablets load them at half size.
   At street level the WebGPU renderer fits recessed doors and windows, sash bars,
-  projecting sills and stone hoods to nearby ordinary buildings. The meshes follow
+  projecting sills and stone hoods to nearby ordinary buildings. Where a continuous
+  strip of wall is clear, a zinc downpipe passes over the cornice and ends in a
+  cast-iron shoe above the paving. Its collars and wall straps share the façade
+  draw, and a street plate can use another patch of plaster beside it. The meshes follow
   the mapped walls, including their sloping feet and existing passages. Opening
   positions and ornament are inferred from the façade artwork. In first and third person,
   historical façades give the first floor a centrepiece, a pair of end bays or alternating

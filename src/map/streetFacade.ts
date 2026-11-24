@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { baysOf, wallLength, BLANK, F_SURFACE as S, F_GROUND, F_STOREY, STOREY_FIT, F_UP, F_DOOR, F_WALL, F_MOD, F_ELEVATION, F_PANEL, F_STREET_WIDTH, SHOPFRONTS, LOOK, STYLE } from '../facades.ts';
 import openings from './facadeOpenings.json' with {type: 'json'};
 import caps from './facadeCaps.json' with {type: 'json'};
+import { rainpipe } from './rainpipe.ts';
 import type { BuildingArrays } from '../contracts.ts';
 
 type Point = [number, number, number, number?]; // along, above foot, outward from wall, and how much light reaches it (1 when left out)
@@ -355,6 +356,8 @@ const SILL_SHADE = [.5, .5], CORNICE_SHADE = [.6, .5], SHADE_LIFT = .006;
 // The shade on the pavement along a wall's foot: how far out it reaches, how dark it is
 // at the wall (0-1) and how far above the paving it lies.
 const FOOT_SHADE = [.7, .5, .03];
+const PIPE_ZINC = ['#78817f','#828685','#647673','#716d64'].map(c=>new THREE.Color(c));
+const PIPE_CAST = new THREE.Color('#474845'), PIPE_STRAP = new THREE.Color('#595d59'), PIPE_INSIDE = new THREE.Color('#222522');
 function clip(poly: Point[], a: V2, b: V2, sign: number) {
   const result: Point[] = []; const dx = b[0] - a[0], dy = b[1] - a[1];
   let last = poly[poly.length - 1], d0 = sign * cross(dx, dy, last[0] - a[0], last[1] - a[1]);
@@ -396,6 +399,40 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
     });
     eligible.set(key, ok); return ok;
   }
+  // Look for a continuous strip beside the openings. A clipped party wall,
+  // recessed entrance or full-width shopfront need not carry a downpipe.
+  function pipeHeight(u: number) {
+    let top = 0;
+    for (const tri of triangles) for (let j=0;j<3;j++) {
+      const a=tri*12+j*4, b=tri*12+((j+1)%3)*4, dx=f[b]-f[a];
+      if (Math.abs(dx)<.001) continue;
+      const k=(u-f[a])/dx;
+      if (k>=0 && k<=1) top=Math.max(top,f[a+1]+k*(f[b+1]-f[a+1]));
+    }
+    const j=Math.min(bays-1,Math.floor(u/bay));
+    for (let row=0, bottom=0; bottom<top-.4; row++) {
+      const h=row?storey:ground, layer=streetModule(w,j,row,bays);
+      const mw=Math.min(bay,F_STREET_WIDTH[layer]), left=j*bay+(bay-mw)*.5;
+      if (!onWall(u,Math.min(top-.3,bottom+.38)) ||
+          openings[layer].some(([lo,,hi]) => u+.16>left+lo*mw/256 && u-.16<left+hi*mw/256)) return 0;
+      bottom+=h;
+    }
+    return onWall(u-.09,top-.35) && onWall(u+.09,top-.35) ? top : 0;
+  }
+  let pipeU=-1, pipeFaces: ReturnType<typeof rainpipe> = [];
+  if (width>=5.5 && style!==STYLE.panel && pick(seed,0,37)<.56) {
+    const offset=.23+.16*pick(seed,1,37);
+    const choices = pick(seed,2,37)<.5 ? [offset,width-offset] : [width-offset,offset];
+    for (const u of choices) {
+      const h=pipeHeight(u);
+      if (h<ground+2 || h>32) continue;
+      pipeU=u; pipeFaces=rainpipe(u,h,ground); break;
+    }
+  }
+  const pipePaint = {
+    zinc: PIPE_ZINC[Math.floor(pick(seed,3,37)*PIPE_ZINC.length)],
+    cast: PIPE_CAST, strap: PIPE_STRAP, inside: PIPE_INSIDE,
+  };
   let modeled = false;
   for (const id of triangles) {
     const o = id * 9, k = id * 12, vertex = id * 3;
@@ -451,6 +488,12 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
         }
       }
     };
+    if (pipeFaces.length && pipeU+.10>=minX && pipeU-.10<=maxX) {
+      for (const face of pipeFaces) {
+        if (face.points.every(q=>q[1]<minY) || face.points.every(q=>q[1]>maxY)) continue;
+        emit(face.points,0,1,S.shopPaint,pipePaint[face.finish]);
+      }
+    }
     // Most openings only need relief near the pavement. A deep loggia casts
     // a visible shadow even several floors up when you stand below the block.
     const band = (lo: number, hi: number) => {
@@ -507,6 +550,7 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
   // door surrounds, sills, the storey cornice and holes in the source wall.
   const mounts: number[] = [];
   function mount(u: number, h: number) {
+    if (pipeU >= 0 && Math.abs(u-pipeU)<.52) return false;
     const left = u - .44, right = u + .44, low = h - .24, high = h + .24;
     if (left < 0 || right > width || high > ground - .30) return false;
     for (let j = Math.floor(left / bay); j <= Math.min(bays - 1, Math.floor(right / bay)); j++) {

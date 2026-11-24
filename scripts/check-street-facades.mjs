@@ -6,6 +6,14 @@ import { buildStreetWall, packStreetWalls, streetModule } from '../src/map/stree
 import { FACADE_ON, F_SURFACE, F_BAY, F_STOREY, F_STREET_WIDTH } from '../src/facades.ts';
 import apertures from '../src/map/facadeOpenings.json' with { type: 'json' };
 import { StreetFacades } from '../src/streetFacades.ts';
+import { STREET_QUALITY, STREET_TIERS } from '../src/streetQuality.ts';
+import { rainpipe } from '../src/map/rainpipe.ts';
+
+const pipe = rainpipe(.3, 15, 4);
+assert(pipe.some(f => f.finish === 'inside'), 'the outlet is hollow');
+assert(pipe.filter(f => f.finish === 'strap').length > 8, 'a tall pipe has clamped joints');
+assert(pipe.every(f => f.points.every(([x,y,z]) => Math.abs(x-.3) < .10 && y > 0 && y < 15 && z > 0)),
+  'pipe stays in its clear strip above the paving and in front of the wall');
 
 const p = [], f = [], colors = [], labels = [];
 function wall(x0, y0, x1, y1) {
@@ -60,7 +68,10 @@ const manager = new StreetFacades(scene, workers);
 manager.register(base, groups, [-10, -10, 30, 30]); FACADE_ON.value = 1;
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 manager.update(false, 4, 1, 4); assert.equal(jobs, 0);
-manager.update(true, 4, 1, 4, 'lowest'); assert.equal(jobs, 0);
+const previousBudget = { ...STREET_QUALITY };
+Object.assign(STREET_QUALITY, STREET_TIERS.lowest);
+manager.update(true, 4, 1, 4); assert.equal(jobs, 0);
+Object.assign(STREET_QUALITY, previousBudget);
 manager.update(true, 4, 1, 4); assert.equal(jobs, 1); assert.equal(geom.index, null);
 manager.update(false, 4, 1, 4); assert.equal(cancelled, 1);
 ready(result); await tick(); assert.equal(scene.children.length, 1); assert.equal(geom.index, null);
