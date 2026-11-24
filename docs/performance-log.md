@@ -1978,3 +1978,18 @@ and 6.8 ms with the larger windows and modelled loggias. High, 1×, clear summer
 afternoon, eight seconds per run. The 95th percentiles were 7.2, 7.3 and 9.0 ms
 before, and 7.1, 8.9 and 9.4 ms after. Both versions slowed during the test.
 These measurements cover a standing desktop view. Mobile frame time is unmeasured.
+
+### Walking through the trees at Petřín (24 November)
+
+At 50.083, 14.3965, facing 140°, the original tile-wide distance check drew the
+detailed trunk, boughs and leaf sprays on 11,483 trees. Selecting by each tree's
+position drew them on 1,764. Both versions accounted for all 12,939 trees in the
+same loaded pages. The detailed meshes contained 16.25 and 2.60 million triangles
+respectively before camera culling.
+
+On a Pixel 5, WebGPU Medium at 392 × 745 and 1× resolution, the page and individual
+selections averaged 139.1 and 109.5 ms per frame in eight alternating six-second
+windows. A second run kept individual selection on and changed only the distant
+crowns' tuft rims. Full and eight-point rims averaged 100.0 and 84.3 ms, with
+four windows per setting. These are separate within-run comparisons. Even the
+lighter forest averaged only 11.9 fps in that second run.

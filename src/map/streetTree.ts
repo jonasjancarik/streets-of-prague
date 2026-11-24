@@ -40,19 +40,31 @@ export function streetTreeGeometry(seed: number, boughs: number, sprays: number,
   const tube = (points: [THREE.Vector3, number, number][], sides: number, turns: number) => {
     sides = Math.max(3, Math.round(sides * woodDetail));
     let last: number[] = [];
+    const trunk = points[0][2] >= 0;
+    let along = Math.abs(points[0][0].y) * 1.7;
     const u = new THREE.Vector3(), w = new THREE.Vector3(), dir = new THREE.Vector3(), n = new THREE.Vector3(), p = new THREE.Vector3();
     points.forEach(([at, radius, rise], i) => {
       dir.copy(points[Math.min(i + 1, points.length - 1)][0]).sub(points[Math.max(i - 1, 0)][0]).normalize();
-      u.crossVectors(Math.abs(dir.y) > 0.9 ? side : up, dir).normalize();
+      if (i) {
+        // Carry the previous ring's seam along the branch. Choosing a new
+        // reference axis at every bend twisted the wood and its bark at forks.
+        u.addScaledVector(dir, -u.dot(dir));
+        along += at.distanceTo(points[i - 1][0]) * 6;
+      }
+      if (!i || u.lengthSq() < .001) u.crossVectors(Math.abs(dir.y) > .9 ? side : up, dir);
+      u.normalize();
       w.crossVectors(dir, u);
       const ring: number[] = [];
       for (let j = 0; j <= sides; j++) {
         const th = (j / sides) * Math.PI * 2;
         n.copy(u).multiplyScalar(Math.cos(th)).addScaledVector(w, Math.sin(th));
-        p.copy(at).addScaledVector(n, radius);
-        ring.push(v(p, n, (j / sides) * turns, 0, 1, rise, 0, 1));
+        const flare = trunk && rise >= 0 ? Math.max(0, 1 - rise / .18) ** 2 : 0;
+        const width = radius * (1 + flare * (.18 * Math.cos(3 * th + .5) + .08 * Math.cos(2 * th - .7)));
+        p.copy(at).addScaledVector(n, width);
+        const mature = Math.min(1, radius / .024);
+        ring.push(v(p, n, (j / sides) * turns, trunk ? -1 : along, 1, rise, 0, mature));
       }
-      if (last.length) for (let j = 0; j < sides; j++) idx.push(last[j], ring[j], last[j + 1], last[j + 1], ring[j], ring[j + 1]);
+      if (last.length) for (let j = 0; j < sides; j++) idx.push(last[j], last[j + 1], ring[j], last[j + 1], ring[j + 1], ring[j]);
       last = ring;
     });
   };
@@ -61,10 +73,15 @@ export function streetTreeGeometry(seed: number, boughs: number, sprays: number,
   // upper part runs on up into the crown and thins out into a leader.
   const lean = (r() - 0.5) * 0.08, bend = r() * Math.PI * 2;
   const axis = (y: number) => new THREE.Vector3(Math.cos(bend) * lean * (y + 0.4), y, Math.sin(bend) * lean * (y + 0.4));
+  const fork = axis(CROWN_FOOT);
+  const lower = (y: number, rise: number) => {
+    const bow = .024 * Math.sin(Math.PI * rise);
+    return new THREE.Vector3(fork.x * rise + Math.sin(bend) * bow, y, fork.z * rise - Math.cos(bend) * bow);
+  };
   tube([
     // (The lower rings' heights here only keep them apart: the shader puts them by `rise`.)
-    [new THREE.Vector3(0, CROWN_FOOT - 1, 0), 0.07, 0], [new THREE.Vector3(0, CROWN_FOOT - 0.95, 0), 0.048, 0.04], [new THREE.Vector3(0, CROWN_FOOT - 0.8, 0), 0.041, 0.18],
-    [new THREE.Vector3(0, CROWN_FOOT - 0.4, 0), 0.038, 0.6], [axis(CROWN_FOOT), 0.035, 1], [axis(-0.85), 0.031, -1], [axis(-0.4), 0.026, -1], [axis(0), 0.019, -1], [axis(0.38), 0.01, -1], [axis(0.6), 0.003, -1],
+    [lower(CROWN_FOOT - 1, 0), .07, 0], [lower(CROWN_FOOT - .95, .04), .048, .04], [lower(CROWN_FOOT - .8, .18), .041, .18],
+    [lower(CROWN_FOOT - .4, .6), .038, .6], [fork, .035, 1], [axis(-.85), .031, -1], [axis(-.4), .026, -1], [axis(0), .019, -1], [axis(.38), .01, -1], [axis(.6), .001, -1],
   ], 8, 2);
 
   // Boughs: off the upper trunk, out and up in a bow, each forking into two or three
@@ -79,7 +96,7 @@ export function streetTreeGeometry(seed: number, boughs: number, sprays: number,
       const t = k / 4, at = from.clone().lerp(to, t);
       at.y += Math.sin(t * Math.PI) * sag * (t < 0.5 ? 1 : 0.4) - (1 - t) * t * span * 0.1;
       at.addScaledVector(sideways, Math.sin(t * Math.PI) * swing);
-      points.push([at, r0 + (r1 - r0) * Math.sqrt(t), -1]);
+      points.push([at, k === 4 ? r1 * .22 : r0 + (r1 - r0) * Math.sqrt(t), -1]);
     }
     tube(points, sides, 1);
     ends.push({ at: to, dir: to.clone().sub(points[3][0]).normalize() });

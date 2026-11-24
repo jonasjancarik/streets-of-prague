@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { STREET_QUALITY } from './streetQuality.ts';
 import { send } from './gpu.ts';
-import { treePageFactory, OUTLINE, type TreeInstances } from './map/vegetation.ts';
+import { distantTreeCrown, treePageFactory, OUTLINE, type TreeInstances } from './map/vegetation.ts';
 import { streetTreeGeometry, canopyGeometry, coniferGeometry } from './map/streetTree.ts';
 
 export const TREE_PAGE_CAPACITY = [1200, 128, 128, 256] as const;
@@ -9,7 +9,13 @@ export type TreeKind = 0 | 1 | 2 | 3; // broadleaf, shrub, conifer, big broadlea
 type PerKind = readonly [number, number, number, number];
 const KINDS = [0, 1, 2, 3] as const;
 const OUTLINE_ATTRIBUTES = ['outlineA', 'outlineB'] as const; // (OUTLINE = 8: four in each)
-type Page = { mesh: THREE.InstancedMesh; kind: TreeKind; owner: string | null; street?: THREE.InstancedMesh; canopy?: THREE.InstancedMesh };
+type Source = { trees: TreeInstances; from: number; count: number };
+type Selection = { mask: Uint8Array; x: number; z: number; individual: boolean };
+type Page = {
+  mesh: THREE.InstancedMesh; kind: TreeKind; owner: string | null;
+  street?: THREE.InstancedMesh; canopy?: THREE.InstancedMesh;
+  source?: Source; selection?: Selection; packed?: boolean;
+};
 
 // The ground uses ranks 1–200. Draw crowns after the other solid meshes so only
 // foliage in front of them marks pixels for the player's car outline.
@@ -25,16 +31,38 @@ function markCrown(mesh: THREE.InstancedMesh<THREE.BufferGeometry, THREE.Materia
 // side (webgpu/streetTrees.ts), which also says when their pictures have loaded.
 let streetMaterial: (() => THREE.Material) | null = null, streetReady: { value: boolean } = { value: false };
 export const setStreetTreeMaterial = (make: () => THREE.Material, ready: { value: boolean }) => { streetMaterial = make; streetReady = ready; };
-// How near a page of trees has to come (the nearest point of its sphere, m) to be drawn as
-// street trees; beyond, the crowns made for the view from above do.
+// Metres from the eye to the tree crown. A tile's sphere only answers whether
+// there might be a nearby tree in it.
 const STREET_REACH = 150;
 // (For measuring: false keeps the top-down crowns in first person too.)
-export const STREET_TREES = { value: true };
+export const STREET_TREES = { value: true, individual: true, farRims: true };
 // Whether crowns seen from above get their sprays of leaves (High and Ultra).
 export const CANOPY_LEAVES = { value: false };
 // 1 while they are drawn (from above, on Ultra, their pictures loaded): the tufts under them
 // are then the crown's shaded inside, and are drawn darker (webgpu/trees.ts).
 export const CANOPY_SHOWN = { value: 0 };
+
+// Copy a contiguous run in its original order. The two outline attributes are
+// the eight surveyed radii, packed together in the worker's source buffer.
+function copyTrees(to: THREE.InstancedMesh, slot: number, trees: TreeInstances, from: number, count: number) {
+  to.instanceMatrix.array.set(trees.matrices.subarray(from * 16, (from + count) * 16), slot * 16);
+  to.instanceColor!.array.set(trees.colours.subarray(from * 3, (from + count) * 3), slot * 3);
+  to.geometry.getAttribute('yearly').array.set(trees.yearly.subarray(from, from + count), slot);
+  const a = to.geometry.getAttribute('outlineA').array, b = to.geometry.getAttribute('outlineB').array;
+  for (let n = 0; n < count; n++) {
+    const input = (from + n) * OUTLINE, output = (slot + n) * 4;
+    for (let j = 0; j < 4; j++) {
+      a[output + j] = trees.outlines[input + j]; b[output + j] = trees.outlines[input + 4 + j];
+    }
+  }
+}
+
+function uploadTrees(mesh: THREE.InstancedMesh, count: number) {
+  mesh.count = count;
+  send(mesh.instanceMatrix, count); send(mesh.instanceColor!, count);
+  send(mesh.geometry.getAttribute('yearly') as THREE.InstancedBufferAttribute, count);
+  for (const name of OUTLINE_ATTRIBUTES) send(mesh.geometry.getAttribute(name) as THREE.InstancedBufferAttribute, count);
+}
 
 // Every page belongs to at most one tile. It keeps its mesh, attributes and shader
 // binding when that tile leaves; only the used ranges and bounds change on reuse.
@@ -133,22 +161,11 @@ export class TreePool {
         page.owner = tileKey;
         acquired.push(page);
         const mesh = page.mesh;
-        (mesh.instanceMatrix.array as Float32Array).set(matrices.subarray(from * 16, (from + n) * 16));
-        (mesh.instanceColor!.array as Float32Array).set(colours.subarray(from * 3, (from + n) * 3));
-        (mesh.geometry.getAttribute('yearly').array as Float32Array).set(yearly.subarray(from, from + n));
-        const [a, b] = OUTLINE_ATTRIBUTES.map((name) => mesh.geometry.getAttribute(name).array as Float32Array);
-        for (let k = 0; k < n; k++) {
-          const o = (from + k) * OUTLINE;
-          a.set(outlines.subarray(o, o + 4), k * 4);
-          b.set(outlines.subarray(o + 4, o + 8), k * 4);
-        }
-        mesh.count = n;
+        page.source = { trees: instances, from, count: n };
+        copyTrees(mesh, 0, instances, from, n);
+        uploadTrees(mesh, n);
         mesh.computeBoundingBox();
         mesh.computeBoundingSphere();
-        send(mesh.instanceMatrix, n);
-        send(mesh.instanceColor!, n);
-        send(mesh.geometry.getAttribute('yearly') as THREE.InstancedBufferAttribute, n);
-        for (const name of OUTLINE_ATTRIBUTES) send(mesh.geometry.getAttribute(name) as THREE.InstancedBufferAttribute, n);
         mesh.visible = true;
       }
       this.leases.set(tileKey, acquired);
@@ -161,6 +178,10 @@ export class TreePool {
 
   private release(page: Page) {
     page.owner = null;
+    distantTreeCrown(page.mesh, false);
+    page.source = undefined;
+    page.packed = false;
+    if (page.selection) page.selection.x = Infinity;
     page.mesh.count = 0;
     page.mesh.visible = false;
     page.mesh.boundingBox = null;
@@ -169,9 +190,9 @@ export class TreePool {
     if (page.canopy) { page.canopy.visible = false; page.canopy.count = 0; }
   }
 
-  // First person: the broadleaf trees near (x, z) are drawn as street trees, each page's
-  // second mesh over the same instances (made when first wanted); `on` false puts every
-  // page back to its top-down crowns.
+  // First person: each leased page can hold nearby street trees and distant
+  // crowns. The source arrays stay with the tile so returning overhead restores
+  // the original batch, order and surveyed attributes.
   private streetShapes: THREE.BufferGeometry[] | null = null;
   private streetLods = new Map<number, THREE.BufferGeometry[]>();
   private streetMade: THREE.Material | null = null;
@@ -188,35 +209,88 @@ export class TreePool {
     if (on) this.streetShapes = this.streetLods.get(detail)!;
     const ready = on && !!this.streetMade && streetReady.value;
     for (const page of this.pages) {
-      const mesh = page.mesh, used = page.owner !== null && mesh.count > 0;
       if (page.kind !== 0 && page.kind !== 3) continue;
-      const sphere = mesh.boundingSphere;
-      const near = ready && used && !!sphere && Math.hypot(sphere.center.x - x, sphere.center.z - z) - sphere.radius < STREET_REACH;
-      if (near && !page.street) page.street = this.streetMesh(page);
-      if (page.street) {
+      distantTreeCrown(page.mesh, ready && !!page.source && STREET_TREES.individual && STREET_TREES.farRims);
+      const sphere = page.mesh.boundingSphere;
+      const range = STREET_REACH + (STREET_TREES.individual ? 8 : 0);
+      if (!ready || !page.source || !sphere || Math.hypot(sphere.center.x - x, sphere.center.z - z) - sphere.radius >= range) {
+        this.allCrowns(page);
+        if (page.selection) page.selection.x = Infinity;
+        continue;
+      }
+      this.selectStreetTrees(page, page.source, x, z);
+      if (page.street?.visible) {
         const shape = this.streetShapes?.[page.kind === 3 ? 1 : 0];
-        if (near && shape && page.street.geometry.index !== shape.index) {
+        if (shape && page.street.geometry.index !== shape.index) {
           page.street.geometry.setIndex(shape.index);
           for (const [name, attr] of Object.entries(shape.attributes)) page.street.geometry.setAttribute(name, attr);
         }
-        page.street.visible = near;
-        if (near) { page.street.count = mesh.count; page.street.boundingSphere = mesh.boundingSphere; page.street.boundingBox = mesh.boundingBox; }
       }
-      mesh.visible = used && !near;
     }
   }
 
-  private streetMesh(page: Page, shape = this.streetShapes![page.kind === 3 ? 1 : 0], shadows = true) {
+  private allCrowns(page: Page) {
+    const source = page.source;
+    if (source && page.packed) {
+      copyTrees(page.mesh, 0, source.trees, source.from, source.count);
+      uploadTrees(page.mesh, source.count);
+      page.packed = false;
+    }
+    page.mesh.visible = !!source && source.count > 0;
+    if (page.street) { page.street.visible = false; page.street.count = 0; }
+  }
+
+  private selectStreetTrees(page: Page, source: Source, x: number, z: number) {
+    const pick = page.selection ??= { mask: new Uint8Array(this.capacity[page.kind]), x: Infinity, z: 0, individual: true };
+    const individual = STREET_TREES.individual;
+    const reuse = Number.isFinite(pick.x) && pick.individual === individual;
+    if (reuse && (pick.x - x) ** 2 + (pick.z - z) ** 2 < 36) return;
+    pick.x = x; pick.z = z; pick.individual = individual;
+    const matrices = source.trees.matrices;
+    let near = 0, changed = !reuse;
+    for (let i = 0; i < source.count; i++) {
+      const at = (source.from + i) * 16;
+      const dx = matrices[at + 12] - x, dz = matrices[at + 14] - z;
+      const radius = Math.sqrt(Math.max(matrices[at] ** 2 + matrices[at + 2] ** 2, matrices[at + 8] ** 2 + matrices[at + 10] ** 2));
+      const limit = STREET_REACH + radius + (reuse && pick.mask[i] ? 6 : 0);
+      const close = (!individual || dx * dx + dz * dz <= limit * limit) ? 1 : 0;
+      if (pick.mask[i] !== close) changed = true;
+      pick.mask[i] = close; near += close;
+    }
+    if (!changed) return;
+    if (!near) { this.allCrowns(page); return; }
+    const street = page.street ??= this.streetMesh(page, this.streetShapes![page.kind === 3 ? 1 : 0], true, true);
+    let closeCount = 0, farCount = 0;
+    for (let from = 0; from < source.count;) {
+      let end = from + 1;
+      while (end < source.count && pick.mask[end] === pick.mask[from]) end++;
+      const n = end - from;
+      if (pick.mask[from]) { copyTrees(street, closeCount, source.trees, source.from + from, n); closeCount += n; }
+      else { copyTrees(page.mesh, farCount, source.trees, source.from + from, n); farCount += n; }
+      from = end;
+    }
+    uploadTrees(street, closeCount); uploadTrees(page.mesh, farCount);
+    page.packed = true;
+    page.mesh.visible = farCount > 0; street.visible = true;
+    // The canonical bounds include every tree in either batch, with the shader's
+    // extra crown width and trunk height, and work for the sun's camera too.
+    street.boundingSphere = page.mesh.boundingSphere; street.boundingBox = page.mesh.boundingBox;
+  }
+
+  private streetMesh(page: Page, shape = this.streetShapes![page.kind === 3 ? 1 : 0], shadows = true, ownInstances = false) {
     const from = page.mesh;
     const geom = new THREE.BufferGeometry();
     geom.setIndex(shape.index);
     for (const [name, attr] of Object.entries(shape.attributes)) geom.setAttribute(name, attr);
-    // The instances are the page's own: one set of numbers for both meshes.
-    for (const name of ['yearly', ...OUTLINE_ATTRIBUTES]) geom.setAttribute(name, from.geometry.getAttribute(name));
+    const capacity = this.capacity[page.kind];
+    for (const name of ['yearly', ...OUTLINE_ATTRIBUTES]) {
+      const attr = from.geometry.getAttribute(name);
+      geom.setAttribute(name, ownInstances ? new THREE.InstancedBufferAttribute(new Float32Array(capacity * attr.itemSize), attr.itemSize) : attr);
+    }
     const mesh = new THREE.InstancedMesh(geom, this.streetMade!, this.capacity[page.kind]);
     markCrown(mesh);
-    mesh.instanceMatrix = from.instanceMatrix;
-    mesh.instanceColor = from.instanceColor;
+    if (ownInstances) mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3);
+    else { mesh.instanceMatrix = from.instanceMatrix; mesh.instanceColor = from.instanceColor; }
     mesh.userData.sharedMatrices = true; // (see configureRenderer in webgpu.ts)
     mesh.count = from.count;
     mesh.castShadow = shadows;
@@ -271,10 +345,11 @@ export class TreePool {
     const active = [0, 0, 0, 0], free = [0, 0, 0, 0], trees = [0, 0, 0, 0];
     for (const page of this.pages) {
       if (page.owner === null) free[page.kind]++;
-      else { active[page.kind]++; trees[page.kind] += page.mesh.count; }
+      else { active[page.kind]++; trees[page.kind] += page.source?.count ?? 0; }
     }
     return { capacity: [...this.capacity], active, free, trees, growth: [...this.growth],
-      matrixColourEvergreenBytes: this.pages.reduce((n, p) => n + this.capacity[p.kind] * (16 + 3 + 1 + OUTLINE) * 4, 0) };
+      matrixColourEvergreenBytes: this.pages.reduce((n, p) =>
+        n + this.capacity[p.kind] * (16 + 3 + 1 + OUTLINE) * 4 * (p.street ? 2 : 1), 0) };
   }
 
   dispose() {

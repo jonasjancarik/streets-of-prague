@@ -858,8 +858,14 @@ The metro ride uses its overhead cutaway camera.
   (`src/map/streetTree.ts`, `src/webgpu/streetTrees.ts`): a trunk with bark, boughs that
   fork, and at every branch end flat sprays of leaves (`public/street-trees.webp`, from
   `assets/trees/`), in the tree's own colour, turning and falling through the year to
-  leave bare twigs. The tree pool makes each page's second mesh over the same instances
-  when first wanted (`TreePool.street`). Shrubs there are a body of the same sprays, and
+  leave bare twigs. Bark grain follows each bough around its bends. Thick trunks
+  broaden at the roots, and the younger branches taper into smoother twigs.
+  The tree pool divides each page by distance to the camera and reuses both instance
+  buffers as you walk. A tree keeps its model for another six metres at the changeover
+  so standing near it does not make it switch back and forth (`TreePool.street`).
+  Farther away, each broadleaf tuft uses eight points around its rim. From above
+  it has its original outline again.
+  Shrubs there are a body of the same sprays, and
   conifers get whorls of spruce boughs laid over their plain tiers (`canopyGeometry`,
   `coniferGeometry`; `TreePool.canopy`). On High and Ultra the view from above has them too: sprays
   laid like shingles over every broadleaf crown's tufts, which keep its shape, shade and

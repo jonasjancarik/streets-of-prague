@@ -894,16 +894,20 @@ export function treePageFactory() {
     if (simple) {
       const full = { ...shape.drawRange };
       let shadowCamera: THREE.Camera | null = null;
-      const restore = () => geom.setDrawRange(full.start, full.count);
+      const restore = () => {
+        const range = geom.userData.distantCrown ? simple : full;
+        geom.setDrawRange(range.start, range.count);
+      };
       mesh.onBeforeShadow = (_renderer, _object, _camera, camera) => {
         shadowCamera = camera;
-        const range = SIMPLE_TREE_SHADOWS.value ? simple : full;
+        const range = SIMPLE_TREE_SHADOWS.value || geom.userData.distantCrown ? simple : full;
         geom.setDrawRange(range.start, range.count);
       };
       mesh.onAfterShadow = () => { restore(); shadowCamera = null; };
       // Also recover the visible range if a shadow render threw before its after hook.
       mesh.onBeforeRender = (_renderer, _scene, camera) => { if (camera !== shadowCamera) restore(); };
       geom.userData.simpleShadowRange = simple;
+      geom.userData.fullTreeRange = full;
     }
     return mesh;
   };
@@ -919,6 +923,16 @@ export function treePageFactory() {
       crown = shrub = pine = bigCrown = null;
     }
   } };
+}
+
+// Across a park or the river, eight rim vertices still describe each tuft, with
+// its original colour and seasonal attributes. Restore the full rim overhead.
+export function distantTreeCrown(mesh: THREE.InstancedMesh, distant: boolean) {
+  const geometry = mesh.geometry, data = geometry.userData;
+  if (!data.simpleShadowRange || !!data.distantCrown === distant) return;
+  data.distantCrown = distant;
+  const range = distant ? data.simpleShadowRange : data.fullTreeRange;
+  geometry.setDrawRange(range.start, range.count);
 }
 // (Bare trees throw the shadows of their twigs.)
 const treeDepth = new THREE.MeshDepthMaterial();

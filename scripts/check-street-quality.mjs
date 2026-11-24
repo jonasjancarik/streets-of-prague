@@ -87,10 +87,32 @@ function leaves(g) {
   }
   return out;
 }
+function checkBark(g) {
+  const { position, normal, part, uv } = g.attributes;
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), n = new THREE.Vector3();
+  let branchFaces = 0;
+  for (let i = 0; i < g.index.count; i += 3) {
+    const ids = [g.index.getX(i), g.index.getX(i + 1), g.index.getX(i + 2)];
+    if (part.getX(ids[0]) !== 1) continue;
+    a.fromBufferAttribute(position, ids[0]);
+    b.fromBufferAttribute(position, ids[1]).sub(a);
+    c.fromBufferAttribute(position, ids[2]).sub(a);
+    const face = b.cross(c);
+    assert(ids.every(id => face.dot(n.fromBufferAttribute(normal, id)) > 0), 'the bark faces out around each bend');
+    const along = ids.map(id => uv.getY(id));
+    if (along[0] >= 0) {
+      assert(Math.max(...along) > Math.min(...along), 'bark grain advances along each branch segment');
+      branchFaces++;
+    }
+  }
+  assert(branchFaces > 0, 'the wood includes textured side branches');
+}
 for (const [seed, boughs] of [[5, 9], [9, 13]]) {
   const full = streetTreeGeometry(seed, boughs, 3), originalLeaves = leaves(full);
+  checkBark(full);
   for (const detail of [.5, .75]) {
     const reduced = streetTreeGeometry(seed, boughs, 3, detail);
+    checkBark(reduced);
     assert(reduced.index.count < full.index.count, 'lower tiers reduce wood triangles');
     assert.deepEqual(leaves(reduced), originalLeaves, 'leaf placement and crown silhouette stay intact');
     reduced.dispose();

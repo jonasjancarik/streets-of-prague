@@ -114,7 +114,10 @@ function material() {
 
   m.setupDiffuseColor = function (builder: N) {
     proto.setupDiffuseColor.call(this, builder);
-    const wood: N = bark.sample(vec2(card.x, positionWorld.y.mul(1.1))).rgb.mul(1.7);
+    // Furrows rise up a trunk and follow the length of a sideways bough.
+    // Young twigs have a smoother, warmer skin than the mature wood.
+    const grain: N = bark.sample(vec2(card.x, select(card.y.lessThan(0), positionWorld.y.mul(1.1), card.y))).rgb.mul(1.7);
+    const wood: N = mix(vec3(.12, .092, .075), grain, smoothstep(.15, 1, part.w));
     const p: N = picture().toVar();
     // (A bare spray is thinner than the same card in leaf, and two cards in five show nothing:
     // with every card a full fan of twigs a winter crown was a dark thicket.)
