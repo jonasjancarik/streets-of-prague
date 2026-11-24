@@ -8,7 +8,7 @@ import type { Chopper } from './helicopter.ts';
 export interface TouchState {
   active: boolean; move: number; turn: number; aim: { h: number; mag: number } | null;
   brake: boolean; run: boolean; fast: boolean;
-  update(options: { car: Car | Chopper | null; engine?: boolean; beacon?: boolean; driving?: boolean; tram?: boolean; steal?: boolean; wait?: boolean; label?: string | null; canEnter: boolean; limit?: number | null }): void;
+  update(options: { car: Car | Chopper | null; engine?: boolean; beacon?: boolean; doors?: boolean; driving?: boolean; tram?: boolean; steal?: boolean; wait?: boolean; label?: string | null; canEnter: boolean; limit?: number | null }): void;
 }
 
 // On-screen controls for phones and tablets. They appear on touch screens (or with
@@ -295,8 +295,9 @@ export function setupTouch({ action, backOnRoad, zoomBy, eyes, horn, steal, cann
   const set = <T extends string | boolean>(key: string, value: T, apply: (value: T) => void) => { if (shown[key] !== value) { shown[key] = value; apply(value); } };
   // `tram`: riding one (or a taxi, funicular or ferry); `steal`: on a tram, which can be
   // taken over; `wait`: at a stop; `label`: what the main button does, when it isn't
-  // getting in or out of a car; `limit`: the speed lane assist is keeping to.
-  state.update = ({ car, engine = false, beacon: lights = false, driving = false, tram = false, steal = false, wait = false, label = null, canEnter, limit = null }) => {
+  // getting in or out of a car; `limit`: the speed lane assist is keeping to; `doors`: in a
+  // bus by a stop's sign, whose doors open.
+  state.update = ({ car, engine = false, beacon: lights = false, doors: busDoors = false, driving = false, tram = false, steal = false, wait = false, label = null, canEnter, limit = null }) => {
     if (!state.active) return;
     if (car !== inCar) {
       // Lane assist starts off in every car you take.
@@ -325,6 +326,8 @@ export function setupTouch({ action, backOnRoad, zoomBy, eyes, horn, steal, cann
     set('engine', engine, (on) => { cannonButton.hidden = !on; if (!on) cannonUp(); });
     set('steal', steal, (on) => { $('t-steal').hidden = !on; });
     set('beacon', lights, (on) => { $('t-beacon').hidden = !on; });
+    // (In a bus at a stop as well as in a tram's cab.)
+    set('doors', busDoors, (on) => { if (on) $('touch').dataset.doors = ''; else delete $('touch').dataset.doors; });
     set('toggle', state.run, (on) => toggle.classList.toggle('on', on));
     set('limit', state.run && limit ? `Lane assist · ${limit}` : 'Lane assist', (text) => { toggle.textContent = text.replace('Lane assist', t('Lane assist')); });
     set('action', !!(inCar || driving || tram || canEnter), (v) => $('t-action').classList.toggle('off', !v));

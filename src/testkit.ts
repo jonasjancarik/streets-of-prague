@@ -120,7 +120,7 @@ interface Game {
   viewRadius: () => number;
   offscreen: (x: number, y: number) => boolean;
   canvas: HTMLElement; fov: number;
-  busWaiting: BusWaiting; tours: Tours; busStops: BusStops;
+  busWaiting: BusWaiting; tours: Tours; busStops: BusStops; busDoorKey: () => void;
   wallet: Wallet; police: Police; health: Health; clock: Clock; fires: Fires; brigade: Brigade; ambulances: Ambulances; refuse: Refuse; traffic: Traffic; crowd: { people: { state: string; x: number; y: number; pace: number }[] }; hurtNearest: (grave?: boolean) => Pedestrian | null; switchBeacon: (c: Car) => void;
   weather: { set: (k: Kind | 'auto') => void; kind: () => string };
   season: { set: (when: string | number) => void; date: () => string };
@@ -663,6 +663,30 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     },
     // How many have got on and off buses since the game started.
     busPassengers() { return { boarded: g.busWaiting.boarded, alighted: g.busWaiting.alighted }; },
+    // Puts the bus you drive by the sign of the nearest stop in view, at the kerb, facing the
+    // way its buses go, standing. The stop's name, or null without one (or a clear spot).
+    pullUp(r = 80) {
+      const c = g.car(), m = g.me();
+      if (!c) throw new Error('Not in a car');
+      const stops = g.busWaiting.report().map((q) => q.stop).sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y)).filter((o) => Math.hypot(o.x - m.x, o.y - m.y) < r);
+      for (const s of stops) {
+        const h = s.ang, cs = Math.cos(h), sn = Math.sin(h);
+        // (The pavement is on the right; the bus's front a metre short of the sign.)
+        for (const out of [1.4, 2.2, 3.2]) {
+          const x = s.x - cs * (c.spec.L / 2 - 1) - sn * (c.spec.W / 2 + out), y = s.y - sn * (c.spec.L / 2 - 1) + cs * (c.spec.W / 2 + out);
+          let ok = true;
+          for (const along of [-c.spec.L / 2, 0, c.spec.L / 2]) for (const side of [-c.spec.W / 2, c.spec.W / 2]) ok &&= g.grid.at(x + cs * along + sn * side, y + sn * along - cs * side) === 0;
+          ok &&= g.carsNear(x, y, c.spec.L + 4).every((o) => o === c || o.gap(x, y) > c.spec.L / 2 + 0.5);
+          if (!ok) continue;
+          Object.assign(c, { x, y, h, vx: 0, vy: 0, w: 0 });
+          return s.name;
+        }
+      }
+      return null;
+    },
+    // X in the bus you drive; then whether its doors are open, and the stop it stands by.
+    busDoors() { g.busDoorKey(); return this.busStand(); },
+    busStand() { const c = g.car(); return { open: g.busWaiting.doorsOpen(c), stop: c ? g.busWaiting.stopBy(c)?.name ?? null : null }; },
     // Calls a bus to the stop nearest you within `r` m, as standing at it does; its name, or null.
     callBus(r = 60) {
       const m = g.me(), s = g.busStops.near(m.x, m.y, r).filter((o) => o.placed).sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y))[0];

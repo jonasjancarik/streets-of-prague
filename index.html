@@ -694,7 +694,7 @@
       #touch:not([data-mode='foot']):not([data-mode='stop']) .foot-only,
       #touch:not([data-mode='car']):not([data-mode='drive']) .car-only, #touch:not([data-mode='tram']):not([data-mode='stop']) .tram-only { display: none; }
       #touch[data-mode='drive'] #t-toggle, #touch[data-mode='drive'] #t-road { display: none; }
-      #touch:not([data-mode='tram']) #t-steal, #touch:not([data-mode='drive']) #t-doors { display: none; }
+      #touch:not([data-mode='tram']) #t-steal, #touch:not([data-mode='drive']):not([data-doors]) #t-doors { display: none; }
       #touch[data-mode='tram'] #t-steer { display: none; }
       #touch[data-mode='car'][data-drive='stick'] #t-pedals { display: none; }
       #t-road { position: fixed; top: calc(max(12px, env(safe-area-inset-top)) + 52px); right: max(12px, env(safe-area-inset-right)); height: 40px; padding: 0 14px; }

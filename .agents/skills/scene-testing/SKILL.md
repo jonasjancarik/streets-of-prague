@@ -103,7 +103,9 @@ in compass degrees (0 north, 90 east), speeds in km/h.
   is up), `t.busWaiting()` the people waiting at each stop near the view, `t.callBus()` sends a
   bus to the nearest stop, `t.busPassengers()` counts who got on and off. The signs, and the
   people at them, come with frames drawn: loop `await t.frames()` after `t.go`.
-  Scenario `bus-stop-waiting`.
+  In a bus you drive, `t.pullUp()` puts it by the sign of the nearest stop near the view,
+  standing, `t.busDoors()` is X (its doors), `t.busStand()` says whether they're open and
+  which stop the bus stands by. Scenarios `bus-stop-waiting`, `bus-doors`.
 - Tour groups (`src/tours.ts`): `t.tours()` lists them (`id`, `phase` talk or walk, the
   `sight` they're at, the `next` one, `size`, `spread` from the guide, `behind`: the furthest
   anyone is from their place, `group`: which way the group stands from the guide).

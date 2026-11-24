@@ -1679,6 +1679,12 @@ record the measurements, merge decisions and pending landmark asset activation.
   busy hours and at the end of the line) and those waiting for its line walk to the nearest
   door and get in; the bus waits until they have, up to 25 s. Some give up after a while
   and walk on.
+  A bus you drive does the same: pull up with its front by a stop's sign, stand still and
+  press **X** (the Doors button on a touch screen) to open the doors. A few passengers get
+  off, more at the end of its line (when the stop's name is the one on its display), and
+  the people waiting for its number get on; a bus without a line only lets people off. It
+  can't move off with the doors open; they shut by themselves once nobody is left to get on
+  or off, or press X again (`scenarios/bus-doors.ts`).
 - **Tour groups** (`src/tours.ts`, `scenarios/tour-group.ts`). By day (most from about
   10:00 to 18:30, fewer in heavy rain and on lower crowd settings) up to three guided groups
   go round the sights near you: the Orloj, the Týn church, Charles Bridge, the Lennon Wall,
