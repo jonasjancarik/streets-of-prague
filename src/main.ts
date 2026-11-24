@@ -614,6 +614,9 @@ async function main() {
   let gaitActive = false;
   let eyeAhead = .30; // metres in front of the player; comes in close to a wall
   let eyeH = 0; // the first-person view's height (developer panel), smoothed over kerbs
+  // Where the vehicle was when you last turned the view: it swings back behind the vehicle
+  // only once that has moved a couple of metres, so a view turned while standing stays put.
+  let lookedFrom: { v: object; x: number; y: number } | null = null;
   // The vehicle that view follows from behind, and the heading it looks along (lagging the vehicle's).
   let chased: { h: number } | null = null, chaseH = 0;
   // The chase camera and third person's camera over your shoulder (followCamera.ts); the
@@ -3192,7 +3195,11 @@ async function main() {
       const base = inHeli ? inHeli.z : (deep && body ? body.gz ?? 0 : ground(me.x, me.y, body)) + (inCar ? 0 : walker.z + walker.perch + 1.75);
       eyeH += (base - eyeH) * (Math.abs(base - eyeH) > 5 ? 1 : Math.min(1, dt * 12));
       const headset = !!vr?.active;
-      if (vehicle && !headset) follow.recentre(eyes, dt);
+      // (Taken again while you turn it and just after.)
+      if (vehicle && (eyes.still ?? 1) <= 0.4 || lookedFrom?.v !== vehicle) lookedFrom = vehicle ? { v: vehicle, x: vehicle.x, y: vehicle.y } : null;
+      const moved = !!vehicle && !!lookedFrom && Math.hypot(vehicle.x - lookedFrom.x, vehicle.y - lookedFrom.y) > 2;
+      if (vehicle && !moved) eyes.still = (eyes.still ?? 1) + dt; // standing: the view stays where you turned it
+      else if (vehicle && !headset) follow.recentre(eyes, dt);
       else if (vehicle) {
         // Let go of the mouse and the chase camera swings back behind the vehicle, soon
         // and quickly, so you aren't left driving with the view turned aside.

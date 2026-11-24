@@ -849,7 +849,8 @@ The metro ride uses its overhead cutaway camera.
   its view by up to 7° towards 100 km/h, and comes in at once when a wall is behind the
   car. A click takes the mouse to look round with
   (Esc lets go); right-drag or Shift-drag looks round too. Driving, the view swings
-  back behind the car smoothly once you stop looking round. In third person on foot the
+  back behind the car smoothly once you stop looking round and the car has moved a couple
+  of metres; turned while standing, it stays where you left it. In third person on foot the
   camera hangs a few metres back, just right of your head; a wall behind you brings it in
   at once and it eases back out, it rises only partly with a jump, and stepping into or
   out of a car blends from one camera to the other. These cameras ease with critically
