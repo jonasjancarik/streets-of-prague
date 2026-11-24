@@ -170,6 +170,8 @@ export class StopWaiting {
     this.clock += dt;
     this.frame++;
     const crowd = this.w.crowd();
+    // (While the map is still loading there are no paths yet to put anyone on.)
+    if (!crowd.walk.edges.length) return;
     for (const s of this.w.stops()) {
       let q = this.queues.get(s);
       if (!q) {
