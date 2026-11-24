@@ -23,7 +23,8 @@ than the roof (a tree reaching over it) is painted over with the roof's colour r
 
 `sources.glb`, if given, is the same model with each texel coloured by where its colour
 came from, for checking a landmark: red from above on a roof, orange from above on a
-wall (under something), green straight in, blue straight in from further off, yellow
+wall (under something), green straight in, cyan from a short ray on the fitted St
+Nicholas roofs, blue straight in from further off, yellow
 taken from elsewhere on the same face (a gap on a wall, a spot painted over), white
 filled in from around it (no ray found the mesh).
 
@@ -76,6 +77,29 @@ for o in (low, high):
 ROOF = 0.35  # a face whose normal points up at least this much is a roof
 
 me = low.data
+crown_height = None
+if os.path.basename(low_path) == "mikulas-ms.lod3.obj":
+    from landmark_crowns import st_nicholas
+
+    def game_triangles(mesh):
+        mesh.calc_loop_triangles()
+        vertices = np.empty(len(mesh.vertices) * 3, np.float32)
+        indices = np.empty(len(mesh.loop_triangles) * 3, np.int32)
+        mesh.vertices.foreach_get("co", vertices)
+        mesh.loop_triangles.foreach_get("vertices", indices)
+        # Blender is Z-up; the two survey inputs use the game's Y-up metres.
+        world = vertices.reshape(-1, 3)[:, [0, 2, 1]].astype(np.float64)
+        world[:, 2] *= -1
+        return world[indices.reshape(-1, 3)]
+
+    fitted, crown_height = st_nicholas(game_triangles(me), game_triangles(high.data))
+    points, inverse = np.unique(fitted.reshape(-1, 3).round(5), axis=0, return_inverse=True)
+    points = points[:, [0, 2, 1]]
+    points[:, 1] *= -1
+    me.clear_geometry()
+    me.from_pydata(points.tolist(), [], inverse.reshape(-1, 3).tolist())
+    me.update()
+
 bm = bmesh.new()
 bm.from_mesh(me)
 bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.02)
@@ -87,8 +111,9 @@ filled = bmesh.ops.holes_fill(bm, edges=[e for e in bm.edges if e.is_boundary], 
 bmesh.ops.recalc_face_normals(bm, faces=filled)
 print(f"filled {len(filled)} holes")
 bmesh.ops.dissolve_limit(bm, angle_limit=math.radians(1), verts=bm.verts, edges=bm.edges)
-# Undersides (floors over the ground or the water) are never seen from above.
-bmesh.ops.delete(bm, geom=[f for f in bm.faces if f.normal.z < -0.7], context="FACES")
+# Leave out buried floors. The projecting copper mouldings are visible from the square.
+bmesh.ops.delete(bm, geom=[f for f in bm.faces if f.normal.z < -0.7 and
+                           (crown_height is None or f.calc_center_median().z < crown_height)], context="FACES")
 # Roofs and walls baked in different ways, so they share no vertices.
 bmesh.ops.split_edges(bm, edges=[e for e in bm.edges if len(e.link_faces) == 2
                                  and (e.link_faces[0].normal.z > ROOF) != (e.link_faces[1].normal.z > ROOF)])
@@ -243,8 +268,16 @@ face, where = texels()
 roofs = (face >= 0) & np.array([f.normal.z > ROOF for f in me.polygons])[face]
 from_above = (roofs | under) & ~missed(above)
 px = np.where(from_above[..., None], above, side)
-hole = missed(px)
 del near, far, side, above
+crown_hit = None
+if crown_height is not None:
+    # These surfaces were fitted to the photograph itself. A short ray catches
+    # the copper immediately underneath its bead instead of the next moulding.
+    copper = bake_into("copper", .45, 1.15)
+    crown_hit = (face >= 0) & (where[..., 2] >= crown_height) & ~missed(copper)
+    px[crown_hit] = copper[crown_hit]
+    del copper
+hole = missed(px)
 normals = np.array([f.normal[:] for f in me.polygons])
 if os.environ.get("LANDMARK_DEBUG"):
     np.savez(os.environ["LANDMARK_DEBUG"], px=px, hole=hole, face=face, where=where, roofs=roofs, normals=normals)
@@ -264,6 +297,8 @@ sources = np.ones_like(px)
 for mask, colour in ((~hole, (0.2, 0.8, 0.2)), (~hole & use_far, (0.1, 0.3, 0.9)), (from_above & ~roofs, (1, 0.6, 0)),
                      (from_above & roofs, (0.8, 0.1, 0.1)), (copied | paint, (1, 0.9, 0.3)), (hole, (1, 1, 1))):
     sources[mask, :3] = colour
+if crown_hit is not None:
+    sources[crown_hit, :3] = (.12, .82, .83)
 
 # Fill the rest from around it, which also bleeds the islands' edges outwards for the
 # texture's mipmaps.

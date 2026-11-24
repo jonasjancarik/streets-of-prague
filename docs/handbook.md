@@ -1246,6 +1246,10 @@ record the measurements, merge decisions and pending landmark asset activation.
 - **Landmarks** (so far Mánes with Šítkovská vodárenská věž, the Týn Church, the Old Town Hall with its tower, St Nicholas at Old Town Square, the Jan Hus memorial and the Marian column on the square (monuments: the mesh as it is, see below), the National Theatre, the Rudolfinum, the Municipal House with the Powder Tower, House Okamura in Břevnov, and the Dancing House, which is the mesh as it is, since the city model has it as a plain prism without the legs you walk between) are cut out of IPR's
   photorealistic 3D model instead: a textured mesh of the whole city from oblique aerial
   photographs (summer 2023, about 5 cm/px), published as an I3S scene layer.
+  At St Nicholas on Malostranské náměstí the copper dome, lantern and belfry follow
+  horizontal sections of that survey. The fitted roofs join the original drums and
+  share the church's baked texture. Rebuild either area's model with
+  `uv run landmarks.py <area> mikulas-ms --rebake` from `pipeline/`.
   `pipeline/landmarks.py` takes the mesh's pieces over the landmark's OSM footprints
   (a little wider) and keeps the triangles inside. Blender (`pipeline/landmark_bake.py`)
   then bakes their colours onto the landmark's clean model from IPR's city model
