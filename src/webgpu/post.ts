@@ -7,7 +7,7 @@
 import type * as THREE from 'three';
 import { RenderPipeline, Vector3, Vector4 } from 'three/webgpu';
 import type { WebGPURenderer } from 'three/webgpu';
-import { Fn, If, pass, renderOutput, uniform, uv, vec2, vec3, vec4, length, smoothstep, float, dot, min, max, distance, fract, screenCoordinate } from 'three/tsl';
+import { Fn, If, pass, renderOutput, uniform, uv, vec2, vec3, vec4, length, smoothstep, float, dot, min, max, abs, cross, fract, screenCoordinate } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { ao } from 'three/addons/tsl/display/GTAONode.js';
 import { BLUR_TUNE, POST, setPost } from '../post.ts';
@@ -31,6 +31,8 @@ const BLOOM_SCALE = 0.25;
 // picture's height; `TAPS`: how many times the picture is read along it.
 // (Both are scaled by BLUR_TUNE.strength, from the dev panel.)
 const SHUTTER = 0.016, REACH = 0.045, TAPS = 8;
+// How high above the road the player's vehicle starts keeping sharp (m).
+const LIFT = 0.25;
 
 export function makePost(renderer: WebGPURenderer) {
   let pipeline: RenderPipeline | null = null, of: THREE.Scene | null = null, by: THREE.Camera | null = null;
@@ -38,6 +40,8 @@ export function makePost(renderer: WebGPURenderer) {
   // The camera's travel while the shutter is open, as the camera sees it; the player's vehicle
   // there (its reach in w); the picture's width over its height.
   const travel: N = uniform(new Vector3()), player: N = uniform(new Vector4(0, 0, 0, -1)), aspect: N = uniform(1), minSmear: N = uniform(0), reach: N = uniform(REACH);
+  // The vehicle's length and up as the camera sees them, and its half length, width and height.
+  const along: N = uniform(new Vector3(1, 0, 0)), upright: N = uniform(new Vector3(0, 1, 0)), half: N = uniform(new Vector3());
   const speed = new Vector3();
   const build = (scene: THREE.Scene, camera: THREE.Camera) => {
     pipeline?.dispose();
@@ -72,7 +76,12 @@ export function makePost(renderer: WebGPURenderer) {
           const here: N = view.xyz.div(view.w).toVar();
           const clip: N = proj.mul(vec4(here.add(travel), 1)).toVar();
           const was: N = vec2(clip.x.div(clip.w), clip.y.div(clip.w).negate()).mul(0.5).add(0.5);
-          const keep: N = smoothstep(player.w, player.w.add(1.5), distance(here, player.xyz));
+          // How far outside the player's vehicle this point is: a box round its body with room
+          // for the mirrors, its bottom a quarter of a metre off the road so the street under
+          // and round the car smears like the rest (a sharp patch of cobbles gives it away).
+          const rel: N = here.sub(player.xyz).sub(upright.mul(LIFT / 2)).toVar();
+          const q: N = vec3(abs(dot(rel, along)), abs(dot(rel, cross(upright, along))), abs(dot(rel, upright))).sub(half).sub(vec3(0.1, 0.25, LIFT / -2));
+          const keep: N = player.w.greaterThan(0).select(smoothstep(0, 0.2, length(max(q, vec3(0)))), float(1));
           const smear: N = was.sub(at).mul(keep).toVar();
           // (Behind the camera the sums turn over: nothing there is in the picture anyway.)
           smear.mulAssign(min(1, reach.div(max(length(smear.mul(vec2(aspect, 1))), 1e-5))).mul(clip.w.greaterThan(0.05).select(1, 0)));
@@ -113,6 +122,9 @@ export function makePost(renderer: WebGPURenderer) {
       travel.value.copy(speed).transformDirection(camera.matrixWorldInverse).multiplyScalar(speed.length() * SHUTTER * POST.blur * BLUR_TUNE.strength);
       reach.value = REACH * BLUR_TUNE.strength;
       player.value.set(POST.car[0], POST.car[1], POST.car[2], 1).applyMatrix4(camera.matrixWorldInverse).setW(POST.car[3]);
+      along.value.set(Math.cos(POST.box[3]), 0, -Math.sin(POST.box[3])).transformDirection(camera.matrixWorldInverse);
+      upright.value.set(0, 1, 0).transformDirection(camera.matrixWorldInverse);
+      half.value.set(POST.box[0], POST.box[1], POST.box[2]);
       aspect.value = (camera as THREE.PerspectiveCamera).aspect || 1;
       minSmear.value = (.35 / Math.max(1, renderer.domElement.height)) ** 2;
     } else travel.value.set(0, 0, 0);

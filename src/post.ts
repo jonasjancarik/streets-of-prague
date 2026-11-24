@@ -15,12 +15,14 @@ export const POST = {
   // A trial (?ao): ambient shading from the picture's depth (webgpu/post.ts).
   ao: new URLSearchParams(globalThis.location?.search ?? '').has('ao'),
   // Motion blur while driving, seen from the street: how much of it (0 below about 20 km/h, 1 from
-  // about 60), and the player's vehicle, which keeps sharp (its middle and reach, in the scene's
-  // coordinates; a reach below 0 for none).
+  // about 60).
   blur: 0,
   // Which way and how fast that vehicle goes (m/s, in the scene's coordinates): the camera goes with it.
   going: [0, 0, 0] as [number, number, number],
+  // The player's vehicle, which keeps sharp: its middle (in the scene's coordinates; a last
+  // value below 0 for none), and its half length, width and height with its heading (radians).
   car: [0, 0, 0, -1] as [number, number, number, number],
+  box: [0, 0, 0, 0] as [number, number, number, number],
   get on() { return asked === 'on' || (asked !== 'off' && this.value > 0); },
 };
 

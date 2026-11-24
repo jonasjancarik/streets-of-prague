@@ -3141,7 +3141,7 @@ async function main() {
     const vehicle = inCar || inHeli, sp = vehicle ? vehicle.speed : 0;
     // Motion blur from the street while driving: from about 20 km/h, full by about 60 (post.ts).
     POST.blur = inCar && fromStreet && motionBlurOn() ? (motionBlurFull ? 1 : THREE.MathUtils.smoothstep(Math.abs(sp), 6, 17)) : 0;
-    if (inCar) { POST.car = [inCar.x, world.heightAt(inCar.x, inCar.y) + 0.8, -inCar.y, inCar.spec.L / 2 + 0.6]; POST.going = [Math.cos(inCar.h) * sp, 0, -Math.sin(inCar.h) * sp]; }
+    if (inCar) { const { L, W, H } = inCar.spec; POST.car = [inCar.x, world.heightAt(inCar.x, inCar.y) + H / 2, -inCar.y, 1]; POST.box = [L / 2, W / 2, H / 2, inCar.h]; POST.going = [Math.cos(inCar.h) * sp, 0, -Math.sin(inCar.h) * sp]; }
     // On the metro, over the train as it goes (see Metro.view).
     const underway = metro.view();
     // In the air the camera rises with the helicopter, so it stays well above it.
