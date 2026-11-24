@@ -12,7 +12,7 @@ from proportions import remap_rect
 
 ROOT = Path(__file__).resolve().parents[2]
 # Decorative blind niches and wall-only modules have no opening.
-blank = {5, 11, 17, 23, 35, 41, 47, 113, 118, 129}
+blank = {5, 11, 17, 23, 35, 47, 118, 129}
 arched = {9, 18, 19, 20, 57, 67, 69, 73, 90, 93, 114, 115, 117, 141}
 # The facade sheet includes shutters, grilles, balconies and basement lights.
 # Crop to each actual opening before looking for its dark glass or joinery.
@@ -117,13 +117,20 @@ def bake(preview=None):
     for i in range(144):
         x, y = i % 6 * 256, i // 6 * 512
         im = atlas.crop((x, y, x + 256, y + 512))
-        rects = measure(im, i)
+        if i == 113:
+            # The projected balcony hides the bottom of the door on the shell.
+            # Fit the unobstructed door behind its parapet on the street mesh.
+            rects = [rect.copy() for rect in out[41]]
+        else:
+            rects = measure(im, i)
         # Preserve the original sash and transom between individual panes.
         # Only accept fairly rectangular islands of blue glass inside the aperture.
         rgb = np.asarray(im, dtype=float)
         red, green, blue = rgb.transpose(2, 0, 1)
         glass = (blue > red + 4) & (rgb.mean(2) < 128)
         for rect in rects:
+            if i == 113:
+                continue  # includes the panes already measured on the unoccluded door
             l, t, r, b, arch = rect
             if i in {
                 19,

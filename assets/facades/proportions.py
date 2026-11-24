@@ -21,7 +21,9 @@ def axes(layer):
     elif layer in (0, 1, 2, 3, 12, 13, 15, *range(48, 54), *range(60, 66),
                     *range(72, 77), *range(84, 90), *range(132, 138)):
         x, y = ((68, 47), (185, 207)), ((150, 106), (360, 395))
-    elif layer in (24, 25, 36, 37, 39, 96, 98):
+    elif layer == 25:  # steel ribbon, narrow posts between adjacent glazed units
+        x, y = ((19, 7), (236, 249)), ((187, 93), (264, 363))
+    elif layer in (24, 36, 37, 39, 96, 98):
         y = ((144, 110), (300, 360))
     elif layer in (21, 43, 54, 55, 68, 78, 92, 116, 140):
         # Raised ground-floor apartments. Keep the cellar row beneath them.
@@ -95,3 +97,20 @@ def precast_joints(cell):
     rgb[:3] *= .77
     rgb[3:5] *= 1.05
     return Image.fromarray(np.clip(rgb, 0, 255).astype(np.uint8))
+
+def interwar_cell(plaster, glazing, layer):
+    """A divided casement or a glazed terrace door in undecorated render.
+    Cell 113 adds the distant view of the balcony to the door in cell 41.
+    """
+    cell = plaster.crop((0, 8, 32, 504)).resize((256, 512), Image.Resampling.BICUBIC)
+    box = (54, 106, 202, 384) if layer == 77 else (55, 98, 201, 484)
+    cell.paste(glazing.resize((box[2]-box[0], box[3]-box[1]), Image.Resampling.LANCZOS), box)
+    if layer == 113:
+        draw = ImageDraw.Draw(cell)
+        draw.rounded_rectangle((7, 336, 249, 502), radius=8, fill='#a6a49e')
+        draw.rounded_rectangle((8, 336, 248, 484), radius=6, fill='#c2c0b9')
+        draw.line((11, 337, 245, 337), fill='#e0ded7', width=3)
+        for left in (32, 134):
+            draw.rectangle((left, 451, left+74, 466), fill='#585a59')
+        draw.line((13, 485, 244, 485), fill='#8b8984', width=3)
+    return cell

@@ -110,7 +110,13 @@ const F_CORNICE = [1.0, 0.6, 0.5, 0.9, 0.3];
 // A wall's own floor height is its style's, scaled by 0.8 to 1.25 so that a whole
 // number of floors fits under its cornice (fStorey in the shaders).
 export const STOREY_FIT = [0.8, 0.45];
-export const baysOf = (style: number, length: number) => (style >= BLANK ? 0 : Math.floor(length / F_BAY[style] + 0.5));
+export const INTERWAR_BAY = 3.8;
+export const baysOf = (w: number, length: number) => {
+  const style = Math.floor(w);
+  if (style >= BLANK) return 0;
+  const pitch = style === STYLE.functionalist && Math.floor(w * 32768) % 16 === LOOK.interwarFlats ? INTERWAR_BAY : F_BAY[style];
+  return Math.floor(length / pitch + .5);
+};
 
 // A wall as facadeCoords measured it, for what has to line up with its windows (the
 // mansard above it): a point on it and its outward normal, the direction its windows
@@ -120,7 +126,7 @@ export interface WallLine { nx: number; nz: number; ax: number; az: number; tx: 
 
 // Looks: the sets of modules a facade is drawn with (rows of F_UP, F_DOOR, F_WALL).
 // The first five are the styles' own; the rest are more for some styles.
-export const LOOK = { neoRenaissance: 0, baroque: 1, functionalist: 2, panel: 3, house: 4, artNouveau: 5, plain: 6, early20th: 7, modern: 8, burgher: 9, renovatedPanel: 10, sorela: 11, postwar: 12 };
+export const LOOK = { neoRenaissance: 0, baroque: 1, functionalist: 2, panel: 3, house: 4, artNouveau: 5, plain: 6, early20th: 7, modern: 8, burgher: 9, renovatedPanel: 10, sorela: 11, postwar: 12, interwarFlats: 13 };
 // Looks whose stucco may be a lighter shade than the wall (two-tone, see finishWalls).
 const STUCCO = new Set([LOOK.neoRenaissance, LOOK.baroque, LOOK.artNouveau, LOOK.plain, LOOK.early20th, LOOK.burgher, LOOK.sorela]);
 type Mix = [number, number][]; // looks and their weights
@@ -149,6 +155,39 @@ export const WALL_CODES: [number, Mix][] = [
   [STYLE.functionalist, [[LOOK.functionalist, 0.35], [LOOK.postwar, 0.35], [LOOK.sorela, 0.3]]],
 ];
 
+// Match a long wall's eave to an inward-rising roof face. Roof colour and a
+// pitched roof on the far side of a party wall are unreliable indicators.
+function pitchedFlats(p: Float32Array, facade: Float32Array, lines: WallLine[], owner: Int32Array) {
+  const eaves = new Map<string, WallLine[]>();
+  const point = (v: number) => `${Math.round(p[v]*100)},${Math.round(p[v+1]*100)},${Math.round(p[v+2]*100)}`;
+  const key = (a: number, b: number) => { const x = point(a), y = point(b); return x < y ? x+'|'+y : y+'|'+x; };
+  for (const line of lines) {
+    if (line.length < 9 || Math.floor(facade[line.tris[0]*12+3]) !== STYLE.functionalist) continue;
+    for (const t of line.tris) for (let i = 0; i < 3; i++) {
+      const a = t*9+i*3, b = t*9+((i+1)%3)*3;
+      if (Math.min(p[a+1],p[b+1]) < line.top-.25 || Math.abs(p[a+1]-p[b+1]) > .25) continue;
+      if (Math.hypot(p[b]-p[a],p[b+2]-p[a+2]) < 2.5) continue;
+      const k = key(a,b), list = eaves.get(k);
+      if (list) list.push(line); else eaves.set(k,[line]);
+    }
+  }
+  const flats = new Set<number>();
+  if (!eaves.size) return flats;
+  for (let t = 0; t < owner.length; t++) {
+    if (owner[t] >= 0) continue;
+    for (let i = 0; i < 3; i++) {
+      const a = t*9+i*3, b = t*9+((i+1)%3)*3, c = t*9+((i+2)%3)*3;
+      const rise = p[c+1]-Math.max(p[a+1],p[b+1]);
+      if (rise < .45 || Math.abs(p[a+1]-p[b+1]) > .25) continue;
+      for (const line of eaves.get(key(a,b)) ?? []) {
+        const run = -((p[c]-p[a])*line.nx + (p[c+2]-p[a+2])*line.nz);
+        if (run > .5 && rise > run*.25 && rise < run*2.8) flats.add(owner[line.tris[0]]);
+      }
+    }
+  }
+  return flats;
+}
+
 // The last touches to a tile's walls, once their styles are settled: every building
 // takes one look, and every wall's floors are fitted to its height (F_STOREY). Of the
 // older looks, nearly half the buildings have their stucco a lighter shade than the
@@ -161,6 +200,7 @@ export const WALL_CODES: [number, Mix][] = [
 // (WALL_CODES), if it says.
 export function finishWalls(p: Float32Array, facade: Float32Array, lines: WallLine[], base: (t: number) => [number, number, number], code?: (t: number) => number) {
   const owner = buildings(p, facade, base), pick = new Map<number, number>();
+  const flats = pitchedFlats(p, facade, lines, owner);
   for (const l of lines) {
     let top = 0;
     for (const t of l.tris) for (let o = t * 12 + 1; o < t * 12 + 12; o += 4) top = Math.max(top, facade[o]);
@@ -180,6 +220,7 @@ export function finishWalls(p: Float32Array, facade: Float32Array, lines: WallLi
       sum += mix[i][1] / all;
       if (r < sum) { look = mix[i][0]; break; }
     }
+    if (look === LOOK.functionalist && flats.has(b)) look = LOOK.interwarFlats;
     const composition = Math.floor(cellHash(r * 13, 5.3) * 8);
     // Give the sunnier of opposing panel-block elevations the loggia stacks.
     // Using the plane normal keeps adjoining sections facing the same way.
@@ -207,7 +248,7 @@ export const ROWS_STEP = 1024;
 const ROW_SHOWN = 0.86; // the share of a floor's height its window and surround reach to
 export const wallLength = (z: number) => z % ROWS_STEP;
 function windowRows(facade: Float32Array, l: WallLine, style: number, fit: number) {
-  const tris = l.tris, length = facade[tris[0] * 12 + 2], bays = baysOf(style, length);
+  const tris = l.tris, length = facade[tris[0] * 12 + 2], bays = baysOf(facade[tris[0] * 12 + 3], length);
   if (bays < 1 || length >= ROWS_STEP) return;
   const ground = F_GROUND[style], storey = F_STOREY[style] * fit, bay = length / bays;
   // The wall's top over a point along it: the highest any of its triangles reaches there.
@@ -460,8 +501,8 @@ export function mansardCoords(p: Float32Array, out: Float32Array, lines?: WallLi
         if ((l.nx * nx + l.nz * nz) / h < 0.97 || Math.abs(l.nx * (fx - l.ax) + l.nz * (fz - l.az)) > 1.5 || l.top < fy - 3 || l.top > fy + 1.5) continue;
         const s0 = l.ax * ex + l.az * ez + (l.tx * ex + l.tz * ez) * l.from, s1 = s0 + (l.tx * ex + l.tz * ez) * l.length;
         const shared = Math.min(hi, Math.max(s0, s1)) - Math.max(lo, Math.min(s0, s1));
-        const style = Math.floor(out[l.tris[0] * 12 + 3]);
-        if (shared > under && baysOf(style, l.length) >= 1) { wall = l; bays = baysOf(style, l.length); under = shared; }
+        const count = l.rows?.length ?? baysOf(Math.floor(out[l.tris[0] * 12 + 3]), l.length);
+        if (shared > under && count >= 1) { wall = l; bays = count; under = shared; }
       }
     }
     for (const t of tris) for (let v = 0; v < 3; v++) {
@@ -635,12 +676,12 @@ export function paintWalls(p: Float32Array, col: Float32Array, facade: Float32Ar
 export const F_UP = [
   48, 49, 50, 51, 52, 53, 12, 13, 15, 12, 13, 15, 24, 25, 24, 25, 26, 24, 27, 28, 27, 29, 28, 27, 36, 37, 38, 39, 40, 36,
   60, 61, 62, 63, 64, 65, 72, 73, 74, 75, 76, 72, 84, 85, 86, 87, 88, 89, 96, 97, 98, 99, 100, 101,
-  108, 109, 110, 112, 108, 109, 120, 121, 122, 124, 123, 120, 132, 133, 134, 135, 136, 137, 24, 39, 24, 36, 39, 24];
-export const F_DOOR = [56, 57, 8, 18, 19, 20, 31, 31, 34, 32, 32, 34, 42, 44, 45, 67, 69, 67, 79, 82, 79, 90, 93, 90, 103, 104, 105, 114, 115, 117, 126, 130, 126, 138, 141, 143, 31, 42, 31];
+  108, 109, 110, 112, 108, 109, 120, 121, 122, 124, 123, 120, 132, 133, 134, 135, 136, 137, 24, 39, 24, 36, 39, 24, 77, 77, 113, 77, 77, 113];
+export const F_DOOR = [56, 57, 8, 18, 19, 20, 31, 31, 34, 32, 32, 34, 42, 44, 45, 67, 69, 67, 79, 82, 79, 90, 93, 90, 103, 104, 105, 114, 115, 117, 126, 130, 126, 138, 141, 143, 31, 42, 31, 79, 31, 79];
 export const F_WALL = [
   54, 55, 58, 6, 21, 22, 23, 20, 30, 30, 30, 35, 33, 35, 33, 35, 43, 46, 47, 43, 66, 68, 70, 71, 78, 80, 81, 83,
-  91, 92, 94, 95, 102, 106, 107, 102, 116, 118, 119, 116, 127, 128, 129, 131, 139, 140, 142, 140, 43, 30, 47, 43];
-export const F_MOD = [1.9, 1.9, 2, 5.4, 1.9, 1.9, 1.9, 1.9, 2, 1.9, 5.4, 1.9, 2];
+  91, 92, 94, 95, 102, 106, 107, 102, 116, 118, 119, 116, 127, 128, 129, 131, 139, 140, 142, 140, 43, 30, 47, 43, 78, 43, 83, 81];
+export const F_MOD = [1.9, 1.9, 3.9, 5.4, 1.9, 1.9, 1.9, 1.9, 2, 1.9, 5.4, 1.9, 2, INTERWAR_BAY];
 // Six room bays per entrance section. For each finish, the access elevation
 // (door under a stair light) and balcony elevation (paired loggias), each
 // ground floor then upper floors. One- and two-bay returns just get windows.
@@ -668,6 +709,7 @@ export const F_ELEVATION = [
   [],                                      // renovated panel
   [132, 134, 133, 137, 135, 136, 132, 137, 140, 142], // sorela
   [39, 24, 39, 39, 24, 39, 24, 24, 43, 47],       // postwar
+  [77, 113, 77, 77, 77, 113, 77, 77, 78, 83], // interwar apartment house
 ].flatMap(row => row.length ? row : Array(10).fill(0));
 // The measured casement only occupies about 40% of its atlas cell. At eye
 // height give it room for a pair of sashes. Display windows and coach gates
@@ -676,6 +718,8 @@ export const SHOPFRONTS = new Set([6, 20, 30, 58, 66, 71, 80, 81, 91, 95, 102, 1
 const GATES = new Set([9, 18, 57, 69, 82, 93, 117, 141]);
 export const F_STREET_WIDTH = Array.from({ length: SHEETS * 12 }, (_, layer) => {
   if (layer >= 27 && layer <= 29 || layer === 32 || layer === 33 || layer === 35 || layer >= 120 && layer <= 131) return 5.4;
+  if (layer === 77) return 3.1;
+  if (layer === 25 || layer === 113 || layer === 41) return 4;
   if (SHOPFRONTS.has(layer) || GATES.has(layer)) return 3.6;
   if (layer >= 96 && layer < 108 || layer === 24 || layer === 25) return 2.9;
   if (layer < 24 || layer >= 48 && layer % 12 < 6) return 2.55;
@@ -712,7 +756,7 @@ float fBays(vec4 f) {
   if (style >= ${BLANK}) return 0.;
   vec2 st = fStorey(f);
   float row = f.y < st.x ? 0. : 1. + floor((f.y - st.x) / st.y);
-  return vRows > .5 && row > vRows - 1.5 ? 0. : floor(f.z / F_BAY[style] + .5);
+  return vRows > .5 && row > vRows - 1.5 ? 0. : floor(f.z / (mod(floor(fract(f.w)*32768.),16.) == 13. ? ${INTERWAR_BAY} : F_BAY[style]) + .5);
 }
 int fLook(vec4 f) { return min(int(mod(floor(fract(f.w) * 32768.), 16.)), ${LOOKS - 1}); }
 float fTwoTone(vec4 f) { return mod(floor(fract(f.w) * 2048.), 2.); }
@@ -746,6 +790,7 @@ int streetLayer(vec4 f, float bays, vec2 cell, bool ground) {
     if (residential) return F_ELEVATION[look*10 + (mod(cell.x, run) == mod(entrance + 1., run) ? 9 : 8)];
     return F_WALL[look*4 + int(streetPick(seed, floor(cell.x/3.), 3.)*4.)];
   }
+  if (look == 13) return bays >= 4. && (cell.x == 0. || cell.x == bays-1.) ? 113 : 77;
   if (look == 4) return F_UP[look*6 + int(streetPick(seed, cell.y+1., 4.)*6.)];
   float edge = min(cell.x, bays - 1. - cell.x), rhythm = mod(composition, 3.);
   bool accent = bays >= 3. && (rhythm == 0. ? edge == 0. : rhythm == 1. ? edge == floor((bays-1.)/2.) : mod(edge, 2.) == 1.);
@@ -765,12 +810,12 @@ vec3 facadeModuleAt(vec3 wall, vec4 f, vec4 fdx, vec4 fdy, float explicitLayer) 
   float bay = f.z / bays, mw = min(F_MOD[look], bay);
   int layer;
   if (explicitLayer >= 0.) layer = int(explicitLayer + .5);
-  else if (uStreetFacade > .5 || style == 3) layer = streetLayer(f, bays, cell, f.y < st.x);
+  else if (uStreetFacade > .5 || style == 3 || look == 13) layer = streetLayer(f, bays, cell, f.y < st.x);
   else if (f.y < st.x) {
     float r = fHash(seed, cell.x);
     layer = r < .18 ? F_DOOR[look * 3 + int(r / .18 * 3.)] : F_WALL[look * 4 + int(fHash(cell.x, seed) * 4.)];
   } else layer = F_UP[look * 6 + int(fHash(seed, look == 3 || look == 10 ? cell.x + 50. : cell.y + 7.) * 6.)];
-  if (uStreetFacade > .5) mw = min(bay, F_STREET_WIDTH[layer]);
+  if (uStreetFacade > .5 || look == 13) mw = min(bay, F_STREET_WIDTH[layer]);
   float edge = style == 3 ? .001 : .016;
   float u = clamp((uv.x - .5) * bay / mw + .5, edge, 1. - edge);
   vec2 k = vec2(1. / mw, 1. / (uStreetFacade > .5 && f.y < st.x ? st.x : st.y));

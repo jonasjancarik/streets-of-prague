@@ -12,7 +12,7 @@ import {
 import { passageAtlas } from '../passageMaterial.ts';
 import { facadeFinishes, shopReady } from '../facadeFinishes.ts';
 import { STRIPS, STRIPS_ON, onStrips, KINDS } from '../reflections.ts';
-import { FACADE_ATLAS, FACADE_ON, STREET_FACADE, F_SURFACE as S, BLANK, F_BAY as BAY_WIDTH, F_UP as UP, F_DOOR as DOOR, F_WALL as WALL, F_MOD as MOD, F_ELEVATION, F_PANEL, F_STREET_WIDTH, F_GROUND as GROUND, F_STOREY as STOREY, STOREY_FIT, ROWS_STEP } from '../facades.ts';
+import { FACADE_ATLAS, FACADE_ON, STREET_FACADE, F_SURFACE as S, BLANK, F_BAY as BAY_WIDTH, F_UP as UP, F_DOOR as DOOR, F_WALL as WALL, F_MOD as MOD, F_ELEVATION, INTERWAR_BAY, F_PANEL, F_STREET_WIDTH, F_GROUND as GROUND, F_STOREY as STOREY, STOREY_FIT, ROWS_STEP } from '../facades.ts';
 import { WINDOWS, ROOF_DETAIL, ROOF_CLUTTER, LANDMARK_ROOF as R, SUN_DIR, SUN_LIGHT } from '../shading.ts';
 import { lampLit } from './lamps.ts';
 import { EDGE, EDGE_STEP } from '../map/roofEdges.ts';
@@ -81,7 +81,7 @@ const fBays = (f: N) => {
   const style = floor(f.w), st = fStorey(f);
   const row = select(f.y.lessThan(st.x), float(0), floor(f.y.sub(st.x).div(st.y)).add(1));
   const none = style.greaterThanEqual(BLANK).or(facadeRows.greaterThan(0.5).and(row.greaterThan(facadeRows.sub(1.5))));
-  return select(none, float(0), floor(f.z.div(F_BAY.element(min(style, 4).toInt())).add(0.5)));
+  return select(none, float(0), floor(f.z.div(select(fLook(f).equal(13), float(INTERWAR_BAY), F_BAY.element(min(style, 4).toInt()))).add(0.5)));
 };
 
 const fHash = (a: N, b: N) => fract(sin(a.mul(127.1).add(b.mul(311.7))).mul(43758.5453));
@@ -431,7 +431,10 @@ function facadeModules(wall: N, f: N, bays: N, fdx: N, fdy: N, explicit?: N) {
         layer.assign(elevation.element(look.mul(10).add(select(plain, int(9), int(8)))));
       }).Else(() => { layer.assign(F_WALL.element(look.mul(4).add(floor(streetPick(seed, floor(cell.x.div(3)), 3).mul(4)).toInt()))); });
     }).Else(() => {
-      If(look.equal(4), () => {
+      If(look.equal(13), () => {
+        const end = cell.x.equal(0).or(cell.x.equal(bays.sub(1)));
+        layer.assign(select(bays.greaterThanEqual(4).and(end), int(113), int(77)));
+      }).ElseIf(look.equal(4), () => {
         layer.assign(F_UP.element(look.mul(6).add(floor(streetPick(seed, cell.y.add(1), 4).mul(6)).toInt())));
       }).Else(() => {
         const composition = fComposition(f);
@@ -455,7 +458,7 @@ function facadeModules(wall: N, f: N, bays: N, fdx: N, fdy: N, explicit?: N) {
     });
   };
   if (explicit) If(explicit.greaterThanEqual(0), () => { layer.assign(explicit.toInt()); }).ElseIf(style.equal(3), choosePanel).Else(chooseStreet);
-  else If(style.equal(3), choosePanel).ElseIf(uStreetFacade.greaterThan(.5), chooseStreet).Else(() => {
+  else If(style.equal(3), choosePanel).ElseIf(uStreetFacade.greaterThan(.5).or(look.equal(13)), chooseStreet).Else(() => {
   If(f.y.lessThan(st.x), () => {
     const r = fHash(seed, cell.x);
     If(r.lessThan(0.18), () => { layer.assign(F_DOOR.element(look.mul(3).add(r.div(0.18).mul(3).toInt()))); })
@@ -466,7 +469,7 @@ function facadeModules(wall: N, f: N, bays: N, fdx: N, fdy: N, explicit?: N) {
     layer.assign(F_UP.element(look.mul(6).add(fHash(seed, select(byColumn, cell.x.add(50), cell.y.add(7))).mul(6).toInt())));
   });
   });
-  const mw = min(bay, select(uStreetFacade.greaterThan(.5), streetWidth.element(layer), F_MOD.element(look)));
+  const mw = min(bay, select(uStreetFacade.greaterThan(.5).or(look.equal(13)), streetWidth.element(layer), F_MOD.element(look)));
   const edge = select(style.equal(3), float(.001), float(.016));
   const u: N = clamp(uv.x.sub(.5).mul(bay).div(mw).add(.5), edge, edge.oneMinus());
   const k = vec2(float(1).div(mw), float(1).div(select(uStreetFacade.greaterThan(.5).and(f.y.lessThan(st.x)), st.x, st.y)));

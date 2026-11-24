@@ -249,7 +249,7 @@ export function roofClutter(p: Float32Array, col: Float32Array, facade: Float32A
       if ((l.nx * nx + l.nz * nz) / h < 0.97 || Math.abs(l.nx * (foot[0] - l.ax) + l.nz * (foot[2] - l.az)) > 1.5 || l.top < foot[1] - 3 || l.top > foot[1] + 1.5) continue;
       const along = l.tx * f.e[0] + l.tz * f.e[2], s0 = l.ax * f.e[0] + l.az * f.e[2] + along * l.from, s1 = s0 + along * l.length;
       const shared = Math.min(f.hi, Math.max(s0, s1)) - Math.max(f.lo, Math.min(s0, s1));
-      const b = baysOf(Math.floor(facade[l.tris[0] * 12 + 3]), l.length);
+      const b = l.rows?.length ?? baysOf(Math.floor(facade[l.tris[0] * 12 + 3]), l.length);
       if (shared > under && b >= 1) { wall = l; bays = b; under = shared; }
     }
     const spots: number[] = [];

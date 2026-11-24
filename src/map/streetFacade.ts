@@ -39,6 +39,7 @@ export function streetModule(w: number, bay: number, floor: number, bays: number
     if (residential) return F_ELEVATION[look * 10 + (bay % run === (entrance + 1) % run ? 9 : 8)];
     return F_WALL[look * 4 + Math.floor(pick(seed, Math.floor(bay / 3), 3) * 4)];
   }
+  if (look === LOOK.interwarFlats) return bays >= 4 && (bay === 0 || bay === bays - 1) ? 113 : 77;
   if (look === LOOK.house) return F_UP[look * 6 + Math.floor(pick(seed, floor, 4) * 6)];
   const edge = Math.min(bay, bays - 1 - bay), rhythm = composition % 3;
   const accent = bays >= 3 && (rhythm === 0 ? edge === 0 : rhythm === 1 ? edge === Math.floor((bays - 1) / 2) : edge % 2 === 1);
@@ -367,6 +368,48 @@ function cellShape(layer: number, bay: number, storey: number, moduleWidth: numb
     course([[under - CORNICE_SHADE[0], SHADE_LIFT], [under, SHADE_LIFT]], S.masonry, [1, CORNICE_SHADE[1]]);
   }
   shadeUnder();
+  if (layer === 113) {
+    // Cast balcony with rounded front corners. Both cheeks run back to the
+    // wall, leaving the doorway clear. Distances are in the wall's frame.
+    const half = moduleWidth * .47, centre = bay / 2, reach = .82;
+    const contour = (inset: number): V2[] => {
+      const radius = .23 - inset, edge = half - inset, front = reach - inset;
+      const points: V2[] = [[centre-edge, 0]];
+      for (const side of [-1, 1]) for (let i = 0; i <= 4; i++) {
+        const angle = (side === -1 ? i : 4-i) * Math.PI / 8;
+        points.push([centre + side * (edge-radius+radius*Math.cos(angle)), front-radius+radius*Math.sin(angle)]);
+      }
+      points.push([centre+edge, 0]);
+      return points;
+    };
+    const outside = contour(0), inside = contour(.09);
+    const deck = storey * 28/512, top = storey * 176/512;
+    const at = ([x,z]: V2, y: number): Point => [x,y,z];
+    const quad = (a: Point, b: Point, c: Point, d: Point, kind: number) =>
+      tris.push([a,b,c,1,kind],[a,c,d,1,kind]);
+    for (let i = 1; i < outside.length; i++) {
+      const a = outside[i-1], b = outside[i], c = inside[i], d = inside[i-1];
+      quad(at(a,deck-.12),at(b,deck-.12),at(b,deck),at(a,deck),S.dressedStone);
+      if (Math.abs(a[1]-reach) < .001 && Math.abs(b[1]-reach) < .001) {
+        const low = deck + (top-deck)*.13, high = deck + (top-deck)*.24;
+        const cuts = [.08,.43,.57,.92].map(u => a[0] + (b[0]-a[0])*u);
+        const face = rectangle(a[0],deck,b[0],top);
+        const slots = [rectangle(cuts[0],low,cuts[1],high),rectangle(cuts[2],low,cuts[3],high)];
+        fill(face, slots, reach, 1, S.infill);
+        // Reverse the inner face so the parapet is visible from above.
+        const start = tris.length;
+        fill(face, slots, reach-.09, .84, S.infill);
+        for (let j=start; j<tris.length; j++) [tris[j][0],tris[j][1]] = [tris[j][1],tris[j][0]];
+        for (const slot of slots) ring(slot,slot,reach,reach-.09,.76,S.infill);
+      } else {
+        quad(at(a,deck),at(b,deck),at(b,top),at(a,top),S.infill);
+        quad(at(c,deck),at(d,deck),at(d,top),at(c,top),S.infill);
+      }
+      quad(at(a,top),at(b,top),at(c,top),at(d,top),S.dressedStone);
+      tris.push([[centre,deck,0],at(a,deck),at(b,deck),1,S.dressedStone],
+        [[centre,deck-.12,0],at(b,deck-.12),at(a,deck-.12),.8,S.infill]);
+    }
+  }
   return tris;
 }
 
@@ -397,7 +440,7 @@ function clip(poly: Point[], a: V2, b: V2, sign: number) {
 }
 
 export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color' | 'facade'> & { shops?: Float32Array }, sky: Float32Array, triangles: Uint32Array): FacadeGeometry | null {
-  const { position: p, color: c, facade: f } = arrays, first = triangles[0] * 12, w = f[first + 3], width = wallLength(f[first + 2]), style = Math.floor(w), bays = baysOf(style, width);
+  const { position: p, color: c, facade: f } = arrays, first = triangles[0] * 12, w = f[first + 3], width = wallLength(f[first + 2]), style = Math.floor(w), bays = baysOf(w, width);
   if (!bays || style >= BLANK || width < 2) return null;
   const seed = Math.floor((w - style) * 32768) % 997, bay = width / bays;
   const ground = F_GROUND[style], storey = F_STOREY[style] * (STOREY_FIT[0] + (Math.floor((w - style) * 1024) % 32) * STOREY_FIT[1] / 31);
@@ -559,7 +602,8 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
       emit([[minX, lo, 0], [maxX, lo, 0], [maxX, hi, 0]], -1, 1, shell);
       emit([[minX, lo, 0], [maxX, hi, 0], [minX, hi, 0]], -1, 1, shell);
     };
-    const upperRows = style === STYLE.panel ? 12 : 3;
+    const interwar = Math.floor(w * 32768) % 16 === LOOK.interwarFlats;
+    const upperRows = style === STYLE.panel ? 12 : interwar ? 8 : 3;
     band(minY, Math.min(0, maxY)); band(Math.max(ground + upperRows * storey, minY), maxY);
     for (let row = 0; row <= upperRows; row++) {
       const bottom = row ? ground + (row - 1) * storey : 0, h = row ? storey : ground;
@@ -567,7 +611,7 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
       for (let j = Math.max(0, Math.floor(minX / bay)); j < Math.min(bays, Math.ceil(maxX / bay)); j++) {
         const layer = moduleAt(j,row);
         const fitsBay = fits(layer, j, row, bottom, h);
-        if (!fitsBay || (row > 3 && !isLoggia(layer))) {
+        if (!fitsBay || (row > 3 && layer !== 113 && !isLoggia(layer))) {
           // The map clips this bay at a passage, gable or parapet. Leave a
           // plain infill here instead of exposing half a window at the roofline.
           const lo = j * bay, hi = lo + bay, top = bottom + h;
@@ -599,7 +643,7 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
           const surface = pane ? S.glass : kind === S.shopSign && !sign ? S.shopPaint : kind;
           const finishValue = pane ? furnishing : surface === S.shopSign ? trade
             : surface===S.display && mappedTrade!==undefined ? mappedTrade+1 : undefined;
-          emit([l, m, r].map(([x, y, z, light]) => [dx + x, bottom + y, z, light]), layer, ao, surface, paint, finishValue);
+          emit([l, m, r].map(([x, y, z, light]) => [dx + x, bottom + y, z, light]), layer === 113 ? 41 : layer, ao, surface, paint, finishValue);
         }
         if (openings[layer]?.length) modeled = true;
       }

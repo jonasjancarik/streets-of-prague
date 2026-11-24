@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { buildStreetWall, packStreetWalls, streetModule } from '../src/map/streetFacade.ts';
-import { FACADE_ON, F_SURFACE, F_BAY, F_STOREY, F_STREET_WIDTH } from '../src/facades.ts';
+import { FACADE_ON, F_SURFACE, F_BAY, F_STOREY, F_STREET_WIDTH, LOOK, finishWalls, facadeCoords, baysOf } from '../src/facades.ts';
 import apertures from '../src/map/facadeOpenings.json' with { type: 'json' };
 import { StreetFacades } from '../src/streetFacades.ts';
 import { STREET_QUALITY, STREET_TIERS } from '../src/streetQuality.ts';
@@ -173,3 +173,23 @@ for (let i = 0; i < slab.detail.length; i += 4) {
 }
 assert.ok(highPanes.length && highPanes.every(z => z < -.85), 'upper-floor balcony doors sit behind the front guard');
 console.log('Verified apartment window dimensions, panel entrance sections and deep loggia stacks.');
+
+// An interwar frontage and its eave. The roof has to rise behind the wall;
+// a neighbour's roof touching the same edge must not change the house.
+function interwarWall(rise, roofZ) {
+  const p = Float32Array.of(0,0,0, 16,0,0, 16,13,0, 0,0,0, 16,13,0, 0,13,0,
+    16,13,0, 0,13,0, 8,13+rise,roofZ);
+  const lines = [], f = facadeCoords(p, () => 0, () => 2, lines);
+  finishWalls(p, f, lines, () => [183,178,166], () => 3);
+  return f[3];
+}
+const pitched = interwarWall(3,-5);
+assert.equal(Math.floor(pitched * 32768) % 16, LOOK.interwarFlats);
+assert.equal(Math.floor(interwarWall(0,-5) * 32768) % 16, LOOK.functionalist);
+assert.equal(Math.floor(interwarWall(3,5) * 32768) % 16, LOOK.functionalist);
+const countFlats = baysOf(pitched,16);
+assert.equal(countFlats,4);
+for (const floor of [1,2,4]) assert.deepEqual(upper(pitched,floor,countFlats),[113,77,77,113]);
+const [l,t,r,b] = apertures[25][0];
+assert.ok((r-l)/256 > .9 && (b-t)/512 > .49, 'ribbon lights fill the bay and reach about half a storey');
+assert.deepEqual(apertures[41], apertures[113], 'the pictured balcony and its physical door coincide');

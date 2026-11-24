@@ -1144,10 +1144,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   the surveyed festive lighting). As in Prague, that lighting goes off at midnight and comes
   back with the street lamps the next evening (`floodlightsAt` in `src/lamps.ts`).
 - **Facades** are put together bay by bay and storey by storey from 144 parts: windows,
-  doors, gateways and shopfronts in thirteen looks (`src/facades.ts`): three for
+  doors, gateways and shopfronts in fourteen looks (`src/facades.ts`): three for
   19th-century tenements (neo-Renaissance, Art Nouveau and the plain houses of Žižkov
   and Karlín), houses of 1912-1925, baroque houses and plainer burgher houses, functionalist
-  blocks, the plain post-war houses and Socialist Realism of 1939-1953, infill since the 1990s, panel housing as built and as insulated since, and
+  blocks and interwar apartment houses, the plain post-war houses and Socialist Realism of 1939-1953, infill since the 1990s, panel housing as built and as insulated since, and
   family houses. A building's style and looks come from its age where IPR's data has it
   (`pipeline/building_age.py`: Art Nouveau mostly for tenements of 1890-1914, for
   instance), else from where it stands and how tall it is: baroque in Old Town, Malá
@@ -1193,6 +1193,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   sunnier elevation. Exposed concrete shows its joints. On insulated blocks, painted
   window bays alternate with pale balconies and some households have enclosed their
   loggia with sliding glass. The panel layout is inferred from the wall geometry.
+  On functionalist frontages, steel ribbon windows run nearly pier to pier. Where a long
+  wall shares an eave with an inward-rising pitched roof, the generator uses a residential
+  interwar façade with divided casements. Fronts of four or more bays have stacked
+  balconies at the ends, with rounded rendered parapets.
   Ordinary windows get physical depth through the first three upper floors.
   Nearby loggias have a slab, a guard and a rear door 0.92 m back, up to twelve upper
   floors. On High, up to 24 nearby walls qualify within 42 m (Ultra: 36 within 56 m). Lowest

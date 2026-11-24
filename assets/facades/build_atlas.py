@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageFilter
 from scipy import ndimage
-from proportions import PANEL_FITTINGS, enclosed_loggia, panel_mask, precast_joints, remap
+from proportions import PANEL_FITTINGS, enclosed_loggia, interwar_cell, panel_mask, precast_joints, remap
 
 HERE = Path(__file__).parent
 OUT = HERE.parent.parent / "public" / "facades.webp"
@@ -105,6 +105,13 @@ def main():
             layer = s * 12 + i
             cell = remap(cell, layer)
             at = ((i % COLS) * CELL[0], (s * ROWS + i // COLS) * CELL[1])
+            if layer == 41:
+                plain_render = cell
+            if layer in (41, 77, 113):
+                # Layer 24, the steel casement with its opening transoms.
+                y = 4 * CELL[1]
+                glazing = atlas.crop((21, y + 98, 236, y + 379))
+                cell = interwar_cell(plain_render, glazing, layer)
             if layer == 125:
                 left, top = at[0] - 3 * CELL[0], at[1]  # layer 122, open loggia
                 cell = enclosed_loggia(atlas.crop((left, top, left + CELL[0], top + CELL[1])))
