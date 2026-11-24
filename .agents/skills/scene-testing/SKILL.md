@@ -74,6 +74,9 @@ in compass degrees (0 north, 90 east), speeds in km/h.
   command, `run` included: without it the command loads the game from port 5191.
 - `t.gun(on)`: players have no pistol; this hands it out (or takes it away) for the page,
   as the developer panel's Pistol box does for good. `t.shoot(at)` returns null without it.
+- `t.watchCrashes()`: from now on, each crash the sound is told of (`src/impacts.ts`) as
+  `{ kind, kmh, mine }`; `.stop()` when done. Scenario `crash-sound` (wall, lamp post,
+  parked car). The sound itself is measured offline (sound-levels skill, `bangs.mjs`).
 - `t.dent(car, along, left, levels)` crumples a car as a blow that far along and to the left of
   its middle would (metres; `DENT` in `src/car.ts`) and returns `car.crush`.
 - `t.ignite(car)` sets a car on fire; `t.fire(car)`: whether it burns, is a wreck, still

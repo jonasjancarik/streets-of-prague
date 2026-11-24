@@ -114,15 +114,19 @@ class Fences {
   }
 
   // A car against the sections it touches, like the posts (posts.ts) but along a line:
-  // the car is tested at points along each section. Returns how hard it hit (m/s).
+  // the car is tested at points along each section. Returns how hard it hit (m/s), and
+  // `struck` says what the hardest of it was (for the crash's sound).
+  struck: 'fence' | 'hedge' | 'rail' = 'fence';
   collide(car: Car) {
     const L = car.spec.L / 2, W = car.spec.W / 2, c = Math.cos(car.h), s = Math.sin(car.h);
     let impact = 0;
     this.through = false;
     for (const f of this.near(car.x, car.y, Math.hypot(L, W))) {
       if (car.gz !== undefined && Math.abs(car.gz - f.z) > 2.5) continue;
+      const was = impact;
       if (f.rail) {
         impact = Math.max(impact, this.rail(f, car, c, s, L, W));
+        if (impact > was) this.struck = 'rail';
         continue;
       }
       const kind = f.hedge ? HEDGE : FENCE;
@@ -134,6 +138,7 @@ class Fences {
         impact = Math.max(impact, bump(car, p, c, s, L, W));
         if (hit.over) this.lay(f, car);
       }
+      if (impact > was) this.struck = f.hedge ? 'hedge' : 'fence';
     }
     return impact;
   }

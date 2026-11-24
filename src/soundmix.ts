@@ -152,6 +152,70 @@ export function rotorFalloff(d: number) {
   return (ROTORS.near / (ROTORS.near + d)) * clamp(1 - d / ROTORS.range, 0, 1);
 }
 
+// Crashes (src/crashsound.ts makes them, Sound.crash plays them): a car into a wall, a
+// post, a fence, another car or a tram, or into someone. How hard it hit (m/s, closing
+// speed) sets what's in it: a soft knock and a thud for a bump at walking pace, a crunch
+// of metal from about 10 km/h, glass breaking and pieces falling from about 30 km/h,
+// all of it bigger up to about 55 km/h. Halved by `near` m, gone at `range`. A car
+// isn't heard again within `cooldown` s unless it hits harder (1.5 times), so a car
+// pressed against a wall or grinding along it doesn't rattle off a crash every frame;
+// at most `voices` play at once. `duck`: the most the engine, tyres, traffic, city and
+// radio are turned down (a share of their level) under the hardest crash right by you,
+// so the crash has room to sound big.
+export const CRASH = { near: 20, range: 150, cooldown: 0.3, voices: 6, duck: 0.5 };
+
+// What each thing hit adds: `thud` the low blow, `crunch` crumpling metal and plastic,
+// `ring` the metal ringing after (`hz` its lowest note, `decay` s), `glass` breaking
+// windows and lamps, `rustle` leaves, branches or clothes; `dull` keeps the thud low
+// (a body, not a panel).
+export const CRASH_KINDS = {
+  wall: { thud: 1.2, crunch: 0.9, ring: 0.35, hz: 520, decay: 0.25, glass: 0.8, rustle: 0, dull: false },
+  post: { thud: 0.7, crunch: 0.5, ring: 1.3, hz: 260, decay: 1.1, glass: 0.5, rustle: 0, dull: false }, // a hollow steel pole
+  fence: { thud: 0.45, crunch: 0.8, ring: 0.5, hz: 900, decay: 0.3, glass: 0.15, rustle: 0.5, dull: false },
+  rail: { thud: 0.6, crunch: 1, ring: 1, hz: 380, decay: 0.6, glass: 0.3, rustle: 0, dull: false }, // a crash barrier
+  hedge: { thud: 0.3, crunch: 0.15, ring: 0, hz: 0, decay: 0, glass: 0, rustle: 0.8, dull: true },
+  car: { thud: 1, crunch: 1.1, ring: 0.7, hz: 640, decay: 0.35, glass: 1, rustle: 0, dull: false },
+  tram: { thud: 1.3, crunch: 1, ring: 1.1, hz: 330, decay: 0.7, glass: 0.9, rustle: 0, dull: false },
+  person: { thud: 0.65, crunch: 0.1, ring: 0, hz: 0, decay: 0, glass: 0, rustle: 0.25, dull: true },
+} as const;
+export type CrashKind = keyof typeof CRASH_KINDS;
+
+export interface CrashMix {
+  thud: number; crunch: number; ring: number; glass: number; rustle: number; // levels, right by it
+  hz: number; decay: number; dull: boolean;
+  length: number; // s over which the crunch and the falling pieces spread
+  hard: number; // 0 (a bump) to 1 (a smash): how many grains, how long things ring
+  pitch: number; // under 1 for a lorry or a bus, over 1 for a bicycle
+  duck: number; // the share the other sounds are turned down by, right by it
+}
+
+// The levels of a crash `speed` m/s hard into a `kind`, the heaviest car in it `mass` kg.
+export function crashMix(speed: number, kind: CrashKind, mass = 1400): CrashMix {
+  const k = CRASH_KINDS[kind] ?? CRASH_KINDS.wall;
+  const hard = clamp((speed - 1.2) / 13.8, 0, 1); // 1.2 m/s (4 km/h) to 15 m/s (54 km/h)
+  const crunch = clamp((speed - 2.5) / 8, 0, 1) ** 1.2; // from about 10 km/h
+  const ring = clamp((speed - 2) / 10, 0, 1);
+  const glass = clamp((speed - 8) / 6, 0, 1); // from about 30 km/h, all of it by 50
+  // A bicycle is lighter and higher; a bus or a tram deeper, and its blows heavier.
+  const pitch = clamp((1400 / Math.max(60, mass)) ** 0.15, 0.7, 1.45);
+  const weight = clamp((mass / 1400) ** 0.2, 0.6, 1.4);
+  return {
+    thud: (0.12 + 0.5 * hard ** 0.7) * k.thud * weight,
+    crunch: 0.55 * crunch * k.crunch * weight,
+    ring: 0.12 * ring * k.ring,
+    glass: 0.35 * glass * k.glass,
+    rustle: (0.08 + 0.3 * hard) * k.rustle,
+    hz: k.hz * pitch, decay: k.decay * (0.6 + 0.7 * hard), dull: k.dull,
+    length: 0.15 + 0.75 * hard,
+    hard, pitch,
+    duck: CRASH.duck * clamp((hard - 0.25) / 0.6, 0, 1),
+  };
+}
+// How loud a crash is at `d` m: halved by `near`, gone at `range`.
+export function crashFalloff(d: number) {
+  return (CRASH.near / (CRASH.near + d)) * clamp(1 - d / CRASH.range, 0, 1);
+}
+
 // In a street view the ears turn with the camera. A source straight ahead or
 // overhead stays centred. The near radius softens a pass through the listener.
 export interface EarRight { x: number; z: number }

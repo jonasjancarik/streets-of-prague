@@ -21,6 +21,8 @@ import type { FigureKit, Look } from './figures.ts';
 import type { Point2 } from './map/geo.ts';
 import { posts } from './posts.ts';
 import { fences } from './fences.ts';
+import { crash } from './impacts.ts';
+import type { ImpactKind } from './impacts.ts';
 import { TreeEscape } from './treeEscape.ts';
 import type { TreeTrunk } from './contracts.ts';
 import { lampLit, LAMP_ON } from './lamps.ts';
@@ -1935,14 +1937,19 @@ export class Car {
     const escape = this.mode === 'player' && grid.trunkAt ? (this.treeEscape ??= new TreeEscape()) : undefined;
     escape?.begin(this, !ctl.handbrake && Math.abs(thrust) >= .2 ? Math.sign(thrust) : 0);
     const steps = Math.max(1, Math.ceil((this.speed * dt) / 0.25));
-    let impact = 0;
+    let impact = 0, struck: ImpactKind = 'wall';
     for (let i = 0; i < steps; i++) {
       this.x += (this.vx * dt) / steps;
       this.y += (this.vy * dt) / steps;
-      impact = Math.max(impact, posts.collide(this), fences.collide(this), this.collideGrid(grid));
+      const post = posts.collide(this), fence = fences.collide(this), wall = this.collideGrid(grid);
+      if (post > impact) { impact = post; struck = 'post'; }
+      if (fence > impact) { impact = fence; struck = fences.struck; }
+      if (wall > impact) { impact = wall; struck = 'wall'; }
     }
     escape?.end(this, dt);
     this.sync();
+    // Heard (src/impacts.ts), whoever's car it is.
+    crash(this, null, impact, struck, this.x, this.y, this.spec.mass);
     return impact;
   }
 

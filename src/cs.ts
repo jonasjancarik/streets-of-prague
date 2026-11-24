@@ -55,7 +55,7 @@ export const CS: Record<string, string> = {
   Trams: 'Tramvaje',
   'City and birds': 'Město a ptáci',
   'Rain and wind': 'Déšť a vítr',
-  Bangs: 'Výstřely a výbuchy',
+  Bangs: 'Výstřely, výbuchy a nárazy',
   Sound: 'Zvuk',
   'Car radio': 'Rádio v autě',
   'Radio settings': 'Nastavení rádia',

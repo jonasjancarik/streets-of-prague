@@ -68,10 +68,19 @@ difference.
   what counts. Duck the ambience, engine and tyres briefly under it, then
   release. Raising the impact's own gain instead makes the whole mix louder without
   making it hit harder. For a new impact sound, add a short duck of the other buses
-  (a few dB, ~0.2 s attack, slower release) rather than only setting its level. Meant
-  for explosions, gunshots and the like; the game has none yet, and `audio.ts` has no
-  ducking today.
-- **Not covered offline:** the code-made sounds (engine, tyres, clicks, weather). To
+  (a few dB, ~0.2 s attack, slower release) rather than only setting its level.
+  Crashes do this (`Sound.crash`: the engine, tyres, traffic, trams, city, weather and
+  radio go through one `duck` gain, down by up to `CRASH.duck` under a hard crash right
+  by you, back up after a quarter of a second); a gunshot or a car blowing up could use
+  the same.
+- **The one-off code-made sounds** (crashes, gunshot, explosion, door) are measured by
+  `bangs.mjs` (next to this file): `node .claude/skills/sound-levels/bangs.mjs
+  [--kinds car,wall] [--kmh 5,30,55]` renders each offline in headless Chrome on the
+  dev server's origin (seconds, the game isn't loaded) and prints its loudest 400 ms
+  (LUFS) and peak. Measured: a car crash at 5 km/h -37.5 (like your engine flat out),
+  10 km/h -32.7, 30 km/h -24.3, 55 km/h -19.1; a door shut -28.9, a gunshot -21.4, a
+  car blowing up -11.9.
+- **Not covered offline:** the other code-made sounds (engine, tyres, clicks, weather). To
   measure those, run `audio.ts` in Node with the `node-web-audio-api` package (a new
   dependency: check it first), or read the engine's output with an `AnalyserNode` in
   the page (see below).

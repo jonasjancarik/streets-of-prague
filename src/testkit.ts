@@ -31,6 +31,7 @@ import type { Standing } from './factions.ts';
 import type { Hit } from './pistol.ts';
 import { gunOn, setGun } from './pistol.ts';
 import { upgrade } from './save.ts';
+import { onCrash } from './impacts.ts';
 
 // Test API for scenarios (scenarios/*.ts), the developer panel and scripts/scene.mjs,
 // as window.__test. Positions are latitude/longitude in and out, headings are compass
@@ -231,6 +232,14 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       const log: boolean[] & { cars?: Car[] } = [], cars: Car[] = log.cars = [], prev = g.traffic.onHonk;
       g.traffic.onHonk = (c, long) => { log.push(long); cars.push(c); prev?.(c, long); };
       return log as boolean[] & { cars: Car[] };
+    },
+
+    // The crashes from now on (src/impacts.ts) as the sound is told of them: what was hit,
+    // how hard (km/h) and whether your car was in it. `stop()` stops watching.
+    watchCrashes() {
+      const log: { kind: string; kmh: number; mine: boolean }[] & { stop?: () => void } = [];
+      log.stop = onCrash((e) => { const me = g.car(); log.push({ kind: e.kind, kmh: Math.round(e.speed * 36) / 10, mine: !!me && (e.a === me || e.b === me) }); });
+      return log as typeof log & { stop: () => void };
     },
 
     // Scenario preparation uses the ordinary descent/exit controls. Teleporting a

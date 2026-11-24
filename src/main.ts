@@ -88,6 +88,7 @@ import { LaneAssist, turnOf, project } from './assist.ts';
 import { snowFooting } from './map/footing.ts';
 import { Sound, surfaceOf } from './audio.ts';
 import { roadNoise, ROAD_FAR } from './soundmix.ts';
+import { crash, onCrash } from './impacts.ts';
 import type { Surface, HornKind, Rotor } from './audio.ts';
 import { tunnelFinishesView } from './tunnelFinish.ts';
 import { StreetIronwork } from './streetIronwork.ts';
@@ -1041,6 +1042,8 @@ async function main() {
   const hornKind = (c: Car): HornKind => (c.two === 'bike' ? 'bike' : c.two === 'moto' ? 'moto' : c.spec.heavy ? 'heavy' : 'car');
   // Drivers held up by you toot at you.
   Car.onShut = (c) => sound.doorShut(Math.hypot(c.x - px(), c.y - py()), c.x - px(), c.y - py());
+  // Crashes (src/impacts.ts: cars into walls, posts, fences, each other, trams, people).
+  onCrash((e) => sound.crash(e, Math.hypot(e.x - px(), e.y - py()), e.x - px(), e.y - py(), !!inCar && (e.a === inCar || e.b === inCar)));
   traffic.onHonk = (c, long) => sound.toot(Math.hypot(c.x - px(), c.y - py()), c.x - px(), hornKind(c), long, c.y - py());
   const honk = (on: boolean) => {
     if (ride.driving) {
@@ -2595,6 +2598,7 @@ async function main() {
       bump(o, 0.3, (c, nx, ny) => {
         if (c.speed > 3 && o.down <= 0) {
           police.knock(o, c.vx * 0.9 + nx * 2, c.vy * 0.9 + ny * 2);
+          crash(c, o, c.speed, 'person', o.x, o.y, c.spec.mass);
           if (c === inCar) police.crime('hitCop', o.x, o.y);
         }
       });
@@ -2610,6 +2614,7 @@ async function main() {
       bump(m, 0.3, (c, nx, ny) => {
         if (c.speed > 3 && m.down <= 0) {
           refuse.knock(m, c.vx * 0.9 + nx * 2, c.vy * 0.9 + ny * 2);
+          crash(c, m, c.speed, 'person', m.x, m.y, c.spec.mass);
           if (c === inCar) police.crime('knock', m.x, m.y);
         }
       });
@@ -2626,6 +2631,7 @@ async function main() {
       bump(ip, 0.3, (c, nx, ny) => {
         if (c.speed > 3 && ip.down <= 0) {
           inspector.knock(c.vx * 0.9 + nx * 2, c.vy * 0.9 + ny * 2);
+          crash(c, ip, c.speed, 'person', ip.x, ip.y, c.spec.mass);
           if (c === inCar) police.crime('knock', ip.x, ip.y);
         }
       });
@@ -2660,7 +2666,7 @@ async function main() {
           }
           return true;
         }
-        if (c.speed > 4 && walker.down <= 0 && !walker.airborne) { walker.knock(c.vx + nx * 2, c.vy + ny * 2); hurt(c.speed * 2.5); shake = 0.6; }
+        if (c.speed > 4 && walker.down <= 0 && !walker.airborne) { walker.knock(c.vx + nx * 2, c.vy + ny * 2); hurt(c.speed * 2.5); shake = 0.6; crash(c, walker, c.speed, 'person', walker.x, walker.y, c.spec.mass); }
       });
       // Up quickly, down as fast as you'd drop.
       walker.perch = top > walker.perch ? walker.perch + (top - walker.perch) * Math.min(1, dt * 14) : Math.max(top, walker.perch - dt * 5);

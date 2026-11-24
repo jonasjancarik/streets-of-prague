@@ -1868,7 +1868,15 @@ record the measurements, merge decisions and pending landmark asset activation.
   `src/soundmix.ts`; the mixer's "Traffic around you"). Helicopters thud with their
   blades, whine and rumble: the one you fly on the engine's slider, spinning up and
   winding down with its rotor, and the two nearest others (police helicopters, one
-  you've just left) on the traffic's, heard from up to 450 m (`ROTORS`). Under it all is the city's own
+  you've just left) on the traffic's, heard from up to 450 m (`ROTORS`). Crashes are
+  made in code too (`src/crashsound.ts`), yours and any car's within 150 m: a soft knock
+  for a bump at walking pace, crumpling metal from about 10 km/h, breaking glass from
+  about 30 km/h, and each thing hit sounds its own (a wall's thud, a lamp post's clang,
+  a hedge's rustle, a tram's heavy blow, a dull thud for someone hit). Anything that
+  notices a blow calls `crash` in `src/impacts.ts`; a car isn't heard again within
+  0.3 s unless it hits harder, and a hard one turns the rest down for a moment
+  (levels in `CRASH` and `crashMix`, `src/soundmix.ts`; the mixer's "Bangs").
+  Under it all is the city's own
   sound, long stereo loops from the same script, each as loud as where you are and the
   time of day call for: two layered Old Town crowds (each six stretches of the
   recordings at once, a murmur with no words to make out), full on the busiest squares
@@ -2046,7 +2054,7 @@ that two versions of the roof builder can be compared.
 - More to do: written missions, factions that hold parts of town and react to you
   (`plans/004-missions-and-factions.md`). The first odd jobs are in.
 - Visible damage on cars.
-- Sound for crashes and people.
+- Sound for people (voices, shouts).
 
 ## Building the map
 

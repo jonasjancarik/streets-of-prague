@@ -1,7 +1,9 @@
 import type { Footing } from './map/footing.ts';
 import { clamp } from './network.ts';
 import { BOGIES, frontOf } from './trams.ts';
-import { AMBIENCE, ambienceGains, ambienceMuffle, sirenGain, SIREN_RANGE, PASSING, passingFalloff, passingNote, passingLevels, ROTORS, rotorFalloff, sourcePan, PASSAGE_SOUND } from './soundmix.ts';
+import { AMBIENCE, ambienceGains, ambienceMuffle, sirenGain, SIREN_RANGE, PASSING, passingFalloff, passingNote, passingLevels, ROTORS, rotorFalloff, sourcePan, PASSAGE_SOUND, CRASH, crashMix, crashFalloff } from './soundmix.ts';
+import { playCrash } from './crashsound.ts';
+import type { Impact } from './impacts.ts';
 import type { EarRight, PassingKind } from './soundmix.ts';
 import { Radio, radioOn, setRadioSaved } from './radio.ts';
 import type { Station } from './radio.ts';
@@ -16,7 +18,8 @@ import type { BirdSeason } from './soundmix.ts';
 // rumble, the motors' whine, the wheels squealing in tight curves, pulling away from a
 // stop and pulling in, and the bell when something's on the track; the bogies clicking
 // over rail joints are made here, and so is the weather: rain hissing and pattering,
-// the tyres louder in the wet, thunder after lightning, a wind while it snows. Under it
+// the tyres louder in the wet, thunder after lightning, a wind while it snows, and so are
+// the crashes (src/crashsound.ts, told of by src/impacts.ts). Under it
 // all, the city's own sound, from recordings too: crowds where the streets are busy,
 // traffic in the distance by day and a low hum by night, and birds where it's quiet
 // (see Ambience and src/soundmix.ts). Browsers only start sound after a key press or
@@ -176,6 +179,8 @@ export const BUSES = ['engine', 'tyres', 'traffic', 'horns', 'trams', 'city', 'w
 export type Bus = (typeof BUSES)[number];
 // Noise cancelling: the steady rumble of engine, tyres, weather and city is cut, mostly its lows; horns, sirens, radio and bangs get through.
 const NOISY: Bus[] = ['engine', 'tyres', 'traffic', 'trams', 'city', 'weather'];
+// Turned down for a moment under a hard crash, so the crash has room (Sound.crash).
+const DUCKED: Bus[] = [...NOISY, 'radio'];
 const ANC_CUT = 0.5, ANC_SHELF = -22; // volume left, and dB taken off the lows
 
 export class Sound {
@@ -189,6 +194,9 @@ export class Sound {
   ctx: AudioContext | null = null;
   on: boolean;
   master!: GainNode;
+  private duck!: GainNode; // DUCKED buses go through this to the master
+  private crashed = new WeakMap<object, { t: number; v: number }>(); // each car's last crash heard
+  private crashEnds: number[] = []; // when the crashes playing now die away
   noise!: AudioBuffer;
   clack!: AudioBuffer;
   clips: Record<string, AudioBuffer> = {};
@@ -287,14 +295,17 @@ export class Sound {
     this.master = ctx.createGain();
     this.master.gain.value = this.on ? 0.8 : 0;
     this.master.connect(comp).connect(ctx.destination);
+    this.duck = gain(ctx, 1);
+    this.duck.connect(this.master);
     for (const b of BUSES) {
       this.buses[b] = ctx.createGain();
       this.buses[b].gain.value = this.level(b);
+      const to = DUCKED.includes(b) ? this.duck : this.master;
       if (NOISY.includes(b)) {
         const shelf = (this.shelves[b] = filter(ctx, 'lowshelf', 500));
         shelf.gain.value = this.anc ? ANC_SHELF : 0;
-        this.buses[b].connect(shelf).connect(this.master);
-      } else this.buses[b].connect(this.master);
+        this.buses[b].connect(shelf).connect(to);
+      } else this.buses[b].connect(to);
     }
     const bus = this.buses;
     this.noise = noiseBuffer(ctx);
@@ -567,6 +578,43 @@ export class Sound {
     thump.connect(tg).connect(pan);
     thump.start(t);
     thump.stop(t + 0.65);
+  }
+
+  // A crash (src/impacts.ts) d m away, dx of it to the east, dy to the north; `mine`:
+  // the car you're in is in it. Its levels are crashMix's (src/soundmix.ts). A car
+  // crashing again within CRASH.cooldown s is only heard if it hits harder, and one
+  // heard again within a second is quieter: a car scraping along a wall knocks now and
+  // then instead of crashing every frame.
+  crash(e: Impact, d: number, dx: number, dy = 0, mine = false) {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running' || !this.on || d > CRASH.range) return;
+    const t = ctx.currentTime;
+    let loud = mine ? 1 : crashFalloff(d);
+    const m = crashMix(e.speed, e.kind, e.mass);
+    if (loud * (m.thud + m.crunch) < 0.01) return; // a bump too far off to hear
+    for (const key of [e.a, e.b]) {
+      const last = key && this.crashed.get(key);
+      if (!last) continue;
+      if (t - last.t < CRASH.cooldown && e.speed < last.v * 1.5) return;
+      if (t - last.t < 1 && e.speed < last.v * 1.5) loud *= 0.6;
+    }
+    for (const key of [e.a, e.b]) if (key) this.crashed.set(key, { t, v: e.speed });
+    this.crashEnds = this.crashEnds.filter((end) => end > t);
+    if (this.crashEnds.length >= CRASH.voices && !mine) return;
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = mine ? 0 : sourcePan(dx, dy, d, 30, this.right);
+    pan.connect(this.buses.bangs);
+    const end = playCrash(ctx, pan, this.noise, m, loud, 12000 - Math.min(d, CRASH.range) * 60, t);
+    this.crashEnds.push(end);
+    // The rest turned down under it for a moment, then back up.
+    const dip = m.duck * loud;
+    if (dip > 0.02 && 1 - this.duck.gain.value < dip) {
+      const g = this.duck.gain;
+      g.cancelScheduledValues(t);
+      g.setValueAtTime(g.value, t);
+      g.setTargetAtTime(1 - dip, t, 0.03);
+      g.setTargetAtTime(1, t + 0.25, 0.4);
+    }
   }
 
   play(buffer: AudioBuffer, at: number, gain: number, out: AudioNode, rate = 1) {
