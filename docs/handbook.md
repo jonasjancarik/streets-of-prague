@@ -812,11 +812,19 @@ The metro ride uses its overhead cutaway camera.
   up for a more angled view and down to look straight down. The Rotation and Tilt
   sliders let you set either angle separately. Straight down resets both angles
   to a north-up view. Searching or picking a spot on the map moves the camera. First person looks out at eye height (1.75 m) the
-  way you face, with a wider 55° view. Settings → Camera view offers Overhead, First person and Third person and remembers your choice. V cycles through those views on foot. First-person controls in Settings let you adjust the field of view, look sensitivity and walking camera movement. You can look down to see your feet or up to see the roofline. The camera URL options take precedence for that visit. At street level, people and their bikes are
+  way you face, with a wider 55° view. Settings → Camera view offers From above, First person and Third person and remembers your choice; the start screen's View row is the same choice (`playerView` in local storage), so whatever is picked there is what the game begins in and what Settings shows. ?fps and ?tps preselect it on the start screen. V cycles through those views on foot. First-person controls in Settings let you adjust the field of view, look sensitivity and walking camera movement. You can look down to see your feet or up to see the roofline. The camera URL options take precedence for that visit. At street level, people and their bikes are
   drawn life size there rather than 1.35× (`FIGURE_SIZE`). In a car or the helicopter it
   follows from behind and above like a driving game's chase camera, the car in the lower
-  third, swinging round after it as it turns. A click takes the mouse to look round with
-  (Esc lets go); right-drag or Shift-drag looks round too. On foot it plays like a
+  third, swinging round after it as it turns. It looks a little into a bend, eases over
+  kerbs and bumps instead of following each one, hangs back a little further and widens
+  its view by up to 7° towards 100 km/h, and comes in at once when a wall is behind the
+  car. A click takes the mouse to look round with
+  (Esc lets go); right-drag or Shift-drag looks round too. Driving, the view swings
+  back behind the car smoothly once you stop looking round. In third person on foot the
+  camera hangs a few metres back, just right of your head; a wall behind you brings it in
+  at once and it eases back out, it rises only partly with a jump, and stepping into or
+  out of a car blends from one camera to the other. These cameras ease with critically
+  damped springs, so they move the same at any frame rate (`src/followCamera.ts`). On foot it plays like a
   first-person game: the mouse turns you, W/S walk the way you look and A/D step sideways (`t.eyes = { yaw, pitch }` in
   scripts). The left stick walks forward, back or sideways relative to the view. On a
   controller the right stick looks around. On a touchscreen, drag the street with your

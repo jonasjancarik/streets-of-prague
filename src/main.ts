@@ -1,5 +1,6 @@
 import { ROOFTOP } from './roofSurface.ts';
 import { headingUpOn } from './headingup.ts';
+import { FollowCamera } from './followCamera.ts';
 import { DATA_FORMAT, dataUrl, mapData } from './data.ts';
 import { ANYWHERE, anywhereIndex } from './countrysideTiles.ts';
 import { STATIONS } from './radio.ts';
@@ -93,7 +94,7 @@ import type { Surface, HornKind, Rotor } from './audio.ts';
 import { tunnelFinishesView } from './tunnelFinish.ts';
 import { StreetIronwork } from './streetIronwork.ts';
 import { StreetPlates } from './streetPlates.ts';
-import { eyesFor, firstPersonOptions, initialView, inStreetCone, savePlayerView, shoulderFraming, vrSupported, WalkingGait, type Eyes, type PlayerView } from './streetView.ts';
+import { eyesFor, firstPersonOptions, initialView, inStreetCone, savePlayerView, vrSupported, WalkingGait, type Eyes, type PlayerView } from './streetView.ts';
 import { setupTouch } from './touch.ts';
 import { setupGamepad, padLabels, usingPad } from './gamepad.ts';
 import './credits.ts';
@@ -600,6 +601,9 @@ async function main() {
   let eyeH = 0; // the first-person view's height (developer panel), smoothed over kerbs
   // The vehicle that view follows from behind, and the heading it looks along (lagging the vehicle's).
   let chased: { h: number } | null = null, chaseH = 0;
+  // The chase camera and third person's camera over your shoulder (followCamera.ts); the
+  // headset keeps the simpler chase above, as its view from a helicopter rides on it.
+  const follow = new FollowCamera();
   let cutR = 0; // radius of the hole above a passage, under a bridge or down into a tunnel (see CUTAWAY)
 
   // First person: how far the city is loaded and drawn, and which way the view looks.
@@ -3165,7 +3169,7 @@ async function main() {
       eyes.onFoot = streetFoot && !eyes.third;
       if (!eyes.onFoot) eyes.pitch = clamp(eyes.pitch, -60, 60);
     }
-    let closeWall = false;
+    let closeWall = false, followed = false;
     const free = testkit?.cam;
     if (free) {
       // The developer panel's free camera: tilted back from the spot it looks at.
@@ -3184,7 +3188,9 @@ async function main() {
       const vehicle = inCar || inHeli, me = vehicle || walker;
       const base = inHeli ? inHeli.z : (deep && body ? body.gz ?? 0 : ground(me.x, me.y, body)) + (inCar ? 0 : walker.z + walker.perch + 1.75);
       eyeH += (base - eyeH) * (Math.abs(base - eyeH) > 5 ? 1 : Math.min(1, dt * 12));
-      if (vehicle) {
+      const headset = !!vr?.active;
+      if (vehicle && !headset) follow.recentre(eyes, dt);
+      else if (vehicle) {
         // Let go of the mouse and the chase camera swings back behind the vehicle, soon
         // and quickly, so you aren't left driving with the view turned aside.
         eyes.still = (eyes.still ?? 1) + dt;
@@ -3196,7 +3202,19 @@ async function main() {
       }
       const yaw = THREE.MathUtils.degToRad(eyes.yaw), pitch = THREE.MathUtils.degToRad(eyes.pitch);
       camera.up.set(0, 1, 0);
-      if (vehicle) {
+      if (vehicle && !headset) {
+        // Like a driving game's chase camera: high enough to see the road over the roof,
+        // the car in the lower third of the picture, swinging round after it as it turns.
+        // A wall behind the car brings it in (not in a tunnel or under a bridge).
+        const floor = inHeli ? inHeli.z : deep && body ? body.gz ?? 0 : ground(me.x, me.y, body);
+        const open = !!inCar && !deep && !(body && world.covered(body));
+        follow.chase(dt, vehicle, {
+          ground: floor, len: inCar ? inCar.spec.L : 14, tall: inCar ? inCar.spec.H : 4, car: !!inCar,
+          forwardSpeed: inCar ? inCar.forwardSpeed : 0, slide: !!inCar?.suspension, yaw, pitch,
+          blocked: open ? (x, y) => !!grid.at(x, y) : undefined,
+        }, camera);
+        followed = true;
+      } else if (vehicle) {
         // (A new vehicle, or after a teleport, starts straight behind it.)
         if (chased !== vehicle) { chased = vehicle; chaseH = vehicle.h; }
         let followHeading = vehicle.h;
@@ -3218,20 +3236,16 @@ async function main() {
       } else if (eyes.third) {
         // Third person: over your shoulder, a few metres back and a little above your head,
         // looking past you along the way you face. A wall behind you brings the camera in
-        // (not on a roof, where the wall below is no reason to).
+        // (not on a roof, where the wall below is no reason to). It rises with a jump only
+        // part of the way, and eases over kerbs and steps.
         chased = null;
-        const aim = me.h + yaw;
-        let back = 3.6;
-        if (!walker.onRoof && !walker.flight) {
-          for (let d = 0.5; d <= back; d += 0.25) {
-            if (grid.at(me.x - Math.cos(aim) * d, me.y - Math.sin(aim) * d)) { back = Math.max(0.6, d - 0.4); break; }
-          }
-        }
-        const up = shoulderFraming.rise(back);
-        const cx = me.x - Math.cos(aim) * back, cy = me.y - Math.sin(aim) * back;
-        camera.position.set(cx, eyeH + up, -cy);
-        const ahead = shoulderFraming.ahead;
-        camera.lookAt(me.x + Math.cos(aim) * ahead, eyeH - shoulderFraming.drop + Math.tan(pitch) * (back + ahead), -(me.y + Math.sin(aim) * ahead));
+        const floor = deep && body ? body.gz ?? 0 : ground(me.x, me.y, body);
+        const lift = walker.flight ? walker.z : walker.z * 0.35;
+        follow.foot(dt, me, {
+          base: floor + lift + walker.perch + 1.75, yaw, pitch,
+          blocked: walker.onRoof || walker.flight ? undefined : (x, y) => !!grid.at(x, y),
+        }, camera);
+        followed = true;
       } else {
         chased = null;
         const aim = me.h + yaw;
@@ -3269,6 +3283,8 @@ async function main() {
       camera.up.set(0, 0, -1);
     }
 
+    if (!followed) follow.rest();
+
     // In a passage under a building, open a hole in the floors above so you stay in view.
     // The same under a bridge, and a wider one down into a tunnel.
     const under = !inHeli && (world.passageAt(px(), py()) || (!!body && world.covered(body)));
@@ -3300,7 +3316,8 @@ async function main() {
     if ((scene as { backgroundNode?: unknown }).backgroundNode !== horizon) (scene as { backgroundNode?: unknown }).backgroundNode = horizon;
     const nearPlane = closeWall ? .055 : eyes ? .2 : 1;
     // A wider view at street level (38° from above, which would feel like a telephoto lens).
-    const fov = eyes ? eyes.onFoot ? firstPersonOptions.fov : 55 : 38;
+    // (Driving, the chase camera widens a little with speed: followCamera.ts.)
+    const fov = eyes ? eyes.onFoot ? firstPersonOptions.fov : followed ? follow.fov : 55 : 38;
     if (camera.fov !== fov) { camera.fov = fov; camera.updateProjectionMatrix(); }
     // Down at street level, people (and their bikes) are life size: from above they're drawn bigger to read.
     FIGURE_SIZE.value = eyes ? 1 : SCALE;
