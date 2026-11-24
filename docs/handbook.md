@@ -654,6 +654,9 @@ The metro ride uses its overhead cutaway camera.
 - **Getting in and out of cars** (`src/getin.ts`). Press E by a car and you go to the
   nearer front door, it opens, you duck in and it shuts behind you; E again and you
   get out the same way (on the other side if the driver's door is against a wall).
+  The player reaches for the handle on the chosen side before the door swings.
+  The driver remains visible until they leave. On the way in, the player leads
+  with one knee and ducks below the roof while the shoulder camera stays outside.
   Taking a car with someone at the wheel: from the driver's side you reach in and
   haul them out onto the road, from the other side they get out of their own door
   and run. Press E again on the way to the door to change your mind. A car that is
@@ -1678,6 +1681,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   first and third person, including after the detailed models are freed and reloaded.
   In third person the player turns into a sideways step while the camera keeps looking
   ahead. Backing up runs the stride in reverse, at the speed the player actually travels.
+  Faster movement lengthens the stride. The slow-run and sprint clips top out
+  at about 190 and 227 footfalls per minute. The supporting shoe rolls about the
+  ball of the foot while the hips travel past it.
   During a sidestep the chest, neck and head turn back toward the player's sightline
   while the feet keep the captured step. Looking behind the body releases that turn.
   Phone calls, falls and other actions keep their own head poses.

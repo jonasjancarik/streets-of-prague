@@ -777,6 +777,41 @@ def getin():
     return keyed([(0, STAND), (5, duck), (12, sat), (13, sat)], 14)
 
 
+def door_latch(side):
+    """Look down, reach with the hand nearest the latch, then draw the door out."""
+    sign = 1 if side == "L" else -1
+    reach = {"pitch": .09, "spine": .17, "head": .23, "look": sign*.15,
+             "twist": sign*.18, "knee": .18, "thigh": .13, "t": (.035,0,-.025)}
+    draw = {**reach, "pitch": -.03, "head": .08, "twist": -sign*.17, "t": (-.045,0,-.035)}
+    frames = []
+    for i, p in enumerate(keyed([(0,STAND),(4,reach),(8,draw),(9,draw)],10)):
+        d, t = pose(p)
+        targets = [(0,(.045,.275,.85)), (4,(.53,.19,1.00)), (8,(.32,.39,.99)), (9,(.30,.40,1.0))]
+        for (a, start), (b, end) in zip(targets,targets[1:]):
+            if a <= i <= b:
+                u = (i-a)/(b-a)
+                hand(d,t,side,Vector(start).lerp(Vector(end),u*u*(3-2*u)),(-.24,1,-.36))
+                break
+        frames.append((d,t))
+    return frames
+
+
+def seat_entry(side):
+    """Lead with the inside knee, tuck the head below the roof, then settle both legs."""
+    other = "R" if side == "L" else "L"
+    sign = 1 if side == "L" else -1
+    brace = {"pitch": .08, "spine": .20, "look": sign*.23, "arm"+side: .65,
+             "elbow"+side: .54, "arm"+other: .32, "elbow"+other: .36}
+    step = {**brace, "t": (.04,sign*.045,-.14), "spine": .30, "head": .24,
+            "thigh"+side: 1.08, "knee"+side: 1.48, "thigh"+other: .15, "knee"+other: .26,
+            "out"+side: .40, "arm"+other: .66, "elbow"+other: .72}
+    sit = {**step, "t": (-.035,sign*.035,-.38), "roll": sign*.09,
+           "thigh"+side: 1.48, "knee"+side: 1.60, "thigh"+other: .68, "knee"+other: .94}
+    settled = {"t": (-.06,0,-.50), "pitch": -.10, "spine": .19, "head": .04,
+               "thigh": 1.43, "knee": 1.42, "arm": .92, "elbow": .59, "out": .10}
+    return keyed([(0,brace),(4,step),(9,sit),(14,settled),(15,settled)],16)
+
+
 def pull():
     """Hauling someone out of a seat: a reach in with both arms, then a heave back and round."""
     reach_in = {"t": (0.08, 0, -0.08), "pitch": 0.15, "spine": 0.45, "head": -0.1, "arm": 1.25, "elbow": 0.25, "out": 0.12,
@@ -914,6 +949,10 @@ CLIPS = {
     "bike": (ride_bike(), True),
     "moto": (ride_moto(), True),
     "getin": (getin(), False),
+    "latchLeft": (door_latch("L"), False),
+    "latchRight": (door_latch("R"), False),
+    "seatLeft": (seat_entry("L"), False),
+    "seatRight": (seat_entry("R"), False),
     "pull": (pull(), False),
     "handsup": (hands_up(), False),
     "cuffed": (cuffed(), False),

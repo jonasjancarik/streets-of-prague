@@ -6,6 +6,9 @@ class Leg {
   offset = 0;
   private base = [new THREE.Quaternion(),new THREE.Quaternion(),new THREE.Quaternion()];
   private applied = false;
+  private planted = false;
+  private plantX = 0;
+  private plantZ = 0;
   private hip = new THREE.Vector3();
   private knee = new THREE.Vector3();
   private ankle = new THREE.Vector3();
@@ -31,7 +34,7 @@ class Leg {
     this.thigh=thigh; this.shin=shin; this.foot=foot; this.toe=toe;
   }
 
-  reset() { this.restore(); this.offset=0; this.soleNormal.set(0,1,0); }
+  reset() { this.restore(); this.offset=0; this.planted=false; this.soleNormal.set(0,1,0); }
 
   restore() {
     if (!this.applied) return;
@@ -46,10 +49,23 @@ class Leg {
     bone.quaternion.premultiply(this.change);
   }
 
-  pose(dt: number, ground: FootGround, floor: number, weight: number) {
+  pose(dt: number, ground: FootGround, floor: number, weight: number, contact: number) {
     if (weight<.01) return;
     this.foot.getWorldPosition(this.ankle);
-    const x=this.ankle.x, z=this.ankle.z, height=ground(x,z), difference=height-floor;
+    let x=this.ankle.x, z=this.ankle.z;
+    if (contact>0) {
+      // During toe-off the ankle rotates about the ball of the foot. Hold
+      // the sole there, allowing the heel to lift with the captured motion.
+      const sole=this.toe ? this.toe.getWorldPosition(this.toeAt) : this.ankle;
+      if (!this.planted || Math.hypot(sole.x-this.plantX,sole.z-this.plantZ)>.55) {
+        this.plantX=sole.x; this.plantZ=sole.z;
+      }
+      const dx=this.plantX-sole.x, dz=this.plantZ-sole.z;
+      const follow=Math.min(1,.20/(Math.hypot(dx,dz)||1))*contact;
+      x+=dx*follow; z+=dz*follow;
+    }
+    this.planted=contact>0;
+    const height=ground(x,z), difference=height-floor;
     if (!Number.isFinite(difference) || Math.abs(difference) >= .30) { this.reset(); return; }
     // Walking animation supplies the swing and toe-off. Only add the change
     // in the surface since the hips' ground sample. Never reach into a drop.
@@ -71,9 +87,9 @@ class Leg {
       }
     }
     this.soleNormal.lerp(this.measuredNormal,ease).normalize();
-    if (Math.abs(this.offset)<.008 && this.soleNormal.y>.9995) return;
+    if (Math.abs(this.offset)<.008 && this.soleNormal.y>.9995 && Math.abs(x-this.ankle.x)+Math.abs(z-this.ankle.z)<.002) return;
     this.thigh.getWorldPosition(this.hip); this.shin.getWorldPosition(this.knee);
-    this.target.copy(this.ankle); this.target.y += this.offset;
+    this.target.set(x,this.ankle.y+this.offset,z);
     this.axis.subVectors(this.target,this.hip);
     const distance=this.axis.length(), upper=this.hip.distanceTo(this.knee), lower=this.knee.distanceTo(this.ankle);
     if (distance<.01 || upper<.01 || lower<.01) return;
@@ -115,7 +131,11 @@ export class PlayerFooting {
   }
   restore() { for (const leg of this.legs) leg.restore(); }
   release() { for (const leg of this.legs) leg.reset(); }
-  apply(dt: number, ground: FootGround, floor: number, weight: number) {
-    for (const leg of this.legs) leg.pose(dt,ground,floor,weight);
+  apply(dt: number, ground: FootGround, floor: number, weight: number, phase=0, lock=0) {
+    for (const [i,leg] of this.legs.entries()) {
+      const step=phase-i*.5;
+      const contact=lock*(1-THREE.MathUtils.smoothstep(Math.abs(step-Math.round(step)),.095,.175));
+      leg.pose(dt,ground,floor,weight,contact);
+    }
   }
 }

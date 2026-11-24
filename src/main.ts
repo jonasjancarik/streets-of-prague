@@ -3227,8 +3227,12 @@ async function main() {
         chased = null;
         const floor = deep && body ? body.gz ?? 0 : ground(me.x, me.y, body);
         const lift = walker.flight ? walker.z : walker.z * 0.35;
+        // The body turns to face the steering wheel as it lowers. Keep the
+        // shoulder camera outside the open door until the chase camera takes over.
+        const entry = getIn.play;
+        const doorYaw = entry?.kind === 'in' && entry.phase === 'sit' ? entry.h0-me.h : 0;
         follow.foot(dt, me, {
-          base: floor + lift + walker.perch + 1.75, yaw, pitch,
+          base: floor + lift + walker.perch + 1.75, yaw:yaw+doorYaw, pitch,
           blocked: walker.onRoof || walker.flight ? undefined : (x, y) => !!grid.at(x, y),
         }, camera);
         followed = true;
@@ -3432,7 +3436,7 @@ async function main() {
     const shut = onFoot && !cabin ? funicular.near(walker.x, walker.y, true) : null;
     const ferryHere = onFoot && !ferries.me ? ferries.near(walker.x, walker.y, true) : null;
     const canEnter = !walker.flight && !inCar && !inHeli && !ride.on && !metro.active && (!!enterable || !!boat || choppers.some((c) => Math.hypot(c.x - walker.x, c.y - walker.y) < 4 && Math.abs(c.z - walker.mesh.position.y) < 2.5 && c.landed));
-    const getIn = t(enterable?.two ? '<b>E</b> get on' : !enterable && boat ? (boat.kind === 'swan' ? '<b>E</b> get in the swan' : '<b>E</b> get in the pedal boat') : '<b>E</b> get in');
+    const enterHint = t(enterable?.two ? '<b>E</b> get on' : !enterable && boat ? (boat.kind === 'swan' ? '<b>E</b> get in the swan' : '<b>E</b> get in the pedal boat') : '<b>E</b> get in');
     const ticketHint = () => pid.state === 'grace'
       ? `${touch.active ? t('Buy a ticket ({price})', { price: kc(TICKET.price) }) : usingPad() ? `<b>B</b> ${t('Buy a ticket ({price})', { price: kc(TICKET.price) })}` : TICKETS.map((k, i) => `<b>${i + 1}</b> ${validity(k.minutes)} ${kc(k.price)}`).join(' · ')} · ${t('{secs} s left', { secs: Math.ceil(pid.left) })}`
       : pid.state === 'dodging' ? t('No ticket') : '';
@@ -3506,8 +3510,8 @@ async function main() {
     else if (board.shown) {
       const bus = board.kind === 'bus';
       const wait = waitScale > 1.5 ? t(bus ? 'Waiting for a bus · {n}× speed' : 'Waiting for a tram · {n}× speed', { n: Math.round(waitScale) }) : touch.active ? '' : t(bus ? 'Hold <b>Space</b> to wait for a bus' : 'Hold <b>Space</b> to wait for a tram');
-      hint = [canEnter && !touch.active ? getIn : '', wait].filter(Boolean).join(' · ');
-    } else if (canEnter && !touch.active) hint = getIn;
+      hint = [canEnter && !touch.active ? enterHint : '', wait].filter(Boolean).join(' · ');
+    } else if (canEnter && !touch.active) hint = enterHint;
     if (onFoot && !cabin && !shut && !board.shown && !touch.active) {
       const lying = !bags.carried && bags.near(walker.x, walker.y);
       if (lying && (!enterable || lying.d <= gap(enterable))) hint = t('<b>E</b> pick up the bag');

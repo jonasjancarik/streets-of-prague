@@ -55,7 +55,7 @@ const TURN = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0),
 
 // The clips by name: the gaits, the ways of standing, 'umbrella' (standing with one) and
 // 'arm' (just its left arm).
-interface Kind { template: THREE.Object3D; clips: Record<string, THREE.AnimationClip>; stride: Record<Move, number>; standing: string[]; uniform?: THREE.MeshStandardMaterial; role?: UniformRole }
+interface Kind { template: THREE.Object3D; clips: Record<string, THREE.AnimationClip>; stride: Record<Move, number>; contactPhase: number; standing: string[]; uniform?: THREE.MeshStandardMaterial; role?: UniformRole }
 interface Person {
   kind: number;
   root: THREE.Object3D;
@@ -159,7 +159,7 @@ export class LifeSize {
           o.userData.cullRadius = 1.3; // (round the hips, for leaving out those the buildings hide: occlusion.ts)
         });
         const hips = g.scene.getObjectByName('Bip01')?.position.y ?? 0.9;
-        const kind: Kind = { template: g.scene, clips: {}, stride: {} as Kind['stride'], standing: STANDING[sex] };
+        const kind: Kind = { template: g.scene, clips: {}, stride: {} as Kind['stride'], contactPhase: sex === 'm' ? .97 : .425, standing: STANDING[sex] };
         for (const move of GAITS) [kind.clips[move], kind.stride[move]] = inPlace(byName[`${sex}_${CLIPS[move]}`], hips);
         for (const name of STANDING[sex]) kind.clips[name] = inPlace(byName[`${sex}_${name}`], hips)[0];
         const umbrella = (kind.clips.umbrella = inPlace(byName[`${sex}_${UMBRELLA[sex]}`], hips)[0]);
@@ -501,16 +501,28 @@ export class LifeSize {
         if (p.w[c] < 0.01 && p.want[c] === 0) p.w[c] = 0; // (a clip at no weight isn't worked out at all)
         if (c in k.stride) { stride += k.stride[c as Move] * p.w[c]; sum += p.w[c]; }
       }
-      if (sum > .01) {
-        const phase = p.phase + (p.strideSign * p.speed * dt) / (stride / sum);
+      let sampledPhase = p.phase;
+      let plant = 0;
+      if (sum > .01 && stride > 0) {
+        // The captures cover about two metres per running cycle. Playing that
+        // distance literally at the game's sprint speed gave 426 steps/minute.
+        // Spend more of a fast stride in flight while the sole still sweeps
+        // rapidly backwards through ground contact, twice per complete cycle.
+        const captureRate = p.speed * sum / stride;
+        const cadence = Math.min(captureRate, (1.46*p.w.walk + 1.58*p.w.jog + 1.89*p.w.run)/sum);
+        const phase = p.phase + p.strideSign * cadence * dt;
         p.phase = phase - Math.floor(phase);
+        const stretch = cadence > 0 ? Math.min(.78, captureRate/cadence-1) : 0;
+        plant = Math.min(1,stretch*3)*Math.min(1,sum);
+        sampledPhase = p.phase + stretch*Math.sin(4*Math.PI*(p.phase-k.contactPhase))/(4*Math.PI);
+        sampledPhase -= Math.floor(sampledPhase);
       }
       let phone = 0;
       for (const c in p.w) {
         const a = p.actions[c], len = a.getClip().duration;
         a.setEffectiveWeight(c === 'arm' ? p.w[c] * OVER : p.w[c]);
         if (p.w[c] === 0) continue;
-        if (c in k.stride) { a.time = p.phase * len; continue; }
+        if (c in k.stride) { a.time = sampledPhase * len; continue; }
         if (this.figureActions[c]) { a.time = p.t[c]; continue; }
         p.t[c] += dt;
         // (The umbrella's clips go round; a way of standing is held at its end as it fades.)
@@ -529,7 +541,7 @@ export class LifeSize {
         const freedom = Math.min(1, neutral + p.w.walk + p.w.jog + p.w.run);
         (p.gaze ??= new PlayerGaze(p.root)).apply(dt,camera,p.root,freedom);
         const grounded = Math.min(1,p.w[p.rest]+p.w.walk+p.w.jog+p.w.run+(p.w.umbrella ?? 0));
-        if (ground && grounded>.01) (p.footing ??= new PlayerFooting(p.root)).apply(dt,ground,p.pos.y,grounded);
+        if (ground && grounded>.01) (p.footing ??= new PlayerFooting(p.root)).apply(dt,ground,p.pos.y,grounded,sampledPhase-k.contactPhase,plant);
         else p.footing?.release();
       }
       if (p.umbrella >= 0 && held < MOST) {

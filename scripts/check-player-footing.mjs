@@ -35,3 +35,13 @@ assert(rotations().every((q,i)=>q.angleTo(base[i])<1e-7),'a missing floor releas
 rig.release();rig.apply(1/30,()=>-3,0,1);
 assert(rotations().every((q,i)=>q.angleTo(base[i])<1e-7),'a foot does not reach down a high drop');
 console.log('Grounded soles, unchanged bone lengths, frozen poses, missing floors and ledges passed');
+
+rig.release();
+const plantedToe=feet[0][3].getWorldPosition(vector());
+rig.apply(1/60,()=>0,0,1,0,1);
+rig.restore();
+root.position.z+=.035;
+rig.apply(1/60,()=>0,0,1,.025,1);
+assert(feet[0][3].getWorldPosition(vector()).distanceTo(plantedToe)<.003,'contact holds the toe as the hips advance');
+rig.release();
+assert(rotations().every((q,i)=>q.angleTo(base[i])<1e-6),'a released plant leaves the next action its original pose');

@@ -1640,6 +1640,7 @@ export class Car {
   x: number; y: number; h: number;
   vx: number; vy: number; w: number;
   mode: string;
+  entryDriver = false; // waits in the seat while the normal door interaction runs
   damage: number;
   touchDriving = false;
   rider: Look | null;
@@ -2530,7 +2531,7 @@ export class CarPool {
           travel.x = c.x; travel.y = c.y;
           const speed = c.forwardSpeed;
           const steer = suspension?.steer ?? (Math.abs(speed) > 0.25 ? clamp(Math.atan(c.w * fit.wheelbase / speed), -0.55, 0.55) : 0);
-          const occupied = c.mode === 'player' || c.mode === 'traffic' || (c.mode === 'police' && c.crew);
+          const occupied = c.mode === 'player' || c.mode === 'traffic' || c.entryDriver || (c.mode === 'police' && c.crew);
           // Direction retains the rotation; its length on the coachwork page
           // carries ignition and speed to the dashboard without a ninth vertex buffer.
           const dial = k === STREET_SEDAN && occupied ? 2 + Math.min(1, Math.abs(speed) * 3.6 / 240) : 1;
@@ -2542,7 +2543,7 @@ export class CarPool {
             VR_SEAT.frame = VR_SEAT.frames;
           } else if (occupied && fit.layout) this.drivers?.put(fit.layout, travel.plate, c.type === 'police' && c.mode !== 'player', d.matrix);
         }
-        if (driverSeat && c.mode !== 'loose' && c !== VR_SEAT.car) {
+        if (driverSeat && (c.mode !== 'loose' || c.entryDriver) && c !== VR_SEAT.car) {
           this.drivers?.putAt(driverSeat[0], driverSeat[1], driverSeat[2], driverSeat[3], 0, false, d.matrix);
         }
         if (under && !c.two && shaded < UNDER.most) {

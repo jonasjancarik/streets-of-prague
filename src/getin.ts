@@ -12,7 +12,7 @@ import type { Point2 } from './map/geo.ts';
 
 const JOG = 4.2; // m/s to the door
 const GIVE_UP = 4; // seconds to reach a door before letting it go
-const OPEN = 0.2, PULL = 0.62, OUT_OPEN = 0.16; // seconds
+const OPEN = .36, LATCH = .15, PULL = .65, OUT_OPEN = .16; // seconds
 export const SIT = 0.5, RISE = 0.42;
 
 interface Hooks {
@@ -77,6 +77,7 @@ export class GetIn {
 
   // To the door and in. `driver`: someone is at the wheel.
   enter(car: Car, door: Door, driver: boolean) {
+    car.entryDriver = driver;
     const w = this.o.walker;
     this.play = { kind: 'in', car, door, phase: 'walk', t: 0, driver, from: [w.x, w.y], h0: w.h };
   }
@@ -98,6 +99,7 @@ export class GetIn {
     const p = this.play, w = this.o.walker;
     if (!p) return;
     this.play = null;
+    p.car.entryDriver = false;
     for (const d of p.car.doors) p.car.open(d.n, false);
     w.base.makeScale(SCALE, SCALE, SCALE);
     // (Whoever was at the wheel doesn't wait to see what you do next.)
@@ -106,7 +108,7 @@ export class GetIn {
       [w.x, w.y] = p.car.beside(p.door);
       w.anim.play('idle', false, 0.15);
       w.sync();
-    }
+    } else if (p.kind === 'in') w.anim.play('idle', false, .12);
   }
 
   update(dt: number) {
@@ -126,6 +128,7 @@ export class GetIn {
 
   private getIn(p: Extract<Play, { kind: 'in' }>, dt: number) {
     const w = this.o.walker, { car, door } = p, a = w.anim;
+    const previousTime = p.t;
     p.t += dt;
     w.z = w.speed = w.vx = w.vy = 0;
     // The car stops for you (its driver has seen what's coming).
@@ -140,17 +143,9 @@ export class GetIn {
       const [tx, ty] = this.goal(car, door), dx = tx - w.x, dy = ty - w.y, d = Math.hypot(dx, dy);
       const [bx, by] = car.beside(door), left = Math.hypot(bx - w.x, by - w.y);
       if (left < 0.08 && car.speed < 0.8) {
-        const pull = p.driver && door.n === 1;
-        Object.assign(p, { phase: pull ? 'pull' : 'open', t: 0 });
+        Object.assign(p, { phase: 'open', t: 0 });
         w.perch = 0;
-        car.open(door.n);
-        if (pull) a.play('pull', true, 0.1);
-        else if (p.driver) {
-          // From the passenger's side: the driver is out of their own door and away.
-          p.driver = false;
-          car.open(1);
-          this.o.evict(car, false);
-        }
+        a.play(door.side > 0 ? 'latchLeft' : 'latchRight', true, .08);
       } else {
         const step = Math.min(d, JOG * dt);
         if (d > 1e-3) {
@@ -163,15 +158,28 @@ export class GetIn {
       }
     } else if (p.phase === 'open' || p.phase === 'pull') {
       w.h = turn(w.h, facing, Math.min(1, 12 * dt));
-      if (p.phase === 'open') locomote(a, dt, 0);
-      else {
-        a.step(dt);
-        // Out they come as the heave begins.
-        if (p.driver && p.t > 0.3) { p.driver = false; this.o.evict(car, true); }
+      const opening = p.phase === 'open', duration = opening ? OPEN : PULL;
+      a.step(dt, a.duration / duration);
+      if (opening && p.t >= LATCH && previousTime < LATCH) {
+        car.open(door.n);
+        if (p.driver && door.n !== 1) {
+          car.open(1);
+          p.driver = car.entryDriver = false;
+          this.o.evict(car, false);
+        }
+      } else if (!opening && p.driver && p.t >= .30) {
+        p.driver = car.entryDriver = false;
+        this.o.evict(car, true);
       }
-      if (p.t > (p.phase === 'open' ? OPEN : PULL)) {
+      if (p.t >= duration) {
+        if (opening && p.driver) {
+          p.phase = 'pull'; p.t = 0;
+          a.play('pull', true, .09);
+          w.sync();
+          return;
+        }
         Object.assign(p, { phase: 'sit', t: 0, from: [w.x, w.y], h0: w.h });
-        a.play('getin', true, 0.1);
+        a.play(door.side > 0 ? 'seatLeft' : 'seatRight', true, .075);
       }
     } else {
       const u = Math.min(1, p.t / SIT);
