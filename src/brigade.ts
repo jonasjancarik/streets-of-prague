@@ -196,9 +196,14 @@ export class Brigade {
     }
     if (!best) return false;
     best.car.h = best.path.at(Math.min(6, best.path.length)).ang;
-    best.car.mode = 'fire';
-    this.engines.push({ car: best.car, target, path: best.path, s: 0, replan: 2, stuck: 0, reverse: 0, phase: 'go', t: 0, wrecked: false, crew: true, goal: { x: target.x, y: target.y }, mark: { x: best.car.x, y: best.car.y }, roads: best.byRoad });
+    this.respond(best.car,target,best.path,best.byRoad);
     return true;
+  }
+
+  respond(car: Car, target: Car, path: NonNullable<Engine['path']>, roads: boolean) {
+    car.mode='fire';
+    this.engines.push({ car,target,path,roads,s:0,replan:2,stuck:0,reverse:0,phase:'go',t:0,wrecked:false,crew:true,
+      goal:{x:target.x,y:target.y},mark:{x:car.x,y:car.y} });
   }
 
   // You got into an engine: it's yours. Its crew (out already, or getting out now) runs after you for a
@@ -352,7 +357,7 @@ export class Brigade {
       if (e.replan < was) e.astray = true;
       // At the end of the way there and the fire still a way off (out on a square, a lawn
       // or a quay): straight to it, if no house stands in between.
-      if (e.path && e.path.length - e.s < 10 && Math.hypot(tc.x - c.x, tc.y - c.y) > 18 && this.sees(c, tc)) { e.path = null; e.direct = true; }
+      if (e.path && e.path.length - e.s < 10 && Math.hypot(tc.x - c.x, tc.y - c.y) >= REACH - 1 && this.sees(c, tc)) { e.path = null; e.direct = true; }
       if (e.path) want = Math.min(want, clamp((e.path.length - e.s - 4) * 0.9, 0, 25));
       const dist = Math.hypot(tc.x - c.x, tc.y - c.y);
       if (dist < 14) want = 0;
@@ -373,7 +378,7 @@ export class Brigade {
         e.replan = 3;
       }
       // Nothing left to put out (a wreck still smouldering is for the crew): turn round.
-      if (!o.fires.onFire(tc) && !this.next(e) && !o.fires.smouldering(tc)) this.leave(e);
+      if (!o.fires.onFire(tc) && !o.fires.smouldering(tc) && !this.next(e)) this.leave(e);
       // There: stopped by the fire or at the end of the way to it, or held up (in a jam, or
       // wedged in a turn too tight for it) near enough for the crew to go the rest on foot.
       else if (Math.abs(c.forwardSpeed) < 2.5 && (dist < 14 || (e.path && e.path.length - e.s < 8) || (dist < 22 && e.t > 2.5) || (dist < ON_FOOT && e.t > 6))) {
@@ -384,7 +389,9 @@ export class Brigade {
     } else if (e.phase === 'work') {
       tx = c.x + Math.cos(c.h); ty = c.y + Math.sin(c.h); want = 0;
       e.t += dt;
-      if (!o.fires.onFire(tc) && e.t < 60) this.next(e);
+      // The cannon can put the flames out in the same step that the crew
+      // reaches the wreck. Finish their hose work before reassigning them.
+      if (!o.fires.onFire(tc) && !o.fires.smouldering(tc) && e.t < 60) this.next(e);
       const out = this.crew.some((f) => f.engine === e && !f.gone);
       if (!out && !e.crew) { e.crew = true; this.leave(e); }
     } else {

@@ -264,6 +264,19 @@ export class Taxis {
     return best;
   }
 
+  // A named square can sit well inside a pedestrian area. Keep a stop near
+  // a lane as mapped. Otherwise meet on the pavement beside the nearest lane.
+  meetingPoint(x: number, y: number): [number, number] | null {
+    const stop = this.stopNear(x,y,85);
+    if (!stop) return null;
+    const p = stop.edge.path.at(stop.s);
+    if (Math.hypot(p.x-x,p.y-y)<7) return [x,y];
+    const nx=-Math.sin(p.ang), ny=Math.cos(p.ang);
+    const side=(x-p.x)*nx+(y-p.y)*ny >= 0 ? 1 : -1;
+    const offset=side*Math.min(4.5,stop.edge.width*.5+.65);
+    return this.o.standAt(p.x+nx*offset,p.y+ny*offset);
+  }
+
   // Plan the way to `stop` (or as close to it as the loaded streets go) and set off.
   private head(stop: Stop | null, final: boolean, to?: { x: number; y: number }) {
     const a = this.agent;

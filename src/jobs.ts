@@ -210,15 +210,25 @@ export const JOBS: MissionDef[] = [
       const a = pick.spot(me, 100, 450);
       const sights = a ? round(a, w.sights(), r.sights, 2600) : [];
       if (!a || sights.length < r.sights) return null;
+      // Offers can arrive before the streets at the pickup have loaded.
+      // Keep the same meeting point for the return trip.
+      let kerb: typeof a | undefined;
+      const meeting = () => {
+        if (!kerb && apart(w.me(),a)<180) {
+          const at=w.passengerKerb(a.x,a.y);
+          if (at && w.loaded(at[0],at[1])) kerb={name:a.name,x:at[0],y:at[1]};
+        }
+        return kerb ?? a;
+      };
       let d = 0, at: { x: number; y: number } = a;
       for (const s of [...sights, a]) { d += apart(at, s); at = s; }
       return {
         vars: { from: a.name, a: sights[0].name, b: sights[1].name, c: sights[2].name },
         pay: r.base + r.perSight * sights.length, bonus: r.tip,
         steps: [
-          pickUp(a, { goal: ['Pick up the tourist at {name}', { name: a.name }], limit: allow(apart(me, a), r.speed, 90) }),
+          pickUp(a, { meeting, goal: ['Pick up the tourist at {name}', { name: a.name }], limit: allow(apart(me, a), r.speed, 90) }),
           ...sights.map((s, i) => pass(s, { goal: ['Drive past {name} ({n} of {of})', { name: s.name, n: i + 1, of: sights.length }] })),
-          dropOff(a, { goal: ['Bring the tourist back to {name}', { name: a.name }], limit: allow(d, r.speed, r.slack) }),
+          dropOff(a, { meeting, goal: ['Bring the tourist back to {name}', { name: a.name }], limit: allow(d, r.speed, r.slack) }),
         ],
       };
     },

@@ -1724,6 +1724,7 @@ async function main() {
       return world.walkAccess([walker.x, walker.y], [s.x, s.y], 0);
     },
     parcel: on => bags.carryParcel(on),
+    passengerKerb: (x, y) => taxi.meetingPoint(x,y),
     me: () => inCar || inHeli || walker,
     car: () => inCar,
     tram: () => (ride.driving && ride.passengers ? { doors: ride.passengers.doors, at: ride.atName, next: ride.next, on: ride.passengers.on, off: ride.passengers.off } : null),

@@ -49,6 +49,7 @@ export interface MissionWorld {
   loaded: (x: number, y: number) => boolean;
   free: (x: number, y: number) => boolean;
   standAt: (x: number, y: number) => Point2;
+  passengerKerb: (x: number, y: number) => Point2 | null;
   crowd: () => Crowd;
   // Cars standing about within r of a spot (parked, left, wrecked).
   parked: (x: number, y: number, r: number) => Car[];
@@ -219,19 +220,20 @@ export function handParcel(spot: Spot, pickup: boolean, limit: number): Step {
 }
 
 // Somebody waits at a place for you to stop the car beside them, and gets in.
-export function pickUp(spot: Spot, o: { goal: Text; limit?: number; r?: number }): Step {
+export function pickUp(spot: Spot, o: { goal: Text; limit?: number; r?: number; meeting?: () => Spot }): Step {
   let p: Pedestrian | null = null, stand: Point2 | null = null, boarding = 0;
   return {
-    goal: o.goal, limit: o.limit, at: () => p ?? spot,
+    goal: o.goal, limit: o.limit, at: () => p ?? o.meeting?.() ?? spot,
     tick: (run, w, dt) => {
-      const m = w.me(), crowd = w.crowd(), d0 = far(m, spot);
+      const at = o.meeting?.() ?? spot;
+      const m = w.me(), crowd = w.crowd(), d0 = far(m, at);
       if (p && !crowd.people.includes(p)) p = null;
       // They are only there while you're near enough to see them.
-      if (d0 > 110 || !w.loaded(spot.x, spot.y)) {
+      if (d0 > 110 || !w.loaded(at.x, at.y)) {
         if (p && d0 > 140) { crowd.retire(p); p = null; }
         return false;
       }
-      stand ??= w.standAt(spot.x, spot.y);
+      stand ??= w.standAt(at.x, at.y);
       p ??= crowd.spawnAt(stand[0], stand[1]);
       if (p.state === 'down') return boarding > 0 || far(m, p) < 8 ? ['Your passenger was knocked over'] : false;
       const c = w.car(), d = c ? far(c, p) : Infinity;
@@ -258,12 +260,12 @@ export function pickUp(spot: Spot, o: { goal: Text; limit?: number; r?: number }
 }
 
 // Stop at a place with your passenger: they get out on the side where there's room.
-export function dropOff(spot: Spot, o: { goal: Text; limit?: number; r?: number }): Step {
+export function dropOff(spot: Spot, o: { goal: Text; limit?: number; r?: number; meeting?: () => Spot }): Step {
   return {
-    goal: o.goal, limit: o.limit, at: () => spot,
+    goal: o.goal, limit: o.limit, at: () => o.meeting?.() ?? spot,
     tick: (run, w) => {
       const c = w.car();
-      if (!c || c !== run.cargo || c.speed > STILL || far(c, spot) > (o.r ?? 14)) return false;
+      if (!c || c !== run.cargo || c.speed > STILL || far(c, o.meeting?.() ?? spot) > (o.r ?? 14)) return false;
       const lx = -Math.sin(c.h), ly = Math.cos(c.h), off = c.spec.W / 2 + 0.8;
       for (const s of [-1, 1]) {
         const x = c.x + lx * s * off, y = c.y + ly * s * off;

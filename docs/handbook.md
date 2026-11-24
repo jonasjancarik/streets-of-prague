@@ -567,7 +567,8 @@ The metro ride uses its overhead cutaway camera.
   here: look for work" on touch). On a gamepad, d-pad right is J. On foot, on a bike
   or in an ordinary car, J goes through what's on: a
   courier run (fetch a parcel and bring it across town in time), a sightseeing tour (a
-  tourist driven past three sights and back), and the Regulars' work for Jarka's pub
+  tourist driven past three sights and back). A tourist at a pedestrian square meets
+  the car at a nearby pavement and returns to that same kerb. The Regulars offer work for Jarka's pub
   crowd: bring a parked car to a yard (dents come off the pay), and once they know you,
   set a debtor's car on fire (ram it till it burns; nobody gets hurt) and a getaway (pick
   Venca up with two stars on you, lose the police, then drop him off). Sit in a taxi and you get fares to pick up
@@ -789,6 +790,8 @@ The metro ride uses its overhead cutaway camera.
   water cannon 17 m ahead: it puts out burning cars and knocks people and officers over
   gently, which counts as a crime. The tank lasts about 30 seconds and refills slowly;
   a blue bar under the health bar shows it (`src/cannon.ts`).
+  If the road ends just outside cannon range, the engine closes the last few metres
+  along a clear approach. Its crew finishes a smouldering wreck before taking another fire.
 - **Ambulances.** A person hit by a car going faster than about 30 km/h, by a tram you
   drive, or caught near a blast stays on the ground instead of getting up after a few
   seconds; so does anyone a stray police bullet hits on the pavement. An ambulance is

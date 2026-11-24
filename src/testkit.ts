@@ -6,7 +6,7 @@ import { posts } from './posts.ts';
 import { fences } from './fences.ts';
 import type { Post } from './posts.ts';
 import type { Point2 } from './map/geo.ts';
-import { segDist } from './network.ts';
+import { Polyline, segDist } from './network.ts';
 import { stickOnly } from './touch.ts';
 import { ownBeacon } from './beacons.ts';
 import type { DriveEdge, DriveGraph } from './network.ts';
@@ -495,6 +495,22 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     // Everything driving in traffic, with its route (and `kerb` while up on the pavement).
     trafficAgents() { return g.traffic.agents; },
     fleeing(c: Car) { return g.crowd.people.filter((p) => p.state === 'flee' && Math.hypot(p.x - c.x, p.y - c.y) < 16).length; },
+    // Put a dispatched engine at the last point of its road route. The
+    // remaining approach, cannon and hose crew use normal game updates.
+    fireApproach(target: Car, distance: number) {
+      for (let i=0;i<16;i++) {
+        const h=i*Math.PI/8, fx=Math.cos(h), fy=Math.sin(h);
+        const x=target.x-distance*fx, y=target.y-distance*fy;
+        const c=new Car('fire',()=>.5,x,y,h);
+        c.level=target.level; c.gz=g.ground(x,y);
+        if (c.worldSamples().some(([cx,cy])=>g.grid.at(cx,cy) || g.carsNear(cx,cy,5).some(o=>o!==target && o.gap(cx,cy)<1))
+            || !g.brigade.sees(c,target)) continue;
+        g.brigade.reset();
+        g.brigade.respond(c,target,new Polyline([[x-7*fx,y-7*fy],[x,y]]),true);
+        return true;
+      }
+      return false;
+    },
     // How a car's fire and the brigade's call to it stand.
     fire(c: Car) {
       const b = g.fires.blazes.get(c), e = g.brigade.engines.find((k) => k.target === c);

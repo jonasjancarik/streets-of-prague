@@ -22,15 +22,23 @@ export default {
       t.check('the fire was put out before the car blew up', !t.fire(parked).wreck && !t.fire(parked).burning, `after ${s} s`);
 
       // Your own car blows up in a few seconds: the wreck stays in flames until the engine's cannon has put them out and the crew finishes the smouldering.
-      await t.go('ujezd', { heading: 180 });
+      const square: [number,number]=[50.08747,14.42108];
+      await t.go(square, { heading: 90 });
       await t.wait(2);
       const own = await t.drive('sedan');
+      const [x,y]=t.toLocal(square);
+      Object.assign(own,{x,y,h:0,level:0,vx:0,vy:0,w:0});
       t.ignite(own);
       await t.wait(0.5);
       t.exit();
+      // The first call above covers dispatch from elsewhere in the city.
+      // Fix this incident at the measured gap between the road and cannon
+      // range, independent of where passing traffic leaves a spawn opening.
+      for (let i=0;i<24 && !own.burnt;i++) await t.wait(.25,{move:1,run:true});
+      if (!t.check('a clear final approach starts outside cannon range',!!own.burnt && t.fireApproach(own,16.4),t.fire(own))) return;
       let sprayed = false, cannon = false, nearest = Infinity;
-      for (s = 0; s < 100; s++) {
-        await t.wait(1, { move: s < 5 ? 1 : 0, run: true });
+      for (s = 0; s < 100; s+=.25) {
+        await t.wait(.25, { move: s < 5 ? 1 : 0, run: true });
         cannon ||= t.fire(own).cannon;
         nearest = Math.min(nearest, t.fire(own).away ?? Infinity);
         sprayed = t.fire(own).wreck && t.fire(own).spraying > 0;
