@@ -1370,6 +1370,13 @@ record the measurements, merge decisions and pending landmark asset activation.
   its autumn colour: a sheet in the same mesh, laid on the ground and cut into clumps by
   the shader, folded away the rest of the year (no extra draw; on steep ground it is
   level, so it floats on one side and is buried on the other).
+  On Medium and above, street views replace those clumps near the eye with individual
+  fallen leaves (`src/streetLitter.ts`, `src/webgpu/streetLitter.ts`): curled maple
+  and linden shapes with stems, veins and mottled ochre, rust and brown surfaces.
+  Their edges follow the local ground, avoiding water, buildings and abrupt steps.
+  One mesh holds up to 3,600 leaves within 22 m; placement runs in short slices
+  when you move or tiles change. Summer and overhead views hide it, and snow covers
+  it gradually. The overhead tree geometry and its existing litter stay unchanged.
   Rendering keeps fixed-capacity mesh pages per tree shape (`src/trees.ts`). A tile
   leases pages containing only its own trees; unloading the tile clears the pages
   for reuse without changing the surveyed or generated tree data. Pages hold 1,200

@@ -4,6 +4,7 @@ import { inStreetCone } from './streetView.ts';
 import { send } from './gpu.ts';
 import { distantTreeCrown, treePageFactory, OUTLINE, type TreeInstances } from './map/vegetation.ts';
 import { streetTreeGeometry, canopyGeometry, coniferGeometry } from './map/streetTree.ts';
+import { StreetLitter, type LitterGround } from './streetLitter.ts';
 
 export const TREE_PAGE_CAPACITY = [1200, 128, 128, 256] as const;
 export type TreeKind = 0 | 1 | 2 | 3; // broadleaf, shrub, conifer, big broadleaf (vegetation.ts, BIG_CROWN)
@@ -69,6 +70,7 @@ function uploadTrees(mesh: THREE.InstancedMesh, count: number) {
 // binding when that tile leaves; only the used ranges and bounds change on reuse.
 export class TreePool {
   readonly group = new THREE.Group();
+  readonly litter = new StreetLitter();
   readonly pages: Page[] = [];
   readonly leases = new Map<string, Page[]>();
   readonly growth = [0, 0, 0, 0];
@@ -86,6 +88,7 @@ export class TreePool {
     this.group.updateMatrix();
     this.group.updateMatrixWorld(true);
     scene.add(this.group);
+    this.group.add(this.litter.group);
   }
 
   private create(kind: TreeKind, overflow: boolean) {
@@ -170,6 +173,7 @@ export class TreePool {
         mesh.visible = true;
       }
       this.leases.set(tileKey, acquired);
+      this.litter.add(tileKey, instances);
       return acquired;
     } catch (error) {
       for (const page of acquired) this.release(page);
@@ -218,8 +222,9 @@ export class TreePool {
     if (view.active) { view.active=false; view.revision++; }
   }
 
-  street(on: boolean, x = 0, z = 0, camera?: THREE.PerspectiveCamera) {
+  street(on: boolean, x = 0, z = 0, camera?: THREE.PerspectiveCamera, ground?: LitterGround, revision = 0) {
     on &&= STREET_TREES.value;
+    this.litter.street(on, x, -z, ground, revision);
     if (!on && !this.streetOn) return;
     this.streetOn = on;
     if (on && !this.streetMade && streetMaterial) {
@@ -368,6 +373,7 @@ export class TreePool {
     if (!pages) return;
     for (const page of pages) this.release(page);
     this.leases.delete(tileKey);
+    this.litter.remove(tileKey);
   }
 
   stats() {
@@ -385,6 +391,7 @@ export class TreePool {
     if (this.disposed) return;
     this.disposed = true;
     this.group.removeFromParent();
+    this.litter.dispose();
     for (const page of this.pages) {
       page.mesh.geometry.dispose();
       page.mesh.dispose();

@@ -28,6 +28,7 @@ import './webgpu/trees.ts';
 import './webgpu/streetTrees.ts';
 import './webgpu/streetHedges.ts';
 import './webgpu/streetGrass.ts';
+import './webgpu/streetLitter.ts';
 import './webgpu/shadows.ts';
 import './webgpu/wake.ts';
 import './webgpu/soft.ts';

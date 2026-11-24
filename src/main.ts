@@ -83,6 +83,7 @@ import { CUTAWAY, DIG, WEATHER_DETAIL, TREE_SWAY } from './shading.ts';
 import { streetHedges } from './streetHedges.ts';
 import { fences } from './fences.ts';
 import { streetGrass, type GrassGround } from './streetGrass.ts';
+import type { LitterGround } from './streetLitter.ts';
 import { setupDev, watchTransitWhileWaiting } from './dev.ts';
 import { setupSettings } from './settings.ts';
 import { setScreenshot } from './feedback.ts';
@@ -386,6 +387,10 @@ async function main() {
   const grassGround: GrassGround = {
     grass: (x, y) => world.footSurface(x, y) === 'grass' && world.tileAt(x, y)?.grid.at(x, y) !== 255 && !fences.blocks(x, y, 0.1, 0),
     height: (x, y) => world.heightAt(x, y),
+  };
+  const litterGround: LitterGround = {
+    open: (x, y) => { const tile = world.tileAt(x, y); return !!tile && tile.grid.at(x, y) !== 255 && !world.waterAt(x, y); },
+    height: grassGround.height,
   };
   const ironwork = new StreetIronwork(scene, world);
   // Past the city's parts, the town or village from the countryside's map.
@@ -3495,7 +3500,7 @@ async function main() {
     castleHorizon.update(fromStreet && !vr?.active,camera,sky);
     world.passageCamera(fromStreet, camera.position.x, -camera.position.z);
     ironwork.update(fromStreet, camera.position, weather.now.wet);
-    world.trees.street(fromStreet, free ? free.x : camera.position.x, free ? -free.y : camera.position.z, eyes && !vr?.active ? camera : undefined);
+    world.trees.street(fromStreet, free ? free.x : camera.position.x, free ? -free.y : camera.position.z, eyes && !vr?.active ? camera : undefined, underway ? undefined : litterGround, world.terrainRevision + world.joined);
     streetHedges.street(fromStreet, free ? free.x : camera.position.x, free ? free.y : -camera.position.z);
     streetGrass.street(fromStreet && !underway, free ? free.x : camera.position.x, free ? free.y : -camera.position.z, grassGround, world.terrainRevision + world.joined);
     world.trees.canopy(true, fromStreet);

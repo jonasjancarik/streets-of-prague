@@ -2085,3 +2085,21 @@ triangles to 954 and 1,292. Over five alternating six-second windows per
 setting this measured 74.9 and 71.9 ms per frame. Separating bark and leaf
 texture reads on identical geometry measured 73.3 and 72.0 ms in a separate
 run. Variation between runs is greater than either saving.
+
+### Fallen leaves at street level (25 November)
+
+At Na Příkopě (50.08688, 14.42779), looking down in first person at 11:28 on
+17 November, WebGPU Ultra at 2× drew 1,177 individual curled leaves in one extra
+draw (20,009 triangles). One desktop Metal run alternated four two-second windows
+per state after warming both: hidden 27.4 ms/frame, visible 27.2 ms/frame;
+JavaScript averaged 26.4 and 26.6 ms. The difference is within normal variation,
+not evidence of a speed gain. This times the settled scene; phone performance
+and the first placement have not been profiled.
+
+`StreetLitter` caps the batch at 3,600 leaves within 22 m, retaining its mesh,
+geometry and GPU buffers through refills. Placement yields after small groups
+of candidates under a 0.75 ms frame budget; a group or final upload may exceed
+that target. The detailed batch is hidden overhead and outside autumn, so the
+existing overhead leaf sheets are unchanged. `scripts/check-street-litter.mjs`
+checks terrain placement, obstacles, seasonal hiding, cancellation, tile removal
+and buffer reuse.
