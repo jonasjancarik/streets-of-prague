@@ -3,6 +3,22 @@
 Sounds have their own list in [`public/audio/SOURCES.md`](../public/audio/SOURCES.md),
 and the map data its credits in the README.
 
+## National Theatre
+
+The building plan and roof heights follow IPR Praha’s city model. The texture of the
+two copper roofs at the rear comes from its 2023 aerial survey. The open porches,
+auditorium roof, gilded ironwork, chariots and stone figures are modelled in
+`national-theatre/`. [IPR Praha, 3D mesh, CC BY](https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model/3D-mesh).
+
+The stonework sheet contains rectified, tinted details from public-domain
+photographs. The capitals, fluting, carved panels, niches and window bays come
+from plates in Matějček and Wirth’s *Modern and Contemporary Czech Art* (1924).
+The attic windows come from Karelj’s photograph of the theatre from the bridge.
+[West façade](https://commons.wikimedia.org/wiki/File:Part_of_the_west_facade_of_the_National_Theatre_in_Prague.jpg),
+[entrance balcony](https://commons.wikimedia.org/wiki/File:Part_of_the_Balcony_of_the_National_Theatre_in_Prague.jpg),
+[riverside elevation](https://commons.wikimedia.org/wiki/File:National_Theatre,_Prague.jpg) and
+[Karelj’s 2008 photograph](https://commons.wikimedia.org/wiki/File:N%C3%A1rodn%C3%AD_divadlo_prg.jpg).
+
 ## Charles Bridge
 
 The street-level John of Nepomuk is an original reconstruction. Its bronze

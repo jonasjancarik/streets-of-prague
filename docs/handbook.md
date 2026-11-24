@@ -1340,6 +1340,16 @@ record the measurements, merge decisions and pending landmark asset activation.
 - **Landmarks** (so far Mánes with Šítkovská vodárenská věž, the Týn Church, the Old Town Hall with its tower, St Nicholas at Old Town Square, the Jan Hus memorial and the Marian column on the square (monuments: the mesh as it is, see below), the National Theatre, the Rudolfinum, the Municipal House with the Powder Tower, House Okamura in Břevnov, and the Dancing House, which is the mesh as it is, since the city model has it as a plain prism without the legs you walk between) are cut out of IPR's
   photorealistic 3D model instead: a textured mesh of the whole city from oblique aerial
   photographs (summer 2023, about 5 cm/px), published as an I3S scene layer.
+  The National Theatre uses its own model in both Prague maps. Its curved slate roof,
+  gilded crest and three-horse chariots rise above the open Národní loggia and the
+  carriage porch facing the river. The main structure follows IPR's survey. The
+  columns, carved bays and roof surfaces share one texture atlas. The game loads
+  the model with the theatre's usual tile and uses its roofs for rooftop landings.
+  To rebuild `public/national-theatre.glb`, run
+  `uv run --project pipeline python assets/national-theatre/build.py` from the
+  repository root. It reads the cached Prague theatre survey from
+  `pipeline/.cache/landmarks/praha/divadlo.mesh.glb`, produced by
+  `uv run landmarks.py praha divadlo` in `pipeline/`.
   At St Nicholas on Malostranské náměstí the copper dome, lantern and belfry follow
   horizontal sections of that survey. The fitted roofs join the original drums and
   share the church's baked texture. Rebuild either area's model with

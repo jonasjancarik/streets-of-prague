@@ -1551,6 +1551,12 @@ export class TileWorld {
     // Landmarks reaching into the tile: its buildings in their footprints give way.
     const marks = (await this.landmarks).filter((l) => l.tiles.includes(k));
     const hide = marks.flatMap((l) => l.polygons);
+    // Older theatre footprints stop at the main wall. Its carriage porch on the
+    // embankment also has an OSM building, which would fill the three open arches.
+    if (marks.some((l) => l.name === 'divadlo')) {
+      const porch = t.buildings.find((b) => b.id === 'way/379386266');
+      if (porch) hide.push(porch.rings);
+    }
     const givesWay = (rings: Point2[][]) => {
       const cx = rings[0].reduce((a, p) => a + p[0], 0) / rings[0].length, cy = rings[0].reduce((a, p) => a + p[1], 0) / rings[0].length;
       return hide.some((r) => inRing(cx, cy, r[0]) && !r.slice(1).some((h) => inRing(cx, cy, h)));

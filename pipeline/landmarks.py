@@ -55,7 +55,7 @@ LANDMARKS = {
     "tyn": ["way/379512802"],  # Kostel Matky Boží před Týnem (Týnský chrám), Staroměstské náměstí
     "radnice": ["way/255771323", "way/391354925"],  # Staroměstská radnice and Radniční věž
     "obecni": ["way/27124435"],  # Obecní dům, and Prašná brána with it: IPR's model has the two as one building
-    "divadlo": ["way/7649971"],  # Národní divadlo
+    "divadlo": ["way/7649971", "way/379386264", "way/379386266"],  # Národní divadlo, loggia and carriage porch
     "rudolfinum": ["way/30123527"],  # Rudolfinum
     "mikulas": ["way/27859115"],  # Kostel sv. Mikuláše, Staroměstské náměstí
     "okamura": ["way/998156376"],  # Vila Tomia Okamury (House Okamura), Nad Tejnkou 9a, Břevnov; not in IPR's city model, so the mesh as it is
