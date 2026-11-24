@@ -20,6 +20,7 @@ import { type N, follow, followVec, uWet, uSnow } from './common.ts';
 
 const uBare = follow(BARE), uSeason = followVec(SEASON), uSway: N = followVec(TREE_SWAY);
 const part: N = attribute('part', 'vec4'), yearly: N = attribute('yearly', 'float');
+const branchAnchor: N = attribute('branchAnchor', 'vec3');
 
 // The pictures arrive after the first frames: plain stand-ins keep the bindings' types.
 const blank = (rgba: number[]) => {
@@ -77,18 +78,27 @@ const fitted = (y: N): N => {
   return select(y.lessThan(TREE_FROM), float(TREE_FROM).sub(float(TREE_FROM).sub(y).mul(k)), y);
 };
 const shaped = (): N => {
-  const p: N = positionGeometry.mul(folded()), wide: N = mix(1, outlineAt(positionGeometry), smoothstep(0.15, 0.5, length(positionGeometry.xz)));
+  const p: N = positionGeometry.mul(folded());
   const tree: N = part.y.greaterThan(-1.5); // (the street tree itself: not a spray laid over a crown, a shrub's or a conifer's bough)
-  const y: N = select(part.y.greaterThanEqual(0), mix(stem.negate().sub(STEM.under), fitted(float(CROWN_FOOT)), part.y), select(tree, fitted(p.y), p.y));
+  // Fit a whole spray at its attachment, rather than fitting its four corners
+  // separately: their interpolated stem otherwise drifts off the wooden branch.
+  const spray: N = tree.and(part.x.lessThan(0.5));
+  const root: N = select(spray, branchAnchor, p);
+  const wide: N = mix(1, outlineAt(root), smoothstep(0.15, 0.5, length(root.xz)));
+  const rise: N = select(root.y.lessThan(TREE_FROM), float(TREE_FROM).sub(crownBase(stem)).div(TREE_FROM - CROWN_FOOT), 1);
+  const crownY: N = fitted(root.y).add(p.y.sub(root.y).mul(rise));
+  const y: N = select(part.y.greaterThanEqual(0), mix(stem.negate().sub(STEM.under), fitted(float(CROWN_FOOT)), part.y), select(tree, crownY, p.y));
   // The wind: boughs and sprays lean with it and swing back, more the further out from the
   // trunk they are, in gusts that cross the street from tree to tree; each spray of leaves
   // also flutters on its own. (The trunk stands still: it is at the middle.)
   const at: N = instanceMatrix().mul(vec4(0, 0, 0, 1)).xz;
   const gust: N = uSway.x.mul(0.9).sub(dot(at, uSway.zw).mul(0.11));
-  const swing: N = sin(gust).add(sin(gust.mul(2.3).add(part.z.mul(6.28))).mul(0.5)).add(0.4);
-  const reach: N = min(length(p.xz), 6).mul(tree.select(1, 0.5));
+  // The attachment sways with the wood; only the free end flutters independently.
+  const swing: N = sin(gust).add(sin(gust.mul(2.3)).mul(0.5)).add(0.4);
+  const reach: N = min(length(root.xz), 6).mul(tree.select(1, 0.5));
   const lean: N = swing.mul(reach).mul(uSway.y).mul(0.035);
-  const flutter: N = sin(uSway.x.mul(3.7).add(part.z.mul(53))).mul(uSway.y).mul(0.025).mul(float(1).sub(part.x)).mul(step(0.3, reach));
+  const free: N = uv().y.sub(select(spray, 0.08, 0));
+  const flutter: N = sin(uSway.x.mul(3.7).add(part.z.mul(53))).mul(uSway.y).mul(0.025).mul(float(1).sub(part.x)).mul(step(0.3, reach)).mul(free);
   return vec3(p.x.mul(wide).add(uSway.z.mul(lean)), y.add(flutter), p.z.mul(wide).add(uSway.w.mul(lean)));
 };
 

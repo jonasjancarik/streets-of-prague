@@ -80,9 +80,9 @@ try {
 function leaves(g) {
   const out = [], part = g.attributes.part;
   for (let i = 0; i < part.count; i++) if (part.getX(i) === 0) {
-    for (const name of ['position', 'normal', 'uv', 'part']) {
+    for (const name of ['position', 'branchAnchor', 'normal', 'uv', 'part']) {
       const a = g.attributes[name];
-      out.push(...a.array.subarray(i * a.itemSize, (i + 1) * a.itemSize));
+      for (let c = 0; c < a.itemSize; c++) out.push(a.getComponent(i, c));
     }
   }
   return out;
@@ -107,12 +107,44 @@ function checkBark(g) {
   }
   assert(branchFaces > 0, 'the wood includes textured side branches');
 }
+function checkAttachments(g) {
+  const { position, branchAnchor, part } = g.attributes;
+  assert.equal(position.data, branchAnchor.data, 'anchors share the position buffer');
+  assert(position.data.shared, 'disposing a page preserves the shared attachment buffer');
+  const point = i => new THREE.Vector3().fromBufferAttribute(position, i);
+  const wood = [];
+  // Tube rings duplicate their seam. Their unique vertices average to their
+  // centre, where every bough, fork and spray attaches, at all wood detail levels.
+  for (let i = 0; i < part.count && part.getX(i) === 1;) {
+    const first = i++, centre = point(first);
+    while (i < part.count && part.getX(i) === 1 && point(i).distanceToSquared(point(first)) > 1e-12) centre.add(point(i++));
+    assert(i < part.count && point(i).distanceToSquared(point(first)) < 1e-12, 'each wooden ring closes');
+    wood.push(centre.divideScalar(i - first));
+    i++;
+  }
+  let cards = 0;
+  for (let i = 0; i < part.count; i++) if (part.getX(i) === 0) {
+    const root = new THREE.Vector3().fromBufferAttribute(branchAnchor, i);
+    for (let j = 1; j < 4; j++) {
+      assert(root.distanceTo(new THREE.Vector3().fromBufferAttribute(branchAnchor, i+j)) < 1e-7,
+        'all corners fit and sway around the same attachment');
+    }
+    const base = point(i).add(point(i+1)).multiplyScalar(.5);
+    const tip = point(i+2).add(point(i+3)).multiplyScalar(.5);
+    assert(base.lerp(tip,.08).distanceTo(root) < 1e-6, 'the card stem lies on its attachment');
+    assert(wood.some(at => at.distanceTo(root) < 1e-6), 'every spray joins a wooden ring');
+    cards++; i+=3;
+  }
+  assert(cards > 0, 'attachment checks cover twig sprays');
+}
 for (const [seed, boughs] of [[5, 9], [9, 13]]) {
   const full = streetTreeGeometry(seed, boughs, 3), originalLeaves = leaves(full);
   checkBark(full);
+  checkAttachments(full);
   for (const detail of [.5, .75]) {
     const reduced = streetTreeGeometry(seed, boughs, 3, detail);
     checkBark(reduced);
+    checkAttachments(reduced);
     assert(reduced.index.count < full.index.count, 'lower tiers reduce wood triangles');
     assert.deepEqual(leaves(reduced), originalLeaves, 'leaf placement and crown silhouette stay intact');
     reduced.dispose();

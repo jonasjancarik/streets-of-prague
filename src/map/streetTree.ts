@@ -30,9 +30,11 @@ export const BOUGH = -3;
 export function streetTreeGeometry(seed: number, boughs: number, sprays: number, woodDetail = 1) {
   const r = rng(seed);
   const pos: number[] = [], nor: number[] = [], uv: number[] = [], part: number[] = [], idx: number[] = [];
-  const v = (p: THREE.Vector3, n: THREE.Vector3, s: number, t: number, a: number, b: number, c: number, d: number) => {
-    pos.push(p.x, p.y, p.z); nor.push(n.x, n.y, n.z); uv.push(s, t); part.push(a, b, c, d);
-    return pos.length / 3 - 1;
+  const v = (p: THREE.Vector3, n: THREE.Vector3, s: number, t: number, a: number, b: number, c: number, d: number, root = p) => {
+    // Position and attachment share a buffer: adding the anchor must not add another
+    // vertex buffer to the instanced tree material on mobile GPUs.
+    pos.push(p.x, p.y, p.z, root.x, root.y, root.z); nor.push(n.x, n.y, n.z); uv.push(s, t); part.push(a, b, c, d);
+    return part.length / 4 - 1;
   };
   const up = new THREE.Vector3(0, 1, 0), side = new THREE.Vector3(1, 0, 0);
 
@@ -136,17 +138,20 @@ export function streetTreeGeometry(seed: number, boughs: number, sprays: number,
     const height = (centre.y - CROWN_FOOT) / (0.6 - CROWN_FOOT), girth = 0.4 + 0.5 * Math.sin(Math.PI * (0.1 + 0.8 * Math.min(1, Math.max(0, height))));
     const deep = Math.min(1, Math.max(Math.hypot(centre.x, centre.z) / girth, (centre.y - 0.1) / 0.45)), own = r(), flip = r() < 0.5;
     round.set(centre.x, (centre.y + 0.35) * 0.55, centre.z).normalize();
-    const first = pos.length / 3;
+    const first = part.length / 4;
     for (const [cx, cy] of [[-1, 0], [1, 0], [1, 1], [-1, 1]]) {
       corner.copy(end.at).addScaledVector(grown, (cy - 0.08) * size).addScaledVector(across, cx * size * 0.5);
       n.copy(round).multiplyScalar(1.4).addScaledVector(face, face.dot(round) < 0 ? -0.5 : 0.5).addScaledVector(across, cx * 0.35).addScaledVector(grown, (cy - 0.5) * 0.35).normalize();
-      v(corner, n, (cx > 0) !== flip ? 1 : 0, cy, 0, -1, own, deep);
+      v(corner, n, (cx > 0) !== flip ? 1 : 0, cy, 0, -1, own, deep, end.at);
     }
     idx.push(first, first + 1, first + 2, first, first + 2, first + 3);
   }
 
   const geom = new THREE.BufferGeometry();
-  geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  const points = new THREE.InterleavedBuffer(new Float32Array(pos), 6);
+  (points as THREE.InterleavedBuffer & { shared?: boolean }).shared = true;
+  geom.setAttribute('position', new THREE.InterleavedBufferAttribute(points, 3, 0));
+  geom.setAttribute('branchAnchor', new THREE.InterleavedBufferAttribute(points, 3, 3));
   geom.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
   geom.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   geom.setAttribute('part', new THREE.Float32BufferAttribute(part, 4));
@@ -219,6 +224,7 @@ export function canopyGeometry(seed: number, rings: number[], skirt: number[] = 
   });
   const geom = new THREE.BufferGeometry();
   geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geom.setAttribute('branchAnchor', geom.getAttribute('position'));
   geom.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
   geom.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   geom.setAttribute('part', new THREE.Float32BufferAttribute(part, 4));
@@ -276,6 +282,7 @@ export function coniferGeometry(seed: number) {
   }
   const geom = new THREE.BufferGeometry();
   geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geom.setAttribute('branchAnchor', geom.getAttribute('position'));
   geom.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
   geom.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   geom.setAttribute('part', new THREE.Float32BufferAttribute(part, 4));

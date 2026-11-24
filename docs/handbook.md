@@ -925,8 +925,10 @@ The metro ride uses its overhead cutaway camera.
   fork, and at every branch end flat sprays of leaves (`public/street-trees.webp`, from
   `assets/trees/`), in the tree's own colour, turning and falling through the year to
   leave bare twigs. Each spray attaches by the stem at the bottom of its atlas image,
-  with its tips pointing away from the wood. Bark grain follows each bough around
-  its bends. Thick trunks broaden at the roots, and the younger branches taper into
+  with its tips pointing away from the wood. The atlas centres each stem rather
+  than the whole fan. Sprays fit the surveyed crown and sway around their wooden
+  attachment; their free ends flutter independently. Bark grain follows each bough
+  around its bends. Thick trunks broaden at the roots, and the younger branches taper into
   smoother twigs.
   The tree pool divides each page by distance to the camera and reuses both instance
   buffers as you walk. A tree keeps its model for another six metres at the changeover

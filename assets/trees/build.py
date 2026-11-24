@@ -39,9 +39,13 @@ def card(name: str, grey: bool, thicken: float) -> np.ndarray:
     im = Image.open(HERE / f"{name}.webp").convert("RGBA")
     # Trimmed to what is drawn, with a margin, and squared up from the bottom (the stem
     # stays at the middle of the lower edge).
+    mask = np.asarray(im.getchannel("A")) > 24
     box = im.getchannel("A").point(lambda v: 255 if v > 24 else 0).getbbox()
-    side = max(box[2] - box[0], box[3] - box[1]) + 24
-    cx = (box[0] + box[2]) // 2
+    # The fan can be asymmetric. Centre its stem, not its bounding box, or the
+    # visible twig starts beside the card's attachment even when the quad is pinned.
+    _, stem_x = np.nonzero(mask[max(box[1], box[3] - 8):box[3]])
+    cx = round(float(stem_x.mean()))
+    side = max(2 * max(cx - box[0], box[2] - cx), box[3] - box[1]) + 24
     square = Image.new("RGBA", (side, side), (0, 0, 0, 0))
     square.alpha_composite(im, (side // 2 - cx, side - 12 - box[3]))
     a = np.asarray(square.resize((SIZE, SIZE), Image.LANCZOS)).astype(np.float32) / 255
