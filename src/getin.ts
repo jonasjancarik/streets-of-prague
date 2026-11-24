@@ -164,9 +164,9 @@ export class GetIn {
       if (opening && p.t >= LATCH && previousTime < LATCH) {
         car.open(door.n);
         if (p.driver && door.n !== 1) {
-          car.open(1);
           p.driver = car.entryDriver = false;
           p.sharedDoor=this.o.evict(car,false)===true;
+          if (!p.sharedDoor) car.open(1);
         }
       } else if (!opening && p.driver && p.t >= .30) {
         p.driver = car.entryDriver = false;

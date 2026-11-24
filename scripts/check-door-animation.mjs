@@ -32,7 +32,10 @@ try {
     assert.equal(walker.anim.name,doorNumber===1?'latchLeft':'latchRight');
     assert.equal(car.entryDriver,occupied);
     assert(!car.door,'the hand reaches a closed door');
-    for (let i=0;i<150 && entry.active;i++) {entry.update(1/60);phases.push(walker.anim.name);}
+    for (let i=0;i<150 && entry.active;i++) {
+      entry.update(1/60); phases.push(walker.anim.name);
+      if (shared) assert(!car.door?.[4],'the obstructed driver door stays shut');
+    }
     assert(phases.includes(doorNumber===1?'seatLeft':'seatRight'));
     if (doorNumber===2 && occupied) seats.push(phases.indexOf('seatRight'));
     assert.equal(phases.includes('pull'),occupied && doorNumber===1);
