@@ -449,9 +449,9 @@ The metro ride uses its overhead cutaway camera.
   snow not yet cleared from the streets clearly more. Braking hard, the handbrake and sliding round a
   corner leave dark tyre marks that fade after a minute (`src/skids.ts`); so do the
   police and cars sent skidding by a crash.
-- **Car handling.** In Settings → Car handling, choose **Realistic (experimental)**
-  to try it in first or third person. Classic is the default. The choice is remembered
-  between games and takes effect on the next driving step. It applies to the car, van
+- **Car handling.** In first and third person, cars drive with **Realistic** handling by
+  default; Settings → Car handling switches to **Classic**. The choice is remembered
+  between games (`carHandling` in the browser's storage) and takes effect on the next driving step. It applies to the car, van
   or pickup you drive, including taxis and patrol cars. Overhead driving, VR, two-wheelers,
   heavy vehicles and AI drivers use Classic.
   With Realistic selected, feed in the steering as you approach a bend. Braking or
@@ -1679,6 +1679,18 @@ record the measurements, merge decisions and pending landmark asset activation.
   busy hours and at the end of the line) and those waiting for its line walk to the nearest
   door and get in; the bus waits until they have, up to 25 s. Some give up after a while
   and walk on.
+- **Tour groups** (`src/tours.ts`, `scenarios/tour-group.ts`). By day (most from about
+  10:00 to 18:30, fewer in heavy rain and on lower crowd settings) up to three guided groups
+  go round the sights near you: the Orloj, the Týn church, Charles Bridge, the Lennon Wall,
+  the Castle and others (`TOUR_STOPS`, placed in front of each sight by hand from OSM; which
+  sights tours stop at isn't published anywhere). A group of 7–16 stands round its guide
+  in a half circle, a few looking about, for a minute or two, then follows the guide, who
+  holds up a bright umbrella rain or shine, slowly along the footpaths to the next sight a
+  few hundred metres on, waiting for anyone who falls behind. After two to five sights the
+  tour ends and everyone goes their own way. Groups start out of sight, as if they'd been
+  there a while. Someone frightened off or knocked down leaves the group; without its
+  guide, or held up for 45 s, the group breaks up. Passers-by give way to a guide and to
+  anyone standing in a group or at a stop.
 - **Bikes and motorbikes.** Cyclists and motorcyclists ride with the traffic, and bikes
   and motorbikes stand on the pavements around you: E gets you on one, and it leans
   into the turns. A collision that knocks a rider off or hits an unattended bike
@@ -2263,6 +2275,10 @@ that two versions of the roof builder can be compared.
   flashing amber at night.
 - **Traffic** without lights only gives way to the right and steers around others.
   The lane assist sometimes clips a corner.
+- **Crowded narrow pavements jam.** Where many people come both ways along a pavement too
+  narrow to pass (the south side of Karlova at midday), they can stand blocking each other
+  for minutes instead of stepping into the empty street. A tour group caught in such a jam
+  breaks up.
 
 ## Not yet in the game
 

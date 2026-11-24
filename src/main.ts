@@ -35,6 +35,7 @@ import { Culler } from './occlusion.ts';
 import { LifeSize } from './lifesize.ts';
 import { Traffic, trafficWanted, roadLoad, type TrafficAgent } from './traffic.ts';
 import { BusWaiting } from './busWaiters.ts';
+import { Tours } from './tours.ts';
 import { roadHint } from './roadLevels.ts';
 import { preparePeople, pickPerson } from './spawn.ts';
 import { PavementDrivers } from './pavement.ts';
@@ -704,6 +705,17 @@ async function main() {
     busy: (x, y) => footfall.at(x, y), road: onCarriageway,
     // (The roads' busy hours stand in for the buses'.)
     demand: () => 0.15 + 0.85 * Math.sqrt(roadLoad(clock.t)),
+  });
+  // Guided tour groups round the sights (src/tours.ts), from about nine till seven, fewer
+  // in heavy rain, and as many fewer as the crowd is on lower graphics settings.
+  const tours = new Tours({
+    crowd: () => crowd!, walk, offscreen, road: onCarriageway, far: LIFE_RADIUS, rng: seeded,
+    toLocal: (lon, lat) => proj4('EPSG:4326', `+proj=tmerc +lat_0=${lat0} +lon_0=${lon0} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`, [lon, lat]) as [number, number],
+    player: () => ({ x: px(), y: py() }),
+    share: () => {
+      const h = (clock.t % 86400) / 3600;
+      return clamp((h - 8.5) / 1.5, 0, 1) * clamp((20 - h) / 1.5, 0, 1) * (weather.now.rain > 0.5 ? 0.4 : 1) * graphics.crowd;
+    },
   });
   const busTimetables = new Map<number, BusDepartures | null>();
   const timetable = (platform: string | undefined) => {
@@ -2434,6 +2446,7 @@ async function main() {
     for (const c of movers) if (c.speed > 5) threats.push(c);
     for (const c of cops) if (c.speed > 5) threats.push(c);
     busWaiting.update(dt);
+    tours.update(dt);
     crowd.update(dt, threats, carsOnly, (x, y) => !offscreen(x, y),
       gaitActive && !walker.flight && walker.z < .5 && walker.perch < .4 ? walker : undefined);
     bags.update(dt, px(), py());
@@ -3714,7 +3727,7 @@ async function main() {
   });
 
   window.__drive = {
-    culler, hitches, tilePrograms, birds, birdsView, lifeSize, scene, camera, traffic, crowd, busWaiting, loose, restingByCar, restingIndex, get resting() { return resting; }, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, refuse, health, fires, trams, ride, taxi, clock, board, busStops, busRide, metro, funicular, ferries, graphics, sound, weather, lamps, sky, skids, bikeShare, carPool, spawnWork, bags,
+    culler, hitches, tilePrograms, birds, birdsView, lifeSize, scene, camera, traffic, crowd, busWaiting, tours, loose, restingByCar, restingIndex, get resting() { return resting; }, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, refuse, health, fires, trams, ride, taxi, clock, board, busStops, busRide, metro, funicular, ferries, graphics, sound, weather, lamps, sky, skids, bikeShare, carPool, spawnWork, bags,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,
@@ -3742,7 +3755,7 @@ async function main() {
     steps: (x, y, r) => world.stepEdgesNear(x, y, r), ground: (x, y) => world.terrainAt(x, y), levelAt: (x, y, l) => world.levelAt(x, y, l),
     streets: drive, countryside: () => !!world.country?.box, place: () => $('district').textContent || null, taxi,
     builtMap: (x, y) => !pastMap(x, y) && world.available.has(world.keyAt(x, y)),
-    grid, boats, ferries, pid, inspector, wallet, police, health, clock, fires, brigade, ambulances, refuse, hurtNearest, switchBeacon, traffic, crowd, rng: seeded, bags, busWaiting, busStops,
+    grid, boats, ferries, pid, inspector, wallet, police, health, clock, fires, brigade, ambulances, refuse, hurtNearest, switchBeacon, traffic, crowd, rng: seeded, bags, busWaiting, tours, busStops,
     missions, satnav, standing: repute, cannon: (on) => { cannonHeld = on; }, tram: { ride, list: () => trams.list, clearRun: (vehicle) => {
       const mid = vehicle.parts[1];
       if (!world.tileAt(mid.x, mid.y)?.drawn) return false;

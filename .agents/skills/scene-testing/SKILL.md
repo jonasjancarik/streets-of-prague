@@ -104,6 +104,12 @@ in compass degrees (0 north, 90 east), speeds in km/h.
   bus to the nearest stop, `t.busPassengers()` counts who got on and off. The signs, and the
   people at them, come with frames drawn: loop `await t.frames()` after `t.go`.
   Scenario `bus-stop-waiting`.
+- Tour groups (`src/tours.ts`): `t.tours()` lists them (`id`, `phase` talk or walk, the
+  `sight` they're at, the `next` one, `size`, `spread` from the guide, `behind`: the furthest
+  anyone is from their place, `group`: which way the group stands from the guide).
+  `t.tour(name, then)` starts one at a sight in view and returns its id, `t.sights(r, from)`
+  says how far each sight is from the paths (and, `from` a sight, the walk to it),
+  `t.endTours()` ends them all, `t.toursEnded()` counts why tours ended. Scenario `tour-group`.
 - Jobs (`src/missions.ts`): `t.job()` says what is on (`idle`, `offer`, `on`), the job, its
   step and objective, seconds left, pay, where it wants you, seconds out of the vehicle
   (`out`), the last outcome and the books (`done`, `failed`, `earned`, `rep`).

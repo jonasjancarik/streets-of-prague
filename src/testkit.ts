@@ -20,6 +20,7 @@ import type { Ambulances } from './ambulance.ts';
 import type { Refuse } from './refuse.ts';
 import type { Pedestrian } from './people.ts';
 import type { BusWaiting } from './busWaiters.ts';
+import type { Tours } from './tours.ts';
 import type { BusStops } from './busstops.ts';
 import type { Traffic } from './traffic.ts';
 import type { TramBody } from './trams.ts';
@@ -119,7 +120,7 @@ interface Game {
   viewRadius: () => number;
   offscreen: (x: number, y: number) => boolean;
   canvas: HTMLElement; fov: number;
-  busWaiting: BusWaiting; busStops: BusStops;
+  busWaiting: BusWaiting; tours: Tours; busStops: BusStops;
   wallet: Wallet; police: Police; health: Health; clock: Clock; fires: Fires; brigade: Brigade; ambulances: Ambulances; refuse: Refuse; traffic: Traffic; crowd: { people: { state: string; x: number; y: number; pace: number }[] }; hurtNearest: (grave?: boolean) => Pedestrian | null; switchBeacon: (c: Car) => void;
   weather: { set: (k: Kind | 'auto') => void; kind: () => string };
   season: { set: (when: string | number) => void; date: () => string };
@@ -669,6 +670,42 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       g.busStops.due(s, 10, g.clock.t);
       return s.name;
     },
+    // Tour groups about (src/tours.ts): where each guide is, at or on the way to which sight,
+    // and which way (compass degrees) the group is from the guide.
+    tours() {
+      const m = g.me();
+      return g.tours.report().map((q) => {
+        const [lon, lat] = g.toLonLat(q.x, q.y);
+        return {
+          ...q, sight: q.at, at: [round(lat, 5), round(lon, 5)] as Point2, away: round(Math.hypot(q.x - m.x, q.y - m.y)), x: undefined, y: undefined, cx: undefined, cy: undefined,
+          group: round(deg(Math.atan2(q.cy - q.y, q.cx - q.x))), spread: round(q.spread), behind: round(q.behind),
+        };
+      });
+    },
+    // Starts a tour group at the sight called `name` (TOUR_STOPS), or the nearest one, in view
+    // or not; `then`: the sight it goes on to first. Its id (as in t.tours()), or null.
+    tour(name?: string, then?: string) {
+      const m = g.me(), sights = g.tours.sights, named = (n: string) => {
+        const s = sights.find((o) => o.name === n);
+        if (!s) throw new Error(`No sight called ${n}`);
+        return s;
+      };
+      const s = name ? named(name) : [...sights].sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y))[0];
+      return g.tours.start(s, true, then === undefined ? undefined : named(then))?.guide.serial ?? null;
+    },
+    // The sights tour groups stop at, within `r` m of you: how far each lies from the nearest
+    // footpath, whether it's on open ground and, given the name of a sight, roughly how far it
+    // is to walk to each from that one (null where the paths loaded now don't join up).
+    sights(r = 600, from?: string) {
+      const m = g.me(), start = from === undefined ? undefined : g.tours.sights.find((o) => o.name === from);
+      if (from !== undefined && !start) throw new Error(`No sight called ${from}`);
+      return g.tours.survey(start).filter((s) => Math.hypot(s.x - m.x, s.y - m.y) < r)
+        .map((s) => ({ name: s.name, away: round(Math.hypot(s.x - m.x, s.y - m.y)), path: s.path === null ? null : round(s.path), open: s.open, ...(start ? { walk: s.walk === null ? null : round(s.walk) } : {}) }));
+    },
+    // Ends every tour group.
+    endTours() { for (const q of [...g.tours.groups]) g.tours.end(q); },
+    // How many tours have ended since the game started, by why ('done', 'held up', 'far'…).
+    toursEnded() { return { ...g.tours.ended }; },
 
     // Assign a loaded PID line to a test bus; never invent a route identifier.
     busLines() { return g.traffic.busLines.map(({ ref, to }) => ({ ref, to })); },

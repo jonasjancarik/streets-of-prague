@@ -60,6 +60,13 @@ const _roll = new THREE.Quaternion(), _at = new THREE.Vector3();
 const PALETTE = COLOURS.map((c) => new THREE.Color(c));
 // The colour of the umbrella the person with this serial number has.
 export const colour = (serial: number) => PALETTE[Math.floor(chance(serial, 6) * PALETTE.length)];
+// One of the umbrellas that stands out (red, yellow, blue, pink, orange): the serial
+// number of one, from `seed`, for a tour guide to hold up. Serial numbers count up
+// from 0 for people, so these lie far beyond them.
+const BRIGHT = new Set(['#b9282d', '#dcb520', '#2c4f8c', '#cc5f8f', '#b0652a', '#3f7fa8']);
+export function brightUmbrella(seed: number) {
+  for (let s = 1e6 + Math.floor(seed) * 97; ; s++) if (BRIGHT.has(COLOURS[Math.floor(chance(s, 6) * PALETTE.length)])) return s;
+}
 
 export class Umbrellas {
   mesh: THREE.InstancedMesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>;
