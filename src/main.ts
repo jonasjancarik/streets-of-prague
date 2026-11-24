@@ -764,10 +764,12 @@ async function main() {
     const ok = onlyFar ? offscreen : null, most = onlyFar ? 20 : Infinity, want = peopleWanted();
     for (let k = crowd.people.length - 1, n = 0; k >= 0 && crowd.people.length > want && n < most; k--) {
       const p = crowd.people[k];
-      if (p.state === 'walk' && (!onlyFar || offscreen(p.x, p.y))) { crowd.retire(p); n++; }
+      if (p.state === 'walk' && !p.kept && (!onlyFar || offscreen(p.x, p.y))) { crowd.retire(p); n++; }
     }
     for (const p of crowd.people) {
-      if (onlyFar && Math.hypot(p.x - px(), p.y - py()) < LIFE_RADIUS) continue;
+      // (Not those waiting at a bus stop or with a tour group round you, even when everyone
+      // else is put out afresh.)
+      if (p.kept || ((onlyFar || p.state === 'hold') && Math.hypot(p.x - px(), p.y - py()) < LIFE_RADIUS)) continue;
       spawnWork.peoplePicks++;
       const at = pickPerson(sampler, seeded, ok);
       if (!at) continue;

@@ -22,7 +22,9 @@ export interface Pedestrian extends WalkSpot {
   i: number; fwd: boolean; side: number; speed: number; x: number; y: number; h: number;
   // How far across their half of the path they keep, 0 (the middle) to 1 (the edge).
   lane: number;
-  vx: number; vy: number; state: 'walk' | 'flee' | 'down' | 'rejoin';
+  // 'hold': off the paths, making for `hold` and standing there (waiting at a bus stop,
+  // following a guide).
+  vx: number; vy: number; state: 'walk' | 'flee' | 'down' | 'rejoin' | 'hold';
   t: number; pause: number; z: number; anim: Anim; look: Look;
   // Stepping aside round something in the way: metres across the path now, and wanted.
   dodge: number; dodgeTo: number;
@@ -42,6 +44,18 @@ export interface Pedestrian extends WalkSpot {
   hurt?: number;
   // So badly hurt that the ambulance takes them away rather than getting them up again.
   grave?: boolean;
+  // Where someone in the 'hold' state makes for, and the way they face once there.
+  hold?: { x: number; y: number; h: number };
+  // The way they mean to walk, junction by junction (a guide's to the next sight); at a
+  // junction the way doesn't go on from, it's dropped.
+  route?: { e: WalkEdge; fwd: boolean }[];
+  // The umbrella they hold up whatever the weather (a guide's, for the group to follow).
+  brolly?: number;
+  // Busy with something of their own (leading a tour): not sent home with the crowd,
+  // nor taken onto a tram.
+  kept?: boolean;
+  // A tour group they're in: a guide doesn't step round its own group, which follows it.
+  group?: object;
 }
 interface WalkSegment extends WalkSpot { a: Point2; b: Point2; s0: number; len: number }
 // Something standing in the way: a circle of a parked car or bike (see pushCar in main.ts).
@@ -56,6 +70,8 @@ const GETUP = 1.25; // seconds of getting up at the end of lying on the ground
 // Walking, people head for a point this far along their path, so they round corners
 // and turn gradually rather than all at once.
 const LOOK = 1.2;
+// Turns to try, nearest the way first, for a step round a corner (toHold).
+const ROUND = [0.7, -0.7, 1.4, -1.4];
 const CLEAR = 0.6; // m kept between a walker's middle and the side of whatever they pass
 const TURN = 5; // rad/s, the fastest a walker turns
 const PASS = 0.62; // m kept between two walkers' middles as they pass each other
@@ -219,9 +235,12 @@ export class Crowd {
   add(at?: WalkSpot): Pedestrian {
     const r = this.r;
     if (this.people.length >= this.fig.capacity) {
-      // Full: move someone who is out of the way instead.
-      const p = this.people[Math.floor(r() * this.people.length)];
-      Object.assign(p, { e: at?.e || p.e, s: at?.s ?? p.s, state: 'walk', vx: 0, vy: 0, cap: Infinity, stuck: 0, hurt: undefined, grave: undefined });
+      // Full: move someone who is out of the way instead (not, if it can be helped, anyone
+      // waiting at a stop or with a tour group).
+      let p = this.people[Math.floor(r() * this.people.length)];
+      for (let k = 0; k < 8 && (p.kept || p.state === 'hold'); k++) p = this.people[Math.floor(r() * this.people.length)];
+      Object.assign(p, { e: at?.e || p.e, s: at?.s ?? p.s, state: 'walk', vx: 0, vy: 0, cap: Infinity, stuck: 0, hurt: undefined, grave: undefined,
+        hold: undefined, route: undefined, brolly: undefined, kept: undefined, group: undefined });
       this.place(p);
       return p;
     }
@@ -450,6 +469,21 @@ export class Crowd {
     p.h = q.ang;
   }
 
+  // Stuck on the corner of a wall where their path runs close by it: put a step or two
+  // further along it, if that's clear, or a moment's wait.
+  private pastCorner(p: Pedestrian) {
+    p.stuck = 0;
+    p.dodge = p.dodgeTo = 0;
+    const s = p.s;
+    for (const ahead of [1, 1.6, 2.2]) {
+      p.s = clamp(s + (p.fwd ? ahead : -ahead), 0, p.e.path.length);
+      const q = this.spot(p);
+      if (!this.blocked(q.x, q.y)) { p.x = q.x; p.y = q.y; return; }
+    }
+    p.s = s;
+    p.pause = 1 + this.r() * 1.5;
+  }
+
   // Walking on: after the point ahead on their path, at their own pace (a little
   // quicker to catch up after a detour).
   follow(p: Pedestrian, dt: number) {
@@ -485,6 +519,43 @@ export class Crowd {
     const want = d > 0.05 ? Math.atan2(dy, dx) : q.ang;
     const off = Math.atan2(Math.sin(want - p.h), Math.cos(want - p.h));
     p.h += clamp(off * Math.min(1, dt * 8), -TURN * dt, TURN * dt);
+  }
+
+  // Off the paths: over to their spot (at a bus stop, behind a guide) and standing there,
+  // turned the way they want to face. They set off once the spot is a few steps off and
+  // keep walking until they're on it, so a spot that moves a little at a time (a guide
+  // walking ahead) is followed at a walk rather than in fits and starts.
+  toHold(p: Pedestrian, w: { x: number; y: number; h: number }, dt: number) {
+    const dx = w.x - p.x, dy = w.y - p.y, d = Math.hypot(dx, dy);
+    let moved = 0;
+    if (d > (p.pace > 0.05 ? 0.08 : 0.35)) {
+      const step = Math.min(d, Math.min(p.speed * 1.4, 0.45 + d * 1.3) * dt);
+      let nx = p.x + (dx / d) * step, ny = p.y + (dy / d) * step;
+      // (Along a wall or a fence rather than into it, or round its corner.)
+      if (this.blocked(nx, ny) && !this.blocked(p.x, p.y)) {
+        if (!this.blocked(nx, p.y)) ny = p.y;
+        else if (!this.blocked(p.x, ny)) nx = p.x;
+        else {
+          const a = Math.atan2(dy, dx);
+          nx = p.x; ny = p.y;
+          for (const turn of ROUND) {
+            const x = p.x + Math.cos(a + turn) * step, y = p.y + Math.sin(a + turn) * step;
+            if (!this.blocked(x, y)) { nx = x; ny = y; break; }
+          }
+        }
+      }
+      moved = Math.hypot(nx - p.x, ny - p.y);
+      p.stuck = moved < step * 0.3 ? p.stuck + dt : 0;
+      p.vx = dt > 0 ? (nx - p.x) / dt : 0;
+      p.vy = dt > 0 ? (ny - p.y) / dt : 0;
+      p.x = nx;
+      p.y = ny;
+    } else { p.vx = p.vy = 0; p.stuck = 0; }
+    p.pace = dt > 0 ? moved / dt : 0;
+    const want = moved > 0.002 ? Math.atan2(p.vy, p.vx) : w.h;
+    const off = Math.atan2(Math.sin(want - p.h), Math.cos(want - p.h));
+    const turn = moved > 0.002 ? TURN : 2.5;
+    p.h += clamp(off * Math.min(1, dt * 6), -turn * dt, turn * dt);
   }
 
   // Something in the way, across the path from a to b (see spans).
@@ -549,7 +620,7 @@ export class Crowd {
     for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
       for (let n = this.heads[bucket(i, j)]; n >= 0; n = links[n]) {
         const o = people[n];
-        if (!o || o === p || Math.abs((o.gz ?? 0) - gz) > 1.5) continue;
+        if (!o || o === p || Math.abs((o.gz ?? 0) - gz) > 1.5 || (o.group && o.group === p.group)) continue;
         // (How far ahead from where they are, so that of two going the same way only
         // the one behind has the other ahead; across from the path.)
         const dx = o.x - base.x, dy = o.y - base.y, along = (o.x - p.x) * ux + (o.y - p.y) * uy;
@@ -625,8 +696,11 @@ export class Crowd {
       // No way past. Someone going their way: they fall in behind. Someone coming
       // towards them or standing there: one of the two (the one who came out later)
       // waits, and after a while turns back; the other stops short of them.
+      // (Someone standing there, at a bus stop or in a tour group, doesn't make way, nor
+      // does a guide with a group behind, but for another guide.)
+      const mine = p.group ? 1 : 0, theirs = blocker.group || blocker.state === 'hold' ? 1 : 0;
       if (blockPace > .2) p.cap = blockPace * 0.95;
-      else if (p.serial > blocker.serial) { p.pause = Math.max(p.pause, .25); p.stuck += .1; }
+      else if (mine === theirs ? p.serial > blocker.serial : mine < theirs) { p.pause = Math.max(p.pause, .25); p.stuck += .1; }
       else if (blockAt < .8) p.cap = 0;
     } else if (personAhead < 1.8 && !blocker) p.pause = Math.max(p.pause, .25);
   }
@@ -702,7 +776,7 @@ export class Crowd {
         if (p.state !== 'down' || (p.hurt += dt) > HURT_FOR) this.revive(p);
         else p.t = 5;
       }
-      if (p.state === 'walk') {
+      if (p.state === 'walk' || p.state === 'hold') {
         // Look out for fast cars heading this way.
         for (let i = 0; i < threatN; i++) {
           const c = this.threatScan[i];
@@ -742,10 +816,16 @@ export class Crowd {
           // No way on past a wall or a fence: out of sight, back onto the path (unless the
           // path itself runs through the wall, a passage through a building, say, or
           // they're on it already, held up by someone); in sight, or then, they turn round.
-          const q = seen(p.x, p.y) ? null : this.spot(p);
+          const q = seen(p.x, p.y) || p.route ? null : this.spot(p);
           if (q && !this.blocked(q.x, q.y) && Math.hypot(q.x - p.x, q.y - p.y) > 0.3) this.place(p);
+          // (Someone on a way of their own, a guide with a group behind, doesn't turn back:
+          // caught on a corner, a step on past it; failing that, they wait.)
+          else if (p.route) this.pastCorner(p);
           else { p.fwd = !p.fwd; p.stuck = 0; p.dodge = p.dodgeTo = 0; }
         }
+      } else if (p.state === 'hold') {
+        if (p.hold) this.toHold(p, p.hold, dt);
+        else p.state = 'walk';
       } else if (p.state === 'flee' || p.state === 'down' || p.state === 'rejoin') {
         if (p.state === 'down') {
           const k = Math.exp(-4 * dt);
@@ -804,12 +884,26 @@ export class Crowd {
     const a = p.anim;
     if (p.state === 'down') knocked(a, dt, p.t);
     else if (a.name === 'jump' && !a.done) a.step(dt);
-    else locomote(a, dt, p.state === 'walk' ? p.pace : Math.hypot(p.vx, p.vy));
+    else locomote(a, dt, p.state === 'walk' || p.state === 'hold' ? p.pace : Math.hypot(p.vx, p.vy));
     p.z = a.name === 'jump' ? jumpHeight(a.t, 0.7) : 0;
   }
 
   turn(p: Pedestrian) {
     const node = p.s > p.e.path.length / 2 ? p.e.v : p.e.u;
+    // On their way somewhere: the next street of it, if it goes on from here.
+    if (p.route) {
+      const next = p.route[0];
+      if (next && (next.fwd ? next.e.u : next.e.v) === node) {
+        p.route.shift();
+        p.e = next.e;
+        p.fwd = next.fwd;
+        p.s = p.fwd ? 0 : p.e.path.length;
+        p.dodge = p.dodgeTo = 0;
+        p.stuck = 0;
+        return;
+      }
+      p.route = undefined;
+    }
     // Not into a building, where the path runs on inside it: that's a dead end.
     const opts = (this.walk.adj.get(node) || []).filter((o) => o.e !== p.e && !this.indoor(o.e, true));
     // Busier streets are likelier. A walk spreads people out more evenly than its
@@ -832,7 +926,7 @@ export class Crowd {
   // A gunshot at (x, y): everyone walking within r runs from it.
   scare(x: number, y: number, r: number) {
     for (const p of this.people) {
-      if (p.state !== 'walk' && p.state !== 'rejoin') continue;
+      if (p.state !== 'walk' && p.state !== 'rejoin' && p.state !== 'hold') continue;
       const dx = p.x - x, dy = p.y - y, d = Math.hypot(dx, dy);
       if (d > r) continue;
       const a = Math.atan2(dy, dx) + (this.r() - 0.5) * 0.8, sp = 5 + this.r();
@@ -871,10 +965,12 @@ export class Crowd {
       if (!seen(p.x, p.y, p)) continue;
       m.compose(_p.set(p.x, height(p.x, p.y, p) + p.z, -p.y), _q.setFromAxisAngle(UP, p.h), _s);
       // (Dropped by anyone running from a car or knocked over.)
-      const up = rain && (p.state === 'walk' || p.state === 'rejoin') && this.umbrellas.up(p.serial) && !sheltered?.(p.x, p.y, _p.y + 1.8);
+      const upright = p.state === 'walk' || p.state === 'rejoin' || p.state === 'hold';
+      const brolly = upright && p.brolly !== undefined ? p.brolly : p.serial;
+      const up = upright && (brolly !== p.serial || (rain && this.umbrellas.up(p.serial))) && !sheltered?.(p.x, p.y, _p.y + 1.8);
       // A street avatar has its own draw and holds its own umbrella. Pack only
       // the remaining walkers into this batch, including in the shadow pass.
-      if (this.fig.streetModel(p.i, m, p.anim, up ? p.serial : -1)) continue;
+      if (this.fig.streetModel(p.i, m, p.anim, up ? brolly : -1)) continue;
       this.fig.wear(n, p.i);
       let pose=p.anim;
       const exit=pose.driverExit;
@@ -890,7 +986,7 @@ export class Crowd {
         pose=small;
       }
       this.fig.place(n,m,pose);
-      if (up) this.umbrellas.put(p.serial, _p, p.h, p.anim.phase, Math.min(1, p.pace / 1.2));
+      if (up) this.umbrellas.put(brolly, _p, p.h, p.anim.phase, Math.min(1, p.pace / 1.2));
       n++;
     }
     this.fig.commit(n);

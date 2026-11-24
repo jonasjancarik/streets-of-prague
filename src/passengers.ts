@@ -88,7 +88,7 @@ export class Passengers {
     this.spawnT = 0;
     this.leaving = 1 + Math.floor(this.rng() * MAX_OFF);
     this.boarding = crowd.people
-      .filter((p) => (p.state === 'walk' || p.state === 'rejoin') && Math.hypot(p.x - mid.x, p.y - mid.y) < WAITING)
+      .filter((p) => (p.state === 'walk' || p.state === 'rejoin') && !p.kept && Math.hypot(p.x - mid.x, p.y - mid.y) < WAITING)
       .sort((a, b) => Math.hypot(a.x - mid.x, a.y - mid.y) - Math.hypot(b.x - mid.x, b.y - mid.y))
       .slice(0, 1 + Math.floor(this.rng() * MAX_ON));
     return true;
