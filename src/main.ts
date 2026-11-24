@@ -46,7 +46,7 @@ import type { Pedestrian } from './people.ts';
 import { GetIn } from './getin.ts';
 import { Arrest } from './arrest.ts';
 import { BUILT_UP_BUSY, loadFootfall } from './footfall.ts';
-import { Trams, frontOf, loadTrams, pushOutOfTram } from './trams.ts';
+import { Trams, cabEye, frontOf, loadTrams, pushOutOfTram } from './trams.ts';
 import { TramRide, FAST } from './ride.ts';
 import { TrackNet } from './tracks.ts';
 import { Passengers } from './passengers.ts';
@@ -3328,8 +3328,17 @@ async function main() {
         else eyeAhead += (.30 - eyeAhead) * (1 - Math.exp(-14 * dt));
         const ex = me.x + fx * eyeAhead - fy * sway;
         const ey = me.y + fy * eyeAhead + fx * sway;
-        camera.position.set(ex, eye, -ey);
-        camera.lookAt(ex + Math.cos(aim) * Math.cos(pitch), eye + Math.sin(pitch), -(ey + Math.sin(aim) * Math.cos(pitch)));
+        const cab = ride.driving && ride.v ? ride.v : null;
+        if (cab) {
+          // Driving a tram: from the driver's seat in its front cab, looking the way it goes.
+          const h = cab.parts[2].ang + yaw;
+          cabEye(cab, ground(me.x, me.y, body), camera.position);
+          const { x, y, z } = camera.position;
+          camera.lookAt(x + Math.cos(h) * Math.cos(pitch), y + Math.sin(pitch), z - Math.sin(h) * Math.cos(pitch));
+        } else {
+          camera.position.set(ex, eye, -ey);
+          camera.lookAt(ex + Math.cos(aim) * Math.cos(pitch), eye + Math.sin(pitch), -(ey + Math.sin(aim) * Math.cos(pitch)));
+        }
       }
       camera.up.set(0, 0, -1);
     } else {

@@ -76,6 +76,8 @@ export class TramStreetView {
   }[];
   private id = -1; private route = ''; private terminal = ''; private amount = 0;
   private driver?: THREE.Mesh; private loadedDriver = -1; private pending = false; private retry = 0;
+  // You drive it: its own driver gets out of the seat.
+  player = false;
   constructor(shells: THREE.Mesh[], fittings: TramFittings[], private classic: boolean) {
     this.rows = shells.map((shell, i) => {
       const fitted = fittings[i], panes = mirrored(new THREE.Mesh(fitted.glass, streetGlass));
@@ -109,7 +111,7 @@ export class TramStreetView {
       this.id = id;
     }
     const donor = id % 2;
-    if (this.driver) this.driver.visible = this.loadedDriver === donor;
+    if (this.driver) this.driver.visible = this.loadedDriver === donor && !this.player;
     if (this.loadedDriver !== donor && this.rows[0].fitted.driver && !this.pending && performance.now() >= this.retry) void this.seatDriver(donor);
   }
   lampOrigin(side: number, out: THREE.Vector3) {
@@ -119,6 +121,15 @@ export class TramStreetView {
     return true;
   }
   get heading() { return this.rows[0].shell.rotation.y; }
+  // The driver's eyes, in the scene's coordinates (false without a driver's seat, or while
+  // the simple model is shown).
+  eye(out: THREE.Vector3) {
+    const front = this.rows[0], seat = front.fitted.driver;
+    if (!this.visible || !seat) return false;
+    front.shell.updateWorldMatrix(true, false);
+    out.set(seat[0] + .1, seat[1] + .78, seat[2]).applyMatrix4(front.shell.matrixWorld);
+    return true;
+  }
   private async seatDriver(donor: number) {
     this.pending = true;
     try {
@@ -129,7 +140,7 @@ export class TramStreetView {
         this.driver.position.set(...this.rows[0].fitted.driver!); this.driver.receiveShadow = true;
         this.rows[0].shell.add(this.driver);
       } else this.driver.geometry = person.geometry;
-      this.loadedDriver = donor; this.driver.visible = this.visible;
+      this.loadedDriver = donor; this.driver.visible = this.visible && !this.player;
     } catch { this.retry = performance.now() + 60000; } finally { this.pending = false; }
   }
   hide() {

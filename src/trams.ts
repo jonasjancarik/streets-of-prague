@@ -262,6 +262,14 @@ function before(arr: number[], s: number) {
 // way there, its first one on the way back.
 export const headsignAt = (line: TramLine, s: number) => (s < line.ends[0] || s >= line.ends[1] ? line.to : line.from);
 export const frontOf = (v: TramVehicle) => v.line.path.wrap(v.s + HALF);
+// Where the driver's eyes are in a tram's front cab, in the scene's coordinates, for first
+// person while you drive it. Without the street model's seat, about where it would be: 1.5 m
+// back from the nose, `ground` + 2.1 m.
+export function cabEye(v: TramVehicle, ground: number, out: THREE.Vector3) {
+  if (v.look?.street?.eye(out)) return out;
+  const p = v.parts[2], d = SECTION / 2 - 1.5;
+  return out.set(p.x + Math.cos(p.ang) * d, ground + 2.1, -(p.y + Math.sin(p.ang) * d));
+}
 
 function prepare(line: RawTramLine): TramLine {
   const path = new Loop(line.pts);
@@ -712,6 +720,7 @@ export class Trams {
       if (street && distance < 110 * reach && !type.preparing) prepareFittings(v.kind, type);
       if (street && distance < (look.street?.visible ? 68 : 57) * reach && type.fittings) {
         look.street ??= new TramStreetView(look.sections, type.fittings, v.kind === 'T3');
+        look.street.player = !!(v.driven && v.rider);
         look.street.show(v.line.ref, headsignAt(v.line, v.s), v.driven ? manualDoors === v : v.dwell > 0, dt, v.id);
       } else look.street?.hide();
       look.sign.visible = !street;
