@@ -603,7 +603,8 @@ const DRIVE_SLIDERS: { key: DriveTuneKey; label: string; note: string }[] = [
 ];
 // The sliders run from 0.1× to 10× on a log scale (1× in the middle); rain and snow from 0× to 5×.
 const DRIVE_MAX = 10;
-const DRIVE_KEY = 'dev-driving';
+// (-2: values saved before the new 1× would apply twice.)
+const DRIVE_KEY = 'dev-driving-2';
 
 function setupDriving($: (id: string) => HTMLElement, flash: (el: HTMLElement, now: string, then: string) => void) {
   try {

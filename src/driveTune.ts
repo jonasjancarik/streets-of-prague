@@ -10,9 +10,10 @@ export const DRIVE_TUNE = {
 export type DriveTuneKey = keyof typeof DRIVE_TUNE;
 export const DRIVE_TUNE_DEFAULT: Readonly<typeof DRIVE_TUNE> = { ...DRIVE_TUNE };
 
-// Built into the car you drive whatever the sliders say: steering that answers three
-// times as fast as the cars' specs give (1× on the slider is this).
-const BASE: Partial<Record<DriveTuneKey, number>> = { response: 3 };
+// Built into the car you drive whatever the sliders say (1× on the slider is this):
+// steering that answers fifteen times as fast as the cars' specs give, and turning
+// circles 1.65 times as wide, both tuned on the sliders in November 2026.
+const BASE: Partial<Record<DriveTuneKey, number>> = { response: 15, radius: 1.65 };
 const factor = (k: DriveTuneKey) => DRIVE_TUNE[k] * (BASE[k] ?? 1);
 
 // The value each spec field falls back to when a type leaves it out (see CarSpec).
