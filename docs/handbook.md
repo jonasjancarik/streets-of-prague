@@ -1689,7 +1689,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   ahead. Backing up runs the stride in reverse, at the speed the player actually travels.
   Faster movement lengthens the stride. The slow-run and sprint clips top out
   at about 190 and 227 footfalls per minute. The supporting shoe rolls about the
-  ball of the foot while the hips travel past it.
+  ball of the foot while the hips travel past it. Starting from rest shifts weight
+  from a supported pose; reversing follows the slowdown through zero. After a
+  sidestep the feet keep their landing direction until the next movement.
   During a sidestep the chest, neck and head turn back toward the player's sightline
   while the feet keep the captured step. Looking behind the body releases that turn.
   Phone calls, falls and other actions keep their own head poses.

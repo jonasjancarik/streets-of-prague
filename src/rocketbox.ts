@@ -463,14 +463,21 @@ export class LifeSize {
       if (dt > 0) {
         const dx = p.pos.x - p.last.x, dz = p.pos.z - p.last.z;
         const v = Math.hypot(dx, dz) / dt;
-        p.speed += (Math.min(v, 12) - p.speed) * Math.min(1, dt * 8);
+        const measured = Math.min(v,12);
         if (p.self) {
+          // Feet brake with the body. Carrying the old forward cadence
+          // through zero made the first backward step play much too fast.
+          p.speed = Math.min(measured,p.speed+(measured-p.speed)*(1-Math.exp(-12*dt)));
+
           // On A/D the camera still looks ahead, but the player's feet must
           // step along the pavement. On S the feet track the ground backwards.
           // Hysteresis keeps a near-sideways diagonal from reversing each frame.
-          let yaw = 0;
+          // At rest keep the stance that just landed. Rotating a stationary
+          // pair of feet back towards the camera slid them across the paving.
+          let yaw = p.strideYaw;
           if (p.want.walk + p.want.jog + p.want.run > 0) {
-            yaw = p.strideYaw;
+            if (p.w.walk+p.w.jog+p.w.run < .01) p.phase=(k.contactPhase+.17)%1;
+            if (!p.rest.startsWith('idle_neutral')) p.rest=k.standing[0];
             if (v > .12) {
               const step = _v.set(dx, 0, dz).applyQuaternion(_q.copy(p.turn).invert());
               const forward = step.x / (v * dt);
@@ -478,12 +485,18 @@ export class LifeSize {
               else if (forward > -.10) p.strideSign = 1;
               yaw = Math.atan2(-step.z * p.strideSign, step.x * p.strideSign);
             }
+            // Shift weight out of the stance as the first step gathers speed,
+            // and back onto both feet as actual ground travel ends.
+            const moving=THREE.MathUtils.smoothstep(measured,.06,.72);
+            p.want.walk*=moving; p.want.jog*=moving; p.want.run*=moving;
+            p.want[p.rest]=1-moving;
           } else if (!p.want[p.rest] && !p.want.umbrella) {
             // A jump, fall or door action is posed in the gameplay heading.
-            p.strideYaw = 0;
+            yaw = 0;
           }
-          p.strideYaw += THREE.MathUtils.clamp(yaw - p.strideYaw, -9 * dt, 9 * dt);
-        }
+          const turn=Math.atan2(Math.sin(yaw-p.strideYaw),Math.cos(yaw-p.strideYaw));
+          p.strideYaw += THREE.MathUtils.clamp(turn*(1-Math.exp(-13*dt)),-9*dt,9*dt);
+        } else p.speed += (measured-p.speed)*Math.min(1,dt*8);
       }
       p.last.copy(p.pos);
       // Done with one way of standing, they go on to another (the last fades out as it ends).

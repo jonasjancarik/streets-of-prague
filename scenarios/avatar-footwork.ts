@@ -5,7 +5,9 @@ import type { Scenario } from '../src/testkit.ts';
 export default {
   title: 'Third-person footsteps follow sideways and backwards travel',
   async run(t) {
-    await t.go('staromak', { heading: 90 });
+    // This spot leaves a clear run in both directions. At the named spawn a
+    // tree can stop the walker while the test continues holding the same key.
+    await t.go([50.08747,14.42108], { heading: 90 });
     const { scene, walker } = window.__drive as { scene: Scene; walker: Walker };
     const wasPaused = t.paused, previousDt = t.frameDt;
     t.paused = true;
@@ -35,6 +37,7 @@ export default {
       const feet = ['Bip01_L_Foot', 'Bip01_R_Foot'].map(name => avatar.getObjectByName(name)!);
       const sample = () => feet.map(foot => foot.getWorldPosition(new Vector3()).sub(avatar.position));
       let prev = sample(), planted = 0, advance = 0;
+      const startBack=walker.mesh.position.clone();
       for (let i = 0; i < 36; i++) {
         await step(-1, 0);
         const next = sample();
@@ -47,6 +50,12 @@ export default {
       }
       t.check('the supporting foot moves forward relative to the retreating hips', planted > 6 && advance > .12,
         { samples: planted, metres: advance });
+      t.check('the backwards samples covered open pavement',walker.mesh.position.distanceTo(startBack)>1.8);
+      for (let i=0;i<24;i++) await step(0,1);
+      const landed=avatar.getWorldDirection(new Vector3());
+      for (let i=0;i<35;i++) await step(0,0);
+      const alignment=avatar.getWorldDirection(facing).dot(landed);
+      t.check('stopping a sidestep keeps the landing direction',alignment>.96 && Math.hypot(walker.vx,walker.vy)<.05,{alignment});
     } finally {
       t.frameDt = previousDt;
       t.paused = wasPaused;
