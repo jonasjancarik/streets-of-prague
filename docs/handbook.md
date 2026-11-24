@@ -409,7 +409,8 @@ keep their delivery boxes.
 From the bank you can see into the cruise boat's saloon and the ferry's wheelhouse.
 The sightseeing boats have flared bows, rounded sterns and a Czech ensign. Close to
 the boat, the timber deck, mooring fittings and raked windscreen come into view.
-The skipper and four seated passengers share one mesh inside the cabin.
+The skipper and four seated passengers share one mesh inside the cabin. From the
+far bank, the illuminated saloon windows remain separated by their sash posts.
 The Žofín swan has a low-sided white hull, a black rubbing strip and a recurved
 neck with a yellow-orange bill. At the bank you can see the moulded bench, pedals
 and steering lever. [Slovanka rental photo](https://www.slovanka.net/images/foto/7.jpg)

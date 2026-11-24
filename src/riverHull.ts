@@ -23,7 +23,7 @@ const shell = (s: number[], side: number, y: number, width: number, rake: number
 };
 type Edge = (s: number[],side: number) => Point3;
 
-function skin(sections: number[][], low: Edge, high: Edge) {
+function skin(sections: number[][], low: Edge, high: Edge, capEnds=true) {
   const positions: number[] = [], indices: number[] = [];
   for (const side of [-1,1]) {
     const start=positions.length/3;
@@ -35,7 +35,7 @@ function skin(sections: number[][], low: Edge, high: Edge) {
     }
   }
   // Hard normals on the transom and stem.
-  for (const end of [0,sections.length-1]) {
+  for (const end of capEnds ? [0,sections.length-1] : []) {
     const s=sections[end], a=positions.length/3;
     positions.push(...low(s,-1),...low(s,1),...high(s,1),...high(s,-1));
     if (end===0) indices.push(a,a+1,a+2,a,a+2,a+3);
@@ -77,7 +77,7 @@ export function cruiserHull(close: boolean, add: Surface, box: Box) {
     add(skin(sections,boot,top),'#e7e6df');
   }
   const inner: Edge = (s,side)=>[s[0]*length,deckAt(s),side*Math.max(0,widthAt(s)-.16)];
-  add(skin(sections,top,inner),'#dbdbce');
+  add(skin(sections,top,inner,false),'#dbdbce');
 
   const deck = new THREE.BufferGeometry(), pos: number[]=[], ix: number[]=[];
   for (const s of sections) pos.push(...inner(s,1),...inner(s,-1));

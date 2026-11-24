@@ -1,6 +1,6 @@
 import { swanBoat } from './swanBoat.ts';
 import { RIVER_MODEL_LAYER } from './mirror.ts';
-import { passengerVessel, pedalFittings } from './boatFittings.ts';
+import { distantCruiseFittings, passengerVessel, pedalFittings } from './boatFittings.ts';
 import { cruiserHull } from './riverHull.ts';
 import { SightseeingBoat } from './cruiseCabin.ts';
 import { loftSections, StreetVehicleMesh } from './vehicleFittings.ts';
@@ -95,7 +95,7 @@ interface Boat {
 
 // Boxes and extrusions with a colour per vertex, merged into one body. Forward is +x,
 // right +z, the waterline y = 0, as for the cars. `glow` marks what shines at night:
-// 1 the cabin windows (lit from inside), 2 the navigation lights (their own colour).
+// up to 1 for the brightness inside a cabin, 2 for the navigation lights in their own colour.
 export function body(kind: Kind, paint: string, street = false) {
   const parts: THREE.BufferGeometry[] = [], glass: THREE.BufferGeometry[] = [];
   const colour = (g: THREE.BufferGeometry, color: string, glow = 0) => {
@@ -135,7 +135,7 @@ export function body(kind: Kind, paint: string, street = false) {
     if (street) passengerVessel('cruise', B, colour, box);
     else {
       box(L * 0.64, 1.85, B - 1, -2, 2.42, 0, '#f4f3ee'); // the cabin (low, like the boats that fit under Prague's bridges)
-      box(L * 0.62, 0.95, B - 0.3, -2, 2.55, 0, '#27343f', 1); // its windows all round (a little proud of the roof, so they show from above)
+      distantCruiseFittings(colour);
     }
     box(L * 0.68, 0.14, B - 0.6, -2, 3.4, 0, '#7f98a8'); // the roof deck
     if (street) box(2.86, .15, 3.48, 10.20, 3.20, 0, '#edece5');
@@ -160,7 +160,6 @@ export function body(kind: Kind, paint: string, street = false) {
     box(0.45, 0.25, 0.45, 10.4, 3.6, 0, '#ffffff', 2);
     box(0.3, 0.3, 0.3, -2 - L * 0.32 + 0.3, 2.0, 0, '#ffffff', 2); // and one at the stern
     box(0.8, 0.2, 5.2, -2 - L * 0.32 + 0.5, 1.55, 0, '#8a2b2b'); // a red stripe at the stern
-    if (!street) for (let i = 0; i < 6; i++) box(1.2, 0.08, 0.5, -12 + i * 3.6, 3.55, 0, '#3d6f9a'); // benches up top
   } else if (kind === 'ferry') {
     // PID's little ferry: a dark hull with a band in the line's colour, an open deck
     // forward under an awning, the cabin and wheelhouse aft.
@@ -242,7 +241,7 @@ export function boatMaterial() {
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', 'varying float vGlow;\n#include <common>')
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-  if (vGlow > .5 && uLampOn > .005) totalEmissiveRadiance += (vGlow > 1.5 ? vColor.rgb * 1.6 : vec3(1., .86, .62) * .6) * uLampOn;`);
+  if (vGlow > .005 && uLampOn > .005) totalEmissiveRadiance += (vGlow > 1.5 ? vColor.rgb * 1.6 : vec3(1., .86, .62) * (.6 * vGlow)) * uLampOn;`);
   };
   material.customProgramCacheKey = () => 'boats';
   return material;

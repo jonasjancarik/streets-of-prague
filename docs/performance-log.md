@@ -2057,3 +2057,16 @@ On Pixel 5 Medium, repeated CPU timings of the two-leg adjustment at the
 Petřín pose ranged from 0.06 to 0.28 ms per player pose, with a median of
 0.12 ms. This is the cost of the pose calculation, measured separately from
 drawing the scene.
+
+### The castle lights and the sightseeing boat (24 November)
+
+On the Pixel 5 at WebGPU Medium, 392 × 745 and 1× resolution, the Charles Bridge
+view at 22:15 averaged 55.9 ms per frame with the castle floodlights hidden and
+56.0 ms with them visible. One ridge view was in frame. The run held back the
+car reflection atlas to exercise the corrected cold-start shader.
+
+At water level near the bow, four alternating five-second windows per version
+averaged 29.0 ms with the original sightseeing boat and 29.5 ms with the shaped
+hull and occupied cabin. The timed close hull had 6,354 triangles in two draws. The
+five seated people share one additional draw of 2,618 triangles. From overhead
+the final boat has 370 triangles and one draw, compared with 372 and one originally.

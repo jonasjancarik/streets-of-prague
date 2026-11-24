@@ -320,8 +320,8 @@ addPort(/^boats$/, (node) => {
   glow(node, () => {
     const g: N = attribute('glow', 'float');
     const c = vertexColor().rgb;
-    const lit = select(g.greaterThan(1.5), c.mul(1.6), vec3(1, 0.86, 0.62).mul(0.6));
-    return select(g.greaterThan(0.5), lit.mul(uLampOn), vec3(0));
+    const lit = select(g.greaterThan(1.5), c.mul(1.6), vec3(1, 0.86, 0.62).mul(g.mul(0.6)));
+    return lit.mul(uLampOn);
   });
   lampLit(node);
 });

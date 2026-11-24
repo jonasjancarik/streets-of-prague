@@ -4,6 +4,35 @@ import { loftSections, pane, strut, type Point3 } from './vehicleFittings.ts';
 type Surface = (g: THREE.BufferGeometry, colour: string, glow?: number) => void;
 type Box = (l: number, h: number, w: number, x: number, y: number, z: number, colour: string, glow?: number) => void;
 
+// The distant saloon has painted panes in the same twelve bays as the near
+// saloon. Its night reflection keeps the interruptions from the sash posts.
+export function distantCruiseFittings(add: Surface) {
+  const quad = (a: Point3,b: Point3,c: Point3,d: Point3,colour: string,glow=0) => {
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position',new THREE.Float32BufferAttribute([...a,...b,...c,...a,...c,...d],3));
+    add(g,colour,glow);
+  };
+  const level=[.14,.22,.12,.065,.20,.17];
+  for (const side of [-1,1]) for (let bay=0;bay<12;bay++) {
+    const x=-12.88+bay*1.8133+.09, z=side*2.709, next=x+1.63;
+    const a=side>0 ? x : next, b=side>0 ? next : x;
+    quad([a,2.05,z],[b,2.05,z],[b,3.20,z],[a,3.20,z],'#45565b',level[bay%level.length]);
+  }
+  for (const end of [-1,1]) for (const side of [-1,1]) {
+    const x=-2+end*10.89,z=side*1.28,a=z-end*1.17,b=z+end*1.17;
+    quad([x,2.05,a],[x,3.20,a],[x,3.20,b],[x,2.05,b],'#45565b',.13);
+  }
+  // From above the roof benches need only the seat and its two long faces.
+  for (let i=0;i<6;i++) {
+    const a=-12.6+i*3.6,b=a+1.2;
+    quad([a,3.59,.25],[b,3.59,.25],[b,3.59,-.25],[a,3.59,-.25],'#3d6f9a');
+    for (const side of [-1,1]) {
+      const x=side>0?a:b,end=side>0?b:a,z=side*.25;
+      quad([x,3.51,z],[end,3.51,z],[end,3.59,z],[x,3.59,z],'#3d6f9a');
+    }
+  }
+}
+
 export function passengerVessel(kind: 'cruise' | 'ferry', beam: number, add: Surface, box: Box) {
   const cruise = kind === 'cruise', deck = cruise ? 1.56 : 1.10;
   const metal = '#aeb7b5', rail = '#778a8f', trim = '#eae7df', wood = '#916648';
