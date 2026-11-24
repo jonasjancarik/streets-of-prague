@@ -1599,10 +1599,12 @@ record the measurements, merge decisions and pending landmark asset activation.
   standing ones at 15 frames a second, and joints that hardly move (most fingers) as one pose.
 - **Birds** (`src/birds.ts`): by day in dry weather, flocks of pigeons arrive from beyond
   the view, wheel round a spot above the roofs for a minute or so and leave; over the
-  river they're a few gulls gliding. Every bird is a flat shape in one instanced mesh
-  with an ordinary material (one draw, one more for their shadows), and a wingbeat is
-  only the instance getting narrower across, so a frame costs one matrix per bird (96 at
-  most). A flock comes down as the camera zooms in, and shrinks away among the roofs.
+  river they're a few gulls gliding. Overhead and at a distance, one instanced mesh draws
+  their silhouettes and a wingbeat narrows the span. A flock comes down as the overhead
+  camera zooms in and shrinks away among the roofs. From the street, nearby pigeons have
+  folded, barred wings, a green and violet collar and pink feet. The head dips to peck, then
+  bobs as the bird walks. On takeoff the flight feathers spread and beat at the shoulders.
+  Up to 24 close pigeons share these model parts (`src/streetBirds.ts`).
   `t.flock('pigeon' | 'gull')` puts one over you.
   On the ground, small groups of pigeons peck about on open ground just past the edge
   of the view; they take off when you come within 3 m on foot or a moving car within

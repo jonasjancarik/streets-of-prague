@@ -3027,7 +3027,8 @@ async function main() {
       ((x - camPos.x) ** 2 + (y + camPos.z) ** 2 <= actorReach ** 2 && (!stereoCone ||
         inStreetCone(x - camPos.x, y + camPos.z, forwardX, forwardY, sinHalf, cosHalf, peopleMargin)))),
     eyes && weather.now.rain > .01 ? weatherFx.sheltered : undefined);
-    birds.update(dt, Object.assign(birdsView, { x: camPos.x, y: -camPos.z, radius: viewRadius(), height: eyes ? 1000 : height, dark: sky.dark, rain: weather.now.rain, snow: weather.now.snow }));
+    birds.update(dt, Object.assign(birdsView, { x: camPos.x, y: -camPos.z, radius: viewRadius(), height: eyes ? 1000 : height, dark: sky.dark, rain: weather.now.rain, snow: weather.now.snow }),
+      fromStreet ? camera.position : undefined);
     terraces.update(dt, Object.assign(terraceView, { x: camPos.x, y: -camPos.z, radius: viewRadius(), day: season.day }),
       fromStreet ? STREET_QUALITY.carReach : 0);
     police.render(ground, time.value, fromStreet ? camera.position : undefined);

@@ -5,6 +5,9 @@ and the map data its credits in the README.
 
 ## Made from code
 
+- The street pigeon is an original Blender mesh with vertex-coloured plumage.
+  Rebuild it with `blender -b --factory-startup -P assets/birds/pigeon.py`.
+  Its proportions and markings follow the [Cornell Lab’s rock pigeon identification photographs](https://www.allaboutbirds.org/guide/Rock_Pigeon/id).
 - The café folding chairs, slatted tables and square parasols are modelled in
   `src/terraceFurniture.ts`. The furniture shares the park benches’ timber texture.
   The visual reference is [Prague’s outdoor dining guide](https://kultivovana.praha.eu/files/manual_predzahradky_MHMP_digi.pdf).

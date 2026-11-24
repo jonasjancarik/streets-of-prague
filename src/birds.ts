@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { sendInstances } from './gpu.ts';
+import { StreetBirds } from './streetBirds.ts';
 
 // Birds: flocks of pigeons wheeling over the roofs in a tight bunch, a few gulls gliding
 // in wide circles over the river, and pigeons pecking about on the ground, which take
@@ -118,12 +119,15 @@ export class Birds {
   groups: Group[] = [];
   private wait = 2; // seconds until the next flock may arrive
   private look = 1; // and until the next look for a group on the ground just out of sight
+  private street: StreetBirds;
+  private time = 0;
   // (Its own numbers: nothing here may move the game's seeded sequence along.)
   private seed = 20231;
   private r = () => ((this.seed = (this.seed * 16807) % 2147483647) / 2147483647);
   private between = ([a, b]: [number, number]) => a + (b - a) * this.r();
 
   constructor(scene: THREE.Scene) {
+    this.street = new StreetBirds(scene);
     const material = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
     this.mesh = new THREE.InstancedMesh(shape(), material, BIRDS.most);
     this.mesh.setColorAt(0, new THREE.Color('#ffffff'));
@@ -199,7 +203,8 @@ export class Birds {
     return null;
   }
 
-  update(dt: number, view: BirdsView) {
+  update(dt: number, view: BirdsView, streetEye?: THREE.Vector3) {
+    this.time += dt;
     const flying = view.dark < 0.5 && view.rain < 0.3 && view.snow < 0.3;
     if (flying && this.flocks.length < BIRDS.flocks && (this.wait -= dt) <= 0) {
       // Somewhere in the middle part of the view; over water it's gulls.
@@ -217,6 +222,7 @@ export class Birds {
     }
     if (!this.flocks.length && !this.groups.length) {
       this.mesh.visible = false;
+      this.street.finish();
       return;
     }
 
@@ -301,8 +307,13 @@ export class Birds {
         const across = lerp(-sin * b.tx + cos * b.ty, b.across + Math.sin(w * 1.3 + 1) * k.spread * 0.16, up);
         // Beating, with spells of gliding on spread wings (none while climbing or landing).
         const beating = up < 1 ? 1 : smoothstep(Math.sin(f.t * 0.45 + b.phase * 3) * 0.5 + 0.5, k.glide - 0.1, k.glide + 0.1);
-        const flap = 1 - beating * 0.5 * (0.5 + 0.5 * Math.sin(f.t * b.beat * Math.PI * 2 + b.phase));
+        const beat = Math.sin(f.t * b.beat * Math.PI * 2 + b.phase);
+        const flap = 1 - beating * 0.5 * (0.5 + 0.5 * beat);
         _p.set(f.x + cos * along - sin * across, alt + (b.up + Math.sin(w * 0.7) * 1.5) * up, -(f.y + sin * along + cos * across));
+        if (streetEye && k === KINDS.pigeon && this.street.near(_p, streetEye)) {
+          this.street.air(_p, _q, b.size, b.colour, .08 + beating * (.15 + .95 * beat));
+          continue;
+        }
         this.mesh.setMatrixAt(n, _m.compose(_p, _q, _s.set(size * b.size * k.long, size * b.size, size * b.size * k.span * flap)));
         this.mesh.setColorAt(n++, b.colour);
       }
@@ -312,7 +323,13 @@ export class Birds {
         if (n >= BIRDS.most) break;
         if (Number.isNaN(b.gz)) b.gz = view.ground(g.x + b.gx, g.y + b.gy);
         const size = BIRDS.size * b.size;
-        _p.set(g.x + b.gx, b.gz + 0.07, -(g.y + b.gy));
+        _p.set(g.x + b.gx, b.gz + .012, -(g.y + b.gy));
+        if (streetEye && this.street.near(_p, streetEye)) {
+          const walking = (b.tx - b.gx) ** 2 + (b.ty - b.gy) ** 2 > .05 ** 2;
+          this.street.ground(_p, b.gh, b.size, b.colour, this.time + b.phase, walking);
+          continue;
+        }
+        _p.y = b.gz + .07;
         this.mesh.setMatrixAt(n, _m.compose(_p, _q.setFromAxisAngle(UP, b.gh), _s.set(size, size, size * GROUND.folded)));
         this.mesh.setColorAt(n++, b.colour);
       }
@@ -320,6 +337,7 @@ export class Birds {
     this.mesh.count = n;
     this.mesh.visible = n > 0;
     sendInstances(this.mesh);
+    this.street.finish();
   }
 
   clear() {
@@ -327,5 +345,6 @@ export class Birds {
     this.groups.length = 0;
     this.mesh.count = 0;
     this.mesh.visible = false;
+    this.street.finish();
   }
 }
