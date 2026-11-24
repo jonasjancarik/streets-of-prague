@@ -1,12 +1,19 @@
 ---
 name: landmarks
-description: How to add a landmark to Streets of Prague from IPR's photorealistic 3D mesh (Mánes, a church, a tower…), baked in Blender onto IPR's clean city model, and how to check and fix one. Use when adding or improving a landmark, when a landmark looks wrong in the game (dark patches, holes, see-through walls, trees baked in), or when working on pipeline/landmarks.py or pipeline/landmark_bake.py.
+description: Build and repair Streets of Prague landmarks, including custom architectural models and Blender bakes of IPR survey meshes. Use for new or replacement landmarks, placement and rendering defects such as missing walls or baked-in trees, or changes to pipeline/landmarks.py and pipeline/landmark_bake.py.
 ---
 
-# Landmarks from IPR's photorealistic mesh
+# Streets of Prague landmarks
 
-A landmark is a building the game draws from photographs instead of its procedural
-look. `pipeline/landmarks.py` cuts IPR's photorealistic mesh (aerial photographs,
+Each map's `landmarks.json` identifies the tile that draws a landmark and the
+footprint where ordinary buildings give way. When the city model has the right
+shape, the survey bake below preserves photographed surface detail.
+
+For a custom replacement, or when the survey loses a distinctive roofline or
+fills in an open arcade, follow the [custom model workflow](references/custom-models.md).
+It uses the National Theatre to show how one authored asset fits both Prague maps.
+
+`pipeline/landmarks.py` cuts IPR's photorealistic mesh (aerial photographs,
 summer 2023, ~5 cm/px, CC BY, a public I3S layer) around the building's OSM footprint,
 and Blender (`pipeline/landmark_bake.py`, run in the background) bakes those colours
 onto the building's clean model from IPR's city model (LOD3). The game hides IPR's and
@@ -18,7 +25,7 @@ Mánes with Šítkovská vodárenská věž was the first (29 September 2026). E
 below was learned on it and on the Týn Church (one OSM way, `way/379512802`, and one
 IPR building, towers included; 334 faces, 1.2 MB).
 
-## Adding one
+## Adding a survey landmark
 
 1. **Find its OSM buildings.** From `pipeline/`:
 
@@ -50,8 +57,8 @@ IPR building, towers included; 334 faces, 1.2 MB).
    `public/data` is shared with other sessions (see the memory on shared map data):
    this only writes `landmarks/` and `landmarks.json` there.
 
-4. **Check it** (next section), fix what's wrong, commit `LANDMARKS`. The GLBs are
-   generated data and stay out of git.
+4. **Check it** (next section), fix what's wrong, commit `LANDMARKS`. The area-specific GLBs under
+   `public/data/` are generated data and stay out of git.
 
 **After a change to the bake** (`landmark_bake.py`, `landmark_fill.py`, `PAINT_OVER`),
 `uv run landmarks.py <area> [name…] --rebake` bakes again from the inputs kept in
