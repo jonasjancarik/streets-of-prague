@@ -131,8 +131,24 @@ try {
   const fresh = make({ saved: () => 'Karlova · on foot', savedLook: { clock: 19 * 3600, weather: 'snow', season: 15 } });
   fresh.panel.children.find(r => r.className === 'ls-actions').children[1].click();
   assert.equal(fresh.row('Season').hidden, false); assert.equal(fresh.root.dataset.season, 'autumn');
+  const views = make({ view: 'third' });
+  assert.equal(views.button('View', 'Third person').getAttribute('aria-pressed'), 'true', 'the view picked last time is preselected');
+  assert.equal(make().button('View', 'From above').getAttribute('aria-pressed'), 'true', 'from above when nothing was picked');
+  views.button('View', 'First person').click();
+  const viewChoice = views.screen.ready(); views.go.click();
+  assert.equal((await viewChoice).view, 'first', 'the start screen\'s view reaches game launch');
+  assert.equal(saved.row('View').hidden, false, 'the view can still be picked when continuing a saved game');
+  assert.equal(make({ view: 'vr', vr: { mode: true, supported: Promise.resolve(true), pick() {} } }).row('View').hidden, true, 'a page opened for VR has the headset as its view');
+  const quiet = make();
+  const soundToggle = quiet.panel.children.find(r => r.className === 'ls-links').children[0];
+  assert.equal(soundToggle.getAttribute('aria-pressed'), 'true');
+  soundToggle.click();
+  assert.equal(soundToggle.getAttribute('aria-pressed'), 'false');
+  const quietChoice = quiet.screen.ready(); quiet.go.click();
+  assert.equal((await quietChoice).sound, false, 'the sound toggle reaches game launch');
   setLang('cs');
   assert.ok(fresh.button('Počasí', 'Mlha (beta)'));
+  assert.ok(fresh.button('Pohled', 'Z první osoby'));
   assert.deepEqual(fresh.row('Roční období').children[1].children.map(b => b.textContent), ['Jaro', 'Léto', 'Podzim', 'Zima']);
   assert.equal(fresh.row('Roční období').children[1].getAttribute('aria-label'), 'Roční období');
   fresh.button('Roční období', 'Jaro').click(); assert.equal(fresh.root.dataset.season, 'spring');
@@ -157,7 +173,7 @@ try {
   const afterNote = acrossNote.screen.ready(); acrossNote.go.click();
   instant += 86400 * 1000;
   assert.equal((await afterNote).season, 278, 'today is read after the asynchronous beta note completes');
-  console.log('Start seasons: Prague date, four choices, URL priority, live-weather eligibility/race, explicit weather, save/new game, English/Czech and unchanged weather-preview state passed.');
+  console.log('Start seasons: Prague date, four choices, URL priority, live-weather eligibility/race, explicit weather, save/new game, view and sound toggle, English/Czech and unchanged weather-preview state passed.');
 } finally {
   globalThis.Date = NativeDate;
   globalThis.fetch = originalFetch;

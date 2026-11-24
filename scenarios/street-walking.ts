@@ -48,7 +48,7 @@ export default {
       await t.frames(4);
       t.check('turning around swaps the side of the same sound', !!sound.right && sourcePan(8, 0, 8, 25, sound.right) < -0.8);
       openSettings();
-      viewButton('Overhead').click();
+      viewButton('From above').click();
       settings.close();
       await t.frames(4);
       t.check('returning overhead restores the ring, camera and map stereo', walker.ring.visible && camera.fov === 38 && !sound.right);

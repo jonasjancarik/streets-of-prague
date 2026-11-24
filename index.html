@@ -308,10 +308,12 @@
       @keyframes ls-fade { from { opacity: 0; } }
       @media (prefers-reduced-motion: reduce) { #loading, #loading * { animation: none !important; } }
       /* The start screen's choices (src/startscreen.ts), over the wedge at the left. */
-      .ls-start { position: absolute; z-index: 2; left: 5vw; top: calc(31 * var(--u) + 0.25 * var(--slack)); width: calc(57 * var(--u)); display: flex; flex-direction: column; gap: var(--u); font: max(calc(2.2 * var(--u)), 11px)/1.1 'Bebas Neue', sans-serif; color: var(--poster-paper); }
+      .ls-start { position: absolute; z-index: 2; left: 5vw; top: calc(31 * var(--u) + 0.25 * var(--slack)); width: calc(57 * var(--u)); display: flex; flex-direction: column; gap: var(--u); font: max(calc(2.2 * var(--u)), 11px)/1.1 'Bebas Neue', sans-serif; color: var(--poster-paper);
+        /* Runs down to the bottom of the screen and scrolls when the menu is taller than that. The padding keeps the shadows, outlines and the news link's offset from being cut off. */
+        bottom: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0.5em 1em 1em; margin: -0.5em 0 0 -1em; }
       /* A label beside its choices, so the menu stays short and on the dark wedge. */
       .ls-row { display: flex; align-items: flex-start; gap: var(--u); }
-      .ls-label { flex: 0 0 5.4em; padding-top: 0.55em; }
+      .ls-label { flex: 0 0 4.8em; padding-top: 0.55em; }
       .ls-chips { flex: 1; min-width: 0; }
       .ls-label { opacity: 0.85; letter-spacing: 0.08em; text-shadow: 0 0 6px var(--poster-black), 0 0 3px var(--poster-black); }
       .ls-chips { display: flex; flex-wrap: wrap; gap: calc(0.6 * var(--u)) calc(0.8 * var(--u)); }
@@ -327,6 +329,8 @@
       .ls-go:not(:disabled):active { transform: translate(0.4vh, 0.4vh); box-shadow: 0.2vh 0.2vh 0 var(--poster-black); }
       .ls-go:disabled { background: #4a3f3c; color: rgba(236, 228, 214, 0.55); cursor: default; }
       .ls-start [hidden] { display: none; }
+      /* The menu's scroll bar: the game's thin bar, but in solid paper on a faint track, so it reads against the dark wedge. */
+      .ls-start { scrollbar-color: var(--poster-paper) rgba(236, 228, 214, 0.14); }
       /* The map of where to begin (src/startmap.ts), over the whole start screen: the
          question at the top like the poster's title, the spot picked and the button at
          the bottom, and a red pin where you'll be. */
@@ -388,6 +392,10 @@
       a.ls-code { display: inline-flex; align-items: center; gap: 0.45em; text-decoration: none; }
       a.ls-code svg { width: 1.05em; height: 1.05em; margin-top: -0.15em; }
       a.ls-code:hover { opacity: 1; }
+      /* Sound and language: quiet toggles at the start of that line, with an icon like GitHub's. */
+      button.ls-toggle { display: inline-flex; align-items: center; gap: 0.45em; text-decoration: none; cursor: pointer; }
+      button.ls-toggle svg { width: 1.05em; height: 1.05em; margin-top: -0.15em; flex: none; }
+      button.ls-toggle:hover { opacity: 1; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.25em; }
       .ls-links { display: flex; flex-wrap: wrap; align-items: flex-start; margin-top: calc(1.6 * var(--u)); }
       .ls-links .ls-news { margin-top: 0; }
       .ls-links .ls-news + .ls-news { margin-left: 0; }
@@ -459,7 +467,10 @@
       @media (max-aspect-ratio: 4/5) {
         #loading { --u: 1svh; --slack: 0px; }
         .ls-title { top: 5svh; font-size: 17vw; line-height: 0.9; }
-        .ls-start { width: 90vw; top: calc(8svh + 31vw); font-size: min(2.2svh, 4vw); }
+        .ls-start { width: 90vw; top: calc(8svh + 31vw); bottom: calc(100% - 100svh); font-size: min(2.2svh, 4vw); }
+        /* Each label over its choices, so the choices get the full width and most rows fit on one line. */
+        .ls-row { flex-direction: column; gap: 0.4em; }
+        .ls-label { flex: none; padding-top: 0; font-size: 0.85em; }
         .ls-wedge { clip-path: polygon(0 0, 100% 0, 100% 60%, 0 76%); }
         .ls-cast { right: -6vw; height: 32svh; }
         .ls-sun { display: none; } /* the wedge covers its sky; it would only show through as a grey disc */

@@ -240,7 +240,10 @@ async function main() {
     monthSource: dateLinked ? 'link' : 'default',
     hourSource: clock.linkedTime ? 'link' : 'default',
   };
+  // The view the game begins in: the one picked last time (or ?fps, ?tps), until the start screen's View says otherwise.
+  let startView: PlayerView = initialView(params);
   const start = params.has('go') ? null : startScreen($('loading'), { now: Clock.nowLabel(), linkedStart, season: season.day, dateLinked, timeLinked: clock.linkedTime, weather: weather.kind, weatherFixed: weather.fixed,
+    view: startView,
     vr: { mode: initialView(params) === 'vr', supported: vrSupported(), pick: () => { savePlayerView('vr'); location.reload(); } },
     sound: savedSound !== 'off', saved: saved && (() => describe(saved)), savedLook: saved ? { clock: saved.clock, weather: saved.weather.fixed ? saved.weather.kind : automaticWeather(saved.weather.kind), season: saved.season } : undefined, lost: !saved && !params.has('go') && unreadable('auto', AREA) });
   // The weather in Prague now, for the start screen (the URL's ?weather wins).
@@ -2766,6 +2769,8 @@ async function main() {
     // Into the headset while the tap still counts (the browser asks for one).
     if (vr && choice.vr) void vr.enter().catch((e) => console.warn('VR', e));
     else if (vr) { vrView = false; vr.offer(false); savePlayerView('overhead'); }
+    // The start screen's View, kept for next time as the settings' Camera view is.
+    else { startView = choice.view; savePlayerView(choice.view); }
     if (choice.resume && saved) {
       startSources = { ...startSources, weatherSource: 'save', hourSource: 'save' };
       if (saved.season) startSources.monthSource = 'save';
@@ -3705,7 +3710,7 @@ async function main() {
     capture: () => new Promise((resolve) => { grabFull.push(resolve); setTimeout(() => resolve(null), 3000); }),
   });
   // ?fps starts in first person, as the developer panel's First person box does; ?tps in third person.
-  testkit.eyes = eyesFor(vr ? 'overhead' : initialView(params)); // (VR: from above until the headset goes on)
+  testkit.eyes = eyesFor(vr ? 'overhead' : startView); // (VR: from above until the headset goes on)
   dev.attach(testkit);
   // A fixed target altitude keeps before/after terrain views on the same camera.
   const shot = params.get('camera')?.split(',').map(Number);

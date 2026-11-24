@@ -216,7 +216,7 @@ export function setupSettings({ sound, graphics, weather, saves, cameraChoice }:
   }
   row<Choice>('Graphics', GRAPHICS.map((g) => ({ id: g.id, label: () => (g.id === 'auto' ? t('Auto ({tier})', { tier: t(cap(graphics.tier)).toLowerCase() }) : t(g.label)) })), () => graphics.choice, (id) => graphics.set(id));
   const viewRow = row<PlayerView>('Camera view', [
-    { id: 'overhead', label: () => t('Overhead') },
+    { id: 'overhead', label: () => t('From above') },
     { id: 'first', label: () => t('First person') },
     { id: 'third', label: () => t('Third person') },
     { id: 'vr', label: () => t('VR') },

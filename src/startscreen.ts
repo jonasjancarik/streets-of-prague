@@ -2,7 +2,6 @@ import { KINDS, automaticWeather } from './weather.ts';
 import type { Kind } from './weather.ts';
 import type { StartSources } from './telemetry.ts';
 import { LANGS, getLang, onLang, setLang, t } from './i18n.ts';
-import type { Lang } from './i18n.ts';
 import { newsletterLink } from './newsletter.ts';
 import { updateNotice } from './update.ts';
 import { graphicsWarning } from './graphicswarning.ts';
@@ -12,14 +11,19 @@ import { SEASONS, pragueToday, seasonOfDay, seasonStartDay } from './season.ts';
 import type { SeasonName } from './season.ts';
 import { pickStart } from './startmap.ts';
 import type { StartSpot } from './startmap.ts';
+import type { PlayerView } from './streetView.ts';
 
 // The start of the game, on the loading screen: where it begins (a random street, or a
 // spot picked on a map of Prague, startmap.ts), the date, time and weather it will begin
 // with (the time in Prague now and a weather picked for the season, if nothing was
-// asked for in the URL), each one changeable, and sound on or off. The button stays
-// grey while the map loads, and pressing it is also what lets the browser play sound.
-// With a saved game, the button continues it (date, time and weather come from the save)
-// and "New game" brings those choices back.
+// asked for in the URL), each one changeable, and how you see the city (from above, or
+// from the street in first or third person: the settings' Camera view, remembered). The
+// rarely changed ones, sound and language, are quiet toggles in the line of links at the
+// bottom. The button stays grey while the map loads, and pressing it is also what lets
+// the browser play sound. With a saved game, the button continues it (date, time and
+// weather come from the save, the view is still yours to pick) and "New game" brings the
+// other choices back. VR isn't one of the views here: it needs the page loaded again
+// (renderer.ts), so it keeps its own button, Play in VR, where the phone can show it.
 
 const TIMES: { id: string; label: string; sec: number }[] = [
   { id: 'morning', label: 'Morning', sec: 8 * 3600 },
@@ -29,6 +33,13 @@ const TIMES: { id: string; label: string; sec: number }[] = [
 ];
 const WEATHER: Record<Kind, string> = { clear: 'Clear', cloudy: 'Cloudy', rain: 'Rain', storm: 'Thunderstorm', mist: 'Mist', snow: 'Snow' };
 const SEASON_NAMES: Record<SeasonName, string> = { spring: 'Spring', summer: 'Summer', autumn: 'Autumn', winter: 'Winter' };
+// The views on offer here: all but VR (see above).
+export type StartView = Exclude<PlayerView, 'vr'>;
+const VIEWS: { id: StartView; label: string }[] = [
+  { id: 'overhead', label: 'From above' },
+  { id: 'first', label: 'First person' },
+  { id: 'third', label: 'Third person' },
+];
 
 export interface StartChoice {
   // Seconds since midnight, or null to keep the clock as it is (the time now).
@@ -46,6 +57,8 @@ export interface StartChoice {
   at: [number, number] | null;
   // Straight into the headset (the page was opened for VR and Start in VR was pressed).
   vr: boolean;
+  // How you see the city once the game begins (when not in the headset).
+  view: StartView;
 }
 
 const el = (tag: string, cls: string, parent: HTMLElement, text = '') => {
@@ -68,6 +81,8 @@ interface StartOptions {
   saved: (() => string) | null;
   savedLook?: { clock: number; weather: Kind; season?: number };
   lost: boolean;
+  // The view picked last time (streetView.ts's initialView), from above if none.
+  view?: PlayerView;
   // VR (vr.ts): whether this page was opened for it, whether the phone can show it, and
   // how to switch to it (a reload: VR needs the WebGL renderer, renderer.ts).
   vr?: { mode: boolean; supported: Promise<boolean>; pick: () => void };
@@ -90,6 +105,7 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
   const liveAvailable = () => { const today = pragueToday(); return day === today && liveDay === today; };
   let resuming = !!opts.saved;
   let spot: StartSpot | null = null;
+  let view: StartView = opts.view === 'first' || opts.view === 'third' ? opts.view : 'overhead';
 
   // The poster behind shows what is picked: the sky's light for the time of day, and
   // the weather over it (index.html). "Now" shows the part of the day it is now.
@@ -130,8 +146,6 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
     return { chips, buttons, pick, row: r };
   }
 
-  const fixed = (s: string) => () => s;
-  row<Lang>('Language', LANGS.map((l) => ({ id: l.id, label: fixed(l.label) })), getLang(), setLang);
   type PlaceChoice = 'link' | 'random' | 'map';
   let place: PlaceChoice = opts.linkedStart ? 'link' : 'random';
   const places: { id: PlaceChoice; label: () => string }[] = [
@@ -153,6 +167,10 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
     }
     return false;
   });
+  // Where the camera is: above the city, or down in the street. On a page opened for VR the
+  // headset is the view, and Play without VR starts from above, as it always has.
+  const viewRow = row<StartView>('View', VIEWS.map((v) => ({ id: v.id, label: () => t(v.label) })), view, (id) => { view = id; });
+  viewRow.row.hidden = !!opts.vr?.mode;
   const showPlace = () => {
     placeRow.buttons.forEach((b, i) => {
       b.setAttribute('aria-pressed', String(places[i].id === place));
@@ -185,7 +203,6 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
     weatherRow.buttons.forEach((b, i) => b.setAttribute('aria-pressed', String(!usingLive && KINDS[i] === weather)));
     liveButton?.setAttribute('aria-pressed', String(usingLive));
   };
-  row('Sound', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], sound ? 'on' : 'off', (id) => { sound = id === 'on'; });
 
   // The saved game as a card: where you were, big, and the rest (on foot, the time,
   // money, how long ago) on a line under it.
@@ -228,9 +245,33 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
   go.type = fresh.type = 'button';
   fresh.addEventListener('click', () => { resuming = false; sync(); show(); go.focus(); });
   go.disabled = true;
-  // News by email and the code on GitHub, side by side, so the menu stays short enough
-  // to clear a phone browser's bottom bar.
+  // Sound and language as quiet toggles, then news by email and the code on GitHub, all on
+  // one line, so the menu stays short enough to clear a phone browser's bottom bar.
   const links = el('div', 'ls-links', panel);
+  const soundButton = el('button', 'ls-news ls-toggle', links) as HTMLButtonElement;
+  soundButton.type = 'button';
+  const soundIcon = (on: boolean) => `<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M2 5.5h2.6L8.5 2v12L4.6 10.5H2z"/>${on
+    ? '<path d="M10.6 5.4a3.6 3.6 0 0 1 0 5.2M12.4 3.6a6.2 6.2 0 0 1 0 8.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>'
+    : '<path d="M10.5 6l4 4m0-4l-4 4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>'}</svg>`;
+  const showSound = () => {
+    soundButton.innerHTML = soundIcon(sound);
+    soundButton.append(t(sound ? 'Sound on' : 'Sound off'));
+    soundButton.setAttribute('aria-pressed', String(sound));
+  };
+  soundButton.addEventListener('click', () => { sound = !sound; showSound(); });
+  relabel.push(showSound);
+  // The other language, in its own words, as sites usually offer it.
+  const langButton = el('button', 'ls-news ls-toggle', links) as HTMLButtonElement;
+  langButton.type = 'button';
+  const otherLang = () => LANGS.find((l) => l.id !== getLang()) ?? LANGS[0];
+  relabel.push(() => {
+    const other = otherLang();
+    langButton.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6.3"/><path d="M1.7 8h12.6M8 1.7c-3.4 3.6-3.4 9 0 12.6M8 1.7c3.4 3.6 3.4 9 0 12.6"/></g></svg>';
+    langButton.append(other.label);
+    langButton.lang = other.id;
+    langButton.title = t('Language');
+  });
+  langButton.addEventListener('click', () => { setLang(otherLang().id); langButton.focus(); });
   newsletterLink(links, 'ls-news', { thanks: true });
   const code = el('a', 'ls-news ls-code', links) as HTMLAnchorElement;
   code.href = 'https://github.com/jonasjancarik/streets-of-prague';
@@ -290,7 +331,7 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
             const startWeather = liveExpired ? 'clear' : weather;
             const startSources: StartSources = { ...sources, weatherSource: liveExpired ? 'default' : sources.weatherSource };
             const at: StartChoice['at'] = resuming ? null : place === 'link' ? opts.linkedStart : spot ? [spot.lon, spot.lat] : null;
-            resolve({ time: t ? t.sec : null, weather: startWeather, sources: startSources, live: !resuming && usingLive && startWeather === weather && liveAvailable(), sound, season: startDay, resume: resuming, at, vr: inVR });
+            resolve({ time: t ? t.sec : null, weather: startWeather, sources: startSources, live: !resuming && usingLive && startWeather === weather && liveAvailable(), sound, season: startDay, resume: resuming, at, vr: inVR, view: vrMode ? 'overhead' : view });
           });
         };
         go.addEventListener('click', () => begin(vrMode));

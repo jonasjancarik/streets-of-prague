@@ -66,7 +66,7 @@ export default {
         'first-person controls are tucked away in overhead view',
         details.hidden &&
           [...settings.querySelectorAll('button')].some((b) =>
-            b.textContent === translate('Overhead') && b.ariaPressed === 'true'
+            b.textContent === translate('From above') && b.ariaPressed === 'true'
           ),
       );
     } finally {
