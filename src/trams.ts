@@ -6,6 +6,7 @@ import type { Point2 } from './map/geo.ts';
 import type { Car } from './car.ts';
 import type { Clock } from './clock.ts';
 import { lampLit } from './lamps.ts';
+import { STREET_QUALITY } from './streetQuality.ts';
 import { TramStreetView } from './tramStreet.ts';
 import { tramFittings, type TramFittings, type TramLayout, type TramSources } from './tramStreetModel.ts';
 
@@ -706,8 +707,10 @@ export class Trams {
         m.position.set(cx, (hf + hb) / 2, -cy);
         m.rotation.set(0, Math.atan2(a.y - b.y, a.x - b.x), Math.atan2(hf - hb, 2 * spec.pivot), 'YZX');
       });
-      if (street && distance < 110 && !type.preparing) prepareFittings(v.kind, type);
-      if (street && distance < (look.street?.visible ? 68 : 57) && type.fittings) {
+      // The street model within 57 m on Medium (68 once shown), further on High and Ultra (fewReach).
+      const reach = STREET_QUALITY.fewReach;
+      if (street && distance < 110 * reach && !type.preparing) prepareFittings(v.kind, type);
+      if (street && distance < (look.street?.visible ? 68 : 57) * reach && type.fittings) {
         look.street ??= new TramStreetView(look.sections, type.fittings, v.kind === 'T3');
         look.street.show(v.line.ref, headsignAt(v.line, v.s), v.driven ? manualDoors === v : v.dwell > 0, dt, v.id);
       } else look.street?.hide();

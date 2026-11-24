@@ -3,12 +3,12 @@
 // cast relief and a grate with actual slots.
 import * as THREE from 'three';
 import type { TileWorld } from './tiles.ts';
-import type { Tier } from './graphics.ts';
 import { DRAIN, HYDRANT_COVER, MANHOLE, streetAngle } from './map/utility.ts';
 import { lampLit } from './lamps.ts';
+import { KEEP, STREET_QUALITY } from './streetQuality.ts';
 
-const LIMIT = 32;
-const reach = { lowest: 0, low: 9, medium: 15, high: 20, ultra: 24 } as const;
+const LIMIT = 48; // the nearest, within the tier's STREET_QUALITY.castings (m)
+const spot = (x: number, y: number) => Math.imul(Math.round(x * 10), 73856093) ^ Math.imul(Math.round(y * 10), 19349663);
 type Tile = NonNullable<ReturnType<TileWorld['tileAt']>>;
 type Mark = { x: number; y: number; kind: number; d: number; tile: Tile };
 
@@ -77,7 +77,8 @@ export class StreetIronwork {
   private meshes: THREE.InstancedMesh[] = [];
   private angles = new WeakMap<Tile, ReturnType<typeof streetAngle>>();
   private last = new THREE.Vector3(Infinity, Infinity, -1);
-  private tier?: Tier;
+  private radius = 0;
+  private shown = new Set<number>(); // (by spot())
   private material?: THREE.MeshStandardMaterial;
   private loading = false;
   private retryAt = 0;
@@ -87,8 +88,8 @@ export class StreetIronwork {
   private across = new THREE.Vector3();
   constructor(private scene: THREE.Scene, private world: TileWorld) {}
 
-  update(street: boolean, eye: THREE.Vector3, tier: Tier, wet: number) {
-    const radius = street ? reach[tier] : 0;
+  update(street: boolean, eye: THREE.Vector3, wet: number) {
+    const radius = street ? STREET_QUALITY.castings : 0;
     if (!radius) {
       if (this.last.z !== -1) {
         for (const mesh of this.meshes) mesh.visible = false;
@@ -99,23 +100,24 @@ export class StreetIronwork {
     if (this.material) this.material.roughness = .77 - wet * .38;
     const x = eye.x, y = -eye.z, revision = this.world.terrainRevision + this.world.joined;
     if (
-      this.last.z === revision && this.tier === tier && Math.hypot(x - this.last.x, y - this.last.y) < 1.5 &&
+      this.last.z === revision && this.radius === radius && Math.hypot(x - this.last.x, y - this.last.y) < 1.5 &&
       (!this.retryAt || this.loading || performance.now() < this.retryAt)
     ) return;
-    this.tier = tier;
+    this.radius = radius;
     this.last.set(x, y, revision);
-    const here = this.world.tileAt(x, y), marks: Mark[] = [];
+    const here = this.world.tileAt(x, y), marks: Mark[] = [], keep = radius * KEEP;
     if (here) {
       for (let i = here.i - 1; i <= here.i + 1; i++) {
         for (let j = here.j - 1; j <= here.j + 1; j++) {
           const tile = this.world.byIndex.get(i * 65536 + j);
           if (!tile?.drawn) continue;
           const [x0, y0, x1, y1] = tile.box;
-          if (x < x0 - radius || x > x1 + radius || y < y0 - radius || y > y1 + radius) continue;
+          if (x < x0 - keep || x > x1 + keep || y < y0 - keep || y > y1 + keep) continue;
           for (const [px, py, kind] of tile.source.t.utility ?? []) {
             if (kind !== MANHOLE && kind !== DRAIN && kind !== HYDRANT_COVER) continue;
             const d = (px - x) ** 2 + (py - y) ** 2;
-            if (d < radius * radius) marks.push({ x: px, y: py, kind, d, tile });
+            // (One in relief stays so until it is KEEP further: it doesn't flicker at the edge.)
+            if (d < radius * radius || (d < keep * keep && this.shown.has(spot(px, py)))) marks.push({ x: px, y: py, kind, d, tile });
           }
         }
       }
@@ -126,8 +128,10 @@ export class StreetIronwork {
     }
     for (const mesh of this.meshes) mesh.count = 0;
     marks.sort((a, b) => a.d - b.d);
+    this.shown.clear();
     for (const m of marks.slice(0, LIMIT)) {
-      const hash = Math.imul(Math.round(m.x * 10), 73856093) ^ Math.imul(Math.round(m.y * 10), 19349663);
+      const hash = spot(m.x, m.y);
+      this.shown.add(hash);
       const kind = m.kind === DRAIN ? 2 : m.kind === HYDRANT_COVER ? 3 : hash & 1;
       let angle = (hash >>> 0) / 4294967296 * 2 * Math.PI;
       if (m.kind !== MANHOLE) {

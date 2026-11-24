@@ -199,7 +199,7 @@ export class Metro {
       if (show !== en.shown) {
         en.shown = show;
         if (show) this.scene.add(en.mesh);
-        else { en.street?.detail(false); this.scene.remove(en.mesh); }
+        else { en.street?.detail(Infinity); this.scene.remove(en.mesh); }
       }
       if (show) {
         en.mesh.position.set(en.x, height(en.x, en.y), -en.y);
@@ -210,7 +210,7 @@ export class Metro {
         }
         if (en.street) {
           en.street.visible = street;
-          en.street.detail(street && (en.x - x) ** 2 + (en.y - y) ** 2 < 55 ** 2);
+          en.street.detail(street ? (en.x - x) ** 2 + (en.y - y) ** 2 : Infinity);
         }
       }
     }

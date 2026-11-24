@@ -9,7 +9,7 @@ interface Flyer { x: number; y: number; vx: number; vy: number }
 interface Helicopter {
   x: number; y: number; z: number; vx: number; vy: number; h: number; w: number;
   g: THREE.Group; rotor: THREE.Group; tail: THREE.Group;
-  cockpit: (near: boolean) => void;
+  cockpit: (distance2: number) => void;
   leaving: boolean; orbit: number; air: boolean; gone?: boolean; pitch?: number; roll?: number;
   blades: number; fan: number; // the rotors' angles
 }
@@ -211,7 +211,7 @@ export class Helicopters {
     for (const h of this.list) {
       h.g.position.set(h.x, h.z, -h.y);
       h.g.rotation.set(h.roll || 0, h.h, h.pitch || 0, 'YZX');
-      h.cockpit(!!eye && eye.distanceToSquared(h.g.position) < 60 ** 2);
+      h.cockpit(eye ? eye.distanceToSquared(h.g.position) : Infinity);
       h.rotor.rotation.y = h.blades;
       h.tail.rotation.z = h.fan;
       if (h.leaving || !this.me) continue;
@@ -256,7 +256,7 @@ export class Chopper {
   wrecked = false;
   private impactCooldown = 0;
   private resting = true;
-  private cockpit: (near: boolean) => void;
+  private cockpit: (distance2: number) => void;
   private blurred: (spin: number) => void;
 
   // `z`: the height to put it down from (onto a bridge's deck, or the ground under it).
@@ -380,7 +380,7 @@ export class Chopper {
     }
     this.impact(impact);
     if (this.damage >= 100 && this.z <= floor + 0.01) {
-      this.cockpit(false);
+      this.cockpit(Infinity);
       this.wrecked = true;
       this.vx = this.vy = this.vz = this.spin = 0;
       this.roll = 0.85;
@@ -402,7 +402,7 @@ export class Chopper {
 
   render(eye?: THREE.Vector3) {
     this.g.position.set(this.x, this.z, -this.y);
-    this.cockpit(!this.wrecked && !!eye && eye.distanceToSquared(this.g.position) < 60 ** 2);
+    this.cockpit(!this.wrecked && eye ? eye.distanceToSquared(this.g.position) : Infinity);
     this.g.rotation.set(this.roll || 0, this.h, this.pitch || 0, 'YZX');
     this.rotor.rotation.y = this.blades;
     this.tail.rotation.z = this.fan;

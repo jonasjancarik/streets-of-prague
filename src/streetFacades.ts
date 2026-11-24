@@ -1,12 +1,13 @@
 import * as THREE from 'three';
-import type { Tier } from './graphics.ts';
 import type { TileWorkers } from './tileWorkers.ts';
 import type { FacadeGeometry } from './map/streetFacade.ts';
 import { FACADE_ON, STREET_FACADE } from './facades.ts';
 import type { StreetPlates } from './streetPlates.ts';
 import { mirrored } from './mirror.ts';
+import { STREET_QUALITY } from './streetQuality.ts';
 
-const budgets = { lowest: [0, 0], low: [20, 8], medium: [27, 12], high: [34, 18], ultra: [40, 24] } as const;
+// How far off walls get their depth, and how many of the nearest do, are the tier's
+// (STREET_QUALITY.wallReach and walls); one that has it keeps it 8 m further.
 interface Source { base: THREE.Mesh; groups: Uint32Array; box: readonly number[]; walls?: Wall[]; index?: THREE.BufferAttribute }
 interface Wall { src: Source; tris: Uint32Array; x0: number; x1: number; z0: number; z1: number; y0: number; y1: number; nx: number; nz: number; mesh?: THREE.Mesh; pending?: boolean; cancel?: () => void; empty?: boolean; retry?: number }
 const material = new THREE.MeshLambertMaterial({ vertexColors: true });
@@ -66,7 +67,7 @@ export class StreetFacades {
   private dirty = true;
   private active = false;
   private last = new THREE.Vector3(Infinity, Infinity, Infinity);
-  private tier: Tier = 'high';
+  private budget = '';
   private retryAt = Infinity;
   private scene: THREE.Scene;
   private workers: TileWorkers;
@@ -85,13 +86,13 @@ export class StreetFacades {
     this.plates?.remove(w.mesh);
     mask(w, false); this.scene.remove(w.mesh); w.mesh.dispose(); w.mesh.geometry.dispose(); for (const child of w.mesh.children) (child as THREE.Mesh).geometry?.dispose(); w.mesh = undefined; this.live.delete(w);
   }
-  update(street: boolean, x: number, y: number, z: number, tier: Tier = 'high', finishesReady = true) {
-    const [reach, limit] = budgets[tier], keep = reach + 8;
+  update(street: boolean, x: number, y: number, z: number, finishesReady = true) {
+    const reach = STREET_QUALITY.wallReach, limit = STREET_QUALITY.walls, keep = reach + 8, budget = reach + '/' + limit;
     const layout = street && FACADE_ON.value > 0, active = layout && limit > 0 && finishesReady;
     STREET_FACADE.value = layout ? 1 : 0;
     if (!active && !this.active) return;
-    if (!this.dirty && this.tier === tier && performance.now() < this.retryAt && this.active === active && Math.hypot(this.last.x - x, this.last.y - y, this.last.z - z) < 3) return;
-    this.dirty = false; this.active = active; this.tier = tier; this.retryAt = Infinity; this.last.set(x, y, z);
+    if (!this.dirty && this.budget === budget && performance.now() < this.retryAt && this.active === active && Math.hypot(this.last.x - x, this.last.y - y, this.last.z - z) < 3) return;
+    this.dirty = false; this.active = active; this.budget = budget; this.retryAt = Infinity; this.last.set(x, y, z);
     const near: { w: Wall; distance: number }[] = [];
     if (active) for (const src of this.sources.values()) {
       const [x0, y0, x1, y1] = src.box;

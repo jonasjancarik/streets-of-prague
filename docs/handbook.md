@@ -192,9 +192,12 @@ Graphics (<kbd>G</kbd> cycles it, remembered in the browser):
 | A soft shade under every car | On | On | On | On | Off |
 | A person's shadow from the sun | Their own shape | Their own shape | Their own shape | A plain shape | A plain shape |
 | Maximum crowd | 1200 | 1200 | 1200 | 1200 | 600 |
-| Close detailed people, up to | 24 | 24 | 12 | 6 | 2 |
-| Detailed people within | 30 m | 30 m | 22 m | 14 m | 8 m |
-| Close car bodies within | 24 m | 24 m | 20 m | 16 m | 12 m |
+| Close detailed people, up to | 32 | 24 | 12 | 6 | 2 |
+| Detailed people within | 45 m | 36 m | 22 m | 14 m | 8 m |
+| Close car bodies within | 40 m | 30 m | 20 m | 16 m | 12 m |
+| Façade walls with window depth, nearest | 36 within 56 m | 24 within 42 m | 12 within 27 m | 8 within 20 m | None |
+| Manhole lids and drain grates in relief within | 32 m | 24 m | 15 m | 9 m | None |
+| Trams, boats, the funicular, helicopters and metro lanterns in detail | 1.6× as far | 1.25× as far | Base distance | Base distance | Base distance |
 | Street-tree branches | Full | Full | Fewer sides | Fewer sides | Fewer sides |
 | Ordinary terrain mesh spacing | 2 m | 2 m | 2 m | 4 m | 4 m |
 | VR resolution at session entry | 75% | 75% | 65% | 55% | 45% |
@@ -204,7 +207,14 @@ sharp when you drive and when the sun is low. Street patterns and facade picture
 stay on at every tier. Quieter streets have
 fewer people; changing tiers lets surplus people leave out of sight.
 At street level, people and cars beyond the close-detail ranges use their usual
-instanced models. Your own avatar and the car you drive keep their close models.
+instanced models. Your own avatar and the car you drive keep their close models
+(the car within at least 24 m on every tier). The ranges are in `src/streetQuality.ts`.
+Once something has switched to its close model, it keeps it until it is 15% further
+away (`KEEP`), so something standing near the line doesn't flicker between the two.
+The few large things switch at a base distance on Medium and below: trams at 57 m,
+boats, ferries and funicular cars at 50 m, helicopters at 60 m and metro lanterns at 55 m.
+On 23 November 2026 Ultra and High moved these further out, after players noticed the
+detailed models appearing close to the camera.
 Simpler tree branches keep the same leaf cards and crown outline. Grass placement
 runs in short slices while you move, so checking the ground under a new patch does
 not have to finish in one frame.
@@ -363,7 +373,7 @@ grates have a recessed bed between the bars, and small hydrant covers carry an
 H. The casting design is inferred. The close models follow the slope and
 reuse four instance batches. Overhead and on Lowest, the ground marks remain.
 
-The fire engine shows its roof ladder and hose rack from above. Within 24 m on foot,
+The fire engine shows its roof ladder and hose rack from above. Within the close-car range on foot (the graphics table),
 you can see through the crew cab, read the rear pump gauges and follow a firefighter’s
 hose to the coupling beside the lockers. Two marked police cars share patrol and pursuit
 duties. The silver response estate has yellow wing markings and roof rails. The white
@@ -378,7 +388,7 @@ the same signal phase as the overhead light.
 
 ### Vehicle models at street level
 
-Within 24 m of the camera, the bus and minibus have separate panes in their doors
+Within the close-car range of the camera (the graphics table), the bus and minibus have separate panes in their doors
 and windows. You can see the aisle, red seats, yellow rails and driver's controls.
 The box lorry, articulated lorry and dustcart keep their cargo bodies and have
 glazed cabs with seats, instruments and mirrors. Bicycles and motorbikes gain rims,
@@ -392,10 +402,10 @@ and steering lever. [Slovanka rental photo](https://www.slovanka.net/images/foto
 
 Petřín's two numbered cars have a continuous white shell around panoramic side
 windows and roof glass. Four stepped landings follow the hill inside. In street
-view, within 50 m, the glass reveals the handrails, timber perches and door sills.
+view, within 50 m (further on High and Ultra), the glass reveals the handrails, timber perches and door sills.
 The NH hotel line has its own small red cabin. [DPP photographs of the 2026 cars](https://www.dpp.cz/en/company/news/detail/342_3462-petrin-funicular-returns-prague-public-transit-company-launches-fourth-generation-cars)
 
-Both helicopter liveries use the same four-seat cockpit, visible within 60 m.
+Both helicopter liveries use the same four-seat cockpit, visible within 60 m (further on High and Ultra).
 The metro ride uses its overhead cutaway camera.
 
 ## Playing
@@ -1070,7 +1080,7 @@ record the measurements, merge decisions and pending landmark asset activation.
   loggia with sliding glass. The panel layout is inferred from the wall geometry.
   Ordinary windows get physical depth through the first three upper floors.
   Nearby loggias have a slab, a guard and a rear door 0.92 m back, up to twelve upper
-  floors. On High, up to eighteen nearby walls qualify within 34 m. Lowest
+  floors. On High, up to 24 nearby walls qualify within 42 m (Ultra: 36 within 56 m). Lowest
   and the overhead camera use the original flat geometry. Photo landmarks keep
   their authored models.
 - **Portraits and the loading screen.** Characters are half-length portraits drawn by
@@ -1566,7 +1576,8 @@ record the measurements, merge decisions and pending landmark asset activation.
   snow) three in five of the walkers put up an umbrella (`src/umbrellas.ts`): one
   more instanced mesh over the crowd, drawn only while it rains.
 - **Life-size people in first person** (`src/rocketbox.ts`): from street level the 24
-  passers-by nearest you (within 30 m, less in a crowd) are drawn as avatars from the
+  passers-by nearest you on High (within 36 m, less in a crowd; 32 within 45 m on Ultra,
+  fewer and nearer below High) are drawn as avatars from the
   Microsoft Rocketbox library instead, walking, jogging, running and standing with that
   library's motion-captured clips; their feet keep pace with how fast they actually move.
   Each person switches to their detailed model when it finishes loading. If one model
@@ -1639,7 +1650,7 @@ record the measurements, merge decisions and pending landmark asset activation.
   of the sides, wheels and lights towards the edges of the screen; on top, the black
   scuttle and the wipers under the windscreen, an aerial, a glass roof panel on the
   saloon and the SUV, and the ribs pressed into the van's roof. `src/car.ts` puts
-  each car's colour on the paint. At street level the cars within 24 m have rounded
+  each car's colour on the paint. At street level the cars within the close-car range (graphics table) have rounded
   tyres, recessed rims and dark wheel wells. The wheels roll with distance travelled
   and the front pair turns into a bend. Distant cars and the overhead view use the
   simpler wheels. Up close, each body has light clusters fitted to its actual wings,
@@ -1647,8 +1658,8 @@ record the measurements, merge decisions and pending landmark asset activation.
   the front and rear. The same individual lamps go dark when broken. Tinted windows reveal
   the dashboard, steering wheel and upholstered seats. The mirrors, latches and inner
   armrests move with their doors (`<type>_door1` to `4`, each with its origin on the hinge).
-  Each street body downloads separately when its type comes within 38 m of the street
-  camera. Inside 24 m the sculpted shell takes over when ready. Until then the car
+  Each street body downloads separately when its type comes within 14 m of the close-car range of the street
+  camera. Inside the close-car range the sculpted shell takes over when ready. Until then the car
   keeps its fitted wheels and original body. The new shells share those wheel mounts and
   door pivots. The hatchback has a short bonnet and a raked tailgate, the estate a longer
   roof, and the SUV flared wheel openings and a taller, blunter nose. The estate, the SUV

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { strut, tint } from './vehicleFittings.ts';
+import { streetNear } from './streetQuality.ts';
 
 let cockpit: THREE.BufferGeometry | undefined;
 const interior = new THREE.MeshLambertMaterial({ vertexColors: true });
@@ -39,10 +40,14 @@ function instruments() {
   return mergeGeometries(parts);
 }
 
+// The returned function takes the distance from the street camera, squared (m²; Infinity
+// from above or for a wreck): the cockpit shows within 60 m on Medium, further on High
+// and Ultra (streetNear).
 export function cockpitView(group: THREE.Group, windows: THREE.Mesh[]) {
   const original = windows.map(m => m.material);
   let cabin: THREE.Mesh | undefined, detailed = false;
-  return (near: boolean) => {
+  return (distance2: number) => {
+    const near = streetNear(detailed, distance2, 60);
     if (near === detailed) return;
     detailed = near;
     if (!cabin) {

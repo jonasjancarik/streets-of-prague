@@ -3319,22 +3319,20 @@ async function main() {
     streetSurfaceView(fromStreet && !!DOME_NODE.value);
     const streetWalls = fromStreet;
     if (streetWalls && graphics.tier !== 'lowest') loadFacadeFinishes();
-    world.facades.update(streetWalls, camera.position.x, camera.position.y, camera.position.z, graphics.tier, !!facadeFinishes.masks);
+    world.facades.update(streetWalls, camera.position.x, camera.position.y, camera.position.z, !!facadeFinishes.masks);
     tunnelFinishesView(!!eyes && !underway);
     for (const b of boats.list) {
-      if (b.live) b.mesh.showDetail(fromStreet && camera.position.distanceToSquared(b.mesh.position) < 50 ** 2);
+      if (b.live) b.mesh.nearCamera(fromStreet ? camera.position.distanceToSquared(b.mesh.position) : Infinity);
     }
     for (const f of ferries.list) {
-      if (f.mesh.visible) f.mesh.showDetail(fromStreet && camera.position.distanceToSquared(f.mesh.position) < 50 ** 2);
+      if (f.mesh.visible) f.mesh.nearCamera(fromStreet ? camera.position.distanceToSquared(f.mesh.position) : Infinity);
     }
     for (const c of funicular.cars) {
-      if (!c.mesh.visible) continue;
-      const near = fromStreet && camera.position.distanceToSquared(c.mesh.position) < 50 ** 2;
-      c.body.showDetail(near);
+      if (c.mesh.visible) c.body.nearCamera(fromStreet ? camera.position.distanceToSquared(c.mesh.position) : Infinity);
     }
     world.furnitureCamera(fromStreet);
     world.passageCamera(fromStreet, camera.position.x, -camera.position.z);
-    ironwork.update(fromStreet, camera.position, graphics.tier, weather.now.wet);
+    ironwork.update(fromStreet, camera.position, weather.now.wet);
     world.trees.street(fromStreet, free ? free.x : camera.position.x, free ? -free.y : camera.position.z);
     streetHedges.street(fromStreet, free ? free.x : camera.position.x, free ? free.y : -camera.position.z);
     streetGrass.street(fromStreet && !underway, free ? free.x : camera.position.x, free ? free.y : -camera.position.z, grassGround, world.terrainRevision + world.joined);

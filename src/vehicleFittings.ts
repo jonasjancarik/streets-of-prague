@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { streetNear } from './streetQuality.ts';
 
 export type Point3 = [number, number, number];
 
@@ -36,6 +37,9 @@ export class StreetVehicleMesh extends THREE.Mesh<THREE.BufferGeometry, THREE.Ma
     super(simple, finish);
     this.finishes = [finish, glass];
   }
+  // `distance2`: from the street camera, in m² (Infinity from above). The street model
+  // shows within 50 m on Medium (further on High and Ultra: streetNear).
+  nearCamera(distance2: number) { this.showDetail(streetNear(this.detailed, distance2, 50)); }
   showDetail(near: boolean) {
     if (near === this.detailed) return;
     this.detailed = near;

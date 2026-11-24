@@ -4,7 +4,7 @@ import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { LIFE_SIZE } from './figures.ts';
-import { STREET_QUALITY } from './streetQuality.ts';
+import { MOST_AVATARS, STREET_QUALITY } from './streetQuality.ts';
 import { cutAway } from './shading.ts';
 import { fireGear } from './responderGear.ts';
 import type { Anim, Figures, UniformRole } from './figures.ts';
@@ -50,9 +50,9 @@ const STANDING = {
 const UMBRELLA = { f: 'umbrella_idle_01', m: 'umbrella_idle_02' };
 const LEFT_ARM = /^Bip01_L_(Clavicle|UpperArm|Forearm|Hand|Finger)/;
 const OVER = 50; // how much more the umbrella arm counts than the walk's own
-const REACH = 30; // metres: taken within this of the camera (less in a crowd, see frame())…
+// Taken within STREET_QUALITY.avatarReach of the camera (less in a crowd, see frame())…
 const SLACK = 6; // …and given back this much further off
-const MOST = 24; // avatars at once
+const MOST = MOST_AVATARS; // avatars at once (Ultra's; each tier has its own budget)
 // Lower tiers keep the instanced people further away, including their animations.
 // The player's own avatar always keeps its slot.
 const TURN = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2); // their front is +z, the figures' +x
@@ -102,7 +102,7 @@ export class LifeSize {
   private ids = new WeakMap<Figures, number>();
   private on = false;
   private cam = new THREE.Vector3();
-  private reach = REACH;
+  private reach = STREET_QUALITY.avatarReach;
   private waitingCrew = 0;
   private nearestWaiting?: { key: string; distance: number };
   private nextCivilian?: string;

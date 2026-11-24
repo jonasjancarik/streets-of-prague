@@ -1,5 +1,5 @@
 import { StreetHandling, ROLL_CENTRE } from './streetHandling.ts';
-import { STREET_QUALITY } from './streetQuality.ts';
+import { KEEP, STREET_QUALITY } from './streetQuality.ts';
 import { drivingSpec } from './driveTune.ts';
 import { busCabin, commercialCab } from './commercialCab.ts';
 import { twoWheelerStreet } from './twoWheelerStreet.ts';
@@ -327,6 +327,8 @@ function carGeometry(type: string, box?: string): THREE.BufferGeometry {
 
 // Keep the original GLB body in the overhead view and at a distance. Only
 // assets that describe their wheel mounts can exchange the low-poly hubs.
+// Other cars change STREET_QUALITY.carReach from the camera, the tier's; the car you drive
+// at least this far, at every tier.
 const STREET_CAR_REACH = 24; // m from the camera
 interface CloseBody {
   key: string; type: string; box?: string; radius: number; wheelbase: number; front: number; rear: number; track: number;
@@ -2327,6 +2329,7 @@ export class CarPool {
   private drivers?: SeatedDrivers;
   private streetView = false;
   private closeCars = new Map<Car, string>();
+  private closeBefore = new Map<Car, string>(); // (the last frame's, for KEEP)
   private wheelTravel = new WeakMap<Car, { x: number; y: number; angle: number; plate: number }>();
   private renderKey(key: string) {
     if (this.streetView) {
@@ -2421,6 +2424,7 @@ export class CarPool {
       if (c.two) this.lean(c, dt);
       else if (c.door) c.swing(dt);
     }
+    [this.closeBefore, this.closeCars] = [this.closeCars, this.closeBefore];
     this.closeCars.clear();
     this.drivers?.begin();
     for (const list of this.groups.values()) list.length = 0;
@@ -2429,17 +2433,21 @@ export class CarPool {
       c.streetHeadlights = undefined;
       if (streetView && eye) {
         const distance2 = (c.x - eye.x) ** 2 + (c.y + eye.z) ** 2;
-        const reach = c.mode === 'player' ? STREET_CAR_REACH : STREET_QUALITY.carReach;
+        // (The tier's reach, KEEP further once close, so a car near the line keeps one body.)
+        const reach = (c.mode === 'player' ? Math.max(STREET_CAR_REACH, STREET_QUALITY.carReach) : STREET_QUALITY.carReach) * (this.closeBefore.has(c) ? KEEP : 1);
         // Start decoding a little before the model can enter the close view.
         const fit = distance2 < (reach + 14) ** 2 ? closeBodies.get(c.key) : undefined;
         if (fit && !fit.formed) requestStreetForm(fit.type);
         const close = distance2 < reach ** 2 ? fit : undefined;
+        // (streetHeadlights: the lamps fitted into the close body, whose own glows lamps.ts leaves out.)
         if (c.key === 'fire' && distance2 < reach ** 2) {
           prepareStreetFire();
           key = STREET_FIRE;
+          c.streetHeadlights = c.spec.headlights;
           this.closeCars.set(c, key);
         } else if (distance2 < reach ** 2 && streetFleet.has(c.key)) {
           key = streetFleet.get(c.key)!;
+          c.streetHeadlights = c.spec.headlights;
           this.closeCars.set(c, key);
         } else if (close) {
           key = close.formed ?? close.key;

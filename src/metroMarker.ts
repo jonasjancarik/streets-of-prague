@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { LAMP_ON } from './lamps.ts';
+import { streetNear } from './streetQuality.ts';
 import type { MetroLine } from './metro.ts';
 
 type Station = { name: string; lines: { line: MetroLine; i: number }[] };
@@ -100,7 +101,10 @@ export class MetroStreetMarker extends THREE.Group {
     this.generic = m; this.insert = new THREE.Mesh(printGeometry, m); this.insert.receiveShadow = true;
     this.rotation.y = angle; this.add(frameMesh, this.insert);
   }
-  detail(on: boolean) {
+  // `distance2`: from the street camera, in m² (Infinity from above). The station's own
+  // print shows within 55 m on Medium, further on High and Ultra (streetNear).
+  detail(distance2: number) {
+    const on = streetNear(this.detailed, distance2, 55);
     if (on !== this.detailed) {
       this.detailed = on;
       if (on) {
