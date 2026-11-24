@@ -20,6 +20,11 @@ try {
     close.computeBoundingBox();
     simple.computeBoundingBox();
     assert.ok(close.boundingBox.max.y <= simple.boundingBox.max.y + .001, kind + ' keeps its original bridge clearance');
+    if (kind === 'cruise') {
+      assert.ok(simple.attributes.position.count/3 <= 372, 'the overhead cruiser fits the original triangle budget');
+      assert.equal(simple.groups.length, 0, 'the overhead cruiser remains one draw');
+      assert.equal(simple.boundingBox.max.x-simple.boundingBox.min.x,34,'the hull keeps its fairway length');
+    }
     if (kind === 'swan') {
       for (const g of [simple, close]) {
         const { min, max } = g.boundingBox;

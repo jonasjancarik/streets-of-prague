@@ -4,10 +4,10 @@ import { streetNear } from './streetQuality.ts';
 export type Point3 = [number, number, number];
 
 // A straight length of tubing between two mounting points, in vehicle coordinates.
-export function strut(a: Point3, b: Point3, radius: number, sides = 8) {
+export function strut(a: Point3, b: Point3, radius: number, sides = 8, open = false) {
   const start = new THREE.Vector3(...a), end = new THREE.Vector3(...b);
   const axis = end.clone().sub(start);
-  const g = new THREE.CylinderGeometry(radius, radius, axis.length(), sides);
+  const g = new THREE.CylinderGeometry(radius, radius, axis.length(), sides, 1, open);
   g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis.normalize()));
   return g.translate(...start.lerp(end, .5).toArray());
 }

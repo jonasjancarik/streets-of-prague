@@ -1,6 +1,8 @@
 import { swanBoat } from './swanBoat.ts';
 import { RIVER_MODEL_LAYER } from './mirror.ts';
 import { passengerVessel, pedalFittings } from './boatFittings.ts';
+import { cruiserHull } from './riverHull.ts';
+import { SightseeingBoat } from './cruiseCabin.ts';
 import { loftSections, StreetVehicleMesh } from './vehicleFittings.ts';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -97,9 +99,12 @@ interface Boat {
 export function body(kind: Kind, paint: string, street = false) {
   const parts: THREE.BufferGeometry[] = [], glass: THREE.BufferGeometry[] = [];
   const colour = (g: THREE.BufferGeometry, color: string, glow = 0) => {
-    const c = new THREE.Color(color), n = g.attributes.position.count, col = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) col.set([c.r, c.g, c.b], i * 3);
-    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const n = g.attributes.position.count;
+    if (!g.hasAttribute('color')) {
+      const c = new THREE.Color(color), col = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) col.set([c.r, c.g, c.b], i * 3);
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    }
     g.setAttribute('glow', new THREE.BufferAttribute(new Float32Array(n).fill(glow), 1));
     g.deleteAttribute('uv');
     // The swan is built entirely from indexed, smooth surfaces in both views.
@@ -126,16 +131,14 @@ export function body(kind: Kind, paint: string, street = false) {
   };
   if (kind === 'cruise') {
     const L = SPECS.cruise.len, B = SPECS.cruise.beam;
-    hull(L, B, 7, -0.4, 0.5, '#1f3550');
-    hull(L, B, 7, 0.5, 1.5, '#f2f1ec');
-    hull(L - 0.7, B - 0.7, 6.6, 1.5, 1.56, '#a9855a'); // wooden deck fore and aft
+    cruiserHull(street,colour,box);
     if (street) passengerVessel('cruise', B, colour, box);
     else {
       box(L * 0.64, 1.85, B - 1, -2, 2.42, 0, '#f4f3ee'); // the cabin (low, like the boats that fit under Prague's bridges)
       box(L * 0.62, 0.95, B - 0.3, -2, 2.55, 0, '#27343f', 1); // its windows all round (a little proud of the roof, so they show from above)
     }
     box(L * 0.68, 0.14, B - 0.6, -2, 3.4, 0, '#7f98a8'); // the roof deck
-    if (street) box(3.02, .15, 3.48, 10.32, 3.20, 0, '#edece5');
+    if (street) box(2.86, .15, 3.48, 10.20, 3.20, 0, '#edece5');
     else {
       box(L * 0.66, 0.3, 0.06, -2, 3.6, (B - 0.7) / 2, '#c9c7bf'); // low railings along it
       box(L * 0.66, 0.3, 0.06, -2, 3.6, -(B - 0.7) / 2, '#c9c7bf');
@@ -143,8 +146,16 @@ export function body(kind: Kind, paint: string, street = false) {
       box(0.1, 0.8, 3.0, 11.7, 2.55, 0, '#27343f');
     }
     // Navigation lights: red to port (left), green to starboard, white on a stub of a mast.
-    box(0.5, 0.35, 0.12, 9.9, 2.9, -1.76, '#ff1a10', 2);
-    box(0.5, 0.35, 0.12, 9.9, 2.9, 1.76, '#10ff40', 2);
+    if (street) {
+      for (const side of [-1,1]) {
+        box(.39,.19,.19,9.9,2.98,side*1.62,'#414d4e');
+        colour(new THREE.CylinderGeometry(.095,.095,.13,10).translate(9.93,3.02,side*1.72),
+          side<0?'#c02b26':'#0c9a65',2);
+      }
+    } else {
+      box(0.5, 0.35, 0.12, 9.9, 2.9, -1.76, '#ff1a10', 2);
+      box(0.5, 0.35, 0.12, 9.9, 2.9, 1.76, '#10ff40', 2);
+    }
     box(0.08, 0.3, 0.08, 10.4, 3.35, 0, '#c9c7bf');
     box(0.45, 0.25, 0.45, 10.4, 3.6, 0, '#ffffff', 2);
     box(0.3, 0.3, 0.3, -2 - L * 0.32 + 0.3, 2.0, 0, '#ffffff', 2); // and one at the stern
@@ -278,7 +289,8 @@ export class Boats {
     const add = (kind: Kind, paint: string) => {
       const k = `${kind}|${paint}`;
       if (!geometries.has(k)) geometries.set(k, body(kind, paint));
-      const mesh = new StreetVehicleMesh(geometries.get(k)!, material, () => body(kind, paint, true));
+      const Vessel = kind==='cruise' ? SightseeingBoat : StreetVehicleMesh;
+      const mesh = new Vessel(geometries.get(k)!, material, () => body(kind, paint, true));
       mesh.layers.enable(RIVER_MODEL_LAYER);
       mesh.castShadow = true;
       mesh.visible = false;

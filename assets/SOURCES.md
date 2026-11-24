@@ -67,6 +67,10 @@ and [Prague Castle lighting brief](https://cceamoba.cz/media/pages/souteze/sph/7
 - The café folding chairs, slatted tables and square parasols are modelled in
   `src/terraceFurniture.ts`. The furniture shares the park benches’ timber texture.
   The visual reference is [Prague’s outdoor dining guide](https://kultivovana.praha.eu/files/manual_predzahradky_MHMP_digi.pdf).
+- The sightseeing cruiser is an original model of a low-deck Vltava passenger boat.
+  The fleet photographs were used as visual reference. Its seated skipper and passengers
+  are simplified from the credited Rocketbox driver poses with `assets/boats/crew.py`.
+  [Prague Boats, Lužnice](https://www.prague-boats.cz/luznice-boat/).
 
 - `cars/build.py`, `trams/build.py`, `figures/build.py` build the cars, trams, people
   and bikes (`public/cars.glb`, `public/trams.glb`, `public/figures.glb`) in Blender
