@@ -1,0 +1,62 @@
+[
+ {
+  "name": "Divadelní under Národní, out of the south mouth by the National Theatre",
+  "ring": [
+   [
+    14.4137579,
+    50.081111
+   ],
+   [
+    14.4137577,
+    50.0812692
+   ],
+   [
+    14.4138737,
+    50.0812692
+   ],
+   [
+    14.4138821,
+    50.0812558
+   ],
+   [
+    14.4138849,
+    50.0812153
+   ],
+   [
+    14.4138864,
+    50.0811524
+   ],
+   [
+    14.4139024,
+    50.0811245
+   ],
+   [
+    14.4139088,
+    50.081111
+   ]
+  ],
+  "why": "the street's last 18 m before the underpass, between the stairs down from Národní beside the theatre and the wall of náměstí Václava Havla: the build took them for the inside of the tunnel and gave the middle of the carriageway the height of Národní, 4 m up, a paved bank across the mouth that people walked down from Národní. The LiDAR has the street level at 188.0–188.3 m right up to the mouth. The outline is the carriageway alone: the stairs' ground beside it stays the slope it is"
+ },
+ {
+  "name": "Divadelní under Národní, out of the north mouth",
+  "ring": [
+   [
+    14.4137016,
+    50.0815173
+   ],
+   [
+    14.4137015,
+    50.0816198
+   ],
+   [
+    14.4137993,
+    50.0816198
+   ],
+   [
+    14.4137994,
+    50.0815173
+   ]
+  ],
+  "why": "as the south mouth: the carriageway between the corner house and the stairs down from Národní came up to Národní over its first 8 m (191.3 m at the mouth, 188.0 m in the LiDAR)"
+ }
+]

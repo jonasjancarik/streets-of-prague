@@ -1003,15 +1003,25 @@ class Piece:
         self.ramp = None
 
 
-def pieces(ways, profiles, outlines, ground, decks, road_tree):
+def pieces(ways, profiles, outlines, ground, decks, road_tree, floors=()):
     """The pieces: every way on its own (its width wide), and every man_made=bridge
     outline (`outlines`), at the height of the ways on it or, with none, from its ends.
     Returns pieces and groups (lists of pieces that must share a level: an outline and
-    the ways on it)."""
+    the ways on it). `floors`: the streets' floors at underpasses' mouths
+    (terrain_floors.json), where a tunnel reaches only FLOOR_PORTAL out of its end."""
     out = []
     lines = [LineString(w["pts"]) for w in ways]
+    on_floor = shapely.union_all(list(floors)).buffer(1.0) if floors else None
+
+    def portal_reach(w, end):
+        if not w["grade"][end]:
+            return 0
+        if on_floor is not None and on_floor.contains(shapely.Point(w["pts"][end])):
+            return FLOOR_PORTAL
+        return PORTAL
+
     for w, line, prof in zip(ways, lines, profiles):
-        drawn = reach(w, lambda end: PORTAL if w["grade"][end] else 0) if w["kind"] == "tunnel" else line
+        drawn = reach(w, lambda end, w=w: portal_reach(w, end)) if w["kind"] == "tunnel" else line
         # A tunnel has a walkway either side of the road; a bridge's pavements are
         # mostly mapped (or its man_made=bridge outline has them).
         shape = drawn.buffer(w["w"] / 2 + (1.5 if w["kind"] == "tunnel" else 0), cap_style="flat", join_style="round")
@@ -1236,6 +1246,10 @@ IPR_END, PAD_MAX, MEET = 4.0, 20.0, 1.0  # m (ipr_ends): IPR's deck this near a 
 WRONG_GROUND = 2.0  # m: a short bridge's end this far off IPR's deck is on the wrong ground, however gentle the way (see solve)
 SCRAP = 25.0  # m: a bridge way shorter than this, lying on a much longer one, is a scrap of that bridge
 PORTAL = 12.0  # m a tunnel reaches out of its portal, at the portal's height
+# m it reaches out of an end on a street's floor (terrain_floors.json), which has the
+# street's own height up to the mouth: the 12 m ran flat over Divadelní's floor as it
+# rose to the open street, and ended in a step of 0.26 m across the road.
+FLOOR_PORTAL = 4.0
 
 
 PAD_INTO = 2.0  # m under a bridge's first metres that the street's pad before it reaches (see pads)
@@ -1904,7 +1918,7 @@ def ramps_per_tile(all_pieces, tile_boxes):
     return out
 
 
-def build(ways, outlines, roads, ground, local, tiles, N, T, step, gx0, gy0, tile_boxes, source_manifest=None, way_levels=None, ramps_out=None, streets=()):
+def build(ways, outlines, roads, ground, local, tiles, N, T, step, gx0, gy0, tile_boxes, source_manifest=None, way_levels=None, ramps_out=None, streets=(), floors=()):
     """Everything for the game: per tile, a list of (level, kind, heights, polygons).
     `ways`: structure_ways from every chunk; `outlines`: the man_made=bridge polygons;
     `roads`: the street polygons (for the ends of bridges with no street on them).
@@ -1912,7 +1926,8 @@ def build(ways, outlines, roads, ground, local, tiles, N, T, step, gx0, gy0, til
     strict assembly's freshness check. `way_levels`: an optional list that gets each
     way's level, {kind, level, pts} (for OnLevels). `ramps_out`: an optional dictionary
     that gets, per tile and level, the profiles of the ways too steep for the lattice.
-    `streets`: the car streets on the ground, as lines (see ipr_ends).
+    `streets`: the car streets on the ground, as lines (see ipr_ends). `floors`: the
+    streets' floors at underpasses' mouths (see pieces).
     """
     ways = merge_ways(ways)
     companions = [w for w in ways if w.get("survey_sources")]
@@ -1930,7 +1945,7 @@ def build(ways, outlines, roads, ground, local, tiles, N, T, step, gx0, gy0, til
     ways += companions
     profiles += [companion_profile(w, ground) for w in companions]
     road_tree = STRtree(roads) if roads else None
-    all_pieces, groups = pieces(ways, profiles, outlines, ground, decks, road_tree)
+    all_pieces, groups = pieces(ways, profiles, outlines, ground, decks, road_tree, floors)
     survey_ids = {w["id"] for w in companions}
     deepest = assign_levels(groups, survey_ids)
     if way_levels is not None:  # (the pieces start with one per way, in the ways' order)

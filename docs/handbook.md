@@ -2465,6 +2465,13 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   in degrees and why) and it stays as the terrain model has it. A wall the survey doesn't
   have as one (it came out as a slope) goes in `pipeline/terrain_walls.json` (a line in
   degrees and why): the plaza over Divadelní's cutting by the National Theatre.
+  A street's last metres before an underpass that stays a tunnel, raised to the street
+  above as if they were inside it, go in `pipeline/terrain_floors.json` (an outline in
+  degrees and why): the LiDAR's street level inside, a terrace of its own with the
+  carriageway in it, and the highest ground out from its edge for the lattice points on
+  top beside it, except at its open end (`FLOOR_SCAN` and its neighbours in
+  `pipeline/dtm_heights.py`). It needs the terrain built with `--survey-scan`; without
+  the scan a floor takes the terrain model's height where that is lower.
   [Places fixed by hand](hand-fixes.md) lists every such place.
   Rendered tile edges also share a world-aligned 2 m height profile and perimeter
   stations (`src/terrain-edges.ts`), including tiles without steps, so differing

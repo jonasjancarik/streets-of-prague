@@ -1,6 +1,6 @@
 # Places fixed by hand
 
-<!-- read_when: a place looks wrong and a general rule can't fix it; adding to terrain_keep.json or terrain_walls.json; asked which parts of the map aren't straight from the data -->
+<!-- read_when: a place looks wrong and a general rule can't fix it; adding to terrain_keep.json, terrain_walls.json or terrain_floors.json; asked which parts of the map aren't straight from the data -->
 
 The map is built from open data by rules that apply across the whole city. In a few
 places the data itself is wrong or missing something, and no rule can tell. Those places
@@ -40,6 +40,21 @@ with a reason. There are three:
 - **5. května over Hvězdova at Pankrác, both sides of the underpass.** The road crosses
   on short bridges off embankments 6 m high. The survey has the top of each embankment
   but no wall, and the ground under the bridges came out as a torn slope.
+
+### Street floors at an underpass's mouths
+
+[`pipeline/terrain_floors.json`](../pipeline/terrain_floors.json) lists the last metres
+of a street before it goes into an underpass, where the build mistook the open street
+for the inside of the tunnel and raised it to the street above: a bank across the mouth
+instead of a wall with an opening. Each is an outline in degrees (longitude, latitude)
+round the street between its walls, from the mouth out to where the ground is right
+again, with a reason. Inside it the ground is the LiDAR's street level, and it steps
+down from the ground beside it, so the game builds the walls and leaves the tunnel's
+opening in the one across the mouth. There are two:
+
+- **Divadelní under Národní, both mouths.** The street stood up to 4 m too high for
+  18 m before the south mouth and 8 m before the north one, and people walked down
+  the bank from Národní.
 
 ## Survey surfaces left out
 

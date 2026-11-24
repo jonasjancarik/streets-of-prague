@@ -549,5 +549,58 @@ class BelowAWallTests(unittest.TestCase):
         self.assertAlmostEqual(float(after[8, 4]), 200.0, delta=0.01)  # (16, 32): 16 m from it
 
 
+
+class FloorTests(unittest.TestCase):
+    """A street running north into an underpass's mouth at y = 30, between walls at
+    x = 26 and x = 38 (terrain_floors.json): the ground on top is at 205 m, the street at
+    200 m. The build has the street right up to y = 6 and the top's height on it from
+    there to the mouth, and the first row on top over the mouth sags to 203 m."""
+
+    def build(self, floors):
+        ys, xs = np.mgrid[0:17, 0:17] * 4.0
+        bare = np.full((17, 17), 205.0, dtype=np.float32)
+        bare[(ys <= 4) & (xs >= 28) & (xs <= 36)] = 200.0
+        bare[(ys <= 4) & (xs >= 20) & (xs <= 24)] = 201.0  # (beside the street out of the open end)
+        bare[(ys == 32) & (xs >= 28) & (xs <= 36)] = 203.0
+        tiles = {(0, 0): bare.copy()}
+
+        def scan(xs, ys, reach):
+            xs, ys = np.asarray(xs), np.asarray(ys)
+            low = (xs + reach >= 26) & (xs - reach <= 38) & (ys - reach <= 30)
+            high = ~((xs - reach >= 26) & (xs + reach <= 38) & (ys + reach <= 30))
+            return np.where(low, 200.0, 205.0).astype(np.float32), np.where(high, 205.0, 200.0).astype(np.float32)
+        lines = [[(2, 50, 205), (10, 50, 205)]]
+        with patch.object(dh, 'survey', return_value=([box(2, 50, 10, 58)], [np.array(c, float) for c in lines], [])):
+            out = dh.apply('test', None, Identity(), tiles, 16, 4.0, 0, 0, None, {(0, 0): box(0, 0, 64, 64)},
+                           floors=floors, scan=scan, scan_levels=False, level_across=False, no_feather=True)
+        return tiles[0, 0], out
+
+    def test_a_listed_floor_is_the_scans_street_and_a_terrace(self):
+        before, _ = self.build(())
+        after, out = self.build([box(26, 6, 38, 30)])
+        self.assertAlmostEqual(float(before[5, 8]), 205.0, delta=0.01)  # (32, 20): the bank
+        self.assertEqual(out['floor_points'], 18)  # x = 28, 32, 36 by y = 8 … 28
+        for j in range(2, 8):
+            for i in (7, 8, 9):
+                self.assertAlmostEqual(float(after[j, i]), 200.0, delta=0.01)
+                self.assertGreaterEqual(int(out['labels'][0, 0][j, i]), 2)
+        self.assertEqual(int(out['labels'][0, 0][1, 8]), 0)  # (32, 4): the street out of its open end
+        self.assertEqual(int(out['labels'][0, 0][8, 8]), 0)  # (32, 32): on top over the mouth
+        self.assertEqual(len(out['terraces'][0, 0]), 1)
+
+    def test_the_ground_on_top_beside_it_is_lifted_but_not_at_its_open_end(self):
+        before, _ = self.build(())
+        after, out = self.build([box(26, 6, 38, 30)])
+        for i in (7, 8, 9):
+            self.assertAlmostEqual(float(before[8, i]), 203.0, delta=0.01)
+            self.assertAlmostEqual(float(after[8, i]), 205.0, delta=0.01)  # (28 … 36, 32)
+        self.assertGreaterEqual(out['floor_rim'], 3)
+        # (24, 4) and (20, 4): beside the street past the floor's open end, 205 m ground
+        # not far off. Lifted, they tilt the street beside them.
+        self.assertAlmostEqual(float(after[1, 6]), 201.0, delta=0.01)
+        self.assertAlmostEqual(float(after[1, 5]), 201.0, delta=0.01)
+        self.assertAlmostEqual(float(after[1, 8]), 200.0, delta=0.01)
+
+
 if __name__ == '__main__':
     unittest.main()

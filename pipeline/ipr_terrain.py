@@ -473,6 +473,14 @@ def drawn_walls(local):
             for wall in json.loads((Path(__file__).parent / "terrain_walls.json").read_text())]
 
 
+def drawn_floors(local):
+    """The floors in terrain_floors.json (rings in degrees: lon, lat) as polygons in the
+    area's metres."""
+    to_local = Transformer.from_crs("EPSG:4326", local, always_xy=True)
+    return [Polygon(zip(*to_local.transform(*zip(*floor["ring"]))))
+            for floor in json.loads((Path(__file__).parent / "terrain_floors.json").read_text())]
+
+
 def source_paths(area, options):
     paths = [CACHE / CATALOGUE, *structures.bridge_files()]
     paths.extend(sheet_path(f"TER_{name}") for name in sheet_names(area))
@@ -736,7 +744,7 @@ def main() -> None:
                                       bridges=[LineString(w["pts"]).buffer(w["w"] / 2) for w in ways if w["kind"] == "bridge" and len(w["pts"]) > 1] + list(outlines),
                                       bridge_ends=dtm_heights.bridge_ends([LineString(w["pts"]) for w in ways if w["kind"] == "bridge" and len(w["pts"]) > 1]),
                                       bridge_ways=[] if args.no_cuttings else [(LineString(w["pts"]), w["w"]) for w in ways if w["kind"] == "bridge" and len(w["pts"]) > 1],
-                                      drawn=drawn_walls(local), level_across=not args.no_level,
+                                      drawn=drawn_walls(local), floors=drawn_floors(local), level_across=not args.no_level,
                                       cuts=[LineString(w["pts"]).buffer(w["w"] / 2) for w in ways if w.get("cut")], sharp=args.lidar_ground,
                                       scan=ipr_lidar.range_sampler(options["survey_scan"])[0] if options.get("survey_scan") else None,
                                       sunk_kerbs=not args.no_sunk_kerbs, scan_levels=not args.no_scan_levels,
@@ -749,7 +757,7 @@ def main() -> None:
     way_levels, steep = [], {}
     found = structures.build(ways, list(getattr(merged, "geoms", [merged])) if merged else [], roads, sampler(tiles, N, T, step, gx0, gy0, labels),
                              local, tiles, N, T, step, gx0, gy0, boxes, way_levels=way_levels, ramps_out=steep,
-                             streets=[line for line, _ in streets.values()])
+                             streets=[line for line, _ in streets.values()], floors=drawn_floors(local))
     # Where a bridge is close over the ground (at its ends) the ground comes up, or down,
     # to it: wholly within NEAR_DECK of it, less and less out to OFF_DECK. The map's bridge
     # and the street it runs on from rarely meet where the terrain says the abutment is,

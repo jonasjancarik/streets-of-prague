@@ -77,6 +77,17 @@ its foot keeps its heights, and its own points beside the wall come down to it (
 survey bounds the street with the line along the wall's top, so they had the top's
 height).
 
+terrain_floors.json lists what neither can do: the street's own ground out of the mouth
+of an underpass that stays a tunnel, between the walls up to the street over it
+(Divadelní under Národní). The last metres before a mouth are in the tunnel's strip,
+where the survey's low kerbs count as the underpass's and the ground as the one above:
+the open street stood 4 m too high there, a bank across the mouth that the game's people
+walked down from the street on top. A listed floor is the LiDAR's ground at each of its
+lattice points and a terrace of its own, carriageway and all, so the ground steps at its
+outline: a wall across the mouth (the game leaves the tunnel's opening in it) and along
+the sides. The lattice points on top beside it, a cell and a half out, take the highest
+ground out from its edge, as on a wall's top: the bank ran up over them too.
+
 The marks are what lets the game make a step of a wall. Each lattice point has a label:
 0 the plain ground, 1 water, 2 and up a terrace of its tile, whose outline the tile lists
 ("terraces"). Where the labels in a lattice cell differ, the game reads the height at a
@@ -301,6 +312,13 @@ STRIP = 8.0  # m: the width of the terrace marked at a wall's foot (two lattice 
 # metre either side of each surveyed wall: the top sagging over 1 m 623 → 481 m of 9,600,
 # the step under half its usual height 418 → 359 m; the streets' checks no worse.
 TOP_STRIP = 8.0  # m
+# A listed floor (terrain_floors.json): its lattice points take the LiDAR's lowest within
+# FLOOR_SCAN (beside a wall the scan's cell has its top too), none more than FLOOR_SLOPE
+# over the middle one of them. The points out to FLOOR_RIM beside it (a cell and a half)
+# take the highest ground out from its edge where that is FLOOR_LIFT or more over them,
+# but not at its open end: where the ground 2–4 m out from the edge is less than
+# FLOOR_OPEN over the floor.
+FLOOR_SCAN, FLOOR_SLOPE, FLOOR_RIM, FLOOR_LIFT, FLOOR_OPEN = 1.0, 0.3, 6.0, 0.3, 1.0  # m
 TOP_LEAST = 32.0  # m²: a smaller piece of it is left out (two lattice cells)
 # A top strip's square ends are where the strip was cut, not a wall: a step line there runs
 # level (`soft_edges`, step_lines.py). Where a 14 m wall in Podolí (50.04845, 14.40551) ends
@@ -1225,7 +1243,7 @@ def weir_points(weirs, shape, x_of, y_of, step):
     return out
 
 
-def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=(), tunnels=(), keep=(), carriageways=(), streets=(), no_feather=False, no_shoulder=True, cut_streets=False, weirs=(), unknown=None, valley_smooth=True, bridges=(), drawn=(), level_across=True, cuts=(), sharp=False, scan=None, sunk_kerbs=True, scan_levels=True, bridge_ends=(), bridge_ways=(), street_sides=None, scan_streets=True):
+def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=(), tunnels=(), keep=(), carriageways=(), streets=(), no_feather=False, no_shoulder=True, cut_streets=False, weirs=(), unknown=None, valley_smooth=True, bridges=(), drawn=(), floors=(), level_across=True, cuts=(), sharp=False, scan=None, sunk_kerbs=True, scan_levels=True, bridge_ends=(), bridge_ways=(), street_sides=None, scan_streets=True):
     """Correct the tiles' lattices in place (see the top of the file). Works on arrays
     over the whole area (a few GB for `praha`). `tiles`: {(i, j):
     (N + 1) x (N + 1) heights}, the lattice of tile (i, j) starting at point (i * N, j * N);
@@ -1238,7 +1256,8 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
     terraces: their label and outline; and under label 1 its water, where that's not
     simply the map's: see below). `weirs`: the map's weirs as lines; `unknown`: {(i, j):
     which of the tile's points the terrain model had nothing for}; `drawn`: walls the
-    survey misses (terrain_walls.json), as lines in local metres; `bridge_ends`: where the
+    survey misses (terrain_walls.json), as lines in local metres; `floors`: the streets'
+    floors at underpasses' mouths (terrain_floors.json), as polygons in local metres; `bridge_ends`: where the
     map's bridges come down to the ground (`bridge_ends()`), local metres; `bridge_ways`:
     the map's bridges as (line, width), for the walls of the streets in cuttings under them
     (CUT_RISE). `sharp` (prototype):
@@ -1751,12 +1770,13 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
     off_streets = 0.0  # m² of terrace taken off the car streets
     cuttings = _cuttings(bridge_ways, streets, at)
 
-    def mark(strip, leave=None, least=4.0):
+    def mark(strip, leave=None, least=4.0, streets_too=False):
         """A wall's strip as the next terrace, off the car streets, the water and the
         terraces so far; whether anything of it was left. `leave(gi, gj)`: the lattice
-        points inside it not to mark; `least`: m², smaller pieces are dropped."""
+        points inside it not to mark; `least`: m², smaller pieces are dropped;
+        `streets_too`: the car streets in it stay (a floor: see terrain_floors.json)."""
         nonlocal off_streets
-        hits = lane_tree.query(strip, predicate="intersects") if lane_tree is not None else []
+        hits = lane_tree.query(strip, predicate="intersects") if lane_tree is not None and not streets_too else []
         if len(hits):
             was = strip.area
             strip = strip.difference(shapely.union_all(lanes[hits]))
@@ -1906,6 +1926,64 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
                     cell[changed[r:r + 2, c:c + 2]] = 0
                     freed += 1
 
+    # The streets' floors out of an underpass's mouths (terrain_floors.json), after the
+    # walls: what a wall read for its foot there was the bank.
+    floor_points = floor_rim = 0
+    scan_floor = _scan_local(scan, to_local)
+    floors = list(floors)
+    every_floor = shapely.union_all(floors) if floors else None
+    for floor in floors:
+        bx0, by0, bx1, by1 = floor.bounds
+        ia, ib = max(0, int(np.floor((bx0 - FLOOR_RIM - x_of(0)) / step))), min(grid.shape[1] - 1, int(np.ceil((bx1 + FLOOR_RIM - x_of(0)) / step)))
+        ja, jb = max(0, int(np.floor((by0 - FLOOR_RIM - y_of(0)) / step))), min(grid.shape[0] - 1, int(np.ceil((by1 + FLOOR_RIM - y_of(0)) / step)))
+        if ia > ib or ja > jb or not mark(floor, streets_too=True):
+            continue  # (outside the area being built)
+        gi, gj = np.meshgrid(np.arange(ia, ib + 1), np.arange(ja, jb + 1))
+        gi, gj = gi.ravel(), gj.ravel()
+        inside = terrace[gj, gi] == len(strips)
+        fi, fj = gi[inside], gj[inside]
+        if not len(fi):
+            continue
+        low = np.fmin(grid[fj, fi], bare[fj, fi])
+        if scan_floor is not None:
+            lo, _ = scan_floor(np.column_stack([x_of(fi), y_of(fj)]), FLOOR_SCAN)
+            low = np.where(np.isfinite(lo), lo, low)
+        # By a house the scan has the slope it draws under the roof, and OSM's wall and
+        # the scan's are a metre or two apart: such a point is the floor too.
+        level = float(np.nanmedian(low))
+        grid[fj, fi] = np.fmin(low, level + FLOOR_SLOPE)
+        floor_points += len(fi)
+        # The ground on top beside it: the highest out from the floor's edge, as on a
+        # wall's top. Not within a cell of the floor's open end, where the street runs
+        # on at its own height: a point lifted there tilts the street beside it.
+        edge = floor.exterior
+        us = np.arange(0.5, edge.length, 1.0)
+        c = shapely.get_coordinates(shapely.line_interpolate_point(edge, us))
+        ahead = shapely.get_coordinates(shapely.line_interpolate_point(edge, np.minimum(us + 0.2, edge.length))) \
+            - shapely.get_coordinates(shapely.line_interpolate_point(edge, np.maximum(us - 0.2, 0)))
+        out = np.column_stack([ahead[:, 1], -ahead[:, 0]]) / np.maximum(np.hypot(ahead[:, 0], ahead[:, 1]), 1e-9)[:, None]
+        out *= -1.0 if shapely.contains_xy(floor, *(c[0] + out[0] * 0.3)) else 1.0
+        with np.errstate(invalid="ignore"), warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            beyond = np.nanmax([at(c + out * r) for r in (2.0, 4.0)], axis=0)
+        open_end = c[~(beyond - level >= FLOOR_OPEN)]
+        p = np.column_stack([x_of(gi), y_of(gj)])
+        d = shapely.distance(floor, shapely.points(p))
+        rim = (d > 1e-6) & (d <= FLOOR_RIM) & ~shapely.contains_xy(every_floor, p[:, 0], p[:, 1]) & ~wet[gj, gi] & ~np.isnan(grid[gj, gi])
+        gi, gj, p, d = gi[rim], gj[rim], p[rim], d[rim]
+        if len(gi):
+            foot = shapely.get_coordinates(shapely.line_interpolate_point(edge, shapely.line_locate_point(edge, shapely.points(p))))
+            away = (p - foot) / d[:, None]
+            walled = np.ones(len(gi), dtype=bool)
+            if len(open_end):
+                walled = cKDTree(open_end).query(foot)[0] > step
+            with np.errstate(invalid="ignore"), warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                top = np.nanmax([at(foot + away * r) for r in np.linspace(ramp.near, ramp.reach, 5)], axis=0)
+                lift = walled & (top - grid[gj, gi] >= FLOOR_LIFT)
+            grid[gj[lift], gi[lift]] = top[lift]
+            floor_rim += int(lift.sum())
+
     # Places where all this makes things worse (terrain_keep.json): as the terrain model has them.
     kept = 0
     for place in keep:
@@ -1990,6 +2068,6 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
             outlines[(i, j)] = listed
     changed = ~np.isnan(bare) & (np.abs(grid - bare) > 0.05)
     return {"survey_rejected_vertices": rejected, "off_scan": counts.get("off_scan", 0), "sunk_kerbs": int(sunk.sum()), "aloft": int(aloft.sum()), "deck_kerbs": int(decked.sum()), "over_kerbs": int(over_kerbs.sum()), "end_kerbs": int(at_end.sum()), "kerbs_skipped": counts.get("kerbs_skipped", 0), "scan_lower": counts.get("scan_lower", 0), "scan_upper": counts.get("scan_upper", 0), **({"kept_aloft": counts["kept_aloft"]} if "kept_aloft" in counts else {}), "surfaces": surfaces, "street_points": street_points, "far_from_survey": counts.get("far_from_survey", 0), "below_wall": counts.get("below_wall", 0), "scan_held": scan_held, "levelled_across": levelled_points, "streets_from_scan": scanned, "two_levels": two_levels, "under_points": under, "feathered": feathered, "overhang_points": overhang, "water_points": int(wet.sum()), "water_levelled": levelled, "valley_points": valley, "bank_points": bank_points,
-            "kept_by_hand": kept, "cut_streets": cuts, "retaining_walls": len(strips) - cuts - wall_tops, "wall_tops": wall_tops, "street_cells": freed, "retaining_metres": round(wall_length), "cuttings": len(cuttings), "terrace_off_streets_m2": round(off_streets), "wall_points": wall_points, "lone_points": lone_points,
+            "kept_by_hand": kept, "cut_streets": cuts, "retaining_walls": len(strips) - cuts - wall_tops, "wall_tops": wall_tops, "street_cells": freed, "retaining_metres": round(wall_length), "cuttings": len(cuttings), "terrace_off_streets_m2": round(off_streets), "wall_points": wall_points, "floor_points": floor_points, "floor_rim": floor_rim, "lone_points": lone_points,
             "changed": int(changed.sum()), "mean_change": float(np.abs(grid - bare)[changed].mean()) if changed.any() else 0.0,
             "labels": labels, "terraces": outlines, "terrace_ids": ids, "soft_edges": soft_edges}

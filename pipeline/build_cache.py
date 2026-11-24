@@ -73,7 +73,7 @@ CODE = {
                 "osm_area.py": ("AREAS", "OUT", "_polys", "_rings"),
                 "dtm_heights.py": (), "dtm_structures.py": (), "step_lines.py": (), "dtm.py": ("CACHE", "PACKAGES", "_wkb"),
                 "structures.py": ("build", "pads"), "dmr5g.py": (), "ipr_lidar.py": (),
-                "terrain_keep.json": (), "terrain_walls.json": ()},
+                "terrain_keep.json": (), "terrain_walls.json": (), "terrain_floors.json": ()},
 }
 OSM_RUNTIME = ("osmnx", "geopandas", "pandas", "networkx", "requests", "scipy")
 GEOMETRY = ("numpy", "shapely", "pyproj")

@@ -214,7 +214,7 @@ def main():
         bridges=[line.buffer(width / 2) for line, width in bridge_lines] + list(outlines),
         bridge_ends=dtm_heights.bridge_ends([line for line, _ in bridge_lines]),
         bridge_ways=[] if args.no_cuttings else bridge_lines,
-        drawn=drawn, level_across=not args.no_level,
+        drawn=drawn, floors=ipr_terrain.drawn_floors(local), level_across=not args.no_level,
         cuts=[LineString(way["pts"]).buffer(way["w"] / 2) for way in ways if way.get("cut")], sharp=False,
         scan=ipr_lidar.range_sampler(ipr_lidar.CACHE)[0] if args.survey_scan else None, sunk_kerbs=not args.no_sunk_kerbs, scan_levels=not args.no_scan_levels,
         street_sides=list(kerbs.values()), scan_streets=not args.no_scan_streets)
@@ -225,7 +225,8 @@ def main():
         merged = unary_union(outlines) if outlines else None
         found = structures.build(ways, list(getattr(merged, "geoms", [merged])) if merged else [], roads,
                                  ipr_terrain.sampler(tiles, N, T, step, gx0, gy0, labels), local, tiles, N, T, step, gx0, gy0, boxes,
-                                 way_levels=[], ramps_out=steep, streets=[line for line, _ in streets.values()])
+                                 way_levels=[], ramps_out=steep, streets=[line for line, _ in streets.values()],
+                                 floors=ipr_terrain.drawn_floors(local))
         ring = lambda r: np.round(shapely.get_coordinates(r)[:-1], 2).tolist()  # noqa: E731
         for n_pad, (pad, height) in enumerate(structures.pads(ways, list(streets.values()), ground=ipr_terrain.sampler(tiles, N, T, step, gx0, gy0, labels))):
             bx0, by0, bx1, by1 = pad.bounds
