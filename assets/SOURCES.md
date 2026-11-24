@@ -3,6 +3,27 @@
 Sounds have their own list in [`public/audio/SOURCES.md`](../public/audio/SOURCES.md),
 and the map data its credits in the README.
 
+## Old Town Square
+
+The Old Town Hall and Orloj, Týn Church, St Nicholas and the Marian Column are
+modelled in `old-town-square/`. The three buildings retain parts of their
+surveyed envelopes and textures. Their principal elevations, roof details and
+the freestanding Marian Column are reconstructed. Each game model and its
+texture atlas are licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+Building geometry and aerial surfaces are adapted from [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model/3D-mesh), CC BY 4.0.
+
+The following Wikimedia Commons photographs were cropped, perspective-corrected
+and mapped onto the models. In the town hall textures, the photographed lamp
+and parts of the clock housing were removed where they overlapped modelled details.
+
+| Model | Photographic sources |
+| --- | --- |
+| Old Town Hall | Dietmar Rabich / Wikimedia Commons, [Prag, Altstädter Rathaus, Astronomische Uhr — 2019 — 6590](https://commons.wikimedia.org/wiki/File:Prag,_Altst%C3%A4dter_Rathaus,_Astronomische_Uhr_--_2019_--_6590.jpg), [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). Yair Haklai, [Old Town Hall Tower (Prague)](https://commons.wikimedia.org/wiki/File:Old_Town_Hall_Tower_(Prague).jpg), [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). Sajjadmrt, [Prague astronomical clock in 2026](https://commons.wikimedia.org/wiki/File:Prague_astronomical_clock_in_2026.jpg), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). |
+| Tower and council houses | Jorge Láscar, [Old Town Hall and Astronomical Clock](https://commons.wikimedia.org/wiki/File:Lascar_Old_Town_Hall_(Staromestsk%C3%A1_radnice)_and_Astronomical_Clock_(Orloj)_(4501597341).jpg), [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/). PatrikPaprika, [Praha, Staroměstské náměstí, Staroměstská radnice (01)](https://commons.wikimedia.org/wiki/File:Praha,_Starom%C4%9Bstsk%C3%A9_n%C3%A1m%C4%9Bst%C3%AD,_Starom%C4%9Bstsk%C3%A1_radnice_(01).jpg), [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/). |
+| Týn Church | Dennis Jarvis, [Czech-03862 — Church of Our Lady before Týn](https://commons.wikimedia.org/wiki/File:Czech-03862_-_Church_of_Our_Lady_before_T%C3%BDn_(33020809055).jpg), [CC BY-SA 2.0](https://creativecommons.org/licenses/by-sa/2.0/). |
+| St Nicholas | Petr Šmerkl, Wikipedia, [Church of St Nicholas of Old Town in Prague 2010](https://commons.wikimedia.org/wiki/File:Church_of_St_Nicholas_of_Old_Town_in_Prague_2010.jpg), [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/). |
+| Marian Column | Gampe, [statue and capital](https://commons.wikimedia.org/wiki/File:Marian_column_Prague_(4825).jpg) and [pedestal inscription](https://commons.wikimedia.org/wiki/File:Marian_column_Prague_(4827).jpg), [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). Xyzabec, [front right angel](https://commons.wikimedia.org/wiki/File:Praha_Mari%C3%A1nsk%C3%BD_sloup_And%C4%9Bl_vpravo_vp%C5%99edu.jpg) and [rear left angel](https://commons.wikimedia.org/wiki/File:Praha_Mari%C3%A1nsk%C3%BD_sloup_And%C4%9Bl_vlevo_vzadu.jpg), [CC0](https://creativecommons.org/publicdomain/zero/1.0/). The wings follow the [completed restoration](https://www.marianskysloup.cz/clanky/aktuality/socharska-vyzdoba-sloupu-dokoncena.html). |
+
 ## Jan Hus Memorial
 
 The model reconstructs Ladislav Šaloun’s memorial on Old Town Square. Its height
