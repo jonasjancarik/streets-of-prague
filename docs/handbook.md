@@ -1670,6 +1670,15 @@ record the measurements, merge decisions and pending landmark asset activation.
   sights, schools and pedestrian streets, how many buses, trams, trains and metro
   trains leave each stop on a weekday, and a short hand-made list of the places
   tourists crowd.
+- **People waiting at bus stops** (`src/busWaiters.ts`, `scenarios/bus-stop-waiting.ts`).
+  At the stops near you a few people stand round the sign, facing the street, some on their
+  phones: more where more lines stop, on busier streets and at the busy hours (nobody
+  publishes how many wait at a stop, so the roads' hourly load from TSK's counts stands in
+  for it). Passers-by stop to wait one at a time; a stop that comes into view already has
+  its people. When a bus pulls up, a few get off at its doors (more at a busy stop, at the
+  busy hours and at the end of the line) and those waiting for its line walk to the nearest
+  door and get in; the bus waits until they have, up to 25 s. Some give up after a while
+  and walk on.
 - **Bikes and motorbikes.** Cyclists and motorcyclists ride with the traffic, and bikes
   and motorbikes stand on the pavements around you: E gets you on one, and it leans
   into the turns. A collision that knocks a rider off or hits an unattended bike

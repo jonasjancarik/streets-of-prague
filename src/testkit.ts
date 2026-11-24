@@ -19,6 +19,8 @@ import type { Brigade } from './brigade.ts';
 import type { Ambulances } from './ambulance.ts';
 import type { Refuse } from './refuse.ts';
 import type { Pedestrian } from './people.ts';
+import type { BusWaiting } from './busWaiters.ts';
+import type { BusStops } from './busstops.ts';
 import type { Traffic } from './traffic.ts';
 import type { TramBody } from './trams.ts';
 import type { Kind } from './weather.ts';
@@ -117,7 +119,8 @@ interface Game {
   viewRadius: () => number;
   offscreen: (x: number, y: number) => boolean;
   canvas: HTMLElement; fov: number;
-  wallet: Wallet; police: Police; health: Health; clock: Clock; fires: Fires; brigade: Brigade; ambulances: Ambulances; refuse: Refuse; traffic: Traffic; crowd: { people: { state: string; x: number; y: number }[] }; hurtNearest: (grave?: boolean) => Pedestrian | null; switchBeacon: (c: Car) => void;
+  busWaiting: BusWaiting; busStops: BusStops;
+  wallet: Wallet; police: Police; health: Health; clock: Clock; fires: Fires; brigade: Brigade; ambulances: Ambulances; refuse: Refuse; traffic: Traffic; crowd: { people: { state: string; x: number; y: number; pace: number }[] }; hurtNearest: (grave?: boolean) => Pedestrian | null; switchBeacon: (c: Car) => void;
   weather: { set: (k: Kind | 'auto') => void; kind: () => string };
   season: { set: (when: string | number) => void; date: () => string };
   birds: (kind: 'pigeon' | 'gull' | 'ground', x: number, y: number) => boolean;
@@ -318,7 +321,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     },
     // People on foot near a spot, and what each is doing.
     peopleNear(x: number, y: number, r: number) {
-      return g.crowd.people.filter((p) => Math.hypot(p.x - x, p.y - y) < r).map((p) => ({ state: p.state, away: round(Math.hypot(p.x - x, p.y - y)), x: round(p.x), y: round(p.y) }));
+      return g.crowd.people.filter((p) => Math.hypot(p.x - x, p.y - y) < r).map((p) => ({ state: p.state, away: round(Math.hypot(p.x - x, p.y - y)), x: round(p.x), y: round(p.y), pace: round(p.pace, 2) }));
     },
     // Stands the nearest pedestrian `m` metres in front of the car and returns them.
     pedestrianAhead(m: number, c = g.car()!) {
@@ -639,6 +642,32 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       if (g.car() !== c) throw new Error('Could not get into the car');
       await frame();
       return c;
+    },
+
+    // The bus stops near the view and the people waiting at each (src/busWaiters.ts):
+    // how many it wants and has, how many are walking to a bus's doors, the line of the bus
+    // standing there, and how far the stop is from you (m).
+    busWaiting() {
+      const m = g.me(), at = (x: number, y: number): Point2 => { const [lon, lat] = g.toLonLat(x, y); return [round(lat, 5), round(lon, 5)]; };
+      return g.busWaiting.report().map(({ stop, people, ...q }) => ({ ...q, at: at(stop.x, stop.y), away: round(Math.hypot(stop.x - m.x, stop.y - m.y)),
+        people: people.map((p) => ({ at: at(p.x, p.y), ref: p.ref, pace: round(p.pace, 2) })) }));
+    },
+    // The bus stops within `r` m of you, nearest first: name, where, whether its sign is up.
+    busStops(r = 300) {
+      const m = g.me();
+      return g.busStops.near(m.x, m.y, r).sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y)).map((s) => {
+        const [lon, lat] = g.toLonLat(s.x, s.y);
+        return { name: s.name, at: [round(lat, 5), round(lon, 5)] as Point2, heading: round(deg(s.ang)), placed: s.placed, shown: s.shown, away: round(Math.hypot(s.x - m.x, s.y - m.y)), lines: [...new Set(s.lines.map((l) => l.line.ref))] };
+      });
+    },
+    // How many have got on and off buses since the game started.
+    busPassengers() { return { boarded: g.busWaiting.boarded, alighted: g.busWaiting.alighted }; },
+    // Calls a bus to the stop nearest you within `r` m, as standing at it does; its name, or null.
+    callBus(r = 60) {
+      const m = g.me(), s = g.busStops.near(m.x, m.y, r).filter((o) => o.placed).sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y))[0];
+      if (!s) return null;
+      g.busStops.due(s, 10, g.clock.t);
+      return s.name;
     },
 
     // Assign a loaded PID line to a test bus; never invent a route identifier.

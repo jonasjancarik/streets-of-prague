@@ -67,11 +67,15 @@ const QUIET = 10, BUSY = 46;
 // The square root is because travel times climb much faster than the number of cars
 // once the roads are close to full.
 export function trafficWanted(t: number): number {
+  return Math.round(QUIET + (BUSY - QUIET) * Math.sqrt(roadLoad(t)));
+}
+
+// How busy the main roads are at clock time `t`, 0 to 1 (TRAFFIC_LOAD, between the hours).
+export function roadLoad(t: number): number {
   const day = Math.floor(t / 86400) % 7, h = ((t % 86400) / 3600 + 23.5) % 24;
   const row = TRAFFIC_LOAD[day === 5 ? 'saturday' : day === 6 ? 'sunday' : 'weekday'];
   const i = Math.floor(h), f = h - i;
-  const load = row[i] * (1 - f) + row[(i + 1) % 24] * f;
-  return Math.round(QUIET + (BUSY - QUIET) * Math.sqrt(load));
+  return row[i] * (1 - f) + row[(i + 1) % 24] * f;
 }
 
 // The longest a car coming off the pavement takes to pull into its lane (m).

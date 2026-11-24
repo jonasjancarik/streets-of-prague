@@ -33,7 +33,8 @@ import { RestingCars } from './restingCars.ts';
 import { loadKit, FIGURE_SIZE, SCALE, WARDROBE, PEOPLE_SHADOWS, CAST_LAYER } from './figures.ts';
 import { Culler } from './occlusion.ts';
 import { LifeSize } from './lifesize.ts';
-import { Traffic, trafficWanted, type TrafficAgent } from './traffic.ts';
+import { Traffic, trafficWanted, roadLoad, type TrafficAgent } from './traffic.ts';
+import { BusWaiting } from './busWaiters.ts';
 import { roadHint } from './roadLevels.ts';
 import { preparePeople, pickPerson } from './spawn.ts';
 import { PavementDrivers } from './pavement.ts';
@@ -696,6 +697,14 @@ async function main() {
     },
   });
   let busStop: ReturnType<typeof busStops.at> | null = null;
+  // People waiting at the stops near you, getting on and off the buses (src/busWaiters.ts).
+  const onCarriageway = (x: number, y: number) => !!crowd!.road?.(x, y);
+  const busWaiting = new BusWaiting({
+    crowd: () => crowd!, stops: () => busStops.shown, buses: () => traffic.agents, offscreen, rng: seeded,
+    busy: (x, y) => footfall.at(x, y), road: onCarriageway,
+    // (The roads' busy hours stand in for the buses'.)
+    demand: () => 0.15 + 0.85 * Math.sqrt(roadLoad(clock.t)),
+  });
   const busTimetables = new Map<number, BusDepartures | null>();
   const timetable = (platform: string | undefined) => {
     if (!platform) return undefined;
@@ -2377,7 +2386,11 @@ async function main() {
     else if (!inHeli && !ride.on && !passenger()) hash.add(obstacle(walker.x, walker.y, walker.flight?.height ?? walker.gz, 0.5, walker.vx, walker.vy, 'player'));
     // (People walking along the pavement only where a car is driving along it too.)
     traffic.gatherPavementCars();
-    for (const p of crowd.people) if (p.state !== 'walk' || p.e.side === 0 || traffic.pavementNear(p.x, p.y, 12)) person(p);
+    // (Someone standing at a bus stop or with a tour group: where they stand in the street.)
+    for (const p of crowd.people) {
+      if (p.state === 'hold' ? onCarriageway(p.x, p.y) || traffic.pavementNear(p.x, p.y, 12)
+        : p.state !== 'walk' || p.e.side === 0 || traffic.pavementNear(p.x, p.y, 12)) person(p);
+    }
     for (const o of police.officers) person(o);
     for (const o of brigade.crew) person(o);
     for (const o of ambulances.crew) person(o);
@@ -2420,6 +2433,7 @@ async function main() {
     if (inCar) threats.push(inCar);
     for (const c of movers) if (c.speed > 5) threats.push(c);
     for (const c of cops) if (c.speed > 5) threats.push(c);
+    busWaiting.update(dt);
     crowd.update(dt, threats, carsOnly, (x, y) => !offscreen(x, y),
       gaitActive && !walker.flight && walker.z < .5 && walker.perch < .4 ? walker : undefined);
     bags.update(dt, px(), py());
@@ -3700,7 +3714,7 @@ async function main() {
   });
 
   window.__drive = {
-    culler, hitches, tilePrograms, birds, birdsView, lifeSize, scene, camera, traffic, crowd, loose, restingByCar, restingIndex, get resting() { return resting; }, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, refuse, health, fires, trams, ride, taxi, clock, board, busStops, busRide, metro, funicular, ferries, graphics, sound, weather, lamps, sky, skids, bikeShare, carPool, spawnWork, bags,
+    culler, hitches, tilePrograms, birds, birdsView, lifeSize, scene, camera, traffic, crowd, busWaiting, loose, restingByCar, restingIndex, get resting() { return resting; }, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, refuse, health, fires, trams, ride, taxi, clock, board, busStops, busRide, metro, funicular, ferries, graphics, sound, weather, lamps, sky, skids, bikeShare, carPool, spawnWork, bags,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,
@@ -3728,7 +3742,7 @@ async function main() {
     steps: (x, y, r) => world.stepEdgesNear(x, y, r), ground: (x, y) => world.terrainAt(x, y), levelAt: (x, y, l) => world.levelAt(x, y, l),
     streets: drive, countryside: () => !!world.country?.box, place: () => $('district').textContent || null, taxi,
     builtMap: (x, y) => !pastMap(x, y) && world.available.has(world.keyAt(x, y)),
-    grid, boats, ferries, pid, inspector, wallet, police, health, clock, fires, brigade, ambulances, refuse, hurtNearest, switchBeacon, traffic, crowd, rng: seeded, bags,
+    grid, boats, ferries, pid, inspector, wallet, police, health, clock, fires, brigade, ambulances, refuse, hurtNearest, switchBeacon, traffic, crowd, rng: seeded, bags, busWaiting, busStops,
     missions, satnav, standing: repute, cannon: (on) => { cannonHeld = on; }, tram: { ride, list: () => trams.list, clearRun: (vehicle) => {
       const mid = vehicle.parts[1];
       if (!world.tileAt(mid.x, mid.y)?.drawn) return false;

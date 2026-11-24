@@ -98,7 +98,12 @@ in compass degrees (0 north, 90 east), speeds in km/h.
   `t.policeLights(car)` reports whether its flashing lamps are active.
 - `t.courier()`: the nearest delivery courier in traffic. `t.bags()`: the bag you carry and those
   lying about; `t.toBag()` stands you by one, `t.interact()` presses E on foot, `t.clearBags()`
-  starts clean, `t.peopleNear(x, y, r)` lists the people round a spot.
+  starts clean, `t.peopleNear(x, y, r)` lists the people round a spot (with how fast each walks).
+- Bus stops (`src/busWaiters.ts`): `t.busStops(r)` lists the stops near you (whether each sign
+  is up), `t.busWaiting()` the people waiting at each stop near the view, `t.callBus()` sends a
+  bus to the nearest stop, `t.busPassengers()` counts who got on and off. The signs, and the
+  people at them, come with frames drawn: loop `await t.frames()` after `t.go`.
+  Scenario `bus-stop-waiting`.
 - Jobs (`src/missions.ts`): `t.job()` says what is on (`idle`, `offer`, `on`), the job, its
   step and objective, seconds left, pay, where it wants you, seconds out of the vehicle
   (`out`), the last outcome and the books (`done`, `failed`, `earned`, `rep`).

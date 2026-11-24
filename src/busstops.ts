@@ -196,6 +196,9 @@ export class BusStops {
     }
   }
 
+  // The stops whose signs stand in the scene now (placed on their pavement, near the view).
+  get shown(): readonly BusStop[] { return this.shownNow; }
+
   // A sign whose street hasn't loaded is tried again a few times a second, not every frame.
   private tryPlace(s: BusStop, now: number) {
     const at = this.retryAt.get(s);

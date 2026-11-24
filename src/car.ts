@@ -678,6 +678,12 @@ function boxBuilder(paintColour?: string, serviceAtlas?: 'ambulance' | 'fire') {
   return { add, box, rounded, panel, wheel, roadWheel, setSeat, done };
 }
 
+// Where along a bus its doors are, in metres forward of its middle (they're on its right).
+export function busDoors(length: number, street = true) {
+  const L = length / 2;
+  return length < 10 ? [L - (street ? 2.75 : 1.1), -L + 2.6] : [L - 1.35, 0.6, -3.8];
+}
+
 function busGeometry(S: CarSpec, street = false): THREE.BufferGeometry {
   const builder = boxBuilder(S.color || '#c8102e');
   const { box, rounded, done } = builder;
@@ -688,7 +694,7 @@ function busGeometry(S: CarSpec, street = false): THREE.BufferGeometry {
   // Rounded at the corners, more at the front than the back.
   const nose = 0.3, tail = 0.16;
   rounded('#2a2c2f', -L + 0.05, L - 0.05, 0.28, 0.5, W - (street ? .70 : .02), [nose, tail]); // skirt and bumpers
-  const doors = small ? [L - (street ? 2.75 : 1.1), -L + 2.6] : [L - 1.35, 0.6, -3.8];
+  const doors = busDoors(S.L, street);
   if (street) {
     busCabin(builder, L, W, small, sill, top, doors, red);
     for (const x of [-L + .12, L - .12]) rounded('#2a2c2f', x - .12, x + .12, .28, .50, W - .08, .10);
