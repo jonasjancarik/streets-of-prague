@@ -1353,7 +1353,8 @@ record the measurements, merge decisions and pending landmark asset activation.
   `uv run landmarks.py praha divadlo` in `pipeline/`.
   The Jan Hus Memorial uses a custom model in all views. The bronze groups, stepped
   granite base and carved inscriptions share one texture atlas. The model follows
-  the existing solid footprint in both Prague maps. If the custom file fails to
+  the existing solid footprint in both Prague maps. The lawn between the steps and
+  the fence follows the mapped park outline. If the custom file fails to
   load, the tile uses its original survey mesh. Rebuild the app asset from the
   checked-in atlas with `uv run --project pipeline python assets/jan-hus/build.py`.
   At St Nicholas on Malostranské náměstí the copper dome, lantern and belfry follow

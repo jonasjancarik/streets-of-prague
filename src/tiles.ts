@@ -12,7 +12,8 @@ import { STREET_QUALITY } from './streetQuality.ts';
 import { mirrored } from './mirror.ts';
 import { streetOf } from './map/roofRules.ts';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { Geo, Grid, rng, hash, clipLine } from './map/geo.ts';
+import { difference } from 'polyclip-ts';
+import { Geo, Grid, rng, hash, clipLine, centroid } from './map/geo.ts';
 import { wallMesh } from './map/buildings.ts';
 import { TreePool } from './trees.ts';
 import { bridgeStairRails, groundStairs, stairLandings } from './map/stairs.ts';
@@ -420,6 +421,27 @@ function buildingMesh(arrays: BuildingArrays, sky: Float32Array | null) {
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   return mesh;
+}
+
+// The mapped park around Hus has a hole for the stone steps. The pavement
+// survey and planting-bed survey both overlap this lawn in the existing maps.
+function memorialLawn(t: TileJSON, monument: Landmark): TileJSON {
+  const [x, y] = centroid(monument.polygons[0][0]);
+  const parks = t.areas.park ?? [];
+  const lawn = parks.find(rings => rings.slice(1).some(hole => inRing(x, y, hole)));
+  if (!lawn) return t;
+  const xs = lawn[0].map(p => p[0]), ys = lawn[0].map(p => p[1]);
+  const west = Math.min(...xs), east = Math.max(...xs), south = Math.min(...ys), north = Math.max(...ys);
+  const outside = (polys?: Polygons) => polys?.flatMap(rings => {
+    const edge = rings[0];
+    if (edge.every(p => p[0] < west) || edge.every(p => p[0] > east) ||
+        edge.every(p => p[1] < south) || edge.every(p => p[1] > north)) return [rings];
+    return difference(rings, lawn);
+  });
+  return { ...t,
+    areas: { ...t.areas, park: parks.filter(p => p !== lawn), no_trees: [...(t.areas.no_trees ?? []), lawn],
+      ipr_lawn: [...(t.areas.ipr_lawn ?? []), lawn], ipr_bed: outside(t.areas.ipr_bed) },
+    roads: { ...t.roads, pavement: outside(t.roads.pavement) } };
 }
 
 // Whether (x, y) is within `pad` metres of a passage through a building.
@@ -1544,12 +1566,14 @@ export class TileWorld {
     // Fetch only the adjacent JSON, before any render resources/leases are created.
     const clearanceEdges = await this.parkingEdges(t);
     const nearBuildings = await this.parkingBuildings(t);
+    const marks = (await this.landmarks).filter((l) => l.tiles.includes(k));
+    const hus = marks.find(l => l.name === 'hus');
+    if (hus) t = memorialLawn(t, hus);
     const [x0, y0, x1, y1] = t.box;
     const data = { ...t, size: [x1 - x0, y1 - y0] as Point2, origin: [-x0, -y0] as Point2 };
     const geo = new Geo(data);
     const own = t.buildings.filter((b) => b.own);
     // Landmarks reaching into the tile: its buildings in their footprints give way.
-    const marks = (await this.landmarks).filter((l) => l.tiles.includes(k));
     const hide = marks.flatMap((l) => l.polygons);
     // Older theatre footprints stop at the main wall. Its carriage porch on the
     // embankment also has an OSM building, which would fill the three open arches.

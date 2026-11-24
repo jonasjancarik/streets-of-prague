@@ -132,6 +132,8 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     fill(d.areas.square_loose, 0);
     for (const k of PITCH_KINDS) fill(d.areas[k], 0);
     fill(d.areas.parking, 0);
+    // Keep the memorial lawn open even where the canopy raster suggests a crown.
+    fill(d.areas.no_trees, 0);
     fill(d.areas.water, 0);
     fill(d.areas.pool, 0);
     fill(d.areas.bridge, 0);
