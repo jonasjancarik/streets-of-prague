@@ -657,16 +657,39 @@ The metro ride uses its overhead cutaway camera.
   can see you, and otherwise make for where they last saw you.
   Police cars chase you along the streets and ram you; one stuck behind another goes
   round it to come up alongside you rather than ramming it. Some carry a ram frame on the
-  nose, more of them the more stars you have. When you're on foot they stay
+  nose, more of them the more stars you have. From two stars, when you're doing more than
+  about 30 km/h, a car behind you now and then tries a PIT manoeuvre (`pitting` in
+  `src/police.ts`, more often with more stars, `PITS` and `PIT_REST`): it pulls up beside
+  your back wheels, keeps pace, then steers into your rear quarter. A blow from the side
+  behind a car's middle swings its tail out faster than the back tyres hold it, so you spin
+  for a second or so with the steering barely answering (`Car.upset` and `SPIN` in
+  `src/car.ts`; any driven car spins this way, a police car you clip at the back too, not
+  bikes, buses or lorries). You can beat it: brake or swerve away as it comes alongside
+  (it gives up when it can't keep its place), or steer against the spin, which gets you
+  back three times as fast (scenario `police-pit`).
+  From three stars they also set up roadblocks (`src/roadblock.ts`, scenario
+  `police-roadblock`): out of your sight, 110–330 m ahead on the way you're likely to
+  drive (straight on at each junction, along the street network), police cars park across
+  the street nose to nose in a V pointing at you, with a gap between the noses of 3 m at
+  three stars, 2.7 m at four and 2.4 m at five, which a careful driver can get through.
+  Wider streets get up to four cars from four stars (none on tram tracks, bridges or in
+  tunnels). An officer from each car stands behind it and, armed, shoots as you come; stop
+  near them and they come to arrest you. Ramming through works, but the parked cars are
+  harder to shift than moving ones and it costs you speed and damage. Once you're past
+  (or 450 m off, or after a minute and a half, or the chase is over) the officers get back
+  in and the cars drive off (while you're still wanted they join the chase, as any patrol
+  nearby would); out of sight they simply go. When you're on foot they stay
   on the road and stop at the kerb nearest you; then (or when you stop the car) an
   officer gets out (their door stays open till they're back) and runs after you, to
-  your door if you're in a car. Once they have hold of you it takes them a moment
+  your door if you're in a car. They stop at arm's length, facing you, spread round you
+  rather than piling into one spot (two don't make for the same door of your car). Once they have hold of you it takes them a moment
   (about a second and a half on foot, two and a half at the door of a car you've
   stopped in) and then you're busted (the police keep the car); run, not walk, and you
   get out of their hands, or drive off before they open the door. The arrest is played out (`src/arrest.ts`): the officer opens
   your door and has you out of the car, your hands go up, they step behind you and
-  put the handcuffs on, and you're walked to their car and put in the back, while the
-  other officers stand round and nobody shoots. The screen fades to black on the way;
+  put the handcuffs on, and you're turned round and walked to their car and put in the
+  back (the officer walks round you to your side, not through you), while the
+  other officers stand round a few steps off and nobody shoots (scenario `arrest-foot`). The screen fades to black on the way;
   you are then taken to the station and the picture fades back in. You can outrun them on foot, or take the police car they've
   left behind (E) and drive off in it. Its blue lights keep flashing while you're at
   the wheel, even when stopped, and switch off when you get out. In a police car, fire

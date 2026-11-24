@@ -896,6 +896,7 @@ async function main() {
   const hurt = (points: number) => { if (!testkit?.unhurt && wastedT <= 0 && health.hurt(points)) wasted(); };
   const police = new Police({
     scene, drive, traffic, grid, height: ground, rng: seeded, edgesNear, walk, walkNear, offscreen, onBusted: busted, kit,
+    trackNear: (x, y, r) => trams.trackNear(x, y, r),
     // A shot is heard, seen and sends people running; one that hits you in a car mostly
     // hits the car.
     onShot: (from, to, hit) => {

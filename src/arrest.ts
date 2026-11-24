@@ -14,6 +14,9 @@ const LED = 2.1; // m/s, walked to the car
 const WALK_CLIP = 1.2; // m/s the walk clips cover at their own speed
 const BEHIND = 0.62; // m the officer stands behind you
 const FAR = 28; // m: a police car further off than this isn't walked to
+const ORBIT = 4.5; // rad/s an officer walks round you, leading you off
+const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const HAUL = 0.3, HANDS = 0.55, CUFF = 1, LEAD = 3, AWAY = 1.3, DARK = 0.85, BACK = 0.6; // seconds
 
 interface Hooks {
@@ -75,7 +78,8 @@ export class Arrest {
     const s = this.now!, w = this.o.walker, o = s.officer;
     s.phase = 'hands';
     s.t = 0;
-    s.face = s.car && s.door ? s.car.h - s.door.side * Math.PI / 2 : o ? Math.atan2(w.y - o.y, w.x - o.x) : w.h;
+    // (An officer right on top of you gives no way to face: then as you were.)
+    s.face = s.car && s.door ? s.car.h - s.door.side * Math.PI / 2 : o && Math.hypot(w.x - o.x, w.y - o.y) > 0.3 ? Math.atan2(w.y - o.y, w.x - o.x) : w.h;
     w.base.makeScale(SCALE, SCALE, SCALE);
     w.anim.play('handsup', true, 0.15);
   }
@@ -158,16 +162,26 @@ export class Arrest {
     } else if (s.phase === 'lead') {
       // To the police car's back door; with none to go to, off the way the officer came.
       const [tx, ty] = s.ride ? s.ride.car.beside(s.ride.door) : [w.x - Math.cos(s.face) * 50, w.y - Math.sin(s.face) * 50];
-      const d = Math.hypot(tx - w.x, ty - w.y);
-      w.h = turn(w.h, Math.atan2(ty - w.y, tx - w.x), Math.min(1, 5 * dt));
-      const step = Math.min(d, LED * dt);
+      const d = Math.hypot(tx - w.x, ty - w.y), way = Math.atan2(ty - w.y, tx - w.x);
+      // Turned round on the spot first (their car is mostly behind you), then walked: not
+      // marched off sideways.
+      w.h = turn(w.h, way, Math.min(1, 5 * dt));
+      const pace = clamp(1.6 - 2 * Math.abs(wrap(way - w.h)), 0, 1), step = Math.min(d, LED * dt * pace);
       w.x += Math.cos(w.h) * step;
       w.y += Math.sin(w.h) * step;
-      a.step(dt, LED / WALK_CLIP);
+      a.step(dt, Math.max(0.4, pace) * LED / WALK_CLIP);
       if (o) {
-        // A step behind, a little to your left, a hand on your arm.
-        Object.assign(o, { x: w.x - Math.cos(w.h) * BEHIND - Math.sin(w.h) * 0.22, y: w.y - Math.sin(w.h) * BEHIND + Math.cos(w.h) * 0.22, h: w.h });
-        o.anim.step(dt, LED / WALK_CLIP);
+        // A step behind, a little to your left, a hand on your arm. As you turn they walk
+        // round you to that place, at arm's length (they used to be stuck to it, and swung
+        // round through you).
+        const ex = w.x - Math.cos(w.h) * BEHIND - Math.sin(w.h) * 0.22, ey = w.y - Math.sin(w.h) * BEHIND + Math.cos(w.h) * 0.22;
+        const now = Math.atan2(o.y - w.y, o.x - w.x), want = Math.atan2(ey - w.y, ex - w.x);
+        const r0 = Math.hypot(o.x - w.x, o.y - w.y), r1 = Math.hypot(ex - w.x, ey - w.y);
+        const ang = now + clamp(wrap(want - now), -ORBIT * dt, ORBIT * dt), r = Math.max(0.55, r0 + clamp(r1 - r0, -dt, dt));
+        o.x = w.x + Math.cos(ang) * r;
+        o.y = w.y + Math.sin(ang) * r;
+        o.h = turn(o.h, w.h, Math.min(1, 8 * dt));
+        o.anim.step(dt, Math.max(0.4, pace) * LED / WALK_CLIP);
       }
       if (s.dark === null) {
         if (s.ride && d < 0.3) {

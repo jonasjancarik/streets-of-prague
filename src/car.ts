@@ -72,7 +72,8 @@ export interface CarGrid {
   view?: (car: Car) => CarGrid;
   trunkAt?: (x: number, y: number) => TreeTrunk | undefined;
 }
-export interface Body { x: number; y: number; vx: number; vy: number; w?: number }
+// (`upset`: told of the turn a blow gave it, `dw`, landing (rx, ry) from its middle; see Car.upset.)
+export interface Body { x: number; y: number; vx: number; vy: number; w?: number; upset?(rx: number, ry: number, dw: number): void }
 
 // Arcade top-down car handling: grip on the long axis, lateral slip that decays
 // (much slower with the handbrake), bounces off walls against the collision grid.
@@ -252,6 +253,12 @@ const BREAKS = 4.5; // m/s: a knock this hard breaks a lamp it lands on
 // those parts in; a corner at level 2 or more cracks the window at its end, a side its
 // side windows.
 export const DENT = { from: 3, per: 5, end: 0.9 };
+// A blow to a driven car's tail that turns it faster than `from` rad/s sets it spinning
+// (Car.upset): the turn grows by `carry` times the blow's own (the back tyres let go), to
+// no more than `fastest`, for `per` seconds per rad/s of it, `most` at most, the last
+// `fade` of them coming back. Meanwhile the tyres grip `slide` less sideways and the
+// steering keeps only 1 - `hold` of its say.
+export const SPIN = { from: 0.5, carry: 2, fastest: 4, per: 1, most: 1.5, fade: 0.4, slide: 0.75, hold: 0.9 };
 export const DENT_STEP = 2048;
 // Every vertex of a lamp's part gets its number: headlamp or tail lamp, left (-z) or right.
 function markLamp(g: THREE.BufferGeometry, head: boolean) {
@@ -1728,6 +1735,8 @@ export class Car {
   treeEscape?: TreeEscape;
   // A police car with the frame on its nose, which keeps its headlamps from breaking.
   ram?: boolean;
+  // Seconds still spinning after a blow to its tail (see upset).
+  spin = 0;
   // The resting index's last obstacle state (main.ts, restingCars.ts). The pose is
   // kept as plain numbers; the circle offsets are the constructor's own array, so a
   // change of shape must replace the array to be noticed.
@@ -1818,6 +1827,18 @@ export class Car {
   local(along: number, left: number): Point2 {
     const c = Math.cos(this.h), s = Math.sin(this.h);
     return [this.x + c * along - s * left, this.y + s * along + c * left];
+  }
+
+  // A blow that turned the car by `dw` rad/s, landing (rx, ry) from its middle (from
+  // collideBodies). Behind the middle and from the side (a police car's PIT manoeuvre, a
+  // car clipping your back corner) it swings the tail out faster than the back tyres can
+  // hold it, and the car spins on for a moment (`spin`, arcadeVelocity). Not a bike or a
+  // motorbike, nor a bus or a lorry, nor a car nobody drives (that one turns freely anyway).
+  upset(rx: number, ry: number, dw: number) {
+    if (!this.driven || this.two || this.spec.heavy || Math.abs(dw) < SPIN.from) return;
+    if (rx * Math.cos(this.h) + ry * Math.sin(this.h) > -this.spec.L * 0.15) return;
+    this.w = clamp(this.w + dw * SPIN.carry, -SPIN.fastest, SPIN.fastest);
+    this.spin = Math.min(SPIN.most, Math.max(this.spin, Math.abs(dw) * SPIN.per));
   }
 
   // Fits the ram frame (a police car's).
@@ -1974,6 +1995,14 @@ export class Car {
     vf -= 9.81 * slope * dt;
     if (ctl.cap != null && vf > ctl.cap) vf = Math.max(ctl.cap, vf - 3 * dt);
 
+    // Spun by a blow to the tail (upset): the tyres slide and the steering barely holds
+    // the car until it wears off. Steering against the spin gets it back three times as fast.
+    let lost = 0;
+    if (this.spin > 0) {
+      this.spin -= dt * (ctl.steer * this.w * vf < 0 && Math.abs(ctl.steer) > 0.3 ? 3 : 1);
+      lost = clamp(this.spin / SPIN.fade, 0, 1);
+    }
+
     // Full throttle in a bend: the driven wheels lose sideways grip (rear-wheel drive)
     // or the car runs wide (front-wheel drive, below).
     const power = this.driven && !S.two ? clamp(throttle, 0, 1) : 0;
@@ -1983,7 +2012,7 @@ export class Car {
     // and longer with the gas held in a rear-wheel-drive car.
     const sliding = clamp((Math.abs(vl) - 1) / 5, 0, 1);
     const grip = (ctl.handbrake ? 1.1 : S.grip * (1 - (S.fade ?? 0.45) * fast) * (S.drive === 'rwd' ? 1 - (0.3 + 0.5 * sliding) * bend : 1) * (1 - 0.6 * sliding)) * road;
-    vl *= Math.exp(-grip * dt);
+    vl *= Math.exp(-grip * (1 - SPIN.slide * lost) * dt);
     // How much of the car's turning its travel follows. Rolling tyres take it all; with
     // the back wheels locked by the handbrake the nose swings round while the car goes
     // on the way it was going, and the difference is the slide.
@@ -2005,11 +2034,11 @@ export class Car {
     // still along its nose.
     const swing = ctl.handbrake ? Math.hypot(vf, vl) : Math.abs(vf);
     const wantW = ctl.steer * Math.min(swing / (S.radius ?? 3.6), maxW) * sgn;
-    if (this.driven) this.w += (wantW - this.w) * Math.min(1, dt * (S.response ?? 9));
+    if (this.driven) this.w += (wantW - this.w) * Math.min(1, dt * (S.response ?? 9)) * (1 - SPIN.hold * lost);
     else this.w *= Math.exp(-4 * dt);
     this.h += this.w * dt;
 
-    const travel = this.h - this.w * dt * (1 - follow);
+    const travel = this.h - this.w * dt * (1 - follow * (1 - lost));
     const nx = Math.cos(travel), ny = Math.sin(travel);
     this.vx = nx * vf + ny * vl;
     this.vy = ny * vf - nx * vl;
@@ -2676,7 +2705,12 @@ export function collideBodies(a: Body, ca: Point2[], ra: number, ia: number, b: 
   for (const [body, inv, sign] of [[a, ia, -1], [b, ib, 1]] as [Body, number, number][]) {
     if (!inv || body.w === undefined) continue;
     const rx = best.px - body.x, ry = best.py - body.y;
-    body.w += (rx * ny - ry * nx) * sign * j * inv * 0.25;
+    const dw = (rx * ny - ry * nx) * sign * j * inv * 0.25;
+    body.w += dw;
+    body.upset?.(rx, ry, dw);
   }
+  // Heard (src/impacts.ts): two cars, or a car and a tram or funicular car.
+  crash(a, b, -vrel, a instanceof Car && b instanceof Car ? 'car' : 'tram', best.px, best.py,
+    Math.max(a instanceof Car ? a.spec.mass : 30000, b instanceof Car ? b.spec.mass : 30000));
   return -vrel;
 }

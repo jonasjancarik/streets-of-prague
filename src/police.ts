@@ -3,7 +3,9 @@ export { Heap } from './pathfinding.ts';
 import * as telemetry from './telemetry.ts';
 import { aim } from './difficulty.ts';
 import * as THREE from 'three';
-import { Car } from './car.ts';
+import { Car, TYPES } from './car.ts';
+import { ahead, layout } from './roadblock.ts';
+import type { Roadblock, Spot, Placed } from './roadblock.ts';
 import { Polyline, clamp } from './network.ts';
 import { project, speedLimit, turnOf } from './assist.ts';
 import { Figures, Anim, SCALE } from './figures.ts';
@@ -16,10 +18,17 @@ import type { FigureKit } from './figures.ts';
 import type { Point2 } from './map/geo.ts';
 import type { Point3 } from './guns.ts';
 
-interface ChaseCar extends Follower { car: Car; calm: boolean; wrecked: boolean; gone?: boolean; reload?: number; side?: number }
+// `pit`: trying a PIT manoeuvre on you (see pitting); `trick`: seconds before it thinks of
+// trying one. `block`: parked across the road as part of a roadblock (see roadblock.ts).
+interface ChaseCar extends Follower { car: Car; calm: boolean; wrecked: boolean; gone?: boolean; reload?: number; side?: number; pit?: Pit; trick?: number; block?: Roadblock }
+// (`ok`: seconds it has kept its place beside you; `cramped`: seconds that place has been
+// in a wall or another car.)
+interface Pit { phase: 'line' | 'hit' | 'off'; t: number; side: number; ok: number; cramped: number }
 // `door`: the one of their car they got out of, left open till they're back. `led`: making
-// an arrest, moved by src/arrest.ts.
-export interface Officer { avatarId: number; x: number; y: number; h: number; vx: number; vy: number; car: Car; fig: Figures; anim: Anim; down: number; back: boolean; gone?: boolean; level?: number; gz?: number; detour?: number; reload?: number; door?: number; led?: boolean; grip?: number }
+// an arrest, moved by src/arrest.ts. `slot`: the way round you (radians) they stand when
+// they've caught up; `at`: the door of your car they're making for. `post`: where they
+// stand at a roadblock, behind their car.
+export interface Officer { avatarId: number; x: number; y: number; h: number; vx: number; vy: number; car: Car; fig: Figures; anim: Anim; down: number; back: boolean; gone?: boolean; level?: number; gz?: number; detour?: number; reload?: number; door?: number; led?: boolean; grip?: number; slot?: number; at?: number; post?: Point2; block?: Roadblock }
 // A stretch of the way a police car or a fire engine can take: a street, or (`foot`) a
 // way meant for people.
 type Way = (DriveEdge | WalkEdge) & { mid?: Polyline; twin?: DriveEdge | null };
@@ -52,6 +61,8 @@ interface PoliceOptions {
   bodyAt?: (x: number, y: number, r: number, skip: Car | null) => boolean;
   // A shot at the player, from the muzzle to where the bullet went, and whether it hit.
   onShot?: (from: Point3, to: Point3, hit: boolean) => void;
+  // Whether a tram track runs within r m of (x, y): no roadblock there.
+  trackNear?: (x: number, y: number, r: number) => boolean;
 }
 
 // The police and your wanted level, GTA 2 style.
@@ -74,6 +85,8 @@ interface PoliceOptions {
 // From three stars a helicopter joins in (src/helicopter.ts), and the officers draw
 // their pistols: they stop where they can see you and shoot rather than run you down.
 // From four stars they shoot from the cars as well.
+// From two stars a car behind you now and then tries a PIT manoeuvre on you (pitting),
+// and from three they set up roadblocks ahead of you (src/roadblock.ts).
 //
 // In a fire engine or an ambulance the police go easier on you. Taking one is still a
 // carjack, but the stars go ON_DUTY.lose times as fast once they've lost sight of you.
@@ -81,6 +94,7 @@ interface PoliceOptions {
 // ON_DUTY.crash as much, and that little heat drains away by itself.
 
 const STARS = [1, 4, 9, 16, 25]; // heat for each star
+const BRAKED = { throttle: 0, steer: 0, handbrake: true };
 const CHASERS = [0, 1, 2, 3, 4, 6]; // police cars after you, by stars
 const HELIS = [0, 0, 0, 1, 1, 1];
 const PATROLS = 3;
@@ -102,6 +116,28 @@ const ON_DUTY = { lose: 3, crash: 0.35, drain: 0.05 }; // (drain: heat a second,
 const REPORT = 6; // s at least before a crime the police didn't see is phoned in
 const GRIP = 1.4; // s an officer has to keep hold of you on foot before you're busted
 const GRIP_CAR = 2.4; // s at the door of the car you've stopped in: time to drive off
+// The PIT manoeuvre (see pitting), from two stars: the chance a car behind you tries one each
+// time it thinks of it (about every second), and the seconds it waits before thinking of
+// another.
+const PITS = [0, 0, 0.25, 0.4, 0.55, 0.7];
+const PIT_REST = [0, 0, 10, 8, 6, 4];
+const PIT_FAST = 8; // m/s (about 30 km/h) at least: slower, they just ram you or stop you
+// Roadblocks (roadblock.ts), from three stars: seconds from one to the next, the gap
+// between the noses (a car is 1.75–1.9 m wide), the most cars in one, how far ahead of you
+// (m) it's set up, how far off you are when it's given up, and how much harder than a
+// moving car the parked ones are to shove.
+const BLOCK_FROM = 3;
+const BLOCK_REST = [0, 0, 0, 30, 22, 15];
+const BLOCK_GAP = [0, 0, 0, 3, 2.7, 2.4];
+const BLOCK_CARS = [0, 0, 0, 2, 4, 4];
+const BLOCK_NEAR = 110, BLOCK_FAR = 330, BLOCK_GONE = 450;
+const BLOCK_MASS = 1.6;
+// Where officers stand once they've caught up with you on foot: at arm's length (from your
+// middle to theirs), spread round you no closer than SPREAD radians to each other, not on
+// top of you. While one of them arrests you, the others stand back at STAND_BY.
+const ARM = 0.85; // m
+const SPREAD = 1.1;
+const STAND_BY = 2.6; // m
 
 // Walking towards (tx, ty) at `speed`: round the cars and trams in the way, not into
 // them: the first way clear a step ahead, turning further and further off the straight
@@ -175,6 +211,7 @@ export class Police {
   r: () => number; edgesNear: PoliceOptions['edgesNear']; offscreen: PoliceOptions['offscreen'];
   onBusted: (by: Officer) => void; kit: FigureKit; bodyAt: NonNullable<PoliceOptions['bodyAt']>;
   height: PoliceOptions['height']; onShot: NonNullable<PoliceOptions['onShot']>;
+  trackNear: NonNullable<PoliceOptions['trackNear']>;
   private nextOfficerId = 0;
   spare: Figures[]; helis: Helicopters; heat: number; cars: ChaseCar[]; officers: Officer[];
   seen: boolean; lose: number; cool: Record<string, number>; spawnT: number; checkT: number; limit: number;
@@ -183,6 +220,11 @@ export class Police {
   stolen: WeakSet<Car>;
   // An arrest is being made (src/arrest.ts): nobody shoots, the other officers stand round.
   arresting = false;
+  // The roadblock set up ahead of you, if there is one, and seconds before another may be.
+  block: Roadblock | null = null;
+  blockT = 4;
+  private spots: Spot[] = [];
+  private placed: Placed[] = [];
   // Where the police think you are: where they last saw you, or where a crime was
   // phoned in from. Out of sight, that is where they go, not to you.
   known: Point2 | null = null;
@@ -195,12 +237,12 @@ export class Police {
   // Driving a fire engine or an ambulance (PlayerTarget.duty), as of the last update.
   private duty = false;
 
-  constructor({ scene, drive, traffic, grid, height, rng, edgesNear, walk = undefined, walkNear = () => [], offscreen, onBusted, kit, bodyAt = () => false, onShot = () => {} }: PoliceOptions) {
+  constructor({ scene, drive, traffic, grid, height, rng, edgesNear, walk = undefined, walkNear = () => [], offscreen, onBusted, kit, bodyAt = () => false, onShot = () => {}, trackNear = () => false }: PoliceOptions) {
     this.scene = scene; this.drive = drive; this.traffic = traffic; this.grid = grid;
     this.r = rng; this.edgesNear = edgesNear; this.offscreen = offscreen;
     this.paths = walk ?? null; this.walkNear = walkNear;
     this.onBusted = onBusted; this.kit = kit; this.bodyAt = bodyAt;
-    this.height = height; this.onShot = onShot;
+    this.height = height; this.onShot = onShot; this.trackNear = trackNear;
     this.spare = []; // figures of officers who've gone, to reuse
     this.helis = new Helicopters(scene, height);
     this.heat = 0;
@@ -221,8 +263,8 @@ export class Police {
 
   get stars() { return STARS.filter((t) => this.heat >= t).length; }
 
-  // Police cars that are after you, not wrecked or given up.
-  get chasing() { return this.cars.filter((p) => !p.calm && !p.wrecked); }
+  // Police cars that are after you, not wrecked or given up (nor standing in a roadblock).
+  get chasing() { return this.cars.filter((p) => !p.calm && !p.wrecked && !p.block); }
 
   // Everyone who can spot you: patrols, chasing cars and officers on foot.
   *eyes() {
@@ -308,6 +350,7 @@ export class Police {
     this.cars = [];
     this.reports = [];
     this.known = null;
+    this.block = null;
     this.helis.reset();
   }
 
@@ -525,6 +568,12 @@ export class Police {
     this.cars.push({ car, path: null, s: 0, replan: 0, stuck: 0, reverse: 0, calm: false, wrecked: false });
   }
 
+  // A new police car joins the chase at (x, y), facing h (for the scenarios).
+  dispatch(x: number, y: number, h: number) {
+    this.enlist(new Car('police', this.r, x, y, h));
+    return this.cars[this.cars.length - 1];
+  }
+
   // Steering and pedals for a car chasing the player.
   chase(p: ChaseCar, dt: number, me: PlayerTarget) {
     const c = p.car, vf = c.forwardSpeed;
@@ -532,7 +581,10 @@ export class Police {
     // (Not on the street over the tunnel you're in, nor in the tunnel under you.)
     const level = this.level(c, me);
     let tx, ty, want;
-    if (me.car && dist < 40 && level && this.clear(c.x, c.y, me.x, me.y)) {
+    if (!me.car || dist >= 40 || !level) p.pit = undefined;
+    const pit = me.car && dist < 40 && level ? this.pitting(p, me, me.car, dt) : null;
+    if (pit) ({ tx, ty, want } = pit);
+    else if (me.car && dist < 40 && level && this.clear(c.x, c.y, me.x, me.y)) {
       // In sight and you're driving: straight at you, to ram you.
       tx = me.x + me.vx * Math.min(0.8, dist / 25);
       ty = me.y + me.vy * Math.min(0.8, dist / 25);
@@ -599,6 +651,70 @@ export class Police {
     return { throttle, steer, handbrake: want === 0 && Math.abs(vf) < 3 };
   }
 
+  // The PIT manoeuvre: a car behind you pulls up alongside your back wheels, keeps pace,
+  // then steers into your rear quarter, and the push swings your tail round (see
+  // Car.upset): you spin out and stop, and they have you. From two stars, now and then
+  // (PITS, PIT_REST), only at speed, and one car at a time. It can be beaten: brake or
+  // swerve away as they come alongside (they give up when they can't keep there), steer
+  // against the spin, or keep your speed down in the first place.
+  // Returns where to head and how fast, or null when not trying one.
+  pitting(p: ChaseCar, me: PlayerTarget, m: Car, dt: number) {
+    const c = p.car;
+    p.trick = (p.trick ?? 2 + this.r() * 3) - dt;
+    const fx = Math.cos(m.h), fy = Math.sin(m.h), lx = -fy, ly = fx;
+    const rx = c.x - m.x, ry = c.y - m.y, along = rx * fx + ry * fy, across = rx * lx + ry * ly;
+    if (!p.pit) {
+      if (p.trick > 0 || this.stars < 2 || me.speed < PIT_FAST || m.two || m.spec.heavy) return null;
+      p.trick = 1 + this.r();
+      // From behind you or beside you, not ahead; going your way; not while another
+      // car is at it.
+      if (along > 1 || along < -30 || Math.cos(c.h - m.h) < 0.7 || this.cars.some((q) => q.pit && q !== p)) return null;
+      if (this.r() >= PITS[this.stars]) return null;
+      p.pit = { phase: 'line', t: 0, side: Math.sign(across) || (this.r() < 0.5 ? -1 : 1), ok: 0, cramped: 0 };
+    }
+    const pit = p.pit;
+    pit.t += dt;
+    // Beside you, its front wheels level with your back ones, a little room between.
+    const wide = (m.spec.W + c.spec.W) / 2, place = -m.spec.L / 2 + 0.9 - c.spec.L / 2 + 0.7;
+    if (me.speed < PIT_FAST - 2 || Math.hypot(rx, ry) > 30) return this.endPit(p);
+    let tx, ty, want;
+    if (pit.phase === 'line') {
+      const sx = m.x + fx * place + lx * pit.side * (wide + 0.6), sy = m.y + fy * place + ly * pit.side * (wide + 0.6);
+      // No room that side (a wall, parked cars): not this time.
+      pit.cramped = this.grid.at(sx, sy) || this.bodyAt(sx, sy, 0.8, c) ? pit.cramped + dt : 0;
+      if (pit.cramped > 0.6) return this.endPit(p);
+      const lead = 6 + me.speed * 0.4;
+      tx = sx + fx * lead;
+      ty = sy + fy * lead;
+      want = me.speed + clamp((place - along) * 1.2, -6, 7);
+      // There and keeping pace for a moment: in.
+      const there = Math.abs(along - place) < 1.3 && Math.abs(across - pit.side * (wide + 0.6)) < 1 && Math.cos(c.h - m.h) > 0.96;
+      pit.ok = there ? pit.ok + dt : 0;
+      if (pit.ok > 0.35) { pit.phase = 'hit'; pit.t = 0; }
+      else if (pit.t > 8) return this.endPit(p);
+    } else if (pit.phase === 'hit') {
+      // Steering into your back wheels, a touch quicker than you.
+      const bx = m.x + fx * (-m.spec.L / 2 + 0.6), by = m.y + fy * (-m.spec.L / 2 + 0.6);
+      tx = bx + fx * 4;
+      ty = by + fy * 4;
+      want = me.speed + 2;
+      if (Math.abs(across) < wide + 0.15 || pit.t > 1.3) { pit.phase = 'off'; pit.t = 0; }
+    } else {
+      // Done: off the brakes behind you, out of the way of the spin.
+      tx = c.x + Math.cos(c.h) * 10;
+      ty = c.y + Math.sin(c.h) * 10;
+      want = Math.max(0, me.speed - 5);
+      if (pit.t > 1.5) return this.endPit(p);
+    }
+    return { tx, ty, want };
+  }
+
+  endPit(p: ChaseCar) {
+    p.pit = undefined;
+    p.trick = PIT_REST[this.stars] + this.r() * 4;
+    return null;
+  }
+
   // ---- Guns ----------------------------------------------------------------
 
   // Seconds to the next shot: quicker with more stars.
@@ -623,12 +739,14 @@ export class Police {
 
   // ---- Officers on foot --------------------------------------------------
 
-  getOut(car: Car) {
+  // (`away`: out of the door further from there, if it's free.)
+  getOut(car: Car, away?: Point2) {
     car.crew = false;
     const lx = -Math.sin(car.h), ly = Math.cos(car.h);
-    let x = car.x + lx * (car.spec.W / 2 + 0.7), y = car.y + ly * (car.spec.W / 2 + 0.7), door = 1;
+    const first = away && (car.x - away[0]) * lx + (car.y - away[1]) * ly < 0 ? -1 : 1;
+    let x = car.x + first * lx * (car.spec.W / 2 + 0.7), y = car.y + first * ly * (car.spec.W / 2 + 0.7), door = first > 0 ? 1 : 2;
     // Out of the other door if a wall or another car is on this side.
-    if (this.grid.at(x, y) || this.bodyAt(x, y, 0.4, car)) { x = car.x - lx * (car.spec.W / 2 + 0.7); y = car.y - ly * (car.spec.W / 2 + 0.7); door = 2; }
+    if (this.grid.at(x, y) || this.bodyAt(x, y, 0.4, car)) { x = car.x - first * lx * (car.spec.W / 2 + 0.7); y = car.y - first * ly * (car.spec.W / 2 + 0.7); door = 3 - door; }
     // (It stays open till they're back.)
     car.open(door);
     let fig = this.spare.pop();
@@ -657,16 +775,23 @@ export class Police {
     } else {
       const ride = this.cars.find((p) => p.car === o.car && !p.wrecked);
       // Back to the car when you drive off (or the chase is over); after you otherwise.
+      // At a roadblock they keep their places (until it's cleared, below).
       const toMe = Math.hypot(me.x - o.x, me.y - o.y);
-      o.back = this.heat <= 0 || !!(ride && me.car && me.speed > 6 && toMe > 12);
+      o.back = this.heat <= 0 || (!o.post && !!(ride && me.car && me.speed > 6 && toMe > 12));
+      // At a roadblock: behind their car while you drive up (or are far off). Once you've
+      // stopped near them, they come for you as anyone would.
+      const posted = !o.back && !!o.post && (toMe > 30 || (!!me.car && me.speed > 2));
       // You in a car: they make for the nearer of its front doors, not for its middle
-      // (which they can't get near from the front or the back).
+      // (which they can't get near from the front or the back), and not for the one
+      // another officer is making for.
       // Out of sight, to where they last knew you to be.
       let gx = goal.x, gy = goal.y, door = Infinity;
+      o.at = undefined;
       for (const d of goal === me ? me.car?.doors ?? [] : []) {
         if (d.n > 2) continue;
         const [x, y] = me.car!.beside(d, 0.9), far = Math.hypot(x - o.x, y - o.y);
-        if (far < door && !this.blocked(x, y)) { door = far; gx = x; gy = y; }
+        if (far >= door || this.blocked(x, y) || this.officers.some((q) => q !== o && q.at === d.n && !q.back && q.down <= 0)) continue;
+        door = far; gx = x; gy = y; o.at = d.n;
       }
       // Armed, in range and in sight: they stand and shoot. Closer in they still come to
       // arrest you.
@@ -674,20 +799,27 @@ export class Police {
       const level = this.level(o, me);
       const aiming = !o.back && !this.arresting && this.stars >= ARMED && !me.air && level && toMe > 5 && toMe < RANGE && this.clear(o.x, o.y, me.x, me.y);
       if (this.arresting && !o.back) {
-        // Someone else has you: come up and stand by.
-        if (toMe > 3.4) steer(o, me.x, me.y, RUN, this.bodyAt, null, this.r);
-        else { o.vx = o.vy = 0; o.h = Math.atan2(me.y - o.y, me.x - o.x); }
+        // Someone else has you: they come up and stand round, a few steps off.
+        this.standRound(o, me.x, me.y, STAND_BY, dt);
       } else if (aiming) {
         o.vx = o.vy = 0;
         o.h = Math.atan2(me.y - o.y, me.x - o.x);
         if (o.reload <= 0) { o.reload = this.pace(); this.shoot(o.x, o.y, o, me); }
-      } else {
+      } else if (o.back) {
         // No car to go back to: they walk off.
-        const tx = !o.back ? gx : ride ? o.car.x : 2 * o.x - me.x, ty = !o.back ? gy : ride ? o.car.y : 2 * o.y - me.y;
+        const tx = ride ? o.car.x : 2 * o.x - me.x, ty = ride ? o.car.y : 2 * o.y - me.y;
         const d = Math.hypot(tx - o.x, ty - o.y) || 1;
-        steer(o, tx, ty, o.back && !ride ? 1.4 : RUN, this.bodyAt, o.back ? o.car : null, this.r);
-        if (o.back && ride && d < 2.6) { o.gone = true; o.car.crew = true; if (o.door) o.car.open(o.door, false); return; }
-        if (!o.back && this.heat > 0 && !me.air && level) {
+        steer(o, tx, ty, ride ? RUN : 1.4, this.bodyAt, o.car, this.r);
+        if (ride && d < 2.6) { o.gone = true; o.car.crew = true; if (o.door) o.car.open(o.door, false); return; }
+      } else if (posted) {
+        this.arrive(o, o.post![0], o.post![1], Math.atan2(me.y - o.y, me.x - o.x), dt);
+        o.grip = 0;
+      } else {
+        // Caught up: at your door, or at arm's length (round your car when both doors are
+        // taken), facing you.
+        if (o.at !== undefined) this.arrive(o, gx, gy, Math.atan2(me.car!.y - o.y, me.car!.x - o.x), dt);
+        else this.standRound(o, goal.x, goal.y, goal === me && me.car ? me.car.spec.L / 2 + 1.2 : ARM, dt);
+        if (this.heat > 0 && !me.air && level) {
           // Hold of you, or at the door of the car you've stopped in: it takes a moment, and
           // you can still run out of their hands (walking, you can't) or drive off.
           const reach = me.car ? me.car.spec.L / 2 + 1 : 1.1;
@@ -703,6 +835,45 @@ export class Police {
     if (o.down > 0) knocked(o.anim, dt, o.down);
     else locomote(o.anim, dt, Math.hypot(o.vx, o.vy));
     if (o.back && !this.cars.some((p) => p.car === o.car) && this.offscreen(o.x, o.y)) o.gone = true;
+  }
+
+  // Runs to (tx, ty), slowing to stop on the spot rather than overshooting it (and
+  // turning on it, back and forth, as they did), and faces `face` once close.
+  arrive(o: Officer, tx: number, ty: number, face: number, dt: number) {
+    const d = Math.hypot(tx - o.x, ty - o.y), h = o.h;
+    if (d < 0.12) { o.vx = o.vy = 0; o.detour = 0; } else steer(o, tx, ty, Math.min(RUN, 0.5 + d * 3), this.bodyAt, null, this.r);
+    if (d < 1.5) o.h = h + turnOf(h, face) * Math.min(1, 10 * dt);
+  }
+
+  standable(x: number, y: number) { return !this.blocked(x, y) && !this.bodyAt(x, y, 0.3, null); }
+
+  // Stands r m from (cx, cy) (you, or where they last knew you to be), facing it: on the
+  // side they came from, but not where another officer stands (they spread round you,
+  // SPREAD apart), nor in a wall or a car; and they go round you to get there, not
+  // through you. The way round is picked once they're near, and kept.
+  standRound(o: Officer, cx: number, cy: number, r: number, dt: number) {
+    const dx = o.x - cx, dy = o.y - cy, d = Math.hypot(dx, dy), here = Math.atan2(dy, dx);
+    if (o.slot === undefined || d > r + 4) o.slot = here;
+    let a = o.slot;
+    for (let pass = 0; pass < 3; pass++) {
+      for (const q of this.officers) {
+        if (q === o || q.down > 0 || q.back || Math.hypot(q.x - cx, q.y - cy) > r + 4) continue;
+        const qa = q.led ? Math.atan2(q.y - cy, q.x - cx) : q.slot;
+        if (qa === undefined) continue;
+        const off = turnOf(qa, a);
+        if (Math.abs(off) < SPREAD) a = qa + (off >= 0 ? SPREAD : -SPREAD);
+      }
+    }
+    for (let k = 1, base = a; k <= 8 && !this.standable(cx + Math.cos(a) * r, cy + Math.sin(a) * r); k++) a = base + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.45;
+    o.slot = a;
+    let tx = cx + Math.cos(a) * r, ty = cy + Math.sin(a) * r;
+    const round = turnOf(here, a);
+    if (Math.abs(round) > 0.7 && d < r + 2) {
+      const b = here + Math.sign(round) * 0.7, rr = Math.max(d, r + 0.3);
+      tx = cx + Math.cos(b) * rr;
+      ty = cy + Math.sin(b) * rr;
+    }
+    this.arrive(o, tx, ty, Math.atan2(cy - o.y, cx - o.x), dt);
   }
 
   // ---- Every frame -------------------------------------------------------
@@ -783,11 +954,25 @@ export class Police {
       for (const p of far.slice(0, chasing.length - want)) p.calm = true;
     }
 
+    // A roadblock ahead of you, now and then from three stars, while they can see you
+    // driving.
+    this.blockT -= dt;
+    if (this.block) this.tend(this.block, me, dt);
+    else if (this.blockT < 0) {
+      this.blockT = 1.5;
+      if (this.stars >= BLOCK_FROM && this.seen && me.car && !me.level && me.speed > 6) this.roadblock(me);
+    }
+
     for (const p of this.cars) {
       const c = p.car;
       if (!p.wrecked && c.damage > WRECKED) p.wrecked = true;
       let ctl = null;
-      if (!p.wrecked && !p.calm) ctl = this.chase(p, dt, goal);
+      if (p.block && !p.wrecked) {
+        // Parked across the road, the handbrake on, nobody at the wheel: once it's knocked
+        // moving it turns as it's shoved (one with a driver would keep its line).
+        if (c.speed > 1.5) c.mode = 'loose';
+        ctl = BRAKED;
+      } else if (!p.wrecked && !p.calm) ctl = this.chase(p, dt, goal);
       else if (!p.wrecked) ctl = { throttle: c.forwardSpeed > 0.3 ? -1 : 0, steer: 0, handbrake: false };
       if (p.wrecked) c.mode = 'loose';
       c.update(dt, ctl, this.grid);
@@ -820,6 +1005,105 @@ export class Police {
     if (!best) return false;
     this.traffic.adopt(car, best.e, best.s, 0);
     return true;
+  }
+
+  // ---- Roadblocks ----------------------------------------------------------
+
+  // Sets up a roadblock on the way you're driving, out of your sight (roadblock.ts): the
+  // first place along it where the cars fit across the street and close it. Whether it did.
+  roadblock(me: PlayerTarget) {
+    this.sync();
+    const st = this.nearestStreet(me.x, me.y, 12);
+    if (!st) return false;
+    const p = st.e.mid.at(st.s), fwd = me.vx * Math.cos(p.ang) + me.vy * Math.sin(p.ang) >= 0;
+    const { L, W } = TYPES.police, stars = this.stars;
+    let tried = 0;
+    for (const sp of ahead(st.e, st.s, fwd, this.links, BLOCK_NEAR, BLOCK_FAR, this.spots)) {
+      // (Round a bend it can be nearer than it is along the street.)
+      if (!this.offscreen(sp.x, sp.y) || Math.hypot(sp.x - me.x, sp.y - me.y) < BLOCK_NEAR * 0.7) continue;
+      if (tried++ > 8) break;
+      if (this.grid.at(sp.x, sp.y) || this.bodyAt(sp.x, sp.y, 1, null)) continue;
+      const right = this.open(sp, -1, sp.right + 0.5, L * 0.3), left = this.open(sp, 1, sp.left + 0.5, L * 0.3);
+      const cars = layout(sp, right, left, BLOCK_GAP[stars], BLOCK_CARS[stars], L, W, this.placed);
+      if (!cars || !cars.every((q) => this.fits(q, L, W))) continue;
+      this.setUp(sp, cars);
+      return true;
+    }
+    return false;
+  }
+
+  // How far across the street from the spot (`a` m on along it) a car can stand, to the
+  // `side` (1 left, -1 right): to a wall, a car, or `most`.
+  private open(sp: Spot, side: number, most: number, a: number) {
+    const fx = Math.cos(sp.ang), fy = Math.sin(sp.ang), lx = -fy * side, ly = fx * side;
+    const ox = sp.x + fx * a, oy = sp.y + fy * a;
+    for (let c = 0; c < most; c += 0.4) {
+      const x = ox + lx * c, y = oy + ly * c;
+      if (this.grid.at(x, y) || this.bodyAt(x, y, 0.3, null)) return Math.max(0, c - 0.5);
+    }
+    return most;
+  }
+
+  // Whether a car of the block has room where it would stand: clear of walls, other cars
+  // and trams, and of the tram tracks (trams couldn't get by).
+  private fits(q: Placed, L: number, W: number) {
+    const c = Math.cos(q.h), s = Math.sin(q.h);
+    for (let i = 0; i <= 4; i++) {
+      for (let j = -1; j <= 1; j++) {
+        const a = (i / 4 - 0.5) * (L - 0.2), b = j * (W / 2 - 0.1);
+        if (this.grid.at(q.x + c * a - s * b, q.y + s * a + c * b)) return false;
+      }
+    }
+    for (let i = -1; i <= 1; i++) if (this.bodyAt(q.x + c * i * (L - W) / 2, q.y + s * i * (L - W) / 2, W / 2, null)) return false;
+    return !this.trackNear(q.x, q.y, L / 2 + 1);
+  }
+
+  // The cars, each with an officer out of the door away from you, standing a step behind it.
+  private setUp(sp: Spot, cars: Placed[]) {
+    const b: Roadblock = { x: sp.x, y: sp.y, ang: sp.ang, cars: [], t: 0, done: false };
+    const fx = Math.cos(sp.ang), fy = Math.sin(sp.ang), you: Point2 = [sp.x - fx * 60, sp.y - fy * 60];
+    for (const q of cars) {
+      const car = new Car('police', this.r, q.x, q.y, q.h);
+      if (this.r() < RAMS[this.stars]) car.armour();
+      car.mode = 'police';
+      car.crew = true;
+      car.mass = car.spec.mass * BLOCK_MASS;
+      this.cars.push({ car, path: null, s: 0, replan: 0, stuck: 0, reverse: 0, calm: false, wrecked: false, block: b });
+      b.cars.push(car);
+      this.getOut(car, you);
+      const o = this.officers[this.officers.length - 1], px = o.x + fx * 1.2, py = o.y + fy * 1.2;
+      o.block = b;
+      o.post = this.blocked(px, py) ? [o.x, o.y] : [px, py];
+      o.h = sp.ang + Math.PI;
+    }
+    this.block = b;
+    // (And a while before the next.)
+    this.blockT = BLOCK_REST[this.stars] + this.r() * 8;
+  }
+
+  // Clears the roadblock away once you're past it, far off, it has stood long enough, or
+  // the chase is over: the officers go back to their cars, which drive off as cars that
+  // have given up do (in sight), or are simply gone (out of it).
+  tend(b: Roadblock, me: PlayerTarget, dt: number) {
+    b.t += dt;
+    const dx = me.x - b.x, dy = me.y - b.y, d = Math.hypot(dx, dy), past = dx * Math.cos(b.ang) + dy * Math.sin(b.ang);
+    if (this.heat > 0 && !(past > 20 && d > 25) && d < BLOCK_GONE && !(b.t > 90 && d > 150)) return;
+    b.done = true;
+    this.block = null;
+    const seen = b.cars.some((c) => !this.offscreen(c.x, c.y)) || this.officers.some((o) => o.block === b && !this.offscreen(o.x, o.y));
+    for (const o of this.officers) {
+      if (o.block !== b) continue;
+      o.block = o.post = undefined;
+      if (!seen) o.gone = true;
+    }
+    for (const p of this.cars) {
+      if (p.block !== b) continue;
+      p.block = undefined;
+      p.calm = true;
+      p.car.mass = p.car.spec.mass;
+      if (!p.wrecked) p.car.mode = 'police';
+    }
+    if (!seen) this.cars = this.cars.filter((p) => !b.cars.includes(p.car));
   }
 
   // After an arrest: the stars go, the officers go back to their cars.
