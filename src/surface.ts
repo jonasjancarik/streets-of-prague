@@ -31,6 +31,7 @@ export interface GroundLayer {
   raster?: RoadRaster;
   wall?: boolean; // the walls at the ground's steps: upright, drawn from their lower side only
   oneSided?: boolean; // each triangle shows from its front only (the kerbs' faces, ground.ts)
+  aboveOnly?: boolean; // drawn only in the views from above (an underpass's opening, ground.ts)
 }
 
 interface SurfaceTexture { texture: THREE.DataTexture; box: number[]; sky?: { texture: THREE.Texture; box: number[] } | null }
@@ -56,17 +57,25 @@ export function groundDepthView(visible: boolean) {
 groundDepthView(false);
 const tunnelRanges = new Map<THREE.BufferGeometry, number>();
 const coarseDepth = new Set<THREE.Mesh>();
-let insideTunnel = false;
+let insideTunnel = false, fromStreet = false;
 export function tunnelDepthMesh(mesh: THREE.Mesh) {
   coarseDepth.add(mesh);
-  mesh.visible = !insideTunnel;
+  mesh.visible = !fromStreet;
   mesh.geometry.addEventListener('dispose', () => coarseDepth.delete(mesh));
 }
-export function tunnelEarthView(inside: boolean) {
+// `inside`: seen from inside a road tunnel, the earth in its bore is left out. `street`:
+// seen from street level, where the ground's own depth hides what is under it
+// (GROUND_DEPTH). The tiles' coarse depth (TileWorld's depth-only ground) is for the
+// view from above and has no steps: it lay as a slope across an underpass's mouth,
+// and the tunnel behind the opening in the wall there was a hole to the sky.
+export function tunnelEarthView(inside: boolean, street = inside) {
+  if (street !== fromStreet) {
+    fromStreet = street;
+    for (const m of coarseDepth) m.visible = !street;
+  }
   if (inside === insideTunnel) return;
   insideTunnel = inside;
   for (const [g, outside] of tunnelRanges) g.setDrawRange(0, inside ? outside : Infinity);
-  for (const m of coarseDepth) m.visible = !inside;
 }
 function tunnelRange(g: THREE.BufferGeometry, count: number | undefined) {
   if (count === undefined) return;
@@ -153,6 +162,8 @@ export class Surfaces {
           time, relief, l.level === undefined ? null : masks.get(l.level) ?? null, null, null, !!l.charlesStone) });
       }
       if (l.tunnelFinish) m.name = 'Tunnel ' + l.tunnelFinish;
+      // (Shown and hidden with the coarse depth that hides the tunnel behind it.)
+      if (l.aboveOnly) tunnelDepthMesh(m);
       if (l.geometry.hold) {
         g.setAttribute('hold', new THREE.BufferAttribute(l.geometry.hold, 3));
         held(mat as THREE.MeshLambertMaterial, m);

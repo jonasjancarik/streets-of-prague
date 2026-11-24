@@ -507,6 +507,46 @@ function bender(pos: number[]) {
 }
 
 const WALL_MIN = 0.03; // m: a step lower than this gets no wall
+// A tunnel's mouth in a wall: where a wall at a step stands across a tunnel's way with
+// the tunnel's floor at its foot (an underpass's portal: Divadelní under Národní), the
+// wall is open up to DOOR_H over the floor, about where the lining's soffit is
+// (map/tunnelInterior.ts), and only the lintel above is drawn. Set with the steps:
+// the tunnel's floor at a point of a wall running (ux, uy), NaN where no tunnel comes
+// out through it.
+const DOOR_H = 4.4, DOOR_FOOT = 1.5, DOOR_ACROSS = 0.42; // m, m, cosine
+let doorAt: ((x: number, y: number, ux: number, uy: number) => number) | null = null;
+// The openings themselves, as the tunnel's dark (DOOR_DARK), for the views from above
+// (`aboveOnly`): there the tunnel isn't drawn behind them and they showed the sky.
+const DOOR_DARK = '#1e1f21';
+let doorFill: ReturnType<typeof quads> | null = null;
+
+function tunnelDoors(levels: GroundLevel[], edges: GroundRoadEdge[]): typeof doorAt {
+  const tunnels = levels.filter((l) => l.kind === 'tunnel').map((l) => ({
+    on: onPolygons(l.polys), height: l.height,
+    ways: edges.filter((e) => e.tunnel && (e.level === undefined || e.level === l.level)).map((e) => e.pts),
+  })).filter((t) => t.ways.length);
+  if (!tunnels.length) return null;
+  return (x, y, ux, uy) => {
+    for (const t of tunnels) {
+      if (!t.on(x, y)) continue;
+      const floor = t.height(x, y);
+      if (Number.isNaN(floor)) continue;
+      // The tunnel's way where it passes nearest: a wall along it is the cutting's side, not its mouth.
+      let best = Infinity, wx = 0, wy = 0;
+      for (const pts of t.ways) {
+        for (let i = 0; i < pts.length - 1; i++) {
+          const [ax, ay] = pts[i], dx = pts[i + 1][0] - ax, dy = pts[i + 1][1] - ay, len2 = dx * dx + dy * dy;
+          if (len2 < 1e-9) continue;
+          const u = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / len2));
+          const d = (x - ax - dx * u) ** 2 + (y - ay - dy * u) ** 2;
+          if (d < best) { best = d; const len = Math.sqrt(len2); wx = dx / len; wy = dy / len; }
+        }
+      }
+      if (best < Infinity && Math.abs(ux * wx + uy * wy) < DOOR_ACROSS) return floor;
+    }
+    return NaN;
+  };
+}
 
 function refineRoad(pos: number[], i: number, j: number, d2: number) {
   if (!roadBoxes || d2 <= ROAD_FINE * ROAD_FINE) return false;
@@ -553,8 +593,22 @@ function stepWalls(lines: Point2[][], owners: number[]): GroundGeometry {
         // A bank lower than the water (a slipway, a quay awash in the terrain model) has
         // no wall: it would face the land, and show from the water as a hole in the bank.
         if (left === WATER ? pl + rl > pr + rr : right === WATER && pr + rr > pl + rl) continue;
-        const P0 = [p[0], Math.min(pl, pr), -p[1]], P1 = [p[0], Math.max(pl, pr), -p[1]];
-        const R0 = [r[0], Math.min(rl, rr), -r[1]], R1 = [r[0], Math.max(rl, rr), -r[1]];
+        let p0 = Math.min(pl, pr), r0 = Math.min(rl, rr);
+        const p1 = Math.max(pl, pr), r1 = Math.max(rl, rr);
+        const floor = doorAt ? doorAt((p[0] + r[0]) / 2, (p[1] + r[1]) / 2, dx / len, dy / len) : NaN;
+        if (Math.abs(floor - (p0 + r0) / 2) < DOOR_FOOT) {
+          const pd = p0, rd = r0;
+          p0 = Math.min(p1, Math.max(p0, floor + DOOR_H));
+          r0 = Math.min(r1, Math.max(r0, floor + DOOR_H));
+          if (doorFill && (p0 > pd || r0 > rd)) {
+            const out = pl + rl < pr + rr ? 1 : -1, normal = [nx * out, 0, -ny * out];
+            const D0 = [p[0], pd, -p[1]], D1 = [p[0], p0, -p[1]], E0 = [r[0], rd, -r[1]], E1 = [r[0], r0, -r[1]];
+            if (out > 0) doorFill.quad(E0, D0, D1, E1, normal); else doorFill.quad(D0, E0, E1, D1, normal);
+          }
+          if (p1 - p0 < WALL_MIN && r1 - r0 < WALL_MIN) continue;
+        }
+        const P0 = [p[0], p0, -p[1]], P1 = [p[0], p1, -p[1]];
+        const R0 = [r[0], r0, -r[1]], R1 = [r[0], r1, -r[1]];
         // Facing the lower side: the wall is drawn from there only.
         const out = pl + rl < pr + rr ? 1 : -1;
         const normal = [nx * out, 0, -ny * out];
@@ -648,7 +702,16 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
   // (A street on the ground with a level is on a bridge over an underpass's cutting
   // there, pipeline/structures.py's cuttings: painted on its deck.)
   const onDeck = (e: GroundRoadEdge) => !e.tunnel && (e.level === undefined ? !!e.bridge : e.level > 0);
-  const lower = stepped(() => layers(d, { box, edges: edges.filter((e) => !onDeck(e) && !e.tunnel), buildings, parkingZones, bridges: false, rasterRoads }));
+  doorAt = height ? tunnelDoors(levels, edges) : null;
+  doorFill = doorAt ? quads() : null;
+  let lower: GroundLayer[];
+  try {
+    lower = stepped(() => layers(d, { box, edges: edges.filter((e) => !onDeck(e) && !e.tunnel), buildings, parkingZones, bridges: false, rasterRoads }));
+    if (doorFill?.idx.length) {
+      const order = Math.max(...lower.map((l) => l.order)) + 1;
+      lower.push({ order, geometry: joined(polygons([]), doorFill), color: DOOR_DARK, pattern: 'flat', blend: null, aboveOnly: true, oneSided: true });
+    }
+  } finally { doorAt = null; doorFill = null; }
   const masks = levels.map((l) => levelMask(box, l.polys, l.level));
   const on = (k: number, x: number, y: number) => onMask(masks[k], x, y);
   // Each street on a bridge or in a tunnel is painted on one level, and each stretch of

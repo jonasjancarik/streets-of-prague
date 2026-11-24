@@ -3327,7 +3327,7 @@ async function main() {
     if (camera.near !== nearPlane) { camera.near = nearPlane; camera.updateProjectionMatrix(); }
     // From street level the ground hides what's behind it (see GROUND_DEPTH).
     groundDepthView(!!eyes || (POST.ao && POST.on));
-    tunnelEarthView(!!eyes && !!body && (body.level ?? 0) < 0);
+    tunnelEarthView(!!eyes && !!body && (body.level ?? 0) < 0, !!eyes);
     // …and the trees near you are the ones made to be stood under (map/streetTree.ts).
     // (The free camera too, once it is tilted well off straight down.)
     PEOPLE_SHADOWS.street = fromStreet; // (people cast their own shapes there)

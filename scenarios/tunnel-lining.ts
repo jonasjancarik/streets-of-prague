@@ -33,7 +33,9 @@ export default {
       t.time('14:00');
       t.weather('clear');
       await walkTo(-3709, 2397.2);
-      t.check('the approach is open to the sky', g.walker.level === -1 && ceiling() === undefined, t.where());
+      // (On the street's own floor here since November 2026, pipeline/terrain_floors.json:
+      // the tunnel's level starts a few metres before the mouth.)
+      t.check('the approach is open to the sky', ceiling() === undefined, { ...t.where(), level: g.walker.level });
       await walkTo(-3711.7, 2412.2);
       await t.frames(3);
       const headroom = ceiling();

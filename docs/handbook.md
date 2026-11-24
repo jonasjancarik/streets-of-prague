@@ -1552,6 +1552,19 @@ record the measurements, merge decisions and pending landmark asset activation.
   (`src/map/tunnelInterior.ts`, `src/map/tunnelEarth.ts`). A tunnel's outer walls stop
   half a metre under the ground over them, so an underpass only 5 m under its street
   doesn't show their tops in it (`tunnelLayers` in `src/ground.ts`).
+  Where a wall at a step in the ground stands across a tunnel's way with the tunnel's
+  floor at its foot, it is the tunnel's portal: the wall is open to 4.4 m over the
+  floor and only the lintel above is drawn (`tunnelDoors`, `DOOR_H`). Such a wall comes
+  from a floor listed in `pipeline/terrain_floors.json` (Divadelní under Národní); a
+  tunnel's mouth in a hillside has none, and the ground there still runs up over it.
+  Seen from above, the tunnel isn't drawn behind the opening (the tiles' coarse depth
+  hides it), so the opening is filled with the tunnel's dark there (`DOOR_DARK`, a
+  layer with `aboveOnly`); from street level that coarse depth and the fill are hidden
+  (`tunnelEarthView` in `src/surface.ts`), the ground's own depth does its work, and
+  you see into the lined tunnel. A tunnel's level reaches 12 m out of each portal at
+  the portal's height (`PORTAL` in `pipeline/structures.py`), but only 4 m out of an end
+  on a listed floor (`FLOOR_PORTAL`): the floor has the street's own height up to the
+  mouth, and the 12 m left a step of 0.26 m across the road where the level ended.
   A road can change levels partway along an edge. Traffic, buses and the developer
   tool that puts a car back on the road use the level at that point along the lane.
   A named deck or tunnel is used where the loaded tile has its surface and height.
