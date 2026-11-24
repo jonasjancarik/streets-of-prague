@@ -3,6 +3,37 @@
 Sounds have their own list in [`public/audio/SOURCES.md`](../public/audio/SOURCES.md),
 and the map data its credits in the README.
 
+## Charles Bridge
+
+The street-level John of Nepomuk is an original reconstruction. Its bronze
+figure, three-part pedestal, cast panels, palm and five stars are editable in
+`charles-bridge/nepomuk.blend`, with the texture atlas packed into the file. Export
+the single-mesh game asset with
+`blender -b assets/charles-bridge/nepomuk.blend -P assets/charles-bridge/export.py`.
+
+- The figure uses public-domain photographs by Ysangkok, Wisniowy and Nikkolo.
+  [Front](https://commons.wikimedia.org/wiki/File:John_of_Nepomuk_front.jpg),
+  [profile](https://commons.wikimedia.org/wiki/File:Jan_Nepomucen_praga_wisnia6522.jpg)
+  and [three-quarter view](https://commons.wikimedia.org/wiki/File:Prague_Jan_Nepomuck%C3%BD_07.jpg).
+- The coloured reliefs and inscription combine Nikkolo's public-domain photograph
+  of the pedestal with the public-domain historical photograph held by the Library
+  of Congress. [Pedestal](https://commons.wikimedia.org/wiki/File:Prague_Jan_Nepomuck%C3%BD_08.jpg)
+  and [historical photograph](https://commons.wikimedia.org/wiki/File:Prague._Statue_of_St._John_Nepomue_LCCN94512601.tif).
+- The pedestal grain comes from Rob Tuytel’s CC0 sandstone scans. The bridge wall and coping
+  use the diffuse and ambient occlusion images from Large Sandstone Blocks, packed by `assets/ground/bridge.py`.
+  [Large Sandstone Blocks](https://polyhaven.com/a/large_sandstone_blocks) and
+  [Sandstone Blocks 04, Poly Haven](https://polyhaven.com/a/sandstone_blocks_04).
+
+The sixteen open vaults and their cutwaters are original geometry built on the
+OpenStreetMap pier positions. Their faces use both sides of IPR Praha's summer
+2023 photorealistic mesh, projected in Blender and combined with the sandstone
+scans above. The end openings use the published clear spans. The other openings
+follow the distances between the mapped piers. The packed source is
+`charles-bridge/arches.blend`. Use the same exporter with that file to rebuild
+`public/charles-arches.glb`. [IPR Praha, 3D mesh, CC BY](https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model/3D-mesh),
+[OpenStreetMap contributors, ODbL](https://www.openstreetmap.org/copyright)
+and [Charles Bridge, Prague City Tourism](https://prague.eu/en/objevujte/charles-bridge-karluv-most/).
+
 ## Made from code
 
 - The street pigeon is an original Blender mesh with vertex-coloured plumage.

@@ -909,8 +909,9 @@ function deckSlab(polys: Polygons, box: Bounds, mask: LevelMask, D: HeightAt, T:
     }
     run += len;
   });
-  const geometry = joined(polygons(polys), q);
-  return geometry.index.length ? [{ order: -600, geometry, color: COLORS.slab, pattern: 'concrete', blend: null, slab: true, level }] : [];
+  const top = polygons(polys), geometry = joined(top, q);
+  return geometry.index.length ? [{ order: -600, geometry, color: COLORS.slab, pattern: 'concrete', blend: null, slab: true, level,
+    parapetStart: stone ? undefined : top.position.length / 3 }] : [];
 }
 
 // What's drawn on a bridge level, over its slab: its surface, tram tracks and the

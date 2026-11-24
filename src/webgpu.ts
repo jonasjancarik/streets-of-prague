@@ -381,6 +381,7 @@ function groundMaterial(
 ) {
   const m = new MeshLambertNodeMaterial();
   m.color.copy(base.color);
+  m.map = base.map;
   Object.assign(m, { side: base.side, depthWrite: base.depthWrite, depthTest: base.depthTest, transparent: base.transparent, opacity: base.opacity });
   const inputs = { relief, deck, photo, raster };
   const shade = (n: N, pattern: number, seasonal = true, day = false) => {

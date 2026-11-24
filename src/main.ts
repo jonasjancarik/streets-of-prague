@@ -402,6 +402,7 @@ async function main() {
   };
   const lamps = new Lamps(scene, renderer, AREA, (x, y) => world.terrainAt(x, y), deckAt);
   lamps.place = (x, y, flood) => bridgeLamp(world.charles, x, y, flood);
+  world.onBridgeRails = (key, rails) => lamps.alignBridgeRails(key, rails);
   const signals = new Signals(scene, AREA, () => clock.t, (x, y, bridge) => (bridge ? world.heightAt(x, y) : world.terrainAt(x, y)), (x, y) => world.onRoad(x, y));
   const streaks = new Streaks(scene);
   if (params.has('ipr')) void import('./iprdebug.ts').then((m) => m.iprOverlay(scene, AREA, (x, y) => world.terrainAt(x, y)));
@@ -3333,7 +3334,7 @@ async function main() {
     for (const c of funicular.cars) {
       if (c.mesh.visible) c.body.nearCamera(fromStreet ? camera.position.distanceToSquared(c.mesh.position) : Infinity);
     }
-    world.furnitureCamera(fromStreet);
+    world.furnitureCamera(fromStreet, camera.position.x, camera.position.z);
     world.passageCamera(fromStreet, camera.position.x, -camera.position.z);
     ironwork.update(fromStreet, camera.position, weather.now.wet);
     world.trees.street(fromStreet, free ? free.x : camera.position.x, free ? -free.y : camera.position.z);

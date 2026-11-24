@@ -1477,12 +1477,23 @@ record the measurements, merge decisions and pending landmark asset activation.
   facing the walkway, listed by OSM's name with how many figures each has and the odd
   feature: Nepomuk's bronze and halo of stars, the Calvary's crucifix with Mary and
   John, the Pietà, the groups on rocks, mitres, croziers, books and the Christ child.
+  Within 75 m in a street view, the John of Nepomuk monument uses its photographed bronze,
+  gilded palm and stars, coat of arms and three cast plates. The entire monument
+  shares one texture atlas and one draw. The lighter figure returns beyond 90 m
+  or when you switch to the overhead view.
   Each tile builds its share into one mesh at the deck's height, and the pedestals are
   cut out of the deck's level, so you walk round them. The bridge's lamps are gas
   lanterns on slim posts standing on the parapets: the surveyed lamps within 2.5 m of a
   parapet's line are moved onto it and drawn so (`bridgeLamp`), and the floodlights in
   the river under the arches are left out. `?nostatues` leaves out the statues and
   piers, keeps the deck as OSM has it and the lamps as the survey has them.
+  Once the tile is drawn, each gas lantern sits at the height and centre of the
+  coping beneath it. At street level the wall shows courses of sandstone and
+  separate coping stones. The pedestrian deck is paved with granite setts.
+  From the river and Kampa the sixteen vaults are open from one side to the other,
+  with wedge-shaped arch stones, a coursed soffit and cutwaters reaching the water.
+  Their four groups share one atlas and load within 400 m of the bridge in a street
+  view. The original deck, piers and tile draw are used overhead.
   Cars, trams and people drive or walk onto a bridge or into a tunnel where it meets
   the street and off it at the far end; parapets and tunnel walls keep them in, and
   whatever is on one level and another passes by. Under a bridge a round hole opens in

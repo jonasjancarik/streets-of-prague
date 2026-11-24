@@ -1,6 +1,7 @@
 import type { CarSpec } from './car.ts';
 import { dataUrl } from './data.ts';
 import * as THREE from 'three';
+import { nearestRailFoot, type RailSegment } from './bridgeStone.ts';
 import { mirrored, mirroredGlow } from './mirror.ts';
 import { fetchBinary } from './terrain.ts';
 import { CLOUD, CLOUD_MAP, CLOUD_GLSL } from './clouds.ts';
@@ -346,6 +347,37 @@ export class Lamps {
   // Set before the survey loads: where a surveyed lamp really stands, if not where the
   // survey has it ([x, y]: a lantern on a bridge's parapet; null: left out). See bridgeLamp.
   place?: (x: number, y: number, flood: boolean) => [number, number] | null | undefined;
+  private bridgeRails = new Map<string, RailSegment[]>();
+  private parapetLamps = new Map<number, { x: number; y: number; deck?: number }>();
+
+  // The survey and the tile workers can finish in either order. A lamp at a
+  // tile seam can pick the neighbouring tile's nearer cap when that arrives.
+  alignBridgeRails(key: string, rails: RailSegment[]) {
+    this.bridgeRails.set(key, rails);
+    this.alignParapetLamps();
+  }
+
+  private alignParapetLamps() {
+    for (const [i,lamp] of this.parapetLamps) {
+      const at = nearestRailFoot(lamp.x, lamp.y, this.bridgeRails.values());
+      if (!at) continue;
+      const [x,y,h] = at, ox = this.xy[i*2], oy = this.xy[i*2+1];
+      if (x === ox && y === oy && h === lamp.deck) continue;
+      const oldKey = this.key(ox,oy), newKey = this.key(x,y);
+      if (oldKey !== newKey) {
+        const old = this.grid.get(oldKey);
+        if (old) {
+          const n = old.indexOf(i);
+          if (n >= 0) old.splice(n, 1);
+          if (!old.length) this.grid.delete(oldKey);
+        }
+        const next = this.grid.get(newKey);
+        if (next) next.push(i); else this.grid.set(newKey, [i]);
+      }
+      this.xy[i*2] = x; this.xy[i*2+1] = y; lamp.deck = h;
+      this.nearAt.x = Infinity;
+    }
+  }
   private lightScene = new THREE.Scene();
   private lightCam = new THREE.Camera();
   private lights: THREE.InstancedBufferGeometry;
@@ -580,10 +612,11 @@ export class Lamps {
         const at = this.place && (k === 4 || KINDS[k].head) ? this.place(x, y, k === 4) : undefined;
         // A lamp left out keeps its index (an empty slot), so the survey's indices still line up.
         if (at === null) { const j = this.kind.length; this.kind[j] = -1; this.xy[j * 2] = this.xy[j * 2 + 1] = NaN; }
-        else if (at) this.add(at[0], at[1], ON_PARAPET);
+        else if (at) this.parapetLamps.set(this.add(at[0], at[1], ON_PARAPET), { x: at[0], y: at[1] });
         else this.add(x, y, k);
       }
       this.surveyed = n;
+      this.alignParapetLamps();
     }).catch(() => {});
     const lit = fetchBinary(dataUrl(area, 'lit.bin.gz'), true).then((buf) => { if (buf) this.lit = litStreets(buf); }).catch(() => {});
     void Promise.all([lamps, lit]).finally(() => {
@@ -915,7 +948,8 @@ export class Lamps {
       const k = KINDS[this.kind[i]], lx = this.xy[i * 2], ly = this.xy[i * 2 + 1];
       // A lamp with a head where a bridge is stands on its deck, not on the ground below.
       // (A floodlight under or beside one lights what's down there, not the walls higher up.)
-      const below = this.height(lx, ly), deck = k.raise ? this.deck(lx, ly, 8) : k.head >= 3 ? this.deck(lx, ly, 2) : null;
+      const rail = this.kind[i] === ON_PARAPET ? this.parapetLamps.get(i)?.deck : undefined;
+      const below = this.height(lx, ly), deck = rail ?? (k.raise ? this.deck(lx, ly, 8) : k.head >= 3 ? this.deck(lx, ly, 2) : null);
       const z = k.raise || deck === null ? below : deck;
       this.rise[i] = k.raise ? (deck === null ? k.raise : 0) : z - below;
       this.high[i] = z - below > DECK;

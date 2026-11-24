@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { bridgeStoneMap } from './bridgeStone.ts';
 import { tunnelFinish, isTunnelFinish } from './tunnelFinish.ts';
 import { PATTERN, patterned, held, DIG, roadRasterEnabled, cutAway } from './shading.ts';
 import type { RoadRaster } from './roadRaster.ts';
@@ -16,6 +17,9 @@ export interface GroundLayer {
   blend?: number | null;
   shade?: number;
   slab?: boolean;
+  parapetStart?: number; // first vertex of the plain parapet's outside, inside and cap quads
+  charlesStone?: boolean;
+  charlesSetts?: number; // indices on the historic pedestrian deck, before other structures at this level
   deck?: boolean;
   outsideTunnel?: number; // visible indices when seen from inside a road tunnel
   topOnly?: boolean;
@@ -107,6 +111,16 @@ export function disposeTileMaterial(material: THREE.Material) {
 export class Surfaces {
   group: THREE.Group;
   masks: THREE.DataTexture[];
+  private bridgeWalls: { mesh: THREE.Mesh; original: THREE.Material; street?: THREE.Material;
+    mixed?: THREE.Material[]; split: boolean; make: () => THREE.Material }[] = [];
+
+  bridgeView(street: boolean) {
+    for (const wall of this.bridgeWalls) {
+      if (!street) { wall.mesh.material = wall.original; continue; }
+      wall.street ??= wall.make();
+      wall.mesh.material = wall.split ? wall.mixed ??= [wall.street, wall.original] : wall.street;
+    }
+  }
 
   constructor(layers: GroundLayer[], { time = { value: 0 }, relief = null, masks = new Map(), photo = null }: SurfaceOptions = {}) {
     this.group = new THREE.Group();
@@ -124,6 +138,17 @@ export class Surfaces {
       const raster = l.raster ? this.coverageTexture(l.raster) : null;
       const mat = surfaceMaterial(l, time, relief, l.level === undefined ? null : masks.get(l.level) ?? null, l.base ? photo : null, raster);
       const m = new THREE.Mesh(g, mat);
+      if (l.charlesStone || l.charlesSetts) {
+        m.name = l.charlesStone ? 'Charles Bridge parapet' : 'Charles Bridge paving';
+        const split = !!l.charlesSetts && l.charlesSetts < l.geometry.index.length;
+        if (split) {
+          g.addGroup(0, l.charlesSetts!, 0);
+          g.addGroup(l.charlesSetts!, l.geometry.index.length - l.charlesSetts!, 1);
+        }
+        this.bridgeWalls.push({ mesh: m, original: mat, split, make: () => surfaceMaterial(
+          l.charlesSetts ? { ...l, color: '#807b70', pattern: 'setts' } : l,
+          time, relief, l.level === undefined ? null : masks.get(l.level) ?? null, null, null, !!l.charlesStone) });
+      }
       if (l.tunnelFinish) m.name = 'Tunnel ' + l.tunnelFinish;
       if (l.geometry.hold) {
         g.setAttribute('hold', new THREE.BufferAttribute(l.geometry.hold, 3));
@@ -175,6 +200,11 @@ export class Surfaces {
   }
 
   dispose() {
+    for (const wall of this.bridgeWalls) {
+      wall.mesh.material = wall.original;
+      if (wall.street) disposeTileMaterial(wall.street);
+    }
+    this.bridgeWalls.length = 0;
     this.group.traverse(o => {
       if (!(o instanceof THREE.Mesh)) return;
       // WebGPU keeps per-object draws on shared depth, lighting and shadow
@@ -213,11 +243,15 @@ export const setSoftShade = (f: (opacity: number) => THREE.Material) => { softSh
 // The same soft dark shading for something that isn't a ground layer (the cars' contact shade), where there is one.
 export const softShade = (opacity: number) => softShadeBy?.(opacity) ?? null;
 
-function surfaceMaterial(l: GroundLayer, time: { value: number }, relief: SurfaceTexture | null, mask: SurfaceTexture | null, photo: { texture: THREE.Texture; box: number[] } | null = null, raster: THREE.Texture | null = null) {
+function surfaceMaterial(l: GroundLayer, time: { value: number }, relief: SurfaceTexture | null, mask: SurfaceTexture | null, photo: { texture: THREE.Texture; box: number[] } | null = null, raster: THREE.Texture | null = null, streetStone = false) {
   if (l.tunnelFinish) return tunnelFinish(l.tunnelFinish);
   // A bridge deck's slab is solid: drawn with depth, so what's under it is hidden
   // (except round the player, see CUTAWAY), and it casts a shadow.
-  if (l.slab) return patterned(new THREE.MeshLambertMaterial({ color: l.color, side: THREE.DoubleSide }), PATTERN[l.pattern ?? 'flat'], time, null, { mask: null });
+  if (l.slab) {
+    const base = new THREE.MeshLambertMaterial({ color: streetStone ? '#ffffff' : l.color, side: THREE.DoubleSide });
+    if (streetStone) base.map = bridgeStoneMap();
+    return patterned(base, PATTERN[l.pattern ?? 'flat'], time, null, { mask: null });
+  }
   // What's on a deck is drawn over its slab, only where there is a deck, and hidden
   // behind anything in front of it (a higher deck, a parapet).
   // A tunnel is solid too, and under the ground (see TileWorld's depth-only ground):

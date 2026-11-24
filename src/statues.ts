@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import proj4 from 'proj4';
 import { difference } from 'polyclip-ts';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { ARCH_ORIGIN, type ArchFrame } from './bridgeArches.ts';
 import { cutAway } from './shading.ts';
 import { rng, hash } from './map/geo.ts';
 import type { Bounds, Point2, Polygons } from './map/geo.ts';
@@ -70,10 +72,11 @@ export interface Statue { name: string; x: number; y: number; fx: number; fy: nu
 export interface Pier { outline: Point2[]; base: [Point2, Point2]; out: Point2; cutter: Point2[] | null }
 // A parapet: its line along one side of the deck, with the way out from the deck.
 export interface Parapet { line: Point2[]; out: Point2 }
-export interface Bridge { statues: Statue[]; piers: Pier[]; parapets: Parapet[] }
+export interface Bridge { statues: Statue[]; piers: Pier[]; parapets: Parapet[]; bounds?: Bounds; archFrame?: ArchFrame }
 export const NO_BRIDGE: Bridge = { statues: [], piers: [], parapets: [] };
 
 const PEDESTAL_D = 1.9; // m across the parapet
+const NEPOMUK_HALF_WIDTH = 1.60;
 const OUT = 0.35; // m: how far the pedestal's middle stands out from the parapet line
 const pedestalL = (s: Spec) => (s.figures >= 3 || s.look === 'calvary' ? 2.9 : s.figures === 2 ? 2.5 : 2.2);
 
@@ -108,7 +111,8 @@ export function placeBridge([w0, s0, e0, n0]: [number, number, number, number]):
     // On the parapet line, across from where OSM has it (on the pier), out over the pier.
     const [px, py] = to(at), len = Math.hypot(b[0] - a[0], b[1] - a[1]), ux = (b[0] - a[0]) / len, uy = (b[1] - a[1]) / len;
     const along = Math.min(Math.max((px - a[0]) * ux + (py - a[1]) * uy, Math.min(L / 2 + 0.3, len / 2)), Math.max(len - L / 2 - 0.3, len / 2));
-    statues.push({ name, x: a[0] + ux * along + nx * OUT, y: a[1] + uy * along + ny * OUT, fx: -nx, fy: -ny, half: [L / 2, PEDESTAL_D / 2], spec });
+    statues.push({ name, x: a[0] + ux * along + nx * OUT, y: a[1] + uy * along + ny * OUT, fx: -nx, fy: -ny,
+      half: [spec.look === 'nepomuk' ? NEPOMUK_HALF_WIDTH : L / 2, PEDESTAL_D / 2], spec });
   }
   // Each side's parapet runs through the piers' parapet lines, in order along the bridge.
   const ref = piers[0].out, parapets: Parapet[] = [];
@@ -118,7 +122,11 @@ export function placeBridge([w0, s0, e0, n0]: [number, number, number, number]):
     const line = on.flatMap((p) => p.base).sort((a, b) => along(a) - along(b));
     parapets.push({ line, out: [ref[0] * side, ref[1] * side] });
   }
-  return { statues, piers: piers.map(({ names: _, ...p }) => p), parapets };
+  const points = piers.flatMap(p => p.outline);
+  const xs = points.map(p => p[0]), ys = points.map(p => p[1]);
+  const bounds: Bounds = [Math.min(...xs)-18, Math.min(...ys)-18, Math.max(...xs)+18, Math.max(...ys)+18];
+  const [x,y] = to(ARCH_ORIGIN), east = to([ARCH_ORIGIN[0]+.001,ARCH_ORIGIN[1]]);
+  return { statues, piers: piers.map(({ names: _, ...p }) => p), parapets, bounds, archFrame: { x, y, turn: Math.atan2(east[1]-y,east[0]-x) } };
 }
 
 // What becomes of a lamp on the bridge: the floodlights in the river under its arches go
@@ -128,6 +136,7 @@ const PARAPET_MID = PARAPET_W / 2;
 const LAMP_TO_PARAPET = 2.5; // m: a lamp this close to a parapet's line is one of its lamps
 const UNDER_ARCHES = 16; // m from a pier's parapet line: a floodlight in the river by it
 export function bridgeLamp(b: Bridge, x: number, y: number, flood: boolean): Point2 | null | undefined {
+  if (b.bounds && (x < b.bounds[0] || y < b.bounds[1] || x > b.bounds[2] || y > b.bounds[3])) return undefined;
   if (flood) {
     for (const p of b.piers) {
       if (!p.cutter) continue;
@@ -177,6 +186,9 @@ export function inPedestal(s: Statue, x: number, y: number, pad = 0) {
   if (s.spec.look === 'bruncvik') return false;
   const dx = x - s.x, dy = y - s.y;
   const across = dx * s.fx + dy * s.fy, along = dx * s.fy - dy * s.fx;
+  if (s.spec.look === 'nepomuk' && Math.abs(along) > .73 + pad) {
+    return Math.abs(along) <= s.half[0] + pad && across >= -.83 - pad && across <= .73 + pad;
+  }
   return Math.abs(along) <= s.half[0] + pad && Math.abs(across) <= s.half[1] + pad;
 }
 
@@ -277,7 +289,7 @@ function figure(p: Parts, at: THREE.Matrix4, color: string, { scale = 1, seated 
 // One statue on its pedestal, standing on the deck at y = 0, in its own frame.
 function statueParts(s: Statue) {
   const p = new Parts(rng(Math.floor(hash(s.name) * 1e9))), r = p.r, spec = s.spec;
-  const L = s.half[0] * 2, D = s.half[1] * 2, n = spec.figures, look = spec.look ?? 'plain';
+  const L = spec.look === 'nepomuk' ? 2.2 : s.half[0] * 2, D = s.half[1] * 2, n = spec.figures, look = spec.look ?? 'plain';
   const at = (x: number, y: number, z: number, ry = 0) => mat(x, y, z, 0, ry, 0);
   if (look === 'bruncvik') {
     // The column rises from the pier; the knight with his gilded sword, the lion at his feet.
@@ -298,6 +310,15 @@ function statueParts(s: Statue) {
   p.box(L - 0.75, 1.0, 0.06, 0, 2.15, (D - 0.3) / 2 + 0.03, STONE_DARK);
   p.box(L + 0.14, 0.2, D + 0.1, 0, 3.1, 0, STONE);
   p.box(L - 0.05, 0.15, D - 0.1, 0, 3.27, 0, STONE_DARK);
+  if (look === 'nepomuk') {
+    // The two lower wings carry the bronze panels beside the central die.
+    const wings = new Parts(rng(1683));
+    for (const side of [-1,1]) {
+      wings.box(.72, 1.45, 1.22, side*(NEPOMUK_HALF_WIDTH-.36), 1.73, -.08, STONE);
+      wings.box(.78, .10, 1.28, side*(NEPOMUK_HALF_WIDTH-.39), 2.48, -.08, STONE_DARK);
+    }
+    p.list.push(...wings.list);
+  }
   const top = 3.35;
   let floor = top;
   if (look === 'rock' || look === 'pieta') {
@@ -375,12 +396,69 @@ function pierParts(pier: Pier, h: number) {
 
 let depth: THREE.MeshDepthMaterial | null = null;
 
+// The photographed bronze is a single mesh. Keep its little overhead figure in
+// the existing tile draw until the full monument is ready and the player is near.
+export class Nepomuk {
+  private site?: { parent: THREE.Mesh; frame: THREE.Matrix4; otherVertices: number };
+  private model?: THREE.Group;
+  private loading = false;
+  private retryAt = 0;
+  private close = false;
+
+  attach(parent: THREE.Mesh, frame: THREE.Matrix4, otherVertices: number) {
+    this.site = { parent, frame, otherVertices };
+    this.close = false;
+  }
+
+  drop(parent: THREE.Mesh) {
+    if (parent !== this.site?.parent) return;
+    this.model?.removeFromParent();
+    this.site = undefined;
+    this.close = false;
+  }
+
+  private async load() {
+    this.loading = true;
+    try {
+      const gltf = await new GLTFLoader().loadAsync(import.meta.env.BASE_URL + 'street-nepomuk.glb');
+      gltf.scene.traverse(o => {
+        if (o instanceof THREE.Mesh) { o.castShadow = true; o.receiveShadow = true; }
+      });
+      this.model = gltf.scene;
+      this.model.name = 'John of Nepomuk in bronze';
+      this.model.matrixAutoUpdate = false;
+    } catch { this.retryAt = performance.now() + 60000; }
+    finally { this.loading = false; }
+  }
+
+  view(street: boolean, x: number, z: number) {
+    if (!this.site) return;
+    const { parent, frame, otherVertices } = this.site, e = frame.elements;
+    const reach = this.close ? 90 : 75;
+    this.close = street && (x-e[12])**2 + (z-e[14])**2 < reach*reach;
+    if (!this.model) {
+      if (this.close && !this.loading && performance.now() >= this.retryAt) void this.load();
+      return;
+    }
+    if (this.close && this.model.parent !== parent) {
+      this.model.matrix.copy(frame);
+      this.model.matrixWorldNeedsUpdate = true;
+      parent.add(this.model);
+      parent.geometry.setDrawRange(0, otherVertices);
+    } else if (!this.close && this.model.parent === parent) {
+      this.model.removeFromParent();
+      parent.geometry.setDrawRange(0, Infinity);
+    }
+  }
+}
+
 // The piers and statues in a tile, as one mesh: each statue on the deck at its height,
 // each pier below it (`deck(x, y)`: the deck at or near a point, null where there's
 // none; then it isn't drawn). The mesh is the tile's own, material and all, as its
 // other fixtures are.
-export function bridgeMesh({ statues, piers }: Bridge, [x0, y0, x1, y1]: Bounds, deck: (x: number, y: number) => number | null) {
-  const parts: THREE.BufferGeometry[] = [];
+export function bridgeMesh({ statues, piers }: Bridge, [x0, y0, x1, y1]: Bounds, deck: (x: number, y: number) => number | null, detail?: Nepomuk) {
+  const parts: THREE.BufferGeometry[] = [], bronze: THREE.BufferGeometry[] = [];
+  let bronzeFrame: THREE.Matrix4 | undefined;
   const inside = (x: number, y: number) => x >= x0 && x < x1 && y >= y0 && y < y1;
   for (const s of statues) {
     if (!inside(s.x, s.y)) continue;
@@ -389,7 +467,9 @@ export function bridgeMesh({ statues, piers }: Bridge, [x0, y0, x1, y1]: Bounds,
     // Its frame in the scene: the game's (x, height, -y), turned so +z faces (fx, fy).
     const m = new THREE.Matrix4().compose(new THREE.Vector3(s.x, h, -s.y),
       new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(s.fx, -s.fy)), new THREE.Vector3(1, 1, 1));
-    for (const g of statueParts(s)) { g.applyMatrix4(m); parts.push(g); }
+    const isBronze = detail && s.spec.look === 'nepomuk';
+    if (isBronze) bronzeFrame = m;
+    for (const g of statueParts(s)) { g.applyMatrix4(m); (isBronze ? bronze : parts).push(g); }
   }
   for (const pier of piers) {
     if (!pier.cutter) continue;
@@ -398,6 +478,8 @@ export function bridgeMesh({ statues, piers }: Bridge, [x0, y0, x1, y1]: Bounds,
     const h = deck(mx - pier.out[0] * 1.5, my - pier.out[1] * 1.5);
     if (h !== null) parts.push(...pierParts(pier, h));
   }
+  const otherVertices = bronzeFrame ? parts.reduce((total, g) => total + g.getAttribute('position').count, 0) : 0;
+  parts.push(...bronze);
   if (!parts.length) return null;
   const geometry = mergeGeometries(parts, false)!;
   parts.forEach((g) => g.dispose());
@@ -406,5 +488,6 @@ export function bridgeMesh({ statues, piers }: Bridge, [x0, y0, x1, y1]: Bounds,
   mesh.name = 'Charles Bridge statues';
   mesh.customDepthMaterial = depth;
   mesh.castShadow = mesh.receiveShadow = true;
+  if (bronzeFrame) detail!.attach(mesh, bronzeFrame, otherVertices);
   return mesh;
 }

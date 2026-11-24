@@ -1993,3 +1993,20 @@ windows. A second run kept individual selection on and changed only the distant
 crowns' tuft rims. Full and eight-point rims averaged 100.0 and 84.3 ms, with
 four windows per setting. These are separate within-run comparisons. Even the
 lighter forest averaged only 11.9 fps in that second run.
+
+### The crowd beyond the nearest walkers (24 November)
+
+Standing in Old Town Square facing 129°, the Pixel 5 drew 12 close walkers on
+Medium at 392 × 745. With the middle-distance models enabled, another 23–24
+walkers wore their photographed outfits. Four alternating five-second windows
+per setting averaged 26.3 ms without these models and 26.2 ms with them.
+
+### Charles Bridge from the water (24 November)
+
+The sixteen vaults and cutwaters share one atlas across four culling groups, with
+11,081 triangles in the complete model. The nearby Nepomuk monument uses one
+additional draw and 8,660 triangles. At ordinary overhead zoom both retire.
+In clear afternoon light at water level north of the bridge, the Pixel 5 on
+WebGPU Medium at 392 × 745 recorded 22, 43, 42 and 42 fps with the vaults off
+and 41, 41, 40 and 41 fps with them on, in alternating five-second windows.
+The slow first window makes the aggregate a poor estimate of the rendering cost.

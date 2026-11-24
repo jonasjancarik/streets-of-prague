@@ -54,7 +54,9 @@ import { fenceCamera, fenceMeshes } from './map/fences.ts';
 import { streetHedges } from './streetHedges.ts';
 import { shedMesh } from './map/sheds.ts';
 import { furnitureMeshes, furnitureView, disposeFurniture } from './furniture.ts';
-import { placeBridge, clipDecks, bridgeMesh, inPedestal, NO_BRIDGE, type Bridge } from './statues.ts';
+import { placeBridge, clipDecks, bridgeMesh, inPedestal, Nepomuk, NO_BRIDGE, type Bridge } from './statues.ts';
+import { finishBridgeStone, type RailSegment } from './bridgeStone.ts';
+import { BridgeArches } from './bridgeArches.ts';
 import { chimneySmoke, dropChimneySmoke } from './chimneySmoke.ts';
 import { furnitureSurvey } from './furnitureSurvey.ts';
 import { CountrysideTiles } from './countrysideTiles.ts';
@@ -528,17 +530,23 @@ export class TileWorld {
   trees: TreePool;
   facades: StreetFacades;
   private streetFurniture = false;
-  furnitureCamera(street: boolean) {
+  private nepomuk = new Nepomuk();
+  private arches?: BridgeArches;
+  furnitureCamera(street: boolean, x: number, z: number) {
+    this.nepomuk.view(street, x, z);
+    this.arches?.view(street, x, z);
     if (this.streetFurniture === street) return;
     this.streetFurniture = street;
     for (const tile of this.loaded.values()) {
       furnitureView(tile.furniture, street);
+      tile.drawn?.surfaces.bridgeView(street);
       const panel = tile.fences.find(section => !section.hedge && !section.rail);
       if (panel) fenceCamera(panel.mesh, street);
     }
   }
 
   private passageRooms = new Map<Tile, PassageRoom>();
+  onBridgeRails?: (key: string, rails: RailSegment[]) => void;
   private nextPassageRetry = Infinity;
   private lastPassage = new THREE.Vector3(Infinity, Infinity, -1);
   private dropPassage(tile: Tile) {
@@ -769,6 +777,9 @@ export class TileWorld {
     this.leveled = !!index.terrain?.structures;
     // Charles Bridge's piers and statues (?nostatues: the deck as the map has it, to compare).
     this.charles = query.has('nostatues') ? NO_BRIDGE : placeBridge(index.bbox_wgs84);
+    if (this.charles.bounds && this.charles.archFrame) {
+      this.arches = new BridgeArches(scene, this.charles.bounds, this.charles.archFrame, index.iprRef ?? 180);
+    }
     this.structures = new Set(index.terrain?.structures || []);
     this.loaded = new Map(); // key → tile
     this.byIndex = new Map(); // i * 65536 + j → tile, for lookups by position
@@ -917,7 +928,7 @@ export class TileWorld {
       }
       return null;
     };
-    const mesh = bridgeMesh(this.charles, box, deck);
+    const mesh = bridgeMesh(this.charles, box, deck, this.nepomuk);
     for (const l of decks) {
       // (Its own copy of the cells: the mask is also what the deck is drawn by.)
       l.grid.cells = l.grid.cells.slice();
@@ -1881,7 +1892,10 @@ export class TileWorld {
       levelMasks.set(mask.level, { texture, box: [x0, y1, x0 + mask.w / RES, y1 - mask.h / RES] });
     }
     const shade = tile.relief, terrain = this.index.terrain;
+    const rails = finishBridgeStone(layers, this.charles, tile.box);
+    if (rails.length) this.onBridgeRails?.(tile.k, rails);
     const surfaces = new Surfaces(layers, { time: this.time, relief: shade ? { texture: shade.texture, box: shade.box, sky: skyTexture ? { texture: skyTexture, box: skyBox } : null } : null, masks: levelMasks, photo: photo ? { texture: photo, box: [x0, y0, x1, y1] } : null });
+    if (this.streetFurniture) surfaces.bridgeView(true);
     // Under a tunnel, the ground hides what's below it (the tunnel, the cars in it)
     // except round you (CUTAWAY): the ground's own layers are drawn without depth.
     const hidden = shade && terrain && tile.levels.some((l) => l.level < 0) ? depthOnlyGround(shade.hm, t.box, terrain.n, terrain.step,
@@ -2024,6 +2038,7 @@ export class TileWorld {
     this.sky.delete(t.i * 65536 + t.j);
     this.dropPhoto(k);
     for (const m of t.fixtures) {
+      this.nepomuk.drop(m);
       m.geometry.dispose();
       if (Array.isArray(m.material)) m.material.forEach(disposeTileMaterial);
       else disposeTileMaterial(m.material);
