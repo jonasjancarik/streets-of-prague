@@ -132,8 +132,17 @@ export class Helicopters {
     this.scene = scene;
     this.height = height;
     this.list = [];
-    const spot = new THREE.CircleGeometry(4, 28).rotateX(-Math.PI / 2);
-    this.spot = new THREE.Mesh(spot, new THREE.MeshBasicMaterial({ color: '#fff1c4', transparent: true, opacity: 0.32, blending: THREE.AdditiveBlending, depthWrite: false }));
+    const spot = new THREE.CircleGeometry(9, 48).rotateX(-Math.PI / 2);
+    const pixels = new Uint8Array(64 * 64 * 4);
+    for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+      const i = (y * 64 + x) * 4, r = Math.hypot((x + 0.5) / 32 - 1, (y + 0.5) / 32 - 1);
+      pixels[i] = pixels[i + 1] = pixels[i + 2] = 255;
+      pixels[i + 3] = Math.round(255 * Math.max(0, 1 - r * r) ** 3);
+    }
+    const map = new THREE.DataTexture(pixels, 64, 64);
+    map.magFilter = map.minFilter = THREE.LinearFilter;
+    map.needsUpdate = true;
+    this.spot = new THREE.Mesh(spot, new THREE.MeshBasicMaterial({ map, color: '#fff1c4', transparent: true, opacity: 0.18, blending: THREE.AdditiveBlending, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 }));
     this.spot.visible = false;
     scene.add(this.spot);
     this.spots = [this.spot];
@@ -207,7 +216,7 @@ export class Helicopters {
   render(time: number, eye?: THREE.Vector3) {
     let n = 0;
     this.lit.length = 0;
-    this.spot.material.opacity = 0.32 * (1 - this.night);
+    this.spot.material.opacity = 0.18 * (1 - this.night);
     for (const h of this.list) {
       h.g.position.set(h.x, h.z, -h.y);
       h.g.rotation.set(h.roll || 0, h.h, h.pitch || 0, 'YZX');
@@ -223,7 +232,7 @@ export class Helicopters {
       }
       const s = this.spots[n++];
       const x = this.me.x + Math.sin(time * 1.3 + h.orbit) * 1.5, y = this.me.y + Math.cos(time * 1.7 + h.orbit) * 1.5;
-      s.position.set(x, this.height(x, y) + 0.15, -y);
+      s.position.set(x, this.height(x, y) + 0.04, -y);
       s.visible = Math.hypot(h.x - this.me.x, h.y - this.me.y) < HELI_SIGHT;
       if (s.visible) this.lit.push({ x: h.x, y: h.y, z: h.z + 0.75, tx: x, ty: y });
     }
