@@ -461,10 +461,12 @@ The metro ride uses its overhead cutaway camera.
   Run `node scripts/check-street-handling.mjs` to compare launches, stops and cornering
   on a flat test road. The `street-handling` scene checks the driving modes in-game.
 - **Rollovers** (`src/rollover.ts`). A car, van, bus or lorry rolls over when its
-  wheels are stopped while it slides sideways: up a kerb at about 21 km/h across (a van
-  at about 17; in practice in a handbrake slide, since the tyres soon scrub off any
-  other sideways slide), into a wall or post at about 38 km/h across, or hit hard in
-  the side by another vehicle (a bus at 60 km/h tips a saloon; a saloon at 40 doesn't).
+  wheels are stopped while it slides sideways: up a kerb at about 32 km/h across (a van
+  at about 25; in practice in a fast handbrake slide, since the tyres soon scrub off any
+  other sideways slide), into a wall or post at about 55 km/h across, or hit hard in
+  the side by something much heavier (a bus at 60 km/h tips a saloon; another saloon
+  would need about 100). The thresholds are multiples of the bare trip speed
+  (`tripSpeed`, about 21 km/h for a saloon) in `Car.update` and `Car.jolted`.
   The car's cross-section then turns about whichever corner is on the road, and it comes
   to rest on its wheels again, on its side or on its roof, a little further across.
   Each landing on a new corner is heard, shakes the view and hurts you a little.

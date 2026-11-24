@@ -28,7 +28,7 @@ interface Pit { phase: 'line' | 'hit' | 'off'; t: number; side: number; ok: numb
 // an arrest, moved by src/arrest.ts. `slot`: the way round you (radians) they stand when
 // they've caught up; `at`: the door of your car they're making for. `post`: where they
 // stand at a roadblock, behind their car.
-export interface Officer { avatarId: number; x: number; y: number; h: number; vx: number; vy: number; car: Car; fig: Figures; anim: Anim; down: number; back: boolean; gone?: boolean; level?: number; gz?: number; detour?: number; reload?: number; door?: number; led?: boolean; grip?: number; slot?: number; at?: number; post?: Point2; block?: Roadblock }
+export interface Officer { avatarId: number; x: number; y: number; h: number; vx: number; vy: number; car: Car; fig: Figures; anim: Anim; down: number; back: boolean; out?: number; gone?: boolean; level?: number; gz?: number; detour?: number; reload?: number; door?: number; led?: boolean; grip?: number; slot?: number; at?: number; post?: Point2; block?: Roadblock }
 // A stretch of the way a police car or a fire engine can take: a street, or (`foot`) a
 // way meant for people.
 type Way = (DriveEdge | WalkEdge) & { mid?: Polyline; twin?: DriveEdge | null };
@@ -115,6 +115,8 @@ const RANGE = 24; // m; further off they come closer first
 const ON_DUTY = { lose: 3, crash: 0.35, drain: 0.05 }; // (drain: heat a second, below the first star)
 const REPORT = 6; // s at least before a crime the police didn't see is phoned in
 const GRIP = 1.4; // s an officer has to keep hold of you on foot before you're busted
+// s an officer getting out takes in the doorway (the door is fully open after 0.2 s).
+const STEP_OUT = 0.5;
 const GRIP_CAR = 2.4; // s at the door of the car you've stopped in: time to drive off
 // The PIT manoeuvre (see pitting), from two stars: the chance a car behind you tries one each
 // time it thinks of it (about every second), and the seconds it waits before thinking of
@@ -641,7 +643,7 @@ export class Police {
     // On foot, also once the car has got as near as the road goes: the officer runs
     // the rest of the way.
     const there = behind || (!me.car && dist < 60 && !!p.path && p.path.length - p.s < 8);
-    if (c.crew && this.seen && !me.air && level && Math.abs(vf) < 2.5 && (me.car ? me.speed < 2 && dist < 14 : dist < 18 || there)) this.getOut(c);
+    if (c.crew && this.seen && !me.air && level && c.speed < 1 && (me.car ? me.speed < 2 && dist < 14 : dist < 18 || there)) this.getOut(c);
     // Near you and in sight, from four stars: a shot out of the window now and then.
     p.reload = (p.reload ?? 1) - dt;
     if (c.crew && this.stars >= FROM_CARS && !me.air && level && dist < RANGE && p.reload <= 0 && this.clear(c.x, c.y, me.x, me.y)) {
@@ -757,7 +759,8 @@ export class Police {
     }
     this.scene.add(fig.mesh);
     // On the car's level: out of a car in a tunnel, in the tunnel (not on the street above).
-    this.officers.push({ avatarId: this.nextOfficerId++, x, y, h: car.h, vx: 0, vy: 0, car, fig, anim: new Anim(this.kit, 'idle'), down: 0, back: false, door, level: car.level, gz: car.gz });
+    // (`out`: still in the doorway while the door swings open; seen once it's half open.)
+    this.officers.push({ avatarId: this.nextOfficerId++, x, y, h: car.h, vx: 0, vy: 0, car, fig, anim: new Anim(this.kit, 'idle'), down: 0, back: false, out: STEP_OUT, door, level: car.level, gz: car.gz });
   }
 
   blocked(x: number, y: number) {
@@ -767,6 +770,7 @@ export class Police {
 
   walk(o: Officer, dt: number, me: PlayerTarget, goal = me) {
     if (o.led) return;
+    if (o.out && o.out > 0) { o.out -= dt; o.vx = o.vy = 0; return; }
     if (o.down > 0) {
       o.down -= dt;
       const k = Math.exp(-4 * dt);
@@ -1124,6 +1128,8 @@ export class Police {
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(SCALE, SCALE, SCALE);
     for (const o of this.officers) {
       m.compose(p.set(o.x, height(o.x, o.y, o), -o.y), q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, o.h), sc);
+      // Still behind the opening door: not drawn yet, life size or not.
+      if (o.out && o.out > STEP_OUT / 2) { o.fig.place(0, m.makeScale(0, 0, 0), o.anim); o.fig.commit(1); continue; }
       o.fig.set(0, m, o.anim, -1, m, o.avatarId);
       o.fig.commit(1);
     }

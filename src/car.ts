@@ -1780,7 +1780,7 @@ export class Car {
     if (!d) return;
     let open = 0;
     for (let i = 0; i < 4; i++) {
-      if (this.speed > 1.5) d[4 + i] = 0;
+      if (this.speed > 1.5 && !(this.mode === 'police' && !this.crew)) d[4 + i] = 0;
       const was = d[i];
       d[i] += clamp(d[4 + i] - d[i], -DOOR_SPEED * dt, DOOR_SPEED * dt);
       if (was > 0 && d[i] <= 0) Car.onShut?.(this);
@@ -1821,7 +1821,7 @@ export class Car {
   jolted(dvx: number, dvy: number) {
     if (!this.canRoll) return;
     const across = -dvx * Math.sin(this.h) + dvy * Math.cos(this.h), need = tripSpeed(this.spec);
-    if (Math.abs(across) > 2 * need || (this.roll && Math.abs(across) > need)) this.tip(Math.sign(across), Math.abs(across) * 0.6);
+    if (Math.abs(across) > 3 * need || (this.roll && Math.abs(across) > 1.5 * need)) this.tip(Math.sign(across), Math.abs(across) * 0.6);
   }
 
   upset(rx: number, ry: number, dw: number) {
@@ -1939,7 +1939,8 @@ export class Car {
     // Sliding sideways up a kerb (or a step in the ground) fast enough trips it over.
     const tripAt = this.canRoll ? tripSpeed(S) : Infinity;
     const across = -this.vx * fy + this.vy * fx;
-    if (grid.height && Math.abs(across) > tripAt) {
+    // (Half as fast again as the bare trip speed: a kerb's edge and a tyre's wall give a little.)
+    if (grid.height && Math.abs(across) > 1.5 * tripAt) {
       const side = Math.sign(across), lx = -fy * side, ly = fx * side, out = S.W / 2 + 0.25, here = grid.height(this.x, this.y);
       let rise = 0;
       for (const a of [-S.L / 3, 0, S.L / 3]) rise = Math.max(rise, grid.height(this.x + fx * a + lx * out, this.y + fy * a + ly * out) - here);
@@ -1968,7 +1969,7 @@ export class Car {
     escape?.end(this, dt);
     // Sliding sideways into a post or a wall: stopped hard enough, it goes over.
     const stopped = -this.vx * Math.sin(this.h) + this.vy * Math.cos(this.h) - before;
-    if (before * stopped < 0 && Math.abs(stopped) > 1.8 * tripAt) this.tip(Math.sign(before), Math.abs(stopped) * 0.7);
+    if (before * stopped < 0 && Math.abs(stopped) > 2.6 * tripAt) this.tip(Math.sign(before), Math.abs(stopped) * 0.7);
     return impact;
   }
 
@@ -2074,7 +2075,10 @@ export class Car {
     // still along its nose.
     const swing = ctl.handbrake ? Math.hypot(vf, vl) : Math.abs(vf);
     const wantW = ctl.steer * Math.min(swing / (S.radius ?? 3.6), maxW) * sgn;
-    if (this.driven) this.w += (wantW - this.w) * Math.min(1, dt * (S.response ?? 9)) * (1 - SPIN.hold * lost);
+    // (Spun by a blow, the steering answers at the car's own pace, whatever the driving
+    // sliders say: quicker steering would catch every spin at once.)
+    const response = lost > 0 ? this.spec.response ?? 9 : S.response ?? 9;
+    if (this.driven) this.w += (wantW - this.w) * Math.min(1, dt * response) * (1 - SPIN.hold * lost);
     else this.w *= Math.exp(-4 * dt);
     this.h += this.w * dt;
 
