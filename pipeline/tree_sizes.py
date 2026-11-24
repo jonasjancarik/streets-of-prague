@@ -92,7 +92,7 @@ def placed_tile(area, i, j):
 
 def canopy(area, meta, t):
     """Heights above the terrain over the tile with MARGIN of its neighbours (rows from the
-    north), the higher of the two surface models; and where buildings stand, with a metre
+    north), the higher of the two surface models; and where buildings and bridges stand, with a metre
     round them (the models' walls lean out past the outlines)."""
     x0, y0, x1, y1 = t["box"]
     ext = {**t, "box": [x0 - MARGIN, y0 - MARGIN, x1 + MARGIN, y1 + MARGIN]}
@@ -117,7 +117,11 @@ def canopy(area, meta, t):
     built = np.zeros(nd.shape, bool)
     for dj in (-1, 0, 1):
         for di in (-1, 0, 1):
-            gc.burn(built, ext, RES, [b["rings"] for b in placed_tile(area, t["i"] + di, t["j"] + dj).get("buildings", [])])
+            near = placed_tile(area, t["i"] + di, t["j"] + dj)
+            gc.burn(built, ext, RES, [b["rings"] for b in near.get("buildings", [])])
+            # A bridge's deck too: the models see it over the trees under it (the Nusle
+            # Bridge, 40 m over the valley, was taken for their tops).
+            gc.burn(built, ext, RES, near.get("areas", {}).get("bridge", []))
     try:
         rgb = gc.photo(gc.RGB, "rgb_1m_wide", area, ext, RES)
         # The photo's haze (bluish, and the same over a tile's picture) is added to every
