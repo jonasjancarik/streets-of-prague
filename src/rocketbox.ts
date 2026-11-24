@@ -130,7 +130,9 @@ export class LifeSize {
     this.group.add(this.umbrellas);
     LIFE_SIZE.claim = (fig, id, matrix, anim, umbrella) => {
       if (this.claim(fig, id, matrix, anim, umbrella)) return true;
-      if (fig.self || fig.lifeSize !== true || umbrella >= 0) return false;
+      // The middle-distance atlas has no seated pose. A driver waiting for
+      // a full rig uses the door-aware instanced figure drawn by the crowd.
+      if (fig.self || anim.driverExit || fig.lifeSize !== true || umbrella >= 0) return false;
       const gid = this.ids.get(fig);
       return gid !== undefined && this.middle.offer(appearance(fig,anim,gid,id), id, matrix, anim);
     };
@@ -326,7 +328,8 @@ export class LifeSize {
       this.live.set(key, p);
       this.pose(p, anim);
       for (const c in p.w) p.w[c] = p.want[c] ?? 0;
-    } else if (!fig.self && (d > this.reach + SLACK || (this.live.size > STREET_QUALITY.avatars && !this.kinds[p.kind].role))) return false;
+    } else if (!fig.self && (d > (anim.driverExit ? STREET_QUALITY.avatarReach : this.reach) + SLACK ||
+      (this.live.size > STREET_QUALITY.avatars && !this.kinds[p.kind].role && !anim.driverExit))) return false;
     p.pos.copy(pos);
     matrix.decompose(_v, p.turn, _s);
     p.umbrella = umbrella;

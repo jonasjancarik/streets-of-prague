@@ -34,6 +34,14 @@ try {
   offer([12, 3, 4]);
   for (let i = 0; i < 8; i++) offer([12, 50, 4, 3]);
   assert(person(3) && person(2), 'a vanished request releases its reservation');
+  // A pending driver must fall through to the seated instanced rig while
+  // its close slot is reserved. The middle crowd can only walk or stand.
+  const { LIFE_SIZE }=await import('../src/figures.ts');
+  let middleCalls=0;
+  avatars.middle.offer=()=>{middleCalls++;return true;};
+  const departing={name:'walk',phase:0,driverDonor:0,driverExit:{progress:0}};
+  assert.equal(LIFE_SIZE.claim(group,99,transform.makeTranslation(3,0,0),departing,-1),false);
+  assert.equal(middleCalls,0,'a waiting driver keeps the seated fallback');
   console.log('Crowd slot promotion, stable ties, abandoned reservation and actor cap passed');
 } finally {
   Object.assign(STREET_QUALITY, saved);
