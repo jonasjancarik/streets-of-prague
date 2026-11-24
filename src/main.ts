@@ -2342,7 +2342,7 @@ async function main() {
     if (!footView && gaitActive) gait.reset();
     gaitActive = footView;
     if (inCar) {
-      const realistic = firstPersonOptions.handling === 'realistic' && !!testkit?.eyes && !testkit.cam && !vrView;
+      const realistic = firstPersonOptions.handling === 'realistic' && !!testkit?.eyes && !testkit.cam;
       let steer = ctl.aim ? steerToward(inCar, ctl.aim.h, ctl.move) : ctl.turn;
       if (ctl.run) {
         const a = assist.steer(inCar, steer, realistic ? inCar.suspension : undefined);

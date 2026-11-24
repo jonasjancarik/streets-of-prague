@@ -453,10 +453,10 @@ The metro ride uses its overhead cutaway camera.
   snow not yet cleared from the streets clearly more. Braking hard, the handbrake and sliding round a
   corner leave dark tyre marks that fade after a minute (`src/skids.ts`); so do the
   police and cars sent skidding by a crash.
-- **Car handling.** In first and third person, cars drive with **Realistic** handling by
+- **Car handling.** In first and third person and in VR, cars drive with **Realistic** handling by
   default; Settings → Car handling switches to **Classic**. The choice is remembered
   between games (`carHandling` in the browser's storage) and takes effect on the next driving step. It applies to the car, van
-  or pickup you drive, including taxis and patrol cars. Overhead driving, VR, two-wheelers,
+  or pickup you drive, including taxis and patrol cars. Overhead driving, two-wheelers,
   heavy vehicles and AI drivers use Classic.
   With Realistic selected, feed in the steering as you approach a bend. Braking or
   accelerating hard leaves the tyres less grip for turning. A short handbrake pull
