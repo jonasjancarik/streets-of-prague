@@ -5,6 +5,8 @@ import { FACADE_ON, STREET_FACADE } from './facades.ts';
 import type { StreetPlates } from './streetPlates.ts';
 import { mirrored } from './mirror.ts';
 import { STREET_QUALITY } from './streetQuality.ts';
+import type { Bounds } from './map/geo.ts';
+import { MappedFrontages } from './mappedFrontages.ts';
 
 // How far off walls get their depth, and how many of the nearest do, are the tier's
 // (STREET_QUALITY.wallReach and walls); one that has it keeps it 8 m further.
@@ -71,7 +73,10 @@ export class StreetFacades {
   private retryAt = Infinity;
   private scene: THREE.Scene;
   private workers: TileWorkers;
-  constructor(scene: THREE.Scene, workers: TileWorkers) { this.scene = scene; this.workers = workers; }
+  private frontages: MappedFrontages;
+  constructor(scene: THREE.Scene, workers: TileWorkers, bounds?: Bounds) {
+    this.scene = scene; this.workers = workers; this.frontages=new MappedFrontages(bounds);
+  }
   register(base: THREE.Mesh, groups: Uint32Array | undefined, box: readonly number[]) {
     if (!groups?.length) return;
     this.sources.set(base, { base, groups, box }); this.dirty = true;
@@ -120,7 +125,8 @@ export class StreetFacades {
       const w = this.queue.shift()!;
       if (!this.wanted.has(w) || w.pending || w.mesh) continue;
       w.pending = true; this.running++;
-      const data = copyWall(w);
+      const wall = copyWall(w);
+      const data = { ...wall, shops:this.frontages.onWall(w,wall.position,wall.facade) };
       const job = this.workers.submit('streetFacade', data, Object.values(data).map(a => a.buffer), 'optional');
       let cancelled = false;
       w.cancel = () => { cancelled = true; job.cancel(); };

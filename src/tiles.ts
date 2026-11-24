@@ -805,7 +805,7 @@ export class TileWorld {
     this.drawTimes = [];
     this.retry = new Map(); // key → when to try a tile that failed again
     this.workers = new TileWorkers();
-    this.facades = new StreetFacades(this.scene, this.workers);
+    this.facades = new StreetFacades(this.scene, this.workers, index.bbox_wgs84);
     this.buildTimes = [];
     this.skyTotals = { coalesced: 0, cancelled: 0 };
     // Landmarks from IPR's photorealistic mesh, where the area has any (?osm: none).

@@ -167,6 +167,19 @@ def bake(preview=None):
                 x1 = min(r - 5, l + sx.stop)
                 y0 = max(t + 5, t + sy.start)
                 y1 = min(b - 5, t + sy.stop)
+                # The bounding boxes of two irregular glass islands can overlap
+                # by a couple of pixels. Preserve the narrow bar between them;
+                # intersecting holes cause the street mesh to lose a whole pane.
+                for left, top, right, bottom in zip(panes[::4], panes[1::4], panes[2::4], panes[3::4]):
+                    overlap_x = min(right, x1) - max(left, x0)
+                    overlap_y = min(bottom, y1) - max(top, y0)
+                    if overlap_x > 3 and 0 <= overlap_y <= 3 and y0 > top:
+                        y0 = bottom + 1
+                    elif overlap_y > 3 and 0 <= overlap_x <= 3:
+                        if x0 > left:
+                            x0 = right + 1
+                        else:
+                            x1 = left - 1
                 if x1 - x0 > 7 and y1 - y0 > 8:
                     panes.extend([x0, y0, x1, y1])
             if 2 <= len(panes) // 4 <= 9:

@@ -149,7 +149,7 @@ export interface LandResult {
 
 export interface WorkerJobs {
   passage: { paths: TilePassage[]; houses: { rings: Point2[][] }[]; landmarks: Point2[][][]; box: Bounds; ground: HeightGrid | null; facades?: Float32Array };
-  streetFacade: Pick<BuildingArrays, 'position' | 'color' | 'facade'> & { sky: Float32Array };
+  streetFacade: Pick<BuildingArrays, 'position' | 'color' | 'facade'> & { sky: Float32Array; shops?: Float32Array };
   // water: the tile's water polygons, so what stands on them is built as a boat (map/buildings.ts).
   roofs: { buildings: TileBuilding[]; size: Point2; origin: Point2; ground: HeightGrid | null; bbox: Bounds; water: Point2[][][]; passages?: TilePassage[]; stops?: StopLine[] };
   // hide: landmarks' footprints (rings of each), where IPR's buildings give way to them.

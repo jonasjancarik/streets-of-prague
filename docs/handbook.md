@@ -344,7 +344,10 @@ and the clouds on that side are lit warm, with only a blush on the opposite side
 At street level on WebGPU and WebGL, a glazed shopfront can show bookshelves, a bakery,
 flowers or ceramics. Look through the glass from the side to see the walls
 and floor behind the window frame. Adjacent bays share a display and some
-stay lit after dark. The displays are scenery imagined for the game.
+stay lit after dark. Along Mostecká, mapped shop and café positions guide which
+street-facing bays get a display. The stock and joinery are imagined for the game.
+Arched timber portals sit further back, with a meeting stile, a stone landing
+and enough steps to reach the threshold from the pavement.
 
 Mapped foot passages continue through the ground floors of buildings. At U Nováků
 on Vodičkova you can walk off the pavement, past the display cases, and back

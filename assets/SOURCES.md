@@ -59,6 +59,12 @@ The lighting pattern follows the castle's architectural lighting brief.
 [OpenStreetMap contributors, ODbL](https://www.openstreetmap.org/copyright)
 and [Prague Castle lighting brief](https://cceamoba.cz/media/pages/souteze/sph/76ac71dda2-1767975363/sph-p.01-outline-brief.pdf).
 
+## Mostecká shopfronts
+
+`pipeline/mostecka_frontages.py` derives the positions and shop categories from
+the local Prague OpenStreetMap extract. The display contents reuse the street
+window atlas. [OpenStreetMap contributors, ODbL](https://www.openstreetmap.org/copyright).
+
 ## Made from code
 
 - The street pigeon is an original Blender mesh with vertex-coloured plumage.

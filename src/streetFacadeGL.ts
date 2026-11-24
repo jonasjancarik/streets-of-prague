@@ -25,7 +25,7 @@ vec2 maskUV(float layer, vec2 p) {
 vec3 shopRoom(vec4 f, vec3 eye, vec3 n) {
   vec2 size = vec2(2. * f.z / max(1., fBays(f)), fStorey(f).x);
   float col = floor(f.x / size.x), seed = floor(fract(f.w) * 32768.);
-  float art = floor(streetPick(seed, col, 9.) * 4.);
+  float art = vDetail.w >= 1. ? clamp(floor(vDetail.w) - 1., 0., 3.) : floor(streetPick(seed, col, 9.) * 4.);
   vec3 ray = vec3(dot(eye, vec3(n.z, 0., -n.x)), eye.y, max(.001, -dot(eye, n)));
   vec2 face = vec2((1. - fract(f.x / size.x)) * size.x, f.y);
   vec2 sides = mix(face, size - face, step(vec2(0.), ray.xy)) / max(abs(ray.xy), vec2(.001));

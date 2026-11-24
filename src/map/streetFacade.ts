@@ -163,7 +163,7 @@ function cellShape(layer: number, bay: number, storey: number, moduleWidth: numb
     const l = (bay - moduleWidth) / 2 + moduleWidth * x0 / 256, r = (bay - moduleWidth) / 2 + moduleWidth * x1 / 256;
     const b = (1 - y1 / 512) * storey, t = (1 - y0 / 512) * storey;
     const doorway = !upper && (t - b) > storey * .49 && b < storey * .22;
-    const inset = doorway ? .255 : upper ? .145 : (t - b) < 1.15 ? .112 : .175;
+    const inset = doorway ? (arch > 0 && style <= STYLE.baroque ? .39 : .255) : upper ? .145 : (t - b) < 1.15 ? .112 : .175;
     const trim = style <= 1 ? .086 : .052;
     const pad = Math.min(trim, l * .75, (bay - r) * .75, b * .72, (storey - t) * .72);
     if (pad < .002) continue;
@@ -285,17 +285,43 @@ function cellShape(layer: number, bay: number, storey: number, moduleWidth: numb
         fill(block, [], depth, 1, S.dressedStone);
       }
     }
-    // The tread has a top surface and a nosing; stop at each doorway jamb.
-    if (doorway && b > .045 && b < .49) {
-      const lo = l - pad, hi = r + pad, toe = Math.max(.01, b - .16);
-      const section: V2[] = [[toe, .003], [toe, .168], [b - .019, .168], [b, .153], [b, .002]];
-      for (let i = 1; i < section.length; i++) {
-        const [y, z] = section[i - 1], [h, d] = section[i];
-        tris.push([[lo, y, z], [hi, y, z], [hi, h, d], 1, S.plinth], [[lo, y, z], [hi, h, d], [lo, h, d], 1, S.plinth]);
+    // A raised portal needs enough risers to reach it from the pavement.
+    // The upper landing continues through the reveal to the timber leaves.
+    if (doorway && b > .045 && b < .66) {
+      const lo = l - pad, hi = r + pad, risers = Math.ceil(b/.182), rise = b/risers;
+      const run = .215, front = .15 + (risers-1)*run;
+      const section: V2[] = [[.003, .004], [.003, front-.014]];
+      for (let step=0;step<risers;step++) {
+        const height=(step+1)*rise, edge=front-step*run;
+        section.push([height-.025,edge-.014],[height-.021,edge],[height-.008,edge],[height,edge-.012],
+          [height,step===risers-1 ? -inset+.003 : edge-run-.014]);
       }
-      for (const x of [lo, hi]) {
-        const q = section.map(([y, z]): Point => [x, y, z]); if (x === hi) q.reverse();
-        for (let j = 1; j < q.length - 1; j++)tris.push([q[0], q[j], q[j + 1], 1, S.plinth]);
+      for (let i = 1; i < section.length; i++) {
+        const [y,z]=section[i-1],[h,d]=section[i];
+        const ao = h===y ? 1 : d>z ? .66 : .89;
+        tris.push([[lo,y,z],[hi,y,z],[hi,h,d],ao,S.dressedStone], [[lo,y,z],[hi,h,d],[lo,h,d],ao,S.dressedStone]);
+      }
+      // Close each riser separately. A fan across the stepped outline would
+      // fill the air over the lower treads.
+      for (let step=0;step<risers;step++) {
+        const low=step*rise, high=low+rise, edge=front-step*run-.012;
+        for (const x of [lo,hi]) {
+          const side: Point[]=[[x,low,.002],[x,low,edge],[x,high,edge],[x,high,.002]];
+          if (x===hi) side.reverse();
+          tris.push([side[0],side[1],side[2],.83,S.dressedStone],[side[0],side[2],side[3],.83,S.dressedStone]);
+        }
+      }
+    }
+    if (doorway && timber && panes.length===0 && r-l>1.28) {
+      // The overlapping timber stile and rail stand proud of the flat boards.
+      const middle=(l+r)/2;
+      const stile=rectangle(middle-.027,b+.021,middle+.027,t-rise-.036);
+      ring(stile,stile,-inset,-inset+.027,.84,S.joinery);
+      fill(stile,[],-inset+.027,.98,S.joinery);
+      for (const [lo,hi] of [[l+.046,middle-.031],[middle+.031,r-.046]]) {
+        const rail=rectangle(lo,b+.038,hi,b+.145);
+        ring(rail,rail,-inset,-inset+.021,.82,S.joinery);
+        fill(rail,[],-inset+.021,.96,S.joinery);
       }
     }
     if (doorway && [8, 18, 56, 57, 67, 69, 79, 82, 90, 93, 114, 138, 141, 143].includes(layer)) {
@@ -370,13 +396,27 @@ function clip(poly: Point[], a: V2, b: V2, sign: number) {
   return result;
 }
 
-export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color' | 'facade'>, sky: Float32Array, triangles: Uint32Array): FacadeGeometry | null {
+export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color' | 'facade'> & { shops?: Float32Array }, sky: Float32Array, triangles: Uint32Array): FacadeGeometry | null {
   const { position: p, color: c, facade: f } = arrays, first = triangles[0] * 12, w = f[first + 3], width = wallLength(f[first + 2]), style = Math.floor(w), bays = baysOf(style, width);
   if (!bays || style >= BLANK || width < 2) return null;
   const seed = Math.floor((w - style) * 32768) % 997, bay = width / bays;
   const ground = F_GROUND[style], storey = F_STOREY[style] * (STOREY_FIT[0] + (Math.floor((w - style) * 1024) % 32) * STOREY_FIT[1] / 31);
   const pos: number[] = [], norm: number[] = [], col: number[] = [], fac: number[] = [], shade: number[] = [], detail: number[] = [];
   const foot: number[] = [];
+  const displays = new Map<number,number>();
+  const shops=arrays.shops;
+  if (shops && style<=STYLE.baroque && bay>=1.8) for (let i=0;i<shops.length;i+=2) {
+    const u=shops[i], j=Math.floor(u/bay);
+    const neighbour = u/bay-j>.5 ? 1 : -1;
+    for (const k of [j,j+neighbour,j-neighbour]) {
+      if (k<0 || k>=bays || Math.abs((k+.5)*bay-u)>4 || displays.has(k)) continue;
+      const layer=streetModule(w,k,0,bays);
+      if (F_DOOR.includes(layer) && !SHOPFRONTS.has(layer)) continue;
+      displays.set(k,shops[i+1]); break;
+    }
+  }
+  const moduleAt = (j:number,row:number) => !row && displays.has(j)
+    ? (pick(seed,j,19)<.5 ? 58 : 66) : streetModule(w,j,row,bays);
   const shapes = new Map<number, Triangle[]>();
   const eligible = new Map<number, boolean>();
   const onWall = (x: number, y: number) => {
@@ -411,7 +451,7 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
     }
     const j=Math.min(bays-1,Math.floor(u/bay));
     for (let row=0, bottom=0; bottom<top-.4; row++) {
-      const h=row?storey:ground, layer=streetModule(w,j,row,bays);
+      const h=row?storey:ground, layer=moduleAt(j,row);
       const mw=Math.min(bay,F_STREET_WIDTH[layer]), left=j*bay+(bay-mw)*.5;
       if (!onWall(u,Math.min(top-.3,bottom+.38)) ||
           openings[layer].some(([lo,,hi]) => u+.16>left+lo*mw/256 && u-.16<left+hi*mw/256)) return 0;
@@ -454,6 +494,23 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
         const out = new THREE.Vector3(N.x, 0, N.z).normalize().multiplyScalar(FOOT_SHADE[0]);
         const [P, Q] = ends.map(at), P1 = P.clone().add(out), Q1 = Q.clone().add(out);
         for (const [v, dark] of [[P, 1], [Q, 1], [Q1, 0], [P, 1], [Q1, 0], [P1, 0]] as [THREE.Vector3, number][]) foot.push(v.x, v.y + FOOT_SHADE[2], v.z, dark * FOOT_SHADE[1]);
+        const low=Math.min(ends[0][0],ends[1][0]), high=Math.max(ends[0][0],ends[1][0]);
+        const outward=out.clone().normalize();
+        for (let j=Math.max(0,Math.floor(low/bay));j<Math.min(bays,Math.ceil(high/bay));j++) {
+          const layer=moduleAt(j,0), mw=Math.min(bay,F_STREET_WIDTH[layer]);
+          if (!fits(layer,j,0,0,ground)) continue;
+          for (const [x0,y0,x1,y1] of openings[layer]) {
+            const b=(1-y1/512)*ground;
+            if (b<=.045 || b>=.66 || (y1-y0)/512<=.49 || b>=ground*.22) continue;
+            const start=j*bay+(bay-mw)*.5, lo=Math.max(low,start+x0/256*mw), hi=Math.min(high,start+x1/256*mw);
+            if (hi<=lo) continue;
+            const edge=.15+(Math.ceil(b/.182)-1)*.215;
+            const a=at([lo,0]).addScaledVector(outward,edge-.012), z=at([hi,0]).addScaledVector(outward,edge-.012);
+            const c=z.clone().addScaledVector(outward,.16), d=a.clone().addScaledVector(outward,.16);
+            for (const [v,alpha] of [[a,.34],[z,.34],[c,0],[a,.34],[c,0],[d,0]] as [THREE.Vector3,number][])
+              foot.push(v.x,v.y+FOOT_SHADE[2],v.z,alpha);
+          }
+        }
       }
     }
     const minX = Math.min(a[0], b[0], d[0]), maxX = Math.max(a[0], b[0], d[0]), minY = Math.min(a[1], b[1], d[1]), maxY = Math.max(a[1], b[1], d[1]);
@@ -508,7 +565,7 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
       const bottom = row ? ground + (row - 1) * storey : 0, h = row ? storey : ground;
       if (bottom >= maxY || bottom + h <= minY) continue;
       for (let j = Math.max(0, Math.floor(minX / bay)); j < Math.min(bays, Math.ceil(maxX / bay)); j++) {
-        const layer = streetModule(w, j, row, bays);
+        const layer = moduleAt(j,row);
         const fitsBay = fits(layer, j, row, bottom, h);
         if (!fitsBay || (row > 3 && !isLoggia(layer))) {
           // The map clips this bay at a passage, gable or parapet. Leave a
@@ -523,7 +580,8 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
         const finish = shop ? SHOP_FINISHES[Math.floor(pick(seed, group, 12) * SHOP_FINISHES.length)] : null;
         const awning = shop && pick(seed, group, 13) < .36;
         // Two adjacent displays see one room; only its first fascia names it.
-        const sign = shop && (j % 2 === 0 || !SHOPFRONTS.has(streetModule(w, j - 1, 0, bays)));
+        const mappedTrade = !row ? displays.get(j) : undefined;
+        const sign = shop && mappedTrade===undefined && (j % 2 === 0 || !SHOPFRONTS.has(moduleAt(j-1,0)));
         const trade = Math.floor(pick(seed, group, 9) * 4);
         const furnishing = pick(seed, j, 20 + row);
         const key = layer * 4 + Number(!!row) * 2 + Number(awning);
@@ -539,7 +597,9 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
           const paint = kind === S.shopPaint || kind === S.shopSign ? finish?.[0] : kind === S.canvas ? finish?.[1] : undefined;
           const pane = kind === FURNISHED_PANE;
           const surface = pane ? S.glass : kind === S.shopSign && !sign ? S.shopPaint : kind;
-          emit([l, m, r].map(([x, y, z, light]) => [dx + x, bottom + y, z, light]), layer, ao, surface, paint, pane ? furnishing : surface === S.shopSign ? trade : undefined);
+          const finishValue = pane ? furnishing : surface === S.shopSign ? trade
+            : surface===S.display && mappedTrade!==undefined ? mappedTrade+1 : undefined;
+          emit([l, m, r].map(([x, y, z, light]) => [dx + x, bottom + y, z, light]), layer, ao, surface, paint, finishValue);
         }
         if (openings[layer]?.length) modeled = true;
       }
@@ -554,7 +614,7 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
     const left = u - .44, right = u + .44, low = h - .24, high = h + .24;
     if (left < 0 || right > width || high > ground - .30) return false;
     for (let j = Math.floor(left / bay); j <= Math.min(bays - 1, Math.floor(right / bay)); j++) {
-      const layer = streetModule(w, j, 0, bays), mw = Math.min(bay, F_STREET_WIDTH[layer]), start = j * bay + (bay - mw) / 2;
+      const layer = moduleAt(j,0), mw = Math.min(bay, F_STREET_WIDTH[layer]), start = j * bay + (bay - mw) / 2;
       if (openings[layer].some(([x0, y0, x1, y1]) =>
         right > start + x0 / 256 * mw - .23 && left < start + x1 / 256 * mw + .23 &&
         high > (1 - y1 / 512) * ground - .15 && low < (1 - y0 / 512) * ground + (SHOPFRONTS.has(layer) ? .36 : .24))) return false;

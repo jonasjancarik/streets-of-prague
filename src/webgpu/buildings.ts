@@ -733,7 +733,8 @@ function shopInterior(f: N, eye: N, normal: N) {
   // other half of the shelves. The wall between them stays opaque.
   const width: N = f.z.div(fBays(f)).mul(2), height = fStorey(f).x;
   const column = floor(f.x.div(width)), seed = floor(fract(f.w).mul(32768));
-  const design = floor(streetPick(seed, column, 9).mul(4));
+  const frontage = attribute('detail','vec4').w;
+  const design = select(frontage.greaterThanEqual(1),clamp(floor(frontage).sub(1),0,3),floor(streetPick(seed, column, 9).mul(4)));
   const depth = float(1.05);
   const fromLeft: N = width.mul(float(1).sub(fract(f.x.div(width))));
   const face = vec2(fromLeft, f.y);
