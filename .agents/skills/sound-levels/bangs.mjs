@@ -8,12 +8,15 @@
 // master's compressor.
 //
 //   node .claude/skills/sound-levels/bangs.mjs [--kinds car,wall,post] [--kmh 5,10,30,55]
-//     [--url http://localhost:5191/]
+//     [--url http://localhost:5191/] [--wav <dir>] [--noclips]
+//   --wav: also write each as a WAV to play; --noclips: without the recordings (what's
+//   heard before they've loaded).
 //
 // For scale: your engine with the pedal down measures about -38 LUFS (see ROTORS in
 // src/soundmix.ts), a door shut -29, a gunshot -21, a car blowing up -12.
 
 import { createRequire } from 'node:module';
+import { mkdirSync, writeFileSync } from 'node:fs';
 const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) => {
   if (a.startsWith('--')) acc.push([a.slice(2), all[i + 1] && !all[i + 1].startsWith('--') ? all[i + 1] : true]);
   return acc;
@@ -35,8 +38,14 @@ const browser = await pw.chromium.launch({ headless: true, channel: 'chrome' });
 try {
   const page = await browser.newPage();
   await page.goto(new URL('src/soundmix.ts', args.url || 'http://localhost:5191/').href, { timeout: 30000 });
-  const res = await page.evaluate(async ({ cases, refs }) => {
-    const { playCrash } = await import('/src/crashsound.ts');
+  const res = await page.evaluate(async ({ cases, refs, wav, noclips }) => {
+    const { playCrash, CRASH_CLIPS } = await import('/src/crashsound.ts');
+    // The recordings, decoded once at the rendering rate (noclips: the made-up sound alone).
+    const clips = {};
+    if (!noclips) {
+      const dec = new OfflineAudioContext(1, 1, 48000);
+      for (const name of Object.keys(CRASH_CLIPS)) clips[name] = await dec.decodeAudioData(await (await fetch(`/audio/${name}.m4a`)).arrayBuffer());
+    }
     const { crashMix, crashFalloff } = await import('/src/soundmix.ts');
     const { Sound } = await import('/src/audio.ts');
     const SR = 48000, LEN = 2;
@@ -49,7 +58,14 @@ try {
       for (let i = 0; i < n; i++) peak = Math.max(peak, Math.abs(d[i]));
       const w = SR * 0.4;
       for (let s = 0; s + w <= n; s += SR * 0.05) { let e = 0; for (let i = s; i < s + w; i++) e += k[i] * k[i]; most = Math.max(most, e / w); }
-      return { m: most > 0 ? -0.691 + 10 * Math.log10(most) : -Infinity, peak: peak > 0 ? 20 * Math.log10(peak) : -Infinity };
+      let pcm = null;
+      if (wav) {
+        const b = new Uint8Array(Int16Array.from(d, (v) => Math.max(-32767, Math.min(32767, v * 32767))).buffer);
+        let str = '';
+        for (let i = 0; i < b.length; i += 8192) str += String.fromCharCode(...b.subarray(i, i + 8192));
+        pcm = btoa(str);
+      }
+      return { m: most > 0 ? -0.691 + 10 * Math.log10(most) : -Infinity, peak: peak > 0 ? 20 * Math.log10(peak) : -Infinity, pcm };
     };
     const noiseOf = (ctx) => {
       const b = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate), d = b.getChannelData(0);
@@ -60,7 +76,7 @@ try {
     const out = [];
     for (const [name, speed, kind, mass, d] of cases) {
       const ctx = new OfflineAudioContext(1, SR * LEN, SR);
-      playCrash(ctx, ctx.destination, noiseOf(ctx), crashMix(speed, kind, mass), d ? crashFalloff(d) : 1, 12000 - Math.min(d, 150) * 60, 0.05, seeded(7));
+      playCrash(ctx, ctx.destination, noiseOf(ctx), crashMix(speed, kind, mass), d ? crashFalloff(d) : 1, 12000 - Math.min(d, 150) * 60, 0.05, seeded(7), clips);
       out.push([name, measure(await ctx.startRendering())]);
     }
     // Sound's own methods, with the offline context standing in for the live one.
@@ -71,9 +87,20 @@ try {
       out.push([`(${name})`, measure(await ctx.startRendering())]);
     }
     return out;
-  }, { cases, refs });
+  }, { cases, refs, wav: !!args.wav, noclips: !!args.noclips });
   console.log(`${'sound'.padEnd(28)} LUFS (M max)   peak dBFS`);
   for (const [name, { m, peak }] of res) console.log(name.padEnd(28), m.toFixed(1).padStart(12), peak.toFixed(1).padStart(11));
+  if (args.wav) {
+    mkdirSync(args.wav, { recursive: true });
+    for (const [name, { pcm }] of res) {
+      const data = Buffer.from(pcm, 'base64'), h = Buffer.alloc(44);
+      h.write('RIFF', 0); h.writeUInt32LE(36 + data.length, 4); h.write('WAVEfmt ', 8); h.writeUInt32LE(16, 16);
+      h.writeUInt16LE(1, 20); h.writeUInt16LE(1, 22); h.writeUInt32LE(48000, 24); h.writeUInt32LE(96000, 28);
+      h.writeUInt16LE(2, 32); h.writeUInt16LE(16, 34); h.write('data', 36); h.writeUInt32LE(data.length, 40);
+      writeFileSync(`${args.wav}/${name.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '')}.wav`, Buffer.concat([h, data]));
+    }
+    console.log(`WAVs in ${args.wav}`);
+  }
 } finally {
   await browser.close();
 }

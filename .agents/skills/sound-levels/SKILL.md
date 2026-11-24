@@ -75,11 +75,19 @@ difference.
   the same.
 - **The one-off code-made sounds** (crashes, gunshot, explosion, door) are measured by
   `bangs.mjs` (next to this file): `node .claude/skills/sound-levels/bangs.mjs
-  [--kinds car,wall] [--kmh 5,30,55]` renders each offline in headless Chrome on the
-  dev server's origin (seconds, the game isn't loaded) and prints its loudest 400 ms
-  (LUFS) and peak. Measured: a car crash at 5 km/h -37.5 (like your engine flat out),
-  10 km/h -32.7, 30 km/h -24.3, 55 km/h -19.1; a door shut -28.9, a gunshot -21.4, a
-  car blowing up -11.9.
+  [--kinds car,wall] [--kmh 5,30,55] [--wav <dir>]` renders each offline in headless
+  Chrome on the dev server's origin (seconds, the game isn't loaded) and prints its
+  loudest 400 ms (LUFS) and peak; `--wav` also writes each one out for the user to
+  play; `--noclips` leaves out the recordings. Measured: a car crash at 5 km/h -32,
+  10 km/h -28, 30 km/h -19, 55 km/h -16; a door shut -28.9, a gunshot -21.4, a car
+  blowing up -11.9.
+- **Crashes are recordings** (`CRASH_CLIPS` and `PICK` in `src/crashsound.ts`: which
+  recording for what was hit and how hard, and each one's level, evened out by
+  measuring it). The code-made blow and crumpling only play until the recordings have
+  loaded; glass, leaves and a pole's ringing are still code-made, over the recording.
+- **Impacts want recordings.** A pure sine sliding down sounds like a cartoon "boink",
+  and the noise-made thump that replaced it sounded like a kick drum without enough
+  weight (the user's words). Real recorded crashes fixed it.
 - **Not covered offline:** the other code-made sounds (engine, tyres, clicks, weather). To
   measure those, run `audio.ts` in Node with the `node-web-audio-api` package (a new
   dependency: check it first), or read the engine's output with an `AnalyserNode` in
