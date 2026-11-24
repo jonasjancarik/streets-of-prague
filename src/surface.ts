@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { bridgeStoneMap } from './bridgeStone.ts';
+import { RIVER_MIRROR, RIVER_MODEL_LAYER } from './mirror.ts';
 import { tunnelFinish, isTunnelFinish } from './tunnelFinish.ts';
 import { PATTERN, patterned, held, DIG, roadRasterEnabled, cutAway } from './shading.ts';
 import type { RoadRaster } from './roadRaster.ts';
@@ -138,6 +139,8 @@ export class Surfaces {
       const raster = l.raster ? this.coverageTexture(l.raster) : null;
       const mat = surfaceMaterial(l, time, relief, l.level === undefined ? null : masks.get(l.level) ?? null, l.base ? photo : null, raster);
       const m = new THREE.Mesh(g, mat);
+      if (l.pattern === 'water') m.onBeforeRender = () => { RIVER_MIRROR.waterDrawn = true; };
+      if (l.slab) m.layers.enable(RIVER_MODEL_LAYER);
       if (l.charlesStone || l.charlesSetts) {
         m.name = l.charlesStone ? 'Charles Bridge parapet' : 'Charles Bridge paving';
         const split = !!l.charlesSetts && l.charlesSetts < l.geometry.index.length;

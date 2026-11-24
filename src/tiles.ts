@@ -57,6 +57,7 @@ import { furnitureMeshes, furnitureView, disposeFurniture } from './furniture.ts
 import { placeBridge, clipDecks, bridgeMesh, inPedestal, Nepomuk, NO_BRIDGE, type Bridge } from './statues.ts';
 import { finishBridgeStone, type RailSegment } from './bridgeStone.ts';
 import { BridgeArches } from './bridgeArches.ts';
+import { riverBanks } from './riverReflection.ts';
 import { chimneySmoke, dropChimneySmoke } from './chimneySmoke.ts';
 import { furnitureSurvey } from './furnitureSurvey.ts';
 import { CountrysideTiles } from './countrysideTiles.ts';
@@ -816,6 +817,7 @@ export class TileWorld {
     // Collision lookups across tiles; anywhere not loaded counts as solid.
     // Game y = 0 is this height above sea level (IPR buildings are stored against it).
     this.ref = index.iprRef ?? 180;
+    riverBanks.area(index.bbox_wgs84, this.ref);
     // Anything on the ground or on a bridge, for what doesn't keep track of which;
     // `view` gives a car or the walker the grid as it meets it.
     this.grid = {

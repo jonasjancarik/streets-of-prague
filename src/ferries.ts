@@ -1,4 +1,5 @@
 import { StreetVehicleMesh } from './vehicleFittings.ts';
+import { RIVER_MODEL_LAYER } from './mirror.ts';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { body, boatMaterial, FERRY, wakeFor, poseWake } from './boats.ts';
@@ -110,6 +111,7 @@ export class Ferries {
       for (let k = 0; k < legs.length; k++) { add(k, k, false, DWELL); add(null, k, false, runTime(legs[k].length, FERRY.speed, ACC)); }
       for (let k = legs.length - 1; k >= 0; k--) { add(k + 1, k, true, DWELL); add(null, k, true, runTime(legs[k].length, FERRY.speed, ACC)); }
       const mesh = new StreetVehicleMesh(body('ferry', line.colour), boatMaterial(), () => body('ferry', line.colour, true));
+      mesh.layers.enable(RIVER_MODEL_LAYER);
       mesh.castShadow = true;
       mesh.visible = false;
       mesh.matrixAutoUpdate = false;
@@ -117,6 +119,7 @@ export class Ferries {
       const piers = line.stops.map((s) => {
         const len = Math.max(2.5, Math.hypot(s.berth[0] - s.gate[0], s.berth[1] - s.gate[1]) - FERRY.len / 2 + 0.3);
         const pier = new THREE.Mesh(pontoon(len, line.colour), boatMaterial());
+        pier.layers.enable(RIVER_MODEL_LAYER);
         pier.castShadow = true;
         pier.visible = false;
         pier.matrixAutoUpdate = false;

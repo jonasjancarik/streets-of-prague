@@ -34,6 +34,14 @@ follow the distances between the mapped piers. The packed source is
 [OpenStreetMap contributors, ODbL](https://www.openstreetmap.org/copyright)
 and [Charles Bridge, Prague City Tourism](https://prague.eu/en/objevujte/charles-bridge-karluv-most/).
 
+## Vltava reflections
+
+The bank panoramas use IPR Praha's summer 2023 photorealistic mesh, cropped to
+the stationary waterfront. Blender renders the colour and distance to each
+surface from the river. The map supplies the water surface and shore distances.
+`pipeline/river_reflections.py` builds `public/vltava-banks.webp` and its
+geographic station list. [IPR Praha, 3D mesh, CC BY](https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model/3D-mesh).
+
 ## Made from code
 
 - The street pigeon is an original Blender mesh with vertex-coloured plumage.

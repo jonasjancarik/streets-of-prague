@@ -6,12 +6,13 @@ import { ANYWHERE, anywhereIndex } from './countrysideTiles.ts';
 import { STATIONS } from './radio.ts';
 import { stationAllowed, onRadioPreferencesChange } from './radio-preferences.ts';
 import * as THREE from 'three';
-import { renderMirror } from './mirror.ts';
+import { renderMirror, renderRiverMirror, RIVER_MIRROR, RIVER_MODEL_LAYER } from './mirror.ts';
 import { renderProbe } from './probe.ts';
 import { POST, drawPost, motionBlurFull, motionBlurOn } from './post.ts';
 import { setupPhoto } from './photo.ts';
 import { FramePhotos, captureFrame, png, thumbnail } from './frameCapture.ts';
 import { streetSurfaceView } from './streetSurface.ts';
+import { riverBanks } from './riverReflection.ts';
 import { wantCloudBank } from './cloudBank.ts';
 import { DOME_NODE } from './sky.ts';
 import { Streaks } from './streaks.ts';
@@ -338,6 +339,7 @@ async function main() {
 
   // The sun and the sky's light follow the clock (see Sky).
   const sky = new Sky(scene, renderer);
+  sky.hemi.layers.enable(RIVER_MODEL_LAYER); sky.sun.layers.enable(RIVER_MODEL_LAYER);
   const sun = sky.sun;
   // How sharp the picture is and whether the costlier looks are on; Auto adapts.
   const graphics = new Graphics(renderer, sky, params);
@@ -3321,6 +3323,7 @@ async function main() {
     else if (walker.mesh.visible) walker.drawFigure();
     carOutline.update(fromStreet ? null : inCar, carPool);
     streetSurfaceView(fromStreet && !!DOME_NODE.value);
+    riverBanks.view(fromStreet && !vr?.active && !!DOME_NODE.value && graphics.water && graphics.tier !== 'lowest', camera.position.x, camera.position.z);
     const streetWalls = fromStreet;
     if (streetWalls && graphics.tier !== 'lowest') loadFacadeFinishes();
     world.facades.update(streetWalls, camera.position.x, camera.position.y, camera.position.z, !!facadeFinishes.masks);
@@ -3592,6 +3595,7 @@ async function main() {
     if (!vr?.active) culler?.update(camera, !!eyes && !underway && !metro.active);
     hitches.render(() => {
       if (vr?.active) {
+        RIVER_MIRROR.active.value = 0;
         // Your eyes: on foot where you stand, in a car from the driver's seat (on the left),
         // otherwise where the game's own camera is.
         const vehicle = inCar || inHeli || null, turn = vr.takeTurn();
@@ -3632,8 +3636,12 @@ async function main() {
       // bound. Draw this view to the display, including the passes which save
       // and restore the current target. The headset owns its target above.
       renderer.setRenderTarget(null);
+      const riverLevel = RIVER_MIRROR.waterDrawn && riverBanks.strength.value > .05 && graphics.tier !== 'low' && graphics.reflections !== 'none'
+        ? THREE.MathUtils.lerp(riverBanks.a.value.y,riverBanks.b.value.y,riverBanks.mix.value)-.35 : null;
+      RIVER_MIRROR.waterDrawn = false;
+      const riverMirrorDrawn = renderRiverMirror(renderer,scene,camera,riverLevel,graphics.tier === 'medium');
       const probed = renderProbe(renderer, scene, camPos.x, camGround, camPos.z, carPool.allMeshes());
-      if (renderMirror(renderer, scene, camera, camGround, weather.now.wet) || probed) {
+      if (renderMirror(renderer, scene, camera, camGround, weather.now.wet) || riverMirrorDrawn || probed) {
         scene.matrixWorldAutoUpdate = false;
         if (!drawPost(scene, camera)) renderer.render(scene, camera);
         scene.matrixWorldAutoUpdate = true;

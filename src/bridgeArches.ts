@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { Bounds } from './map/geo.ts';
+import { RIVER_MODEL_LAYER } from './mirror.ts';
 
 // In the Blender source +X is geographic east, +Y north and the heights are
 // metres above 180 m Bpv. The map's projected axes vary a little by area.
@@ -33,7 +34,7 @@ export class BridgeArches {
       model.rotation.y = this.frame.turn;
       model.updateMatrix(); model.matrixAutoUpdate = false;
       for (const o of model.children) {
-        if (o instanceof THREE.Mesh) { o.castShadow = true; o.receiveShadow = true; }
+        if (o instanceof THREE.Mesh) { o.castShadow = true; o.receiveShadow = true; o.layers.enable(RIVER_MODEL_LAYER); }
       }
       model.visible = this.wanted;
       this.scene.add(model);

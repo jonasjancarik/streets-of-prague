@@ -241,6 +241,15 @@ the river (`src/webgpu/water.ts`; WebGPU only, not on Lowest; on by default from
 through Ultra; `?water=on|off` for one visit). Small ponds and park basins with a
 complete outline inside a tile get gentler ripples and keep their rain rings.
 
+From street level, the Vltava carries short wind ripples across a longer swell.
+Along the central river, neighbouring water-level panoramas supply the actual
+banks. Each photograph has a depth view so the reflection shifts with the
+camera. Moving boats and bridge piers meet their reflections at the waterline
+on Medium and above. Only these objects and the bridge slabs go into a small
+cached reflection, refreshed while river water is on screen. The overhead view
+and headset keep the original water. Rebuild the atlas and station positions
+from the Prague map with `uv run river_reflections.py` in `pipeline/`.
+
 Every pixel ends with the same tone curve at every tier but Lowest (`src/grade.ts`): a
 filmic curve per channel (Krzysztof Narkowicz's fit to the ACES curve, with a softer toe)
 and a little less saturation, more of it taken from bright colours. Sunlit stone sits on

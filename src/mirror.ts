@@ -16,6 +16,11 @@ export const MIRROR = { value: 0 };
 export const MIRROR_MATRIX = { value: new THREE.Matrix4() };
 export const MIRROR_TARGET = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, magFilter: THREE.LinearFilter, minFilter: THREE.LinearFilter, depthBuffer: true });
 export const MIRROR_MAP = { value: MIRROR_TARGET.texture };
+export const RIVER_MODEL_LAYER = 6;
+export const RIVER_MIRROR = {
+  enabled: true, waterDrawn: false, active: { value: 0 }, matrix: new THREE.Matrix4(),
+  target: new THREE.WebGLRenderTarget(1,1,{ type: THREE.HalfFloatType, magFilter: THREE.LinearFilter, minFilter: THREE.LinearFilter, depthBuffer: true }),
+};
 // How much of what's mirrored a puddle shows: as much as of the sky (SKY_REF is 0.06 of the
 // sky's light), so trees and cars are dark against it. Lights are far brighter than the
 // game's colours can say, so at night (with the lamps on) what's brighter than BRIGHT[0]
@@ -45,10 +50,37 @@ const size = new THREE.Vector2(), clearColour = new THREE.Color();
 export function renderMirror(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, ground: number, wet: number) {
   MIRROR.value = MIRROR_ON.value > 0 && wet > 0.02 ? 1 : 0;
   if (!MIRROR.value) return false;
+  return drawPlane(renderer,scene,camera,ground,MIRROR_TARGET,MIRROR_MATRIX.value,MIRROR_LAYER,Infinity);
+}
+
+let lastRiver = -Infinity, riverPlane = Infinity;
+const riverEye = new THREE.Vector3(), riverAim = new THREE.Quaternion();
+
+// Only the watercraft and bridge fixtures use this layer. At water level their
+// reflections must meet their hulls and piers. Static banks come from the atlas.
+export function renderRiverMirror(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, ground: number | null, medium: boolean) {
+  if (ground === null || !RIVER_MIRROR.enabled || camera.position.y < ground+.08) {
+    RIVER_MIRROR.active.value = 0;
+    return false;
+  }
+  const now = performance.now();
+  if (RIVER_MIRROR.active.value && now-lastRiver < 65) return false;
+  if (RIVER_MIRROR.active.value && now-lastRiver < (medium ? 180 : 140) && Math.abs(ground-riverPlane) < .15 &&
+      camera.position.distanceToSquared(riverEye) < 1 && camera.quaternion.angleTo(riverAim) < .08) return false;
+  const drawn = drawPlane(renderer,scene,camera,ground,RIVER_MIRROR.target,RIVER_MIRROR.matrix,RIVER_MODEL_LAYER,medium ? 256 : 320);
+  lastRiver = now; riverPlane = ground; riverEye.copy(camera.position); riverAim.copy(camera.quaternion);
+  RIVER_MIRROR.active.value = 1;
+  return drawn;
+}
+
+function drawPlane(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, ground: number,
+  target: THREE.WebGLRenderTarget, matrix: THREE.Matrix4, layer: number, longest: number) {
   const gpu = (renderer as unknown as { coordinateSystem: number }).coordinateSystem === THREE.WebGPUCoordinateSystem;
   renderer.getDrawingBufferSize(size);
-  const w = Math.max(1, Math.round(size.x / 2)), h = Math.max(1, Math.round(size.y / 2));
-  if (MIRROR_TARGET.width !== w || MIRROR_TARGET.height !== h) MIRROR_TARGET.setSize(w, h);
+  const scale = Math.min(.5,longest/Math.max(1,size.x,size.y));
+  const w = Math.max(1, Math.round(size.x * scale)), h = Math.max(1, Math.round(size.y * scale));
+  if (target.width !== w || target.height !== h) target.setSize(w, h);
+  cam.layers.set(layer);
 
   // The camera reflected in the plane, looking at the reflection of what it looks at.
   point.set(0, ground, 0);
@@ -66,7 +98,7 @@ export function renderMirror(renderer: THREE.WebGLRenderer, scene: THREE.Scene, 
   cam.updateMatrixWorld();
   cam.projectionMatrix.copy(camera.projectionMatrix);
   // Where a point of the world falls in the texture (WebGPU's textures start at the top).
-  MIRROR_MATRIX.value.set(0.5, 0, 0, 0.5, 0, gpu ? -0.5 : 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1)
+  matrix.set(0.5, 0, 0, 0.5, 0, gpu ? -0.5 : 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1)
     .multiply(cam.projectionMatrix).multiply(cam.matrixWorldInverse);
   // Nothing under the plane (Lengyel's oblique near plane).
   plane.setFromNormalAndCoplanarPoint(normal, point).applyMatrix4(cam.matrixWorldInverse);
@@ -87,7 +119,7 @@ export function renderMirror(renderer: THREE.WebGLRenderer, scene: THREE.Scene, 
   // Put everything back even when the render throws (a lost GPU device).
   try {
     renderer.setClearColor(0x000000, 0);
-    renderer.setRenderTarget(MIRROR_TARGET);
+    renderer.setRenderTarget(target);
     renderer.clear(true, true, false);
     renderer.render(scene, cam);
   } finally {

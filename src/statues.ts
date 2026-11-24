@@ -10,6 +10,7 @@ import type { Bounds, Point2, Polygons } from './map/geo.ts';
 import type { TileStructure } from './contracts.ts';
 import { PARAPET_W } from './ground.ts';
 import bridge from './charlesBridge.json';
+import { RIVER_MODEL_LAYER } from './mirror.ts';
 
 // Charles Bridge: its piers and the thirty statues and groups on its parapets, and
 // Bruncvík on his column beside it, from OSM (pipeline/charles_bridge.py writes
@@ -422,7 +423,7 @@ export class Nepomuk {
     try {
       const gltf = await new GLTFLoader().loadAsync(import.meta.env.BASE_URL + 'street-nepomuk.glb');
       gltf.scene.traverse(o => {
-        if (o instanceof THREE.Mesh) { o.castShadow = true; o.receiveShadow = true; }
+        if (o instanceof THREE.Mesh) { o.castShadow = true; o.receiveShadow = true; o.layers.enable(RIVER_MODEL_LAYER); }
       });
       this.model = gltf.scene;
       this.model.name = 'John of Nepomuk in bronze';
@@ -486,6 +487,7 @@ export function bridgeMesh({ statues, piers }: Bridge, [x0, y0, x1, y1]: Bounds,
   depth ??= new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
   const mesh = new THREE.Mesh(geometry, cutAway(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }), 'furniture'));
   mesh.name = 'Charles Bridge statues';
+  mesh.layers.enable(RIVER_MODEL_LAYER);
   mesh.customDepthMaterial = depth;
   mesh.castShadow = mesh.receiveShadow = true;
   if (bronzeFrame) detail!.attach(mesh, bronzeFrame, otherVertices);

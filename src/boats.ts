@@ -1,4 +1,5 @@
 import { swanBoat } from './swanBoat.ts';
+import { RIVER_MODEL_LAYER } from './mirror.ts';
 import { passengerVessel, pedalFittings } from './boatFittings.ts';
 import { loftSections, StreetVehicleMesh } from './vehicleFittings.ts';
 import * as THREE from 'three';
@@ -278,6 +279,7 @@ export class Boats {
       const k = `${kind}|${paint}`;
       if (!geometries.has(k)) geometries.set(k, body(kind, paint));
       const mesh = new StreetVehicleMesh(geometries.get(k)!, material, () => body(kind, paint, true));
+      mesh.layers.enable(RIVER_MODEL_LAYER);
       mesh.castShadow = true;
       mesh.visible = false;
       mesh.matrixAutoUpdate = false;

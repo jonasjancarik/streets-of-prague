@@ -2010,3 +2010,13 @@ In clear afternoon light at water level north of the bridge, the Pixel 5 on
 WebGPU Medium at 392 × 745 recorded 22, 43, 42 and 42 fps with the vaults off
 and 41, 41, 40 and 41 fps with them on, in alternating five-second windows.
 The slow first window makes the aggregate a poor estimate of the rendering cost.
+
+
+### Water-level reflections north of Charles Bridge (24 November)
+
+On the Pixel 5 at 50.08704, 14.41028, facing 161° and looking 11° down, the
+original water averaged 29.9 ms per frame and the final street water 29.3 ms.
+WebGPU Medium used a 392 × 745 canvas at 1×. The four alternating six-second
+windows per setting returned 34, 33, 33 and 34 fps before, and 34 fps in all
+four windows after. The photographs share one 2,048 × 1,024 atlas. The live
+boat and bridge reflection uses at most 256 pixels on its longer side on Medium.
