@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { AVATARS, CLIPS, avatarIndex, inPlace, readClips } from './rocketboxClips.ts';
 import { StreetCrowd } from './streetCrowd.ts';
+import { PlayerGaze } from './avatarGaze.ts';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
@@ -65,6 +66,7 @@ interface Person {
   phase: number; // through a stride, 0 to 1
   strideSign: number;
   strideYaw: number; // player's body relative to the direction of the street camera
+  gaze?: PlayerGaze;
   rest: string; // the way they're standing about now
   umbrella: number; // the serial number of the umbrella they have up, or -1
   hand: THREE.Object3D; // the left, for the umbrella
@@ -444,11 +446,13 @@ export class LifeSize {
     let held = 0;
     for (const [key, p] of this.live) {
       if (!p.seen || !this.on) {
+        p.gaze?.release();
         p.root.visible = false;
         this.live.delete(key);
         this.spare[p.kind].push(p);
         continue;
       }
+      p.gaze?.restore();
       p.seen = false;
       const k = this.kinds[p.kind];
       // How fast they're going, from how far they moved: the feet keep pace with the ground.
@@ -516,6 +520,11 @@ export class LifeSize {
       p.root.quaternion.copy(p.turn);
       if (p.self && p.strideYaw) p.root.quaternion.multiply(_q.setFromAxisAngle(UP, p.strideYaw));
       p.root.quaternion.multiply(TURN);
+      if (p.self) {
+        const neutral = p.rest.startsWith('idle_neutral') ? p.w[p.rest] : 0;
+        const freedom = Math.min(1, neutral + p.w.walk + p.w.jog + p.w.run);
+        (p.gaze ??= new PlayerGaze(p.root)).apply(dt,camera,p.root,freedom);
+      }
       if (p.umbrella >= 0 && held < MOST) {
         // In the left hand, leant in over the head, each a little their own way.
         p.root.updateMatrixWorld(true);

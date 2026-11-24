@@ -1646,6 +1646,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   first and third person, including after the detailed models are freed and reloaded.
   In third person the player turns into a sideways step while the camera keeps looking
   ahead. Backing up runs the stride in reverse, at the speed the player actually travels.
+  During a sidestep the chest, neck and head turn back toward the player's sightline
+  while the feet keep the captured step. Looking behind the body releases that turn.
+  Phone calls, falls and other actions keep their own head poses.
   Standing, each takes turns with a few ways of waiting (`STANDING`: shifting their weight,
   looking round, texting or calling on a phone, with a phone in the hand). In the rain
   anyone with their umbrella up holds it in the left hand, with Rocketbox's umbrella clip
