@@ -503,11 +503,14 @@ export class Crowd {
     for (const p of this.people) {
       if (!seen(p.x, p.y, p)) continue;
       m.compose(_p.set(p.x, height(p.x, p.y, p) + p.z, -p.y), _q.setFromAxisAngle(UP, p.h), _s);
-      this.fig.wear(n, p.i);
       // (Dropped by anyone running from a car or knocked over.)
       const up = rain && (p.state === 'walk' || p.state === 'rejoin') && this.umbrellas.up(p.serial) && !sheltered?.(p.x, p.y, _p.y + 1.8);
-      // (Someone drawn life size holds theirs in the hand: src/rocketbox.ts.)
-      if (!this.fig.set(n, m, p.anim, up ? p.serial : -1) && up) this.umbrellas.put(p.serial, _p, p.h, p.anim.phase, Math.min(1, p.pace / 1.2));
+      // A street avatar has its own draw and holds its own umbrella. Pack only
+      // the remaining walkers into this batch, including in the shadow pass.
+      if (this.fig.streetModel(p.i, m, p.anim, up ? p.serial : -1)) continue;
+      this.fig.wear(n, p.i);
+      this.fig.place(n, m, p.anim);
+      if (up) this.umbrellas.put(p.serial, _p, p.h, p.anim.phase, Math.min(1, p.pace / 1.2));
       n++;
     }
     this.fig.commit(n);

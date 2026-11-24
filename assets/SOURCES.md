@@ -40,7 +40,10 @@ and the map data its credits in the README.
   (half the triangles, KTX2 textures), and the library's own walk, slow run and run clips,
   and a few of its standing ones (waiting, looking round, on the phone, under an umbrella). `rocketbox/build.sh` downloads them and converts the clips with `rocketbox/clips.mjs`
   onto the avatars' bone axes (a straight Blender conversion bent the knees backwards); the
-  licence goes with them (`rocketbox/LICENSE.md`). The seated occupants in
+  licence goes with them (`rocketbox/LICENSE.md`). The middle-distance crowd uses
+  the same fourteen source meshes, diffuse maps and motions. `rocketbox/crowd.mjs`
+  simplifies them and bakes their poses, and `rocketbox/crowd_atlas.py` packs the
+  diffuse maps into one texture. The seated occupants in
   `public/car-drivers.glb` are the male-adult-13, female-adult-05 and uniformed
   male-adult-10 avatars baked in the game’s seated entry pose. Their vertex colours
   sample the corresponding diffuse textures (`cars/pose_driver.mjs`, `cars/driver_mesh.py`).

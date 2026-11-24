@@ -1616,6 +1616,12 @@ record the measurements, merge decisions and pending landmark asset activation.
   base model and outfit are ready.
   In a crowd, a nearer walker can take a detailed model's place from a civilian farther
   away. Walkers at similar distances keep their models as they pass one another.
+  On Medium and above, ordinary walkers farther down the street wear those same
+  fourteen outfits on lighter models. Their idle, walk, jog and run poses are baked
+  into a texture, so walkers in the same outfit can share a draw call. The limit
+  is twice the tier's close-avatar allowance, up to 64. The overhead view keeps
+  its original figures. Rebuild the models and clothing atlas with
+  `node assets/rocketbox/crowd.mjs` after building the full avatars.
   The player's model starts loading alongside the animation clips. The player gets
   a random avatar each session and keeps it when switching between
   first and third person, including after the detailed models are freed and reloaded.

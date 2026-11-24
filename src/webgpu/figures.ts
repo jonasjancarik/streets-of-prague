@@ -5,7 +5,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as THREE from 'three';
-import { float, vec3, vec4, int, ivec2, attribute, vertexIndex, texture, positionLocal, positionGeometry, normalLocal, diffuseColor, mix, normalize, select, varying } from 'three/tsl';
+import { float, floor, vec2, vec3, vec4, int, ivec2, attribute, vertexIndex, texture, positionLocal, positionGeometry, normalLocal, diffuseColor, mix, normalize, select, varying } from 'three/tsl';
 import { MeshBasicNodeMaterial } from 'three/webgpu';
 import { lampLit } from './lamps.ts';
 import { instanceMatrix, shareInstances } from './trees.ts';
@@ -49,6 +49,28 @@ addPort(/^figures-true$/, (node, legacy) => {
     proto.setupDiffuseColor.call(this, builder);
     diffuseColor.assign(vec4(diffuseColor.rgb.mul(tint), diffuseColor.a));
   };
+  lampLit(node);
+});
+
+// Two reads animate a textured middle-distance walker. Each half-float texel
+// contains its position and a ten-bit octahedral normal (assets/rocketbox/crowd.mjs).
+addPort(/^street-crowd$/, (node, legacy) => {
+  const proto = Object.getPrototypeOf(node);
+  const vat: N = texture(legacy.userData.crowdPoses), pose: N = attribute('crowdPose', 'vec3');
+  const fetch = (row: N) => vat.load(ivec2(int(vertexIndex as N), int(row))).toVar();
+  const a = fetch(pose.x), b = fetch(pose.y), position: N = mix(a.xyz, b.xyz, pose.z);
+  const normal = (word: N) => {
+    const p: N = vec2(word.mod(32), floor(word.div(32))).mul(2 / 31).sub(1);
+    const z = p.x.abs().add(p.y.abs()).oneMinus();
+    return vec3(select(z.lessThan(0), p.yx.abs().oneMinus().mul(p.sign()), p), z);
+  };
+  node.setupPosition = function (builder: N) {
+    shareInstances(builder);
+    positionLocal.assign(position);
+    normalLocal.assign(normalize(mix(normal(a.w), normal(b.w), pose.z)));
+    return proto.setupPosition.call(this, builder);
+  };
+  node.castShadowPositionNode = instanceMatrix().mul(vec4(position, 1)).xyz;
   lampLit(node);
 });
 

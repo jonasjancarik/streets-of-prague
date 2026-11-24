@@ -357,10 +357,18 @@ export class Figures {
 
   // Returns whether they're drawn life size instead (and so hold their own umbrella).
   // `local`: the matrix to draw with when the group isn't in world space (`matrix` is).
-  set(i: number, matrix: THREE.Matrix4, anim: Anim, umbrella = -1, local = matrix, person?: number) {
-    const claimed = this.lifeSize && !!LIFE_SIZE.claim?.(this, person ?? (this.wearing[i] >= 0 ? this.wearing[i] : i), matrix, anim, umbrella);
-    this.mesh.setMatrixAt(i, claimed ? NOWHERE : local);
+  streetModel(person: number, matrix: THREE.Matrix4, anim: Anim, umbrella = -1) {
+    return this.lifeSize && !!LIFE_SIZE.claim?.(this, person, matrix, anim, umbrella);
+  }
+
+  place(i: number, matrix: THREE.Matrix4, anim: Anim) {
+    this.mesh.setMatrixAt(i, matrix);
     anim.write(this.attr.aAnimA, this.attr.aAnimB, i, this.sleeves[i]);
+  }
+
+  set(i: number, matrix: THREE.Matrix4, anim: Anim, umbrella = -1, local = matrix, person?: number) {
+    const claimed = this.streetModel(person ?? (this.wearing[i] >= 0 ? this.wearing[i] : i), matrix, anim, umbrella);
+    this.place(i, claimed ? NOWHERE : local, anim);
     return claimed;
   }
 

@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { AVATARS, CLIPS, avatarIndex, inPlace, readClips } from './rocketboxClips.ts';
+import { StreetCrowd } from './streetCrowd.ts';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
@@ -25,13 +27,6 @@ import { shape as umbrellaShape, material as umbrellaMaterial, colour as umbrell
 // in the left hand: standing, with Rocketbox's umbrella clip, walking, with that clip's
 // left arm over the walk.
 
-// Who appears, with which set of clips (women's or men's). The same list is in build.sh.
-const AVATARS: [string, 'f' | 'm'][] = [
-  ['female-adult-01', 'f'], ['female-adult-03', 'f'], ['female-adult-05', 'f'], ['female-adult-08', 'f'],
-  ['female-adult-11', 'f'], ['female-adult-14', 'f'], ['business-female-02', 'f'],
-  ['male-adult-01', 'm'], ['male-adult-04', 'm'], ['male-adult-07', 'm'], ['male-adult-10', 'm'],
-  ['male-adult-13', 'm'], ['male-adult-17', 'm'], ['business-male-03', 'm'],
-];
 // Uniform variants keep each donor’s rig, head, mesh and normal maps.
 const UNIFORM_AVATARS: Record<UniformRole, string[]> = {
   dustman: ['male-adult-10', 'male-adult-17'],
@@ -39,7 +34,6 @@ const UNIFORM_AVATARS: Record<UniformRole, string[]> = {
   medic: ['male-adult-10', 'female-adult-05'],
   fire: ['male-adult-10', 'male-adult-17'],
 };
-const CLIPS = { walk: 'walk_neutral_01', jog: 'run_slow_01', run: 'run_neutral_01' };
 type Move = keyof typeof CLIPS;
 const GAITS: Move[] = ['walk', 'jog', 'run'];
 // Ways of standing about, taken in turns; in those with "phone" they have one in hand.
@@ -87,6 +81,7 @@ interface Person {
 
 export class LifeSize {
   group = new THREE.Group();
+  readonly middle = new StreetCrowd(this.group);
   enabled = true;
   private kinds: Kind[] = [];
   // An avatar keeps its catalogue identity as individual models finish loading.
@@ -121,7 +116,12 @@ export class LifeSize {
     this.umbrellas.setColorAt(0, new THREE.Color());
     this.umbrellas.castShadow = true;
     this.group.add(this.umbrellas);
-    LIFE_SIZE.claim = (fig, id, matrix, anim, umbrella) => this.claim(fig, id, matrix, anim, umbrella);
+    LIFE_SIZE.claim = (fig, id, matrix, anim, umbrella) => {
+      if (this.claim(fig, id, matrix, anim, umbrella)) return true;
+      if (fig.self || fig.lifeSize !== true || umbrella >= 0) return false;
+      const gid = this.ids.get(fig);
+      return gid !== undefined && this.middle.offer(avatarIndex(fig.avatarSeed, gid, id), id, matrix, anim);
+    };
   }
 
   private async load() {
@@ -228,6 +228,7 @@ export class LifeSize {
 
   // Lets go of the avatars, their clips and textures, and stops offering to draw anyone.
   dispose() {
+    this.middle.dispose();
     if (LIFE_SIZE.claim) LIFE_SIZE.claim = null;
     this.group.removeFromParent();
     const textures = new Set<THREE.Texture>();
@@ -278,7 +279,7 @@ export class LifeSize {
       // (Not someone the camera is inside; you, though, always: see Figures.self.)
       if (!fig.self && (d > this.reach || d < .30)) return false;
       const role = typeof fig.lifeSize === 'string' ? fig.lifeSize : undefined;
-      const kind = role ? this.uniformKind(role, id) : this.baseKinds[(fig.avatarSeed ?? (gid * 7919 + id * 104729)) % AVATARS.length];
+      const kind = role ? this.uniformKind(role, id) : this.baseKinds[avatarIndex(fig.avatarSeed, gid, id)];
       if (kind == null) return false;
       const next = key === this.nextCivilian;
       if (next) this.nextSeen = true;
@@ -398,6 +399,7 @@ export class LifeSize {
   // view is first person.
   frame(dt: number, eyes: boolean, camera: THREE.Camera) {
     eyes &&= this.enabled;
+    this.middle.frame(dt, eyes, camera);
     if (eyes && this.state === 'idle') void this.load();
     this.on = eyes && this.kinds.length > 0;
     this.cam.copy(camera.position);
@@ -543,44 +545,4 @@ const PHONE_LOOK = new THREE.MeshLambertMaterial({ color: '#15161a' });
 // The crowd's umbrella moved so that the hand holds it 7 cm up the stick.
 function gripped(g: THREE.BufferGeometry) {
   return g.translate(-0.1, -1.22, 0);
-}
-
-// The clips as assets/rocketbox/clips.mjs writes them: a header (JSON) with each clip's
-// name, frames, fps, moving and still joints, then int16s: Bip01's positions (millimetres)
-// and each joint's turns (in 32767ths), frame by frame, then the still joints' once.
-function readClips(buffer: ArrayBuffer) {
-  const length = new DataView(buffer).getUint32(0, true);
-  const head = JSON.parse(new TextDecoder().decode(new Uint8Array(buffer, 4, length))) as { clips: { name: string; frames: number; fps: number; joints: string[]; still: string[] }[] };
-  const data = new Int16Array(buffer, 4 + length);
-  const clips: Record<string, THREE.AnimationClip> = {};
-  let at = 0;
-  const take = (n: number, unit: number) => Float32Array.from(data.subarray(at, (at += n)), (v) => v / unit);
-  for (const c of head.clips) {
-    const times = Float32Array.from({ length: c.frames }, (_, i) => i / c.fps);
-    const tracks: THREE.KeyframeTrack[] = [new THREE.VectorKeyframeTrack('Bip01.position', times, take(c.frames * 3, 1000))];
-    for (const joint of c.joints) tracks.push(new THREE.QuaternionKeyframeTrack(`${joint}.quaternion`, times, take(c.frames * 4, 32767)));
-    for (const joint of c.still) tracks.push(new THREE.QuaternionKeyframeTrack(`${joint}.quaternion`, [0], take(4, 32767)));
-    clips[c.name] = new THREE.AnimationClip(c.name, (c.frames - 1) / c.fps, tracks);
-  }
-  return clips;
-}
-
-// A clip that walks off along +z, made to walk on the spot: only the joints' turns and the
-// hips' height (scaled to these hips) are kept. Returns it with the distance one cycle covers.
-function inPlace(source: THREE.AnimationClip, hips: number): [THREE.AnimationClip, number] {
-  const clip = source.clone();
-  clip.tracks = clip.tracks.filter((t) => t.name.endsWith('.quaternion') || t.name === 'Bip01.position');
-  const root = clip.tracks.find((t) => t.name === 'Bip01.position');
-  if (!root) return [clip, 0];
-  const t = root.times, v = root.values, n = t.length, t0 = t[0], T = t[n - 1] - t0;
-  const x0 = v[0], y0 = v[1], z0 = v[2], dx = v[(n - 1) * 3] - x0, dz = v[(n - 1) * 3 + 2] - z0;
-  for (let i = 0; i < n; i++) {
-    const f = T > 0 ? (t[i] - t0) / T : 0;
-    v[i * 3] -= x0 + dx * f;
-    v[i * 3 + 1] *= hips / y0;
-    v[i * 3 + 2] -= z0 + dz * f;
-  }
-  for (const tr of clip.tracks) for (let i = 0; i < tr.times.length; i++) tr.times[i] -= t0;
-  clip.duration = T;
-  return [clip, Math.hypot(dx, dz)];
 }
