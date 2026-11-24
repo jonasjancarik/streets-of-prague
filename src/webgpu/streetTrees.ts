@@ -116,25 +116,29 @@ function material() {
     proto.setupDiffuseColor.call(this, builder);
     // Furrows rise up a trunk and follow the length of a sideways bough.
     // Young twigs have a smoother, warmer skin than the mature wood.
-    const grain: N = bark.sample(vec2(card.x, select(card.y.lessThan(0), positionWorld.y.mul(1.1), card.y))).rgb.mul(1.7);
-    const wood: N = mix(vec3(.12, .092, .075), grain, smoothstep(.15, 1, part.w));
-    const p: N = picture().toVar();
-    // (A bare spray is thinner than the same card in leaf, and two cards in five show nothing:
-    // with every card a full fan of twigs a winter crown was a dark thicket.)
-    const thin: N = leafy().oneMinus();
-    If(part.x.lessThan(0.5).and(p.a.lessThan(mix(0.35, 0.55, thin)).or(thin.greaterThan(0.5).and(fract(part.z.mul(7.13)).lessThan(0.4).or(part.y.lessThan(CANOPY + 0.5))))), () => { Discard(); });
-    // The leaves' colour through the year (yearColour in webgpu/trees.ts, by the card).
-    const tree: N = diffuseColor.rgb;
-    const pick: N = fract(own.mul(7.31).add(0.13));
-    const shade: N = min(dot(tree, vec3(0.3, 0.59, 0.11)).div(0.15), 1.6);
-    const fresh: N = tree.mul(mix(vec3(1), vec3(1.3, 1.25, 0.7), uSeason.z.mul(changes)));
-    const autumn: N = mix(mix(vec3(0.58, 0.39, 0.03), vec3(0.32, 0.1, 0.02), smoothstep(0.25, 0.85, pick)), vec3(0.27, 0.03, 0.014), step(0.9, pick));
-    const turned: N = clamp(uSeason.x.mul(1.7).sub(clamp(own.add(part.z.sub(0.5).mul(0.3)), 0, 1).mul(0.7)), 0, 1).mul(changes);
-    // Darker inside the crown and on its underside, where the light has to come through leaves.
-    const inside: N = mix(0.5, 1.12, smoothstep(0.35, 1, part.w));
-    const leaf: N = mix(fresh, autumn.mul(shade).mul(0.7), turned).mul(p.rgb).mul(1.5).mul(inside);
-    const c: N = mix(p.rgb.mul(0.8), leaf, leafy()).toVar();
-    c.assign(mix(c, wood, part.x));
+    const c: N = vec3(0).toVar();
+    If(part.x.greaterThan(.5), () => {
+      const grain: N = bark.sample(vec2(card.x, select(card.y.lessThan(0), positionWorld.y.mul(1.1), card.y))).rgb.mul(1.7);
+      const wood: N = mix(vec3(.12, .092, .075), grain, smoothstep(.15, 1, part.w));
+      c.assign(wood);
+    }).Else(() => {
+      const p: N = picture().toVar();
+      // (A bare spray is thinner than the same card in leaf, and two cards in five show nothing:
+      // with every card a full fan of twigs a winter crown was a dark thicket.)
+      const thin: N = leafy().oneMinus();
+      If(p.a.lessThan(mix(0.35, 0.55, thin)).or(thin.greaterThan(0.5).and(fract(part.z.mul(7.13)).lessThan(0.4).or(part.y.lessThan(CANOPY + 0.5)))), () => { Discard(); });
+      // The leaves' colour through the year (yearColour in webgpu/trees.ts, by the card).
+      const tree: N = diffuseColor.rgb;
+      const pick: N = fract(own.mul(7.31).add(0.13));
+      const shade: N = min(dot(tree, vec3(0.3, 0.59, 0.11)).div(0.15), 1.6);
+      const fresh: N = tree.mul(mix(vec3(1), vec3(1.3, 1.25, 0.7), uSeason.z.mul(changes)));
+      const autumn: N = mix(mix(vec3(0.58, 0.39, 0.03), vec3(0.32, 0.1, 0.02), smoothstep(0.25, 0.85, pick)), vec3(0.27, 0.03, 0.014), step(0.9, pick));
+      const turned: N = clamp(uSeason.x.mul(1.7).sub(clamp(own.add(part.z.sub(0.5).mul(0.3)), 0, 1).mul(0.7)), 0, 1).mul(changes);
+      // Darker inside the crown and on its underside, where the light has to come through leaves.
+      const inside: N = mix(0.5, 1.12, smoothstep(0.35, 1, part.w));
+      const leaf: N = mix(fresh, autumn.mul(shade).mul(0.7), turned).mul(p.rgb).mul(1.5).mul(inside);
+      c.assign(mix(p.rgb.mul(.8),leaf,leafy()));
+    });
     c.mulAssign(float(1).sub(uWet.mul(0.18)));
     If(uSnow.greaterThan(0.01), () => {
       const upward = dot(normalize(normalViewGeometry), cameraViewMatrix.mul(vec4(0, 1, 0, 0)).xyz);

@@ -98,7 +98,10 @@ export function streetTreeGeometry(seed: number, boughs: number, sprays: number,
       at.addScaledVector(sideways, Math.sin(t * Math.PI) * swing);
       points.push([at, k === 4 ? r1 * .22 : r0 + (r1 - r0) * Math.sqrt(t), -1]);
     }
-    tube(points, sides, 1);
+    // On the lower tiers keep the main forks and all five attachment points.
+    // Only a terminal twig has no smaller branches joining its middle rings.
+    const wood = !leafAlong && woodDetail<1 ? [points[0],points[2],points[4]] : points;
+    tube(wood, sides, 1);
     ends.push({ at: to, dir: to.clone().sub(points[3][0]).normalize() });
     if (leafAlong) ends.push({ at: points[2][0], dir: new THREE.Vector3(r() - 0.5, 0.5 + r() * 0.5, r() - 0.5).normalize() });
     return points;

@@ -2070,3 +2070,18 @@ averaged 29.0 ms with the original sightseeing boat and 29.5 ms with the shaped
 hull and occupied cabin. The timed close hull had 6,354 triangles in two draws. The
 five seated people share one additional draw of 2,618 triangles. From overhead
 the final boat has 370 triangles and one draw, compared with 372 and one originally.
+
+### Turning through the Petřín canopy (24 November)
+
+On Pixel 5 Medium at 1×, paired turning runs isolated leaf cards and wood.
+Removing the cards took 132.8 ms per frame down to 102.7 ms. Removing the
+wood in a separate run took 78.8 ms down to 66.2 ms. Both changed the image.
+The CPU spent roughly 1 ms per frame selecting tree instances. An isolated
+run with detailed-tree shadows disabled showed no speed gain.
+
+Keeping all cards and attachment points while removing two intermediate rings
+from terminal twigs on Medium reduced the two tree meshes from 1,242 and 1,688
+triangles to 954 and 1,292. Over five alternating six-second windows per
+setting this measured 74.9 and 71.9 ms per frame. Separating bark and leaf
+texture reads on identical geometry measured 73.3 and 72.0 ms in a separate
+run. Variation between runs is greater than either saving.
