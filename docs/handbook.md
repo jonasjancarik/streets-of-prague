@@ -1297,6 +1297,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   the first car in their way. Helicopter searchlights use a separate soft volume,
   sampled through the air so the beam remains visible from inside it in first and
   third person. Their daytime ground glow fades smoothly at the edges.
+  Lamp glints drawn as separate quads are confined to car roofs. Ground reflections
+  use the wet ground materials and the selected reflection mode; dry grass and
+  paving receive diffuse lamplight without floating reflection streaks.
   The lamps come on at dusk (earlier under heavy cloud),
   and a share of the windows is lit by the hour, most in the evening.
 - **Tiles.** The map streams in 250 m tiles (`src/tiles.ts`) around the camera. Each

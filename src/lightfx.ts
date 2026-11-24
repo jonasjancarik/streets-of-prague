@@ -4,7 +4,8 @@ import { send, sendInstances } from './gpu.ts';
 // What the lights do besides lighting the ground on High and Ultra: a faint
 // cone in the air in front of every headlight and round the emergency lights, stronger
 // in rain and mist, and the glint of each street lamp where the camera would see it
-// mirrored: on the roof of a car that is at that spot, and on wet ground.
+// mirrored on the roof of a car that is at that spot. Ground reflections belong to
+// the ground material (and mirror.ts / streaks.ts), never floating additive quads.
 // Lamps (lamps.ts) fills these in as it goes through the lights each frame.
 // Drawn by the WebGPU renderer only (webgpu/glows.ts makes the materials).
 
@@ -29,7 +30,6 @@ export class LightFx {
   private dummy = new THREE.Object3D();
   private c = new THREE.Color();
   private eye: THREE.Vector3 | null = null;
-  private gloss = 0;
   private nb = 0;
   private ng = 0;
 
@@ -54,12 +54,10 @@ export class LightFx {
 
   // A new frame. `eye`: the camera (null: nothing is drawn); `on`: how dark it is;
   // `wet`, `murk`: how wet the ground and how hazy the air (0..1).
-  begin(eye: THREE.Vector3 | null, on: number, wet: number, murk: number) {
+  begin(eye: THREE.Vector3 | null, on: number, _wet: number, murk: number) {
     this.eye = this.beams ? eye : null;
     this.nb = this.ng = 0;
     BEAM_ON.value = on * (0.1 + 0.9 * Math.min(1, murk * 1.6));
-    // Dry asphalt and stone mirror a lamp only faintly.
-    this.gloss = on * (0.1 + 0.9 * wet);
     if (!this.eye) this.commit();
   }
 
@@ -93,13 +91,16 @@ export class LightFx {
   lamp(x: number, y: number, z: number, head: number, colour: THREE.Color, strength: number, grid: Map<number, number[]>, at: Float32Array, cars: Roof[], carZ: number[]) {
     const eye = this.eye;
     if (!eye) return;
-    const ex = eye.x - x, ey = -eye.z - y, far = Math.hypot(ex, ey), ang = Math.atan2(ey, ex);
+    const ex = eye.x - x, ey = -eye.z - y, ang = Math.atan2(ey, ex);
     // Where a mirror lying `up` m over the lamp's ground shows the lamp to the camera:
     // on the line from the lamp's foot to the camera's, in the proportion of their heights over it.
     const share = (up: number) => { const h = head - up, H = eye.y - z - up; return H > 1 && h > 0 ? h / (H + h) : -1; };
     const s = share(0);
     if (s < 0) return;
-    if (this.gloss > 0.02) this.glint(x + ex * s, y + ey * s, z + 0.06, ang, 0.6 + 0.35 * far * s, 0.45, colour, this.gloss * strength * 0.7);
+    // Do not put a quad at the ground mirror point: it cannot tell grass from
+    // paving, follows the lamp's height instead of the receiving terrain, and
+    // ignores obstacles between the lamp and the reflection. Ground materials
+    // already provide wet reflections with the receiving surface's depth.
     // On the roofs of the cars round that spot.
     const px = x + ex * s, py = y + ey * s;
     for (let cx = Math.floor((px - 4) / CAR_CELL); cx <= Math.floor((px + 4) / CAR_CELL); cx++) {
