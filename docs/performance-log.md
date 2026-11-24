@@ -2043,3 +2043,17 @@ the directional selection. In a second run sweeping the view through 220°,
 the corresponding times were 170.4 and 135.0 ms. The turning view still
 averaged only 7.4 fps. Normal overhead zoom restores the original pages, and
 looking steeply up, the free camera and the headset keep the circular selection.
+
+### The player's shoes on sloping pavement (24 November)
+
+The close player adjusts two legs to the floor under the shoes. In matched
+walking poses on a 26% Petřín slope and a 38% Letná slope, median error from
+the captured sole clearance fell from 5.9 to 1.5 cm and from 5.6 to 1.7 cm
+respectively. The deepest sampled shoe penetration decreased from 8.0 to
+2.4 cm and from 11.9 to 3.6 cm. These are measurements of the deformed shoe
+vertices. The simulation position and limb lengths are the same.
+
+On Pixel 5 Medium, repeated CPU timings of the two-leg adjustment at the
+Petřín pose ranged from 0.06 to 0.28 ms per player pose, with a median of
+0.12 ms. This is the cost of the pose calculation, measured separately from
+drawing the scene.

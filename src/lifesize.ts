@@ -1,5 +1,6 @@
 import type * as THREE from 'three';
 import type { LifeSize as Avatars } from './rocketbox.ts';
+import type { FootGround } from './playerFooting.ts';
 
 // First person's life-size people (rocketbox.ts), fetched only when someone looks from the
 // street: the code (with its texture and mesh decoders) the first time first person is on,
@@ -7,6 +8,7 @@ import type { LifeSize as Avatars } from './rocketbox.ts';
 // the next look from the street loads them anew (from the browser's cache by then).
 
 export class LifeSize {
+  footGround?: FootGround;
   enabled = true;
   playerSeed?: number;
   freeAfter = 120; // seconds out of first person (shorter in tests)
@@ -34,7 +36,7 @@ export class LifeSize {
       this.avatars = null;
       return;
     }
-    this.avatars.frame(dt, wanted, camera);
+    this.avatars.frame(dt, wanted, camera, this.footGround);
   }
 
   // (For scripts: whether the avatars are in memory now.)

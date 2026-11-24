@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { AVATARS, CLIPS, avatarIndex, inPlace, readClips } from './rocketboxClips.ts';
 import { StreetCrowd } from './streetCrowd.ts';
 import { PlayerGaze } from './avatarGaze.ts';
+import { PlayerFooting, type FootGround } from './playerFooting.ts';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
@@ -67,6 +68,7 @@ interface Person {
   strideSign: number;
   strideYaw: number; // player's body relative to the direction of the street camera
   gaze?: PlayerGaze;
+  footing?: PlayerFooting;
   rest: string; // the way they're standing about now
   umbrella: number; // the serial number of the umbrella they have up, or -1
   hand: THREE.Object3D; // the left, for the umbrella
@@ -399,7 +401,7 @@ export class LifeSize {
 
   // Once a frame, after the crowd is drawn and before the picture: `eyes` is whether the
   // view is first person.
-  frame(dt: number, eyes: boolean, camera: THREE.Camera) {
+  frame(dt: number, eyes: boolean, camera: THREE.Camera, ground?: FootGround) {
     eyes &&= this.enabled;
     this.middle.frame(dt, eyes, camera);
     if (eyes && this.state === 'idle') void this.load();
@@ -447,12 +449,14 @@ export class LifeSize {
     for (const [key, p] of this.live) {
       if (!p.seen || !this.on) {
         p.gaze?.release();
+        p.footing?.release();
         p.root.visible = false;
         this.live.delete(key);
         this.spare[p.kind].push(p);
         continue;
       }
       p.gaze?.restore();
+      p.footing?.restore();
       p.seen = false;
       const k = this.kinds[p.kind];
       // How fast they're going, from how far they moved: the feet keep pace with the ground.
@@ -524,6 +528,9 @@ export class LifeSize {
         const neutral = p.rest.startsWith('idle_neutral') ? p.w[p.rest] : 0;
         const freedom = Math.min(1, neutral + p.w.walk + p.w.jog + p.w.run);
         (p.gaze ??= new PlayerGaze(p.root)).apply(dt,camera,p.root,freedom);
+        const grounded = Math.min(1,p.w[p.rest]+p.w.walk+p.w.jog+p.w.run+(p.w.umbrella ?? 0));
+        if (ground && grounded>.01) (p.footing ??= new PlayerFooting(p.root)).apply(dt,ground,p.pos.y,grounded);
+        else p.footing?.release();
       }
       if (p.umbrella >= 0 && held < MOST) {
         // In the left hand, leant in over the head, each a little their own way.
