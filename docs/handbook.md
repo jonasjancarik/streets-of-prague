@@ -1410,6 +1410,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   `uv run landmarks.py praha fantova` in `pipeline/`, then
   `uv run --project pipeline python assets/fantova/build.py` at the repository root.
   Run the landmark command for `centrum` as well to register the historic-centre placement.
+  Across Wilsonova, four glazed stairwells stand on the forecourt. The model uses their
+  individual footprints and a surveyed crown elevation of 220.4 m, with transparent panes,
+  arched steel frames and a stair landing visible inside (`src/map/stationStairwells.ts`).
   The National Theatre uses the same custom model in top-down, first-person and
   third-person views. Its curved slate roof,
   gilded crest and three-horse chariots rise above the open Národní loggia and the

@@ -6,6 +6,7 @@ import { StreetFacades } from './streetFacades.ts';
 import { roofLookup, ROOFTOP } from './roofSurface.ts';
 import { dataUrl } from './data.ts';
 import { customLandmark } from './customLandmark.ts';
+import { isStationStairwell, stationStairwells, STAIRWELL_GLASS } from './map/stationStairwells.ts';
 import * as telemetry from './telemetry.ts';
 import * as THREE from 'three';
 import { STREET_QUALITY } from './streetQuality.ts';
@@ -1575,6 +1576,7 @@ export class TileWorld {
     const own = t.buildings.filter((b) => b.own);
     // Landmarks reaching into the tile: its buildings in their footprints give way.
     const hide = marks.flatMap((l) => l.polygons);
+    for (const b of t.buildings) if (isStationStairwell(b)) hide.push(b.rings);
     // Older theatre footprints stop at the main wall. Its carriage porch on the
     // embankment also has an OSM building, which would fill the three open arches.
     if (marks.some((l) => l.name === 'divadlo')) {
@@ -1704,7 +1706,7 @@ export class TileWorld {
       const x = reservedAll[n], y = reservedAll[n + 1];
       if (x > x0 - 4 && x < x1 + 4 && y > y0 - 4 && y < y1 + 4) reserved.push(x, y);
     }
-    const shapes: Shadower[] = t.buildings.filter(grounded).map((b) => ({ rings: b.rings, h: b.h }));
+    const shapes: Shadower[] = t.buildings.filter(b => grounded(b) && !isStationStairwell(b)).map((b) => ({ rings: b.rings, h: b.h }));
     const bounds: Bounds = [geo.minX, geo.minY, geo.maxX, geo.maxY];
     const source: TileSource = {
       t, size: data.size, origin: data.origin, bounds, ground, levels: tileLevels, masks: [], marks, hide,
@@ -1785,9 +1787,10 @@ export class TileWorld {
     if (sliced) { ms.parkingWait = ms.parking - Math.round(busy); ms.parking = Math.round(busy); }
     for (const c of cars) c.level = 0; // (nobody parks on a bridge or in a tunnel)
     const handrails = underpass ? bridgeStairRails(underpass, this.ref) : null;
+    const stairwells = stationStairwells(own, shade?.sample, this.ref);
     const tile: Tile = {
       k, i: t.i, j: t.j, box: t.box, passages: t.passages || [], raised: t.buildings.filter((b) => !grounded(b)).map((b) => b.rings), grid, trunkCells: land.trunkCells, levels: onLevels, cars, ms,
-      source, shown: false, dressing: null, drawn: null, drawMs: {}, drawAfter: 0, fixtures: [walls, ...(handrails ? [handrails] : []), fenceRows.fence, fenceRows.hedge, fenceRows.rail, ...(sheds ? [sheds] : []), ...wires, ...statues],
+      source, shown: false, dressing: null, drawn: null, drawMs: {}, drawAfter: 0, fixtures: [walls, ...(handrails ? [handrails] : []), fenceRows.fence, fenceRows.hedge, fenceRows.rail, ...(sheds ? [sheds] : []), ...wires, ...statues, ...stairwells],
       roads, crossers, poles, fences: fenceSections, furniture, relief: shade, sample: shade?.sample,
       water: (t.areas.water || []).map((rings) => {
         const xs = rings[0].map((p) => p[0]), ys = rings[0].map((p) => p[1]);
@@ -1947,6 +1950,7 @@ export class TileWorld {
     if (hidden) group.add(hidden);
     const buildings = arraysOf.map((arrays, n) => buildingMesh(arrays, (skyResult && !location.search.includes('nosky') ? skyResult.walls[n] : null)));
     tile.roofSurfaces = buildings.map((mesh, i) => roofLookup(mesh, arraysOf[i].parts?.extras));
+    for (const mesh of tile.fixtures) if (mesh.name === STAIRWELL_GLASS) tile.roofSurfaces.push(roofLookup(mesh));
     for (const model of landmarks) model.traverse((o) => {
       if (o instanceof THREE.Mesh) tile.roofSurfaces!.push(roofLookup(o));
     });
