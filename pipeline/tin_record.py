@@ -73,6 +73,10 @@ def heights(tiles_dir: Path, k: str) -> bytes | None:
     return _load(Path(tiles_dir) / f"{k}.height.bin")
 
 
+def level_heights(tiles_dir: Path, k: str) -> bytes | None:
+    return _load(Path(tiles_dir) / f"{k}.levels.bin")
+
+
 def inputs(tiles_dir: Path, terrain: dict, keys=None, parts: dict | None = None) -> dict:
     """{k: the inputs of tile k's mesh} for `keys` (default every tile in the folder):
     its own parts and its neighbours', and the terrain's grid. `parts`: {k: own(…)} already

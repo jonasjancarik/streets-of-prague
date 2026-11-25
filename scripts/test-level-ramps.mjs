@@ -29,3 +29,13 @@ test('a level without stairs is its lattice', () => {
   assert.equal(withRamps(deck, undefined, 180), deck);
   assert.equal(withRamps(deck, [], 180), deck);
 });
+
+test('a bridge landing fills missing deck samples and preserves the surveyed deck and stairs', () => {
+  const lip = { fallback: true, w: 8, pts: [[0, 0, 240], [8, 0, 240]] };
+  const stairs = { w: 1, pts: [[0, 1, 235], [8, 1, 236]] };
+  const at = withRamps(x => x < 4 ? 61 : NaN, [lip, stairs], 180);
+  assert.equal(at(2, 0), 61);
+  assert.equal(at(5, 0), 60);
+  assert.equal(at(4, 1), 55.5);
+  assert.ok(Number.isNaN(at(10, 0)));
+});

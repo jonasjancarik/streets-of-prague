@@ -1576,6 +1576,14 @@ record the measurements, merge decisions and pending landmark asset activation.
   each direction follows its own smoothed height profile through junctions and over
   bridges. The profiles preserve the climb and the slope towards the kerbs.
   Ground and bridge decks use separate profiles wherever the roads cross at different levels.
+- **Roads joining bridges.** A short piece of the upper carriageway can disappear where
+  the approach meets a bridge at an angle over another street. During assembly,
+  `pipeline/bridge_joins.py` checks the approach across its width against the deck,
+  the raised ground at its end and the road below. Where the upper road drops and
+  recovers within 16 m, the deck and the driving graph can continue to that landing.
+  The lower street keeps its terrain. To compare map builds, run
+  `node scripts/check-bridge-decks.mjs praha --ride-joins --save joins.json`.
+  Its ride check ranks joins by how much the pitch over a 4 m span changes in 2 m of travel.
 - **Crossing widths.** At junctions where road surfaces merge, zebra bars are limited
   to the crossed street's width plus 2 m on each side, adjusted for the crossing angle.
 - **Terrain.** IPR's bare-earth model on a 4 m grid per tile: the ground, buildings,

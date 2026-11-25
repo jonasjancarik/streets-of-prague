@@ -533,9 +533,15 @@ def put_together(area: str, strict=False) -> dict:
     if terrain and terrain.get("index", {}).get("wayLevels"):
         import structures
         on_levels = structures.OnLevels(terrain.get("ways", []), terrain.get("tiles", {}))
+    import bridge_joins
+    join_shapes, join_spans = {}, {}
+    bounds = lambda i, j: tile_box(meta, i, j)
     for ci, cj in chunks(meta):
         rails += read_chunk(area, "ground", ci, cj)["rails"]
-        for name, (length, x, y) in read_chunk(area, "streets", ci, cj)["names"].items():
+        streets_chunk = read_chunk(area, "streets", ci, cj)
+        if on_levels:
+            bridge_joins.collect(streets_chunk, terrain, on_levels, bounds, out_dir / "tiles", join_shapes, join_spans)
+        for name, (length, x, y) in streets_chunk["names"].items():
             if length > names.get(name, (0,))[0]:
                 names[name] = (length, x, y)
     out_of_date = young_out_of_date = 0
@@ -624,6 +630,9 @@ def put_together(area: str, strict=False) -> dict:
         # (Trial: its steps as lines with the ground's height either side, step_lines.py.)
         if terrain and terrain.get("steplines", {}).get(k):
             t["stepLines"] = terrain["steplines"][k]
+        if k in join_shapes:
+            t["structures"] = join_shapes[k]
+        bridge_joins.apply_spans(t["drive"], join_spans)
         if station_crossing:
             station_crossing.fit(t)
         if k in magistrala:

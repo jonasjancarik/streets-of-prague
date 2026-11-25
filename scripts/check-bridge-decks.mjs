@@ -6,6 +6,7 @@
 //
 //   node scripts/check-bridge-decks.mjs [area, praha] [--data public/data] [--worst 25]
 //        [--save now.json] [--against before.json] [--profile <edge id or part of a name>]
+//        [--ride-joins] rank changes in vehicle pitch through road-to-bridge joins
 //        [--max-break 1.0] [--max-join 1.0] [--named-only] [--near lat,lon[,metres]]
 //        [--roadsurfaces file] [--bridgesurfaces file] [--strict-regressions (requires --against)]
 //
@@ -30,6 +31,7 @@ import { onPolygons } from '../src/map/geo.ts';
 import { meshGround } from './tin-ground.mjs';
 import { readRoadSurfaces, withRoadSurfaces } from '../src/roadSurfaces.ts';
 import { bridgeSurfaceBuffers, bridgeSurfaceTile, readBridgeSurfacePreview } from '../src/bridgeSurfacePreview.ts';
+import { joinRides } from './bridge-join-rides.mjs';
 import { bridgeRegressions } from './bridge-regressions.mjs';
 
 const args = {}, pos = [];
@@ -178,7 +180,10 @@ const endHeight = (e, node, profs) => {
   const p = profs.get(e), first = e.u === node;
   if (p) return p[first ? Math.min(1, p.length - 1) : Math.max(0, p.length - 2)][2];
   if (e.bridge) return NaN;
-  return groundAt(...inFrom(first ? e.pts : e.pts.slice(-2).reverse(), 1));
+  const xy = inFrom(first ? e.pts : e.pts.slice(-2).reverse(), 1);
+  const span = e.levels?.at(first ? 0 : -1)?.[1];
+  const deck = span ? levelAt(...xy, span) : NaN;
+  return Number.isFinite(deck) ? deck : groundAt(...xy);
 };
 
 const profs = new Map();
@@ -338,6 +343,13 @@ if (args.profile) {
 const result = { built: index.built, summary, rows, tunnels,
   ...(bridgeTrial ? { bridgeDigest: createHash('sha256').update(bridgeTrial).digest('hex') } : {}),
   ...(trial ? { patchDigest: createHash('sha256').update(trial).digest('hex') } : {}) };
+if (args['ride-joins']) {
+  result.rides = joinRides(atNode, (x, y, level) => {
+    const h = level ? levelAt(x, y, level) : NaN;
+    return Number.isFinite(h) ? h : groundAt(x, y);
+  });
+  console.log('Road-to-bridge joins by change in pitch (degrees):', result.rides.slice(0, Number(args.worst || 25)));
+}
 if (args.save) writeFileSync(args.save, JSON.stringify(result));
 const bad = summary.filter((s) => s.break > BREAK || s.join > JOIN);
 if (args['strict-regressions']) {

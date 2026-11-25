@@ -64,12 +64,21 @@ export function decodeLevels(buffer: ArrayBuffer, n: number, count: number, ref:
 // Stairs on a bridge level (pipeline/structures.py, ramps): steeper and narrower than the
 // lattice can hold, so they come with their own profile, a line with a height (m a.s.l.)
 // at each point, `w` wide.
-export interface Ramp { w: number; pts: [number, number, number][] }
+export interface Ramp { fallback?: boolean; w: number; pts: [number, number, number][] }
 
 // A level's height at a point: on its stairs their own profile, elsewhere `base` (the
 // level's lattice). `ref`: the game's zero in metres a.s.l.
-export function withRamps(base: (x: number, y: number) => number, ramps: Ramp[] | null | undefined, ref: number) {
+export function withRamps(base: (x: number, y: number) => number, ramps: Ramp[] | null | undefined, ref: number): (x: number, y: number) => number {
   if (!ramps?.length) return base;
+  if (ramps.some(ramp => ramp.fallback)) {
+    const measured = withRamps(base, ramps.filter(ramp => !ramp.fallback), ref);
+    const extension = withRamps(() => NaN, ramps.filter(ramp => ramp.fallback)
+      .map(({ w, pts }) => ({ w, pts })), ref);
+    return (x: number, y: number): number => {
+      const h = measured(x, y);
+      return Number.isFinite(h) ? h : extension(x, y);
+    };
+  }
   const boxes = ramps.map(({ w, pts }) => {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const [x, y] of pts) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
