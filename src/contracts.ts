@@ -81,6 +81,7 @@ export interface TilePassage { hw?: string; pts: Point2[]; w: number }
 export interface TileStructure { level: number; kind: 'bridge' | 'tunnel'; polys: Polygons; ramps?: Ramp[]; deckSurface?: DeckSurface }
 
 export interface TileJSON extends GroundTileData {
+  magistrala?: import('./magistrala.ts').RoadGrade[];
   i: number;
   j: number;
   box: Bounds;
@@ -115,7 +116,7 @@ export interface TileJSON extends GroundTileData {
 
 // labels, terraces: the steps in the ground (terrain.ts, pointLabels), where the tile has any.
 // ramps: on a bridge level's grid, its stairs (terrain.ts, withRamps).
-export interface HeightGrid { hm: Float32Array; box: Bounds; n: number; step: number; labels?: Uint8Array | null; terraces?: Terrace[]; stepLines?: StepLine[]; unit?: number; ref?: number; ramps?: Ramp[]; roadProfile?: RoadProfile; roadSurfaces?: RoadSurface[]; underpass?: import('./map/bridgeWalk.ts').BridgeWalk; tin?: import('./tin.ts').TinMesh; kerbs?: import('./kerbDrop.ts').KerbDrop | null }
+export interface HeightGrid { magistrala?: import('./magistrala.ts').RoadGrade[]; roadLevel?: number; hm: Float32Array; box: Bounds; n: number; step: number; labels?: Uint8Array | null; terraces?: Terrace[]; stepLines?: StepLine[]; unit?: number; ref?: number; ramps?: Ramp[]; roadProfile?: RoadProfile; roadSurfaces?: RoadSurface[]; underpass?: import('./map/bridgeWalk.ts').BridgeWalk; tin?: import('./tin.ts').TinMesh; kerbs?: import('./kerbDrop.ts').KerbDrop | null }
 // A level with its heights, for the tile workers.
 export interface LevelInput extends TileStructure { heights: HeightGrid }
 

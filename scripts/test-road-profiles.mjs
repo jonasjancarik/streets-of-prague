@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { withMagistrala } from "../src/magistrala.ts";
 import { groundLayers, COLORS } from '../src/ground.ts';
 import { readRoadProfile, withRoadProfile } from '../src/roadProfiles.ts';
 
@@ -54,4 +55,15 @@ test('two independently built road tiles agree at the seam and track vehicle hei
     assert.ok(Math.abs(a - b) < 1e-5, `mesh seam at ${x},${y}`);
     assert.ok(Math.abs(a - at(x, y)) < 0.01, `vehicle differs from seam at ${x},${y}`);
   }
+});
+
+test('the magistrála follows its own deck and the continuing carriageway at a width change', () => {
+  const base = () => -1;
+  const wide = [1, 9, 0, 0, 20000, 0, 8, 0, 20000, 0];
+  const narrow = [1, 4, 8, 0, 20000, 0, 16, 0, 20080, 0];
+  const at = withMagistrala(base, [wide, narrow], 1, 190);
+  assert.ok(Math.abs(at(11, 3) - 10.3) < 1e-9);
+  assert.equal(at(11, 3, true), -1);
+  assert.equal(at(60, 60), -1);
+  assert.equal(withMagistrala(base, [wide, narrow], 0, 190), base);
 });

@@ -539,6 +539,8 @@ def put_together(area: str, strict=False) -> dict:
             if length > names.get(name, (0,))[0]:
                 names[name] = (length, x, y)
     out_of_date = young_out_of_date = 0
+    from magistrala import tile_profiles
+    magistrala = tile_profiles(meta)
     from wilsonova import StationCrossing
     station_crossing = StationCrossing(meta["crs"], terrain.get("ways", [])) if terrain and area in ("praha", "centrum") else None
     for i, j, t in tiles(area, meta):
@@ -624,6 +626,8 @@ def put_together(area: str, strict=False) -> dict:
             t["stepLines"] = terrain["steplines"][k]
         if station_crossing:
             station_crossing.fit(t)
+        if k in magistrala:
+            t["magistrala"] = magistrala[k]
         text = dumps(t)
         written += write(out_dir / "tiles" / f"{k}.json", text)
         if tin_rec["tiles"]:  # (what its ground mesh is made from, as the file has it)

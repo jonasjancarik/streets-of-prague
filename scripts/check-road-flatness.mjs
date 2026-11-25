@@ -46,6 +46,7 @@ import { readRoadProfile, withRoadProfile } from '../src/roadProfiles.ts';
 import { readRoadSurfaces, withRoadSurfaces } from '../src/roadSurfaces.ts';
 import { bridgeSurfaceBuffers, bridgeSurfaceTile, readBridgeSurfacePreview } from '../src/bridgeSurfacePreview.ts';
 import { onPolygons } from '../src/map/geo.ts';
+import { withMagistrala } from '../src/magistrala.ts';
 import { meshGround } from './tin-ground.mjs';
 import { DriveGraph } from '../src/network.ts';
 
@@ -156,9 +157,9 @@ function tileOf(i, j) {
     out = {
       side: side || (() => 0),
       base,
-      ground: withRoadSurfaces(withRoadProfile(base, height && pilot?.tiles.includes(k) ? pilot.profile : undefined, REF),
-        height ? surfaces?.get(k) : undefined, REF, side),
-      levels: structures.map((s, n) => ({ level: s.level, on: args.exact ? onPolygons(s.polys) : onMask([s.polys], t.box), sample: withRamps(heightSampler(heights[n], t.box, terrain.n, terrain.step), s.ramps, REF) })),
+      ground: withMagistrala(withRoadSurfaces(withRoadProfile(base, height && pilot?.tiles.includes(k) ? pilot.profile : undefined, REF),
+        height ? surfaces?.get(k) : undefined, REF, side), t.magistrala, 0, REF),
+      levels: structures.map((s, n) => ({ level: s.level, on: args.exact ? onPolygons(s.polys) : onMask([s.polys], t.box), sample: withMagistrala(withRamps(heightSampler(heights[n], t.box, terrain.n, terrain.step), s.ramps, REF), t.magistrala, s.level, REF) })),
     };
     // (The carriageways, and outside the survey the asphalt the photos show.)
     const road = [...['road', 'sett', 'bridge', 'trambed'].map((k) => roads[k]), ...['cover_asphalt', 'parking'].map((k) => t.areas?.[k])].filter((p) => p?.length);

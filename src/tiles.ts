@@ -1,3 +1,4 @@
+import { gradeBoxes, withMagistrala } from './magistrala.ts';
 import { bridgeWalk, withBridgeWalk } from './map/bridgeWalk.ts';
 import { footSurfaces, type Footing } from './map/footing.ts';
 import { liningMesh, passageView } from './passageMaterial.ts';
@@ -1640,6 +1641,7 @@ export class TileWorld {
     const fits = lower ? [...lower, ...(trial ?? [])] : trial;
     const surfaces = fits;
     if (shade && surfaces) shade.sample = withRoadSurfaces(shade.sample, surfaces, this.ref, terraceAt(t.terraces));
+    if (shade && t.magistrala) shade.sample = withMagistrala(shade.sample, t.magistrala, 0, this.ref);
     const underpass = shade && t.structures?.some(s => s.kind === 'bridge') ? bridgeWalk(t.walk) : undefined;
     if (shade && underpass) shade.sample = withBridgeWalk(shade.sample, underpass, this.ref);
     // Raised kerbs: the carriageway a kerb's height below the terrain (kerbDrop.ts), for
@@ -1650,14 +1652,14 @@ export class TileWorld {
     }) : null;
     if (shade && kerbs) shade.sample = withKerbs(shade.sample, kerbs);
     const hAt = shade ? shade.sample : () => 0;
-    const ground = shade && terrain ? { hm: shade.hm, box: t.box, n: terrain.n, step: terrain.step, labels: shade.labels,
+    const ground = shade && terrain ? { magistrala: t.magistrala, hm: shade.hm, box: t.box, n: terrain.n, step: terrain.step, labels: shade.labels,
       terraces: t.terraces, ...(underpass ? { underpass } : {}), stepLines: this.stepLines ? t.stepLines : undefined, unit: terrain.unit, ref: this.ref, ...(roadProfile ? { roadProfile } : {}), ...(surfaces ? { roadSurfaces: surfaces } : {}), ...(tin ? { tin } : {}), ...(kerbs ? { kerbs } : {}) } : null;
     // Bridges above the ground and tunnels below it, each level with its own heights.
     // (Charles Bridge's cutwaters come off its deck.)
     const structures = clipDecks(t.structures || [], this.charles.piers, t.box);
     const heights = levels && terrain ? decodeLevels(levels, terrain.n, structures.length, this.ref) : [];
     const tileLevels: LevelInput[] | null = this.leveled && terrain ? structures.map((s, i) => ({
-      ...s, heights: { hm: heights[i] ?? new Float32Array(terrain.n * terrain.n).fill(NaN), box: t.box, n: terrain.n, step: terrain.step, ramps: s.ramps, ref: this.ref },
+      ...s, heights: { magistrala: t.magistrala, roadLevel: s.level, hm: heights[i] ?? new Float32Array(terrain.n * terrain.n).fill(NaN), box: t.box, n: terrain.n, step: terrain.step, ramps: s.ramps, ref: this.ref },
     })) : null;
     lap('terrain');
 
@@ -1739,7 +1741,7 @@ export class TileWorld {
       const input = tileLevels?.find((l) => l.level === mask.level);
       return {
         level: mask.level, grid: new Grid(geo, RES, null, mask.cells),
-        sample: input ? withRamps(heightSampler(input.heights.hm, t.box, input.heights.n, input.heights.step), input.ramps, this.ref) : () => NaN,
+        sample: input ? withMagistrala(withRamps(heightSampler(input.heights.hm, t.box, input.heights.n, input.heights.step), input.ramps, this.ref), t.magistrala, mask.level, this.ref) : () => NaN,
       };
     });
     const walls = wallMesh(land.walls);
@@ -1950,8 +1952,9 @@ export class TileWorld {
     if (this.streetFurniture) surfaces.bridgeView(true);
     // Under a tunnel, the ground hides what's below it (the tunnel, the cars in it)
     // except round you (CUTAWAY): the ground's own layers are drawn without depth.
+    const boxes = [...(s.ground?.roadSurfaces?.map(p => p.box) ?? []), ...gradeBoxes(t.magistrala)];
     const hidden = shade && terrain && tile.levels.some((l) => l.level < 0) ? depthOnlyGround(shade.hm, t.box, terrain.n, terrain.step,
-      s.ground?.roadSurfaces?.length ? { sample: shade.sample, boxes: s.ground.roadSurfaces.map((p) => p.box) } : undefined) : null;
+      boxes.length ? { sample: shade.sample, boxes } : undefined) : null;
     if (hidden) group.add(hidden);
     const buildings = arraysOf.map((arrays, n) => buildingMesh(arrays, (skyResult && !location.search.includes('nosky') ? skyResult.walls[n] : null)));
     tile.roofSurfaces = buildings.map((mesh, i) => roofLookup(mesh, arraysOf[i].parts?.extras));

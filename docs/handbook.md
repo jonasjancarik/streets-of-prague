@@ -1572,6 +1572,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   deck follows the surveyed kerbs and preserves the lightwell in the median.
   Traffic uses the deck height on Wilsonova and the original ground down the ramps.
   The lining of the neighbouring tunnel ends where the ramp opens to the sky.
+- **Magistrála.** From the main station to the Liberecká end of V Holešovičkách,
+  each direction follows its own smoothed height profile through junctions and over
+  bridges. The profiles preserve the climb and the slope towards the kerbs.
+  Ground and bridge decks use separate profiles wherever the roads cross at different levels.
 - **Crossing widths.** At junctions where road surfaces merge, zebra bars are limited
   to the crossed street's width plus 2 m on each side, adjusted for the crossing angle.
 - **Terrain.** IPR's bare-earth model on a 4 m grid per tile: the ground, buildings,

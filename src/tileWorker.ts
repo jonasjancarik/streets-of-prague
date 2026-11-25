@@ -1,3 +1,4 @@
+import { gradeBoxes, withMagistrala } from './magistrala.ts';
 import { withBridgeWalk } from './map/bridgeWalk.ts';
 import { openPassages } from './map/passageOpenings.ts';
 import { passageLining } from './map/passageLining.ts';
@@ -92,7 +93,7 @@ function groundAt(g: HeightGrid | null) {
   const own = g.tin ? tinSampler(g.tin, ref, base).sample : base;
   const profiled = withRoadProfile(withRamps(own, g.ramps, ref), g.roadProfile, ref);
   const road = withRoadSurfaces(profiled, g.roadSurfaces, ref, g.roadSurfaces ? terraceAt(g.terraces) : null);
-  return withKerbs(withBridgeWalk(road, g.underpass, ref), g.kerbs);
+  return withKerbs(withBridgeWalk(withMagistrala(road, g.magistrala, g.roadLevel ?? 0, ref), g.underpass, ref), g.kerbs);
 }
 
 function roofs({ buildings, size, origin, ground, bbox, water, stops }: WorkerJobs['roofs']): BuildingArrays {
@@ -487,9 +488,11 @@ worker.onmessage = async (event: MessageEvent<unknown>) => {
         const started = performance.now();
         // (The layers take the terrain's own heights, and the kerbs beside them: a layer is
         // street or pavement as a whole, right up to its edge.)
+        const boxes = [...(ground?.roadSurfaces?.map(p => p.box) ?? []), ...gradeBoxes(ground?.magistrala)];
+        if (ground?.underpass) boxes.push(ground.underpass.box);
         const result = groundLayers(d, {
           ...opts, height: ground ? groundAt({ ...ground, kerbs: null }) : null, kerbs: ground?.kerbs, roadProfile: ground?.roadProfile, fine: ground?.tin ? opts.fine ?? 2 : undefined,
-          roadSurfaceBoxes: ground?.underpass ? [...(ground.roadSurfaces?.map(p=>p.box) ?? []), ground.underpass.box] : ground?.roadSurfaces?.map((p) => p.box),
+          roadSurfaceBoxes: boxes.length ? boxes : undefined,
           steps: ground?.labels ? ground.terraces ?? [] : null,
           levels: levels ? levels.map((l) => ({ level: l.level, kind: l.kind, polys: l.polys, deckSurface: l.deckSurface, height: groundAt(l.heights) })) : null,
         });
