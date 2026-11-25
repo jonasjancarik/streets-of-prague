@@ -56,6 +56,7 @@ LANDMARKS = {
     "radnice": ["way/255771323", "way/391354925"],  # Staroměstská radnice and Radniční věž
     "obecni": ["way/27124435"],  # Obecní dům, and Prašná brána with it: IPR's model has the two as one building
     "divadlo": ["way/7649971", "way/379386264", "way/379386266"],  # Národní divadlo, loggia and carriage porch
+    "fantova": ["way/188824307"],  # Historic station building facing Wilsonova, separate from the tracks and lower hall
     "rudolfinum": ["way/30123527"],  # Rudolfinum
     "mikulas": ["way/27859115"],  # Kostel sv. Mikuláše, Staroměstské náměstí
     "okamura": ["way/998156376"],  # Vila Tomia Okamury (House Okamura), Nad Tejnkou 9a, Břevnov; not in IPR's city model, so the mesh as it is

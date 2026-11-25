@@ -1399,6 +1399,12 @@ record the measurements, merge decisions and pending landmark asset activation.
 - **Landmarks** (so far Mánes with Šítkovská vodárenská věž, the Týn Church, the Old Town Hall with its tower, St Nicholas at Old Town Square, the Jan Hus memorial and the Marian column on the square, the National Theatre, the Rudolfinum, the Municipal House with the Powder Tower, House Okamura in Břevnov, and the Dancing House, which is the mesh as it is, since the city model has it as a plain prism without the legs you walk between) are cut out of IPR's
   photorealistic 3D model instead: a textured mesh of the whole city from oblique aerial
   photographs (summer 2023, about 5 cm/px), published as an I3S scene layer.
+  Fantova budova, the historic main station building facing Wilsonova, has a custom
+  model of its entrance gable, twin clock towers, glazed canopy and gallery windows.
+  The wings, roof and platform side follow the IPR survey. To rebuild it, run
+  `uv run landmarks.py praha fantova` in `pipeline/`, then
+  `uv run --project pipeline python assets/fantova/build.py` at the repository root.
+  Run the landmark command for `centrum` as well to register the historic-centre placement.
   The National Theatre uses the same custom model in top-down, first-person and
   third-person views. Its curved slate roof,
   gilded crest and three-horse chariots rise above the open Národní loggia and the

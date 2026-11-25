@@ -40,6 +40,19 @@ The resulting model and atlas are licensed under [CC BY-SA 4.0](https://creative
 | `reverse.jpg` | VasuVR, [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). [Rear figures and dedication, left stereograph](https://commons.wikimedia.org/wiki/File:PCZ828_18_Praha_D_Old_Town_hall_square_Jan_Hus_monument_2_back_3D.jpg) |
 | `face.jpg` | Kawon Kez Sel, [CC0](https://creativecommons.org/publicdomain/zero/1.0/). [Hus’s face](https://commons.wikimedia.org/wiki/File:Jan_Hus_Monument_(zoomed_detail),_Prague,_August_2025.jpg) |
 
+## Fantova budova
+
+The historic main station combines IPR Praha’s surveyed wings, end pavilions and
+roof with a modelled entrance, glazed canopy and two clock towers. The gable,
+clock surrounds and window bays adapt Lynx1211’s 2017 photograph. The façade
+details were cropped, resized and fitted to the geometry. The glass lanterns,
+frames, ribs and canopy brackets are modelled. The combined GLB and derived
+photographic panels are licensed under CC BY-SA 4.0.
+[IPR Praha 3D survey (CC BY)](https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model/3D-mesh),
+[Lynx1211’s front elevation](https://commons.wikimedia.org/wiki/File:Secesn%C3%AD_budova_Hlavn%C3%ADho_n%C3%A1dra%C5%BE%C3%AD.jpg),
+[south tower reference by ŠJů](https://commons.wikimedia.org/wiki/File:Praha_hlavn%C3%AD_n%C3%A1dra%C5%BE%C3%AD,_Fantova_budova,_ji%C5%BEn%C3%AD_v%C4%9B%C5%BE_hlavn%C3%ADho_pr%C5%AF%C4%8Del%C3%AD.jpg),
+[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+
 ## National Theatre
 
 The building plan and roof heights follow IPR Praha’s city model. The texture of the

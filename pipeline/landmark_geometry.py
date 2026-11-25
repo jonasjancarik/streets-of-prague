@@ -108,8 +108,9 @@ class Building:
         if r > 0:
             self.face([at(centre + c * r, z) for c in circle], material)
 
-    def save(self, out, name, copyright):
+    def save(self, out, name, copyright, extent=104):
         vertices = np.array(self.vertices, dtype="<f4")
+        assert np.abs(vertices[:, :3]).max() < extent
         indices = np.array(self.indices, dtype="<u2")
         assert len(vertices) < 65536 and int(indices.max()) == len(vertices) - 1
         raw = bytearray()
@@ -127,7 +128,7 @@ class Building:
         # Millimetre-scale resolution is enough even for the gilding. Keep the
         # normal and UV streams compact and every VEC3 aligned to four bytes.
         for arr, typ, component in [
-            (np.rint(vertices[:, :3] * 32767 / 104).astype("<i2"), "VEC3", 5122),
+            (np.rint(vertices[:, :3] * 32767 / extent).astype("<i2"), "VEC3", 5122),
             (np.rint(vertices[:, 3:6] * 127).astype("i1"), "VEC3", 5120),
             (np.rint(vertices[:, 6:8] * 65535).astype("<u2"), "VEC2", 5123),
         ]:
@@ -138,7 +139,6 @@ class Building:
                 dict(bufferView=stream, componentType=component, count=len(arr), type=typ, normalized=True)
             )
             if component == 5122:
-                assert np.abs(vertices[:, :3]).max() < 104
                 access[-1].update(min=arr.min(0).tolist(), max=arr.max(0).tolist())
         access.append(
             dict(
@@ -157,7 +157,7 @@ class Building:
             extensionsRequired=["KHR_mesh_quantization"],
             scene=0,
             scenes=[dict(nodes=[0])],
-            nodes=[dict(mesh=0, name=name, scale=[104] * 3)],
+            nodes=[dict(mesh=0, name=name, scale=[extent] * 3)],
             meshes=[
                 dict(
                     primitives=[

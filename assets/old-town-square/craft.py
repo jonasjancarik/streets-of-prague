@@ -80,7 +80,7 @@ class Atlas:
         return (x + w * t[0]) / self.image.width, (y + h * t[1]) / self.image.height
 
 
-def survey(name):
+def survey(name, frame=None):
     doc, blob = parse_glb((ROOT / f"public/data/praha_now/landmarks/{name}.glb").read_bytes())
     prim = doc["meshes"][0]["primitives"][0]
 
@@ -95,7 +95,7 @@ def survey(name):
         ).reshape(-1, w)
 
     pos = array(prim["attributes"]["POSITION"], 3).astype(float)[:, [0, 2, 1]]
-    ox, oy, oz, angle = FRAMES[name]
+    ox, oy, oz, angle = FRAMES[name] if frame is None else frame
     pos[:, 1] *= -1
     pos -= (ox, oy, oz)
     a = math.radians(angle)

@@ -8,6 +8,8 @@ import { cutAway } from './shading.ts';
 const models = new Map([
   ['divadlo', { file: 'national-theatre.glb', elevation: 190,
     origin: [14.41348669212441, 50.081278066926764], axis: [14.414883831157802, 50.08127868567036] }],
+  ['fantova', { file: 'fantova.glb', elevation: 209.9,
+    origin: [14.43529471573, 50.08317749706], axis: [14.43470698854, 50.08236187463] }],
   ['hus', { file: 'jan-hus.glb', elevation: 192.12,
     origin: [14.4211398634, 50.0877093323], axis: [14.4224351617, 50.0880465985] }],
   ['radnice', { file: 'old-town-radnice.glb', elevation: 192,
