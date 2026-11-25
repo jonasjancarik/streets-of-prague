@@ -340,7 +340,8 @@ async function main() {
     for (const type of ['keydown', 'keyup']) window.dispatchEvent(new KeyboardEvent(type, { code, bubbles: true, cancelable: true }));
   }, () => cameraChoice.set('overhead'));
   let vrView = !!vr;
-  const tilePrograms = vr ? retainTilePrograms(renderer) : null;
+  // (Only the legacy renderer drops a program with its last material; ?gl2 is the WebGPU one.)
+  const tilePrograms = vr && !gpuBackend ? retainTilePrograms(renderer) : null;
   // Where straight ahead is in a vehicle, turned from its nose, and which vehicle that is.
   let vrSeat: { h: number } | null = null, vrSeatTurn = 0, vrWas = false;
 

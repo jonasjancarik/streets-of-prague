@@ -7,7 +7,8 @@ import { STREET_QUALITY } from './streetQuality.ts';
 // first-person view, drawn once per eye by the browser's WebXR (Chrome on Android draws the
 // lenses' correction and follows the head with the phone's sensors). The game places a
 // "rig" each frame, where your eyes are and which way is straight ahead, and the head turns
-// round it. Drawn with the WebGL renderer (renderer.ts): three.js has no WebXR for WebGPU.
+// round it. Drawn with the legacy WebGL renderer (renderer.ts), or with ?gl2 the WebGPU renderer
+// through WebGL 2, which has the full street look but is slower: WebXR needs WebGL.
 //
 // Moving: a gamepad's left stick (the right stick turns), the Daydream controller over
 // Web Bluetooth (its touchpad walks, click is E, the app button runs, volume turns), or with
@@ -85,6 +86,9 @@ export class VR {
     renderer.xr.enabled = true;
     renderer.xr.setReferenceSpaceType('local');
     renderer.xr.setFramebufferScaleFactor(scale ?? STREET_QUALITY.vrScale);
+    // The WebGPU renderer (?gl2) would draw the eyes into a WebXR projection layer, which
+    // Chrome's Cardboard VR accepts but never shows; the plain WebGL layer works there.
+    if ((renderer as { isWebGPURenderer?: boolean }).isWebGPURenderer) (renderer.xr as unknown as { _supportsLayers: boolean })._supportsLayers = false;
     // A picture the game draws for itself (the street lamps' light map, the cars' probe, a
     // puddle's mirror) is drawn with its own camera, not the headset's two eyes.
     const render = renderer.render.bind(renderer);
@@ -154,6 +158,9 @@ export class VR {
       this.fps = Math.round(this.frames * 1000 / (now - this.since)); this.frames = 0; this.since = now;
       this.loopMs = Math.round(med(this.loops)); this.drawMs = Math.round(med(this.draws)); this.loops = []; this.draws = [];
     }
+    // The WebGPU renderer (?gl2) draws the headset's view with no target of its own set; a
+    // shader warm-up can leave its offscreen one bound, and the eyes would go there instead.
+    if ((this.renderer as { isWebGPURenderer?: boolean }).isWebGPURenderer) this.renderer.setRenderTarget(null);
     this.xrTarget = this.renderer.getRenderTarget();
     const waiting = this.queue; this.queue = [];
     for (const cb of waiting) { try { cb(now); } catch (e) { console.error(e); } }

@@ -91,10 +91,13 @@ export async function createGameRenderer(params: URLSearchParams): Promise<THREE
   const retry = startRetry();
   if (retry) telemetry.error('start tried again', retry === 'low' ? 'with low graphics' : 'with WebGL');
   if (retry === 'webgl' && params.get('renderer') !== 'webgl') return createLegacy('WebGPU could not start the game on this device', false);
-  // VR (?vr, vr.ts) is drawn with WebGL: three.js draws for a headset only through WebGL, and
-  // the WebGPU renderer's own WebGL fallback leaves out people and breaks the trees.
+  // VR (?vr, vr.ts) is drawn with WebGL: three.js draws for a headset only through WebGL.
   const vr = initialView(params) === 'vr';
-  const asked = params.get('renderer') === 'webgl' || vr;
+  // ?gl2: the WebGPU renderer drawing through WebGL 2 (its own fallback), with all the
+  // game's ported materials (street trees, life-size people). In VR it works too, but on the
+  // Pixel 5 at about two thirds of the legacy renderer's frame rate (Nov 2026), so it's a trial.
+  const gl2 = params.has('gl2');
+  const asked = params.get('renderer') === 'webgl' || (vr && !gl2);
   const legacy = (why: string) => createLegacy(why, asked);
   if (asked) return legacy(vr ? 'VR asks for it (?vr or the VR camera view)' : 'it was asked for in the URL (?renderer=webgl)');
   let why = '';
@@ -102,22 +105,22 @@ export async function createGameRenderer(params: URLSearchParams): Promise<THREE
   const watch = startupWatch();
   try {
     const gpu = (navigator as { gpu?: { requestAdapter(): Promise<{ isFallbackAdapter?: boolean; info?: { vendor?: string; architecture?: string; description?: string; isFallbackAdapter?: boolean } } | null> } }).gpu;
-    const adapter = gpu && await within(gpu.requestAdapter(), 5000, 'WebGPU adapter request timed out');
-    if (!gpu) why = 'the browser has no WebGPU';
+    const adapter = gl2 ? null : gpu && await within(gpu.requestAdapter(), 5000, 'WebGPU adapter request timed out');
+    if (gl2) { /* no WebGPU adapter wanted */ } else if (!gpu) why = 'the browser has no WebGPU';
     else if (!adapter) why = 'the browser offered no WebGPU adapter';
-    if (adapter) {
-      const info = adapter.info;
+    if (adapter || gl2) {
+      const info = adapter?.info;
       const name = info ? info.description || [info.vendor, info.architecture].filter(Boolean).join(' ') : '';
       if (info) telemetry.setGpu(name);
       watch.gpu(name);
-      if (adapter.isFallbackAdapter || info?.isFallbackAdapter || isSoftware(name)) reportTrouble('software');
+      if (adapter?.isFallbackAdapter || info?.isFallbackAdapter || isSoftware(name)) reportTrouble('software');
       // This library import creates no renderer or game material factories if it arrives late.
       watch.stage('module');
       const { WebGPURenderer } = await within(import('three/webgpu'), 15000, 'WebGPU renderer module loading timed out');
       // (three.js asks for an adapter of its own in init(), with featureLevel 'compatibility', and
       // then for the device: the adapter above is only read for its name and never used again.)
       watch.stage('device');
-      const candidate = new WebGPURenderer({ antialias: true, stencil: true });
+      const candidate = new WebGPURenderer({ antialias: true, stencil: true, forceWebGL: gl2 });
       const initialized = candidate.init();
       try {
         await within(initialized, 15000, 'WebGPU device initialization timed out');

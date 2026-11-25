@@ -46,6 +46,10 @@ it. If the local status endpoint is unavailable, the page carries on.
 
 WebGPU is the default renderer; `?renderer=webgl` selects the legacy renderer, and so does
 `?vr` or the VR camera view (three.js draws for a headset only through WebGL).
+`?gl2` (a trial) runs the WebGPU renderer through WebGL 2 instead, with all its materials;
+with `?vr` that gives the headset the street trees and life-size people, but on the
+Pixel 5 at about two thirds of the legacy renderer's frame rate (6 against 9–11 fps in
+Kampa).
 WebGPU reuses the same building, landmark, cutaway and lamp-light shader graphs
 across equivalent meshes. Each mesh keeps its own material, textures and sky-view
 attribute, so unloading one tile does not change another tile's appearance.
