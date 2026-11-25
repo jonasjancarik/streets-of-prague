@@ -55,7 +55,8 @@ export interface GroundRoadEdge {
 // side: at a step in the ground, which side's height (terrain.ts, heightSampler).
 type HeightAt = (x: number, y: number, side?: number | boolean) => number;
 // A bridge or tunnel level of the tile, with its height at a point (NaN off it).
-export interface GroundLevel { level: number; kind: 'bridge' | 'tunnel'; polys: Polygons; height: HeightAt }
+export interface DeckSurface { road: Polygons; pavement: Polygons }
+export interface GroundLevel { level: number; kind: 'bridge' | 'tunnel'; polys: Polygons; height: HeightAt; deckSurface?: DeckSurface }
 type GroundGeometry = GroundLayer['geometry'];
 
 // The present-day ground as real geometry: one mesh per surface kind, triangulated
@@ -761,11 +762,11 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
       if (l.kind === 'bridge') {
         groundHeight = H;
         const stone = (paintOn.get(k) || []).some((e) => !!e.name && BALUSTRADES.has(e.name));
-        upper.push(...deckSlab(l.polys, box, masks[k], H, T, l.level, stone));
+        upper.push(...deckSlab(l.polys, box, masks[k], H, T, l.level, stone, l.deckSurface));
         // What's on the deck floats a hand's breadth above the slab: they're
         // triangulated differently, so they'd cut into each other.
         groundHeight = (x: number, y: number) => H(x, y) + 0.12;
-        upper.push(...deckLayers(l.polys, tramsOn.get(k) || [], paintOn.get(k) || [], l.level, railway.get(l.level), !!d.station));
+        upper.push(...deckLayers(l.polys, tramsOn.get(k) || [], paintOn.get(k) || [], l.level, railway.get(l.level), !!d.station, l.deckSurface));
       } else {
         groundHeight = H;
         bores.push(...tunnelPrisms(l.polys, H));
@@ -866,10 +867,13 @@ const TUNNEL_H = 5.5; // m: a tunnel's walls
 // carries on in the next tile), `wall(a, b, ha, hb, out)` with the side's ends, their
 // heights and the way out of the level.
 function openSides(polys: Polygons, [x0, y0, x1, y1]: Bounds, mask: LevelMask, H: HeightAt, T: HeightAt,
-  wall: (a: Point2, b: Point2, ha: number, hb: number, ox: number, oy: number) => void) {
+  wall: (a: Point2, b: Point2, ha: number, hb: number, ox: number, oy: number) => void,
+  fitted?: (x: number, y: number) => boolean) {
   const cut = (a: Point2, b: Point2) => ([[0, x0], [0, x1], [1, y0], [1, y1]] as [0 | 1, number][]).some(([k, v]) => Math.abs(a[k] - v) < 0.05 && Math.abs(b[k] - v) < 0.05);
   for (const rings of polys) {
     for (const ring of rings) {
+      const hole = ring !== rings[0] && fitted;
+      const holeNormal = hole && signedArea(ring) > 0 ? -1 : 1;
       for (let r = 0; r < ring.length; r++) {
         const p = ring[r], q = ring[(r + 1) % ring.length];
         const len = Math.hypot(q[0] - p[0], q[1] - p[1]);
@@ -880,6 +884,15 @@ function openSides(polys: Polygons, [x0, y0, x1, y1]: Bounds, mask: LevelMask, H
           const a: Point2 = [p[0] + ((q[0] - p[0]) * s) / n, p[1] + ((q[1] - p[1]) * s) / n];
           const b: Point2 = [p[0] + ((q[0] - p[0]) * (s + 1)) / n, p[1] + ((q[1] - p[1]) * (s + 1)) / n];
           const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+          // A surveyed lightwell has a continuous rim even where the coarse
+          // terrain beneath a corner rises close to the roof.
+          if (hole) {
+            const ox = uy * holeNormal, oy = -ux * holeNormal;
+            if (hole(mx - .18 * ox, my - .18 * oy)) {
+              wall(a, b, H(a[0], a[1]), H(b[0], b[1]), ox, oy);
+              continue;
+            }
+          }
           // Which side is off the level; neither or both: not an open side.
           const left = onMask(mask, mx - uy * 0.8, my + ux * 0.8), right = onMask(mask, mx + uy * 0.8, my - ux * 0.8);
           if (left === right) continue;
@@ -929,16 +942,38 @@ const RAIL_W = 0.42, PLINTH = 0.2, RAIL = 0.8, BALUSTER = 0.3, PILLAR = 3.2, BAL
 
 // A bridge level as a solid slab: its surface, the edge below it and a parapet along
 // every open side (a balustrade, with `stone`).
-function deckSlab(polys: Polygons, box: Bounds, mask: LevelMask, D: HeightAt, T: HeightAt, level: number, stone = false): GroundLayer[] {
+function deckSlab(polys: Polygons, box: Bounds, mask: LevelMask, D: HeightAt, T: HeightAt, level: number, stone = false, surveyed?: DeckSurface): GroundLayer[] {
   const q = quads(true);
+  const steel = quads(true);
+  const fitted = surveyed && onPolygons([...surveyed.road, ...surveyed.pavement]);
+  // Steel tubes over a low lip around the opening between the carriageways.
+  function edgeRail(a: Point2, b: Point2, ha: number, hb: number, ox: number, oy: number) {
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]), ux = (b[0] - a[0]) / len, uy = (b[1] - a[1]) / len;
+    const at = (s: number, d: number, h: number) => [a[0]+s*ux-d*ox, ha+(hb-ha)*s/len+h, -a[1]-s*uy+d*oy];
+    function bar(s0: number, s1: number, z0: number, z1: number, width: number) {
+      const u = .12, v = u + width, out = [ox,0,-oy], inn = [-ox,0,oy];
+      steel.quad(at(s0,u,z0),at(s1,u,z0),at(s1,u,z1),at(s0,u,z1),out);
+      steel.quad(at(s1,v,z0),at(s0,v,z0),at(s0,v,z1),at(s1,v,z1),inn);
+      steel.quad(at(s0,u,z1),at(s1,u,z1),at(s1,v,z1),at(s0,v,z1),[0,1,0]);
+      steel.quad(at(s0,v,z0),at(s1,v,z0),at(s1,u,z0),at(s0,u,z0),[0,-1,0]);
+      steel.quad(at(s0,u,z0),at(s0,v,z0),at(s0,v,z1),at(s0,u,z1),[-ux,0,uy]);
+      steel.quad(at(s1,v,z0),at(s1,u,z0),at(s1,u,z1),at(s1,v,z1),[ux,0,-uy]);
+    }
+    bar(0,len,.50,.55,.055);
+    bar(0,len,.97,1.03,.065);
+    bar(0,Math.min(.065,len),.10,1.02,.065);
+  }
   let run = 0; // how far along the parapet, for the pillars
   openSides(polys, box, mask, D, T, (a, b, ha, hb, ox, oy) => {
     const out = [ox, 0, -oy], inn = [-ox, 0, oy];
     if (!stone) {
+      const rail = fitted?.((a[0]+b[0])/2-.18*ox, (a[1]+b[1])/2-.18*oy);
+      const cap = rail ? .16 : PARAPET;
       const ia = [a[0] - ox * PARAPET_W, a[1] - oy * PARAPET_W], ib = [b[0] - ox * PARAPET_W, b[1] - oy * PARAPET_W];
-      q.quad([a[0], ha - FASCIA, -a[1]], [b[0], hb - FASCIA, -b[1]], [b[0], hb + PARAPET, -b[1]], [a[0], ha + PARAPET, -a[1]], out);
-      q.quad([ib[0], hb, -ib[1]], [ia[0], ha, -ia[1]], [ia[0], ha + PARAPET, -ia[1]], [ib[0], hb + PARAPET, -ib[1]], inn);
-      q.quad([a[0], ha + PARAPET, -a[1]], [b[0], hb + PARAPET, -b[1]], [ib[0], hb + PARAPET, -ib[1]], [ia[0], ha + PARAPET, -ia[1]], [0, 1, 0]);
+      q.quad([a[0], ha - FASCIA, -a[1]], [b[0], hb - FASCIA, -b[1]], [b[0], hb + cap, -b[1]], [a[0], ha + cap, -a[1]], out);
+      q.quad([ib[0], hb, -ib[1]], [ia[0], ha, -ia[1]], [ia[0], ha + cap, -ia[1]], [ib[0], hb + cap, -ib[1]], inn);
+      q.quad([a[0], ha + cap, -a[1]], [b[0], hb + cap, -b[1]], [ib[0], hb + cap, -ib[1]], [ia[0], ha + cap, -ia[1]], [0, 1, 0]);
+      if (rail) edgeRail(a,b,ha,hb,ox,oy);
       return;
     }
     q.quad([a[0], ha - FASCIA, -a[1]], [b[0], hb - FASCIA, -b[1]], [b[0], hb, -b[1]], [a[0], ha, -a[1]], out);
@@ -973,10 +1008,12 @@ function deckSlab(polys: Polygons, box: Bounds, mask: LevelMask, D: HeightAt, T:
       }
     }
     run += len;
-  });
+  }, fitted);
   const top = polygons(polys), geometry = joined(top, q);
-  return geometry.index.length ? [{ order: -600, geometry, color: COLORS.slab, pattern: 'concrete', blend: null, slab: true, level,
+  const layers: GroundLayer[] = geometry.index.length ? [{ order: -600, geometry, color: COLORS.slab, pattern: 'concrete', blend: null, slab: true, level,
     parapetStart: stone ? undefined : top.position.length / 3 }] : [];
+  if (steel.idx.length) layers.push({ order: -600, geometry: joined(polygons([]),steel), color: '#81908b', pattern: 'flat', blend: null, slab: true, level });
+  return layers;
 }
 
 // What's drawn on a bridge level, over its slab: its surface, tram tracks and the
@@ -985,7 +1022,7 @@ function deckSlab(polys: Polygons, box: Bounds, mask: LevelMask, D: HeightAt, T:
 // pavements are, from parapet to parapet, with the carriageway over it between granite
 // kerbs (the survey has no pavements on the bridges); one that carries none (a railway
 // bridge) stays plain.
-function deckLayers(polys: Polygons, trams: Point2[][], edges: GroundRoadEdge[], level: number, railway: Point2[][] = [], station = false): GroundLayer[] {
+function deckLayers(polys: Polygons, trams: Point2[][], edges: GroundRoadEdge[], level: number, railway: Point2[][] = [], station = false, surveyed?: DeckSurface): GroundLayer[] {
   const out: GroundLayer[] = [];
   let order = -599;
   const add = (geometry: GroundGeometry, color: string, pattern = 'flat', topOnly = false) => {
@@ -1004,6 +1041,11 @@ function deckLayers(polys: Polygons, trams: Point2[][], edges: GroundRoadEdge[],
       .flatMap((line) => offOtherRoads(line, e, streets))), 0.25), COLORS.kerb, 'graniteKerb');
   } else if (railway.length) add(polygons(polys), COLORS.ballast, 'gravel', true);
   else add(polygons(polys), COLORS.bridge, 'asphalt');
+  // Finish the surveyed span right up to its approaches before painting its lanes.
+  if (surveyed) {
+    add(polygons(surveyed.pavement), COLORS.pavement, 'asphalt');
+    add(polygons(surveyed.road), COLORS.asphalt, 'asphalt');
+  }
   add(tramRibbon(trams, false), COLORS.trackbed, 'tramBed');
   add(tramRibbon(trams, true), COLORS.steel, 'groovedRail');
   if (station && railway.length) railwayLayers(railway, (g, color, pattern) => add(g, color, pattern, true));
@@ -1107,7 +1149,7 @@ function tunnelLayers(polys: Polygons, box: Bounds, mask: LevelMask, H: HeightAt
   // centimetre, and from inside the lining's soffit (tunnelInterior) is lower still.
   const top = (p: Point2, h: number) => {
     const t = T(p[0], p[1]);
-    return t > h + 1.2 ? Math.min(h + TUNNEL_H, t - 0.5) : h + TUNNEL_H;
+    return Math.max(h, Math.min(h + TUNNEL_H, t - 0.5));
   };
   openSides(polys, box, mask, H, T, (a, b, ha, hb, ox, oy) => {
     q.quad([b[0], hb, -b[1]], [a[0], ha, -a[1]], [a[0], top(a, ha), -a[1]], [b[0], top(b, hb), -b[1]], [-ox, 0, oy]);

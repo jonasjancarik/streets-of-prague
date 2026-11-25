@@ -59,7 +59,7 @@ IPR_OUTPUT = {"layers.py": ("FORMAT", "tiles", "write_layer", "begin_layer", "wr
 PROJECTION = ("krovak_to_local",)
 CODE = {
     "buildings": OSM,
-    "ground": {**OSM, **SURVEY, "wilsonova.py": (), "dtm_walls.py": (), "dtm_stairs.py": (), "ipr_trees.py": (), "ipr_open.py": (),
+    "ground": {**OSM, **SURVEY, "wilsonova.py": ("upper_road", "LOWER_WAYS"), "dtm_walls.py": (), "dtm_stairs.py": (), "ipr_trees.py": (), "ipr_open.py": (),
                "barriers.py": (), "pavements.py": (), "plots.py": (), "verges.py": ()},
     "streets": {**OSM, **SURVEY, "wilsonova.py": ("LOWER_WAYS",), "structures.py": ("structure_ways",)},
     "parking": {"build_tiles.py": (), "osm_area.py": ("OUT", "AREAS", "_polys", "_rings"),

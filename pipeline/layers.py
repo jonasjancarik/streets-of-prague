@@ -539,6 +539,8 @@ def put_together(area: str, strict=False) -> dict:
             if length > names.get(name, (0,))[0]:
                 names[name] = (length, x, y)
     out_of_date = young_out_of_date = 0
+    from wilsonova import StationCrossing
+    station_crossing = StationCrossing(meta["crs"], terrain.get("ways", [])) if terrain and area in ("praha", "centrum") else None
     for i, j, t in tiles(area, meta):
         k = f"{i}_{j}"
         add_moravkova_frontage(t)
@@ -620,6 +622,8 @@ def put_together(area: str, strict=False) -> dict:
         # (Trial: its steps as lines with the ground's height either side, step_lines.py.)
         if terrain and terrain.get("steplines", {}).get(k):
             t["stepLines"] = terrain["steplines"][k]
+        if station_crossing:
+            station_crossing.fit(t)
         text = dumps(t)
         written += write(out_dir / "tiles" / f"{k}.json", text)
         if tin_rec["tiles"]:  # (what its ground mesh is made from, as the file has it)

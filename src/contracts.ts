@@ -3,7 +3,7 @@ import type { RoadProfile } from './roadProfiles.ts';
 import type { Bounds, GeoData, Point2, Polygons } from './map/geo.ts';
 import type { RawStreetEdge } from './network.ts';
 import type { Ramp, StepLine, Terrace } from './terrain.ts';
-import type { GroundResult, GroundRoadEdge, GroundTileData, LevelMask } from './ground.ts';
+import type { DeckSurface, GroundResult, GroundRoadEdge, GroundTileData, LevelMask } from './ground.ts';
 import type { TreeSpot, CanopyCells } from './map/vegetation.ts';
 import type { FenceBuffers, FenceTile } from './map/fences.ts';
 import type { Shed, ShedBuffers } from './map/sheds.ts';
@@ -78,7 +78,7 @@ export interface TilePassage { hw?: string; pts: Point2[]; w: number }
 // A level of bridges (1, 2, …) or tunnels (-1, -2, …) in a tile: its outline here;
 // its heights come in the tile's .levels.bin.
 // `ramps`: the level's stairs, each with its own profile (terrain.ts, withRamps).
-export interface TileStructure { level: number; kind: 'bridge' | 'tunnel'; polys: Polygons; ramps?: Ramp[] }
+export interface TileStructure { level: number; kind: 'bridge' | 'tunnel'; polys: Polygons; ramps?: Ramp[]; deckSurface?: DeckSurface }
 
 export interface TileJSON extends GroundTileData {
   i: number;

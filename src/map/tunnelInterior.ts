@@ -140,14 +140,17 @@ export function tunnelInterior(
     const covered = axes.length ? Math.min(a.before + along, a.after + a.length - along) : Infinity;
     const clearance = (axes.length ? Math.min(4.95, 3.3 + width * .105) : Math.max(2.65, Math.min(5.05, depth - .52))) -
       .14 * (2 * across - 1) ** 2;
+    // A mapped centreline can extend into an open ramp. Keep both the crown
+    // and its outer panels under the actual surface above this part of the bore.
+    const cover = Math.min(depth, ground(x, y) - h);
     return {
       x,
       y,
       floor: h,
-      ceiling: h + clearance,
+      ceiling: h + Math.min(clearance, cover - .5),
       along: along + a.x * ux + a.y * uy,
       across,
-      inside: axes.length ? covered : depth - 3.18,
+      inside: Math.min(covered, cover - (axes.length ? 2.9 : 3.18)),
     };
   }
   const pos = floorMesh.position, ids = floorMesh.index, samples: Slice[] = [];

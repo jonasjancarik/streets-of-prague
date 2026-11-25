@@ -680,7 +680,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     road_polys = {k: g.intersection(clip) for k, g in road_polys.items()}
     timer.lap("road_land_unions")
     area_polys.update(land)
-    if area in ("praha", "centrum") and w < 14.436 and e > 14.434 and s < 50.085 and n > 50.082:
+    if area in ("praha", "centrum") and w < 14.436 and e > 14.433 and s < 50.085 and n > 50.081:
         lots = wilsonova.upper_road(road_polys, area_polys, lots, clip, tf.transform)
     if not gardens.is_empty:
         area_polys["garden"] = unary_union([area_polys.get("garden", gardens), gardens])

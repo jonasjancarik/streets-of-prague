@@ -1548,6 +1548,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   lower concourse. The map follows the upper carriageways and their central
   reservation between those entrances (`pipeline/wilsonova.py`). Indoor footways
   and stairs confined to basement floors stay out of the surface walking network.
+  Farther south, the lower pick-up road passes under both carriageways. The upper
+  deck follows the surveyed kerbs and preserves the lightwell in the median.
+  Traffic uses the deck height on Wilsonova and the original ground down the ramps.
+  The lining of the neighbouring tunnel ends where the ramp opens to the sky.
 - **Crossing widths.** At junctions where road surfaces merge, zebra bars are limited
   to the crossed street's width plus 2 m on each side, adjusted for the crossing angle.
 - **Terrain.** IPR's bare-earth model on a 4 m grid per tile: the ground, buildings,

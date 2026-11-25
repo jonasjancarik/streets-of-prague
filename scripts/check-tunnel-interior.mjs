@@ -49,6 +49,15 @@ const old = tunnelInterior(polys, mesh, [], [-5, -2, 15, 34], ground, floor);
 assertGeometry(old.roof);
 const shallow = tunnelInterior(polys, mesh, [], [-5, -2, 15, 34], floor, floor);
 assert.equal(shallow.roof.index.length, 0);
+const rampGround = (x, y) => floor(x, y) + Math.min(3.6, .12 * y);
+const ramp = tunnelInterior(polys, mesh, [[[5, 0], [5, 30]]], [-5, -2, 15, 34], rampGround, floor);
+assertGeometry(ramp.roof);
+for (const surface of [ramp.roof, ramp.walls]) {
+  for (let i = 0; i < surface.position.length; i += 3) {
+    const [x, h, z] = surface.position.subarray(i, i + 3);
+    assert.ok(h <= rampGround(x, -z) - .45, 'the portal lining stays below the upper street');
+  }
+}
 
 const prism = new TunnelIndex(tunnelPrisms(polys, floor));
 function quad(h) {

@@ -5,6 +5,7 @@ Seen at the main station: Wilsonova (layer 1) runs over the hall (relation 42574
 edges both ways (players' reports of 13 and 16 November 2026).
 """
 import unittest
+from copy import deepcopy
 from unittest.mock import patch
 
 import numpy as np
@@ -29,6 +30,33 @@ def buildings(street_tags, building_tags=None, streets=(ACROSS,)):
 
 
 class StreetOnRoofTests(unittest.TestCase):
+    def test_upper_span_keeps_the_lightwell_lower_route_and_other_bridge(self):
+        crs = "+proj=tmerc +lon_0=14.43 +lat_0=50.08 +ellps=WGS84"
+        project = Transformer.from_crs(4326, crs, always_xy=True).transform
+        ways = []
+        for lon in (14.43378948, 14.43402378):
+            x, y = project(lon, 50.081955)
+            ways.append({"level": 1, "cut": True, "pts": [[x-2, y-5], [x+2, y+5]]})
+        crossing = wilsonova.StationCrossing(crs, ways)
+        old = [osm_area._rings(LineString(w["pts"]).buffer(2)) for w in ways]
+        x, y = crossing.outline.bounds[:2]
+        unrelated = osm_area._rings(box(x-20, y-20, x-15, y-15))
+        lower = {"name": None, "hw": "service", "pts": ways[0]["pts"]}
+        tile = {"box": crossing.outline.buffer(25).bounds, "walk": [], "drive": [lower.copy()],
+                "structures": [{"kind": "bridge", "level": 1, "polys": [*old, unrelated]}]}
+        crossing.fit(tile)
+        fitted, = tile["structures"]
+        self.assertEqual(tile["drive"], [lower])
+        self.assertEqual(len(fitted["polys"]), 2)
+        self.assertIn(unrelated, fitted["polys"])
+        top = shapely.Polygon(fitted["polys"][-1][0], fitted["polys"][-1][1:])
+        self.assertEqual(len(top.interiors), 1)
+        road = shapely.union_all([shapely.Polygon(r[0], r[1:]) for r in fitted["deckSurface"]["road"]])
+        self.assertLess(road.difference(top).area, .5)
+        again = deepcopy(tile)
+        crossing.fit(again)
+        self.assertEqual(again, tile)
+
     def test_station_roof_has_two_continuous_carriageways_and_a_clear_median(self):
         to_local = Transformer.from_crs(4326, "+proj=tmerc +lon_0=14.43 +lat_0=50.08 +ellps=WGS84", always_xy=True)
         deck, median = wilsonova.surfaces(to_local.transform)

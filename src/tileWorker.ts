@@ -491,7 +491,7 @@ worker.onmessage = async (event: MessageEvent<unknown>) => {
           ...opts, height: ground ? groundAt({ ...ground, kerbs: null }) : null, kerbs: ground?.kerbs, roadProfile: ground?.roadProfile, fine: ground?.tin ? opts.fine ?? 2 : undefined,
           roadSurfaceBoxes: ground?.underpass ? [...(ground.roadSurfaces?.map(p=>p.box) ?? []), ground.underpass.box] : ground?.roadSurfaces?.map((p) => p.box),
           steps: ground?.labels ? ground.terraces ?? [] : null,
-          levels: levels ? levels.map((l) => ({ level: l.level, kind: l.kind, polys: l.polys, height: groundAt(l.heights) })) : null,
+          levels: levels ? levels.map((l) => ({ level: l.level, kind: l.kind, polys: l.polys, deckSurface: l.deckSurface, height: groundAt(l.heights) })) : null,
         });
         result.ms = performance.now() - started;
         result.triangles = { ground: 0, walls: 0 };
