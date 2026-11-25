@@ -307,7 +307,7 @@ function surfaceMaterial(l: GroundLayer, time: { value: number }, relief: Surfac
 export function groundSamples(time: { value: number }) {
   const plane = (pattern?: string) => {
     const position = new Float32Array([0, 0, 0, 1, 0, 0, 0, 0, -1]);
-    return { position, ...(['groovedRail', 'tramBed', 'graniteKerb'].includes(pattern ?? '') ? { trackCoord: new Float32Array(3) } : {}),
+    return { position, ...(['groovedRail', 'tramBed', 'graniteKerb', 'stairStone'].includes(pattern ?? '') ? { trackCoord: new Float32Array(3) } : {}),
       normal: new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0]), alpha: new Float32Array(3), index: new Uint32Array([0, 1, 2]) };
   };
   const texture = new THREE.DataTexture(new Uint16Array([THREE.DataUtils.toHalfFloat(1)]), 1, 1, THREE.RedFormat, THREE.HalfFloatType);

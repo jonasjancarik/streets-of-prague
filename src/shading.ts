@@ -362,7 +362,7 @@ vec3 mirrorOf(vec3 w, vec2 p) {
 }
 `;
 
-export const PATTERN: Record<string, number> = { flat: 0, asphalt: 1, setts: 2, mosaic: 3, slabs: 4, grass: 5, wood: 6, pitch: 7, dirt: 8, concrete: 9, water: 10, gravel: 11, field: 12, meadow: 13, lawn: 14, garden: 15, pavement: 16, quietWater: 17, groovedRail: 18, tramBed: 19, graniteKerb: 20 };
+export const PATTERN: Record<string, number> = { flat: 0, asphalt: 1, setts: 2, mosaic: 3, slabs: 4, grass: 5, wood: 6, pitch: 7, dirt: 8, concrete: 9, water: 10, gravel: 11, field: 12, meadow: 13, lawn: 14, garden: 15, pavement: 16, quietWater: 17, groovedRail: 18, tramBed: 19, graniteKerb: 20, stairStone: 21 };
 
 // Buildings: tiles laid in rows down the slope of every roof face (the slope comes
 // from the face normal), slate in smaller rows, gravel on flat roofs, and a grid of
@@ -908,7 +908,7 @@ export function patterned(
   if (patternedBy) return patternedBy(material, id, time, relief, deck, dig, photo, sheltered, seasonal, raster);
   material.userData.flatten = () => patterned(material.clone(), 0, time, relief, deck, dig, photo, sheltered);
   if (id === 18) id = PATTERN.flat;
-  if (id === 19) id = PATTERN.concrete;
+  if (id === 19 || id === 21) id = PATTERN.concrete;
   if ([5, 6, 7, 12, 13, 14, 15].includes(id)) material.userData.summerGround = () => patterned(material.clone(), id, time, relief, deck, dig, photo, sheltered, false);
   material.onBeforeCompile = (sh) => {
     sh.defines = { ...sh.defines, GROUND_YEAR: seasonal ? 1 : 0 };

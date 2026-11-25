@@ -52,12 +52,15 @@ export function notSurveyed(stairs: MappedStair[], flights: SurveyedStair[] = []
 // top) up to its surveyed height, `ref` the game's zero in m a.s.l.; the front edges as
 // thin strips on top. Heights are the survey's, not moved onto the terrain.
 export function surveyedStairGeometry(flights: SurveyedStair[], ref: number, height: (x: number, y: number) => number) {
-  const mesh = () => ({ position: [] as number[], normal: [] as number[], index: [] as number[] });
+  const mesh = () => ({ position: [] as number[], normal: [] as number[], index: [] as number[], across: [] as number[] });
   const body = mesh(), edges = mesh();
+  // The stone's `trackCoord` (stoneCoord): the tread being laid now, its middle and the
+  // way across it.
+  let mx = 0, my = 0, ax = 1, ay = 0, step = 0;
   // A face from points [x, height, y] (plan y), turned to face `n` ([x, up, y]).
   const face = (m: ReturnType<typeof mesh>, pts: [number, number, number][], n: [number, number, number]) => {
     const i = m.position.length / 3;
-    for (const [x, h, y] of pts) { m.position.push(x, h, -y); m.normal.push(n[0], n[1], -n[2]); }
+    for (const [x, h, y] of pts) { m.position.push(x, h, -y); m.normal.push(n[0], n[1], -n[2]); m.across.push(stoneCoord(step, (x - mx) * ax + (y - my) * ay)); }
     const [a, b, c] = pts;
     const u = [b[0] - a[0], b[1] - a[1], -(b[2] - a[2])], v = [c[0] - a[0], c[1] - a[1], -(c[2] - a[2])];
     const cross = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
@@ -87,10 +90,20 @@ export function surveyedStairGeometry(flights: SurveyedStair[], ref: number, hei
       flight.t.forEach((tread, k) => { const e = Math.abs(tread[0] - ref - h); if (e < d) { d = e; best = lift[k]; } });
       return best;
     };
+    const middle = rings.map((ring) => ring.reduce(([sx, sy], [x, y]) => [sx + x / ring.length, sy + y / ring.length], [0, 0]));
     for (let k = 0; k < flight.t.length; k++) {
       const ring = rings[k];
       if (ring.length < 3) continue;
       const top = tops[k];
+      // Across runs along the tread's longest side (its front or back edge), so the
+      // joints between its blocks run straight up the flight.
+      let longest = 0;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const dx = ring[i][0] - ring[j][0], dy = ring[i][1] - ring[j][1], l = Math.hypot(dx, dy);
+        if (l > longest) { longest = l; ax = dx / l; ay = dy / l; }
+      }
+      [mx, my] = middle[k];
+      step = k;
       let area = 0;
       for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) area += ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
       const ccw = area > 0;
@@ -116,16 +129,21 @@ export function surveyedStairGeometry(flights: SurveyedStair[], ref: number, hei
   }
   const finish = ({ position, normal, index }: ReturnType<typeof mesh>) =>
     ({ position: new Float32Array(position), normal: new Float32Array(normal), index: new Uint32Array(index) });
-  return { body: finish(body), edges: finish(edges) };
+  return { body: { ...finish(body), trackCoord: new Float32Array(body.across) }, edges: finish(edges) };
 }
 
-type Arrays = { position: Float32Array; normal: Float32Array; index: Uint32Array };
+// Which step a stair's corner is on and how far across the flight from its middle, in one
+// number for the stone's shader (stairStone in webgpu.ts): 16 per step, the middle at 8.
+const stoneCoord = (step: number, across: number) => step * 16 + 8 + Math.max(-7.9, Math.min(7.9, across));
+
+type Arrays = { position: Float32Array; normal: Float32Array; index: Uint32Array; trackCoord?: Float32Array };
 export function joinArrays(a: Arrays, b: Arrays): Arrays {
   const offset = a.position.length / 3, index = new Uint32Array(a.index.length + b.index.length);
   index.set(a.index);
   for (let i = 0; i < b.index.length; i++) index[a.index.length + i] = b.index[i] + offset;
   const cat = (x: Float32Array, y: Float32Array) => { const o = new Float32Array(x.length + y.length); o.set(x); o.set(y, x.length); return o; };
-  return { position: cat(a.position, b.position), normal: cat(a.normal, b.normal), index };
+  const across = (m: Arrays) => m.trackCoord ?? new Float32Array(m.position.length / 3);
+  return { position: cat(a.position, b.position), normal: cat(a.normal, b.normal), index, trackCoord: cat(across(a), across(b)) };
 }
 
 export function groundStairs(ways: RawStreetEdge[] = []): MappedStair[] {
@@ -153,11 +171,15 @@ const WALL = 1, LEAN = 0.22, LANDING = 3.5;
 
 export function stairGeometry(stairs: MappedStair[], box: Bounds, height: (x: number, y: number) => number,
   blocked: (x: number, y: number) => boolean): { body: GroundLayer['geometry']; edges: GroundLayer['geometry'] } {
-  const mesh = () => ({ position: [] as number[], normal: [] as number[], index: [] as number[] });
+  const mesh = () => ({ position: [] as number[], normal: [] as number[], index: [] as number[], across: [] as number[] });
   const body = mesh(), edges = mesh();
-  const quad = ({ position, normal, index }: ReturnType<typeof mesh>, vertices: [Point2, number][], nx: number, h: number, ny: number) => {
+  let steps = 0;
+  // `across`: each corner's metres from the middle of the flight (the stone's trackCoord).
+  const quad = ({ position, normal, index, across: off }: ReturnType<typeof mesh>, vertices: [Point2, number][], nx: number, h: number, ny: number,
+    across = [0, 0, 0, 0]) => {
     const i = position.length / 3;
     for (const [[x, y], z] of vertices) { position.push(x, z, -y); normal.push(nx, h, -ny); }
+    off.push(...across.map((a) => stoneCoord(steps, a)));
     index.push(i, i + 1, i + 2, i, i + 2, i + 3);
   };
   for (const { pts, width } of stairs) {
@@ -220,14 +242,15 @@ export function stairGeometry(stairs: MappedStair[], box: Bounds, height: (x: nu
     if (count > 60 || run / count < 0.2 || run / count > 0.85) continue;
     let previous = start, top = start.hi;
     for (let k = 1; k <= count; k++) {
+      steps = k;
       const target = start.hi + rise * k / count;
       const next = k === count ? end : sections.find((p) => p.s > previous.s && p.hi >= target);
       if (!next || next === previous) continue;
       const h = next.hi + 0.025;
-      quad(body, [[previous.left, h], [previous.right, h], [next.right, h], [next.left, h]], 0, 1, 0);
-      quad(body, [[previous.right, top], [previous.right, h], [previous.left, h], [previous.left, top]], -ux, 0, -uy);
-      quad(body, [[previous.left, previous.lo], [previous.left, h], [next.left, h], [next.left, next.lo]], -uy, 0, ux);
-      quad(body, [[next.right, next.lo], [next.right, h], [previous.right, h], [previous.right, previous.lo]], uy, 0, -ux);
+      quad(body, [[previous.left, h], [previous.right, h], [next.right, h], [next.left, h]], 0, 1, 0, [half, -half, -half, half]);
+      quad(body, [[previous.right, top], [previous.right, h], [previous.left, h], [previous.left, top]], -ux, 0, -uy, [-half, -half, half, half]);
+      quad(body, [[previous.left, previous.lo], [previous.left, h], [next.left, h], [next.left, next.lo]], -uy, 0, ux, [half, half, half, half]);
+      quad(body, [[next.right, next.lo], [next.right, h], [previous.right, h], [previous.right, previous.lo]], uy, 0, -ux, [-half, -half, -half, -half]);
       const edge = Math.min(previous.s + 0.055, next.s), line = h + 0.003;
       quad(edges, [[previous.left, line], [previous.right, line], [point(edge, -half), line], [point(edge, half), line]], 0, 1, 0);
       previous = next;
@@ -236,7 +259,7 @@ export function stairGeometry(stairs: MappedStair[], box: Bounds, height: (x: nu
   }
   const finish = ({ position, normal, index }: ReturnType<typeof mesh>) =>
     ({ position: new Float32Array(position), normal: new Float32Array(normal), index: new Uint32Array(index) });
-  return { body: finish(body), edges: finish(edges) };
+  return { body: { ...finish(body), trackCoord: new Float32Array(body.across) }, edges: finish(edges) };
 }
 
 

@@ -82,7 +82,7 @@ export const COLORS = {
   water: '#4d7680', pool: '#62aec2', asphalt: '#626264', sett: '#8a847a', parking: '#6a6968',
   bed: '#6f5b43', shrubBed: '#5d6b3c', iron: '#3f3d3b',
   bridge: '#6d6c6a', trackbed: '#8a8a85', steel: '#3a3b3d', paint: '#efede4', kerb: '#aba79e', granite: '#9a9893',
-  quay: '#7c776c', funicular: '#6e6a62', slab: '#8e8b84', tunnel: '#46484c', tunnelWall: '#a59f93',
+  quay: '#7c776c', funicular: '#6e6a62', slab: '#8e8b84', stairStone: '#aca596', stairNose: '#bdb6a8', tunnel: '#46484c', tunnelWall: '#a59f93',
 };
 // Paint of parking bays by paid-parking zone: [zone, colour, dashes].
 const BAY_PAINT: [string | null, string, Point2 | null][] = [
@@ -1367,8 +1367,8 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
         const surveyed = surveyedStairGeometry(d.flights, d.ref, groundHeight);
         stairs = { body: joinArrays(stairs.body, surveyed.body), edges: joinArrays(stairs.edges, surveyed.edges) };
       }
-      add(stairs.body, COLORS.slab, 'concrete');
-      add(stairs.edges, COLORS.kerb, 'concrete');
+      add(stairs.body, COLORS.stairStone, 'stairStone');
+      add(stairs.edges, COLORS.stairNose, 'concrete');
     } else order += 2;
     // The kerb's stones, over everything that lies on the street: seen from the pavement
     // the kerb hides the gutter behind it, with whatever is painted or let into it.

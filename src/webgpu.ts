@@ -117,12 +117,51 @@ function graniteKerb(c: N, p: N) {
     const arris = float(1).sub(smoothstep(.009, .022, edge)).sub(joint);
     const id = floor(trackCoord.div(3.12)).mul(3).add(step(1.08, q)).add(step(2.02, q));
     const bed = vnoise(vec2(id, 17.3)).mul(.19).add(.89);
-    const grit = aggregate(p.mul(2.25)).r.sub(.5);
-    const mineral = vec3(grit.mul(1.25).add(1), grit.mul(1.12).add(1), grit.add(1));
+    const grit = aggregate(p.mul(3.1)).r.sub(.5);
+    const mineral = vec3(grit.mul(1.7).add(1), grit.mul(1.55).add(1), grit.mul(1.4).add(1));
+    // Dark mica and pale feldspar specks, as on the stairs (stairStone).
+    const fine = vec2(trackCoord, positionWorld.y).add(p).mul(70);
+    const specks = float(1).sub(smoothstep(.7, .86, vnoise(fine)).mul(.25)).add(smoothstep(.74, .9, vnoise(fine.add(17.3))).mul(.14));
     const fade = float(1).sub(smoothstep(.025, .15, aa));
-    stone.assign(c.mul(bed).mul(mineral).mul(float(1).add(arris.mul(.12).sub(joint.mul(.48)).mul(fade))));
+    stone.assign(c.mul(bed).mul(mineral).mul(specks).mul(float(1).add(arris.mul(.12).sub(joint.mul(.48)).mul(fade))));
   }).Else(() => { stone.assign(grit(pConcrete(c, p), p)); });
   return stone;
+}
+// Outdoor stairs of cut granite. Each step is laid in two or three blocks with staggered joints. The middle of
+// each tread is worn smoother and paler, and the risers are darker and streaked.
+function stairStone(c: N, p: N) {
+  // trackCoord is the step's number times 16, plus 8 m plus the metres across (stoneCoord in map/stairs.ts).
+  const id = floor(trackCoord.div(16)), u = trackCoord.sub(id.mul(16)).sub(8), y = positionWorld.y;
+  const riser = float(1).sub(smoothstep(.45, .85, abs(normalWorldGeometry.y)));
+  const len = vnoise(vec2(id, 5.7)).mul(.6).add(1.15);
+  const along = u.add(vnoise(vec2(id, 1.3)).mul(len));
+  const block = floor(along.div(len)).add(id.mul(7));
+  const tone = vnoise(vec2(block, 3.1)).mul(.2).add(.89);
+  const tint = mix(vec3(1.03, 1, .96), vec3(.97, 1, 1.03), vnoise(vec2(block, 8.9)));
+  const wear = float(1).sub(smoothstep(.3, .85, abs(u))).mul(riser.oneMinus());
+  const stone = c.mul(tone).mul(tint).mul(mix(1, .76, riser)).mul(wear.mul(.07).add(1)).toVar();
+  // Lichen and old dirt in patches, as on a garden flight under trees.
+  const patch = smoothstep(.56, .78, fbm2(p.mul(.45).add(vec2(u, y).mul(.3)))).mul(wear.mul(.7).oneMinus());
+  stone.mulAssign(mix(vec3(1), vec3(.84, .88, .8), patch.mul(.6)));
+  If(surfaceDetail.greaterThan(.5), () => {
+    const aa = max(.0015, fwidth(u).mul(.62));
+    const q = fract(along.div(len)).mul(len), edge = min(q, len.sub(q));
+    const joint = float(1).sub(smoothstep(float(.006).sub(aa), float(.006).add(aa), edge));
+    const fade = float(1).sub(smoothstep(.025, .15, aa));
+    // Quartz and dark mica, finer than the stone; on a riser the grain is laid out
+    // across and up its face instead of over the ground.
+    const at = mix(p, vec2(u, y), riser);
+    const grain = aggregate(at.mul(3.1)).r.sub(.5).mul(wear.mul(.4).oneMinus());
+    stone.mulAssign(vec3(grain.mul(1.9).add(1), grain.mul(1.75).add(1), grain.mul(1.55).add(1)));
+    // Dark mica and pale feldspar specks, and a cloudy mottle over each block.
+    const fine = at.mul(70);
+    stone.mulAssign(float(1).sub(smoothstep(.7, .86, vnoise(fine)).mul(.28)).add(smoothstep(.74, .9, vnoise(fine.add(17.3))).mul(.16)));
+    stone.mulAssign(fbm2(at.mul(1.7).add(vec2(block, block.mul(.37)))).mul(.16).add(.92));
+    // Rain runs down the risers and leaves darker streaks.
+    stone.mulAssign(float(1).sub(riser.mul(smoothstep(.45, .8, vnoise(vec2(u.mul(7), y.mul(.6))))).mul(.12)));
+    stone.mulAssign(float(1).sub(joint.mul(.5).mul(fade)));
+  });
+  return grit(stone, p);
 }
 function pAsphalt(c0: N, p: N) {
   const c = c0.mul(fbm(p.mul(0.3)).mul(0.18).add(0.9)).toVar();
@@ -282,6 +321,7 @@ function pattern(id: number, c: N, p: N, time: N, seasonal: boolean): N {
     case 18: return railProfile(c);
     case 19: return tramConcrete(c,p);
     case 20: return graniteKerb(c,p);
+    case 21: return stairStone(c,p);
     case 2: return grit(pSetts(c, p, 0.17, 0.14), p);
     case 3: return grit(pMosaic(c, p), p);
     case 16: return grit(pPaved(c, p), p);
@@ -304,7 +344,7 @@ function pattern(id: number, c: N, p: N, time: N, seasonal: boolean): N {
 // WEATHER_GLSL: the colour, and in .a how much of a mirror the ground is there (shine).
 function weathered(id: number, c0: N, p: N, time: N) {
   if (id === 10 || id === 17) return vec4(c0, select(uWater.greaterThan(0.5), 0, 0.35));
-  const paved = id <= 4 || id === 9 || id === 16 || id === 18 || id === 19 || id === 20, road = id === 1 || id === 2;
+  const paved = id <= 4 || id === 9 || id === 16 || id === 18 || id === 19 || id === 20 || id === 21, road = id === 1 || id === 2;
   const c = vec3(c0).toVar(), shine = float(0).toVar();
   // (Derivatives outside the branches.)
   const ripple = paved ? detail(p, 0.12) : float(0);

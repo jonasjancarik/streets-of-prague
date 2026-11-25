@@ -2657,8 +2657,12 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   `--sides plane` reads the ground by a step from its own side's slope (`sampling` in
   `src/terrain.ts`, a trial, off in the game), and `--lines off` leaves a map's step
   lines out. `?nostepedges` turns the edges off.
-  Straight outdoor stairways with a usable ground profile get concrete treads
-  and visible nosings from their mapped walk edges (`src/map/stairs.ts`).
+  Straight outdoor stairways with a usable ground profile get granite treads
+  and visible nosings from their mapped walk edges (`src/map/stairs.ts`). The stone
+  (`stairStone` in `src/webgpu.ts`) lays each step in two or three blocks with
+  staggered joints, wears the middle of each tread paler and smoother, and darkens and
+  streaks the risers; the geometry's `trackCoord` gives it the step and the metres
+  across the flight.
   Where the technical map surveys a flight, it is drawn from the survey instead, and
   flights OpenStreetMap lacks are drawn too (`pipeline/dtm_stairs.py`): the stairway
   outline (ZPS polygons, Schodiště) gets heights from its surveyed edges (ZPS lines,
