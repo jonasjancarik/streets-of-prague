@@ -16,6 +16,9 @@ declare const __APP_VERSION__: string; // set by vite.config.js
 declare const __DATA_VERSION__: string;
 
 export type Mode = 'foot' | 'car' | 'tram' | 'taxi' | 'other';
+// The camera view a frame was drawn in (`vr` only while the headset is on).
+export type View = 'overhead' | 'first' | 'third' | 'vr';
+const VIEWS: View[] = ['overhead', 'first', 'third', 'vr'];
 export type StartSource = 'player' | 'default' | 'link' | 'save';
 export type StartSources = { weatherSource: StartSource; monthSource: StartSource; hourSource: StartSource };
 
@@ -114,15 +117,21 @@ export function begin(info: { renderer: string; graphics: string; tier: string; 
     ...Object.fromEntries(Object.entries(info.stages).map(([stage, ms]) => [`${stage}Ms`, Math.round(ms ?? 0)])),
   });
   started = true;
+  for (const name of before.splice(0)) did(name);
 }
 
 export function setting(name: string, value: string) { send('setting', { name, value }); }
 
 // ---- Frames and play, added up and sent when the tab is hidden or closed -----
 let started = false, dirty = false, seq = 0;
-const histogram = new Uint32Array(STALL + 1); // frames by whole milliseconds
-let frames = 0, hitches = 0, stalls = 0, tierChanges = 0, lastTier = '';
-let seconds = 0, metres = 0, lastX = NaN, lastY = NaN;
+// Frames by whole milliseconds, with the frames over HITCH and STALL: for the whole
+// session and for each camera view.
+interface FrameTimes { histogram: Uint32Array; frames: number; hitches: number; stalls: number; seconds: number; changed: boolean }
+const frameTimes = (): FrameTimes => ({ histogram: new Uint32Array(STALL + 1), frames: 0, hitches: 0, stalls: 0, seconds: 0, changed: false });
+const all = frameTimes();
+const byView = Object.fromEntries(VIEWS.map((v) => [v, frameTimes()])) as Record<View, FrameTimes>;
+let tierChanges = 0, lastTier = '';
+let metres = 0, lastX = NaN, lastY = NaN;
 const modes: Record<Mode, number> = { foot: 0, car: 0, tram: 0, taxi: 0, other: 0 };
 const counts: Record<string, number> = {};
 let graphicsNow = '';
@@ -135,13 +144,18 @@ interface Activity { times: number; firstAt: number; amount: number }
 const activities = new Map<string, Activity>(), changed = new Set<string>(), going = new Set<string>();
 function activity(key: string) {
   let a = activities.get(key);
-  if (!a) activities.set(key, (a = { times: 0, firstAt: Math.round(seconds), amount: 0 }));
+  if (!a) activities.set(key, (a = { times: 0, firstAt: Math.round(all.seconds), amount: 0 }));
   changed.add(key);
   dirty = true;
   return a;
 }
-// The player did this, once more.
-export function did(name: string) { if (started) activity(`did\n${name}`).times++; }
+// The player did this, once more. `early`: also when it happens between the start
+// screen and the start report (going into VR with Play), counted once the game begins.
+const before: string[] = [];
+export function did(name: string, early = false) {
+  if (started) activity(`did\n${name}`).times++;
+  else if (early) before.push(name);
+}
 // Something that lasts (holding the horn, lane assist): counted each time it begins.
 export function doing(name: string, on: boolean) {
   if (!on) { going.delete(name); return; }
@@ -164,25 +178,31 @@ export function count(name: string, by = 1) { counts[name] = (counts[name] ?? 0)
 export function hitch(name: string) { if (started) count(name); }
 export function most(name: string, value: number) { counts[name] = Math.max(counts[name] ?? 0, value); }
 
-// Once a frame: how long it took, and what the player is doing where.
-export function tick(ms: number, dt: number, mode: Mode, x: number, y: number, graphics: string, tier: string) {
+function add(t: FrameTimes, ms: number, dt: number) {
+  t.frames++;
+  t.histogram[Math.min(STALL, Math.round(ms))]++;
+  if (ms > STALL) t.stalls++; else if (ms > HITCH) t.hitches++;
+  t.seconds += dt;
+  t.changed = true;
+}
+
+// Once a frame: how long it took, and what the player is doing where, in which view.
+export function tick(ms: number, dt: number, mode: Mode, x: number, y: number, graphics: string, tier: string, view: View) {
   if (!started || ms > PAUSE) { lastX = x; lastY = y; return; }
   dirty = true;
-  frames++;
-  histogram[Math.min(STALL, Math.round(ms))]++;
-  if (ms > STALL) stalls++; else if (ms > HITCH) hitches++;
+  add(all, ms, dt);
+  add(byView[view], ms, dt);
   if (tier !== lastTier) { tierChanges++; lastTier = tier; }
   graphicsNow = graphics;
-  seconds += dt;
   modes[mode] += dt;
   const d = Math.hypot(x - lastX, y - lastY);
   if (d < 5) metres += d; // (more in one frame is a jump: the metro, a hospital, a saved game)
   lastX = x; lastY = y;
 }
 
-function percentile(p: number) {
+function percentile(t: FrameTimes, p: number) {
   let n = 0;
-  for (let ms = 0; ms <= STALL; ms++) if ((n += histogram[ms]) >= frames * p) return ms;
+  for (let ms = 0; ms <= STALL; ms++) if ((n += t.histogram[ms]) >= t.frames * p) return ms;
   return STALL;
 }
 
@@ -192,14 +212,22 @@ function flush() {
   seq++;
   const r = Math.round;
   send('frames', {
-    renderer, graphics: graphicsNow, tier: lastTier, seq, seconds: r(seconds), frames,
-    medianMs: percentile(0.5), p95Ms: percentile(0.95), hitches, stalls, tierChanges, tileFailures: counts.tileFailures ?? 0, cappedWindows: counts.cappedWindows ?? 0,
+    renderer, graphics: graphicsNow, tier: lastTier, seq, seconds: r(all.seconds), frames: all.frames,
+    medianMs: percentile(all, 0.5), p95Ms: percentile(all, 0.95), hitches: all.hitches, stalls: all.stalls, tierChanges, tileFailures: counts.tileFailures ?? 0, cappedWindows: counts.cappedWindows ?? 0,
     ...Object.fromEntries(HITCH_CAUSES.map((c) => [c, counts[c] ?? 0])),
   });
   send('play', {
-    seq, seconds: r(seconds), foot: r(modes.foot), car: r(modes.car), tram: r(modes.tram), taxi: r(modes.taxi), other: r(modes.other),
+    seq, seconds: r(all.seconds), foot: r(modes.foot), car: r(modes.car), tram: r(modes.tram), taxi: r(modes.taxi), other: r(modes.other),
     metres: r(metres), tickets: counts.tickets ?? 0, saves: counts.saves ?? 0, maxStars: counts.maxStars ?? 0, ...totals(),
+    viewOverhead: r(byView.overhead.seconds), viewFirst: r(byView.first.seconds), viewThird: r(byView.third.seconds), viewVr: r(byView.vr.seconds),
   });
+  // Frame times in each camera view used since the last report, in one request.
+  const views = VIEWS.filter((v) => byView[v].changed).map((view) => {
+    const t = byView[view];
+    t.changed = false;
+    return { view, renderer, graphics: graphicsNow, tier: lastTier, seq, seconds: r(t.seconds), frames: t.frames, medianMs: percentile(t, 0.5), p95Ms: percentile(t, 0.95), hitches: t.hitches, stalls: t.stalls };
+  });
+  if (views.length) send('view', {}, views);
   // Only what changed since the last report, in one request.
   const rows = [...changed].map((key) => {
     const [kind, name] = key.split('\n'), a = activities.get(key)!;

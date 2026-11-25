@@ -1988,8 +1988,9 @@ async function main() {
       showBanner(station ? station.name : t('Radio off'));
     }
     if (e.code === 'KeyV' && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey && testkit && !testkit.cam && testkit.where().mode === 'foot') {
-      const view = cameraChoice.get();
-      cameraChoice.set(view === 'overhead' ? 'first' : view === 'first' ? 'third' : 'overhead');
+      const view = cameraChoice.get(), next = view === 'overhead' ? 'first' : view === 'first' ? 'third' : 'overhead';
+      cameraChoice.set(next);
+      telemetry.setting('Camera view', next);
     }
     if (e.code === 'KeyG' && !e.repeat) { graphics.cycle(); showBanner(graphics.label()); telemetry.setting('Graphics', graphics.choice); }
     if (e.code === 'KeyP' && !e.repeat) { weather.cycle(); showBanner(weather.label()); telemetry.setting('Weather', weather.kind); }
@@ -3038,6 +3039,8 @@ async function main() {
     graphics: graphics.choice, tier: graphics.tier, lang: getLang(), touch: touch.active, resumed, loadMs, stages: loadTimes,
     conditions: { ...startSources, weather: weather.kind, month: Number(season.date.slice(0, 2)), hour: clock.hour },
   });
+  // (The start report has no room for more text, so the view the game began in is sent apart.)
+  telemetry.setting('Camera view at start', vrView ? 'vr' : vr ? 'overhead' : startView);
   telemetry.summary(() => ({ ...stats, money: wallet.balance }));
   wallet.onSpend = telemetry.spent;
   let starsWas = 0;
@@ -3080,7 +3083,8 @@ async function main() {
     }
     if (paused !== soundHeld) sound.hold((soundHeld = paused)); // and the sound with it
     graphics.frame(now - last, now, world.busy);
-    telemetry.tick(now - last, dt, playingAs(), px(), py(), graphics.choice, graphics.tier);
+    const viewing = !testkit?.cam && testkit?.eyes;
+    telemetry.tick(now - last, dt, playingAs(), px(), py(), graphics.choice, graphics.tier, vr?.active ? 'vr' : viewing ? (viewing.third ? 'third' : 'first') : 'overhead');
     telemetry.most('maxStars', police.stars);
     if (police.stars !== starsWas) { if (police.stars > starsWas) telemetry.did(`wanted: ${police.stars} ${police.stars === 1 ? 'star' : 'stars'}`); starsWas = police.stars; }
     // Things that last, counted each time they begin.

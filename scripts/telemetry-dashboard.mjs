@@ -113,12 +113,21 @@ function sampleRows() {
     });
     if (rnd() < 0.12) continue; // left before anything was added up
     const seconds = Math.round(40 + rnd() * rnd() * 2400), drive = 0.25 + rnd() * 0.5, tram = rnd() < 0.3 ? rnd() * 0.25 : 0;
+    const startView = pick([['overhead', 7], ['first', 2], ['third', 1.5], ['vr', touch ? 0.6 : 0]]), street = startView === 'overhead' ? rnd() * 0.15 : 0.5 + rnd() * 0.4;
+    const views = version === 'v0.3.0' ? {} : { viewOverhead: Math.round(seconds * (1 - street)), viewFirst: startView === 'third' || startView === 'vr' ? 0 : Math.round(seconds * street), viewThird: startView === 'third' ? Math.round(seconds * street) : 0, viewVr: startView === 'vr' ? Math.round(seconds * street) : 0 };
     put(at, 'frames', version, s, country, { renderer, graphics: 'auto', tier, seq: 1, seconds, frames: Math.round((seconds * 1000) / median), medianMs: median, p95Ms: Math.round(median * (1.3 + rnd())), hitches: Math.round((seconds / 60) * rnd() * (base / 6)), stalls: Math.round(rnd() * 3), tierChanges: Math.round(rnd() * 3), tileFailures: rnd() < 0.05 ? 2 : 0, hitchShaders: Math.round(rnd() * 4), hitchTiles: Math.round(rnd() * 6), hitchGame: Math.round(rnd() * 3), hitchWaiting: Math.round(rnd() * 5), hitchUnknown: Math.round(rnd() * 2) });
     put(at, 'play', version, s, country, {
       seq: 1, seconds, car: seconds * drive, tram: seconds * tram, taxi: rnd() < 0.1 ? seconds * 0.05 : 0, other: rnd() < 0.15 ? seconds * 0.04 : 0, foot: seconds * (1 - drive - tram) * 0.9,
       metres: seconds * drive * 9, wrecked: Math.round(rnd() * seconds / 90), knocked: Math.round(rnd() * seconds / 60), busted: rnd() < 0.3 ? 1 : 0, wasted: rnd() < 0.2 ? 1 : 0,
       money: 10000 - Math.round(rnd() * 3000), maxStars: Math.floor(rnd() * rnd() * 6), tickets: tram ? Math.round(rnd() * 2) : 0, saves: rnd() < 0.1 ? 1 : 0,
+      ...views,
     });
+    // Frame times in each camera view used: the street views cost more, VR most.
+    if (version !== 'v0.3.0') for (const [view, cost] of [['overhead', 1], ['first', 1.35], ['third', 1.3], ['vr', 2.1]]) {
+      const secs = views[`view${view === 'vr' ? 'Vr' : view[0].toUpperCase() + view.slice(1)}`], ms = Math.round(median * cost);
+      if (secs > 0) put(at, 'view', version, s, country, { view, renderer, graphics: 'auto', tier, seq: 1, seconds: secs, frames: Math.round((secs * 1000) / ms), medianMs: ms, p95Ms: Math.round(ms * (1.3 + rnd())), hitches: Math.round((secs / 60) * rnd() * (base / 6)), stalls: Math.round(rnd() * 2) });
+    }
+    if (version !== 'v0.3.0') put(at, 'setting', version, s, country, { name: 'Camera view at start', value: startView });
     // What they did, and what they paid for: [name, how likely, how often, how early].
     const DID = [['drove: car', 0.9, 4, 40], ['crime: took a car from its driver', 0.7, 3, 70], ['crime: knocked someone over', 0.75, 8, 90], ['crime: wrecked a car', 0.6, 5, 120], ['honked', 0.55, 9, 60], ['jumped', 0.5, 6, 30],
       ['wanted: 1 star', 0.7, 2, 100], ['wanted: 2 stars', 0.45, 2, 160], ['wanted: 3 stars', 0.2, 1, 260], ['arrested', 0.3, 1, 240], ['killed', 0.2, 1, 300], ['rode a tram', tram ? 1 : 0, 2, 200], ['rode without a ticket', tram ? 0.6 : 0, 1, 215],
@@ -171,7 +180,13 @@ function app(INITIAL, DAYS, LIVE) {
 
   function addUp(reports, buckets, bucketOf) {
     const of = (e) => reports.filter((r) => r.event === e);
-    const starts = of('start'), frames = lastPer(of('frames')), play = lastPer(of('play')), errors = of('error'), settings = of('setting');
+    const starts = of('start'), frames = lastPer(of('frames')), play = lastPer(of('play')), errors = of('error');
+    const settings = of('setting').filter((s) => s.name !== 'Camera view at start'), startViews = of('setting').filter((s) => s.name === 'Camera view at start');
+    // The last report of each camera view in each session.
+    const viewed = new Map();
+    for (const v of of('view')) { const key = `${v.session}\n${v.view}`; if (!viewed.has(key) || viewed.get(key).seq <= v.seq) viewed.set(key, v); }
+    const VIEW_NAMES = [['overhead', 'From above', 'viewOverhead'], ['first', 'First person', 'viewFirst'], ['third', 'Third person', 'viewThird'], ['vr', 'VR headset', 'viewVr']];
+    const viewTime = play.reduce((a, p) => a + VIEW_NAMES.reduce((b, [, , k]) => b + (p[k] || 0), 0), 0) || 1;
     const framesBy = new Map(frames.map((f) => [f.session, f]));
     const perDay = new Map(buckets.map((b) => [b, 0]));
     for (const s of starts) { const b = bucketOf(s.at); if (perDay.has(b)) perDay.set(b, perDay.get(b) + 1); }
@@ -226,6 +241,10 @@ function app(INITIAL, DAYS, LIVE) {
       startHours: conditionsBySource(starts, 'hour', HOURS),
       referrers: tally(starts.map((s) => s.referrer || 'Opened directly')).slice(0, 8),
       modes: [['Driving', 'car'], ['On foot', 'foot'], ['On a tram', 'tram'], ['In a taxi', 'taxi'], ['Boat, funicular, metro, helicopter', 'other']].map(([label, k]) => [label, play.reduce((a, p) => a + p[k], 0) / total]),
+      viewTime: VIEW_NAMES.map(([, label, k]) => [label, play.reduce((a, p) => a + (p[k] || 0), 0) / viewTime]),
+      startViews: tally(startViews.map((s) => VIEW_NAMES.find(([id]) => id === s.value)?.[1] ?? s.value)),
+      views: VIEW_NAMES.map(([id, label]) => [label, [...viewed.values()].filter((v) => v.view === id && v.frames > 0)]).filter(([, vs]) => vs.length)
+        .map(([label, vs]) => ({ label, n: vs.length, median: median(vs.map((v) => v.medianMs)), p95: median(vs.map((v) => v.p95Ms)), stutters: mean(vs.map((v) => ((v.hitches + v.stalls) / Math.max(1, v.seconds)) * 60)), minutes: median(vs.map((v) => v.seconds)) / 60 })),
       cards: [...cards].map(([gpu, fs]) => ({ gpu, n: fs.length, median: median(fs.map((f) => f.medianMs)), p95: median(fs.map((f) => f.p95Ms)), stutters: mean(fs.map((f) => ((f.hitches + f.stalls) / Math.max(1, f.seconds)) * 60)), tier: tally(fs.map((f) => f.tier))[0][0] })).sort((a, b) => b.median - a.median).slice(0, 12),
       errors: [...errorGroups.values()].sort((a, b) => b.sessions.size - a.sessions.size).slice(0, 20),
       settings: tally(settings.map((s) => `${s.name} → ${s.value}`)).slice(0, 12),
@@ -293,6 +312,9 @@ function app(INITIAL, DAYS, LIVE) {
   ${bars('Renderer', d.renderers)}
   ${bars('Graphics level at the end of the game', d.tiers.map(([k, n]) => [k[0].toUpperCase() + k.slice(1), n]))}
   ${bars('What made frames over 100 ms', d.stutters, { note: 'Each frame over 100 ms, put down to the part of the work that took longest. Only versions from 9 November 2026 on report this.' })}
+  ${table('Frame rate by camera view', ['Camera view', 'Games', 'Middle frame', 'Slow frames (95th percentile)', 'Stutters a minute', 'Typical time in it'],
+    d.views.map((v) => [esc(v.label), v.n, `${num(v.median)} ms · ${num(1000 / v.median)} fps`, `${num(v.p95)} ms`, num(v.stutters, 1), `${num(v.minutes, v.minutes < 10 ? 1 : 0)} min`]),
+    'Each game counts once for every view it was played in. Only versions from 25 November 2026 on report this.')}
   ${table('Graphics cards, slowest first', ['Graphics card', 'Games', 'Middle frame', 'Slow frames (95th percentile)', 'Stutters a minute', 'Usual graphics level'],
     d.cards.map((c) => [esc(c.gpu), c.n, `${num(c.median)} ms · ${num(1000 / c.median)} fps`, `${num(c.p95)} ms`, num(c.stutters, 1), esc(c.tier)]),
     'A stutter is a frame longer than a tenth of a second.')}
@@ -312,7 +334,9 @@ function app(INITIAL, DAYS, LIVE) {
 <h3>What gets played</h3>
 <div class="grid">
   ${bars('Time spent', d.modes, { as: 'fraction', note: 'Share of all the time played.' })}
-  ${bars('Settings changed', d.settings, { as: 'count', note: 'What players switched to, in the settings or with the G and P keys.' })}
+  ${bars('Camera view', d.viewTime, { as: 'fraction', note: 'Share of the time played in each view. Only versions from 25 November 2026 on report this.' })}
+  ${bars('Camera view at the start', d.startViews, { note: 'The view picked on the start screen, or kept from last time.' })}
+  ${bars('Settings changed', d.settings, { as: 'count', note: 'What players switched to, in the settings or with the G, P and V keys.' })}
   ${table('In a game', ['', ''], d.play.map(([k, v]) => [esc(k), esc(v)]))}
   ${table('What players do', ['Activity', 'Games that did it', 'Share of games', 'Times in such a game', 'First done after'],
     d.did.map((a) => [esc(a.name[0].toUpperCase() + a.name.slice(1)), a.games, `<span class="share"><span style="width:${(a.share * 100).toFixed(1)}%"></span></span>${pct(a.share)}`, num(a.times, 1), `${num(a.first, a.first < 10 ? 1 : 0)} min`]),

@@ -26,7 +26,15 @@ export const SCHEMA = {
   },
   play: {
     blobs: [],
-    doubles: ['seq', 'seconds', 'foot', 'car', 'tram', 'taxi', 'other', 'metres', 'wrecked', 'knocked', 'busted', 'wasted', 'money', 'maxStars', 'tickets', 'saves'],
+    doubles: ['seq', 'seconds', 'foot', 'car', 'tram', 'taxi', 'other', 'metres', 'wrecked', 'knocked', 'busted', 'wasted', 'money', 'maxStars', 'tickets', 'saves',
+      // Seconds in each camera view.
+      'viewOverhead', 'viewFirst', 'viewThird', 'viewVr'],
+  },
+  // Frame times in one camera view (overhead, first, third, vr), totals since the start of
+  // the session like `frames`; one for each view used, sent together.
+  view: {
+    blobs: ['view', 'renderer', 'graphics', 'tier'],
+    doubles: ['seq', 'seconds', 'frames', 'medianMs', 'p95Ms', 'hitches', 'stalls'],
   },
   setting: { blobs: ['name', 'value'], doubles: [] },
   // One thing the player did (`kind` did) or what money went on (`kind` spent): how often,

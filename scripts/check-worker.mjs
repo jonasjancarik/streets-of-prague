@@ -271,6 +271,12 @@ assert.equal(res.status, 204);
 assert.deepEqual(rows.map((r) => [...r.blobs.slice(6), ...r.doubles]), [['did', 'rode a tram', 1, 2, 95, 0], ['spent', 'ticket', 1, 1, 96, 46], ['', '', 0, 0, 0, 0]]);
 await tell({ e: 'activity', rows: Array.from({ length: 100 }, () => ({ kind: 'did', name: 'x' })) });
 assert.equal(rows.length, 40);
+// Time in each camera view after the older play fields, and frame times by view.
+await tell({ e: 'play', f: { seq: 1, saves: 2, viewOverhead: 300, viewFirst: 120, viewThird: 0, viewVr: 45 } });
+assert.deepEqual(rows[0].doubles.slice(15), [2, 300, 120, 0, 45], 'camera views land after the older play fields');
+assert.ok(rows[0].doubles.length <= 20 && rows[0].blobs.length <= 20, 'Analytics Engine takes 20 of each');
+await tell({ e: 'view', rows: [{ view: 'first', renderer: 'WebGPU', graphics: 'auto', tier: 'medium', seq: 1, seconds: 120, frames: 4800, medianMs: 24, p95Ms: 41, hitches: 3, stalls: 1 }, { view: 'vr', seq: 1, medianMs: 50 }] });
+assert.deepEqual(rows.map((r) => [...r.blobs.slice(6), ...r.doubles]), [['first', 'WebGPU', 'auto', 'medium', 1, 120, 4800, 24, 41, 3, 1], ['vr', '', '', '', 1, 0, 0, 50, 0, 0, 0]]);
 
 assert.equal((await tell({ e: 'constructor' })).status, 400);
 assert.equal((await tell('{')).status, 400);

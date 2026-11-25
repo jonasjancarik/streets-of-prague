@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { t } from './i18n.ts';
 import { initialView } from './streetView.ts';
 import { STREET_QUALITY } from './streetQuality.ts';
+import * as telemetry from './telemetry.ts';
 
 // VR on a phone in a headset (a Daydream View, a Cardboard), the VR camera view (or ?vr): the game's own
 // first-person view, drawn once per eye by the browser's WebXR (Chrome on Android draws the
@@ -113,13 +114,19 @@ export class VR {
     const xr = (navigator as { xr?: XRish }).xr;
     if (!xr) return;
     if (this.active) return;
-    const session = this.session = await xr.requestSession('immersive-vr', { optionalFeatures: ['local'] });
-    session.addEventListener('end', () => this.leave());
-    // The framebuffer can only be sized before setSession. Read the current
-    // tier on every entry, including after Auto stepped down in the last session.
-    this.renderer.xr.setFramebufferScaleFactor(this.scale ?? STREET_QUALITY.vrScale);
-    await this.renderer.xr.setSession(session as unknown as XRSession);
+    try {
+      const session = this.session = await xr.requestSession('immersive-vr', { optionalFeatures: ['local'] });
+      session.addEventListener('end', () => this.leave());
+      // The framebuffer can only be sized before setSession. Read the current
+      // tier on every entry, including after Auto stepped down in the last session.
+      this.renderer.xr.setFramebufferScaleFactor(this.scale ?? STREET_QUALITY.vrScale);
+      await this.renderer.xr.setSession(session as unknown as XRSession);
+    } catch (e) {
+      telemetry.error('VR did not start', e);
+      throw e;
+    }
     this.active = true;
+    telemetry.did('went into VR', true);
     this.walking = false;
     document.body.classList.add('in-vr');
     // In the headset the page isn't shown, and the browser stops the page's own animation
@@ -128,6 +135,7 @@ export class VR {
   }
 
   private leave() {
+    if (this.active) telemetry.did('came out of VR');
     this.active = false;
     this.session = null;
     document.body.classList.remove('in-vr');

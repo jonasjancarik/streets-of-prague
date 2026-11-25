@@ -15,22 +15,23 @@ before that and from tabs left open since.
 
 ## What is sent
 
-`src/telemetry.ts` sends six kinds of report. `SCHEMA` in `worker/stats.js` lists
+`src/telemetry.ts` sends seven kinds of report. `SCHEMA` in `worker/stats.js` lists
 every field of each and is the only place the format is defined.
 
 | Report | When | What it holds |
 |---|---|---|
 | `start` | the game begins after the start screen | renderer (WebGPU, WebGL 2, or the legacy WebGL renderer), graphics card name, graphics setting and level, language, keyboard or touch, new or continued game, browser and its major version, operating system, the site the visitor came from, loading time and how long each of its stages took (the map's index, starting the graphics, the models, the streets, setting up, preparing the view, and after the start screen moving to the start spot and bringing in the life-size people; `src/loadProgress.ts`), screen size, pixel ratio, memory and processor cores as the browser reports them, starting weather, in-game month and hour, and the source of each of those three values |
 | `frames` | the tab is hidden or closed | time played, frames drawn, middle and 95th-percentile frame time, frames over 100 ms and over 250 ms, how often Auto changed the graphics level, map tiles that failed to load, how many times Auto kept the level because slow frames were waiting rather than working (the browser or the screen holding the game at 30 frames a second; WebGPU only); the frames over 100 ms by what made them long (below) |
-| `play` | with `frames` | seconds on foot, driving, on a tram, in a taxi and on anything else; metres travelled; cars wrecked, people knocked over, arrests, deaths; money; the most stars reached; tickets bought; games saved by hand |
+| `play` | with `frames` | seconds on foot, driving, on a tram, in a taxi and on anything else; metres travelled; cars wrecked, people knocked over, arrests, deaths; money; the most stars reached; tickets bought; games saved by hand; seconds in each camera view (from above, first person, third person, in the VR headset) |
+| `view` | with `frames`, one for each camera view used | the view, renderer, graphics setting and level, and in that view alone: time played, frames drawn, middle and 95th-percentile frame time, frames over 100 ms and over 250 ms. The street views and VR cost more to draw than the view from above, so this separates them from `frames`, which mixes them. A frame counts as VR only while the headset is on |
 | `activity` | with `frames`, one for each thing done or paid for | `did`: the name of something the player did, how many times, and how many seconds into the session the first time. `spent`: what money went on, how many payments, the first one's time and the amount in Kč |
-| `setting` | a setting is changed in the panel, or with G or P | which one and the new value |
-| `error` | an uncaught error, a failed start, WebGPU falling back to WebGL, the graphics device being lost | the message and the first lines of the stack; five a session at most, each distinct error once. For a WebGPU startup error that triggers fallback: which step was pending (adapter, renderer module or device), after how long, the animation frames drawn meanwhile, whether the tab was hidden or out of focus, and the graphics card's name; a device that arrives after the fallback is reported with how late it came, and cleanup failures are reported separately with their setup stage. With WebGPU, the GPU's own error messages (`GPU error`, such as an out-of-memory buffer) are sent too. A start that the graphics broke reloads the page to try again, first on Low and then with WebGL, for as long as the tab is open (`src/renderer.ts`); the new page reports `start tried again` with which one it is. Such a failed start, and a WebGPU device lost mid-game, also send `GPU memory at failed start` or `GPU memory at lost device`: the buffers and textures the game holds on the GPU (counts, megabytes, the biggest of each), the buffer Safari couldn't make if there was one, the GPU's largest allowed buffer, the memory the browser reports and the screen size (`src/gpumemory.ts`; texture sizes are estimates) |
+| `setting` | a setting is changed in the panel, or with G, P or V (Camera view); and once as the game begins, `Camera view at start`: the view it began in (the start report has no room for it) | which one and the new value |
+| `error` | an uncaught error, a failed start, WebGPU falling back to WebGL, the graphics device being lost | the message and the first lines of the stack; five a session at most, each distinct error once. `VR did not start`: the browser refused or failed to open the headset view (`src/vr.ts`). For a WebGPU startup error that triggers fallback: which step was pending (adapter, renderer module or device), after how long, the animation frames drawn meanwhile, whether the tab was hidden or out of focus, and the graphics card's name; a device that arrives after the fallback is reported with how late it came, and cleanup failures are reported separately with their setup stage. With WebGPU, the GPU's own error messages (`GPU error`, such as an out-of-memory buffer) are sent too. A start that the graphics broke reloads the page to try again, first on Low and then with WebGL, for as long as the tab is open (`src/renderer.ts`); the new page reports `start tried again` with which one it is. Such a failed start, and a WebGPU device lost mid-game, also send `GPU memory at failed start` or `GPU memory at lost device`: the buffers and textures the game holds on the GPU (counts, megabytes, the biggest of each), the buffer Safari couldn't make if there was one, the GPU's largest allowed buffer, the memory the browser reports and the screen size (`src/gpumemory.ts`; texture sizes are estimates) |
 
-`frames`, `play` and `activity` hold totals since the start of the session and may be
+`frames`, `play`, `view` and `activity` hold totals since the start of the session and may be
 sent several times (each time the tab is hidden); `seq` counts them and the last one is
-the session. Activities that changed since the last time go out together in one request
-(`rows`, 40 at most).
+the session (for `view`, the last one of each view). Activities that changed since the
+last time go out together in one request (`rows`, 40 at most), and so do the views.
 
 ### Starting conditions
 
@@ -72,6 +73,9 @@ happens and no change to the Worker or the dashboard, which shows whatever names
 - `telemetry.doing('used lane assist', on)` once a frame for something that lasts, which
   counts each time it begins;
 - money is counted by itself: `Wallet.take(amount, what)` names what it went on.
+
+`went into VR` and `came out of VR` (`src/vr.ts`) count the headset view. Going into VR
+with Play happens just before the game begins, so `did(name, true)` keeps it until then.
 
 Names are lower-case English as a person would say it, with a group in front where there
 are several of a kind. Renaming one splits its history in two. What is tracked now:
