@@ -1,6 +1,6 @@
 // The small effects that are written in GLSL outright (ShaderMaterial), in TSL: the lamps'
 // and traffic lights' glows (lamps.ts, signals.ts), the spray behind cars in the rain
-// (spray.ts), the flames and smoke of burning cars (fire.ts) and the tyre marks (skids.ts).
+// (spray.ts), the flames and smoke of burning cars and the sparks of crashes (particles.ts) and the tyre marks (skids.ts).
 // Each one is made through a hook in its own file (as `setSoftShade` is in surface.ts).
 // The signals' poles and heads have the lamps' light too (a port of their Lambert materials).
 
@@ -17,7 +17,7 @@ import { setSignalGlow, setSignalFlare } from '../signals.ts';
 import { setBeamShade, setGlintShade, BEAM_ON } from '../lightfx.ts';
 import { setSprayDrawing } from '../spray.ts';
 import { setSmokeDrawing } from '../chimneySmoke.ts';
-import { setPuffShade } from '../fire.ts';
+import { setSpriteShade } from '../particles.ts';
 import { setSkidShade } from '../skids.ts';
 import { setStreakShade, STREAK_GAIN, STREAK_TIME } from '../streaks.ts';
 import { lampLit, uLampOn } from './lamps.ts';
@@ -258,20 +258,103 @@ setSmokeDrawing(({ scene, life, rise, uTime, uOn, uScale, uWind, tint }) => {
   return m;
 });
 
-// ---- Flames and smoke (fire.ts) ----
-// Flat round puffs, each with its own colour and fade (the `tint` attribute): smoke drawn over the
-// scene, flames and flashes added to it.
+// ---- Flames, smoke, sparks and flying bits (particles.ts: fire.ts and debris.ts) ----
+// A quad for each, worked out on the CPU: `at` where it is (and its radius; a negative one lies flat on
+// the ground), `tint` its colour and fade, `motion` its turn and pattern (a spark: its velocity). Smoke
+// and flames face the camera and are broken up by noise that moves as they age, so they read as puffs
+// and tongues from the street as well as from above; a spark is drawn as a streak along its flight.
 
-setPuffShade((glow) => {
+setSpriteShade(({ kind, scene, light }) => {
   const m = new NodeMaterial();
-  const tint: N = attribute('tint', 'vec4');
+  const at: N = attribute('at', 'vec4'), tint: N = attribute('tint', 'vec4'), mv: N = attribute('motion', 'vec4');
+  const q: N = positionGeometry.xy;
+  const lit: N = clamp(followColor(light).mul(1.5), 0.12, 1.15);
+  if (kind === 'spark') {
+    const screen = uniform(new THREE.Vector2(1, 1)).setGroup(renderGroup);
+    screen.onRenderUpdate(({ renderer }: N) => { renderer.getDrawingBufferSize(screen.value); return screen.value; });
+    // Head and tail on the screen; the streak between them, at least a pixel or so wide.
+    const head: N = cameraProjectionMatrix.mul(cameraViewMatrix.mul(vec4(at.xyz, 1)));
+    const tail0: N = cameraProjectionMatrix.mul(cameraViewMatrix.mul(vec4(at.xyz.sub(mv.xyz.mul(mv.w)), 1)));
+    const tail: N = select(tail0.w.lessThan(0.05), head, tail0);
+    const hs: N = head.xy.div(head.w).mul(screen), ts: N = tail.xy.div(tail.w).mul(screen);
+    const d: N = hs.sub(ts), dl: N = length(d);
+    const dir: N = select(dl.lessThan(0.001), vec2(1, 0), d.div(max(dl, 0.001)));
+    const p11: N = cameraProjectionMatrix.mul(vec4(0, 1, 0, 0)).y;
+    const wide: N = max(at.w.mul(p11).mul(screen.y).div(head.w), 1.3);
+    const end: N = mix(tail, head, q.x.mul(0.5).add(0.5));
+    const side: N = vec2(dir.y.negate(), dir.x).mul(q.y).mul(wide).div(screen).mul(end.w).mul(2);
+    // (A short streak still shows its round head.)
+    const pad: N = dir.mul(q.x).mul(wide).div(screen).mul(end.w).mul(2);
+    m.vertexNode = vec4(end.xy.add(side).add(pad), end.z, end.w);
+    const vQ = q.toVarying('vQ'), vT = tint.toVarying('vTint');
+    m.fragmentNode = Fn(() => {
+      const across = vQ.y.mul(vQ.y);
+      const a = across.oneMinus().mul(mix(0.3, 1, vQ.x.mul(0.5).add(0.5))).mul(vT.a);
+      If(a.lessThan(0.004), () => { Discard(); });
+      const hot = mix(vT.rgb, vec3(1.6, 1.5, 1.3), pow(across.oneMinus(), 4).mul(0.5));
+      return vec4(unmap(hot.mul(a), true), 1);
+    })();
+    Object.assign(m, { transparent: true, depthWrite: false, fog: false, toneMapped: false });
+    m.blending = THREE.AdditiveBlending;
+    return m;
+  }
+  // Turned (and for a chip, squashed as it tumbles), then either facing the camera or flat on the ground.
+  const turned: N = vec2(mv.x.mul(q.x).sub(mv.y.mul(q.y)), mv.y.mul(q.x).add(mv.x.mul(q.y)));
+  const r: N = kind === 'chip' ? vec2(turned.x.mul(mv.z), turned.y) : turned;
+  const centre: N = cameraViewMatrix.mul(vec4(at.xyz, 1));
+  const facing: N = vec4(centre.xy.add(r.mul(at.w)), centre.z, 1);
+  const lying: N = cameraViewMatrix.mul(vec4(at.xyz.add(vec3(r.x, 0, r.y).mul(at.w.negate())), 1));
+  const view: N = select(at.w.lessThan(0), lying, facing);
+  m.vertexNode = cameraProjectionMatrix.mul(view);
+  const vQ = q.toVarying('vQ'), vR = turned.toVarying('vR'), vT = tint.toVarying('vTint');
+  const vM = vec2(mv.z, mv.w).toVarying('vMove'), vDepth = view.z.negate().toVarying('vDepth');
+  const fogged = (c: N) => mix(c, fogOf(scene).color, fogAt(scene, vDepth));
+  if (kind === 'chip') {
+    m.fragmentNode = Fn(() => {
+      // A rough, broken shape of its own.
+      const s = vM.y;
+      const edge = max(abs(vQ.x).mul(s.mul(0.5).add(0.75)), abs(vQ.y).mul(s.mul(-0.5).add(1.25))).add(vQ.x.add(vQ.y.mul(s.sub(0.5))).mul(0.25));
+      If(edge.greaterThan(0.85), () => { Discard(); });
+      // Catching the light when it turns face on.
+      const glint = pow(vM.x, 8).mul(0.9);
+      return vec4(unmap(fogged(vT.rgb.mul(lit).mul(glint.add(0.7)))), vT.a);
+    })();
+    Object.assign(m, { transparent: true, depthWrite: true, fog: false, toneMapped: false, side: THREE.DoubleSide });
+    return m;
+  }
+  if (kind === 'smoke') {
+    m.fragmentNode = Fn(() => {
+      const k = vM.y, seed = vM.x;
+      const n = fbm2(vR.mul(1.7).add(vec2(seed.mul(41.3), seed.mul(17.9))).add(vec2(k.mul(0.9), k.mul(-0.6))));
+      const d = length(vQ);
+      const shape = smoothDown(1, 0.25, d.add(n.sub(0.5).mul(0.8)));
+      const a = shape.mul(clamp(n.mul(1.1).add(0.5), 0, 1)).mul(vT.a);
+      If(a.lessThan(0.004), () => { Discard(); });
+      // Lighter on top where the sky lights it, darker in its folds.
+      const shade = vQ.y.mul(0.18).add(0.86).add(n.sub(0.5).mul(0.4));
+      return vec4(unmap(fogged(vT.rgb.mul(shade).mul(lit))), a);
+    })();
+    Object.assign(m, { transparent: true, depthWrite: false, fog: false, toneMapped: false });
+    return m;
+  }
+  // Flames and flashes: tongues flickering upwards, hottest in the middle.
   m.fragmentNode = Fn(() => {
-    const a = smoothDown(1, 0.15, length(uv().mul(2).sub(1))).mul(tint.a);
+    const k = vM.y, seed = vM.x;
+    const n = fbm2(vR.mul(2.2).add(vec2(seed.mul(23.1), seed.mul(57.7))).add(vec2(0, k.mul(-2.5))));
+    const d = length(vQ);
+    const shape = smoothDown(1, 0.05, d.mul(n.oneMinus().mul(0.7).add(0.7)));
+    const a = shape.mul(vT.a);
     If(a.lessThan(0.004), () => { Discard(); });
-    return glow ? vec4(unmap(tint.rgb.mul(a), true), 1) : vec4(unmap(tint.rgb), a);
+    const core = smoothDown(0.55, 0, d).mul(shape);
+    const colour = mix(vT.rgb, vec3(1.5, 1.25, 0.8), core.mul(0.5)).mul(n.mul(0.5).add(0.75));
+    // Added, but also hiding a little of what is behind (premultiplied), so a fireball in daylight
+    // reads as a body of flame rather than bleaching all it covers to white.
+    return vec4(unmap(colour.mul(a), true).mul(0.4), a.mul(0.6));
   })();
   Object.assign(m, { transparent: true, depthWrite: false, fog: false, toneMapped: false });
-  if (glow) m.blending = THREE.AdditiveBlending;
+  m.blending = THREE.CustomBlending;
+  m.blendSrc = THREE.OneFactor;
+  m.blendDst = THREE.OneMinusSrcAlphaFactor;
   return m;
 });
 

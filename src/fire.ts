@@ -1,6 +1,7 @@
-import * as THREE from 'three';
+import type * as THREE from 'three';
 import type { Car } from './car.ts';
-import { send, sendInstances } from './gpu.ts';
+import { Sprites } from './particles.ts';
+import { Debris } from './debris.ts';
 
 // Cars that catch fire and blow up, GTA 2 style. A car that's taken enough knocks
 // (crashes, shots, a blast nearby) starts to smoke from under the bonnet; more and it
@@ -23,87 +24,6 @@ const WAIT = 60;
 const LAST = 8; // seconds of fuse that are kept back for the crew
 
 interface Blaze { fuse: number; t: number; emit: number; flame: number; wet: number; steam: number; rate: number; held: number; spread: number }
-interface Puff { x: number; y: number; z: number; vx: number; vy: number; vz: number; r0: number; r1: number; age: number; life: number; rgb: [number, number, number]; a: number }
-
-const VERT = /* glsl */ `
-  attribute vec4 tint;
-  varying vec2 vUv;
-  varying vec4 vTint;
-  void main() {
-    vUv = uv;
-    vTint = tint;
-    gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
-  }`;
-const FRAG = /* glsl */ `
-  uniform bool glow;
-  varying vec2 vUv;
-  varying vec4 vTint;
-  void main() {
-    float a = smoothstep(1.0, 0.15, length(vUv * 2.0 - 1.0)) * vTint.a;
-    if (a < 0.004) discard;
-    gl_FragColor = glow ? vec4(vTint.rgb * a, 1.0) : vec4(vTint.rgb, a);
-  }`;
-
-// The WebGPU trial's own version of the puffs' material (webgpu/glows.ts), set before the fires are made.
-let puffBy: ((glow: boolean) => THREE.Material) | null = null;
-export const setPuffShade = (f: typeof puffBy) => { puffBy = f; };
-
-// Soft round puffs lying flat (the view looks down on them), each with its own colour
-// and fade: smoke drawn over the scene, flames and flashes added to it.
-class Puffs {
-  mesh: THREE.InstancedMesh<THREE.PlaneGeometry, THREE.Material>;
-  tint: THREE.InstancedBufferAttribute;
-  list: Puff[] = [];
-  cap: number;
-  dummy = new THREE.Object3D();
-
-  constructor(scene: THREE.Scene, cap: number, glow: boolean) {
-    this.cap = cap;
-    const g = new THREE.PlaneGeometry(2, 2);
-    g.rotateX(-Math.PI / 2);
-    this.tint = new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4);
-    g.setAttribute('tint', this.tint);
-    const m = puffBy ? puffBy(glow) : new THREE.ShaderMaterial({
-      vertexShader: VERT, fragmentShader: FRAG, uniforms: { glow: { value: glow } },
-      transparent: true, depthWrite: false, blending: glow ? THREE.AdditiveBlending : THREE.NormalBlending,
-    });
-    this.mesh = new THREE.InstancedMesh(g, m, cap);
-    this.mesh.count = 0;
-    this.mesh.frustumCulled = false;
-    this.mesh.renderOrder = glow ? 3 : 2;
-    scene.add(this.mesh);
-  }
-
-  add(p: Omit<Puff, 'age'>) {
-    if (this.list.length >= this.cap) this.list.shift();
-    this.list.push({ ...p, age: 0 });
-  }
-
-  update(dt: number) {
-    const d = this.dummy, t = this.tint.array as Float32Array;
-    let n = 0;
-    for (const p of this.list) {
-      p.age += dt;
-      if (p.age >= p.life) continue;
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      p.z += p.vz * dt;
-      const k = p.age / p.life;
-      d.position.set(p.x, p.z, -p.y);
-      d.scale.setScalar(p.r0 + (p.r1 - p.r0) * Math.sqrt(k));
-      d.updateMatrix();
-      this.mesh.setMatrixAt(n, d.matrix);
-      // In quickly, out slowly.
-      const a = p.a * Math.min(1, p.age / Math.min(0.12, p.life * 0.2)) * (1 - k);
-      t.set([p.rgb[0], p.rgb[1], p.rgb[2], a], n * 4);
-      n++;
-    }
-    this.list = this.list.filter((p) => p.age < p.life);
-    this.mesh.count = n;
-    sendInstances(this.mesh);
-    send(this.tint, n);
-  }
-}
 
 export interface FiresOptions {
   scene: THREE.Scene;
@@ -121,15 +41,16 @@ export interface FiresOptions {
 export class Fires {
   blazes = new Map<Car, Blaze>();
   blamed = new WeakSet<Car>();
-  smoke: Puffs; flames: Puffs;
+  smoke: Sprites; flames: Sprites; debris: Debris;
   height: FiresOptions['height']; r: () => number;
   onIgnite: NonNullable<FiresOptions['onIgnite']>; onBlast: FiresOptions['onBlast'];
   onSpread: FiresOptions['onSpread'];
   awaited: NonNullable<FiresOptions['awaited']>;
 
   constructor({ scene, height, rng, onIgnite = () => {}, awaited = () => false, onSpread, onBlast }: FiresOptions) {
-    this.smoke = new Puffs(scene, 600, false);
-    this.flames = new Puffs(scene, 300, true);
+    this.smoke = new Sprites(scene, 700, 'smoke');
+    this.flames = new Sprites(scene, 400, 'glow');
+    this.debris = new Debris(scene, this.smoke, this.flames, rng);
     this.height = height;
     this.r = rng;
     this.onIgnite = onIgnite;
@@ -190,6 +111,7 @@ export class Fires {
     }
     this.smoke.update(dt);
     this.flames.update(dt);
+    this.debris.update(dt);
   }
 
   // Whether this fire waits another step for the engine that's coming to it.
@@ -237,7 +159,7 @@ export class Fires {
     b.emit += dt * 10;
     for (; b.emit >= 1; b.emit--) {
       this.smoke.add({ x: c.x + fx * S.L * 0.2 + (r() - 0.5) * S.W, y: c.y + fy * S.L * 0.2 + (r() - 0.5) * S.W, z, vx: (r() - 0.5) * 0.8 + 0.6, vy: (r() - 0.5) * 0.8 + 0.4, vz: 1.6 + r(),
-        r0: 0.5, r1: 1.6 + r(), life: 1.4 + r(), rgb: [0.92, 0.94, 0.96], a: 0.5 });
+        r0: 0.5, r1: 1.6 + r(), life: 1.4 + r(), rgb: [0.92, 0.94, 0.96], a: 0.45, spin: (r() - 0.5) * 0.8 });
     }
   }
 
@@ -245,17 +167,27 @@ export class Fires {
   emit(c: Car, b: Blaze, dt: number, fire: number, thick: number) {
     const S = c.spec, fx = Math.cos(c.h), fy = Math.sin(c.h), r = this.r;
     const x = c.x + fx * S.L * 0.3, y = c.y + fy * S.L * 0.3, z = this.height(c.x, c.y, c) + S.H * 0.75;
-    // (Smoke drifts off a little to the north-east, as if on a light breeze.)
-    b.emit += dt * (4 + 6 * thick + 4 * fire) * b.rate;
+    // (Smoke drifts off a little to the north-east, as if on a light breeze, and slows as it cools.)
+    b.emit += dt * (4 + 6 * thick + 5 * fire) * b.rate;
     for (; b.emit >= 1; b.emit--) {
-      const grey = fire > 0 ? 0.1 + r() * 0.08 : 0.6 - thick * 0.35 + r() * 0.1;
-      this.smoke.add({ x: x + (r() - 0.5) * 0.6, y: y + (r() - 0.5) * 0.6, z, vx: (r() - 0.5) * 0.8 + 0.8, vy: (r() - 0.5) * 0.8 + 0.6, vz: 2.5 + r(),
-        r0: 0.5, r1: 1.8 + thick * 1.5 + fire * 1.5, life: 2 + r() * 1.2 + fire, rgb: [grey, grey * 0.97, grey * 0.95], a: 0.45 + 0.35 * Math.max(thick, fire) });
+      const grey = fire > 0 ? 0.07 + r() * 0.07 : 0.6 - thick * 0.35 + r() * 0.1;
+      this.smoke.add({ x: x + (r() - 0.5) * 0.6, y: y + (r() - 0.5) * 0.6, z: z + fire * 0.6, vx: (r() - 0.5) * 0.8 + 0.8, vy: (r() - 0.5) * 0.8 + 0.6, vz: 2.6 + r() + fire * 1.5,
+        r0: 0.45 + fire * 0.3, r1: 1.8 + thick * 1.5 + fire * 2, life: 2.2 + r() * 1.4 + fire * 1.5, rgb: [grey * 1.04, grey, grey * 0.95], a: 0.45 + 0.4 * Math.max(thick, fire),
+        spin: (r() - 0.5) * 1.2, drag: 0.25 });
     }
-    b.flame += dt * 30 * fire * b.rate;
+    // Tongues of flame licking up out of the engine and the cabin, and a glow over them.
+    b.flame += dt * 34 * fire * b.rate;
     for (; b.flame >= 1; b.flame--) {
-      this.flames.add({ x: x + (r() - 0.5) * S.W * 0.7, y: y + (r() - 0.5) * S.W * 0.7, z: z + 0.1, vx: 0.3, vy: 0.2, vz: 1.5,
-        r0: 0.5 + r() * 0.4, r1: 1 + r() * 0.6, life: 0.35 + r() * 0.3, rgb: [1.3, 0.5 + r() * 0.25, 0.1], a: 0.85 });
+      const along = r() < 0.65 ? 0.3 : -0.05;
+      this.flames.add({ x: c.x + fx * S.L * along + (r() - 0.5) * S.W * 0.7, y: c.y + fy * S.L * along + (r() - 0.5) * S.W * 0.7, z: z - 0.15 + r() * 0.2,
+        vx: 0.3 + (r() - 0.5) * 0.4, vy: 0.2 + (r() - 0.5) * 0.4, vz: 1.6 + r() * 1.4,
+        r0: 0.35 + r() * 0.35, r1: 0.7 + r() * 0.5, life: 0.35 + r() * 0.35, rgb: [1.3, 0.45 + r() * 0.3, 0.08], a: 0.8, spin: (r() - 0.5) * 3 });
+    }
+    if (fire > 0.3 && r() < dt * 6 * b.rate) {
+      this.flames.add({ x, y, z: z + 0.4, r0: 1.4, r1: 1.8, life: 0.35, rgb: [1, 0.4, 0.08], a: 0.22 * fire });
+      // Now and then an ember floats up out of it.
+      this.debris.sparks.add({ x: x + (r() - 0.5) * S.W, y: y + (r() - 0.5) * S.W, z: z + 0.5, vx: (r() - 0.5) * 1.5 + 0.5, vy: (r() - 0.5) * 1.5 + 0.4, vz: 2 + r() * 3,
+        r0: 0.015, life: 1 + r() * 1.2, rgb: [1.6, 1, 0.5], a: 1, fall: 1, drag: 0.8, heat: true });
     }
   }
 
@@ -270,29 +202,44 @@ export class Fires {
   }
 
   fireball(cx: number, cy: number, z: number) {
-    const r = this.r;
+    const r = this.r, ground = z - 0.6;
     const at = (spread: number) => [cx + (r() - 0.5) * spread, cy + (r() - 0.5) * spread] as const;
     // The flash, and its glow on the ground round about.
-    this.flames.add({ x: cx, y: cy, z: z + 1, vx: 0, vy: 0, vz: 0, r0: 2, r1: 7, life: 0.3, rgb: [1.6, 1.4, 1], a: 1 });
-    this.flames.add({ x: cx, y: cy, z: z - 0.5, vx: 0, vy: 0, vz: 0, r0: 10, r1: 13, life: 0.7, rgb: [1, 0.45, 0.1], a: 0.5 });
-    // A fireball of flames boiling up and out.
-    for (let i = 0; i < 14; i++) {
-      const [x, y] = at(3), a = r() * Math.PI * 2, v = 2 + r() * 4;
-      this.flames.add({ x, y, z: z + r(), vx: Math.cos(a) * v, vy: Math.sin(a) * v, vz: 3 + r() * 3,
-        r0: 1 + r(), r1: 2.5 + r() * 2, life: 0.5 + r() * 0.5, rgb: [1.4, 0.5 + r() * 0.3, 0.1], a: 0.9 });
+    this.flames.add({ x: cx, y: cy, z: z + 1, r0: 2.5, r1: 6, life: 0.2, rgb: [1.7, 1.5, 1.1], a: 0.9 });
+    this.flames.add({ x: cx, y: cy, z: ground + 0.05, r0: 7, r1: 10, life: 0.8, rgb: [1, 0.45, 0.1], a: 0.3, flat: true });
+    // A fireball boiling up and out: fast at first, held back by the air.
+    for (let i = 0; i < 26; i++) {
+      const [x, y] = at(3), a = r() * Math.PI * 2, v = 4 + r() * 7;
+      this.flames.add({ x, y, z: z + r() * 1.5, vx: Math.cos(a) * v, vy: Math.sin(a) * v, vz: 3 + r() * 6,
+        r0: 1 + r() * 0.8, r1: 2.6 + r() * 2.2, life: 0.55 + r() * 0.6, rgb: [1.4, 0.42 + r() * 0.3, 0.08], a: 0.7, spin: (r() - 0.5) * 2, drag: 3 });
     }
-    // Then a cloud of black smoke.
-    for (let i = 0; i < 16; i++) {
-      const [x, y] = at(4), a = r() * Math.PI * 2, v = 1 + r() * 2.5;
-      this.smoke.add({ x, y, z: z + 1 + r() * 2, vx: Math.cos(a) * v, vy: Math.sin(a) * v, vz: 3 + r() * 2,
-        r0: 1.5, r1: 4 + r() * 3, life: 3 + r() * 2.5, rgb: [0.08, 0.075, 0.07], a: 0.75 });
+    // Its hot heart rising after it.
+    for (let i = 0; i < 8; i++) {
+      const [x, y] = at(1.5);
+      this.flames.add({ x, y, z: z + 1 + r() * 1.5, vx: (r() - 0.5), vy: (r() - 0.5), vz: 4 + r() * 2,
+        r0: 1.4, r1: 3 + r() * 1.5, life: 0.9 + r() * 0.5, rgb: [1.4, 0.55, 0.12], a: 0.6, spin: (r() - 0.5) * 1.5, drag: 1.2 });
     }
+    // Then a cloud of black smoke rolling up, lit orange from below at first.
+    for (let i = 0; i < 26; i++) {
+      const [x, y] = at(4), a = r() * Math.PI * 2, v = 2 + r() * 4, warm = i < 10;
+      this.smoke.add({ x, y, z: z + 0.5 + r() * 2.5, vx: Math.cos(a) * v, vy: Math.sin(a) * v, vz: 2.5 + r() * 3,
+        r0: 1.3, r1: 3.5 + r() * 3, life: 5 + r() * 4, rgb: warm ? [0.2, 0.11, 0.06] : [0.075, 0.07, 0.065], a: 0.9,
+        spin: (r() - 0.5) * 0.6, drag: 1.1 });
+    }
+    // Dust and grit blown out along the ground.
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2 + r() * 0.4, v = 8 + r() * 5;
+      this.smoke.add({ x: cx, y: cy, z: ground + 0.6, vx: Math.cos(a) * v, vy: Math.sin(a) * v, vz: 0.3,
+        r0: 0.8, r1: 2.5 + r(), life: 1.6 + r(), rgb: [0.38, 0.35, 0.32], a: 0.35, spin: (r() - 0.5), drag: 2.2 });
+    }
+    this.debris.blast(cx, cy, ground);
     // And a scorch mark on the ground under the wreck.
-    this.smoke.add({ x: cx, y: cy, z: z - 0.55, vx: 0, vy: 0, vz: 0, r0: 3.4, r1: 3.6, life: 60, rgb: [0.03, 0.03, 0.03], a: 0.7 });
+    this.smoke.add({ x: cx, y: cy, z: ground + 0.05, r0: 3.4, r1: 3.6, life: 60, rgb: [0.03, 0.03, 0.03], a: 0.7, flat: true, rot: 0 });
   }
 
   // Dev teleport and the like: nothing burning is left behind.
   reset() {
     this.blazes.clear();
+    this.debris.reset();
   }
 }

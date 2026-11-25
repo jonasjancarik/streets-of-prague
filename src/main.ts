@@ -56,6 +56,8 @@ import { Clock } from './clock.ts';
 import { Sky } from './sky.ts';
 import { Weather, WeatherFx, KINDS, automaticWeather, LIVE_EVERY } from './weather.ts';
 import { updateChimneySmoke } from './chimneySmoke.ts';
+import { SPRITE_LIGHT, SPRITE_PIXELS } from './particles.ts';
+import { Debris } from './debris.ts';
 import { MIST_MODE } from './localmist.ts';
 import type { Kind } from './weather.ts';
 import { Lamps, type Flashing, floodlightsAt } from './lamps.ts';
@@ -2118,6 +2120,13 @@ async function main() {
       if (blamed) police.crime(c.type === 'police' ? 'blowUpCop' : 'blowUp', x, y);
     },
   });
+  // Sparks, glass and bits thrown off in crashes near the camera (src/debris.ts).
+  onCrash((e) => {
+    const near = Math.hypot(e.x - camPos.x, e.y + camPos.z) < Debris.NEAR;
+    if (!near) return;
+    const a = e.a instanceof Car ? e.a : null;
+    fires.debris.hit(e, ground(e.x, e.y, a) + (a ? Math.min(0.9, a.spec.H * 0.38) : 0.6), near);
+  });
   const brigade: Brigade = new Brigade({
     scene, police, grid, fires, kit, height: ground, rng: seeded, edgesNear, offscreen, viewRadius,
     bodyAt: (x, y, r, skip) => police.bodyAt(x, y, r, skip),
@@ -3538,6 +3547,8 @@ async function main() {
     // The trees seen from the street sway with the same wind.
     { const wind = weatherFx.wind, blow = Math.hypot(wind.x, wind.y) || 1; TREE_SWAY.value.set(time.value, 0.3 + 0.7 * weather.now.storm, wind.x / blow, wind.y / blow); }
     updateChimneySmoke(WEATHER_DETAIL.value > 0 ? Math.max(season.cold, weather.now.cover) : 0, time.value, weatherFx.wind, weatherFx.tint.value, renderer.domElement.height);
+    SPRITE_LIGHT.value.copy(weatherFx.tint.value);
+    SPRITE_PIXELS.value = renderer.domElement.height;
 
     // ---- HUD -------------------------------------------------------------
     // (On the metro, the street the train is under; on a funicular, its name.)
