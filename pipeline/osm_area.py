@@ -31,6 +31,7 @@ import plots as garden_plots
 import roofs
 import sports
 import verges
+import wilsonova
 import worn_paths
 from build_cache import Timings
 from kerbs import Kerbs, bridge_ends, estimate, tapered
@@ -359,7 +360,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
                 trams.append(g)
         hw = col(row, "highway")
         if hw and isinstance(g, (LineString, MultiLineString)):
-            if hw in ("proposed", "construction", "elevator", "platform", "bus_stop") or basement_passage(row):
+            if hw in ("proposed", "construction", "elevator", "platform", "bus_stop") or basement_passage(row, row["id"]):
                 continue
             if (ground and hw in ("pedestrian", "footway", "living_street", "service")
                     and col(row, "footway") != "crossing" and col(row, "tunnel") in (None, "no")
@@ -679,6 +680,8 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     road_polys = {k: g.intersection(clip) for k, g in road_polys.items()}
     timer.lap("road_land_unions")
     area_polys.update(land)
+    if area in ("praha", "centrum") and w < 14.436 and e > 14.434 and s < 50.085 and n > 50.082:
+        lots = wilsonova.upper_road(road_polys, area_polys, lots, clip, tf.transform)
     if not gardens.is_empty:
         area_polys["garden"] = unary_union([area_polys.get("garden", gardens), gardens])
     if not lawns.is_empty:
@@ -885,12 +888,15 @@ def _conifer(leaf_type, genus, species):
     return name.startswith(CONIFERS)
 
 
-def basement_passage(tags):
-    """A building passage explicitly underground, or indoors entirely on basement floors."""
-    if tags.get("tunnel") != "building_passage":
-        return False
-    if tags.get("location") == "underground":
+def basement_passage(tags, way_id=None):
+    """A passage or indoor walking route entirely below street level."""
+    if way_id in wilsonova.LOWER_WAYS and (_below(tags.get("layer")) or _below(tags.get("level"))):
         return True
+    if tags.get("tunnel") == "building_passage":
+        if tags.get("location") == "underground":
+            return True
+    elif tags.get("highway") not in ("footway", "pedestrian", "corridor", "path", "steps"):
+        return False
     return tags.get("indoor") == "yes" and all(_below(level) for level in str(tags.get("level", "")).split(";"))
 
 

@@ -9,9 +9,11 @@ from unittest.mock import patch
 
 import numpy as np
 import shapely
+from pyproj import Transformer
 from shapely.geometry import LineString, box
 
 import osm_area
+import wilsonova
 
 BBOX, CENTRE = (14.4, 50.08, 14.4005, 50.0805), (14.40025, 50.08025)
 HALL = box(14.4001, 50.0801, 14.4004, 50.0804)  # about 21 by 33 m
@@ -27,6 +29,21 @@ def buildings(street_tags, building_tags=None, streets=(ACROSS,)):
 
 
 class StreetOnRoofTests(unittest.TestCase):
+    def test_station_roof_has_two_continuous_carriageways_and_a_clear_median(self):
+        to_local = Transformer.from_crs(4326, "+proj=tmerc +lon_0=14.43 +lat_0=50.08 +ellps=WGS84", always_xy=True)
+        deck, median = wilsonova.surfaces(to_local.transform)
+        clip = deck.envelope.buffer(10)
+        # A transverse pavement, parking bay and path from the entrance below.
+        roads = {"pavement": clip, "path": clip}
+        areas = {"parking": clip}
+        lots = wilsonova.upper_road(roads, areas, [{"poly": clip, "o": None}], clip, to_local.transform)
+        self.assertEqual(len(osm_area._polys(roads["road"])), 2)
+        self.assertLess(deck.difference(roads["road"].union(roads["pavement_asphalt"])).area, 1)
+        self.assertLess(median.intersection(roads["road"]).area, 1)
+        for layer in (roads["pavement"], roads["path"], areas["parking"], lots[0]["poly"]):
+            self.assertLess(layer.intersection(deck).area, 1)
+            self.assertGreater(layer.area, 0)
+
     def test_a_street_a_layer_up_cuts_its_carriageway_out(self):
         got = buildings({"highway": "primary", "layer": "1", "width": "8"})
         self.assertEqual(len(got), 2)  # one either side of the street

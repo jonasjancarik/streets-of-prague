@@ -28,6 +28,17 @@ def cut(entrance_at):
 
 
 class StationWaysTests(unittest.TestCase):
+    def test_station_roof_keeps_lower_stairs_and_indoor_footways_off_the_surface(self):
+        ways = cut(40.0)
+        for ident, tags in [
+            (431095280, {"highway": "steps", "level": "-1;0", "layer": "-1", "tunnel": "building_passage"}),
+            (20, {"highway": "steps", "level": "-1;0", "layer": "-1", "tunnel": "building_passage"}),
+            (21, {"highway": "footway", "level": "-2", "indoor": "yes"}),
+            (22, {"highway": "footway", "level": "0", "indoor": "yes"}),
+        ]:
+            ways.append({"type": "way", "id": ident, "nodes": [1, 2], "tags": tags})
+        self.assertEqual(structures.station_ways(ways, IdentityTransform(), {10}), {431095280, 21})
+
     def test_corridor_next_to_an_entrance_is_the_stations(self):
         self.assertEqual(structures.station_ways(cut(3.0), IdentityTransform(), {10}), {11, 12, 13})
 

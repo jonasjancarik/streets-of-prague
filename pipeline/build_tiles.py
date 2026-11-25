@@ -172,7 +172,8 @@ def graph_edges(bbox, tf, network, directed, source=None, kerbs=None, core=None,
         G = ox.graph._create_graph([data], network in ox.settings.bidirectional_network_types)
     else:
         G = ox.graph_from_bbox(bbox, network_type=network, simplify=False, retain_all=True)
-        G.remove_edges_from([(u, v, k) for u, v, k, tags in G.edges(keys=True, data=True) if basement_passage(tags)])
+        G.remove_edges_from([(u, v, k) for u, v, k, tags in G.edges(keys=True, data=True)
+                             if basement_passage(tags, tags.get("osmid"))])
     G = ox.simplify_graph(G, edge_attrs_differ=JOIN_ONLY_ALIKE)
     if directed:
         G = connected(G, tf, core)
@@ -286,7 +287,7 @@ def setup():
     if "surface" not in ox.settings.useful_tags_way:
         ox.settings.useful_tags_way = [*ox.settings.useful_tags_way, "surface"]  # asphalt vs setts
     ox.settings.useful_tags_way = [*dict.fromkeys([*ox.settings.useful_tags_way, *PARKING_TAGS, "embedded_rails",
-                                                  "location", "indoor", "level"])]
+                                                  "location", "indoor", "level", "layer"])]
 
 
 def load_sections(area):

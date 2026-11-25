@@ -1533,6 +1533,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   25 m², `ROOF_SCRAP`). Not service roads: those mapped a layer
   up are rooftop car parks, on the roof itself. In Prague the hall is the only
   building it cuts (November 2026).
+  At the station itself, the upper kerbs continue across the entrances to the
+  lower concourse. The map follows the upper carriageways and their central
+  reservation between those entrances (`pipeline/wilsonova.py`). Indoor footways
+  and stairs confined to basement floors stay out of the surface walking network.
 - **Crossing widths.** At junctions where road surfaces merge, zebra bars are limited
   to the crossed street's width plus 2 m on each side, adjusted for the crossing angle.
 - **Terrain.** IPR's bare-earth model on a 4 m grid per tile: the ground, buildings,

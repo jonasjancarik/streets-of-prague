@@ -116,7 +116,7 @@ def station_ways(els, tf, ground=frozenset()):
     omitted = set()
     for el in els:
         tags = el.get("tags", {})
-        if el["type"] == "way" and basement_passage(tags):
+        if el["type"] == "way" and basement_passage(tags, el["id"]):
             omitted.add(el["id"])
         if el["type"] == "node" and is_subway_station(tags):
             near.append(where[el["id"]])
