@@ -329,7 +329,7 @@ setSpriteShade(({ kind, scene, light }) => {
       const d = length(vQ);
       const shape = smoothDown(1, 0.25, d.add(n.sub(0.5).mul(0.8)));
       const a = shape.mul(clamp(n.mul(1.1).add(0.5), 0, 1)).mul(vT.a);
-      If(a.lessThan(0.004), () => { Discard(); });
+      If(a.lessThan(0.02), () => { Discard(); });
       // Lighter on top where the sky lights it, darker in its folds.
       const shade = vQ.y.mul(0.18).add(0.86).add(n.sub(0.5).mul(0.4));
       return vec4(unmap(fogged(vT.rgb.mul(shade).mul(lit))), a);

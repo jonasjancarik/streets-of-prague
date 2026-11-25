@@ -168,11 +168,11 @@ export class Fires {
     const S = c.spec, fx = Math.cos(c.h), fy = Math.sin(c.h), r = this.r;
     const x = c.x + fx * S.L * 0.3, y = c.y + fy * S.L * 0.3, z = this.height(c.x, c.y, c) + S.H * 0.75;
     // (Smoke drifts off a little to the north-east, as if on a light breeze, and slows as it cools.)
-    b.emit += dt * (4 + 6 * thick + 5 * fire) * b.rate;
+    b.emit += dt * (2.5 + 3.5 * thick + 2.5 * fire) * b.rate;
     for (; b.emit >= 1; b.emit--) {
       const grey = fire > 0 ? 0.07 + r() * 0.07 : 0.6 - thick * 0.35 + r() * 0.1;
       this.smoke.add({ x: x + (r() - 0.5) * 0.6, y: y + (r() - 0.5) * 0.6, z: z + fire * 0.6, vx: (r() - 0.5) * 0.8 + 0.8, vy: (r() - 0.5) * 0.8 + 0.6, vz: 2.6 + r() + fire * 1.5,
-        r0: 0.45 + fire * 0.3, r1: 1.8 + thick * 1.5 + fire * 2, life: 2.2 + r() * 1.4 + fire * 1.5, rgb: [grey * 1.04, grey, grey * 0.95], a: 0.45 + 0.4 * Math.max(thick, fire),
+        r0: 0.45 + fire * 0.3, r1: 1.8 + thick * 1.5 + fire * 2, life: 2.2 + r() * 1.4 + fire * 1.5, rgb: [grey * 1.04, grey, grey * 0.95], a: 0.55 + 0.45 * Math.max(thick, fire),
         spin: (r() - 0.5) * 1.2, drag: 0.25 });
     }
     // Tongues of flame licking up out of the engine and the cabin, and a glow over them.
@@ -220,15 +220,17 @@ export class Fires {
         r0: 1.4, r1: 3 + r() * 1.5, life: 0.9 + r() * 0.5, rgb: [1.4, 0.55, 0.12], a: 0.6, spin: (r() - 0.5) * 1.5, drag: 1.2 });
     }
     // Then a cloud of black smoke rolling up, lit orange from below at first.
-    for (let i = 0; i < 26; i++) {
-      const [x, y] = at(4), a = r() * Math.PI * 2, v = 2 + r() * 4, warm = i < 10;
+    // (Few and dense rather than many and thin: every puff is blended over all it covers, and a
+    // close cloud filling the screen many times over cost a phone tens of milliseconds a frame.)
+    for (let i = 0; i < 12; i++) {
+      const [x, y] = at(4), a = r() * Math.PI * 2, v = 2 + r() * 4, warm = i < 5;
       this.smoke.add({ x, y, z: z + 0.5 + r() * 2.5, vx: Math.cos(a) * v, vy: Math.sin(a) * v, vz: 2.5 + r() * 3,
-        r0: 1.3, r1: 3.5 + r() * 3, life: 5 + r() * 4, rgb: warm ? [0.2, 0.11, 0.06] : [0.075, 0.07, 0.065], a: 0.9,
+        r0: 1.3, r1: 3.2 + r() * 2.3, life: 5 + r() * 4, rgb: warm ? [0.2, 0.11, 0.06] : [0.075, 0.07, 0.065], a: 1,
         spin: (r() - 0.5) * 0.6, drag: 1.1 });
     }
     // Dust and grit blown out along the ground.
-    for (let i = 0; i < 12; i++) {
-      const a = (i / 12) * Math.PI * 2 + r() * 0.4, v = 8 + r() * 5;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + r() * 0.5, v = 8 + r() * 5;
       this.smoke.add({ x: cx, y: cy, z: ground + 0.6, vx: Math.cos(a) * v, vy: Math.sin(a) * v, vz: 0.3,
         r0: 0.8, r1: 2.5 + r(), life: 1.6 + r(), rgb: [0.38, 0.35, 0.32], a: 0.35, spin: (r() - 0.5), drag: 2.2 });
     }

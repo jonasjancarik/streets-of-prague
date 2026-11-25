@@ -2103,3 +2103,23 @@ that target. The detailed batch is hidden overhead and outside autumn, so the
 existing overhead leaf sheets are unchanged. `scripts/check-street-litter.mjs`
 checks terrain placement, obstacles, seasonal hiding, cancellation, tile removal
 and buffer reuse.
+
+## 25 November 2026 — crash debris, smoke and explosions on the Pixel 5
+
+The fire's puffs became camera-facing sprites with noise (`src/particles.ts`), and crashes
+throw sparks and debris (`src/debris.ts`). Measured on the Pixel 5, standing on the Old Town
+Square at Medium (`--dpr tier`), third person on foot, effects 12 m ahead of the camera,
+`--ab` hiding the sprites' materials every 4–5 s while the effects keep running:
+
+- **Worst case** (an explosion every 1.5 s, so about five smoke clouds at once, and a crash
+  burst every 0.5 s): the smoke alone cost 58 → 129 ms a frame, all of it on the GPU (the
+  JavaScript stayed at ~45 ms). It is overdraw: every puff is blended over all it covers,
+  and a close cloud covered the screen many times over.
+- After fewer, denser puffs (an explosion's smoke 26 → 12 puffs and a little smaller, a
+  burning car's about half as many, faint smoke pixels discarded below 2 % instead of
+  0.4 %): smoke 13 ms in the same worst case; all four kinds together 48 → 80 ms.
+- **One explosion at a time** (every 10 s, a crash burst every 2 s): 50.8 → 50.1 ms, no
+  measurable cost.
+- The phone switched between two states during the session (JavaScript ~42 ms or ~62 ms a
+  frame; 1.5 GB in swap, many tabs from other projects). Windows taken in the slow state
+  hide GPU costs; the flames-only run landed there and was inconclusive.
