@@ -139,7 +139,30 @@ export class LifeSize {
     };
   }
 
-  private async load() {
+  // Settles once the player's own avatar and the clips are in (or couldn't load).
+  private playerIn!: () => void;
+  readonly playerReady = new Promise<void>((done) => { this.playerIn = done; });
+
+  // Starts loading before the game opens in a street view (lifesize.ts): your own avatar
+  // and the clips first, the crowd's avatars once `crowdAfter` settles, so they don't
+  // hold up the map's tiles.
+  preload(crowdAfter: Promise<unknown>) {
+    if (this.state === 'idle') void this.load(crowdAfter);
+    return this.playerReady;
+  }
+
+  // Compiles the avatars' shaders behind the loading screen, so the first person to step
+  // up close doesn't stall a frame: a copy of your avatar, put in the scene for it.
+  async warm(compile: (o: THREE.Object3D) => Promise<unknown>) {
+    const player = this.playerSeed === undefined ? undefined : this.baseKinds[this.playerSeed % AVATARS.length];
+    const k = player === undefined ? this.kinds[0] : this.kinds[player];
+    if (!k) return;
+    const copy = SkeletonUtils.clone(k.template);
+    this.group.add(copy);
+    try { await compile(copy); } finally { this.group.remove(copy); }
+  }
+
+  private async load(crowdAfter: Promise<unknown> = Promise.resolve()) {
     this.state = 'loading';
     let ktx2: KTX2Loader | undefined;
     try {
@@ -156,7 +179,8 @@ export class LifeSize {
       const player = this.playerSeed === undefined ? -1 : this.playerSeed % AVATARS.length;
       const loads = AVATARS.map(async ([name, sex], avatar) => {
         const fetchModel = () => loader.loadAsync(`rocketbox/${name}.glb`);
-        const [byName, g] = await Promise.all([animations, avatar === player ? fetchModel() : animations.then(fetchModel)]);
+        const [byName, g] = await Promise.all([animations, avatar === player ? fetchModel()
+          : Promise.all([animations, crowdAfter.catch(() => {})]).then(fetchModel)]);
         g.scene.traverse((o) => {
           if (!(o instanceof THREE.SkinnedMesh)) return;
           // (175 face shapes we never use: each would cost every vertex every frame.)
@@ -192,7 +216,10 @@ export class LifeSize {
         }
         this.baseKinds[avatar] = this.kinds.push(kind) - 1;
         this.spare.push([]);
+        if (avatar === player) this.playerIn();
       });
+      if (player < 0) void animations.then(() => this.playerIn(), () => this.playerIn());
+      void loads[player]?.catch(() => this.playerIn());
       // Keep the shared decoder alive until the last request settles, even if
       // one model fails. Each ready character can already be drawn meanwhile.
       const results = await Promise.allSettled(loads);
@@ -204,6 +231,7 @@ export class LifeSize {
       console.warn('Life-size people could not load', e);
       this.state = 'failed';
     } finally {
+      this.playerIn();
       ktx2?.dispose(); // (its decoding workers: everything's decoded by now)
     }
   }

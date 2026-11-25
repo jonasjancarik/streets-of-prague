@@ -79,8 +79,18 @@ it. `?date=MM-DD` keeps an exact date and `?season=spring|summer|autumn|winter` 
 season's representative date. These links keep their date until a season button is picked.
 The weather changes by itself every half hour or so of the game's clock;
 `?weather=clear|cloudy|rain|storm|mist|snow` fixes it, and `?go` skips the start screen
-(place, view, season, time and weather, a row each, with sound and the language as
-quiet toggles in the line of links under the Start button). The start screen picks Clear; the real
+(place, view, graphics, season, time and weather, a row each, with sound and the language as
+quiet toggles in the line of links under the Start button). The map loads behind it: the
+Start button fills up with how far loading has got, with the seconds left under it
+(`src/loadProgress.ts`). The estimate uses typical times for each stage (the map's index,
+starting the graphics, the models, the streets, setting up, preparing the view), replaced
+by this device's own times from its last load (`loadTimes` in local storage), at the pace
+of the stages so far; the start report sends the stages' times so the typical ones can be
+set from what players see ([telemetry](telemetry.md)). Scripts read each moment's estimate
+from `window.__loadLog`. The Graphics row is the same setting as in Settings and applies
+at once, while the map loads; its Auto button says the level Auto starts at. With a saved
+game, the map loads round where it was left, so Continue opens at once; a new game then
+loads a random street after Start. The start screen picks Clear; the real
 weather in Prague, from Open-Meteo (`src/liveweather.ts`), is offered right after it as
 "Live: …", only for today's game date (another season goes back to Clear). The weather
 only starts changing by itself once the game is under way. A game begun with it follows the real
@@ -229,9 +239,12 @@ line (`groundFlat` in `src/streetQuality.ts`, `bender` in `src/ground.ts`). Tile
 steps, road edges, bridge decks and tunnel floors keep their finer spacing; collision
 heights do not change. Terrain spacing applies to newly built tiles, so an already
 loaded tile keeps its mesh until it is rebuilt or the page reloads.
-Auto, the default, starts High (Medium on touch devices) and moves between tiers
-by how steady the frames are (`src/graphics.ts`), ignoring loading and tile builds;
-it never picks Ultra, which only choosing it turns on. On WebGPU it doesn't step down
+Auto, the default, starts where telemetry says the graphics chip usually ends up
+(`AUTO_START` in `src/graphics.ts`: Lowest on Intel gen-9 and gen-12 integrated graphics
+and Adreno 6xx phones, Low on Mali and older Adrenos, High on iPhones, iPads and newer
+Adrenos), or else High (Medium on touch devices), and moves between tiers by how steady
+the frames are, ignoring loading and tile builds; under half the frame rate it aims for,
+it drops two tiers at once. It never picks Ultra, which only choosing it turns on. On WebGPU it doesn't step down
 when frames are slow only because they wait: when the browser or the screen holds the
 game at 30 frames a second (Chrome's Energy Saver does), a frame whose work fits in
 half the time stays at its tier.
@@ -1926,7 +1939,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   The avatars' code (with the
   texture and mesh decoders only they use) and the files (about 18 MB, in `public/rocketbox/`)
   load the first time first person is on (`src/lifesize.ts` imports `src/rocketbox.ts`
-  then), and two minutes after leaving first person, paused or not, they're freed again
+  then). A game opening in first or third person starts on them while the map loads:
+  your own avatar and the clips at once, the crowd's once the map is in (so they don't
+  hold up its tiles), and after Start the loading screen waits, 15 seconds at most, for
+  your avatar and its shaders (`preload` and `warm`), so the game doesn't open on your
+  stand-in. Two minutes after leaving first person, paused or not, they're freed again
   (`freeAfter`); the next look from the street loads them from the browser's cache
   (`scenarios/life-size-lazy.ts`). `?rocketbox=0` keeps the
   usual figures, to compare (`window.__drive.lifeSize.enabled` from a script or `bench.mjs --ab`).

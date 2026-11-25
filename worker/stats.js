@@ -14,7 +14,9 @@ export const COMMON = ['event', 'version', 'session', 'country', 'host', 'map'];
 export const SCHEMA = {
   start: {
     blobs: ['renderer', 'gpu', 'graphics', 'tier', 'lang', 'input', 'game', 'browser', 'os', 'referrer', 'weather', 'weatherSource', 'monthSource', 'hourSource'],
-    doubles: ['loadMs', 'width', 'height', 'dpr', 'memory', 'cores', 'month', 'hour'],
+    doubles: ['loadMs', 'width', 'height', 'dpr', 'memory', 'cores', 'month', 'hour',
+      // How long each loading stage took (src/loadProgress.ts), in milliseconds.
+      'mapMs', 'graphicsMs', 'modelsMs', 'streetsMs', 'setupMs', 'viewMs', 'moveMs', 'peopleMs'],
   },
   // Totals since the start of the session; `seq` counts the reports, the last one holds the session.
   frames: {

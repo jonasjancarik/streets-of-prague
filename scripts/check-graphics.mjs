@@ -60,6 +60,15 @@ const check = `(async () => {
   const busy = new AutoTier('high', () => false);
   for (let i = 0; i < 60; i++) { busy.work(30, 1000 + i * 33); next = busy.record(33, 1000 + i * 33); }
   assert(next === 'medium' && busy.capped === 0, 'Auto steps down when the frame was working');
+  // Under half the frame rate wanted: two tiers down at once.
+  const slowest = new AutoTier('high', () => false);
+  for (let i = 0; i < 60; i++) next = slowest.record(70, 1000 + i * 70);
+  assert(next === 'low', 'Auto drops two tiers when far too slow');
+  // Where Auto starts, by the graphics chip (graphics.ts, AUTO_START).
+  const { autoStart } = await import('/src/graphics.ts');
+  assert(autoStart('intel gen-12lp', false) === 'lowest' && autoStart('qualcomm adreno-6xx', true) === 'lowest', 'Auto starts low chips on Lowest');
+  assert(autoStart('arm valhall', true) === 'low' && autoStart('Adreno (TM) 650, or similar', true) === 'low', 'Auto starts weaker phones on Low');
+  assert(autoStart('apple', true) === 'high' && autoStart('nvidia ampere', false) === 'high' && autoStart('', true) === 'medium' && autoStart('', false) === 'high', 'Auto starts others as before, or High on phones that hold it');
 
   // A frame over 100 ms is put down to the part that took longest, if it took enough of it.
   const { blame, scriptCause } = await import('/src/hitches.ts');

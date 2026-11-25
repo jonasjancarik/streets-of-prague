@@ -69,7 +69,7 @@ import { Spray } from './spray.ts';
 import { Water } from './water.ts';
 import { Beacons, ownBeacon } from './beacons.ts';
 import { Cannon, TANK, HOSE } from './cannon.ts';
-import { Graphics } from './graphics.ts';
+import { Graphics, savedChoice, type Choice } from './graphics.ts';
 import { createGameRenderer, retryStart } from './renderer.ts';
 import { setupVR } from './vr.ts';
 import { StopBoard } from './board.ts';
@@ -94,6 +94,7 @@ import { readSave, writeSave, clearSave, listSaves, newSlot, unreadable, describ
 import type { Slot, SaveData } from './save.ts';
 import { dressLoading, Dialog } from './portraits.ts';
 import { startScreen } from './startscreen.ts';
+import { LoadProgress, type Stage as LoadStage } from './loadProgress.ts';
 import { liveWeather } from './liveweather.ts';
 import { Season, parseDay } from './season.ts';
 import { LaneAssist, turnOf, project } from './assist.ts';
@@ -255,7 +256,12 @@ async function main() {
   };
   // The view the game begins in: the one picked last time (or ?fps, ?tps), until the start screen's View says otherwise.
   let startView: PlayerView = initialView(params);
-  const start = params.has('go') ? null : startScreen($('loading'), { now: Clock.nowLabel(), linkedStart, season: season.day, dateLinked, timeLinked: clock.linkedTime, weather: weather.kind, weatherFixed: weather.fixed,
+  // (A View picked on the start screen, once the game below can act on it; the same for
+  // the graphics, kept until there's a Graphics to set.)
+  let viewPicked = (_view: PlayerView) => {};
+  let graphicsPicked: Choice | null = null;
+  let pickGraphics = (choice: Choice) => { graphicsPicked = choice; };
+  const start = params.has('go') ? null : startScreen($('loading'), { onView: (v) => viewPicked(v), graphics: { choice: savedChoice(params), pick: (c) => pickGraphics(c) }, now: Clock.nowLabel(), linkedStart, season: season.day, dateLinked, timeLinked: clock.linkedTime, weather: weather.kind, weatherFixed: weather.fixed,
     view: startView,
     vr: { mode: initialView(params) === 'vr', supported: vrSupported(), pick: () => { savePlayerView('vr'); location.reload(); } },
     sound: savedSound !== 'off', saved: saved && (() => describe(saved)), savedLook: saved ? { clock: saved.clock, weather: saved.weather.fixed ? saved.weather.kind : automaticWeather(saved.weather.kind), season: saved.season } : undefined, lost: !saved && !params.has('go') && unreadable('auto', AREA) });
@@ -267,6 +273,15 @@ async function main() {
     status('');
     for (;;) await start.ready(true);
   }
+  // How far loading has got, on the start screen's button (loadProgress.ts). `loading` is
+  // the run under way, if any: the map before the start screen's button, and after it,
+  // moving to the start spot and bringing in the people.
+  let loading: LoadProgress | null = start ? new LoadProgress(['map', 'graphics', 'models', 'streets', 'setup', 'view'], (share, left) => start.progress(share, left)) : null;
+  const loadStage = (stage: LoadStage) => loading?.begin(stage);
+  // (How long each stage took, for the start report.)
+  const loadTimes: Partial<Record<LoadStage, number>> = {};
+  const loadEnd = () => { loading?.finish(); Object.assign(loadTimes, loading?.times); loading = null; };
+  loadStage('map');
   status('Loading the map…');
   const kitLoad = loadKit();
   const carsLoad = loadCars();
@@ -311,6 +326,7 @@ async function main() {
   // shading each pixel of the ground once, see surface.ts.)
   // (three.js's WebGPURenderer, see webgpu.ts. The old WebGLRenderer is no longer kept up to
   // date: it is for ?renderer=webgl and for browsers with no WebGPU.)
+  loadStage('graphics');
   status('Preparing graphics…');
   const renderer = await createGameRenderer(params);
   if (renderer instanceof THREE.WebGLRenderer) (await import('./streetFacadeGL.ts')).configureStreetFacadeGL();
@@ -332,6 +348,9 @@ async function main() {
   const lifeSize = new LifeSize(scene, renderer);
   // (?rocketbox=0 keeps the usual figures, to compare.)
   lifeSize.enabled = params.get('rocketbox') !== '0';
+  // Who you are in the street, picked now so your avatar can load with the map (the Walker
+  // takes it below).
+  lifeSize.playerSeed = Math.floor(Math.random() * 0x100000000);
   scene.background = new THREE.Color(BACKDROP);
   const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 1, 6000);
   camera.up.set(0, 0, -1);
@@ -342,6 +361,20 @@ async function main() {
     for (const type of ['keydown', 'keyup']) window.dispatchEvent(new KeyboardEvent(type, { code, bubbles: true, cancelable: true }));
   }, () => cameraChoice.set('overhead'));
   let vrView = !!vr;
+  // A game opening in first or third person starts on the life-size people while the map
+  // loads: your avatar and their clips at once, the crowd once the map is in (mapIn).
+  let mapLoaded = () => {};
+  const mapIn = new Promise<void>((done) => { mapLoaded = done; });
+  const streetPeople = (view: PlayerView) => { if (view === 'first' || view === 'third') void lifeSize.preload(mapIn); };
+  if (!vr) { streetPeople(start ? start.view() : startView); viewPicked = streetPeople; }
+  // Before the game opens in a street view: your avatar in, its shaders compiled. A slow
+  // connection doesn't keep the game shut for long: the crowd's stand-ins fill in meanwhile.
+  const streetPeopleReady = async () => {
+    status('Bringing in the people…');
+    const ready = lifeSize.preload(mapIn).then(() => lifeSize.warm((o) => renderer.compileAsync(o, camera, scene)));
+    await Promise.race([ready, new Promise((done) => setTimeout(done, 15_000))]);
+    status('');
+  };
   // (Only the legacy renderer drops a program with its last material; ?gl2 is the WebGPU one.)
   const tilePrograms = vr && !gpuBackend ? retainTilePrograms(renderer) : null;
   // Where straight ahead is in a vehicle, turned from its nose, and which vehicle that is.
@@ -353,7 +386,10 @@ async function main() {
   sky.hemi.layers.enable(RIVER_MODEL_LAYER); sky.sun.layers.enable(RIVER_MODEL_LAYER);
   const sun = sky.sun;
   // How sharp the picture is and whether the costlier looks are on; Auto adapts.
-  const graphics = new Graphics(renderer, sky, params);
+  const graphics = new Graphics(renderer, sky, params, telemetry.gpuName());
+  if (graphicsPicked) graphics.set(graphicsPicked);
+  pickGraphics = (choice) => graphics.set(choice);
+  start?.autoTier(graphics.autoTier);
   sun.castShadow = true;
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.4;
@@ -372,6 +408,7 @@ async function main() {
   const districts = new Districts(AREA, $('district'));
   const time = { value: 0 };
   // People and two-wheelers (parked motorbikes come with the tiles, so load it first).
+  loadStage('models');
   status('Loading people and vehicles…');
   const kit = await kitLoad;
   useKit(kit);
@@ -448,7 +485,10 @@ async function main() {
   const random = starts.length ? starts[Math.floor(Math.random() * starts.length)] : null;
   const randomStart: [number, number] = random ? [random[1], random[2]] : [lon0, lat0];
   const namedStart: [number, number] | null = named ? [named.at[1], named.at[0]] : null;
-  const initialStart = start && linkedStart ? linkedStart : namedStart ?? linkedStart ?? randomStart;
+  // (With a saved game, the map loads round where it was left, so Continue, the start
+  // screen's first choice, opens at once; a new game then goes to a random street.)
+  const savedStart: [number, number] | null = start && saved && !namedStart ? [saved.lon, saved.lat] : null;
+  const initialStart = start && linkedStart ? linkedStart : namedStart ?? linkedStart ?? savedStart ?? randomStart;
   const [slon, slat] = initialStart;
   // The pipeline's local metres: a transverse Mercator centred on the area.
   // (Past the map's edge too, where the countryside is made: once its file is open.)
@@ -457,9 +497,11 @@ async function main() {
   const [sx, sy] = inside(slon, slat) || world.hasAt(there[0], there[1]) ? there : [0, 0];
   // (Nobody parks at a bus stop: known before the first tiles park their cars.)
   world.noParking = busStopZones((await busLines).lines);
+  loadStage('streets');
   status('Building the streets…');
   // (The view at the start is about 85 m across; what's beyond is loaded but not yet drawn.)
-  await world.loadNow(sx, sy, 380, 85 + world.drawBeyond);
+  await world.loadNow(sx, sy, 380, 85 + world.drawBeyond, (done, total) => loading?.count(done, total));
+  loadStage('setup');
   // You stand at the spot on a street nearest to that point (a named street, if one is close).
   const streetNear = (sx: number, sy: number) => {
     let edge = drive.edges[0], at = 0, best = Infinity;
@@ -588,7 +630,7 @@ async function main() {
 
   // ---- Player ------------------------------------------------------------
   const walker = new Walker(grid, kit, world, (helicopter) => showBanner(t(helicopter ? 'Back on dry land' : 'Back where you jumped after a splash')), (points) => hurt(points));
-  lifeSize.playerSeed = walker.fig.avatarSeed;
+  walker.fig.avatarSeed = lifeSize.playerSeed;
   carPool.playerRider = walker.fig;
   lifeSize.footGround = (x,z) => walker.flight || walker.perch>.02 || walker.z>.02 || walker.down>0
     ? NaN : world.levelAt(x,-z,walker.level ?? 0);
@@ -1542,7 +1584,7 @@ async function main() {
     if (inHeli) inHeli.z = Math.max(inHeli.z, ground(x, y) + 60);
     if (inCar) inCar.w = 0;
     camPos.set(x, 0, -y);
-    await world.loadNow(x, y, 300, viewRadius() + world.drawBeyond);
+    await world.loadNow(x, y, 300, viewRadius() + world.drawBeyond, (done, total) => loading?.count(done, total));
     if (inCar) backOnRoad();
     else if (!inHeli) { [walker.x, walker.y] = nearestWalkable(grid, x, y, 150); walker.sync(); }
     for (const a of [...traffic.agents]) traffic.release(a);
@@ -2899,6 +2941,7 @@ async function main() {
     scene.add(samples.group, metro.under.group);
     // The facade pictures must be in first: on WebGPU a building that doesn't move binds
     // its textures once, so tiles compiled here would keep the black stand-in.
+    loadStage('view');
     status('Preparing the view…');
     await loadFacadeAtlas();
     // Keep tree variants prepared while warming the car meshes and scene.
@@ -2919,10 +2962,19 @@ async function main() {
     samples.dispose();
   }
   const loadMs = performance.now(); // the map is ready; what follows waits for the player
+  mapLoaded();
+  loadEnd();
   let resumed = false;
   if (start) {
     status('');
     const choice = await start.ready();
+    // After the button: moving to the start spot (when it isn't where the map loaded) and
+    // the people in a street view, with their own progress on the button.
+    const street = !vr && (choice.view === 'first' || choice.view === 'third');
+    const afterPlay = (stage: LoadStage) => {
+      loading ??= new LoadProgress(stage === 'move' && street ? ['move', 'people'] : [stage], (share, left) => start.progress(share, left));
+      loading.begin(stage);
+    };
     // Into the headset while the tap still counts (the browser asks for one).
     if (vr && choice.vr) void vr.enter().catch((e) => console.warn('VR', e));
     else if (vr) { vrView = false; vr.offer(false); savePlayerView('overhead'); }
@@ -2932,6 +2984,7 @@ async function main() {
       startSources = { ...startSources, weatherSource: 'save', hourSource: 'save' };
       if (saved.season) startSources.monthSource = 'save';
       resumed = true;
+      afterPlay('move');
       status('Building the streets…');
       await resume(saved);
       status('');
@@ -2945,17 +2998,21 @@ async function main() {
       weather.begin(choice.weather, clock.t, choice.live);
       // Beta mist can only reach this choice through an explicit selection.
       if (choice.weather === 'mist') weather.fixed = true;
-      const at = choice.at ?? (linkedStart ? randomStart : initialStart);
+      const at = choice.at ?? (linkedStart || savedStart ? randomStart : initialStart);
       if (at[0] !== slon || at[1] !== slat) {
+        afterPlay('move');
         status('Building the streets…');
         await startAt(...at);
         status('');
       }
     }
+    if (street) { afterPlay('people'); await streetPeopleReady(); }
+    loadEnd();
     if (sound.on !== choice.sound) sound.toggle();
     playing = true;
     last = performance.now();
   }
+  else if (!vr && (startView === 'first' || startView === 'third')) await streetPeopleReady();
   $('loading').classList.add('done');
   vr?.ready();
   // The real weather, when the game began with it: asked for again now and then, and the
@@ -2978,7 +3035,7 @@ async function main() {
   // how long it took and what you're doing, added up there.
   telemetry.begin({
     renderer: gpuBackend ? (gpuBackend.isWebGPUBackend ? 'WebGPU' : 'WebGL 2') : 'WebGL (legacy)',
-    graphics: graphics.choice, tier: graphics.tier, lang: getLang(), touch: touch.active, resumed, loadMs,
+    graphics: graphics.choice, tier: graphics.tier, lang: getLang(), touch: touch.active, resumed, loadMs, stages: loadTimes,
     conditions: { ...startSources, weather: weather.kind, month: Number(season.date.slice(0, 2)), hour: clock.hour },
   });
   telemetry.summary(() => ({ ...stats, money: wallet.balance }));

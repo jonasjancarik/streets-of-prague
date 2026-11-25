@@ -1378,15 +1378,19 @@ export class TileWorld {
   // within `drawn` of the point in the scene. A tile that fails (a dropped or cut-short
   // download on a busy machine) is tried again a couple of times, then left for update()
   // to load later, so one bad file never stops the start.
-  async loadNow(x: number, y: number, r: number, drawn = r) {
+  // (`progress` hears how many of the tiles are in so far, for the loading screen.)
+  async loadNow(x: number, y: number, r: number, drawn = r, progress?: (done: number, total: number) => void) {
     this.urgent++;
-    try { await this.loadAround(x, y, r, drawn); } finally { this.urgent--; }
+    try { await this.loadAround(x, y, r, drawn, progress); } finally { this.urgent--; }
   }
 
-  private async loadAround(x: number, y: number, r: number, drawn: number) {
+  private async loadAround(x: number, y: number, r: number, drawn: number, progress?: (done: number, total: number) => void) {
     this.runJobs(Infinity);
     this.shown = new Set(this.reach(x, y, r, drawn));
-    await Promise.all(this.around(x, y, r).map(async (k) => {
+    const keys = this.around(x, y, r);
+    let done = 0;
+    progress?.(0, keys.length);
+    await Promise.all(keys.map(async (k) => {
       for (let tries = 1; !this.loaded.has(k); tries++) {
         try {
           await this.build(k, await this.fetchTile(k));
@@ -1402,6 +1406,7 @@ export class TileWorld {
       }
       const tile = this.loaded.get(k);
       if (tile && this.shown.has(k)) await this.dress(tile);
+      progress?.(++done, keys.length);
     }));
   }
 

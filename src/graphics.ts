@@ -44,7 +44,8 @@ import { STREET_QUALITY, STREET_TIERS } from './streetQuality.ts';
 // texels across on High and Ultra (at 1024 a car's shadow stepped along the texels), 1024 below.
 // Auto keeps the light map at the size it began with: a new size rebuilds every shader.
 //
-// Auto starts high (medium on touch devices), targets 40 FPS on a screen or the
+// Auto starts where telemetry says this kind of graphics chip ends up (autoStart), or else
+// high (medium on touch devices), targets 40 FPS on a screen or the
 // headset's refresh rate in XR, and judges windows of 60 frame times
 // by their mean without the quickest and slowest tenth. That mean doesn't see hitches,
 // so it also adds up the time spent in frames over 50 ms: two windows in a row that
@@ -116,6 +117,32 @@ const WARMUP = 4000, SETTLE = 3000, RETRY = 120000;
 const STUCK = 5;
 const WAITING = 0.5; // a frame whose work took under half its time was waiting
 
+// Where Auto starts on graphics chips whose sessions mostly ended up lower (or, on touch
+// screens, higher) than the usual start: the median of where Auto had settled a minute or
+// more into the game, from 45 days of telemetry to 25 Nov 2026 (sessions per chip in brackets).
+// Starting there saves a stretch of slow frames, or of waiting to step up. Chips not listed
+// start as before. The names are the WebGPU adapter's vendor and architecture, or WebGL's.
+const AUTO_START: [RegExp, Tier][] = [
+  [/^intel gen-(9|12lp)$/, 'lowest'], // gen-9: all of 29 on Lowest; gen-12lp: 70% of 95
+  [/^qualcomm adreno-6xx$/, 'lowest'], // 86% of 15
+  [/^arm valhall$|^mali-/i, 'low'], // Valhall: 58% of 71 on Low or Lowest; Mali-T760 on WebGL: 64% of 17
+  [/^adreno \(tm\) 6/i, 'low'], // Adreno 650 on WebGL: 58% of 34
+  [/^intel\(r\) hd graphics/i, 'medium'], // on WebGL, 59% of 31 at Medium or below
+  [/^apple$|^qualcomm adreno-[78]xx$/, 'high'], // phones and tablets: 67% of 146 iPhones and iPads, 57% of 40 and 76% of 34 Adrenos on High
+];
+export function autoStart(gpu: string, touch: boolean): Tier {
+  const name = gpu.replace(/, or similar$/, '');
+  return AUTO_START.find(([chip]) => chip.test(name))?.[1] ?? (touch ? 'medium' : 'high');
+}
+
+// The choice of graphics before the game has its Graphics: ?graphics, else the one saved.
+export function savedChoice(params: URLSearchParams): Choice {
+  let saved: string | null = null;
+  try { saved = localStorage.getItem('graphics'); } catch {}
+  const pick = (c: string | null) => (CHOICES as string[]).includes(c ?? '') ? c as Choice : null;
+  return pick(params.get('graphics')) ?? pick(saved) ?? 'auto';
+}
+
 export class AutoTier {
   tier: Tier;
   private targetMs = TARGET_MS;
@@ -178,19 +205,20 @@ export class AutoTier {
     if (mean > this.targetMs * 1.1 && waiting) this.capped++;
     this.samples.length = this.worked.length = 0;
     this.spent = this.stalled = 0;
-    const step = (dir: 1 | -1) => {
-      for (let i = ORDER.indexOf(this.tier) + dir; i >= 0 && i < ORDER.length; i += dir) {
-        if (!this.same(ORDER[i], this.tier)) return ORDER[i];
+    const step = (dir: 1 | -1, from = this.tier): Tier | null => {
+      for (let i = ORDER.indexOf(from) + dir; i >= 0 && i < ORDER.length; i += dir) {
+        if (!this.same(ORDER[i], from)) return ORDER[i];
       }
       return null;
     };
     let next: Tier | null = null;
-    const lower = step(-1), up = step(1), higher = up && ORDER.indexOf(up) <= ORDER.indexOf(this.top) ? up : null;
+    // (Under half the frame rate wanted, two tiers down at once: one wouldn't be enough.)
+    const lower = step(-1), up = step(1), muchLower = lower && mean > this.targetMs * 2 && !waiting ? step(-1, lower) : null, higher = up && ORDER.indexOf(up) <= ORDER.indexOf(this.top) ? up : null;
     this.stuck = slow && !lower ? this.stuck + 1 : 0;
     if ((slow || this.choppy >= CHOPPY_WINDOWS) && lower) {
       this.failures[this.tier] += 1;
       this.retryAt[this.tier] = now + RETRY * 2 ** (this.failures[this.tier] - 1);
-      next = lower;
+      next = muchLower ?? lower;
     } else if (higher && steady && now >= this.retryAt[higher]) next = higher;
     if (!next) return null;
     this.tier = next;
@@ -214,31 +242,31 @@ export class Graphics {
   private applied = false;
   private presenting = false;
 
-  constructor(renderer: THREE.WebGLRenderer, sky: Sky, params: URLSearchParams) {
+  // (`gpu`: the graphics chip's name, for where Auto starts.)
+  constructor(renderer: THREE.WebGLRenderer, sky: Sky, params: URLSearchParams, gpu = '') {
     this.renderer = renderer;
     this.sky = sky;
     this.fixedRatio = Number(params.get('dpr')) || null;
-    let saved: string | null = null;
-    try { saved = localStorage.getItem('graphics'); } catch {}
     try { const w = localStorage.getItem('water'); if (w) this.waterChoice = w === 'on'; } catch {}
     if (params.has('water')) this.waterChoice = params.get('water') !== 'off';
     try { const r = localStorage.getItem('reflections'); if (REFLECTIONS.includes(r as Reflections)) this.reflections = r as Reflections; } catch {}
     const r = params.get('reflections');
     if (REFLECTIONS.includes(r as Reflections)) this.reflections = r as Reflections;
     if (params.has('clutter')) this.clutter = params.get('clutter') !== 'off';
-    const asked = params.get('graphics');
-    const pick = (c: string | null) => (CHOICES as string[]).includes(c ?? '') ? c as Choice : null;
-    this.choice = pick(asked) ?? pick(saved) ?? 'auto';
+    this.choice = savedChoice(params);
     const touch = matchMedia('(pointer: coarse)').matches;
     // After a start the graphics broke, this tab stays on Low at most (renderer.ts, startRetry);
     // a setting chosen above Low is held there too, without changing what is saved.
     const retried = startRetry() !== '';
     if (retried && this.choice !== 'auto' && CHOICES.indexOf(this.choice) < CHOICES.indexOf('low')) this.choice = 'low';
-    this.auto = new AutoTier(retried ? 'low' : touch ? 'medium' : 'high', (a, b) => this.same(a, b), retried ? 'low' : 'high');
+    this.auto = new AutoTier(retried ? 'low' : autoStart(gpu, touch), (a, b) => this.same(a, b), retried ? 'low' : 'high');
     this.tier = this.choice === 'auto' ? this.auto.tier : this.choice;
     this.apply();
     document.addEventListener('visibilitychange', () => { if (!document.hidden) this.auto.hold(performance.now(), WARMUP); });
   }
+
+  // The level Auto is at (or would start at, with another setting chosen).
+  get autoTier() { return this.auto.tier; }
 
   // The game has loaded: start judging frames after a few seconds.
   started(now: number) { this.auto.hold(now, WARMUP); }

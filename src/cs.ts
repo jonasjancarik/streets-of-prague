@@ -188,6 +188,11 @@ export const CS: Record<string, string> = {
   'The graphics failed to start. Trying again…': 'Grafika se nespustila. Zkouším to znovu…',
   'Loading people and vehicles…': 'Načítání lidí a vozidel…',
   'Preparing the view…': 'Příprava obrazu…',
+  'Bringing in the people…': 'Přicházejí lidé…',
+  'Almost there': 'Skoro hotovo',
+  'About {n} second left|About {n} seconds left': 'Zbývá asi {n} sekunda|Zbývají asi {n} sekundy|Zbývá asi {n} sekund',
+  'About {n} minute left|About {n} minutes left': 'Zbývá asi {n} minuta|Zbývají asi {n} minuty|Zbývá asi {n} minut',
+  'Loading {n} %': 'Načítání {n} %',
   Streets: 'Ulice',
   'of Prague': 'Prahy',
   // Settings (the corner buttons)

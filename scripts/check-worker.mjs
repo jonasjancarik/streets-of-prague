@@ -257,7 +257,9 @@ res = await tell({ e: 'start', f: {
 } });
 assert.equal(res.status, 204);
 assert.deepEqual(rows[0].blobs.slice(15), ['example.com', 'snow', 'player', 'link', 'default']);
-assert.deepEqual(rows[0].doubles.slice(5), [8, 1, 0]);
+assert.deepEqual(rows[0].doubles.slice(5, 8), [8, 1, 0]);
+await tell({ e: 'start', f: { loadMs: 9000, streetsMs: 4200, viewMs: 3100, peopleMs: 800 } });
+assert.deepEqual(rows[0].doubles.slice(8), [0, 0, 0, 4200, 0, 3100, 0, 800], 'loading stages land after the older fields');
 await tell({ e: 'start', f: { cores: 8 } });
 assert.deepEqual(rows[0].blobs.slice(16), ['', '', '', ''], 'old starts have no sources');
 await tell({ e: 'error', f: { message: 'x'.repeat(5000).slice(0, 3000) } });

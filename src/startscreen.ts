@@ -12,16 +12,20 @@ import type { SeasonName } from './season.ts';
 import { pickStart } from './startmap.ts';
 import type { StartSpot } from './startmap.ts';
 import type { PlayerView } from './streetView.ts';
+import { leftLabel } from './loadProgress.ts';
+import { CHOICES, type Choice, type Tier } from './graphics.ts';
 
 // The start of the game, on the loading screen: where it begins (a random street, or a
 // spot picked on a map of Prague, startmap.ts), the date, time and weather it will begin
 // with (the time in Prague now and a weather picked for the season, if nothing was
 // asked for in the URL), each one changeable, and how you see the city (from above, or
-// from the street in first or third person: the settings' Camera view, remembered). The
-// rarely changed ones, sound and language, are quiet toggles in the line of links at the
-// bottom. The button stays grey while the map loads, and pressing it is also what lets
-// the browser play sound. With a saved game, the button continues it (date, time and
-// weather come from the save, the view is still yours to pick) and "New game" brings the
+// from the street in first or third person: the settings' Camera view, remembered), and
+// the graphics setting (the settings' own). The rarely changed ones, sound and language,
+// are quiet toggles in the line of links at the bottom. While the map loads the button
+// fills up with how far it has got and the time left (loadProgress.ts), and pressing it
+// is also what lets the browser play sound. With a saved game, the button continues it
+// (date, time and weather come from the save, the view and graphics are still yours to
+// pick) and "New game" brings the
 // other choices back. VR isn't one of the views here: it needs the page loaded again
 // (renderer.ts), so it keeps its own button, Play in VR, where the phone can show it.
 
@@ -86,6 +90,11 @@ interface StartOptions {
   // VR (vr.ts): whether this page was opened for it, whether the phone can show it, and
   // how to switch to it (a reload: VR needs the WebGL renderer, renderer.ts).
   vr?: { mode: boolean; supported: Promise<boolean>; pick: () => void };
+  // Told each time View changes, so a street view can start loading what it needs.
+  onView?: (view: StartView) => void;
+  // The graphics setting (graphics.ts), the same as in the settings, and who to tell when
+  // it changes (at once: the game applies it while it loads).
+  graphics?: { choice: Choice; pick: (choice: Choice) => void };
 }
 
 export function startScreen(root: HTMLElement, opts: StartOptions) {
@@ -169,8 +178,15 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
   });
   // Where the camera is: above the city, or down in the street. On a page opened for VR the
   // headset is the view, and Play without VR starts from above, as it always has.
-  const viewRow = row<StartView>('View', VIEWS.map((v) => ({ id: v.id, label: () => t(v.label) })), view, (id) => { view = id; });
+  const viewRow = row<StartView>('View', VIEWS.map((v) => ({ id: v.id, label: () => t(v.label) })), view, (id) => { view = id; opts.onView?.(id); });
   viewRow.row.hidden = !!opts.vr?.mode;
+  // How detailed the city looks. Auto adjusts to keep the game smooth, and says which level
+  // it's on once the game knows the graphics chip (autoTier).
+  let autoNow: Tier | null = null;
+  const tierName = (tier: Tier) => t(tier[0].toUpperCase() + tier.slice(1));
+  const graphicsRow = opts.graphics ? row<Choice>('Graphics', CHOICES.map((id) => ({
+    id, label: () => id === 'auto' ? (autoNow ? t('Auto ({tier})', { tier: tierName(autoNow).toLowerCase() }) : t('Auto')) : tierName(id),
+  })), opts.graphics.choice, (id) => { opts.graphics!.pick(id); }) : null;
   const showPlace = () => {
     placeRow.buttons.forEach((b, i) => {
       b.setAttribute('aria-pressed', String(places[i].id === place));
@@ -231,12 +247,21 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
   vrButton.hidden = true;
   if (opts.vr) void opts.vr.supported.then((ok) => { vrButton.hidden = !ok && !vrMode; });
   if (!vrMode) vrButton.addEventListener('click', () => opts.vr?.pick());
-  let ready = false;
+  // While the map loads, the button fills up and says how far along it is, with the time
+  // left on a line under the buttons.
+  const eta = el('div', 'ls-eta', panel);
+  panel.insertBefore(eta, actions.nextSibling);
+  let ready = false, loaded: number | null = null, left: number | null = null;
   const sync = () => {
     panel.classList.toggle('resume', resuming);
     found.hidden = fresh.hidden = !resuming;
     for (const r of [placeRow.row, seasonRow.row, timeRow.row, weatherRow.row]) r.hidden = resuming;
-    go.textContent = !ready ? t('Loading…') : vrMode ? (resuming ? t('Continue in VR') : t('Start in VR')) : resuming ? t('Continue') : opts.saved ? t('Start new game') : t('Start game');
+    const loading = loaded !== null && loaded < 1;
+    go.style.setProperty('--p', String(loading ? loaded : 0));
+    go.toggleAttribute('data-loading', loading);
+    eta.textContent = loading ? leftLabel(left) : '';
+    eta.hidden = !loading;
+    go.textContent = loading ? t('Loading {n} %', { n: Math.floor(loaded! * 100) }) : !ready ? t('Loading…') : vrMode ? (resuming ? t('Continue in VR') : t('Start in VR')) : resuming ? t('Continue') : opts.saved ? t('Start new game') : t('Start game');
     fresh.textContent = t('New game');
     vrButton.textContent = vrMode ? t('Play without VR') : t('Play in VR');
     if (vrMode) vrButton.disabled = !ready;
@@ -287,6 +312,19 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
 
   // Enables the button; resolves with the choice when it's pressed.
   return {
+    // The view picked so far.
+    view: () => view,
+    // The level Auto starts at, for its button.
+    autoTier(tier: Tier) {
+      autoNow = tier;
+      if (graphicsRow) graphicsRow.buttons[CHOICES.indexOf('auto')].textContent = t('Auto ({tier})', { tier: tierName(tier).toLowerCase() });
+    },
+    // How far loading has got (loadProgress.ts); 1 when done.
+    progress(share: number, secondsLeft: number | null) {
+      loaded = share;
+      left = secondsLeft;
+      sync();
+    },
     // The weather in Prague now has come in: a button for it, after Clear.
     live(kind: Kind) {
       if (liveButton) return;

@@ -328,6 +328,9 @@
       .ls-go:not(:disabled):hover { background: #e2342b; transform: translate(-0.2vh, -0.2vh); box-shadow: 0.8vh 0.8vh 0 var(--poster-black); }
       .ls-go:not(:disabled):active { transform: translate(0.4vh, 0.4vh); box-shadow: 0.2vh 0.2vh 0 var(--poster-black); }
       .ls-go:disabled { background: #4a3f3c; color: rgba(236, 228, 214, 0.55); cursor: default; }
+      /* Loading: the button fills from the left as the map comes in (startscreen.ts). */
+      .ls-go[data-loading] { background: linear-gradient(90deg, #8a2b25 calc(var(--p, 0) * 100%), #4a3f3c 0); color: rgba(236, 228, 214, 0.8); font-variant-numeric: tabular-nums; }
+      .ls-eta { min-height: 1.2em; margin-top: calc(0.6 * var(--u)); font: max(calc(1.9 * var(--u)), 12px)/1.2 'Bebas Neue', sans-serif; letter-spacing: 0.06em; color: rgba(236, 228, 214, 0.6); }
       .ls-start [hidden] { display: none; }
       /* The menu's scroll bar: the game's thin bar, but in solid paper on a faint track, so it reads against the dark wedge. */
       .ls-start { scrollbar-color: var(--poster-paper) rgba(236, 228, 214, 0.14); }
@@ -364,7 +367,7 @@
       .ls-saved-place { font-size: 1.9em; line-height: 0.95; }
       .ls-saved-info { opacity: 0.8; }
       .ls-lost { letter-spacing: 0.06em; opacity: 0.8; }
-      .ls-saved[hidden], .ls-lost[hidden], .ls-new[hidden] { display: none; }
+      .ls-saved[hidden], .ls-lost[hidden], .ls-new[hidden], .ls-eta[hidden] { display: none; }
       /* The big button, and "New game" beside it as a plain outlined one. */
       .ls-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(1.6 * var(--u)); margin-top: var(--u); }
       .ls-actions .ls-go { margin-top: 0; }

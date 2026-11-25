@@ -7,6 +7,8 @@
 // and deploy-mbxp.sh, for the beta) do; local development and test runs (?go) never do. The settings panel has
 // the switch, remembered in the browser.
 
+import type { Stage as LoadStage } from './loadProgress.ts';
+
 const URL_ = import.meta.env.VITE_TELEMETRY_URL as string | undefined;
 // Cloudflare Web Analytics (visits, countries, page load), behind the same switch.
 const BEACON = import.meta.env.VITE_CF_BEACON_TOKEN as string | undefined;
@@ -81,6 +83,7 @@ if (available) {
 // The graphics card's name, as the browser gives it (renderer.ts sets it for WebGPU).
 let gpu = '';
 export function setGpu(name: string) { gpu = name; }
+export function gpuName() { return gpu; }
 
 function browser() {
   const ua = navigator.userAgent;
@@ -94,8 +97,9 @@ function os() {
 }
 
 // `rendererName`: which renderer the game ended up with; `loadMs`: from opening the page
-// to the map being ready behind the start screen.
-export function begin(info: { renderer: string; graphics: string; tier: string; lang: string; touch: boolean; resumed: boolean; loadMs: number; conditions: StartSources & { weather: string; month: number; hour: number } }) {
+// to the map being ready behind the start screen; `stages`: how long each loading stage
+// took (loadProgress.ts), for its typical times.
+export function begin(info: { renderer: string; graphics: string; tier: string; lang: string; touch: boolean; resumed: boolean; loadMs: number; stages: Partial<Record<LoadStage, number>>; conditions: StartSources & { weather: string; month: number; hour: number } }) {
   renderer = info.renderer;
   let referrer = '';
   try { if (document.referrer) referrer = new URL(document.referrer).hostname; } catch {}
@@ -107,6 +111,7 @@ export function begin(info: { renderer: string; graphics: string; tier: string; 
     input: info.touch ? 'touch' : 'keyboard', game: info.resumed ? 'continued' : 'new', browser: browser(), os: os(), referrer,
     loadMs: Math.round(info.loadMs), width: screen.width, height: screen.height, dpr: devicePixelRatio,
     memory: (navigator as { deviceMemory?: number }).deviceMemory ?? 0, cores: navigator.hardwareConcurrency ?? 0,
+    ...Object.fromEntries(Object.entries(info.stages).map(([stage, ms]) => [`${stage}Ms`, Math.round(ms ?? 0)])),
   });
   started = true;
 }
