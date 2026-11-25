@@ -7,9 +7,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as THREE from 'three';
 import {
-  Fn, If, Discard, float, vec2, vec3, vec4, mat4, attribute, instancedBufferAttribute, normalViewGeometry, faceDirection, modelViewMatrix,
+  Fn, If, Discard, float, vec2, vec3, vec4, mat4, attribute, normalViewGeometry, faceDirection, modelViewMatrix,
   cameraViewMatrix, positionGeometry, positionLocal, positionWorld, diffuseColor, floor, fract, dot, sin, cos, atan, mix, smoothstep, step, length, abs, max, min,
-  normalize, cross, sqrt, fwidth, distance, select, clamp, storage, buffer, instanceIndex,
+  normalize, cross, sqrt, fwidth, distance, select, clamp, storage, buffer, instanceIndex, texture, textureSize, int, ivec2,
 } from 'three/tsl';
 import { BARE, LEAVES, SEASON } from '../shading.ts';
 import { CROWN, STEM, CROWN_BASE } from '../map/vegetation.ts';
@@ -117,18 +117,47 @@ const yearColour = (colour: N) => {
 // buffer while the matrices fit in one, else, where the GPU has them, from a storage buffer
 // both share (see shareInstances), since as vertex inputs each copy takes four of the 16 a
 // pipeline may have (with more than ~1000 trees in a tile, the crowns went undrawn).
-const matrixBuffers = new WeakMap<THREE.InstancedBufferAttribute, THREE.InstancedInterleavedBuffer>();
+// Without storage buffers (WebGL 2, ?gl2 and VR) a second set of vertex inputs next to
+// three.js's own took the people and trees past those 16, and they weren't drawn: there
+// the matrices are copied into a float texture, four texels each, read by instance.
 export const instanceMatrix = Fn((builder: N) => {
   shareInstances(builder);
   const m = builder.object.instanceMatrix as THREE.InstancedBufferAttribute & { isStorageInstancedBufferAttribute?: boolean };
   const count = Math.max(m.count, 1);
   if (m.isStorageInstancedBufferAttribute) return storage(m as any, 'mat4', count).element(instanceIndex);
   if (count * 64 <= builder.getUniformBufferLimit()) return (buffer(m.array as any, 'mat4', count) as N).element(instanceIndex);
-  let interleaved = matrixBuffers.get(m);
-  if (!interleaved) matrixBuffers.set(m, (interleaved = new THREE.InstancedInterleavedBuffer(m.array as Float32Array, 16, 1)));
-  const col = (o: number): N => instancedBufferAttribute(interleaved, 'vec4', 16, o);
-  return mat4(col(0), col(4), col(8), col(12));
+  // (One texture node per shader, however often the matrix is asked for: a vertex
+  // shader has few texture units.)
+  let node = matrixNodes.get(builder);
+  if (!node) {
+    const t: N = (texture(matrixTexture(m)) as N).onObjectUpdate(({ object }: N) => matrixTexture(object.instanceMatrix));
+    const w: N = int((textureSize as N)(t, int(0)).x), at: N = int(instanceIndex).mul(4);
+    const col = (c: number): N => t.load(ivec2(at.add(c).mod(w), at.add(c).div(w)));
+    matrixNodes.set(builder, (node = mat4(col(0), col(1), col(2), col(3))));
+  }
+  return node;
 });
+const matrixNodes = new WeakMap<object, N>();
+const MATRIX_ROW = 4096; // texels across (1024 matrices a row)
+const matrixTextures = new WeakMap<THREE.BufferAttribute, THREE.DataTexture>();
+const matrixTexture = (m: THREE.BufferAttribute) => {
+  const texels = Math.max(m.count, 1) * 4, w = Math.min(texels, MATRIX_ROW), h = Math.ceil(texels / w);
+  let t = matrixTextures.get(m);
+  if (!t || t.image.width !== w || t.image.height !== h) {
+    t?.dispose();
+    const array = m.array as Float32Array;
+    t = new THREE.DataTexture(array.length === w * h * 4 ? array : new Float32Array(w * h * 4), w, h, THREE.RGBAFormat, THREE.FloatType);
+    t.userData.version = -1;
+    matrixTextures.set(m, t);
+  }
+  if (t.userData.version !== m.version) {
+    const data = t.image.data as Float32Array, array = m.array as Float32Array;
+    if (data !== array) data.set(array.length > data.length ? array.subarray(0, data.length) : array);
+    t.needsUpdate = true;
+    t.userData.version = m.version;
+  }
+  return t;
+};
 // Before three.js's instancing is set up (setupPosition): too many matrices for a uniform
 // buffer go in a storage buffer, which it then reads too (it checks this flag).
 export const shareInstances = (builder: N) => {
