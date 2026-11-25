@@ -18,6 +18,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 sys.path.insert(0, str(ROOT / "assets/old-town-square"))
 from craft import Atlas, Building, at, band, drum, lathe, rect, rod, shell, survey
+import pavilions
 
 FRAME = (-2169.00922697, 2617.41380864, 29.9, -114.89920052)
 FRONT = -13.32
@@ -217,30 +218,37 @@ def wings(m):
 def build():
     tris, texture = survey("fantova", FRAME)
     images = {key: Image.open(HERE / f"{key}.webp").convert("RGB") for key in PANELS}
+    images.update({p.stem: Image.open(p).convert("RGB") for p in sorted((HERE / "panels").glob("*.webp"))})
     images.update(
         survey=texture,
         lantern=Image.new("RGB", (8, 8), (109, 137, 147)),
         canopy=Image.new("RGB", (8, 8), (130, 159, 150)),
-        **{"painted-iron": Image.new("RGB", (8, 8), (51, 91, 75))},
+        **{
+            "painted-iron": Image.new("RGB", (8, 8), (51, 91, 75)),
+            "chimney-brick": Image.new("RGB", (8, 8), (145, 82, 64)),
+        },
     )
     m = Building(Atlas(2048, images))
     p = tris[:, :, :3]
-    # Keep the surveyed roof, end pavilions and platform elevation. Replace the
-    # street face and both clock towers, including their square bases.
+    # The central roof and platform wall come from the survey. The galleries
+    # stop at the inner walls of the two independently modelled end pavilions.
     front_wall = (np.abs(p[:, :, 0]).max(1) < 19.1) & (p[:, :, 1].max(1) < -12.4)
     towers = np.zeros(len(p), dtype=bool)
     for x in (-15.15, 15.35):
         towers |= (np.abs(p[:, :, 0] - x).max(1) < 3.8) & (np.abs(p[:, :, 1] + 9.96).max(1) < 3.8)
-    shell(m, tris[~(front_wall | towers)], 100)
+    shell(m, pavilions.gallery_triangles(tris[~(front_wall | towers)]), 100)
     facade(m)
     for x in (-15.15, 15.35):
         clock_tower(m, x)
     canopy(m)
     wings(m)
+    for end in ("north", "south"):
+        pavilions.pavilion(m, end)
     m.save(
         ROOT / "public/fantova.glb",
         "Fantova budova",
-        "CC BY-SA 4.0. Survey: IPR Praha (CC BY). Adapted facade photograph: Lynx1211 (CC BY-SA 4.0). "
+        "CC BY-SA 4.0. Survey: IPR Praha (CC BY). Adapted photographs: Lynx1211 (CC BY-SA 4.0), "
+        "ŠJů (CC BY 4.0, CC BY-SA 3.0 and 4.0), Wikimedia Commons. "
         "https://github.com/jonasjancarik/streets-of-prague/blob/main/assets/SOURCES.md#fantova-budova",
         extent=112,
     )

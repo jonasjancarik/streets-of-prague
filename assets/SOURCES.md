@@ -42,8 +42,9 @@ The resulting model and atlas are licensed under [CC BY-SA 4.0](https://creative
 
 ## Fantova budova
 
-The historic main station combines IPR Praha’s surveyed wings, end pavilions and
-roof with a modelled entrance, glazed canopy and two clock towers. The gable,
+The historic main station uses IPR Praha’s survey for the building plan, heights,
+central roof and platform elevation. The entrance, galleries and both end pavilions
+are modelled. The gable,
 clock surrounds and window bays adapt Lynx1211’s 2017 photograph. The façade
 details were cropped, resized and fitted to the geometry. The glass lanterns,
 frames, ribs and canopy brackets are modelled. The combined GLB and derived
@@ -52,6 +53,19 @@ photographic panels are licensed under CC BY-SA 4.0.
 [Lynx1211’s front elevation](https://commons.wikimedia.org/wiki/File:Secesn%C3%AD_budova_Hlavn%C3%ADho_n%C3%A1dra%C5%BE%C3%AD.jpg),
 [south tower reference by ŠJů](https://commons.wikimedia.org/wiki/File:Praha_hlavn%C3%AD_n%C3%A1dra%C5%BE%C3%AD,_Fantova_budova,_ji%C5%BEn%C3%AD_v%C4%9B%C5%BE_hlavn%C3%ADho_pr%C5%AF%C4%8Del%C3%AD.jpg),
 [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+
+The end pavilions use rectified, colour-adjusted details from photographs by ŠJů,
+Wikimedia Commons. The tile courses, ridge lanterns, ironwork and stone birds are
+original reconstructions. All parts share the station’s texture atlas.
+
+| Pavilion detail | Source photograph by ŠJů | Source licence |
+| --- | --- | --- |
+| South pavilion window bays, projecting end window and rusticated lower storey | [street elevation](https://commons.wikimedia.org/wiki/File:Praha_hlavn%C3%AD_n%C3%A1dra%C5%BE%C3%AD,_Fantova_budova,_ji%C5%BEn%C3%AD_k%C5%99%C3%ADdlo,_od_Vrchlick%C3%A9ho_sad%C5%AF.jpg), [end elevation](https://commons.wikimedia.org/wiki/File:Praha_hlavn%C3%AD_n%C3%A1dra%C5%BE%C3%AD,_Fantova_budova,_od_jihu.jpg) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Carved arches and doors | [west arch](https://commons.wikimedia.org/wiki/File:Praha_hlavn%C3%AD_n%C3%A1dra%C5%BE%C3%AD,_Fantova_budova,_z%C3%A1padn%C3%AD_vchod_do_ji%C5%BEn%C3%ADho_k%C5%99%C3%ADdla,_port%C3%A1l.jpg), [south entrance](https://commons.wikimedia.org/wiki/File:Praha_hlavn%C3%AD_n%C3%A1dra%C5%BE%C3%AD,_Fantova_budova,_ji%C5%BEn%C3%AD_vchod.jpg) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Clock face, banded tower masonry, crown reliefs and gilded wings | [south clock](https://commons.wikimedia.org/wiki/File:Praha_hlavn%C3%AD_n%C3%A1dra%C5%BE%C3%AD,_Fantova_budova,_ji%C5%BEn%C3%AD_v%C4%9B%C5%BE,_ji%C5%BEn%C3%AD_cifern%C3%ADk.jpg), [clock tower](https://commons.wikimedia.org/wiki/File:Praha_hlavn%C3%AD_n%C3%A1dra%C5%BE%C3%AD,_Fantova_budova,_ji%C5%BEn%C3%AD_v%C4%9B%C5%BE.jpg), [winged wheel](https://commons.wikimedia.org/wiki/File:Praha_hlavn%C3%AD_n%C3%A1dra%C5%BE%C3%AD,_Fantova_budova,_ji%C5%BEn%C3%AD_v%C4%9B%C5%BE,_ok%C5%99%C3%ADdlen%C3%A9_kolo.jpg) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| North pavilion stained-glass bay | [north windows](https://commons.wikimedia.org/wiki/File:Praha_hlavn%C3%AD_n%C3%A1dra%C5%BE%C3%AD,_Fantova_budova,_vitr%C3%A1%C5%BEe_na_severn%C3%AD_stran%C4%9B.jpg) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| North pavilion oval windows and balconies | [Wilsonova balconies](https://commons.wikimedia.org/wiki/File:Praha_hlavn%C3%AD_n%C3%A1dra%C5%BE%C3%AD,_Fantova_budova,_z_Wilsonovy_ulice,_balk%C3%B3ny_severn%C3%ADho_k%C5%99%C3%ADdla.jpg) | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
+| North pavilion double-height portal | [north portal](https://commons.wikimedia.org/wiki/File:Praha_hlavn%C3%AD_n%C3%A1dra%C5%BE%C3%AD,_Fantova_budova,_port%C3%A1l_severn%C3%ADho_k%C5%99%C3%ADdla.jpg) | [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) |
 
 ## National Theatre
 

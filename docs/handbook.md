@@ -1419,7 +1419,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   photographs (summer 2023, about 5 cm/px), published as an I3S scene layer.
   Fantova budova, the historic main station building facing Wilsonova, has a custom
   model of its entrance gable, twin clock towers, glazed canopy and gallery windows.
-  The wings, roof and platform side follow the IPR survey. To rebuild it, run
+  Both galleries meet modelled end pavilions with recessed windows, tiled roofs and
+  glazed ridge lanterns. Gilded winged wheels crown the two outer clocks. The south
+  pavilion has red panels around its end windows, and the north pavilion has oval
+  windows and curved iron balconies facing the street. The central roof and platform
+  wall follow the IPR survey. To rebuild it, run
   `uv run landmarks.py praha fantova` in `pipeline/`, then
   `uv run --project pipeline python assets/fantova/build.py` at the repository root.
   Run the landmark command for `centrum` as well to register the historic-centre placement.
