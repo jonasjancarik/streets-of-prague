@@ -326,7 +326,8 @@ def held_ground(tile_of, i, j):
     aloft = car_mid
     if car_mid is not None and tunnels:
         aloft = shapely.difference(car_mid, shapely.buffer(union(tunnels), TUNNEL_NEAR))
-    out = dict(middles=union(middles), cars=car_mid, aloft=aloft, landings=landings, carriage=union(sides))
+    out = dict(middles=union(middles), cars=car_mid, aloft=aloft, landings=landings, carriage=union(sides),
+               structures=shapely.buffer(union(bridges + tunnels), BRIDGE_NEAR) if bridges or tunnels else None)
     for g in out.values():
         if g is not None:
             shapely.prepare(g)
@@ -368,6 +369,38 @@ def kerbs_in(kerbs, box, lines, side, g):
     return out
 
 
+def scanned_road_dips(base, scan, road, grid):
+    """Weight a short trough where the road scan continues between matching shoulders."""
+    difference = scan - base
+    rows, cols = np.nonzero(road & (difference > AGREE))
+    if not len(rows):
+        return 0.
+    anchors = road & (np.abs(difference) < .25)
+    seeds = np.zeros_like(road)
+    # Check about 12 m on either side of a low sample. The ends must meet
+    # the scan, and every 3 m along it must agree with the same gentle grade.
+    for dy, dx in ((0, 1), (1, 0), (1, 1), (1, -1)):
+        step = max(1, round(3 / (grid * np.hypot(dx, dy))))
+        sy, sx = dy * step, dx * step
+        valid = ((rows >= 4 * abs(sy)) & (rows < road.shape[0] - 4 * abs(sy))
+                 & (cols >= 4 * abs(sx)) & (cols < road.shape[1] - 4 * abs(sx)))
+        y, x = rows[valid], cols[valid]
+        ends = (y - 4 * sy, x - 4 * sx), (y + 4 * sy, x + 4 * sx)
+        low, high = scan[ends[0]], scan[ends[1]]
+        clear = anchors[ends[0]] & anchors[ends[1]]
+        clear &= np.abs(high - low) <= .15 * 8 * grid * np.hypot(sx, sy)
+        for n in range(-3, 4):
+            at = y + n * sy, x + n * sx
+            chord = low + (high - low) * ((n + 4) / 8)
+            clear &= road[at] & (np.abs(scan[at] - chord) < .18)
+        seeds[y[clear], x[clear]] = True
+    if not seeds.any():
+        return 0.
+    # Fill the shoulders of each confirmed trough and fade within the road.
+    distance = distance_transform_edt(~seeds) * grid
+    return road * np.clip((9 - distance) / 4, 0, 1)
+
+
 def surface(t, targets, dense, scan_at, pads, kerbs, held_at=None):
     """The tile's surface and breaklines (the module's docstring, step 2 and 3).
     `held_at`: `held_ground`'s streets' middles."""
@@ -403,7 +436,8 @@ def surface(t, targets, dense, scan_at, pads, kerbs, held_at=None):
             soft = np.where(den > 0.2, num / den, np.nan)
         h_p = padded(targets, meta, "h", PAD)
         h_p = np.where(np.isfinite(h_p), h_p, sp)
-        street = np.where(padded(targets, meta, "paved", PAD), sp, soft)
+        paved_p = padded(targets, meta, "paved", PAD)
+        street = np.where(paved_p, sp, soft)
         street = np.where(np.isfinite(street), street, h_p)
         lidar = street
         # (A face in the LiDAR: its rise within a metre, 3 × 3 samples.)
@@ -451,6 +485,7 @@ def surface(t, targets, dense, scan_at, pads, kerbs, held_at=None):
             part = np.nan_to_num(np.clip((np.minimum(off, alt) - AGREE) / AGREE, 0, 1))
             above = np.nan_to_num(h_p - street) > ALOFT
         apart = off > AGREE
+        dip = 0.
         if cars.any():
             # The carriageway: the city pass, and of the LiDAR only how far it is off the
             # city pass, where that is small, smoothed along the road. (The LiDAR itself,
@@ -463,6 +498,10 @@ def surface(t, targets, dense, scan_at, pads, kerbs, held_at=None):
             # the road round it says. Every weight is smoothed along the road, or the
             # surface flickers between the two from one sample to the next.
             road = inside("carriage")
+            exposed = road & paved_p & (d_face > STEEP_NEAR) & ~land
+            if geo.get("structures") is not None:
+                exposed &= ~inside("structures")
+            dip = scanned_road_dips(h_p, sp, exposed, g)
             sigma = ROAD_SMOOTH / g
             along = lambda v: gaussian_filter(v * road, sigma, mode="nearest")
             cover = np.maximum(along(np.ones(PX.shape)), 1e-6)
@@ -506,6 +545,9 @@ def surface(t, targets, dense, scan_at, pads, kerbs, held_at=None):
             part = np.maximum(part, hold)
         part = soften(part)
         street = np.where(np.isfinite(h_p), street * (1 - part) + np.nan_to_num(h_p) * part, street)
+        # At the shoulders a few high samples otherwise leave a lip around the fill.
+        # Allow the same 18 cm variation as the scan-to-grade check above.
+        street += dip * np.maximum(np.nan_to_num(sp - street), -.18)
         street, held = street[PAD:-PAD, PAD:-PAD], (part * off)[PAD:-PAD, PAD:-PAD]  # (held: how far it moved)
         street = np.where(np.isfinite(street), street, h)
         # (A held patch is the city pass off paved ground too, where the dense model would

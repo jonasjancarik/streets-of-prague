@@ -1589,6 +1589,9 @@ record the measurements, merge decisions and pending landmark asset activation.
 - **Terrain.** IPR's bare-earth model on a 4 m grid per tile: the ground, buildings,
   walls, trees, cars, people, trams and the camera sit at their real height, cars
   pitch, roll and roll downhill, and the ground is hill-shaded.
+  On exposed carriageways the terrain mesh also checks short dips against the 2023 LiDAR.
+  Where the road on both sides meets the scan and the scan follows a smooth grade
+  through the dip, the mesh uses the scanned surface across the affected lanes.
 - **Street placement.** Traffic-light poles and shared-bike rows move towards the
   pavement when their mapped positions fall on a carriageway. Tram-wire supports
   move out of the road too; a span is omitted when neither side can support it.
