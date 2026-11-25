@@ -57,7 +57,7 @@ import ipr_trees
 import lanes
 import layers
 import structures
-from osm_area import (AREAS, CAR_ROADS, FEATURE_TAGS, ORIENTATIONS, OUT, _coords, _float, _lines, _polys, _rings, extract,
+from osm_area import (AREAS, CAR_ROADS, FEATURE_TAGS, ORIENTATIONS, OUT, _coords, _float, _lines, _polys, _rings, basement_passage, extract,
                       features_from_json, feature_rows, road_width, use_overpass_mirror)
 
 MARGIN = 150.0
@@ -170,9 +170,10 @@ def graph_edges(bbox, tf, network, directed, source=None, kerbs=None, core=None,
         station = structures.station_ways(data["elements"], tf, ground)
         data["elements"] = [el for el in data["elements"] if el["type"] != "way" or (ok(el.get("tags", {})) and el["id"] not in station)]
         G = ox.graph._create_graph([data], network in ox.settings.bidirectional_network_types)
-        G = ox.simplify_graph(G, edge_attrs_differ=JOIN_ONLY_ALIKE)
     else:
-        G = ox.simplify_graph(ox.graph_from_bbox(bbox, network_type=network, simplify=False, retain_all=True), edge_attrs_differ=JOIN_ONLY_ALIKE)
+        G = ox.graph_from_bbox(bbox, network_type=network, simplify=False, retain_all=True)
+        G.remove_edges_from([(u, v, k) for u, v, k, tags in G.edges(keys=True, data=True) if basement_passage(tags)])
+    G = ox.simplify_graph(G, edge_attrs_differ=JOIN_ONLY_ALIKE)
     if directed:
         G = connected(G, tf, core)
     out, seen, sized = [], set(), []
@@ -284,7 +285,8 @@ def setup():
     use_overpass_mirror()
     if "surface" not in ox.settings.useful_tags_way:
         ox.settings.useful_tags_way = [*ox.settings.useful_tags_way, "surface"]  # asphalt vs setts
-    ox.settings.useful_tags_way = [*dict.fromkeys([*ox.settings.useful_tags_way, *PARKING_TAGS, "embedded_rails"])]
+    ox.settings.useful_tags_way = [*dict.fromkeys([*ox.settings.useful_tags_way, *PARKING_TAGS, "embedded_rails",
+                                                  "location", "indoor", "level"])]
 
 
 def load_sections(area):

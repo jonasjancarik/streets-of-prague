@@ -2,6 +2,7 @@
 import pickle
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import osmnx as ox
 
@@ -15,6 +16,21 @@ def elements():
 
 
 class EdgeJoiningTests(unittest.TestCase):
+    def test_basement_corridor_is_absent_from_local_and_overpass_walking_routes(self):
+        data = elements()
+        tags = {"highway": "footway", "tunnel": "building_passage", "indoor": "yes"}
+        for way, level in zip(data[4:], ("0", "-1", "-1;0")):
+            way["tags"] = {**tags, "level": level}
+        projection = SimpleNamespace(transform=lambda x, y: (x, y))
+        with patch.dict(vars(ox.settings)):
+            build_tiles.setup()
+            G = ox.graph._create_graph([{"elements": data}], True)
+            with patch.object(ox, "graph_from_bbox", return_value=G):
+                for source in (None, pickle.dumps({"elements": data})):
+                    edges = build_tiles.graph_edges(None, projection, "walk", False, source=source)
+                    self.assertEqual({(e["u"], e["v"]) for e in edges}, {("1", "2"), ("3", "4")})
+                    self.assertTrue(all(e["passage"] for e in edges))
+
     def test_tunnel_and_bridge_are_not_joined(self):
         G = ox.graph._create_graph([{"elements": elements()}], False)
         joined = ox.simplify_graph(G)

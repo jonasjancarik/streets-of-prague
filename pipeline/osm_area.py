@@ -359,7 +359,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
                 trams.append(g)
         hw = col(row, "highway")
         if hw and isinstance(g, (LineString, MultiLineString)):
-            if hw in ("proposed", "construction", "elevator", "platform", "bus_stop"):
+            if hw in ("proposed", "construction", "elevator", "platform", "bus_stop") or basement_passage(row):
                 continue
             if (ground and hw in ("pedestrian", "footway", "living_street", "service")
                     and col(row, "footway") != "crossing" and col(row, "tunnel") in (None, "no")
@@ -883,6 +883,15 @@ def _conifer(leaf_type, genus, species):
         return str(leaf_type) == "needleleaved"
     name = str(genus or species or "").strip().lower()
     return name.startswith(CONIFERS)
+
+
+def basement_passage(tags):
+    """A building passage explicitly underground, or indoors entirely on basement floors."""
+    if tags.get("tunnel") != "building_passage":
+        return False
+    if tags.get("location") == "underground":
+        return True
+    return tags.get("indoor") == "yes" and all(_below(level) for level in str(tags.get("level", "")).split(";"))
 
 
 def passage_tags(hw, get):

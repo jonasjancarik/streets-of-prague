@@ -76,6 +76,16 @@ class WalkingSurfaceTests(unittest.TestCase):
         left, right = box(-20, -20, 10, 20), box(10, -20, 40, 20)
         self.assertTrue(shapely.union(after.intersection(left), after.intersection(right)).equals(after))
 
+    def test_basement_passages_do_not_get_surface_paths_or_shopfronts(self):
+        # Way 1295991727 under Wilsonova has no layer. Its indoor floor is -1.
+        passage = {"highway": "footway", "tunnel": "building_passage", "indoor": "yes"}
+        floors = [{"level": "-1"}, {"level": "-2;-0.5"}, {"location": "underground"},
+                  {"level": "0"}, {"level": "-1;0"}, {"layer": "-1"}, {}]
+        got = self.extract([{**passage, **tags} for tags in floors])
+        self.assertEqual([round(p["pts"][0][1]) for p in got["passages"]], [60, 80, 100, 120])
+        for y in (0, 20, 40):
+            self.assertFalse(got["roads"]["path"].covers(shapely.Point(0, y)))
+
     def extract(self, tags, geoms=None, land=None, walks=None):
         w, s, e, n = AREAS["ujezd"]
         crs = f"+proj=tmerc +lat_0={(s+n)/2} +lon_0={(w+e)/2} +ellps=WGS84 +units=m"

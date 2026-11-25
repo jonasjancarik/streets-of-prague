@@ -44,6 +44,7 @@ from shapely.geometry import LineString, Polygon
 from shapely.ops import unary_union
 
 from ipr_buildings import CACHE, krovak_to_local
+from osm_area import basement_passage
 import build_cache
 
 DENSE = 5.0  # m between the points a structure's heights are worked out at
@@ -106,13 +107,17 @@ def station_ways(els, tf, ground=frozenset()):
     station's outline. Underpasses away from the metro (under the magistrála by Hlavní
     nádraží, say) stay. The chunk's cut may hold only part of a vestibule, without the
     station (Jiřího z Poděbrad's west half): the entrances still tell. `ground`: ways tagged as tunnels that are passages through
-    buildings at street level (osm_area.extract's ground_ways), neither."""
+    buildings at street level (osm_area.extract's ground_ways), neither. Explicit basement
+    passages are omitted even when the cut has no other station features."""
     where = {el["id"]: (el["lon"], el["lat"]) for el in els if el["type"] == "node"}
     entrances = {el["id"] for el in els if el["type"] == "node" and el.get("tags", {}).get("railway") == "subway_entrance"}
     doors = STRtree(shapely.points([tf.transform(*where[n]) for n in entrances]) if entrances else [])
     near, outlines = [], []
+    omitted = set()
     for el in els:
         tags = el.get("tags", {})
+        if el["type"] == "way" and basement_passage(tags):
+            omitted.add(el["id"])
         if el["type"] == "node" and is_subway_station(tags):
             near.append(where[el["id"]])
         elif el["type"] == "way" and is_subway_station(tags):
@@ -123,7 +128,7 @@ def station_ways(els, tf, ground=frozenset()):
     foot = {el["id"]: el for el in els if el["type"] == "way" and el.get("tags", {}).get("highway") in STATION_FOOT
             and structure_kind(el["tags"]) == "tunnel" and el["id"] not in ground}
     if not foot:
-        return set()
+        return omitted
     # Group the footways that meet (share a node) into one piece each.
     parent = {i: i for i in foot}
 
@@ -141,7 +146,6 @@ def station_ways(els, tf, ground=frozenset()):
         pieces[find(i)].append(i)
     stations = STRtree(shapely.points([tf.transform(*p) for p in near]) if near else [])
     inside = STRtree(outlines)
-    out = set()
     for ids in pieces.values():
         nodes = {n for i in ids for n in foot[i]["nodes"]}
         pts = [tf.transform(*where[n]) for n in nodes if n in where]
@@ -150,8 +154,8 @@ def station_ways(els, tf, ground=frozenset()):
                 or (line is not None and (len(stations.query(line, predicate="dwithin", distance=STATION))
                                           or len(doors.query(line, predicate="dwithin", distance=ENTRANCE))
                                           or len(inside.query(line, predicate="intersects"))))):
-            out.update(ids)
-    return out
+            omitted.update(ids)
+    return omitted
 
 
 def structure_ways(data, tf, ground=frozenset()):

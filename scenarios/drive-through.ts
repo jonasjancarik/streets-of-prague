@@ -1,4 +1,5 @@
 import type { Scenario } from '../src/testkit.ts';
+import type { TileWorld } from '../src/tiles.ts';
 
 // Streets players reported they couldn't drive through (November 2026):
 // - the Strahov tunnel from Smíchov ended in a ramp of 103 % under Strahov, where each
@@ -9,7 +10,7 @@ import type { Scenario } from '../src/testkit.ts';
 // - Wilsonova's viaduct, falling 10 m to Bulhar, stood there as a slab 5 m over its
 //   carriageways, on a level of its own, with the trams laid on its top (OUTLINE_ALONG in
 //   pipeline/structures.py). Cars drove under it, so this is checked by the heights there.
-// The map of 16 November 2026 has all three; a map built since passes.
+// - a floor -1 corridor inside the station opened a furnished passage on Wilsonova.
 type Line = [number, number][];
 const STRAHOV_NORTH: Line = [[50.072639, 14.39838], [50.072955, 14.398168], [50.073192, 14.397933], [50.073405, 14.39767],
   [50.073672, 14.397171], [50.073938, 14.39652], [50.074255, 14.395703], [50.074579, 14.394972], [50.07491, 14.394379],
@@ -41,6 +42,12 @@ export default {
     for (const [name, line] of [['Strahov tunnel northbound', STRAHOV_NORTH], ['Strahov tunnel southbound', STRAHOV_SOUTH],
       ['Wilsonova southbound by the station', WILSONOVA_SOUTH], ['Wilsonova northbound by the station', WILSONOVA_NORTH]] as const) {
       await t.go(line[0], { heading: heading(line[0], line[1]) });
+      if (line === WILSONOVA_NORTH) {
+        // Above the middle of the basement corridor (OSM way 1295991727).
+        const xy = t.toLocal([50.08278065, 14.43453461]);
+        const { world } = window.__drive as { world: TileWorld };
+        t.check('Wilsonova is open to the sky above the station corridor', !world.passageAt(...xy));
+      }
       t.empty(); // nothing to run into on the way
       try {
         await t.drive('sedan');
