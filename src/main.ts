@@ -1,3 +1,5 @@
+// (First: it sets every texture's filtering, so it must come before any texture is made.)
+import './textureQuality.ts';
 import { DriverExit } from './driverExit.ts';
 import { ROOFTOP } from './roofSurface.ts';
 import { headingUpOn } from './headingup.ts';
@@ -69,7 +71,7 @@ import { Spray } from './spray.ts';
 import { Water } from './water.ts';
 import { Beacons, ownBeacon } from './beacons.ts';
 import { Cannon, TANK, HOSE } from './cannon.ts';
-import { Graphics, savedChoice, type Choice } from './graphics.ts';
+import { Graphics, savedChoice, ABOVE_HEIGHT, type Choice } from './graphics.ts';
 import { createGameRenderer, retryStart } from './renderer.ts';
 import { setupVR } from './vr.ts';
 import { StopBoard } from './board.ts';
@@ -681,7 +683,8 @@ async function main() {
   let cutR = 0; // radius of the hole above a passage, under a bridge or down into a tunnel (see CUTAWAY)
 
   // First person: how far the city is loaded and drawn, and which way the view looks.
-  const EYES_REACH = 400, STEP5 = THREE.MathUtils.degToRad(5), looking = new THREE.Vector3(), view = { h: 0, spread: 1 };
+  const aboveAt = new THREE.Vector3();
+  const STEP5 = THREE.MathUtils.degToRad(5), looking = new THREE.Vector3(), view = { h: 0, spread: 1 };
   const viewRadius = (h = height) => h * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * Math.hypot(1, camera.aspect) + 15;
   // The sun's shadow map covers only what is on screen: the view's rectangle from a
   // little below the lowest ground in it to 40 m above the highest (the roofs), as the
@@ -3105,10 +3108,11 @@ async function main() {
     // The city lives well beyond the screen; only the tiles near it are drawn.
     // (The developer panel's free camera can look far across the city: everything is drawn.)
     // Zooming out, the tiles the view is about to take in are drawn before it gets there.
-    // (In first person you see along the street: 400 m of it, as far as the haze lets you,
-    // and of that only the tiles the view looks towards are drawn.)
+    // (In first person you see along the street: 400 m of it on High, as far as the haze lets
+    // you, and of that only the tiles the view looks towards are drawn. graphics.ts: view.)
     const eyes = !testkit?.cam && testkit?.eyes;
-    const eyeReach = vr?.active && firstPersonOptions.vrShortView ? 120 : EYES_REACH;
+    const EYES_REACH = graphics.viewDistance;
+    const eyeReach = vr?.active && firstPersonOptions.vrShortView ? Math.min(120, EYES_REACH) : EYES_REACH;
     if (eyes) {
       camera.getWorldDirection(looking);
       // (A little wider than the picture, so turning doesn't show an empty edge at once;
@@ -3214,7 +3218,16 @@ async function main() {
     } else ferryAt = undefined;
     if (ride.on && ride.arrived() && inspector.phase !== 'decide') getOff();
     if (police.stars === 0 && inspector.owed) inspector.owed = 0;
-    const fromStreet = !!eyes || (testkit?.cam?.tilt ?? 0) > 35;
+    // `eyeStreet`: the camera is at street level. `above` (Custom's street models from
+    // above): the overhead view, zoomed in, draws the street's own models too, reaching
+    // across the screen from the middle of the view (`near`, on the ground under it) rather
+    // than from the camera high above. What only makes sense at eye height (the sky, the
+    // haze, the trees made to stand under, grass, motion blur) stays with `eyeStreet`.
+    const eyeStreet = !!eyes || (testkit?.cam?.tilt ?? 0) > 35;
+    const above = !eyeStreet && !testkit?.cam && !vr?.active && graphics.above && height <= ABOVE_HEIGHT;
+    graphics.overhead(above ? viewRadius() : null);
+    const fromStreet = eyeStreet || above;
+    const near = above ? aboveAt.set(camPos.x, camGround + 1.7, camPos.z) : camera.position;
     const stereoCone = vr?.active && Math.abs(vr.headPitch) < .7;
     const head = vr?.headH ?? 0, forwardX = Math.cos(head), forwardY = Math.sin(head);
     // The XR projection describes the combined eyes. The canvas aspect ratio
@@ -3235,10 +3248,10 @@ async function main() {
         inStreetCone(x - camPos.x, y + camPos.z, forwardX, forwardY, sinHalf, cosHalf, peopleMargin)))),
     eyes && weather.now.rain > .01 ? weatherFx.sheltered : undefined);
     birds.update(dt, Object.assign(birdsView, { x: camPos.x, y: -camPos.z, radius: viewRadius(), height: eyes ? 1000 : height, dark: sky.dark, rain: weather.now.rain, snow: weather.now.snow }),
-      fromStreet ? camera.position : undefined);
+      fromStreet ? near : undefined);
     terraces.update(dt, Object.assign(terraceView, { x: camPos.x, y: -camPos.z, radius: viewRadius(), day: season.day }),
       fromStreet ? STREET_QUALITY.carReach : 0);
-    police.render(ground, time.value, fromStreet ? camera.position : undefined);
+    police.render(ground, time.value, fromStreet ? near : undefined);
     {
       const chasing = police.lit, engines = brigade.lit, rescue = ambulances.lit, carts = refuse.lit;
       // The one you're driving, as you've set its lights.
@@ -3282,7 +3295,7 @@ async function main() {
       for (const r of ambulances.rigs) see(r.car);
     }
     VR_SEAT.car = vr?.active ? inCar : null; VR_SEAT.frames++;
-    carPool.render(drawn, ground, dt, world.terrainRevision, fromStreet, camera.position);
+    carPool.render(drawn, ground, dt, world.terrainRevision, fromStreet, near);
     refuse.render(carPool);
     blinkers.update(dt, inCar, inCar ? satnav.signal(inCar.speed) : null, carPool);
     skids.update(dt * scale, drawn, ground);
@@ -3298,7 +3311,7 @@ async function main() {
       busy = clamp(footfall.around(px(), py(), 150) / 0.2, 0, 1);
       road = roadNoise(edgesNear(px(), py(), ROAD_FAR), px(), py());
     }
-    for (const c of choppers) c.render(fromStreet ? camera.position : undefined);
+    for (const c of choppers) c.render(fromStreet ? near : undefined);
     if (hornHeld && !inCar && !ride.driving) honk(false);
     if (hornHeld && (hornT -= dt) < 0) { hornT = 0.5; scareAhead(); }
     // Helicopters with their rotors turning: yours, others winding down and the police's.
@@ -3318,7 +3331,7 @@ async function main() {
     // ---- Camera ----------------------------------------------------------
     const vehicle = inCar || inHeli, sp = vehicle ? vehicle.speed : 0;
     // Motion blur from the street while driving: from about 20 km/h, full by about 60 (post.ts).
-    POST.blur = inCar && fromStreet && motionBlurOn() ? (motionBlurFull ? 1 : THREE.MathUtils.smoothstep(Math.abs(sp), 6, 17)) : 0;
+    POST.blur = inCar && eyeStreet && motionBlurOn() ? (motionBlurFull ? 1 : THREE.MathUtils.smoothstep(Math.abs(sp), 6, 17)) : 0;
     if (inCar) { const { L, W, H } = inCar.spec; POST.car = [inCar.x, world.heightAt(inCar.x, inCar.y) + H / 2, -inCar.y, 1]; POST.box = [L / 2, W / 2, H / 2, inCar.h]; POST.going = [Math.cos(inCar.h) * sp, 0, -Math.sin(inCar.h) * sp]; }
     POST.others.length = 0;
     if (inCar && POST.blur > 0.001) {
@@ -3560,38 +3573,38 @@ async function main() {
     // (The free camera too, once it is tilted well off straight down.)
     PEOPLE_SHADOWS.street = fromStreet; // (people cast their own shapes there)
     // Keep the player's ring visible through tree crowns in the overhead view.
-    walker.ring.material.depthTest = fromStreet;
+    walker.ring.material.depthTest = eyeStreet;
     // (Seen from just behind you, the ring is only in the way.)
     walker.ring.visible = !eyes && !vr?.active;
     // At street level you're a life-size person too, like everyone round you (rocketbox.ts).
     // (Not in the headset, where your eyes are inside your own head.)
-    walker.fig.lifeSize = walker.fig.self = !!eyes && !underway && !vr?.active;
+    walker.fig.lifeSize = walker.fig.self = (!!eyes || above) && !underway && !vr?.active;
     if (vr?.active) walker.fig.commit(0);
     else if (walker.mesh.visible) walker.drawFigure();
-    carOutline.update(fromStreet ? null : inCar, carPool);
-    streetSurfaceView(fromStreet && !!DOME_NODE.value);
-    riverBanks.view(fromStreet && !vr?.active && !!DOME_NODE.value && graphics.water && graphics.tier !== 'lowest', camera.position.x, camera.position.z);
+    carOutline.update(eyeStreet ? null : inCar, carPool);
+    streetSurfaceView(eyeStreet && !!DOME_NODE.value);
+    riverBanks.view(eyeStreet && !vr?.active && !!DOME_NODE.value && graphics.water && graphics.tier !== 'lowest', camera.position.x, camera.position.z);
     const streetWalls = fromStreet;
     if (streetWalls && graphics.tier !== 'lowest') loadFacadeFinishes();
-    world.facades.update(streetWalls, camera.position.x, camera.position.y, camera.position.z, !!facadeFinishes.masks);
+    world.facades.update(streetWalls, near.x, near.y, near.z, !!facadeFinishes.masks);
     tunnelFinishesView(!!eyes && !underway);
     for (const b of boats.list) {
-      if (b.live) b.mesh.nearCamera(fromStreet ? camera.position.distanceToSquared(b.mesh.position) : Infinity);
+      if (b.live) b.mesh.nearCamera(fromStreet ? near.distanceToSquared(b.mesh.position) : Infinity);
     }
     for (const f of ferries.list) {
-      if (f.mesh.visible) f.mesh.nearCamera(fromStreet ? camera.position.distanceToSquared(f.mesh.position) : Infinity);
+      if (f.mesh.visible) f.mesh.nearCamera(fromStreet ? near.distanceToSquared(f.mesh.position) : Infinity);
     }
     for (const c of funicular.cars) {
-      if (c.mesh.visible) c.body.nearCamera(fromStreet ? camera.position.distanceToSquared(c.mesh.position) : Infinity);
+      if (c.mesh.visible) c.body.nearCamera(fromStreet ? near.distanceToSquared(c.mesh.position) : Infinity);
     }
     world.furnitureCamera(fromStreet, camera.position.x, camera.position.z);
-    castleHorizon.update(fromStreet && !vr?.active,camera,sky);
+    castleHorizon.update(eyeStreet && !vr?.active,camera,sky);
     world.passageCamera(fromStreet, camera.position.x, -camera.position.z);
-    ironwork.update(fromStreet, camera.position, weather.now.wet);
-    world.trees.street(fromStreet, free ? free.x : camera.position.x, free ? -free.y : camera.position.z, eyes && !vr?.active ? camera : undefined, underway ? undefined : litterGround, world.terrainRevision + world.joined);
-    streetHedges.street(fromStreet, free ? free.x : camera.position.x, free ? free.y : -camera.position.z);
-    streetGrass.street(fromStreet && !underway, free ? free.x : camera.position.x, free ? free.y : -camera.position.z, grassGround, world.terrainRevision + world.joined);
-    world.trees.canopy(true, fromStreet);
+    ironwork.update(fromStreet, near, weather.now.wet);
+    world.trees.street(eyeStreet, free ? free.x : camera.position.x, free ? -free.y : camera.position.z, eyes && !vr?.active ? camera : undefined, underway ? undefined : litterGround, world.terrainRevision + world.joined);
+    streetHedges.street(eyeStreet, free ? free.x : camera.position.x, free ? free.y : -camera.position.z);
+    streetGrass.street(eyeStreet && !underway, free ? free.x : camera.position.x, free ? free.y : -camera.position.z, grassGround, world.terrainRevision + world.joined);
+    world.trees.canopy(true, eyeStreet);
     sun.position.copy(sun.target.position).add(sky.offset);
     fitShadow();
     // Street lamps and headlights, and the rain, snow and mist round the view.
@@ -3599,7 +3612,7 @@ async function main() {
       // Looking straight down, the light map covers what's in view; the free camera sees further.
       const tan = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
       lightOpt.box = free || eyes ? undefined : [height * tan * camera.aspect + 6, height * tan + 6];
-      lightOpt.streetView = fromStreet;
+      lightOpt.streetView = eyeStreet;
       lightOpt.time = time.value;
       police.helis.night = sky.dark;
       lightOpt.spots = police.helis.lit;
@@ -3845,7 +3858,7 @@ async function main() {
 
     dev.update();
     // (Ultra: the street round the middle of the view, for the cars to mirror.)
-    lifeSize.frame(dt, !!eyes && !underway, camera);
+    lifeSize.frame(dt, (!!eyes || above) && !underway, camera);
     if (!vr?.active) culler?.update(camera, !!eyes && !underway && !metro.active);
     hitches.render(() => {
       if (vr?.active) {

@@ -1,7 +1,7 @@
 import { firstPersonOptions, setFirstPersonOptions, vrSupported, type CarHandling, type FirstPersonOptions, type PlayerView } from './streetView.ts';
 import { LANGS, getLang, onLang, setLang, t } from './i18n.ts';
 import type { Lang } from './i18n.ts';
-import type { Graphics, Choice, Reflections } from './graphics.ts';
+import type { Graphics, Choice, Reflections, Custom } from './graphics.ts';
 import type { Bus } from './audio.ts';
 import { BUSES } from './audio.ts';
 import type { Kind } from './weather.ts';
@@ -51,7 +51,36 @@ const TABS = [
 type Tab = typeof TABS[number]['id'];
 
 const GRAPHICS: { id: Choice; label: string }[] = [
-  { id: 'auto', label: 'Auto' }, { id: 'ultra', label: 'Ultra' }, { id: 'high', label: 'High' }, { id: 'medium', label: 'Medium' }, { id: 'low', label: 'Low' }, { id: 'lowest', label: 'Lowest' },
+  { id: 'auto', label: 'Auto' }, { id: 'ultra', label: 'Ultra' }, { id: 'high', label: 'High' }, { id: 'medium', label: 'Medium' }, { id: 'low', label: 'Low' }, { id: 'lowest', label: 'Lowest' }, { id: 'custom', label: 'Custom' },
+];
+// Custom's settings, one list each: what the player sees, and what it sets (graphics.ts).
+// Some go past Ultra: the full pixel ratio, an 8192 shadow map and the furthest detail.
+type Option = [string, Partial<Custom>];
+const on = (yes: Partial<Custom>, no: Partial<Custom>): Option[] => [['On', yes], ['Off', no]];
+const CUSTOM: [string, Option[]][] = [
+  ['Sharpness', [['Up to 1×', { maxRatio: 1 }], ['Up to 1.5×', { maxRatio: 1.5 }], ['Up to 2×', { maxRatio: 2 }], ['The screen’s own, up to 3× (demanding)', { maxRatio: 3 }]]],
+  ['View distance from the street', [['250 m', { view: 250 }], ['300 m', { view: 300 }], ['400 m', { view: 400 }], ['500 m', { view: 500 }], ['700 m (demanding)', { view: 700 }], ['1000 m (demanding)', { view: 1000 }]]],
+  ['Texture filtering', [['Off', { aniso: 0 }], ['Half', { aniso: 0.5 }], ['As made', { aniso: 1 }], ['Double', { aniso: 2 }], ['Most (16×)', { aniso: 16 }]]],
+  ['Texture resolution (from the next start)', [['Half', { textures: 'half' }], ['Full', { textures: 'full' }]]],
+  ['Ground mesh in new tiles', [['Coarse (4 m)', { ground: 4 }], ['Normal (2 m)', { ground: 2 }], ['Fine (1 m, demanding)', { ground: 1 }]]],
+  ['Street models from above', [['Off', { above: false }], ['When zoomed in (demanding)', { above: true }]]],
+  ['Smooth edges (MSAA)', [['Off', { samples: 0 }], ['4×', { samples: 4 }]]],
+  ['Sun shadows', [['Coarse (1024)', { shadowSize: 1024 }], ['Normal (2048)', { shadowSize: 2048 }], ['Sharp (4096)', { shadowSize: 4096 }], ['Sharpest (8192, demanding)', { shadowSize: 8192 }]]],
+  ['Shadow edges', [['Crisp', { shadowBlur: 1, softShadows: false }], ['Soft', { shadowBlur: 2, softShadows: false }], ['Softer further off', { shadowBlur: 2, softShadows: true }]]],
+  ['People’s shadows', [['Their own shape', { people: 'full' }], ['Simple', { people: 'simple' }]]],
+  ['Shadows in lamplight', [['None', { cars: 0 }], ['Soft under cars', { cars: 1 }], ['Cars', { cars: 2 }], ['Cars, people, trams and posts', { cars: 3 }]]],
+  ['Lamp shadow detail', [['Normal (1024)', { lampMap: 1024 }], ['Sharp (2048)', { lampMap: 2048 }]]],
+  ['Light beams and glints', on({ lights: true }, { lights: false })],
+  ['Glow round bright lights', on({ post: true }, { post: false })],
+  ['Cars mirror the street', on({ probe: true }, { probe: false })],
+  ['Grime, leaves and weathering', on({ look: true }, { look: false })],
+  ['Detailed roofs', on({ roofs: true }, { roofs: false })],
+  ['Chimneys and roof clutter', on({ clutter: true }, { clutter: false })],
+  ['Leaves on tree crowns', on({ canopy: true }, { canopy: false })],
+  ['Hedges and grass up close', on({ streetDetail: true }, { streetDetail: false })],
+  ['Relief on kerbs, steps and rails', on({ closeRelief: true }, { closeRelief: false })],
+  ['Detailed models up close', [['Lowest', { street: 'lowest' }], ['Low', { street: 'low' }], ['Medium', { street: 'medium' }], ['High', { street: 'high' }], ['Ultra', { street: 'ultra' }], ['Furthest (demanding)', { street: 'max' }]]],
+  ['People in the streets', [['Half', { crowd: 0.5 }], ['All', { crowd: 1 }]]],
 ];
 const WEATHER: Record<Kind, string> = { clear: 'Clear', cloudy: 'Cloudy', rain: 'Rain', storm: 'Thunderstorm', mist: 'Mist', snow: 'Snow' };
 
@@ -280,6 +309,27 @@ export function setupSettings({ sound, graphics, weather, saves, cameraChoice }:
   rows = panels.display;
 
   row<Choice>('Graphics', GRAPHICS.map((g) => ({ id: g.id, label: () => (g.id === 'auto' ? t('Auto ({tier})', { tier: t(cap(graphics.tier)).toLowerCase() }) : t(g.label)) })), () => graphics.choice, (id) => graphics.set(id));
+  // Custom's own settings, under the row while it is chosen.
+  const customBox = el('details', 'settings-radio', rows.lastElementChild as HTMLElement) as HTMLDetailsElement;
+  customBox.open = true;
+  const customSummary = el('summary', '', customBox);
+  relabel.push(() => { customSummary.textContent = t('Custom graphics'); });
+  const customNote = el('p', 'settings-note', customBox);
+  relabel.push(() => { customNote.textContent = t('Starts from the level you were on. Settings marked demanding go past Ultra and need a fast graphics card.'); });
+  refresh.push(() => { customBox.hidden = graphics.choice !== 'custom'; });
+  for (const [label, options] of CUSTOM) {
+    const line = el('label', 'settings-radio-station', customBox);
+    const name = el('span', '', line), pick = el('select', 'settings-chip', line) as HTMLSelectElement;
+    pick.dataset.custom = label;
+    const items = options.map((_, i) => { const o = new Option('', String(i)); pick.add(o); return o; });
+    relabel.push(() => { name.textContent = t(label); options.forEach(([text], i) => { items[i].textContent = t(text); }); });
+    pick.onchange = () => { graphics.setCustom(options[Number(pick.value)][1]); telemetry.setting('Custom: ' + label, options[Number(pick.value)][0]); update(); };
+    refresh.push(() => {
+      const now = graphics.custom;
+      const i = now ? options.findIndex(([, set]) => Object.entries(set).every(([k, v]) => now[k as keyof Custom] === v)) : -1;
+      pick.value = String(Math.max(0, i));
+    });
+  }
   row<Reflections>('Wet streets', [{ id: 'none', label: () => t('No reflections') }, { id: 'lights', label: () => t('Lights reflect') }, { id: 'mirror', label: () => t('Full mirror (demanding)') }], () => graphics.reflections, (id) => graphics.setReflections(id));
   row('Water', [{ id: 'waves', label: () => t('Waves and reflections') }, { id: 'plain', label: () => t('Plain') }], () => (graphics.water ? 'waves' : 'plain'), (id) => graphics.setWater(id === 'waves'));
   onOff('Motion blur when driving', motionBlurOn, setMotionBlur);

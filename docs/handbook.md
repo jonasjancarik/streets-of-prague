@@ -264,7 +264,25 @@ In VR, Auto aims for the headset's refresh rate (60 FPS when the browser does no
 report one). It reduces street detail while you play. Headset resolution changes
 on the next VR entry; changing the page's pixel ratio cannot resize an active XR
 framebuffer.
-`?graphics=auto|ultra|high|medium|low|lowest` overrides it for one visit; `?dpr=1` fixes
+Custom shows every switch the tiers set (sharpness, MSAA, sun and lamp shadows, light
+effects, roof and street detail, how far the close-up models reach, the crowd) as its own
+setting under the Graphics row. It starts from the level you were on, and some options go
+past Ultra: the screen's full pixel ratio up to 3×, an 8192 sun shadow map (where the GPU
+allows it) and close-up models reaching half as far again. Custom is kept in
+`graphicsCustom`; code that asks for the tier sees Ultra.
+The tiers also set how far you see from the street (250 m on Lowest, 300 on Low, 400 on
+Medium and High, 500 on Ultra; Custom up to 1000), anisotropic filtering (off on Lowest,
+half on Low, as each texture was made on Medium and High, double on Ultra; Custom up to
+16×; `src/textureQuality.ts` scales every texture's own amount, and Auto keeps the amount
+it started with, as a change uploads the textures again), texture resolution (half on
+Lowest, from the next start: the image files are the largest there are) and the ground
+mesh in newly built tiles (4 m triangles on Low and Lowest, 2 m above; Custom down to 1 m).
+Custom's "Street models from above" draws the street-level models (life-size people, close
+car bodies, façade walls, ironwork, boats, lamps) in the overhead view as well while it is
+zoomed in (camera up to 180 m), reaching from the ground in the middle of the view across
+the screen (up to 140 m); the sky, haze, trees to stand under, grass and motion blur stay
+at eye level only.
+`?graphics=auto|ultra|high|medium|low|lowest|custom` overrides it for one visit; `?dpr=1` fixes
 only the pixel ratio. The Water setting turns on waves, sun glitter and lamp reflections on
 the river (`src/webgpu/water.ts`; WebGPU only, not on Lowest; on by default from Low
 through Ultra; `?water=on|off` for one visit). Small ponds and park basins with a
