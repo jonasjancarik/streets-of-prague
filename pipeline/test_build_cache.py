@@ -15,6 +15,7 @@ import build_cache
 import build_tiles
 import building_age
 import chunk_cache
+import di_tracks
 import dmr5g
 import dtm
 import dtm_heights
@@ -138,11 +139,17 @@ class ChunkBuildTests(unittest.TestCase):
                                  (build_tiles, "PBF", self.pbf), (ipr_trees, "CACHE", self.trees),
                                  (ipr_trees, "_table", None), (dtm, "PACKAGES", self.root / "dtm"),
                                  (dtm_walls, "LINES", self.root / "dtm_lines"),
+                                 # The DI track zips are a chunk input too: an empty cache here,
+                                 # so a download between builds can't change the keys.
+                                 (di_tracks, "CACHE", self.root / "di"),
+                                 (di_tracks, "AXES", self.root / "di" / "axes.pkl"),
+                                 (di_tracks, "MOVES", self.root / "di" / "moves.pkl"),
                                  (build_tiles, "_sections", None),
                                  (build_tiles, "AREAS", {"ujezd": (14.4, 50.08, 14.4005, 50.0805)})]:
             self.stack.enter_context(patch.object(obj, attr, value))
         self.stack.enter_context(patch.object(build_tiles, "setup", return_value=None))
         self.stack.enter_context(patch.object(dtm, "download", return_value=None))
+        self.stack.enter_context(patch.object(di_tracks, "download", return_value=None))
         self.stack.enter_context(patch.object(dtm, "surfaces", return_value={}))
         self.stack.enter_context(patch.object(dtm, "streets", return_value=Polygon()))
         self.stack.enter_context(patch.object(dtm, "land", return_value={}))
