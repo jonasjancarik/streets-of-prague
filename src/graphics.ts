@@ -28,7 +28,10 @@ import { STREET_QUALITY, STREET_TIERS } from './streetQuality.ts';
 // rendered walls (CLOSE_RELIEF); Medium and below keep them flat.
 // Ultra is High with a sun shadow map twice as sharp and softer shadow edges, and
 // shadows in lamplight from people, trams and posts as well as cars.
-// Only choosing it turns it on, Auto goes no higher than High.
+// Auto goes up to Ultra only on a desktop or laptop with WebGPU, from a steady High whose
+// frames' work (main thread or GPU, whichever is longer) takes under ULTRA_ROOM of the
+// target, and only once a visit: Ultra's shadow filter rebuilds every lit shader, half a
+// second's freeze each way, so a computer that can't hold it doesn't go back and forth.
 // On Low and Lowest a person's shadow from the sun is a plain shape, not their own
 // (PEOPLE_SHADOWS in figures.ts: about 1 ms of 25 a frame on a Pixel 5 on a full square).
 // Lowest drops MSAA on WebGPU, roof detail and those looks, and halves the crowd cap;
@@ -78,7 +81,7 @@ export const REFLECTIONS = ['none', 'lights', 'mirror'] as const;
 export type Reflections = typeof REFLECTIONS[number];
 export type Tier = 'lowest' | 'low' | 'medium' | 'high' | 'ultra';
 export type Choice = Tier | 'auto';
-const ORDER: Tier[] = ['lowest', 'low', 'medium', 'high']; // (Auto's)
+const ORDER: Tier[] = ['lowest', 'low', 'medium', 'high', 'ultra']; // (Auto's)
 export const CHOICES: Choice[] = ['auto', 'ultra', 'high', 'medium', 'low', 'lowest'];
 // `cars`: what gets in the way of the lamps' light at night: 3 cars, people, trams and
 // posts cast shadows from every lamp and headlight, 2 only the cars do, 1 a soft darkening
@@ -119,6 +122,7 @@ const CHOPPY = 0.25, CHOPPY_WINDOWS = 2; // a quarter of its time in them is cho
 const WARMUP = 4000, SETTLE = 3000, RETRY = 120000;
 const STUCK = 5;
 const WAITING = 0.5; // a frame whose work took under half its time was waiting
+const ULTRA_ROOM = 0.4; // High's work in under 10 ms a frame (of 25) can step up to Ultra
 
 // Where Auto starts on graphics chips whose sessions mostly ended up lower (or, on touch
 // screens, higher) than the usual start: the median of where Auto had settled a minute or
@@ -162,7 +166,7 @@ export class AutoTier {
   // Skip a tier only when all of its effective settings are the same.
   private same: (a: Tier, b: Tier) => boolean;
 
-  constructor(start: Tier, same: (a: Tier, b: Tier) => boolean, private top: Tier = 'high') {
+  constructor(start: Tier, same: (a: Tier, b: Tier) => boolean, readonly top: Tier = 'high') {
     this.tier = start;
     this.same = same;
   }
@@ -203,7 +207,8 @@ export class AutoTier {
     const steady = !choppy && sorted.filter((t) => t <= this.targetMs * .75).length >= sorted.length * STEADY;
     this.choppy = choppy ? this.choppy + 1 : 0;
     const median = (a: number[]) => [...a].sort((x, y) => x - y)[a.length >> 1];
-    const waiting = this.worked.length >= SAMPLES / 2 && median(this.worked) < median(sorted) * WAITING;
+    const timed = this.worked.length >= SAMPLES / 2, work = timed ? median(this.worked) : Infinity;
+    const waiting = timed && work < median(sorted) * WAITING;
     const slow = mean > this.targetMs * 1.1 && !waiting;
     if (mean > this.targetMs * 1.1 && waiting) this.capped++;
     this.samples.length = this.worked.length = 0;
@@ -216,7 +221,8 @@ export class AutoTier {
     };
     let next: Tier | null = null;
     // (Under half the frame rate wanted, two tiers down at once: one wouldn't be enough.)
-    const lower = step(-1), up = step(1), muchLower = lower && mean > this.targetMs * 2 && !waiting ? step(-1, lower) : null, higher = up && ORDER.indexOf(up) <= ORDER.indexOf(this.top) ? up : null;
+    const lower = step(-1), up = step(1), muchLower = lower && mean > this.targetMs * 2 && !waiting ? step(-1, lower) : null, higher = up && ORDER.indexOf(up) <= ORDER.indexOf(this.top)
+      && (up !== 'ultra' || (!this.failures.ultra && this.targetMs === TARGET_MS && work < this.targetMs * ULTRA_ROOM)) ? up : null;
     this.stuck = slow && !lower ? this.stuck + 1 : 0;
     if ((slow || this.choppy >= CHOPPY_WINDOWS) && lower) {
       this.failures[this.tier] += 1;
@@ -262,7 +268,8 @@ export class Graphics {
     // a setting chosen above Low is held there too, without changing what is saved.
     const retried = startRetry() !== '';
     if (retried && this.choice !== 'auto' && CHOICES.indexOf(this.choice) < CHOICES.indexOf('low')) this.choice = 'low';
-    this.auto = new AutoTier(retried ? 'low' : autoStart(gpu, touch), (a, b) => this.same(a, b), retried ? 'low' : 'high');
+    const webgpu = !!(renderer as unknown as GPURenderer).backend?.isWebGPUBackend;
+    this.auto = new AutoTier(retried ? 'low' : autoStart(gpu, touch), (a, b) => this.same(a, b), retried ? 'low' : touch || !webgpu ? 'high' : 'ultra');
     this.tier = this.choice === 'auto' ? this.auto.tier : this.choice;
     this.apply();
     document.addEventListener('visibilitychange', () => { if (!document.hidden) this.auto.hold(performance.now(), WARMUP); });
@@ -369,7 +376,7 @@ export class Graphics {
     this.choice = choice;
     try { localStorage.setItem('graphics', choice); } catch {}
     if (choice === 'auto') {
-      this.auto.tier = this.tier === 'ultra' ? 'high' : this.tier;
+      this.auto.tier = this.tier === 'ultra' && this.auto.top !== 'ultra' ? 'high' : this.tier;
       this.tier = this.auto.tier;
       this.auto.hold(performance.now(), SETTLE);
     } else this.tier = choice;

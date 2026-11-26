@@ -252,7 +252,11 @@ Auto, the default, starts where telemetry says the graphics chip usually ends up
 and Adreno 6xx phones, Low on Mali and older Adrenos, High on iPhones, iPads and newer
 Adrenos), or else High (Medium on touch devices), and moves between tiers by how steady
 the frames are, ignoring loading and tile builds; under half the frame rate it aims for,
-it drops two tiers at once. It never picks Ultra, which only choosing it turns on. On WebGPU it doesn't step down
+it drops two tiers at once. On a computer without a touch screen, using WebGPU, it goes on
+from High to Ultra when High's frames are steady and their work (the main thread's or the
+GPU's, whichever is longer) takes under 10 ms; it tries that once a visit, as the change
+rebuilds every lit shader (a short freeze each way). Touch devices, WebGL and VR stop at
+High, and choosing Ultra still turns it on anywhere. On WebGPU it doesn't step down
 when frames are slow only because they wait: when the browser or the screen holds the
 game at 30 frames a second (Chrome's Energy Saver does), a frame whose work fits in
 half the time stays at its tier.
