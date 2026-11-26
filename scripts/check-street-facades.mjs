@@ -52,6 +52,19 @@ for (let i = 0; i < count; i += 3) {
   if (result.position[i * 3 + 2] === 0 && result.normal[i * 3 + 2] > .99) front++;
 }
 assert.ok(front && deep && sill && glass && jambs, 'front planes, actual recesses, projecting stone, straight jambs and panes');
+// The steps up to the raised doorways: each flight's foot on the pavement along the wall
+// (z 0), reaching out in front of it as far as the stone drawn there.
+assert.ok(result.steps.length > 0 && result.steps.length % 8 === 0, 'the test wall has steps up to a door');
+for (let i = 0; i < result.steps.length; i += 8) {
+  const [ax, az, bx, bz, ox, oz, low, top] = result.steps.subarray(i, i + 8);
+  assert.ok(az === 0 && bz === 0 && bx > ax && ox === 0 && oz > .1 && oz < 1 && low === 0 && top > low, 'a flight stands on the pavement in front of the wall');
+  let reach = 0;
+  for (let k = 0; k < count; k++) {
+    const x = result.position[k * 3], y = result.position[k * 3 + 1], z = result.position[k * 3 + 2];
+    if (result.detail[k * 4 + 2] === F_SURFACE.dressedStone && x > ax - .001 && x < bx + .001 && y < top) reach = Math.max(reach, z);
+  }
+  assert.ok(Math.abs(reach - oz) < .02, `a flight's footprint reaches as far as its bottom step (${reach.toFixed(3)} against ${oz.toFixed(3)})`);
+}
 const blank = buffers.facade.slice(); for (let i = 3; i < blank.length; i += 4)blank[i] += 5;
 assert.equal(packStreetWalls(blank, [{ tris: [...tris] }]).length, 0, 'party walls excluded');
 assert.equal(streetModule(1 + .5 / 32768, 0, 0, 1) === 19, false, 'an inferred entrance never masquerades as an open tunnel');
@@ -77,14 +90,41 @@ manager.update(false, 4, 1, 4); assert.equal(cancelled, 1);
 ready(result); await tick(); assert.equal(scene.children.length, 1); assert.equal(geom.index, null);
 manager.update(true, 4, 1, 4); ready(result); await tick();
 assert.equal(scene.children.length, 2); assert.equal(geom.index.array[1], 0);
+// Cars run into the steps while the wall is drawn close up (game y is three.js -z).
+const flight = result.steps.subarray(0, 8), onStep = [(flight[0] + flight[2]) / 2, -flight[5] / 2];
+assert.ok(manager.stepAt(...onStep) && !manager.stepAt(onStep[0], -flight[5] - .2), 'the steps are solid, the paving in front of them is not');
 const fitted = scene.children.find(o => o.name === 'Street façade');
 let disposedObject = false;
 fitted.addEventListener('dispose', () => { disposedObject = true; });
 manager.update(false, 4, 1, 4); assert.equal(scene.children.length, 1);
 assert.ok(disposedObject, 'retiring the fitted wall releases its renderer object as well as its vertex buffers');
 for (let i = 0; i < geom.index.count; i++)assert.equal(geom.index.array[i], i, 'original triangle restored');
+assert.ok(!manager.stepAt(...onStep), 'the steps go with the close-up wall');
 manager.update(true, 4, 1, 4); manager.drop(base); ready(result); await tick(); assert.equal(scene.children.length, 1);
 console.log('Verified recessed geometry, stone profiles, passage clipping, camera swaps and late worker results.', count / 3, 'triangles in the test wall.');
+
+// A wall measured on the ground of another tile, which stops at that tile's edge: its foot
+// stood 0.6 m above the pavement. Measured again on the world's ground before it is drawn
+// close up, its building's model and the close-up one both start at the pavement.
+{
+  const lifted = buffers.facade.slice(); for (let i = 1; i < lifted.length; i += 4) lifted[i] -= .6;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(buffers.position.slice(), 3));
+  g.setAttribute('facade', new THREE.BufferAttribute(lifted, 4));
+  g.setAttribute('color', new THREE.BufferAttribute(buffers.color.slice(), 3));
+  g.setAttribute('sky', new THREE.BufferAttribute(sky.slice(), 1));
+  g.computeVertexNormals();
+  let sent = null;
+  const ground = new StreetFacades(new THREE.Scene(), { submit: (_, data) => { sent = data; return { promise: new Promise(() => {}), cancel: () => {} }; } }, undefined, () => 0);
+  ground.register(new THREE.Mesh(g), groups, [-10, -10, 30, 30]);
+  ground.update(true, 4, 1, 4);
+  assert.ok(sent, 'the wall is sent to be built');
+  for (let v = 0; v < buffers.position.length / 3; v++) {
+    assert.ok(Math.abs(sent.facade[v * 4 + 1] - buffers.position[v * 3 + 1]) < 1e-5, 'the close-up wall stands on the world\'s ground');
+    assert.ok(Math.abs(lifted[v * 4 + 1] - buffers.position[v * 3 + 1]) < 1e-5, 'the building\'s own model moves with it');
+  }
+  console.log('Verified walls measured again on the ground round them, and the steps cars run into.');
+}
 
 // An Art Nouveau shopfront has glass above its sill and solid joinery round
 // the panes. The display finish cannot leak into the doors or the flats above.

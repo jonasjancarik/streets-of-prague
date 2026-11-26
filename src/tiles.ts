@@ -830,7 +830,7 @@ export class TileWorld {
     this.drawTimes = [];
     this.retry = new Map(); // key → when to try a tile that failed again
     this.workers = new TileWorkers();
-    this.facades = new StreetFacades(this.scene, this.workers, index.bbox_wgs84);
+    this.facades = new StreetFacades(this.scene, this.workers, index.bbox_wgs84, (x, y) => this.tileAt(x, y)?.sample?.(x, y) ?? NaN);
     this.buildTimes = [];
     this.skyTotals = { coalesced: 0, cancelled: 0 };
     // Landmarks from IPR's photorealistic mesh, where the area has any (?osm: none).
@@ -1171,7 +1171,8 @@ export class TileWorld {
     if (!t) return 255;
     if (level === ROOFTOP) return Math.abs(this.rooftopAt(x, y) - z) <= CLIMB ? 0 : 255;
     const g = t.grid.at(x, y);
-    if (level === 0 && g === 0) return 0;
+    // (The steps up to a doorway are too small for the grid: the close-up walls have them.)
+    if (level === 0 && g === 0) return this.facades.stepAt(x, y) ? 255 : 0;
     for (const l of t.levels) {
       if (!l.grid.at(x, y)) continue;
       if (Math.abs(this.levelAt(x, y, l.level) - z) < CLIMB) return 0;
