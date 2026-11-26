@@ -9,7 +9,7 @@ import { stationAllowed, onRadioPreferencesChange } from './radio-preferences.ts
 import * as THREE from 'three';
 import { renderMirror, renderRiverMirror, RIVER_MIRROR, RIVER_MODEL_LAYER } from './mirror.ts';
 import { renderProbe } from './probe.ts';
-import { POST, drawPost, motionBlurFull, motionBlurOn } from './post.ts';
+import { OTHERS, POST, drawPost, motionBlurFull, motionBlurOn } from './post.ts';
 import { setupPhoto } from './photo.ts';
 import { FramePhotos, captureFrame, png, thumbnail } from './frameCapture.ts';
 import { streetSurfaceView } from './streetSurface.ts';
@@ -3320,6 +3320,16 @@ async function main() {
     // Motion blur from the street while driving: from about 20 km/h, full by about 60 (post.ts).
     POST.blur = inCar && fromStreet && motionBlurOn() ? (motionBlurFull ? 1 : THREE.MathUtils.smoothstep(Math.abs(sp), 6, 17)) : 0;
     if (inCar) { const { L, W, H } = inCar.spec; POST.car = [inCar.x, world.heightAt(inCar.x, inCar.y) + H / 2, -inCar.y, 1]; POST.box = [L / 2, W / 2, H / 2, inCar.h]; POST.going = [Math.cos(inCar.h) * sp, 0, -Math.sin(inCar.h) * sp]; }
+    POST.others.length = 0;
+    if (inCar && POST.blur > 0.001) {
+      // The nearest vehicles under way within BLUR_NEAR (m), each smeared by how it moves against yours.
+      const BLUR_NEAR = 60, me = inCar, far = (c: Car) => (c.x - me.x) ** 2 + (c.y - me.y) ** 2;
+      const near = allCars().filter((c) => c !== me && c.vx * c.vx + c.vy * c.vy > 1 && far(c) < BLUR_NEAR ** 2).sort((a, b) => far(a) - far(b));
+      for (const c of near.slice(0, OTHERS)) {
+        const { L, W, H } = c.spec;
+        POST.others.push({ mid: [c.x, world.heightAt(c.x, c.y) + H / 2, -c.y], box: [L / 2, W / 2, H / 2, c.h], going: [c.vx, 0, -c.vy] });
+      }
+    }
     // On the metro, over the train as it goes (see Metro.view).
     const underway = metro.view();
     // In the air the camera rises with the helicopter, so it stays well above it.

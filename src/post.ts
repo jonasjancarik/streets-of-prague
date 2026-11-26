@@ -23,8 +23,15 @@ export const POST = {
   // value below 0 for none), and its half length, width and height with its heading (radians).
   car: [0, 0, 0, -1] as [number, number, number, number],
   box: [0, 0, 0, 0] as [number, number, number, number],
+  // The nearest other vehicles under way (up to OTHERS): each is smeared by how it moves
+  // against the camera, so a police car on your tail at your speed stays as sharp as yours.
+  // Each is its middle, its half length, width and height with its heading, and its
+  // velocity (m/s), in the scene's coordinates as above.
+  others: [] as { mid: [number, number, number]; box: [number, number, number, number]; going: [number, number, number] }[],
   get on() { return asked === 'on' || (asked !== 'off' && this.value > 0); },
 };
+
+export const OTHERS = 4;
 
 type Draw = (scene: THREE.Scene, camera: THREE.Camera) => void;
 let draw: Draw | null = null;
