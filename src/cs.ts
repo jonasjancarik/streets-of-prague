@@ -197,6 +197,11 @@ export const CS: Record<string, string> = {
   'of Prague': 'Prahy',
   // Settings (the corner buttons)
   Settings: 'Nastavení',
+  // The settings' tabs.
+  Game: 'Hra',
+  Display: 'Obraz',
+  Controls: 'Ovládání',
+  More: 'Další',
   Graphics: 'Grafika',
   Water: 'Voda',
   'Waves and reflections': 'Vlny a odlesky',
