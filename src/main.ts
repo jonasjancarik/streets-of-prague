@@ -2168,7 +2168,7 @@ async function main() {
     const near = Math.hypot(e.x - camPos.x, e.y + camPos.z) < Debris.NEAR;
     if (!near) return;
     const a = e.a instanceof Car ? e.a : null;
-    fires.debris.hit(e, ground(e.x, e.y, a) + (a ? Math.min(0.9, a.spec.H * 0.38) : 0.6), near);
+    fires.debris.hit(e, ground(e.x, e.y, a) + (a ? Math.min(0.9, a.spec.H * 0.38) : 0.6), (x, y) => ground(x, y, a));
   });
   const brigade: Brigade = new Brigade({
     scene, police, grid, fires, kit, height: ground, rng: seeded, edgesNear, offscreen, viewRadius,

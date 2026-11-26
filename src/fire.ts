@@ -198,10 +198,10 @@ export class Fires {
     const blamed = this.blamed.has(c);
     this.onBlast(c, blamed);
     if (!seen) return;
-    this.fireball(c.x, c.y, this.height(c.x, c.y, c) + 0.6);
+    this.fireball(c.x, c.y, this.height(c.x, c.y, c) + 0.6, (x, y) => this.height(x, y, c));
   }
 
-  fireball(cx: number, cy: number, z: number) {
+  fireball(cx: number, cy: number, z: number, under?: (x: number, y: number) => number) {
     const r = this.r, ground = z - 0.6;
     const at = (spread: number) => [cx + (r() - 0.5) * spread, cy + (r() - 0.5) * spread] as const;
     // The flash, and its glow on the ground round about.
@@ -234,7 +234,7 @@ export class Fires {
       this.smoke.add({ x: cx, y: cy, z: ground + 0.6, vx: Math.cos(a) * v, vy: Math.sin(a) * v, vz: 0.3,
         r0: 0.8, r1: 2.5 + r(), life: 1.6 + r(), rgb: [0.38, 0.35, 0.32], a: 0.35, spin: (r() - 0.5), drag: 2.2 });
     }
-    this.debris.blast(cx, cy, ground);
+    this.debris.blast(cx, cy, ground, under);
     // And a scorch mark on the ground under the wreck.
     this.smoke.add({ x: cx, y: cy, z: ground + 0.05, r0: 3.4, r1: 3.6, life: 60, rgb: [0.03, 0.03, 0.03], a: 0.7, flat: true, rot: 0 });
   }

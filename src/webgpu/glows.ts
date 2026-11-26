@@ -6,10 +6,10 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as THREE from 'three';
-import { NodeMaterial } from 'three/webgpu';
+import { NodeMaterial, MeshStandardNodeMaterial } from 'three/webgpu';
 import {
   Fn, If, Loop, abs, Discard, float, vec2, vec3, vec4, uv, texture, instanceIndex, attribute, uniform, renderGroup, instanceColor, positionGeometry, positionView, positionViewDirection, normalView, cameraViewMatrix,
-  cameraProjectionMatrix, positionWorld, smoothstep, step, mix, min, max, clamp, dot, sqrt, pow, fract, sin, cos, length, select, sRGBTransferEOTF, toneMappingExposure,
+  cameraProjectionMatrix, cameraPosition, positionWorld, transformNormalToView, normalize, cross, distance, smoothstep, step, mix, min, max, clamp, dot, sqrt, pow, fract, sin, cos, length, select, sRGBTransferEOTF, toneMappingExposure,
 } from 'three/tsl';
 import { setGlows } from '../lamps.ts';
 import { pedestrianLens } from '../signalOptics.ts';
@@ -23,6 +23,7 @@ import { setStreakShade, STREAK_GAIN, STREAK_TIME } from '../streaks.ts';
 import { lampLit, uLampOn } from './lamps.ts';
 import { ungrade } from './grade.ts';
 import { OLD_GRADE } from '../grade.ts';
+import { SKY_REF } from '../shading.ts';
 import { type N, addPort, follow, followVec, followColor, uWet, uRain, vnoise, fbm2 } from './common.ts';
 
 addPort(/^pedestrian-lenses$/, node => {
@@ -298,9 +299,10 @@ setSpriteShade(({ kind, scene, light }) => {
     m.blending = THREE.AdditiveBlending;
     return m;
   }
-  // Turned (and for a chip, squashed as it tumbles), then either facing the camera or flat on the ground.
+  if (kind === 'chip') return chipMaterial();
+  // Turned, then either facing the camera or flat on the ground.
   const turned: N = vec2(mv.x.mul(q.x).sub(mv.y.mul(q.y)), mv.y.mul(q.x).add(mv.x.mul(q.y)));
-  const r: N = kind === 'chip' ? vec2(turned.x.mul(mv.z), turned.y) : turned;
+  const r: N = turned;
   const centre: N = cameraViewMatrix.mul(vec4(at.xyz, 1));
   const facing: N = vec4(centre.xy.add(r.mul(at.w)), centre.z, 1);
   const lying: N = cameraViewMatrix.mul(vec4(at.xyz.add(vec3(r.x, 0, r.y).mul(at.w.negate())), 1));
@@ -309,19 +311,6 @@ setSpriteShade(({ kind, scene, light }) => {
   const vQ = q.toVarying('vQ'), vR = turned.toVarying('vR'), vT = tint.toVarying('vTint');
   const vM = vec2(mv.z, mv.w).toVarying('vMove'), vDepth = view.z.negate().toVarying('vDepth');
   const fogged = (c: N) => mix(c, fogOf(scene).color, fogAt(scene, vDepth));
-  if (kind === 'chip') {
-    m.fragmentNode = Fn(() => {
-      // A rough, broken shape of its own.
-      const s = vM.y;
-      const edge = max(abs(vQ.x).mul(s.mul(0.5).add(0.75)), abs(vQ.y).mul(s.mul(-0.5).add(1.25))).add(vQ.x.add(vQ.y.mul(s.sub(0.5))).mul(0.25));
-      If(edge.greaterThan(0.85), () => { Discard(); });
-      // Catching the light when it turns face on.
-      const glint = pow(vM.x, 8).mul(0.9);
-      return vec4(unmap(fogged(vT.rgb.mul(lit).mul(glint.add(0.7)))), vT.a);
-    })();
-    Object.assign(m, { transparent: true, depthWrite: true, fog: false, toneMapped: false, side: THREE.DoubleSide });
-    return m;
-  }
   if (kind === 'smoke') {
     m.fragmentNode = Fn(() => {
       const k = vM.y, seed = vM.x;
@@ -357,6 +346,77 @@ setSpriteShade(({ kind, scene, light }) => {
   m.blendDst = THREE.OneMinusSrcAlphaFactor;
   return m;
 });
+
+// Broken glass and bits of a car (debris.ts): a flat flake, lit by the sun, the sky and the lamps
+// like anything else on the street and shaded by the houses' shadows. It tumbles about an axis of
+// its own as it flies and lies flat where it comes to rest, each tilted a few degrees its own way,
+// so a scatter of glass on the road catches the sun crumb by crumb as you walk past. Glass is
+// clear: the road shows through its middle, its broken edges are greenish and brighter, and its
+// face mirrors the sky at a slant and the sun where it leans right. So small a piece is under a
+// pixel from overhead; it is drawn a pixel wide there and fainter by as much, which keeps the
+// scatter visible without the crumbs flickering.
+const uSkyRef: N = followColor(SKY_REF);
+function chipMaterial() {
+  const m = new MeshStandardNodeMaterial();
+  const at: N = attribute('at', 'vec4'), tint: N = attribute('tint', 'vec4'), mv: N = attribute('motion', 'vec4');
+  const q: N = positionGeometry.xy;
+  const angle: N = mv.x, seed: N = mv.y, glass: N = mv.z, long: N = mv.w;
+  const resting: N = at.w.lessThan(0), radius: N = abs(at.w);
+  const flake: N = vec3(q.x.mul(long), q.y, 0);
+  // Flying: turned about its own axis.
+  const axis: N = normalize(fract(vec3(seed.mul(91.7), seed.mul(47.3), seed.mul(13.1))).sub(0.5).add(vec3(0, 0.001, 0)));
+  const c: N = cos(angle), s: N = sin(angle);
+  const turn = (v: N): N => v.mul(c).add(cross(axis, v).mul(s)).add(axis.mul(dot(axis, v)).mul(c.oneMinus()));
+  // At rest: in the ground's plane, turned about the upright, its face tilted a little.
+  const lying: N = vec3(flake.x.mul(c).sub(flake.y.mul(s)), 0, flake.x.mul(s).add(flake.y.mul(c)));
+  const tilt: N = normalize(vec3(fract(seed.mul(7.13)).sub(0.5).mul(0.5), 1, fract(seed.mul(3.71)).sub(0.5).mul(0.5)));
+  const offset: N = select(resting, lying, turn(flake));
+  const n: N = select(resting, tilt, turn(vec3(0, 0, 1)));
+  // At least about a pixel across, fainter by as much as it was blown up.
+  const screen = uniform(new THREE.Vector2(1, 1)).setGroup(renderGroup);
+  screen.onRenderUpdate(({ renderer }: N) => { renderer.getDrawingBufferSize(screen.value); return screen.value; });
+  const perMetre: N = cameraProjectionMatrix.mul(vec4(0, 1, 0, 0)).y.mul(screen.y).div(distance(cameraPosition, at.xyz).mul(2));
+  const size: N = max(radius, float(0.6).div(perMetre));
+  const cover: N = radius.div(size).mul(radius.div(size));
+  m.positionNode = at.xyz.add(offset.mul(size));
+  const vN: N = n.toVarying('vChipNormal'), vQ: N = q.toVarying('vChipQ');
+  const vS: N = vec4(seed, glass, long, cover).toVarying('vChipSeed'), vT: N = tint.toVarying('vChipTint');
+  // A rough, broken outline of its own; how near the edge a point is.
+  const outline = Fn(() => {
+    const k = vS.x;
+    return max(abs(vQ.x).mul(k.mul(0.5).add(0.75)), abs(vQ.y).mul(k.mul(-0.5).add(1.25))).add(vQ.x.add(vQ.y.mul(k.sub(0.5))).mul(0.25))
+      .add(abs(vQ.x.add(vQ.y)).mul(fract(k.mul(5.3)).mul(0.3)));
+  })();
+  const isGlass: N = vS.y.greaterThan(0.5);
+  const rim: N = smoothstep(0.55, 0.85, outline);
+  // A crumb of safety glass is a little cube, not a flat flake: split into four faces leaning
+  // their own ways, one of which catches the sun or the sky from almost any side.
+  const k: N = vS.x;
+  const fx: N = step(fract(k.mul(3.3)).mul(0.6).sub(0.3), vQ.x).mul(2).sub(1), fy: N = step(fract(k.mul(6.1)).mul(0.6).sub(0.3), vQ.y).mul(2).sub(1);
+  const lean: N = vec3(fx.mul(fract(k.mul(13.7).add(fy.mul(0.31))).mul(0.5).add(0.3)), 0, fy.mul(fract(k.mul(17.3).add(fx.mul(0.17))).mul(0.5).add(0.3)));
+  const face: N = transformNormalToView(normalize(vN.add(select(isGlass, lean, vec3(0)))));
+  m.normalNode = select(dot(face, positionViewDirection).lessThan(0), face.negate(), face);
+  const body: N = sRGBTransferEOTF(vT.rgb);
+  // Glass: a faint green-grey body, its edges greener and more solid.
+  m.colorNode = Fn(() => {
+    If(outline.greaterThan(0.85), () => { Discard(); });
+    const glassy = mix(vec3(0.06, 0.09, 0.08), vec3(0.2, 0.32, 0.28), rim);
+    const a = select(isGlass, mix(0.4, 0.9, rim), float(1)).mul(vT.a).mul(vS.w);
+    const rgb: N = select(isGlass, glassy, body);
+    return vec4(rgb, a);
+  })();
+  m.roughnessNode = select(isGlass, float(0.1), mix(0.35, 0.75, fract(vS.x.mul(5.7))));
+  m.metalnessNode = float(0);
+  // What the glass mirrors at a slant: the sky (as a car's windows do).
+  const slant: N = pow(dot(face, positionViewDirection).abs().oneMinus(), 3);
+  // (As bright as a car's windows mirror it: SKY_REF is the sky's light, not its look. Each face a
+  // little differently, as each leans to a different patch of it.)
+  const facet: N = fract(k.mul(29.1).add(fx.mul(0.37)).add(fy.mul(0.71))).mul(0.9).add(0.3);
+  m.emissiveNode = select(isGlass, uSkyRef.mul(mix(3, 12, slant)).mul(mix(0.6, 1.3, rim)).mul(facet), vec3(0));
+  lampLit(m);
+  Object.assign(m, { transparent: true, depthWrite: true, side: THREE.DoubleSide });
+  return m;
+}
 
 // ---- Tyre marks (skids.ts) ----
 // Only darkens what's there: the colour is ignored (the blending takes nothing of the source),

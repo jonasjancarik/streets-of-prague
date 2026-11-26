@@ -9,7 +9,8 @@ import { send } from './gpu.ts';
 // - 'smoke': a billowing puff that faces the camera, drawn over the scene (lit by the day).
 // - 'glow': a flame or a flash, added to what is behind it.
 // - 'spark': a white-hot streak drawn along the way it flies, cooling to red, added.
-// - 'chip': a small hard fragment (glass, paint, plastic) that tumbles as it flies.
+// - 'chip': a small hard fragment (glass, paint, plastic): a lit flake that tumbles as it flies
+//   and lies flat where it comes to rest.
 // A sprite can also lie flat on the ground instead of facing the camera (a scorch mark).
 
 export type SpriteKind = 'smoke' | 'glow' | 'spark' | 'chip';
@@ -26,8 +27,11 @@ export interface Sprite {
   drag: number; // 1/s: how quickly the air slows it
   floor: number; // ground height under it (it bounces off this); -Infinity: no ground
   bounce: number; // what share of its fall it keeps when it bounces
-  flat: boolean; // lies flat on the ground
+  flat: boolean; // lies flat on the ground (a chip: has come to rest)
   heat: boolean; // a spark: white-hot to red as it cools
+  glass: boolean; // a chip of glass (clear and glinting) rather than paint or plastic
+  under?: (x: number, y: number) => number; // the ground under it, where it lands (its floor follows)
+  lift: number; // how far above that ground it lies
 }
 
 export type SpriteInit = Partial<Sprite> & Pick<Sprite, 'x' | 'y' | 'z' | 'r0' | 'life' | 'rgb' | 'a'>;
@@ -60,9 +64,13 @@ const VERT = /* glsl */ `
       c.xy += dir * (q.x * .5 - .5) * len + vec2(-dir.y, dir.x) * q.y * w;
       gl_Position = projectionMatrix * c;
     #else
-      vec2 r = vec2(motion.x * q.x - motion.y * q.y, motion.y * q.x + motion.x * q.y);
       #ifdef CHIP
-        r.x *= motion.z;
+        // (motion: its turn, seed, glass, length for its width.) Seen side-on now and then as it tumbles.
+        vec2 cs = vec2(cos(motion.x), sin(motion.x));
+        vec2 r = vec2(cs.x * q.x - cs.y * q.y, cs.y * q.x + cs.x * q.y);
+        r.x *= motion.w * (at.w < 0. ? 1. : .25 + .75 * abs(cos(motion.x * 1.7 + motion.y * 6.)));
+      #else
+        vec2 r = vec2(motion.x * q.x - motion.y * q.y, motion.y * q.x + motion.x * q.y);
       #endif
       if (at.w < 0.) gl_Position = projectionMatrix * modelViewMatrix * vec4(at.xyz + vec3(r.x, 0., r.y) * -at.w, 1.);
       else { c.xy += r * at.w; gl_Position = projectionMatrix * c; }
@@ -76,7 +84,7 @@ const FRAG = /* glsl */ `
       float a = (1. - vQ.y * vQ.y) * (.35 + .65 * (vQ.x * .5 + .5)) * vTint.a;
       gl_FragColor = vec4(vTint.rgb * a, 1.);
     #elif defined(CHIP)
-      if (max(abs(vQ.x), abs(vQ.y)) > .9) discard;
+      if (abs(vQ.x) + abs(vQ.y) > 1.3) discard;
       gl_FragColor = vec4(vTint.rgb * uLight, vTint.a);
     #else
       float a = smoothstep(1., .15, length(vQ)) * vTint.a;
@@ -101,6 +109,7 @@ function glslMaterial(kind: SpriteKind) {
 }
 
 const QUAD = new Float32Array([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0]);
+const FACING = new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1]);
 const ORDER: Record<SpriteKind, number> = { chip: 1, smoke: 2, glow: 3, spark: 3 };
 
 export class Sprites {
@@ -119,6 +128,7 @@ export class Sprites {
     this.kind = kind;
     const g = (this.geometry = new THREE.InstancedBufferGeometry());
     g.setAttribute('position', new THREE.BufferAttribute(QUAD, 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(FACING, 3));
     g.setIndex([0, 1, 2, 0, 2, 3]);
     const attr = (name: string) => {
       const a = new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4);
@@ -135,6 +145,8 @@ export class Sprites {
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = ORDER[kind];
     this.mesh.visible = false;
+    // (Chips are lit like anything else on the street, the sun's shadows included.)
+    this.mesh.receiveShadow = kind === 'chip';
     scene.add(this.mesh);
   }
 
@@ -142,7 +154,7 @@ export class Sprites {
     if (this.list.length >= this.cap) this.list.shift();
     this.list.push({
       vx: 0, vy: 0, vz: 0, r1: p.r0, rot: Math.random() * Math.PI * 2, spin: 0, seed: Math.random(),
-      fall: 0, drag: 0, floor: -Infinity, bounce: 0, flat: false, heat: false, ...p, age: 0,
+      fall: 0, drag: 0, floor: -Infinity, bounce: 0, flat: false, heat: false, glass: false, lift: 0, ...p, age: 0,
     });
   }
 
@@ -159,14 +171,27 @@ export class Sprites {
       p.y += p.vy * dt;
       p.z += p.vz * dt;
       p.rot += p.spin * dt;
-      if (p.z < p.floor) {
+      if (p.z < p.floor && p.under && p.vz < 0) {
+        // Where it comes down the street may be higher or lower than where it flew from.
+        p.floor = p.under(p.x, p.y) + p.lift;
+      }
+      if (p.z <= p.floor) {
         // Off the ground: up again with some of its fall, slowed along the ground.
         p.z = p.floor;
         if (p.vz < 0) {
           p.vz = -p.vz * p.bounce;
           p.vx *= 0.55; p.vy *= 0.55;
           p.spin *= 0.5;
-          if (p.vz < 0.4) { p.vz = 0; p.vx *= 0.6; p.vy *= 0.6; p.spin *= 0.3; p.fall = 0; }
+          if (p.vz < 0.4) {
+            p.vz = 0; p.fall = 0;
+            p.vx *= 0.6; p.vy *= 0.6;
+            // A chip settles flat and slides to a stop instead of skating on.
+            if (chip) { p.flat = true; p.spin = 0; p.drag = 0; } else p.spin *= 0.3;
+          }
+        }
+        if (chip && p.flat) {
+          const v = Math.hypot(p.vx, p.vy), slow = 6 * dt; // friction: some 0.6 g
+          if (v <= slow) { p.vx = 0; p.vy = 0; } else { p.vx *= 1 - slow / v; p.vy *= 1 - slow / v; }
         }
       }
       const k = p.age / p.life;
@@ -184,9 +209,12 @@ export class Sprites {
         // In quickly, out slowly (smoke holds for a while first; a chip stays whole and goes in its last quarter).
         const fade = chip ? Math.min(1, (1 - k) / 0.25) : this.kind === 'smoke' ? Math.min(1, (1 - k) * 1.6) : 1 - k;
         a = p.a * fade * (chip ? 1 : Math.min(1, p.age / Math.min(0.12, p.life * 0.2)));
-        mv[o] = Math.cos(p.rot); mv[o + 1] = Math.sin(p.rot);
-        mv[o + 2] = chip ? 0.25 + 0.75 * Math.abs(Math.cos(p.rot * 1.7 + p.seed * 6)) : p.seed;
-        mv[o + 3] = chip ? p.seed : k;
+        if (chip) {
+          // Its turn about its own axis (from its seed), its seed, glass or not, how long it is for its width.
+          mv[o] = p.rot; mv[o + 1] = p.seed; mv[o + 2] = p.glass ? 1 : 0; mv[o + 3] = 0.55 + 0.45 * ((p.seed * 7.31) % 1);
+        } else {
+          mv[o] = Math.cos(p.rot); mv[o + 1] = Math.sin(p.rot); mv[o + 2] = p.seed; mv[o + 3] = k;
+        }
       }
       tint[o] = cr; tint[o + 1] = cg; tint[o + 2] = cb; tint[o + 3] = a;
       n++;

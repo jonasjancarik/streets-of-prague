@@ -820,9 +820,12 @@ The metro ride uses its overhead cutaway camera.
   two metres of the exploding vehicle's body catch fire and can spread the fire further.
   Blowing up a car you've crashed into is a crime, a police car more so
   (`src/fire.ts`).
-- **Crash debris.** A crash near the camera throws sparks off metal, a shower of glass
-  and bits of paint and plastic that bounce and skid across the road, and a puff of
-  grit; a scrape along a wall keeps sparking. An explosion throws burning embers and
+- **Crash debris.** A crash near the camera throws sparks off metal, crumbs of safety
+  glass that mostly fall where the car broke, bits of paint and plastic that fly further,
+  bounce and slide to a stop, and a puff of grit; a scrape along a wall keeps sparking.
+  The pieces are real size (glass a centimetre or two), lit like the rest of the street,
+  and lie flat where they land for 15–25 s; each glass crumb has four faces that catch
+  the sun or mirror the sky, so a patch of it glints as you walk past. An explosion throws burning embers and
   charred pieces far around. Smoke and flames face the camera, so they read from the
   street as well as from above (`src/debris.ts`, `src/particles.ts`).
 - **Fire brigade.** When a car catches fire, a fire engine is called from a few hundred

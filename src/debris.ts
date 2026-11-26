@@ -10,7 +10,7 @@ import { Sprites } from './particles.ts';
 
 const NEAR = 160; // m from the camera within which anything is thrown
 const GLASS: [number, number, number] = [0.78, 0.86, 0.9];
-const PLASTIC: [number, number, number] = [0.07, 0.07, 0.075];
+const PLASTIC: [number, number, number] = [0.13, 0.13, 0.14];
 const LEAF: [number, number, number] = [0.2, 0.32, 0.12];
 
 const hex = new Map<string, [number, number, number]>();
@@ -36,15 +36,15 @@ export class Debris {
 
   constructor(scene: THREE.Scene, smoke: Sprites, glows: Sprites, rng: () => number) {
     this.sparks = new Sprites(scene, 700, 'spark');
-    this.chips = new Sprites(scene, 500, 'chip');
+    this.chips = new Sprites(scene, 900, 'chip');
     this.smoke = smoke;
     this.glows = glows;
     this.r = rng;
   }
 
-  // A blow (impacts.ts) `z` metres up at the point of contact; `seen` whether it's near enough to draw.
-  hit(e: Impact, z: number, near: boolean) {
-    if (!near || e.kind === 'person') return;
+  // A blow (impacts.ts) `z` metres up at the point of contact; `under` the ground's height round it.
+  hit(e: Impact, z: number, under: (x: number, y: number) => number) {
+    if (e.kind === 'person') return;
     const r = this.r, s = e.speed;
     const metal = e.kind !== 'hedge';
     let x = e.x, y = e.y;
@@ -61,7 +61,7 @@ export class Debris {
       const b = e.b as { vx?: number; vy?: number };
       bx = (a.vx + (b.vx ?? 0)) * 0.05; by = (a.vy + (b.vy ?? 0)) * 0.05;
     }
-    const ground = z - 0.5;
+    const ground = under(x, y);
     const hard = Math.min(1, Math.max(0, (s - 3) / 14)); // 0 at a knock, 1 at a real smash
     // Sparks, from the first scrape on.
     if (metal) {
@@ -79,19 +79,24 @@ export class Debris {
       if (s > 7) this.glows.add({ x, y, z, r0: 0.3, r1: 0.6 + hard * 0.8, life: 0.09, rgb: [1.5, 1.2, 0.8], a: 0.6 + 0.4 * hard });
     }
     if (s < 5) return;
-    // Glass and bits of the car: a few from a knock, a shower from a smash.
-    const glass = metal ? Math.round(hard * 34) : 0, bits = Math.round(2 + hard * 14);
+    // Glass and bits of the car: a few from a knock, a shower from a smash. Safety glass breaks into
+    // crumbs a centimetre or two across; bits of lamp, trim and paint are a few centimetres, now and
+    // then a bigger piece.
+    const glass = metal ? Math.round(hard * 110) : 0, bits = Math.round(2 + hard * 14);
     const paint = paintOf(a);
     for (let i = 0; i < glass + bits; i++) {
-      const isGlass = i < glass, t = r() * Math.PI * 2, v = 1 + r() * (2 + s * 0.25);
-      const tone = 0.8 + r() * 0.4;
+      // (Glass mostly drops where it broke; harder bits fly on.)
+      const isGlass = i < glass, t = r() * Math.PI * 2, v = isGlass ? 0.4 + r() * (0.8 + s * 0.1) : 1 + r() * (2 + s * 0.25);
+      const tone = 0.8 + r() * 0.4, big = r();
       const rgb: [number, number, number] = !metal ? LEAF : isGlass ? GLASS : r() < 0.55 ? paint : PLASTIC;
+      const lift = 0.004 + r() * 0.008;
       this.chips.add({
         x: x + (r() - 0.5) * 0.8, y: y + (r() - 0.5) * 0.8, z: z + r() * 0.4,
-        vx: Math.cos(t) * v + bx * v, vy: Math.sin(t) * v + by * v, vz: 1 + r() * (1.5 + s * 0.15),
-        r0: isGlass ? 0.02 + r() * 0.03 : 0.04 + r() * 0.07, life: 4 + r() * 5,
-        rgb: [rgb[0] * tone, rgb[1] * tone, rgb[2] * tone], a: isGlass ? 0.85 : 1,
-        spin: (r() - 0.5) * 30, fall: 9.8, drag: 0.3, floor: ground + 0.01 + r() * 0.01, bounce: 0.3,
+        vx: Math.cos(t) * v + bx * v, vy: Math.sin(t) * v + by * v, vz: isGlass ? 0.3 + r() * (0.6 + s * 0.06) : 0.5 + r() * (1 + s * 0.12),
+        r0: !metal ? 0.02 + r() * 0.02 : isGlass ? 0.005 + r() * 0.009 : 0.012 + big * big * 0.05,
+        life: 14 + r() * 10, glass: isGlass,
+        rgb: [rgb[0] * tone, rgb[1] * tone, rgb[2] * tone], a: 1,
+        spin: (r() - 0.5) * 30, fall: 9.8, drag: !metal ? 2 : 0.1, floor: ground + lift, under, lift, bounce: isGlass ? 0.25 : 0.3,
       });
     }
     // Grit and dust kicked up.
@@ -107,8 +112,8 @@ export class Debris {
     }
   }
 
-  // A car blowing up at (x, y), `z` the ground: burning embers and charred bits of it thrown far and wide.
-  blast(x: number, y: number, z: number) {
+  // A car blowing up at (x, y), `z` the ground (`under`: round it): burning embers and charred bits of it thrown far and wide.
+  blast(x: number, y: number, z: number, under?: (x: number, y: number) => number) {
     const r = this.r;
     for (let i = 0; i < 60; i++) {
       const t = r() * Math.PI * 2, v = 3 + r() * 13;
@@ -119,14 +124,15 @@ export class Debris {
         fall: 9.8, drag: 0.5, floor: z, bounce: 0.3, heat: true,
       });
     }
-    for (let i = 0; i < 46; i++) {
-      const t = r() * Math.PI * 2, v = 2 + r() * 10, glass = i < 18, g = 0.05 + r() * 0.06;
+    for (let i = 0; i < 110; i++) {
+      const t = r() * Math.PI * 2, v = 2 + r() * 10, glass = i < 70, g = 0.05 + r() * 0.06, big = r();
+      const lift = 0.004 + r() * 0.008;
       this.chips.add({
         x: x + (r() - 0.5) * 2, y: y + (r() - 0.5) * 2, z: z + 0.5 + r(),
-        vx: Math.cos(t) * v, vy: Math.sin(t) * v, vz: 4 + r() * 9,
-        r0: glass ? 0.025 + r() * 0.03 : 0.05 + r() * 0.1, life: 8 + r() * 8,
-        rgb: glass ? [GLASS[0] * 0.8, GLASS[1] * 0.8, GLASS[2] * 0.8] : [g, g * 0.95, g * 0.9], a: glass ? 0.8 : 1,
-        spin: (r() - 0.5) * 24, fall: 9.8, drag: 0.15, floor: z + 0.01, bounce: 0.25,
+        vx: Math.cos(t) * v, vy: Math.sin(t) * v, vz: 3 + r() * 7,
+        r0: glass ? 0.006 + r() * 0.01 : 0.015 + big * big * 0.08, life: 20 + r() * 10, glass,
+        rgb: glass ? [GLASS[0] * 0.8, GLASS[1] * 0.8, GLASS[2] * 0.8] : [g, g * 0.95, g * 0.9], a: 1,
+        spin: (r() - 0.5) * 24, fall: 9.8, drag: 0.1, floor: z + lift, under, lift, bounce: 0.25,
       });
     }
   }
