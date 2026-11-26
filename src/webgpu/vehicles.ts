@@ -4,8 +4,8 @@
 // the 'cars', 'trams', 'funicular' and 'boats' materials (see addPort).
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Fn, If, float, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, cameraWorldMatrix, diffuseColor, renderGroup, positionLocal, positionWorld, positionViewDirection, normalLocal, positionGeometry, materialColor, materialSpecular, normalize, dot, smoothstep, mix, select, sin, min, cos, max, floor, mod, exp2, reflect, atan, pow, uniform, texture, cubeTexture, length, clamp, step, distance, cross } from 'three/tsl';
-import { LAMP_GLOW, CAR_GLOSS, DUSTCART_COAT, CAR_MIRROR, CAR_STREET, WHEEL_LEVEL, CAR_REFLECT as R, CAR_STRIPS as CS, AREA_STEP, DENT_STEP, DENT_SHAPE as DS } from '../car.ts';
+import { Fn, If, float, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, cameraWorldMatrix, diffuseColor, renderGroup, positionLocal, positionWorld, positionViewDirection, normalLocal, positionGeometry, materialColor, materialSpecular, normalize, dot, smoothstep, mix, select, sin, min, cos, max, floor, mod, exp2, reflect, atan, pow, uniform, texture, cubeTexture, length, clamp, step, distance, cross, fract, abs, fwidth, normalGeometry } from 'three/tsl';
+import { LAMP_GLOW, CAR_GLOSS, DUSTCART_COAT, CAR_MIRROR, CAR_STREET, WHEEL_LEVEL, CAR_REFLECT as R, CAR_STRIPS as CS, AREA_STEP, DENT_STEP, DENT_SHAPE as DS, BROKEN_GLASS as BG } from '../car.ts';
 import { ROLL_CENTRE } from '../streetHandling.ts';
 import { sedanInstruments, sedanWeave } from '../sedanFinish.ts';
 import { registrationAtlas } from '../registrationPlates.ts';
@@ -81,22 +81,67 @@ const dentNormal = (n: N, p: N, d: N): N =>
 // The colour of a vertex, painted (in the vertex stage, in place of the vertex colour's
 // own varying).
 const tinted: N = attribute('color', 'vec3').mul(mix(vec3(1), paint.rgb, own.sub(lampAt.mul(2)))).toVarying('vTint');
-// Where on a crazed window a point is (x and z on the car), and whether it's crazed.
-const crackAt: N = (() => {
+// Where on a window a point is (x, y and z on the car) and how crumpled the car is there
+// (0 to 3; 0 where it isn't glass). `glass`: which of the material's surfaces are glass:
+// by their colour (the distant bodies, the passengers' glass), all of it (a coach's
+// glass) or none (the close bodies, whose glass is a material of its own).
+const crackFor = (glass: 'colour' | 'all' | 'none'): N => {
+  if (glass === 'none') return vec4(0);
   const c: N = attribute('color', 'vec3');
   const end = select(at.x.greaterThan(0.05), max(dentLevel(0), dentLevel(1)), select(at.x.lessThan(-0.05), max(dentLevel(2), dentLevel(3)), float(0)));
   const side = select(at.y.greaterThan(0.4), dentLevel(4), select(at.y.lessThan(-0.4), dentLevel(5), float(0)));
-  const glassy = own.lessThan(0.5).and(luma(c).lessThan(0.04)).and(c.z.greaterThan(c.x.mul(1.25))).and(max(end, side).greaterThanEqual(2));
-  return vec3(positionGeometry.x, positionGeometry.z, select(glassy, float(1), float(0))).toVarying('vCrack');
-})();
-// The cracks (CRACKS_GLSL in car.ts).
-const cracks = (p: N): N => {
-  const a = p.x.mul(6).add(sin(p.y.mul(17)).mul(0.35)).fract().sub(0.5).abs();
-  const b = p.x.mul(0.5).add(p.y.mul(0.87)).mul(7).add(sin(p.x.mul(23)).mul(0.3)).fract().sub(0.5).abs();
-  const c = p.x.mul(0.5).sub(p.y.mul(0.87)).mul(8).add(sin(p.y.mul(19).add(1)).mul(0.3)).fract().sub(0.5).abs();
-  return smoothstep(0.03, 0.09, min(a, min(b, c))).oneMinus();
+  const glassy = glass === 'all' ? own.lessThan(0.5) : own.lessThan(0.5).and(luma(c).lessThan(0.04)).and(c.z.greaterThan(c.x.mul(1.25)));
+  return vec4(positionGeometry, select(glassy, max(end, side), float(0))).toVarying('vCrack');
 };
-
+// Broken glass (BROKEN_GLASS_GLSL in car.ts, the same). A windscreen is laminated: it stays
+// in, crazed in spider webs round where it was hit (a crushed white spot, cracks running
+// out from it, broken rings round it, and a crack where two webs meet). The side and rear
+// windows are toughened: they craze all over into cubes of a centimetre or so, each
+// catching the light its own way, and at the worst (level 3) pieces of them are gone.
+// Lines narrower than a pixel keep their share of the pixel, so from further off a pane
+// turns evenly frosted instead of glittering. `q`: the point in the pane's plane (metres),
+// `aa`: metres a pixel.
+const hash1 = (c: N): N => fract(sin(dot(c, vec2(127.1, 311.7))).mul(43758.5453));
+const hash2 = (c: N): N => fract(sin(vec2(dot(c, vec2(127.1, 311.7)), dot(c, vec2(269.5, 183.3)))).mul(43758.5453));
+const smooth1 = (p: N): N => {
+  const i: N = floor(p), f: N = fract(p), u: N = f.mul(f).mul(f.mul(-2).add(3));
+  return mix(mix(hash1(i), hash1(i.add(vec2(1, 0))), u.x), mix(hash1(i.add(vec2(0, 1))), hash1(i.add(vec2(1, 1))), u.x), u.y);
+};
+const crackLine = (d: N, w: number, aa: N): N => clamp(float(w).add(aa.mul(0.5)).sub(d).div(aa), 0, 1).mul(min(1, float(w * 2).div(aa)));
+const brokenGlass = (q: N, aa: N, laminated: N, level: N) => {
+  // The nearest point a blow landed (cells of 75 cm) and the next nearest.
+  const g: N = q.div(0.75), cell: N = floor(g), f: N = fract(g);
+  let best: N = float(8), next: N = float(8), to: N = vec2(0), seed: N = float(0);
+  for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+    const o = vec2(i, j), h = hash2(cell.add(o)), rel = o.add(h.mul(0.6).add(0.2)).sub(f), d = length(rel);
+    const nearer = d.lessThan(best);
+    next = select(nearer, best, min(next, d));
+    to = select(nearer, rel, to);
+    seed = select(nearer, h.x, seed);
+    best = min(best, d);
+  }
+  const r = best.mul(0.75), angle = atan(to.y, to.x);
+  const spokes = floor(seed.mul(5)).add(9);
+  const s = angle.div(6.2832).mul(spokes).add(seed.mul(7)).add(sin(r.mul(31).add(angle.mul(2))).mul(0.12));
+  const spoke = crackLine(fract(s).sub(0.5).abs().mul(r).mul(6.2832).div(spokes), 0.0006, aa).mul(float(0.8).sub(smoothstep(0.25, 0.7, r).mul(0.5)));
+  const k = r.mul(16).add(sin(angle.mul(5).add(seed.mul(9))).mul(0.15));
+  const ring = crackLine(fract(k).sub(0.5).abs().div(16), 0.0006, aa)
+    .mul(step(0.45, hash1(vec2(floor(k), floor(s))))).mul(float(1).sub(smoothstep(0.1, 0.26, r))).mul(laminated);
+  const seam = crackLine(next.sub(best).mul(0.375), 0.0006, aa).mul(0.7);
+  const crush = float(1).sub(smoothstep(0.006, 0.035, r)).mul(laminated);
+  // The toughened glass's cubes (a centimetre, in staggered rows turned off the pane's
+  // edges, a little skewed).
+  const t: N = vec2(q.x.mul(0.88).sub(q.y.mul(0.48)), q.x.mul(0.48).add(q.y.mul(0.88))).mul(100);
+  const v: N = t.add(vec2(sin(t.y.mul(0.37)), sin(t.x.mul(0.41))).mul(0.3));
+  const u: N = vec2(v.x.add(floor(v.y).mul(0.5)), v.y);
+  const cube: N = floor(u), e: N = fract(u), h: N = hash1(cube);
+  const joint = crackLine(min(min(e.x, e.y.oneMinus()), min(e.y, e.x.oneMinus())).div(100), 0.00035, aa).mul(float(0.6).sub(smoothstep(0.0018, 0.0035, aa).mul(0.6)));
+  const tone = mix(0.46, mix(0.36, 0.56, h), float(1).sub(smoothstep(0.0015, 0.005, aa)));
+  const tempered = laminated.oneMinus();
+  const gone = step(0.64, smooth1(q.mul(1.7)).add(h.sub(0.5).mul(float(0.06).sub(smoothstep(0.0015, 0.004, aa).mul(0.05))))).mul(step(2.5, level)).mul(tempered);
+  const lines = max(max(spoke, ring), max(seam, joint.mul(tempered)));
+  return { lines, crush, frost: tone.mul(tempered), gone };
+};
 // The gloss (CAR_GLOSS in car.ts): the sky and the lamps' light mirrored by what faces up, and
 // more of it by what's seen at a slant; more when wet.
 // And what they mirror (CAR_REFLECT in car.ts): the street round the car, the sky above it.
@@ -245,8 +290,24 @@ addPort(/^cars(?:-service|-dustcart|-close|-coachglass|-coachwork)?$/, (node, le
         diffuseColor.rgb.mulAssign(texture(sedanWeave(), dial.xy).r.mul(1.32).add(.35));
       });
     }
-    const crazed = mix(mix(diffuseColor.rgb, vec3(0.6), DS.milk), vec3(...DS.crack), cracks(crackAt.xy));
-    diffuseColor.rgb.assign(mix(diffuseColor.rgb, crazed, crackAt.z));
+    // Broken glass (brokenGlass), from level 2. Its plane is the one the pane faces most.
+    const crack = crackFor(key === 'cars-coachglass' ? 'all' : closeCar ? 'none' : 'colour');
+    const frost = float(0).toVar(), gone = float(0).toVar();
+    if (!closeCar) {
+      const n: N = normalGeometry.abs(), p: N = crack.xyz;
+      const q: N = select(n.z.greaterThanEqual(max(n.x, n.y)), p.xy, select(n.x.greaterThanEqual(n.y), p.zy, p.xz));
+      const aa: N = max(fwidth(q.x), fwidth(q.y)).max(0.0002);
+      const ng: N = normalGeometry;
+      const laminated: N = select(ng.x.greaterThan(0.25).and(p.x.greaterThan(0)).and(n.z.lessThan(max(n.x, n.y))), float(1), float(0));
+      If(crack.w.greaterThan(1.5), () => {
+        const b: Record<string, N> = brokenGlass(q, aa, laminated, crack.w);
+        const pale: N = vec3(...BG.white);
+        const glassC = mix(diffuseColor.rgb, pale, b.frost.mul(BG.frost).add(b.crush.mul(BG.crush)));
+        diffuseColor.rgb.assign(select(b.gone.greaterThan(0.5), vec3(...BG.inside), mix(glassC, pale, b.lines)));
+        frost.assign(max(b.frost, max(b.crush, b.lines)));
+        gone.assign(b.gone);
+      });
+    }
     diffuseColor.rgb.assign(select(shine.lessThan(-0.5), vec3(0.05, 0.05, 0.055), diffuseColor.rgb));
     const up = dot(normalView, cameraViewMatrix.mul(vec4(0, 1, 0, 0)).xyz);
     const cover = smoothstep(0.75, 0.95, up).mul(smoothstep(0.1, 0.6, uSnow)).mul(0.6);
@@ -259,6 +320,8 @@ addPort(/^cars(?:-service|-dustcart|-close|-coachglass|-coachwork)?$/, (node, le
       const base = float(.39).add(smoothstep(1.22, 1.41, positionGeometry.y).mul(.15)).add(select(rear, .18, 0));
       diffuseColor.a.assign(mix(base, .085, cover).add(grazing.mul(mix(.32, .26, cover))));
     }
+    // Crazed glass is frosted, and where pieces are gone, there's nothing.
+    if (legacy.transparent) diffuseColor.a.assign(mix(diffuseColor.a, 0.94, frost).mul(gone.oneMinus()));
   };
   glow(node, () => Fn(() => {
     const coat = carCoat(diffuseColor.rgb).toVar();

@@ -840,6 +840,13 @@ The metro ride uses its overhead cutaway camera.
   the sun or mirror the sky, so a patch of it glints as you walk past. An explosion throws burning embers and
   charred pieces far around. Smoke and flames face the camera, so they read from the
   street as well as from above (`src/debris.ts`, `src/particles.ts`).
+  A window at a corner or side crumpled hard (level 2 of 3) breaks the way car glass
+  does. The windscreen is laminated and stays in, crazed in spider webs: a small crushed
+  spot, cracks running out from it, broken rings round it, and a crack where two webs
+  meet. The side and rear windows are toughened and craze all over into centimetre
+  cubes, frosted pale, and at level 3 pieces of them are gone, so you see into the car.
+  From further off the cracks fade into an even frost instead of glittering
+  (`brokenGlass` in `src/webgpu/vehicles.ts`, `BROKEN_GLASS_GLSL` in `src/car.ts`).
 - **Fire brigade.** When a car catches fire, a fire engine is called from a few hundred
   metres away, drives to it by the streets, and its crew of three gets out and sprays
   the car with hoses. A car nobody is driving burns 45–75 seconds before it blows up,

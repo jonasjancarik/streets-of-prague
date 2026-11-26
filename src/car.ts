@@ -1329,9 +1329,13 @@ if (KINDS.length * AREA_STEP > DENT_STEP) throw new Error('Too many kinds of are
 // `dentAt`: how far in the nose, the tail, the left and the right are pushed there (0
 // to 3). `bumpy`: a smooth unevenness (0 to 1), so the crumpled metal isn't flat.
 // A dented part comes in by up to `nose` or `side` metres a level, sags by up to `sag`
-// of its height and tilts by up to `tilt`. A crazed window (crackedAt) is a web of pale
-// cracks (`crack`, their colour) over glass a little milky (`milk`).
-export const DENT_SHAPE = { nose: 0.13, side: 0.11, sag: 0.03, tilt: 0.12, crack: [0.7, 0.72, 0.74], milk: 0.2 };
+// of its height and tilts by up to `tilt`.
+export const DENT_SHAPE = { nose: 0.13, side: 0.11, sag: 0.03, tilt: 0.12 };
+// Broken glass (BROKEN_GLASS_GLSL; brokenGlass in webgpu/vehicles.ts): the cracks and
+// crushed glass are `white`, a crazed toughened pane is frosted up to `frost` of the way
+// to it, a windscreen's crushed spot `crush` of the way, and where pieces of a pane are
+// gone the car's dark `inside` shows (on glass you can see through, nothing).
+export const BROKEN_GLASS = { white: [0.72, 0.75, 0.77], frost: 0.55, crush: 0.45, inside: [0.02, 0.02, 0.022] };
 const DENT_GLSL = /* glsl */ `
 float dentLevel(float i) { return mod(floor(floor(paint.w / ${DENT_STEP}.) / exp2(2. * i)), 4.); }
 vec2 zoneAt() { float z = floor(painted / 16.); return vec2(mod(z, 32.) / 15.5 - 1., 1. - floor(z / 32.) / 15.5); }
@@ -1353,20 +1357,46 @@ vec3 dentNormal(vec3 n, vec3 p, vec4 d) {
   float k = (d.x + d.y + d.z + d.w) * ${DENT_SHAPE.tilt.toFixed(2)};
   return normalize(n + vec3(sin(p.z * 17. + 1.), 0., sin(p.x * 19.)) * k);
 }
-// A window at a corner or side crumpled to level 2 or more is crazed.
-float crackedAt(vec2 at) {
+// How crumpled the corner or side a window is at is (0 to 3): from 2 it's broken.
+float crackLevel(vec2 at) {
   float end = at.x > .05 ? max(dentLevel(0.), dentLevel(1.)) : at.x < -.05 ? max(dentLevel(2.), dentLevel(3.)) : 0.;
   float side = at.y > .4 ? dentLevel(4.) : at.y < -.4 ? dentLevel(5.) : 0.;
-  return step(2., max(end, side));
+  return max(end, side);
 }`;
-// The cracks, at a point of the window (x and z on the car, metres): three sets of wavy
-// lines across each other, some 15 cm apart (the same in TSL: webgpu/vehicles.ts).
-const CRACKS_GLSL = /* glsl */ `
-float cracks(vec2 p) {
-  float a = abs(fract(p.x * 6. + .35 * sin(p.y * 17.)) - .5);
-  float b = abs(fract((p.x * .5 + p.y * .87) * 7. + .3 * sin(p.x * 23.)) - .5);
-  float c = abs(fract((p.x * .5 - p.y * .87) * 8. + .3 * sin(p.y * 19. + 1.)) - .5);
-  return 1. - smoothstep(.03, .09, min(a, min(b, c)));
+// Broken glass (BROKEN_GLASS; the same as brokenGlass in webgpu/vehicles.ts, which says
+// what it draws). `q`: the point in the pane's plane (metres), `aa`: metres a pixel.
+// Returns the cracks, the windscreen's crushed spot, the toughened glass's frost and
+// whether a piece is gone.
+const BROKEN_GLASS_GLSL = /* glsl */ `
+float bgHash(vec2 c) { return fract(sin(dot(c, vec2(127.1, 311.7))) * 43758.5453); }
+vec2 bgHash2(vec2 c) { return fract(sin(vec2(dot(c, vec2(127.1, 311.7)), dot(c, vec2(269.5, 183.3)))) * 43758.5453); }
+float bgSmooth(vec2 p) {
+  vec2 i = floor(p), f = fract(p), u = f * f * (3. - 2. * f);
+  return mix(mix(bgHash(i), bgHash(i + vec2(1, 0)), u.x), mix(bgHash(i + vec2(0, 1)), bgHash(i + vec2(1, 1)), u.x), u.y);
+}
+float bgLine(float d, float w, float aa) { return clamp((w + aa * .5 - d) / aa, 0., 1.) * min(1., w * 2. / aa); }
+vec4 brokenGlass(vec2 q, float aa, float laminated, float level) {
+  vec2 g = q / .75, cell = floor(g), f = fract(g), to = vec2(0);
+  float best = 8., next = 8., seed = 0.;
+  for (int i = -1; i <= 1; i++) for (int j = -1; j <= 1; j++) {
+    vec2 o = vec2(i, j), h = bgHash2(cell + o), rel = o + .2 + .6 * h - f;
+    float d = length(rel);
+    if (d < best) { next = best; best = d; to = rel; seed = h.x; } else next = min(next, d);
+  }
+  float r = best * .75, angle = atan(to.y, to.x), spokes = floor(seed * 5.) + 9.;
+  float s = angle / 6.2832 * spokes + seed * 7. + .12 * sin(r * 31. + angle * 2.);
+  float spoke = bgLine(abs(fract(s) - .5) * r * 6.2832 / spokes, .0006, aa) * (.8 - .5 * smoothstep(.25, .7, r));
+  float k = r * 16. + .15 * sin(angle * 5. + seed * 9.);
+  float ring = bgLine(abs(fract(k) - .5) / 16., .0006, aa) * step(.45, bgHash(vec2(floor(k), floor(s)))) * (1. - smoothstep(.1, .26, r)) * laminated;
+  float seam = bgLine((next - best) * .375, .0006, aa) * .7;
+  float crush = (1. - smoothstep(.006, .035, r)) * laminated;
+  vec2 t = 100. * vec2(q.x * .88 - q.y * .48, q.x * .48 + q.y * .88), v = t + .3 * vec2(sin(t.y * .37), sin(t.x * .41));
+  vec2 u = vec2(v.x + floor(v.y) * .5, v.y), e = fract(u);
+  float h = bgHash(floor(u));
+  float joint = bgLine(min(min(e.x, 1. - e.y), min(e.y, 1. - e.x)) / 100., .00035, aa) * (.6 - .6 * smoothstep(.0018, .0035, aa));
+  float tone = mix(.46, mix(.36, .56, h), 1. - smoothstep(.0015, .005, aa)), tempered = 1. - laminated;
+  float gone = step(.64, bgSmooth(q * 1.7) + (h - .5) * (.06 - .05 * smoothstep(.0015, .004, aa))) * step(2.5, level) * tempered;
+  return vec4(max(max(spoke, ring), max(seam, joint * tempered)), crush, tone * tempered, gone);
 }`;
 const R = CAR_REFLECT, CS = CAR_STRIPS;
 export const VEHICLE_VIEW_UNIFORMS = { uStreetView: CAR_STREET, uSkyRef: SKY_REF, uStreetRef: STREET_REF, uSunDir: SUN_DIR, uSunLight: SUN_LIGHT, uStrips: STRIPS, uStripsOn: STRIPS_ON, uProbe: PROBE_MAP, uProbePrev: PROBE_PREV, uProbeMix: PROBE_MIX, uProbeAt: PROBE_AT, uProbeNear: PROBE_NEAR, uProbeK: PROBE_K };
@@ -1431,7 +1461,9 @@ attribute vec4 paint;
 attribute vec3 hinge;
 attribute vec4 doors;
 varying float vLit;
-varying vec3 vCrack;
+varying vec4 vCrack;
+varying vec3 vCrackN;
+#define CRACK_GLASS (dot(vColor.rgb, vec3(.3, .59, .11)) < .04 && vColor.b > vColor.r * 1.25)
 vec2 swing(vec2 p) {
   if (hinge.z < .5) return p;
   float a = hinge.z < 1.5 ? -doors.x : hinge.z < 2.5 ? doors.y : hinge.z < 3.5 ? -doors.z : doors.w;
@@ -1443,7 +1475,7 @@ ${DENT_GLSL}`)
     .replace('#include <color_vertex>', `#include <color_vertex>
 float own = mod(floor(painted), 16.), lamp = floor(own * .5 + .01);
 vColor.rgb *= mix(vec3(1.), paint.rgb, own - 2. * lamp);
-vCrack = vec3(position.xz, own < .5 && dot(vColor.rgb, vec3(.3, .59, .11)) < .04 && vColor.b > vColor.r * 1.25 ? crackedAt(zoneAt()) : 0.);
+vCrack = vec4(position, own < .5 && CRACK_GLASS ? crackLevel(zoneAt()) : 0.);
 vLit = 0.;
 if (lamp > .5) {
   float tail = mod(floor(paint.w / 32.), 4.);
@@ -1451,12 +1483,12 @@ if (lamp > .5) {
   if (mod(floor(paint.w / exp2(lamp - 1.)), 2.) > .5) { vLit = -1.; vColor.rgb = vec3(.05, .05, .055); }
 }
 vLit += 4. * mod(floor(paint.w / ${AREA_STEP}.), ${DENT_STEP / AREA_STEP}.);`)
-    .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nvec4 dents = dentAt(zoneAt());\nobjectNormal = dentNormal(objectNormal, position, dents);\nobjectNormal.xz = swing(objectNormal.xz);')
+    .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nvCrackN = objectNormal;\nvec4 dents = dentAt(zoneAt());\nobjectNormal = dentNormal(objectNormal, position, dents);\nobjectNormal.xz = swing(objectNormal.xz);')
     .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed = dented(transformed, dents);\ntransformed.xz = hinge.xy + swing(transformed.xz - hinge.xy);');
   sh.uniforms.uSnow = SNOW;
   Object.assign(sh.uniforms, { uWet: WET, ...VEHICLE_VIEW_UNIFORMS, uMirror: CAR_MIRROR, uVrAt: VR_GLASS.at, uVrBox: VR_GLASS.box });
   sh.fragmentShader = sh.fragmentShader
-    .replace('#include <common>', `#include <common>\nuniform float uSnow;\nvarying float vLit;\nvarying vec3 vCrack;\nuniform vec4 uVrAt, uVrBox;\n#define VR_GLAZED (dot(vColor.rgb, vec3(.3, .59, .11)) < .04 && vColor.b > vColor.r * 1.25)\n${COAT_GLSL}\n${CRACKS_GLSL}`)
+    .replace('#include <common>', `#include <common>\nuniform float uSnow;\nvarying float vLit;\nvarying vec4 vCrack;\nvarying vec3 vCrackN;\nuniform vec4 uVrAt, uVrBox;\n#define VR_GLAZED (dot(vColor.rgb, vec3(.3, .59, .11)) < .04 && vColor.b > vColor.r * 1.25)\n${COAT_GLSL}\n${BROKEN_GLASS_GLSL}`)
     .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
   if (uVrBox.w > .5) {
     vec3 vrW = cameraPosition + (vec4(-vViewPosition, 0.) * viewMatrix).xyz - uVrAt.xyz;
@@ -1471,7 +1503,18 @@ vLit += 4. * mod(floor(paint.w / ${AREA_STEP}.), ${DENT_STEP / AREA_STEP}.);`)
     float up = dot(normal, (viewMatrix * vec4(0., 1., 0., 0.)).xyz);
     diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.8, .82, .86), smoothstep(.75, .95, up) * smoothstep(.1, .6, uSnow) * .6);
   }
-  if (vCrack.z > .01) diffuseColor.rgb = mix(mix(diffuseColor.rgb, vec3(.6), ${DENT_SHAPE.milk.toFixed(2)}), vec3(${DENT_SHAPE.crack.map((v) => v.toFixed(2)).join(', ')}), cracks(vCrack.xy)) * vCrack.z + diffuseColor.rgb * (1. - vCrack.z);
+  // Broken glass from level 2, in the plane the pane faces most.
+  vec3 crackN = abs(vCrackN);
+  vec2 crackQ = crackN.z >= max(crackN.x, crackN.y) ? vCrack.xy : crackN.x >= crackN.y ? vCrack.zy : vCrack.xz;
+  float crackAa = max(max(fwidth(crackQ.x), fwidth(crackQ.y)), .0002), glassFrost = 0., glassGone = 0.;
+  if (vCrack.w > 1.5) {
+    vec4 b = brokenGlass(crackQ, crackAa, vCrackN.x > .25 && vCrack.x > 0. && crackN.z < max(crackN.x, crackN.y) ? 1. : 0., vCrack.w);
+    vec3 pale = vec3(${BROKEN_GLASS.white.map((v) => v.toFixed(2)).join(', ')});
+    vec3 glassC = mix(diffuseColor.rgb, pale, b.z * ${BROKEN_GLASS.frost.toFixed(2)} + b.y * ${BROKEN_GLASS.crush.toFixed(2)});
+    diffuseColor.rgb = b.w > .5 ? vec3(${BROKEN_GLASS.inside.map((v) => v.toFixed(3)).join(', ')}) : mix(glassC, pale, b.x);
+    glassFrost = max(b.z, max(b.y, b.x)); glassGone = b.w;
+    diffuseColor.a = mix(diffuseColor.a, .94, glassFrost) * (1. - glassGone);
+  }
   vec3 coatC = diffuseColor.rgb;
   diffuseColor.rgb *= mix(1., ${CAR_GLOSS.darker.toFixed(2)}, uWet * carTop(normal));`)
     .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n  reflectedLight.directDiffuse += carCoat(coatC, normal, normalize(vViewPosition), lampLightOn(vLampW, normal), area, cameraPosition + (vec4(-vViewPosition, 0.) * viewMatrix).xyz);');
@@ -1527,6 +1570,7 @@ streetWheelMaterial.customProgramCacheKey = () => 'cars-close';
 streetWheelMaterial.onBeforeCompile = (sh, renderer) => {
   material.onBeforeCompile(sh, renderer);
   sh.fragmentShader = sh.fragmentShader.replace(/#define VR_GLAZED .*/, '#define VR_GLAZED false'); // (its glass is passengerGlass: a navy paint isn't glass)
+  sh.vertexShader = sh.vertexShader.replace(/#define CRACK_GLASS .*/, '#define CRACK_GLASS false'); // (nor does it break)
   sh.uniforms.uRegistration = { value: registrationAtlas() };
   sh.uniforms.uWheelLevel = WHEEL_LEVEL;
   sh.vertexShader = sh.vertexShader.replace('if (hinge.z < .5) return p;', 'if (hinge.z < .5 || hinge.z > 4.5) return p;').replace('vec2 swing(vec2 p)', `
@@ -1582,13 +1626,15 @@ const coachGlass = passengerGlass.clone();
 coachGlass.customProgramCacheKey = () => 'cars-coachglass';
 coachGlass.onBeforeCompile = (sh, renderer) => {
   material.onBeforeCompile(sh, renderer);
-  sh.vertexShader = sh.vertexShader.replace('varying float vLit;', 'varying float vLit; varying vec2 vGlassTint;')
+  sh.vertexShader = sh.vertexShader.replace(/#define CRACK_GLASS .*/, '#define CRACK_GLASS true') // (it's all glass)
+    .replace('varying float vLit;', 'varying float vLit; varying vec2 vGlassTint;')
     .replace('#include <color_vertex>', '#include <color_vertex>\nvGlassTint=vec2(floor(fract(painted)*16.+.5), position.y);');
   sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vGlassTint;')
     .replace('#include <opaque_fragment>', `
     float grazing = pow(1. - abs(dot(normal, normalize(vViewPosition))), 3.);
     float cover = step(7.5,vGlassTint.x), rear = 1.-step(.4,abs(vGlassTint.x-7.));
     diffuseColor.a = mix(.39+.15*smoothstep(1.22,1.41,vGlassTint.y)+.18*rear, .085, cover) + grazing * mix(.32,.26,cover);
+    diffuseColor.a = mix(diffuseColor.a, .94, glassFrost) * (1. - glassGone);
     #include <opaque_fragment>`);
 };
 const coachPaint = new THREE.MeshPhysicalMaterial({
