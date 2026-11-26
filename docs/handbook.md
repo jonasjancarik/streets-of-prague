@@ -761,12 +761,18 @@ The metro ride uses its overhead cutaway camera.
   in and the cars drive off (while you're still wanted they join the chase, as any patrol
   nearby would); out of sight they simply go. When you're on foot they stay
   on the road and stop at the kerb nearest you; then (or when you stop the car) an
-  officer gets out (their door stays open till they're back) and runs after you, to
+  officer gets out (their door stays open till they're back; a car rammed or shot at
+  while it's moving pulls up first, scenario `police-door`) and runs after you, to
   your door if you're in a car. They stop at arm's length, facing you, spread round you
   rather than piling into one spot (two don't make for the same door of your car). Once they have hold of you it takes them a moment
   (about a second and a half on foot, two and a half at the door of a car you've
-  stopped in) and then you're busted (the police keep the car); run, not walk, and you
-  get out of their hands, or drive off before they open the door. The arrest is played out (`src/arrest.ts`): the officer opens
+  stopped in) and then you're busted (the police keep the car). Walking off doesn't
+  shake them (they keep pace beside you), and running gets you out of their hands, but
+  an officer close behind you sprints for a couple of seconds (then is winded for four)
+  and dives at your legs once they'd reach you: you go down, they kneel over you and
+  cuff you where you lie, and get you up onto your knees and your feet (scenario
+  `police-tackle`). With a few strides' start you get away. In a car, drive off before
+  they open the door. The arrest is played out (`src/arrest.ts`): the officer opens
   your door and has you out of the car, your hands go up, they step behind you and
   put the handcuffs on, and you're turned round and walked to their car and put in the
   back (the officer walks round you to your side, not through you), while the
@@ -1926,7 +1932,8 @@ record the measurements, merge decisions and pending landmark asset activation.
   (`assets/figures/build.py` → `public/figures.glb`): a low-poly person with a skeleton
   and clips for standing, walking, jogging, running, jumping, falling, getting up,
   riding, getting into a car, hauling someone out of one, and an arrest (hands up,
-  handcuffed, led away, and the officer's side of it), plus a bike and a motorbike. The walk, jog and run place the feet first (on
+  handcuffed, led away, and the officer's side of it; and a tackle: the dive, being
+  brought down, cuffed on the ground and got up again), plus a bike and a motorbike. The walk, jog and run place the feet first (on
   the ground they stay put, rolling from heel to ball) and reach them with the legs;
   in the game the two gaits either side of someone's speed are blended, in step. At
   load, `src/figures.ts` plays every clip through and bakes the posed vertices into

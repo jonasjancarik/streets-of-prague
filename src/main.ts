@@ -932,7 +932,8 @@ async function main() {
   // Busted: out of the car (the police keep it), and a moment before you can move again.
   const stats = { knocked: 0, wrecked: 0, busted: 0, wasted: 0 };
   let frozen = 0;
-  const busted = (by?: Officer) => {
+  // (`tackled`: brought down on foot by an officer's dive, src/police.ts.)
+  const busted = (by?: Officer, tackled = false) => {
     if (frozen > 0 || testkit?.unarrested) return;
     missions.onBusted();
     getIn.cancel();
@@ -958,7 +959,7 @@ async function main() {
     // Not a jump: the banner comes up as the handcuffs go on, you're walked to the police
     // car, the screen fades out, you're taken to the station, and it fades back in.
     frozen = Infinity;
-    arrest.begin(by ?? null, car);
+    arrest.begin(by ?? null, car, tackled && !car);
     showBanner(text, true);
   };
   // What you were driving when you were caught: gone when you come out.

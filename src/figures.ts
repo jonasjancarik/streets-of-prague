@@ -126,7 +126,7 @@ export async function loadKit(url = 'figures.glb') {
   let rows = 0;
   for (const clip of gltf.animations) {
     const frames = Math.round(clip.duration * FPS);
-    clips[clip.name] = { row: rows, frames, duration: frames / FPS, loop: ['idle', 'walk', 'jog', 'run', 'bike', 'moto', 'cuffedwalk', 'escort', 'cuff', 'push', 'hold', 'attend', 'hose', 'hosewalk'].includes(clip.name) };
+    clips[clip.name] = { row: rows, frames, duration: frames / FPS, loop: ['idle', 'walk', 'jog', 'run', 'bike', 'moto', 'cuffedwalk', 'escort', 'cuff', 'pin', 'push', 'hold', 'attend', 'hose', 'hosewalk'].includes(clip.name) };
     rows += frames + 1;
   }
   const pos = new Float32Array(N * rows * 4), nrm = new Float32Array(N * rows * 4);

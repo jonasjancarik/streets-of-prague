@@ -3,7 +3,7 @@
 A small low-poly person with a skeleton and a handful of clips (standing, walking,
 running, jumping, being knocked over and getting up, riding a bike and a motorbike,
 getting into a car, hauling someone out of one, being arrested and making the arrest,
-wheeling a bin and riding on the back of the dustcart),
+standing or after a tackle, wheeling a bin and riding on the back of the dustcart),
 plus a bike and a motorbike to ride. Everything is made from code here, so the kit
 can be tweaked and rebuilt; src/figures.js bakes the clips into textures at load.
 
@@ -14,8 +14,8 @@ Paint, Tyre, Metal, Seat, Lamp, Engine on the vehicles); src/figures.js relies o
 names.
 
 usage: blender -b --factory-startup -P assets/figures/build.py
-       blender -b --factory-startup -P assets/figures/build.py -- --preview DIR
-       (renders a few frames of every clip into DIR, to check the poses)
+       blender -b --factory-startup -P assets/figures/build.py -- --preview DIR [clip ...]
+       (renders a few frames of every clip, or of the clips named, into DIR, to check the poses)
 """
 import math
 import sys
@@ -878,6 +878,110 @@ def cuff(frames=16):
     return out
 
 
+# ---- A tackle ----------------------------------------------------------------
+#
+# An officer who can't keep up dives at whoever runs from them: arms round the legs,
+# both go down, the officer gets up onto one knee beside them and cuffs them where they
+# lie, then they're got up onto their knees and their feet. The game moves the figures
+# along the ground; these clips stay roughly where they stand. Angles here are the
+# pose()'s own: a limb's swing is taken from the body, so with the body pitched forward
+# by `pitch`, a leg hangs at (thigh - pitch) from straight down and an arm at
+# (arm - pitch - spine).
+
+# Face down, the legs out straight, the toes pointed into the ground, the face turned
+# aside. The feet stay about where they stood; the hips are ahead of them.
+PRONE = {"pitch": 1.56, "t": (0.5, 0, -0.85), "head": -0.45, "look": 0.6, "thigh": 0.0, "knee": 0.08, "toe": 1.25}
+# One knee down beside them, the other foot planted out to the side (not on them), bent
+# low over their back, the hands down at their wrists.
+PIN = {"pitch": 0.3, "spine": 0.75, "head": 0.15, "t": (0.03, 0, -0.49), "thighR": 0.3, "kneeR": 1.57, "toeR": 1.1,
+       "thighL": 1.5, "kneeL": 1.25, "legoutL": 0.55, "arm": 1.45, "elbow": 0.5, "out": 0.12}
+
+
+LIMBS = {"thigh": 0.0, "knee": 0.0, "legout": 0.0, "toe": 0.0, "arm": 0.0, "out": 0.06, "elbow": 0.15}
+
+
+def sided(keys):
+    """(frame, pose) keys with every limb given for each side, so a key that sets both
+    sides at once blends smoothly with one that sets them apart."""
+    out = []
+    for f, P in keys:
+        Q = {k: v for k, v in P.items() if k not in LIMBS}
+        for k, d in LIMBS.items():
+            for side in ("L", "R"):
+                Q[k + side] = P.get(k + side, P.get(k, d))
+        out.append((f, Q))
+    return out
+
+
+def tackle():
+    """The dive: off one foot, arms out and round the legs ahead, down flat on top of
+    them; a moment there, then up onto hands and knees and round to kneel (PIN)."""
+    stride = {"pitch": 0.3, "spine": 0.12, "head": -0.25, "t": (0, 0, -0.05), "thighL": 0.9, "kneeL": 1.1,
+              "thighR": -0.05, "kneeR": 0.6, "arm": 0.3, "elbow": 1.2}
+    launch = {"pitch": 0.85, "spine": 0.15, "head": -0.75, "t": (0.1, 0, -0.22), "thighL": 1.35, "kneeL": 1.4,
+              "thighR": 0.4, "kneeR": 0.05, "toeR": 0.6, "arm": 2.3, "elbow": 0.3, "out": 0.2}
+    fly = {"pitch": 1.3, "spine": 0.15, "head": -1.0, "t": (0.25, 0, -0.5), "thighL": 0.2, "kneeL": 0.5,
+           "thighR": 0.1, "kneeR": 0.2, "toe": 0.9, "arm": 2.35, "elbow": 1.1, "out": 0.3}
+    hug = {"pitch": 1.5, "spine": 0.05, "head": -0.9, "look": 0.3, "t": (0.35, 0, -0.74), "thigh": 0.05, "kneeL": 0.3,
+           "kneeR": 0.15, "toe": 1.1, "arm": 2.35, "elbow": 1.35, "out": 0.35}
+    fours = {"pitch": 0.95, "spine": 0.25, "head": -0.5, "t": (0.12, 0, -0.5), "thigh": 0.95, "knee": 1.57, "toe": 1.1,
+             "arm": 1.2, "elbow": 0.2, "out": 0.15}
+    return keyed(sided([(0, stride), (4, launch), (8, fly), (11, hug), (14, {**hug, "t": (0.36, 0, -0.76)}),
+                  (24, {**hug, "t": (0.36, 0, -0.76), "head": -0.7}), (30, fours), (36, PIN), (37, PIN)]), 38)
+
+
+def pin(frames=16):
+    """Kneeling over them, both hands at their wrists, working the handcuffs on."""
+    out = []
+    for f in range(frames):
+        a = 2 * math.pi * f / frames
+        out.append({**PIN, "spine": PIN["spine"] + 0.03 * math.sin(a), "armL": PIN["arm"] + 0.07 * math.sin(a),
+                    "armR": PIN["arm"] - 0.07 * math.sin(a), "elbowL": PIN["elbow"] + 0.15 * math.cos(a),
+                    "elbowR": PIN["elbow"] - 0.15 * math.cos(a)})
+    return out
+
+
+def tackled():
+    """Brought down from behind while running: the legs go, the arms go out to break the
+    fall, and down flat on the front."""
+    stride = {"pitch": 0.25, "spine": 0.1, "head": -0.2, "thighL": 0.75, "kneeL": 0.9, "thighR": -0.15, "kneeR": 0.5,
+              "arm": 0.3, "elbow": 1.1}
+    hit = {"pitch": 0.6, "spine": 0.1, "head": -0.6, "t": (0.15, 0, -0.1), "thighL": 0.4, "kneeL": 0.3, "thighR": 0.3,
+           "kneeR": 0.2, "arm": 1.9, "elbow": 0.4, "out": 0.3}
+    falling = {"pitch": 1.1, "spine": 0.05, "head": -0.8, "t": (0.35, 0, -0.42), "thigh": 0.2, "knee": 0.2, "toe": 0.6,
+               "arm": 2.2, "elbow": 0.5, "out": 0.45}
+    down = {**PRONE, "head": -0.55, "arm": 2.6, "elbow": 1.6, "out": 0.7}
+    return keyed(sided([(0, stride), (3, hit), (7, falling), (11, {**down, "t": (0.48, 0, -0.81)}), (14, down),
+                  (24, {**down, "head": -0.4}), (25, {**down, "head": -0.4})]), 26)
+
+
+def cuffed_hands(frames):
+    """Poses -> frames with the wrists together behind the back."""
+    out = []
+    for P in frames:
+        D, t = pose(P)
+        for side in ("L", "R"):
+            hand(D, t, side, BEHIND, BEHIND_POLE)
+        out.append((D, t))
+    return out
+
+
+def pinned():
+    return cuffed_hands([PRONE, PRONE])
+
+
+def cuffed_up():
+    """Got up, hands cuffed behind: onto the knees, upright, a foot forward, and up."""
+    knees = {"pitch": 0.95, "spine": 0.2, "head": -0.5, "t": (0.12, 0, -0.56), "thigh": 1.1, "knee": 1.75, "toe": 1.0}
+    kneel = {"pitch": 0.08, "spine": 0.1, "head": 0.15, "t": (0.06, 0, -0.49), "thigh": 0.08, "knee": 1.6, "toe": 0.9}
+    tuck = {"pitch": 0.15, "spine": 0.1, "head": 0.15, "t": (0.05, 0, -0.46), "thighR": 0.15, "kneeR": 1.6, "toeR": 0.9,
+            "thighL": 1.2, "kneeL": 2.3}
+    lunge = {"pitch": 0.2, "spine": 0.1, "head": 0.15, "t": (0.05, 0, -0.4), "thighR": 0.2, "kneeR": 1.6, "toeR": 0.9,
+             "thighL": 1.65, "kneeL": 1.55}
+    stood = {"spine": 0.12, "head": 0.28, "pitch": 0.03}
+    return cuffed_hands(keyed(sided([(0, PRONE), (8, knees), (16, kneel), (20, tuck), (24, lunge), (32, stood), (33, stood)]), 34))
+
+
 def push():
     """A dustman wheeling a bin: the walk, both hands forward on its handle."""
     out = []
@@ -961,6 +1065,11 @@ CLIPS = {
     "cuffedwalk": (cuffed_walk(), True),
     "escort": (escort(), True),
     "cuff": (cuff(), True),
+    "tackle": (tackle(), False),
+    "pin": (pin(), True),
+    "tackled": (tackled(), False),
+    "pinned": (pinned(), False),
+    "cuffedup": (cuffed_up(), False),
     "push": (push(), True),
     "hold": (hold(), True),
     "attend": (attend(), True),
@@ -1022,8 +1131,8 @@ def export():
     print("wrote", OUT, OUT.stat().st_size, "bytes")
 
 
-def preview(out_dir):
-    """Side and three-quarter views of a few frames of every clip."""
+def preview(out_dir, only=()):
+    """Side and three-quarter views of a few frames of every clip (or of the clips named)."""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     scene, rig, person, bike, moto = build()
@@ -1039,6 +1148,8 @@ def preview(out_dir):
     scene.camera = cam
     views = {"side": ((0.1, -6, 0.9), (math.pi / 2, 0, 0)), "top": ((0.1, -3.5, 5), (math.radians(35), 0, 0))}
     for name, (frames, loop) in CLIPS.items():
+        if only and name not in only:
+            continue
         for t in rig.animation_data.nla_tracks:
             t.mute = True
         rig.animation_data.action = bpy.data.actions[name]
@@ -1058,7 +1169,7 @@ def preview(out_dir):
 if __name__ == "__main__":
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     if argv[:1] == ["--preview"]:
-        preview(argv[1])
+        preview(argv[1], argv[2:])
     else:
         build()
         export()

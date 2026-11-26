@@ -20,7 +20,8 @@ import type { Point3 } from './guns.ts';
 
 // `pit`: trying a PIT manoeuvre on you (see pitting); `trick`: seconds before it thinks of
 // trying one. `block`: parked across the road as part of a roadblock (see roadblock.ts).
-interface ChaseCar extends Follower { car: Car; calm: boolean; wrecked: boolean; gone?: boolean; reload?: number; side?: number; pit?: Pit; trick?: number; block?: Roadblock }
+// (`halt`: pulling up to let its officer out, see Police.crime.)
+interface ChaseCar extends Follower { car: Car; calm: boolean; wrecked: boolean; gone?: boolean; reload?: number; side?: number; pit?: Pit; trick?: number; block?: Roadblock; halt?: boolean }
 // (`ok`: seconds it has kept its place beside you; `cramped`: seconds that place has been
 // in a wall or another car.)
 interface Pit { phase: 'line' | 'hit' | 'off'; t: number; side: number; ok: number; cramped: number }
@@ -28,7 +29,10 @@ interface Pit { phase: 'line' | 'hit' | 'off'; t: number; side: number; ok: numb
 // an arrest, moved by src/arrest.ts. `slot`: the way round you (radians) they stand when
 // they've caught up; `at`: the door of your car they're making for. `post`: where they
 // stand at a roadblock, behind their car.
-export interface Officer { avatarId: number; x: number; y: number; h: number; vx: number; vy: number; car: Car; fig: Figures; anim: Anim; down: number; back: boolean; out?: number; gone?: boolean; level?: number; gz?: number; detour?: number; reload?: number; door?: number; led?: boolean; grip?: number; slot?: number; at?: number; post?: Point2; block?: Roadblock }
+export interface Officer { avatarId: number; x: number; y: number; h: number; vx: number; vy: number; car: Car; fig: Figures; anim: Anim; down: number; back: boolean; out?: number; gone?: boolean; level?: number; gz?: number; detour?: number; reload?: number; door?: number; led?: boolean; grip?: number; slot?: number; at?: number; post?: Point2; block?: Roadblock; sprint?: number; winded?: number; dive?: Dive; diveRest?: number }
+// An officer's dive at your legs: `t` since they left their feet, which way, how fast they
+// set off, and whether it's been decided yet.
+interface Dive { t: number; ux: number; uy: number; v: number; done: boolean }
 // A stretch of the way a police car or a fire engine can take: a street, or (`foot`) a
 // way meant for people.
 type Way = (DriveEdge | WalkEdge) & { mid?: Polyline; twin?: DriveEdge | null };
@@ -56,7 +60,7 @@ interface PoliceOptions {
   rng: () => number; edgesNear: (x: number, y: number, radius: number) => DriveEdge[];
   // The footpath network, for the ways an emergency vehicle may take through pedestrian zones and parks.
   walk?: WalkGraph; walkNear?: (x: number, y: number, radius: number) => WalkEdge[];
-  offscreen: (x: number, y: number) => boolean; onBusted: (by: Officer) => void; kit: FigureKit;
+  offscreen: (x: number, y: number) => boolean; onBusted: (by: Officer, tackled?: boolean) => void; kit: FigureKit;
   // Whether a car or a tram (other than `skip`) takes up a circle of radius r at (x, y).
   bodyAt?: (x: number, y: number, r: number, skip: Car | null) => boolean;
   // A shot at the player, from the muzzle to where the bullet went, and whether it hit.
@@ -108,6 +112,18 @@ const CRIME_NAMES: Record<keyof typeof POINTS, string> = {
 };
 const COOLDOWN: Partial<Record<keyof typeof POINTS, number>> = { hitCop: 1, gunfire: 2.5 }; // one scrape (or one burst) shouldn't count ten times
 const RUN = 6.4; // officers on foot, m/s: you can outrun them, but not walking
+// Close behind someone running from them (you run at 7.5 m/s), an officer sprints for a
+// moment and then is winded for a while: from a few metres off that gets them near enough
+// to dive at your legs; from further off you still get away.
+const SPRINT = 9, SPRINT_FOR = 2.2, WINDED = 4, SPRINT_NEAR = 7; // m/s, s, s, m
+// The dive (the `tackle` clip): they set off at up to DIVE_MAX m/s and slow to a stop on
+// the ground in DIVE_SLIDE s, their arms DIVE_ARMS m ahead, and it's decided DIVE_CONTACT s
+// in: you're brought down if you're within DIVE_HIT of their arms then (src/arrest.ts
+// plays it out). They only go for it when they'd reach where you'll be by then. A miss leaves
+// them on the ground until DIVE_UP s, and a while before they try another.
+const DIVE_CONTACT = 0.3, DIVE_SLIDE = 0.5, DIVE_MAX = 10.5, DIVE_ARMS = 1.4, DIVE_HIT = 0.95, DIVE_UP = 1.55, DIVE_REST = 3;
+const DIVE_TRAVEL = DIVE_CONTACT - DIVE_CONTACT * DIVE_CONTACT / (2 * DIVE_SLIDE); // metres covered by contact per m/s set off at
+const DIVE_FAST = 4.5; // m/s you're going at least: slower, they just take hold of you
 const WRECKED = 90; // damage that puts a police car out of the chase
 const ARMED = 3; // stars from which officers on foot shoot
 const FROM_CARS = 4; // and from which they shoot from the cars
@@ -211,7 +227,7 @@ export function pedals(c: Car, p: Follower, tx: number, ty: number, want: number
 export class Police {
   scene: THREE.Scene; drive: DriveGraph; traffic: Traffic; grid: CarGrid;
   r: () => number; edgesNear: PoliceOptions['edgesNear']; offscreen: PoliceOptions['offscreen'];
-  onBusted: (by: Officer) => void; kit: FigureKit; bodyAt: NonNullable<PoliceOptions['bodyAt']>;
+  onBusted: PoliceOptions['onBusted']; kit: FigureKit; bodyAt: NonNullable<PoliceOptions['bodyAt']>;
   height: PoliceOptions['height']; onShot: NonNullable<PoliceOptions['onShot']>;
   trackNear: NonNullable<PoliceOptions['trackNear']>;
   private nextOfficerId = 0;
@@ -297,11 +313,12 @@ export class Police {
     return false;
   }
 
-  // `car`: the police car that was hit, if any; its crew gets out and comes after you,
-  // wrecked or not (but not out of one the blow has rolled over: they stay belted in).
+  // `car`: the police car that was hit (rammed or shot at), if any; its crew gets out and
+  // comes after you, wrecked or not (but not out of one the blow has rolled over: they stay
+  // belted in). Out of a moving car only once it has pulled up (`halt`): they used to jump
+  // out at once and leave it rolling on behind you, the driver's door open.
   crime(kind: keyof typeof POINTS, x: number, y: number, car?: Car) {
     if (kind === 'hitCop' && car?.crew && !car.roll) {
-      this.getOut(car);
       // A patrol riding along with the traffic has no one to drive it once its officer is
       // out (the traffic would carry on with an empty car, the door open): it joins the
       // chase cars, which wait for their officers.
@@ -311,6 +328,9 @@ export class Police {
         car.mode = 'police';
         this.cars.push({ car, path: null, s: 0, replan: 0, stuck: 0, reverse: 0, calm: false, wrecked: false });
       }
+      const p = this.cars.find((q) => q.car === car);
+      if (p && car.speed > 1) p.halt = true;
+      else this.getOut(car);
     }
     if (this.cool[kind] > 0) return;
     telemetry.did(`crime: ${CRIME_NAMES[kind]}`);
@@ -336,7 +356,7 @@ export class Police {
   }
 
   knock(o: Officer, vx: number, vy: number) {
-    Object.assign(o, { down: 3, vx, vy, h: Math.atan2(vy, vx) + Math.PI });
+    Object.assign(o, { down: 3, vx, vy, h: Math.atan2(vy, vx) + Math.PI, dive: undefined });
     o.anim.play('fall', true, 0.08);
   }
 
@@ -634,8 +654,10 @@ export class Police {
     const behind = !me.car && dist < 60 && this.cars.some((q) => q !== p && q.car.speed < 2
       && Math.hypot(q.car.x - c.x, q.car.y - c.y) < 9 && (q.car.x - c.x) * Math.cos(c.h) + (q.car.y - c.y) * Math.sin(c.h) > 0);
     if (behind) want = 0;
-    // An officer out on foot: the car waits.
-    if (!c.crew) want = 0;
+    // An officer out on foot: the car waits (and doesn't back up with its door open, if it
+    // was backing out of somewhere as they got out). Pulling up to let them out: it stops.
+    if (!c.crew || p.halt) want = 0;
+    if (!c.crew) p.reverse = 0;
     // Through a red light with care.
     if (!p.calm && this.traffic.signals?.against(c.x, c.y, c.h, 22)) want = Math.min(want, 5);
     const { throttle, steer } = pedals(c, p, tx, ty, want, dt);
@@ -771,6 +793,9 @@ export class Police {
   walk(o: Officer, dt: number, me: PlayerTarget, goal = me) {
     if (o.led) return;
     if (o.out && o.out > 0) { o.out -= dt; o.vx = o.vy = 0; return; }
+    o.diveRest = Math.max(0, (o.diveRest ?? 0) - dt);
+    if (o.winded) o.winded = Math.max(0, o.winded - dt);
+    if (o.dive) { this.diving(o, o.dive, dt, me); return; }
     if (o.down > 0) {
       o.down -= dt;
       const k = Math.exp(-4 * dt);
@@ -819,10 +844,18 @@ export class Police {
         this.arrive(o, o.post![0], o.post![1], Math.atan2(me.y - o.y, me.x - o.x), dt);
         o.grip = 0;
       } else {
+        // After you on foot and you're running: a sprint while you're near, and a dive at
+        // your legs once they'd reach you.
+        const after = goal === me && !me.car && this.heat > 0 && !me.air && level && !this.arresting, running = after && this.moved > DIVE_FAST;
+        if (running && toMe < SPRINT_NEAR && !o.winded) {
+          o.sprint = (o.sprint ?? 0) + dt;
+          if (o.sprint > SPRINT_FOR) { o.sprint = 0; o.winded = WINDED; }
+        } else o.sprint = 0;
+        if (running && this.lunge(o, me)) return;
         // Caught up: at your door, or at arm's length (round your car when both doors are
-        // taken), facing you.
+        // taken), facing you. On your heels while you walk: they keep up with you.
         if (o.at !== undefined) this.arrive(o, gx, gy, Math.atan2(me.car!.y - o.y, me.car!.x - o.x), dt);
-        else this.standRound(o, goal.x, goal.y, goal === me && me.car ? me.car.spec.L / 2 + 1.2 : ARM, dt);
+        else this.standRound(o, goal.x, goal.y, goal === me && me.car ? me.car.spec.L / 2 + 1.2 : ARM, dt, after ? this.moved : 0, o.sprint ? SPRINT : RUN);
         if (this.heat > 0 && !me.air && level) {
           // Hold of you, or at the door of the car you've stopped in: it takes a moment, and
           // you can still run out of their hands (walking, you can't) or drive off.
@@ -842,11 +875,57 @@ export class Police {
   }
 
   // Runs to (tx, ty), slowing to stop on the spot rather than overshooting it (and
-  // turning on it, back and forth, as they did), and faces `face` once close.
-  arrive(o: Officer, tx: number, ty: number, face: number, dt: number) {
+  // turning on it, back and forth, as they did), and faces `face` once close. `pace`: how
+  // fast the spot itself is moving (it's beside you and you're walking off), which they
+  // keep up with on top of closing in; `top`, as fast as they'll go.
+  arrive(o: Officer, tx: number, ty: number, face: number, dt: number, pace = 0, top = RUN) {
     const d = Math.hypot(tx - o.x, ty - o.y), h = o.h;
-    if (d < 0.12) { o.vx = o.vy = 0; o.detour = 0; } else steer(o, tx, ty, Math.min(RUN, 0.5 + d * 3), this.bodyAt, null, this.r);
+    if (d < 0.12 && pace < 0.2) { o.vx = o.vy = 0; o.detour = 0; } else steer(o, tx, ty, Math.min(top, pace + 0.5 + d * 3), this.bodyAt, null, this.r);
     if (d < 1.5) o.h = h + turnOf(h, face) * Math.min(1, 10 * dt);
+  }
+
+  // Whether the officer dives at you now: when, setting off as fast as it takes (no
+  // faster than a dive goes), their arms would be where you'll be when it's decided, and
+  // nothing stands between.
+  lunge(o: Officer, me: PlayerTarget) {
+    if (o.diveRest || this.officers.some((q) => q.dive)) return false;
+    const px = me.x + me.vx * DIVE_CONTACT, py = me.y + me.vy * DIVE_CONTACT;
+    const dx = px - o.x, dy = py - o.y, d = Math.hypot(dx, dy), v = Math.max(1, (d - DIVE_ARMS) / DIVE_TRAVEL);
+    if (d < 1 || v > DIVE_MAX || !this.clear(o.x, o.y, me.x, me.y)) return false;
+    const ux = dx / d, uy = dy / d;
+    for (const k of [0.8, 1.6, 2.4]) if (k < d && (this.blocked(o.x + ux * k, o.y + uy * k) || this.bodyAt(o.x + ux * k, o.y + uy * k, 0.35, null))) return false;
+    o.dive = { t: 0, ux, uy, v, done: false };
+    o.h = Math.atan2(uy, ux);
+    o.vx = o.vy = 0;
+    o.grip = 0;
+    o.anim.play('tackle', true, 0.06);
+    return true;
+  }
+
+  // Through the air and along the ground, slowing to a stop; whether they've got you is
+  // decided at DIVE_CONTACT. Missed: up again once the clip has them on their knees.
+  diving(o: Officer, d: Dive, dt: number, me: PlayerTarget) {
+    d.t += dt;
+    const v = d.v * Math.max(0, 1 - d.t / DIVE_SLIDE);
+    const nx = o.x + d.ux * v * dt, ny = o.y + d.uy * v * dt;
+    if (!this.blocked(nx, o.y)) o.x = nx;
+    if (!this.blocked(o.x, ny)) o.y = ny;
+    o.vx = o.vy = 0;
+    o.anim.step(dt);
+    if (!d.done && d.t >= DIVE_CONTACT) {
+      d.done = true;
+      const ax = o.x + d.ux * DIVE_ARMS, ay = o.y + d.uy * DIVE_ARMS;
+      if (this.heat > 0 && !this.arresting && !me.car && !me.air && this.level(o, me) && Math.hypot(me.x - ax, me.y - ay) < DIVE_HIT) {
+        // (Unless the arrest is off: for the tests, or you were busted already.)
+        this.onBusted(o, true);
+        if (this.arresting) { o.dive = undefined; return; }
+      }
+    }
+    if (d.t > DIVE_UP) {
+      o.dive = undefined;
+      o.diveRest = DIVE_REST;
+      o.anim.play('idle', true, 0.3);
+    }
   }
 
   standable(x: number, y: number) { return !this.blocked(x, y) && !this.bodyAt(x, y, 0.3, null); }
@@ -855,7 +934,7 @@ export class Police {
   // side they came from, but not where another officer stands (they spread round you,
   // SPREAD apart), nor in a wall or a car; and they go round you to get there, not
   // through you. The way round is picked once they're near, and kept.
-  standRound(o: Officer, cx: number, cy: number, r: number, dt: number) {
+  standRound(o: Officer, cx: number, cy: number, r: number, dt: number, pace = 0, top = RUN) {
     const dx = o.x - cx, dy = o.y - cy, d = Math.hypot(dx, dy), here = Math.atan2(dy, dx);
     if (o.slot === undefined || d > r + 4) o.slot = here;
     let a = o.slot;
@@ -877,7 +956,7 @@ export class Police {
       tx = cx + Math.cos(b) * rr;
       ty = cy + Math.sin(b) * rr;
     }
-    this.arrive(o, tx, ty, Math.atan2(cy - o.y, cx - o.x), dt);
+    this.arrive(o, tx, ty, Math.atan2(cy - o.y, cx - o.x), dt, pace, top);
   }
 
   // ---- Every frame -------------------------------------------------------
@@ -981,6 +1060,10 @@ export class Police {
       // (Rolled over, it keeps its crew, belted in their seats.)
       if (p.wrecked && !c.roll) c.mode = 'loose';
       c.update(dt, ctl, this.grid);
+      if (p.halt && c.speed < 1) {
+        p.halt = false;
+        if (c.crew && !c.roll) this.getOut(c);
+      }
       const d = Math.hypot(c.x - me.x, c.y - me.y);
       const waiting = this.officers.some((o) => o.car === c);
       p.gone = !waiting && this.offscreen(c.x, c.y) && (p.calm || p.wrecked ? d > 120 : d > 450);
