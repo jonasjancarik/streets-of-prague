@@ -6,7 +6,7 @@ import type { Geo, Point2, Bounds, Polygons } from './geo.ts';
 import type { TreeTileData, TreeInstances } from './vegetation.ts';
 import type { RawStreetEdge } from '../network.ts';
 
-export type FurnitureKind = 0 | 1 | 2 | 3 | 4; // bench, bin, courtyard planter; surveyed: hydrant, phone box (map/utility.ts)
+export type FurnitureKind = 0 | 1 | 2 | 3; // bench, bin, courtyard planter; surveyed: hydrant (map/utility.ts)
 export interface FurnitureSpot { kind: FurnitureKind; x: number; y: number; z: number; angle: number }
 export interface FurnitureInstances { matrices: Float32Array[]; spots: FurnitureSpot[] }
 export interface FurnitureData extends TreeTileData {
@@ -16,7 +16,7 @@ export interface FurnitureData extends TreeTileData {
   reserved: Float32Array; // surveyed lamps, independent of tile arrival order
   structures: Polygons;
 }
-export const FURNITURE_SIZE = [[0.95, 0.42], [0.32, 0.32], [0.65, 0.65], [0.16, 0.16], [0.47, 0.47]] as const;
+export const FURNITURE_SIZE = [[0.95, 0.42], [0.32, 0.32], [0.65, 0.65], [0.16, 0.16]] as const;
 export const FURNITURE_KINDS = FURNITURE_SIZE.length;
 const STEP = 14;
 const INSET = 12; // neighbouring generated tree crowns can reach across a tile edge

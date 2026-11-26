@@ -1,13 +1,14 @@
 // What lies in and stands on the streets, surveyed (pipeline/ipr_utility.py, a tile's
 // `utility`): manhole covers, storm drains and the small covers of underground hydrants,
-// flat on the ground; hydrants and phone boxes, standing. Worked out in the tile workers.
+// flat on the ground; hydrants, standing. (The survey's phone boxes are in the data but not
+// in the game; see standingMarks.) Worked out in the tile workers.
 import type { Point2 } from './geo.ts';
 
 export type UtilityMark = [number, number, number]; // x, y (m), kind
 export const MANHOLE = 0, DRAIN = 1, HYDRANT = 2, PHONE = 3, HYDRANT_COVER = 4;
 
 // Which way the nearest street runs at a point (radians, 0 if none is within `reach`):
-// a drain's bars and a phone box's door follow it.
+// a drain's bars and a hydrant cover's long side follow it.
 export function streetAngle(lines: Point2[][], reach = 25) {
   const segments: number[] = [];
   for (const pts of lines) for (let i = 0; i < pts.length - 1; i++) segments.push(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]);
@@ -70,35 +71,11 @@ export function coverGeometry(marks: UtilityMark[], lines: Point2[][], height: (
   return { position: new Float32Array(pos), normal, index: new Uint32Array(idx) };
 }
 
-// Where the surveyed hydrants and phone boxes stand: { kind (the furniture's 3 or 4), x,
-// y, angle }. A phone box faces along the nearest path or street.
-export function standingMarks(marks: UtilityMark[], lines: Point2[][]) {
-  const angleAt = streetAngle(lines, 15);
-  const out: { kind: 3 | 4; x: number; y: number; angle: number }[] = [];
-  for (const [x, y, kind] of marks) {
-    if (kind === HYDRANT) out.push({ kind: 3, x, y, angle: 0 });
-    else if (kind === PHONE) out.push({ kind: 4, x, y, angle: angleAt(x, y) });
-  }
+// Where the surveyed hydrants stand: { kind (the furniture's 3), x, y, angle }. The
+// survey's phone boxes are left out: nearly all of Prague's were taken away in the
+// early 2020s, and a kiosk dates the street.
+export function standingMarks(marks: UtilityMark[]) {
+  const out: { kind: 3; x: number; y: number; angle: number }[] = [];
+  for (const [x, y, kind] of marks) if (kind === HYDRANT) out.push({ kind: 3, x, y, angle: 0 });
   return out;
-}
-
-// A survey point can fall just inside the simplified frontage. Try turning a kiosk
-// at that point first; at most a metre of setback may be needed to fit its cabinet.
-export function fitPhoneBox(mark: { x: number; y: number; angle: number }, clear: (x: number, y: number) => boolean) {
-  for (const offset of [0, 0.5, 1]) {
-    for (const turn of [0, Math.PI, Math.PI / 2, -Math.PI / 2]) {
-      const angle = mark.angle + turn, c = Math.cos(angle), s = Math.sin(angle);
-      const x = mark.x + offset * s, y = mark.y - offset * c;
-      // Across and along its sides, including half a step through the open front.
-      let fits = true;
-      for (const across of [-0.46, 0, 0.46]) {
-        for (const front of [-0.46, 0, 0.46, 0.86]) {
-          if (!clear(x + across * c + front * s, y + across * s - front * c)) { fits = false; break; }
-        }
-        if (!fits) break;
-      }
-      if (fits) return { x, y, angle };
-    }
-  }
-  return null;
 }

@@ -100,7 +100,7 @@ export interface TileJSON extends GroundTileData {
   trees: TreeSpot[];
   shrubs?: Point2[]; // surveyed single shrubs (pipeline/ipr_greenery.py)
   canopy?: CanopyCells; // what grows where (pipeline/tree_sizes.py), for the trees made up
-  utility?: UtilityMark[]; // surveyed covers, drains, hydrants and phone boxes (pipeline/ipr_utility.py)
+  utility?: UtilityMark[]; // surveyed covers, drains, hydrants and phone boxes, which the game leaves out (pipeline/ipr_utility.py)
   lots?: { o: 'parallel' | 'diagonal' | 'perpendicular' | null; rings: Point2[][] }[];
   sections?: TileSection[];
   passages?: TilePassage[];

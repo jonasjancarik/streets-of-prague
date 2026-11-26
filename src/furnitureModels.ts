@@ -148,35 +148,6 @@ function hydrant() {
   return join(parts);
 }
 
-function kiosk() {
-  const foot = '#737675', metal = '#b5b9b6', gasket = '#475152';
-  const parts = [box(.91, .066, .92, 0, .042, 0, foot), box(.94, .055, .94, 0, 2.105, 0, gasket),
-  box(.94, .148, .94, 0, 2.20, 0, '#c9a343'), box(.948, .036, .948, 0, 2.286, 0, '#d2d1bf')];
-  const title: Swatch = [265, 262, 507, 312], keys: Swatch = [265, 328, 425, 500];
-  for (const angle of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) parts.push(finish(new THREE.PlaneGeometry(.615, .133).translate(0, 2.2, .472).rotateY(angle), '#ffffff', title));
-  for (const x of [-.426, .426]) for (const z of [-.426, .426]) {
-    parts.push(box(.047, 2.07, .047, x, 1.076, z, metal), box(.074, .15, .074, x, .106, z, gasket));
-  }
-  const panes: THREE.BufferGeometry[] = [];
-  for (const angle of [Math.PI, Math.PI / 2, -Math.PI / 2]) {
-    for (const y of [.235, 1.026, 2.046]) parts.push(box(.82, .041, .037, 0, y, .427, metal).rotateY(angle));
-    parts.push(box(.808, .128, .027, 0, .151, .427, gasket).rotateY(angle));
-    panes.push(new THREE.PlaneGeometry(.802, 1.78).translate(0, 1.141, .428).rotateY(angle));
-    for (let i = -2; i <= 2; i++) parts.push(box(.063, .012, .008, i * .145, 1.494, .431, '#bfc8c1').rotateY(angle));
-  }
-  // Back board, payphone cabinet, recessed keypad and handset on a coiled tether.
-  parts.push(box(.514, .89, .043, 0, 1.31, -.395, metal), box(.366, .574, .137, 0, 1.374, -.31, '#666f71'),
-    box(.37, .031, .194, 0, 1.079, -.28, gasket), box(.27, .06, .095, .035, 1.205, -.22, '#596062'),
-    finish(new THREE.PlaneGeometry(.181, .230).translate(.054, 1.473, -.239), '#fff', keys),
-    box(.105, .014, .015, .051, 1.294, -.232, '#30383b'));
-  const hand: Point[] = [[-.136, 1.59, -.206], [-.131, 1.55, -.176], [-.137, 1.404, -.168], [-.134, 1.38, -.194]];
-  for (let i = 1; i < hand.length; i++) parts.push(rod(hand[i - 1], hand[i], .019, 8, '#303c3c'));
-  for (const y of [1.38, 1.589]) parts.push(box(.058, .057, .057, -.136, y, -.194, '#354042'));
-  const cord: Point[] = [[-.138, 1.356, -.193], [-.155, 1.16, -.182], [-.124, 1.084, -.18], [-.090, 1.116, -.197], [-.076, 1.215, -.23]];
-  for (let i = 1; i < cord.length; i++) parts.push(rod(cord[i - 1], cord[i], .005, 5, gasket));
-  return { body: join(parts), glass: join(panes) };
-}
 export function furnitureModels() {
-  const phone = kiosk();
-  return { bodies: [bench(), bin(), planter(), hydrant(), phone.body], glass: phone.glass };
+  return [bench(), bin(), planter(), hydrant()];
 }

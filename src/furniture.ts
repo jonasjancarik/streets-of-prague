@@ -14,29 +14,20 @@ function prepareStreet() {
   const map = furnitureAtlas();
   const solid = cutAway(new THREE.MeshStandardMaterial({ map, vertexColors: true, roughness: 0.86 }), 'furniture');
   const shrub = cutAway(new THREE.MeshStandardMaterial({ map, vertexColors: true, roughness: 0.96, alphaTest: 0.42, side: THREE.DoubleSide }), 'furniture-leaves');
-  const glass = cutAway(new THREE.MeshStandardMaterial({ color: '#abc5c4', opacity: 0.16, transparent: true, depthWrite: false,
-    roughness: 0.19, metalness: 0.10, side: THREE.DoubleSide, forceSinglePass: true }), 'kiosk-glass');
   const leafDepth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map, alphaTest: 0.42, side: THREE.DoubleSide });
-  return { models, solid, shrub, glass, leafDepth };
+  return { models, solid, shrub, leafDepth };
 }
-const names = ['park benches', 'park bins', 'courtyard planters', 'hydrants', 'phone boxes'];
+const names = ['park benches', 'park bins', 'courtyard planters', 'hydrants'];
 
 function changeModel(body: THREE.InstancedMesh, fromStreet: boolean) {
   const kind: number = body.userData.kind;
   if (fromStreet) {
-    const { models, solid, shrub, glass, leafDepth } = street ??= prepareStreet();
-    body.geometry = models.bodies[kind]; body.material = kind === 2 ? shrub : solid;
+    const { models, solid, shrub, leafDepth } = street ??= prepareStreet();
+    body.geometry = models[kind]; body.material = kind === 2 ? shrub : solid;
     body.customDepthMaterial = kind === 2 ? leafDepth : depth;
-    if (kind === 4 && !body.children.length) {
-      const panes = new THREE.InstancedMesh(models.glass, glass, body.count);
-      panes.name = 'phone box glass';
-      panes.instanceMatrix.array.set(body.instanceMatrix.array); sendInstances(panes);
-      panes.computeBoundingBox(); panes.computeBoundingSphere(); body.add(panes);
-    }
   } else {
     body.geometry = (overview ??= furnitureOverview())[kind]; body.material = mapMaterial; body.customDepthMaterial = depth;
   }
-  if (body.children.length) body.children[0].visible = fromStreet;
   body.computeBoundingBox(); body.computeBoundingSphere();
 }
 
@@ -57,8 +48,5 @@ export function furnitureMeshes(instances: FurnitureInstances, fromStreet = fals
 }
 
 export function disposeFurniture(meshes: THREE.InstancedMesh[]) {
-  for (const mesh of meshes) {
-    for (const panes of mesh.children) (panes as THREE.InstancedMesh).dispose();
-    mesh.dispose();
-  }
+  for (const mesh of meshes) mesh.dispose();
 }

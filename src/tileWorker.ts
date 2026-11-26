@@ -20,7 +20,7 @@ import { fenceArrays } from './map/fences.ts';
 import { shedArrays, shedCorners } from './map/sheds.ts';
 import { treeInstances } from './map/vegetation.ts';
 import { furnitureInstances, furnitureMatrices, FURNITURE_SIZE } from './map/furniture.ts';
-import { fitPhoneBox, standingMarks } from './map/utility.ts';
+import { standingMarks } from './map/utility.ts';
 import { onPolygons } from './map/geo.ts';
 import { Geo, Grid, fillPolys, strokeLines } from './map/geo.ts';
 import { styleFor, facadeCoords, paintWalls, mansardCoords, finishWalls, splitWindowRows, WALL_CODES, BLANK } from './facades.ts';
@@ -404,19 +404,12 @@ function land({ data, seeds, ground, bridges, box, structures }: WorkerJobs['lan
   const sheds = shedArrays(data.sheds, hAt);
   const grid = tileGrid(geo, data, seeds, edges);
   const furniture = ground && data.furnitureEnabled ? furnitureInstances(new Geo({ ...data, buildings: data.furnitureBuildings }), trees, hAt) : { matrices: furnitureMatrices([]), spots: [] };
-  // The surveyed hydrants and phone boxes stand where the survey has them.
+  // The surveyed hydrants stand where the survey has them.
   if (ground && data.furnitureEnabled && data.utility?.length) {
     // (Not one the game's carriageway covers: its streets are not always as wide as the real ones.)
     const onRoad = onPolygons([...(data.roads.road || []), ...(data.roads.sett || []), ...(data.roads.dirt || [])]);
-    // A walkable archway is cut out of the collision raster, but it still belongs
-    // to the building. Keep the whole cabinet out of its frontage and passage.
-    let inBuilding: ReturnType<typeof onPolygons> | undefined;
-    const clear = (x: number, y: number) => grid.at(x, y) === 0 && !onRoad(x, y)
-      && !(inBuilding ??= onPolygons(data.furnitureBuildings.map(b => b.rings)))(x, y);
-    for (const p of standingMarks(data.utility, data.walk.map((e) => e.pts))) {
-      if (onRoad(p.x, p.y)) continue;
-      const spot = p.kind === 4 ? fitPhoneBox(p, clear) : p;
-      if (spot) furniture.spots.push({ ...spot, kind: p.kind, z: hAt(spot.x, spot.y) });
+    for (const p of standingMarks(data.utility)) {
+      if (!onRoad(p.x, p.y)) furniture.spots.push({ ...p, z: hAt(p.x, p.y) });
     }
     furniture.matrices = furnitureMatrices(furniture.spots);
   }

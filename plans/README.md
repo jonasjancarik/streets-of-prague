@@ -18,6 +18,7 @@
 | [023: Seasons](023-seasons.md) | A fixed game date; seasonal trees, ground, fields, hedges, light, weather and birds; season choices on the start screen | STEPS 1–4 IN MAIN AND LIVE IN v0.5.2 (ground cost unresolved) |
 | [037: Cars that mirror the street](037-cars-that-mirror-the-street.md) | Car paint and glass reflect a scene: a reflection shader for every tier, a band of surroundings from Codex-made street panoramas by kind of area, and a reflection probe of the real street on Ultra | DONE (27 October 2026) |
 | [038: Bus timetables](038-bus-timetables.md) | Scheduled departures by platform, then a scheduled spawning pilot on line 227 | DEPARTURE BOARD BUILT LOCALLY |
+| [039: Street detail in first person](039-street-detail-in-first-person.md) | Small objects at eye level from comparing first-person frames with street panoramas: kerbside furniture, wall attachments, paving, street life; phone boxes removed; tiers for each | PROPOSED |
 
 ### Overnight status, 3 October 2026
 

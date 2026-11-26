@@ -46,9 +46,8 @@ It is not expected to stay identical across map rebuilds or a different area's o
 The overhead benches, bins and planters use 108, 36 and 84 triangles. At pedestrian
 height the bench has chamfered timber slats on cast supports, the litter basket has a
 recessed liner, and individual sprays of leaves rise from the planter. Surveyed hydrants
-have capped outlets. The telephone kiosk has clear panes, a handset and a keypad. Its
-frame and glass use two instanced draws. Each other kind uses one draw per populated
-tile. Switching cameras reuses the instance placements. The street models share a
+have capped outlets. Each kind uses one draw per populated tile. The survey's phone
+boxes are left out: nearly all of Prague's were removed in the early 2020s. Switching cameras reuses the instance placements. The street models share a
 single surface atlas, loaded on first use in the street view.
 
 The worker stamps the solid footprints into the existing collision grid before
