@@ -67,13 +67,13 @@ const dentAt = (): N => {
   const l: N = smoothstep(-0.9, 0.7, at.y), r: N = smoothstep(-0.9, 0.7, at.y.negate()), mid: N = float(1).sub(at.x.mul(at.x));
   const nose: N = smoothstep(0.45, 1, at.x).mul(dentLevel(0).mul(l).add(dentLevel(1).mul(r)));
   const tail: N = smoothstep(0.45, 1, at.x.negate()).mul(dentLevel(2).mul(l).add(dentLevel(3).mul(r)));
-  const left: N = smoothstep(0.4, 1, at.y).mul(mid).mul(dentLevel(4)), right: N = smoothstep(0.4, 1, at.y.negate()).mul(mid).mul(dentLevel(5));
+  const left: N = smoothstep(0.15, 0.7, at.y).mul(mid).mul(dentLevel(4)), right: N = smoothstep(0.15, 0.7, at.y.negate()).mul(mid).mul(dentLevel(5));
   return vec4(nose, tail, left, right);
 };
 const bumpy = (p: N): N => sin(p.x.mul(11).add(p.z.mul(7))).add(sin(p.z.mul(13).sub(p.y.mul(9)).add(2))).mul(0.25).add(0.5);
 const dented = (p: N, d: N): N => {
-  const w = bumpy(p).add(0.5), all = d.x.add(d.y).add(d.z).add(d.w);
-  const q = vec3(p.x.add(d.y.sub(d.x).mul(DS.nose).mul(w)), p.y, p.z.add(d.z.sub(d.w).mul(DS.side).mul(w)));
+  const along = bumpy(vec3(0, p.y, p.z)).add(0.5), across = bumpy(vec3(p.x, p.y, 0)).add(0.5).mul(float(1).sub(smoothstep(0.85, 1.35, p.y).mul(0.65))), all = d.x.add(d.y).add(d.z).add(d.w);
+  const q = vec3(p.x.add(d.y.sub(d.x).mul(DS.nose).mul(along)), p.y, p.z.add(d.z.sub(d.w).mul(DS.side).mul(across)));
   return vec3(q.x, q.y.mul(float(1).sub(all.mul(DS.sag).mul(bumpy(q.zyx)))), q.z);
 };
 const dentNormal = (n: N, p: N, d: N): N =>

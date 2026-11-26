@@ -1329,7 +1329,12 @@ if (KINDS.length * AREA_STEP > DENT_STEP) throw new Error('Too many kinds of are
 // `dentAt`: how far in the nose, the tail, the left and the right are pushed there (0
 // to 3). `bumpy`: a smooth unevenness (0 to 1), so the crumpled metal isn't flat.
 // A dented part comes in by up to `nose` or `side` metres a level, sags by up to `sag`
-// of its height and tilts by up to `tilt`.
+// of its height and tilts by up to `tilt`. Everything at one spot of the side (or the
+// nose, or the tail) comes in by the same amount, whatever its depth in the car: the
+// unevenness doesn't depend on how far in a part is, and a side dent comes in fully
+// over the outer third of the car's width, so the panels and the trim just inside them
+// move together instead of the panels passing through the trim (or the bumper through
+// the grille). It eases off above the doors, so the roof doesn't come down on the people inside.
 export const DENT_SHAPE = { nose: 0.13, side: 0.11, sag: 0.03, tilt: 0.12 };
 // Broken glass (BROKEN_GLASS_GLSL; brokenGlass in webgpu/vehicles.ts): the cracks and
 // crushed glass are `white`, a crazed toughened pane is frosted up to `frost` of the way
@@ -1343,13 +1348,13 @@ vec4 dentAt(vec2 at) {
   float l = smoothstep(-.9, .7, at.y), r = smoothstep(-.9, .7, -at.y), mid = 1. - at.x * at.x;
   return vec4(smoothstep(.45, 1., at.x) * (dentLevel(0.) * l + dentLevel(1.) * r),
     smoothstep(.45, 1., -at.x) * (dentLevel(2.) * l + dentLevel(3.) * r),
-    smoothstep(.4, 1., at.y) * mid * dentLevel(4.), smoothstep(.4, 1., -at.y) * mid * dentLevel(5.));
+    smoothstep(.15, .7, at.y) * mid * dentLevel(4.), smoothstep(.15, .7, -at.y) * mid * dentLevel(5.));
 }
 float bumpy(vec3 p) { return .5 + .25 * (sin(p.x * 11. + p.z * 7.) + sin(p.z * 13. - p.y * 9. + 2.)); }
 vec3 dented(vec3 p, vec4 d) {
-  float w = .5 + bumpy(p);
-  p.x += (d.y - d.x) * ${DENT_SHAPE.nose.toFixed(2)} * w;
-  p.z += (d.z - d.w) * ${DENT_SHAPE.side.toFixed(2)} * w;
+  float along = .5 + bumpy(vec3(0., p.yz)), across = (.5 + bumpy(vec3(p.xy, 0.))) * (1. - .65 * smoothstep(.85, 1.35, p.y));
+  p.x += (d.y - d.x) * ${DENT_SHAPE.nose.toFixed(2)} * along;
+  p.z += (d.z - d.w) * ${DENT_SHAPE.side.toFixed(2)} * across;
   p.y *= 1. - (d.x + d.y + d.z + d.w) * ${DENT_SHAPE.sag.toFixed(2)} * bumpy(p.zyx);
   return p;
 }
