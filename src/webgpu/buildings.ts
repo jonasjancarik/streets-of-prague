@@ -18,6 +18,7 @@ import { lampLit } from './lamps.ts';
 import { EDGE, EDGE_STEP } from '../map/roofEdges.ts';
 import { type N, follow, followColor, addPort, uCut, uDirt, uWet, uSnow, vnoise, fbm, fbm2, blocks, hash12, skyAmbient } from './common.ts';
 import { DOME } from '../sky.ts';
+import { CLOSE_RELIEF } from '../streetSurface.ts';
 
 const uZenith: N = followColor(DOME.zenith), uHorizon: N = followColor(DOME.horizon);
 // Which way the sun (or at night the moon) stands, for the relief of the roofs' tiles and seams.
@@ -867,10 +868,12 @@ const streetGlassLight = Fn(() => {
   });
   return result;
 })();
+const uCloseRelief: N = follow(CLOSE_RELIEF);
 const streetWallNormal = Fn(() => {
   const n: N = normalWorldGeometry.toVar(), kind = floor(attribute('detail', 'vec4').z.add(.5));
   const stone = kind.equal(S.masonry).or(kind.greaterThanEqual(S.reveal).and(kind.lessThanEqual(S.plinth)));
-  const slope = plasterScan().gb.sub(.5).mul(select(stone, .41, 0));
+  // Rendered walls have the plaster's own grain too, faint, which a low sun brings out (High and Ultra).
+  const slope = plasterScan().gb.sub(.5).mul(select(stone, float(.41), uCloseRelief.mul(.16)));
   const tangent = vec3(n.z, 0, n.x.negate());
   return transformNormalToView(normalize(n.add(tangent.mul(slope.x)).add(tangent.cross(n).mul(slope.y))));
 })();

@@ -211,6 +211,7 @@ Graphics (<kbd>G</kbd> cycles it, remembered in the browser):
 | Close car bodies within | 40 m | 30 m | 20 m | 16 m | 12 m |
 | Façade walls with window depth, nearest | 36 within 56 m | 24 within 42 m | 12 within 27 m | 8 within 20 m | None |
 | Manhole lids and drain grates in relief within | 32 m | 24 m | 15 m | 9 m | None |
+| Relief and sheen up close on kerbs, stone steps, tram rails and rendered walls | On | On | Off | Off | Off |
 | Trams, boats, the funicular, helicopters and metro lanterns in detail | 1.6× as far | 1.25× as far | Base distance | Base distance | Base distance |
 | Street-tree branches | Full | Full | Fewer sides | Fewer sides | Fewer sides |
 | Ordinary terrain mesh spacing | 2 m | 2 m | 2 m | 4 m | 4 m |
@@ -1153,7 +1154,17 @@ record the measurements, merge decisions and pending landmark asset activation.
   stretch has which is not surveyed. At street level the WebGPU view uses six-centimetre
   cubes with chipped edges, mineral flecks and shallow joints, following the scale of
   the city's cut limestone mosaic. Cut granite blocks follow the bends of the kerb,
-  with narrow joints across it. Grass has lusher and thinner clumps, blades close up,
+  with narrow joints across it. On High and Ultra, in first and third person, the kerbs, stone
+  steps and tram rails are lit as though they had depth (`kerbHeight`, `stairHeight` and
+  `railHeight` in `src/webgpu.ts`): sunken joints, kerb stones and step blocks that have
+  settled a little each their own way, a dish worn into the middle of each tread, the
+  rail's groove. Each is a height field turned into a normal per pixel, so nothing is added
+  to the geometry; the joints fade before they are only a pixel or two wide, where they
+  would glitter, and all of it fades with distance. The same pixels get a roughness: rail
+  heads and the worn middle of the steps catch the sun, and all of them shine more when
+  wet. Rendered walls get the plaster's own grain as relief. It shows in sunlight and rain
+  more than in shade, which is lit evenly from the sky. `CLOSE_RELIEF` in
+  `src/streetSurface.ts` switches it (set from the tier in `src/graphics.ts`). Grass has lusher and thinner clumps, blades close up,
   and daisies and dandelions while the trees are in blossom. Tile rows and metal seams are
   lit and shaded by where the sun stands (`rowRelief`), and roof windows and metal roofs
   flash the sun where they lean half-way between it and the camera. Every car has a soft
@@ -1280,7 +1291,8 @@ record the measurements, merge decisions and pending landmark asset activation.
   height map stops precipitation under the ground, roofs and bridge decks. It samples
   a 72 m square in strips and follows the camera as you walk. The
   ground gets wet in the rain (darker paving, puddles mirroring the sky and the lamps,
-  rings where the drops hit) and dries over several minutes; snow settles on the
+  rings where the drops hit; up close, the setts' worn tops, the asphalt's stones, the
+  middle of stone steps and the rail heads shine more than the rest) and dries over several minutes; snow settles on the
   ground, the roofs, the cars and the tree tops, and melts slower still. Under snow,
   and from December to February, the broadleaf trees lose their leaves down to the
   branches; pines, spruces and some of the hedges stay green. On the roads

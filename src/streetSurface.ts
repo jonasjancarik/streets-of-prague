@@ -43,6 +43,9 @@ export const setts = new StreetScan('street-setts.webp');
 export const pavement = new StreetScan('street-mosaic.webp');
 export const pavementRelief = new StreetScan('street-mosaic-relief.webp');
 export const pavementReady = { value: 0 };
+// Relief and sheen up close on the granite kerbs and stairs, the tram rails and rendered
+// walls (webgpu.ts, webgpu/buildings.ts): on at High and Ultra (graphics.ts).
+export const CLOSE_RELIEF = { value: 1 };
 
 export function streetSurfaceView(street: boolean) {
   asphalt.view(street);

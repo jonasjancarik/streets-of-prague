@@ -8,12 +8,13 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as THREE from 'three';
-import { WebGPURenderer, MeshLambertNodeMaterial, CubeRenderTarget } from 'three/webgpu';
+import { WebGPURenderer, MeshLambertNodeMaterial, MeshStandardNodeMaterial, CubeRenderTarget } from 'three/webgpu';
 import { PROBE_OPTIONS, PROBE_SIZE, setProbeTargets } from './probe.ts';
 import {
   Fn, If, Discard, float, vec2, vec3, vec4, texture, materialReference, positionWorld, normalView, normalWorldGeometry, materialColor, fract, floor, mod, dot,
   mix, smoothstep, step, length, fwidth, abs, sqrt, min, max, distance, cos, sin, select, clamp, transformNormalToView,
   attribute, positionLocal, modelViewMatrix, cameraProjectionMatrix, screenSize, uniform, renderGroup, uv, cameraPosition, normalize,
+  dFdx, dFdy, cross, sign,
 } from 'three/tsl';
 import { GRASS_SEASON, WOOD_SEASON, FIELD_SEASON, HEDGE_SEASON } from './groundSeason.ts';
 import { setPatterned, setHeld, HOLD_PX, SKY_REF, GRIT, GRIT_M, LAMP_MIRROR, SEASON } from './shading.ts';
@@ -40,7 +41,7 @@ import './webgpu/underground.ts';
 import { CloudSunNode } from './webgpu/clouds.ts';
 import { gradeCurve } from './webgpu/grade.ts';
 import { makePost } from './webgpu/post.ts';
-import { asphalt, setts } from './streetSurface.ts';
+import { asphalt, setts, CLOSE_RELIEF } from './streetSurface.ts';
 import { dome } from './webgpu/dome.ts';
 import { DOME_NODE, DOME } from './sky.ts';
 import { OLD_GRADE } from './grade.ts';
@@ -127,6 +128,74 @@ function graniteKerb(c: N, p: N) {
   }).Else(() => { stone.assign(grit(pConcrete(c, p), p)); });
   return stone;
 }
+// ---- Relief and sheen up close (High and Ultra: CLOSE_RELIEF) ----
+// The kerbs, stairs and tram rails are lit as if their surface had the depth it has: joints
+// sunk between the blocks, each kerb stone's face leaning a little its own way, a dish worn
+// into the middle of a tread, the rail's groove. Each is a height field in metres, turned
+// into a normal from its change across the pixel (Mikkelsen's surface gradient), so it works
+// on a riser or a kerb's face as on the ground. It fades out before the joints come down to a
+// pixel, where it would only shimmer. They also get a sheen (roughness): polished treads and
+// rail heads catch the sun, and all of them more when wet.
+const uRelief: N = follow(CLOSE_RELIEF);
+const reliefOn: N = uRelief.mul(surfaceDetail);
+function bumped(h: N) {
+  const n: N = normalWorldGeometry, dpx: N = dFdx(positionWorld), dpy: N = dFdy(positionWorld);
+  const r1: N = cross(dpy, n), r2: N = cross(n, dpx), det: N = dot(dpx, r1);
+  const grad: N = r1.mul(dFdx(h)).add(r2.mul(dFdy(h))).mul(sign(det));
+  return transformNormalToView(normalize(n.mul(abs(det)).sub(grad)));
+}
+const closeFade = (aa: N) => float(1).sub(smoothstep(.008, .05, aa)).mul(reliefOn);
+// A joint is a centimetre or so wide: drawn narrower than a few pixels, its slope comes and goes
+// from one pixel to the next (dotted, glinting lines), so it goes sooner than the rest.
+const jointFade = (aa: N) => float(1).sub(smoothstep(.0022, .0045, aa));
+function kerbHeight(p: N) {
+  const aa = max(.0015, fwidth(trackCoord).mul(.62));
+  const q = mod(trackCoord.add(vnoise(p.mul(23)).mul(.006)), 3.12);
+  const edge = min(min(q, float(3.12).sub(q)), min(abs(q.sub(1.08)), abs(q.sub(2.02))));
+  const joint = float(1).sub(smoothstep(.003, max(.016, aa.mul(5)), edge)).mul(jointFade(aa));
+  const id = floor(trackCoord.div(3.12)).mul(3).add(step(1.08, q)).add(step(2.02, q));
+  const lean = vnoise(vec2(id, 4.7)).sub(.5).mul(.1);
+  const grain = aggregate(vec2(trackCoord, positionWorld.y).add(p).mul(3.1)).r.sub(.5);
+  return joint.mul(-.005).add(lean.mul(q.sub(1.5))).add(grain.mul(.0007)).mul(closeFade(aa));
+}
+// (stairStone's own coordinates: the step, metres across, the block, how worn.)
+function stairCoords(p: N) {
+  const id = floor(trackCoord.div(16)), u = trackCoord.sub(id.mul(16)).sub(8), y = positionWorld.y;
+  const riser = float(1).sub(smoothstep(.45, .85, abs(normalWorldGeometry.y)));
+  const len = vnoise(vec2(id, 5.7)).mul(.6).add(1.15);
+  const along = u.add(vnoise(vec2(id, 1.3)).mul(len));
+  const block = floor(along.div(len)).add(id.mul(7));
+  const wear = float(1).sub(smoothstep(.3, .85, abs(u))).mul(riser.oneMinus());
+  return { id, u, y, riser, len, along, block, wear, at: mix(p, vec2(u, y), riser) };
+}
+function stairHeight(p: N) {
+  const { u, len, along, block, at } = stairCoords(p);
+  const riser = float(1).sub(smoothstep(.45, .85, abs(normalWorldGeometry.y)));
+  const aa = max(.0015, fwidth(u).mul(.62));
+  const q = fract(along.div(len)).mul(len), edge = min(q, len.sub(q));
+  const joint = float(1).sub(smoothstep(.003, max(.014, aa.mul(5)), edge)).mul(jointFade(aa));
+  const dish = float(1).sub(smoothstep(.1, .8, abs(u))).mul(riser.oneMinus());
+  const undulate = fbm2(at.mul(2.3).add(vec2(block, block.mul(.37)))).sub(.5);
+  // Each block has settled a degree or so its own way.
+  const tilt = vnoise(vec2(block, 2.2)).sub(.5).mul(.05).mul(q.sub(len.mul(.5)));
+  const grain = aggregate(at.mul(3.1)).r.sub(.5);
+  return joint.mul(-.004).sub(dish.mul(.02)).add(tilt).add(undulate.mul(.008)).add(grain.mul(.0007)).mul(closeFade(aa));
+}
+const railBand = (a: number, b: number, w: N) =>
+  smoothstep(float(a).sub(w), float(a).add(w), trackCoord).sub(smoothstep(float(b).sub(w), float(b).add(w), trackCoord));
+function railHeight() {
+  const aa = max(.004, fwidth(trackCoord).mul(.6));
+  return railBand(.25, .483, max(aa, .008)).mul(-.025).mul(closeFade(aa));
+}
+// Roughness: 1 (no sheen) where the relief is off.
+function closeRoughness(id: number, p: N): N {
+  let r: N;
+  if (id === 20) r = float(.6).add(aggregate(p.mul(3.1)).r.sub(.5).mul(.2));
+  else if (id === 21) r = float(.78).sub(stairCoords(p).wear.mul(.36));
+  else r = mix(.8, .22, railBand(.483, .865, float(.01)));
+  return mix(1, mix(r, min(r, .18), uWet.mul(.8)), reliefOn);
+}
+
 // Outdoor stairs of cut granite. Each step is laid in two or three blocks with staggered joints. The middle of
 // each tread is worn smoother and paler, and the risers are darker and streaked.
 function stairStone(c: N, p: N) {
@@ -353,7 +422,15 @@ function weathered(id: number, c0: N, p: N, time: N) {
     c.mulAssign(mix(1, paved ? 0.6 : 0.78, wet));
     if (paved) {
       const puddle = smoothstep(0.66, 0.71, fbm2(p.mul(0.3).add(31)).mul(0.75).add(fbm2(p.mul(0.04).add(7)).mul(0.35))).mul(smoothstep(0.35, 0.9, wet)).toVar();
-      shine.assign(puddle.mul(0.4).add(0.1).mul(wet));
+      // Away from the puddles, how much a wet surface shines depends on it: the setts' worn caps
+      // more than the sand between them, the asphalt's stones here and there, a stair's worn
+      // middle, a rail's polished head (up close only).
+      let gloss: N = float(1);
+      if (id === 2) gloss = select(settDetail.greaterThan(0.5), smoothstep(0.35, 0.65, settScan.sample(settPoint(p, settAxes(p)).div(2.5)).r).mul(1.1).add(0.45), float(1));
+      else if (id === 1) gloss = select(surfaceDetail.greaterThan(.5), aggregate(p).r.mul(0.9).add(0.55), float(1));
+      else if (id === 21) gloss = stairCoords(p).wear.mul(0.8).add(0.8);
+      else if (id === 18) gloss = railBand(.483, .865, float(.01)).mul(1.5).add(0.8);
+      shine.assign(puddle.mul(0.4).add(gloss.mul(0.1)).mul(wet));
       c.mulAssign(float(1).sub(puddle.mul(0.35)));
       If(uRain.greaterThan(0.01).and(ripple.mul(puddle).greaterThan(0)), () => {
         shine.addAssign(ripples(p, time).mul(uRain).mul(0.8).mul(ripple).mul(puddle));
@@ -411,7 +488,7 @@ type GroundInputs = {
   photo: { texture: THREE.Texture; box: number[] } | null;
   raster: RasterGroundInput | null;
 };
-const groundGraphs = new Map<{ value: number }, Map<string, { color: N; ao: N | null; emissive: N; normal: N | null; mask: N | null }>>();
+const groundGraphs = new Map<{ value: number }, Map<string, { color: N; ao: N | null; emissive: N; normal: N | null; mask: N | null; roughness: N | null }>>();
 
 // patterned() in shading.ts, as a node material.
 function groundMaterial(
@@ -420,7 +497,9 @@ function groundMaterial(
   dig = false, photo: GroundInputs['photo'] = null, sheltered = false,
   seasonal = true, raster: GroundInputs['raster'] = null,
 ) {
-  const m = new MeshLambertNodeMaterial();
+  // (The kerbs, stairs and rails can shine: closeRoughness.)
+  const glossy = id === 18 || id === 20 || id === 21;
+  const m: N = glossy ? new MeshStandardNodeMaterial() : new MeshLambertNodeMaterial();
   m.color.copy(base.color);
   m.map = base.map;
   Object.assign(m, { side: base.side, depthWrite: base.depthWrite, depthTest: base.depthTest, transparent: base.transparent, opacity: base.opacity });
@@ -428,7 +507,7 @@ function groundMaterial(
   const shade = (n: N, pattern: number, seasonal = true, day = false) => {
     const g = groundGraph(pattern, time, inputs, dig, sheltered, seasonal, day);
     Object.assign(n, {
-      colorNode: g.color, aoNode: g.ao, emissiveNode: g.emissive, normalNode: g.normal,
+      colorNode: g.color, aoNode: g.ao, emissiveNode: g.emissive, normalNode: g.normal, ...(g.roughness ? { roughnessNode: g.roughness, metalnessNode: float(0) } : {}),
       maskNode: g.mask, rasterMap: raster?.texture, rasterBox: raster && boxOf(raster.box),
       reliefMap: relief?.texture, reliefBox: relief && boxOf(relief.box), skyMap: relief?.sky?.texture, skyBox: relief?.sky && boxOf(relief.sky.box),
       maskMap: deck?.mask, maskBox: deck?.mask && boxOf(deck.box!), photoMap: photo?.texture, photoBox: photo && boxOf(photo.box),
@@ -515,7 +594,9 @@ function groundGraph(id: number, time: { value: number }, { relief, deck, photo,
         n.assign(normalize(n.add(vec3(world.x, 0, world.y.negate()).mul(abs(n.y)))));
       });
       return transformNormalToView(n);
-    })() : id === 3 || id === 16 ? pavementNormal(wp) : null,
+    })() : id === 3 || id === 16 ? pavementNormal(wp)
+      : id === 20 ? bumped(kerbHeight(wp)) : id === 21 ? bumped(stairHeight(wp)) : id === 18 ? bumped(railHeight()) : null,
+    roughness: id === 18 || id === 20 || id === 21 ? closeRoughness(id, wp) : null,
   };
   byKey.set(key, graph);
   return graph;

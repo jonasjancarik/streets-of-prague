@@ -1,4 +1,5 @@
 import { STREET_DETAIL } from './streetHedges.ts';
+import { CLOSE_RELIEF } from './streetSurface.ts';
 import { wantStrips } from './reflections.ts';
 import { PROBE_ON } from './probe.ts';
 import { POST } from './post.ts';
@@ -23,6 +24,8 @@ import { STREET_QUALITY, STREET_TIERS } from './streetQuality.ts';
 // Pixel ratio scales shading; streetQuality.ts also scales close avatars, cars and
 // tree branches, so lower tiers reduce geometry and CPU work at street level and in VR.
 // Low also halves the sun shadow map.
+// High and Ultra add relief and sheen up close to kerbs, stone steps, tram rails and
+// rendered walls (CLOSE_RELIEF); Medium and below keep them flat.
 // Ultra is High with a sun shadow map twice as sharp and softer shadow edges, and
 // shadows in lamplight from people, trams and posts as well as cars.
 // Only choosing it turns it on, Auto goes no higher than High.
@@ -304,6 +307,7 @@ export class Graphics {
     CANOPY_LEAVES.value = this.tier === 'ultra' || this.tier === 'high';
     // The street view's hedge leaves and blades of grass (streetHedges.ts, streetGrass.ts): Medium and up.
     STREET_DETAIL.value = this.tier === 'ultra' || this.tier === 'high' || this.tier === 'medium';
+    CLOSE_RELIEF.value = this.tier === 'ultra' || this.tier === 'high' ? 1 : 0;
     // (The lamps resize their maps at the next frame; the materials are bound afresh below,
     // which freezes the game for half a second even on an M5, so Auto keeps the size the
     // lamps were given when it began.)
