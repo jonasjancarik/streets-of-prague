@@ -189,11 +189,33 @@ class RasterCacheTests(unittest.TestCase):
         np.testing.assert_array_equal(self.export(), result)
         self.assertEqual(self.fetch.call_count, 3)
 
-    def test_cache_cleanup_keeps_the_active_wide_surface_model(self):
-        active = self.root / "cover" / "img" / "dsm_1m_wide"
-        active.mkdir(parents=True)
+    def test_cache_cleanup_keeps_the_active_wide_height_models(self):
+        active = [self.root / "cover" / "img" / name for name in ("dsm_1m_wide", "dmr5g_1m_wide")]
+        for path in active:
+            path.mkdir(parents=True)
+        experiment = self.root / "cover" / "img" / "probe_rgb"
+        experiment.mkdir(parents=True)
         with patch.object(cache_stale, "CACHE", self.root):
-            self.assertNotIn(active, [p for p, _ in cache_stale.stale({})])
+            stale = {p for p, _ in cache_stale.stale({})}
+            for path in active:
+                self.assertNotIn(path, stale)
+            self.assertIn(experiment, stale)
+
+    def test_cache_cleanup_removes_legacy_rasters_but_keeps_area_rasters(self):
+        image = self.root / "cover" / "img" / "rgb"
+        current = image / "praha" / "0_0.npy"
+        current.parent.mkdir(parents=True)
+        legacy = image / "0_0.npy"
+        for path in (legacy, current):
+            path.write_bytes(b"cached raster")
+            Path(f"{path}.source.json").write_text("{}")
+        with patch.object(cache_stale, "CACHE", self.root):
+            stale = {p for p, _ in cache_stale.stale({})}
+        self.assertIn(legacy, stale)
+        self.assertIn(Path(f"{legacy}.source.json"), stale)
+        self.assertNotIn(current, stale)
+        self.assertNotIn(Path(f"{current}.source.json"), stale)
+        self.assertNotIn(image, stale)
 
 
 class ProcessingKeyTests(unittest.TestCase):

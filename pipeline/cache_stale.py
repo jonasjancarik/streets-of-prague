@@ -8,6 +8,8 @@ Only what the steps' paths and keys make certain is listed (see the rules below)
 that is merely old, or large, is not. It reads layers/<area>/meta.json for each area's
 grid and local projection, so run it where the layers are. Add a rule when a step starts
 keeping something new, or stops reading something.
+Raster files directly under cover/img/<kind>/ belong to the old cache layout;
+current steps read cover/img/<kind>/<area>/ instead.
 """
 
 import json
@@ -17,8 +19,8 @@ import zlib
 from pathlib import Path
 
 CACHE = Path(sys.argv[sys.argv.index("--cache") + 1] if "--cache" in sys.argv else Path(__file__).parent / ".cache").resolve()
-# Image folders under cover/img that ground_cover.export() fills (rgb, cir, dsm) and the IPR surface model.
-COVER_IMG = {"rgb", "cir", "dsm", "dsm_ipr", "dsm_1m_wide"}
+# Image folders used by ground cover and the tree-height steps, including their wide rasters.
+COVER_IMG = {"rgb", "cir", "dsm", "dsm_ipr", "dsm_1m_wide", "dmr5g_1m_wide"}
 OSM_NAME = __import__("re").compile(r"^(?P<area>[a-z]+)_(?P<ci>\d+)_(?P<cj>\d+)\.(osm|parsed\.pkl|osm\.source\.json)$")
 
 
@@ -47,6 +49,10 @@ def stale(known: dict):
     for p in sorted((CACHE / "cover" / "img").glob("*")):
         if p.name not in COVER_IMG:
             yield p, "an image set from a classifier experiment; ground_cover reads only " + ", ".join(sorted(COVER_IMG))
+        elif p.is_dir():
+            for old in sorted(p.iterdir()):
+                if old.is_file() and old.name.endswith((".npy", ".npy.source.json")):
+                    yield old, "a legacy raster without an area folder; current steps use area-specific rasters"
     for sub in ("results", "tiles"):
         for p in sorted((CACHE / "cover" / sub).glob("*")):
             if p.name not in known:
