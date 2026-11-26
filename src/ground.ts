@@ -679,9 +679,10 @@ export function groundLayers(d: GroundTileData, options: Parameters<typeof built
   }
   return result;
 }
-function builtGround(d: GroundTileData, { box, edges = [], buildings = [], parkingZones = [], height = null, levels = null, steps = null, roadProfile, roadSurfaceBoxes, paint = true, rasterRoads = false, fine, flat = 0, kerbs = null }: {
+function builtGround(d: GroundTileData, { box, edges = [], buildings = [], parkingZones = [], kerbPaint = [], height = null, levels = null, steps = null, roadProfile, roadSurfaceBoxes, paint = true, rasterRoads = false, fine, flat = 0, kerbs = null }: {
   box: Bounds; edges?: GroundRoadEdge[]; buildings?: { rings: Point2[][] }[];
   parkingZones?: (string | null)[]; height?: HeightAt | null; levels?: GroundLevel[] | null; steps?: Terrace[] | null;
+  kerbPaint?: { cat: string; pts: Point2[] }[]; // the zone lines along kerbside parking rows (parking.ts kerbPaint)
   // false: no lane lines (see TILE_LOOK in tiles.ts)
   paint?: boolean;
   roadProfile?: RoadProfile;
@@ -709,7 +710,7 @@ function builtGround(d: GroundTileData, { box, edges = [], buildings = [], parki
     kerbField = height && !rasterRoads ? kerbs : null;
     try { return build(); } finally { kerbField = null; groundHeight = sideOf = null; terraceOutlines = []; terraceOwners = []; stepIndex = null; groundBox = roadBoxes = null; }
   };
-  if (!levels) return { layers: stepped(() => layers(d, { box, edges, buildings, parkingZones, rasterRoads })), masks: [] };
+  if (!levels) return { layers: stepped(() => layers(d, { box, edges, buildings, parkingZones, kerbPaint, rasterRoads })), masks: [] };
   const T = height || (() => 0);
   // (A street on the ground with a level is on a bridge over an underpass's cutting
   // there, pipeline/structures.py's cuttings: painted on its deck.)
@@ -718,7 +719,7 @@ function builtGround(d: GroundTileData, { box, edges = [], buildings = [], parki
   doorFill = doorAt ? quads() : null;
   let lower: GroundLayer[];
   try {
-    lower = stepped(() => layers(d, { box, edges: edges.filter((e) => !onDeck(e) && !e.tunnel), buildings, parkingZones, bridges: false, rasterRoads }));
+    lower = stepped(() => layers(d, { box, edges: edges.filter((e) => !onDeck(e) && !e.tunnel), buildings, parkingZones, kerbPaint, bridges: false, rasterRoads }));
     if (doorFill?.idx.length) {
       const order = Math.max(...lower.map((l) => l.order)) + 1;
       lower.push({ order, geometry: joined(polygons([]), doorFill), color: DOOR_DARK, pattern: 'flat', blend: null, aboveOnly: true, oneSided: true });
@@ -1173,9 +1174,9 @@ function tunnelLayers(polys: Polygons, box: Bounds, mask: LevelMask, H: HeightAt
   return out;
 }
 
-function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridges: withBridges = true, rasterRoads = false }: {
+function layers(d: GroundTileData, { box, edges, buildings, parkingZones, kerbPaint = [], bridges: withBridges = true, rasterRoads = false }: {
   box: Bounds; edges: GroundRoadEdge[]; buildings: { rings: Point2[][] }[];
-  parkingZones: (string | null)[]; bridges?: boolean; rasterRoads?: boolean;
+  parkingZones: (string | null)[]; kerbPaint?: { cat: string; pts: Point2[] }[]; bridges?: boolean; rasterRoads?: boolean;
 }): GroundLayer[] {
   const out: GroundLayer[] = [];
   const A = d.areas, R = d.roads;
@@ -1378,9 +1379,12 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     add(street(() => polygons(R.trambed || [])), COLORS.ballast, 'gravel');
     // Bay lines as Prague paints them: a solid blue line in residents' zones, white
     // dashes in the mixed (violet) and visitors' (orange) ones, plain white elsewhere.
+    // Kerbside rows with no mapped area under them get the zone's line along their
+    // traffic side (parking.ts kerbPaint), in the zones only.
     for (const [cat, color, dash] of BAY_PAINT) {
       const rings = (A.parking || []).filter((rs, k) => (parkingZones[k] || null) === cat);
-      add(onStreet(() => strips(bayLines(rings.map((rs) => rs[0]), edges, cut), 0.15, dash, true)), color);
+      const rows = kerbPaint.filter((k) => k.cat === cat).map((k) => k.pts);
+      add(onStreet(() => strips([...bayLines(rings.map((rs) => rs[0]), edges, cut), ...rows], 0.15, dash, true)), color);
     }
 
     // Bridges: a soft shadow on the water, then the deck (unless the decks are drawn

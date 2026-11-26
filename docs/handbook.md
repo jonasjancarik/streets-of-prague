@@ -2372,7 +2372,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   brings back the old flat 20 % / 45 % for comparison. Bay lines are painted as Prague paints them,
   along the street side of the bays with short lines across at each end and none along
   the pavement: solid blue in residents' zones, white dashes in the mixed (violet) and
-  visitors' (orange) ones. Cars stand parallel, angled or
+  visitors' (orange) ones. Most kerbside parking has no mapped area, only the street's
+  row of cars; in a TSK section such a row gets its zone's line along its traffic side,
+  stopping 5 m short of a zebra (`kerbPaint` in `src/parking.ts`). Outside the zones
+  these rows are left unpainted. Cars stand parallel, angled or
   perpendicular as OSM tags each parking area (`orientation`) and each side of the
   street (`parking:<side>:orientation`, or the older `parking:lane:<side>`); where it
   doesn't say, an area under 4.5 m wide is parallel, up to 5.6 m angled and wider

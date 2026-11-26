@@ -25,7 +25,7 @@ import { buildTin, decodeTin, tinGrid, tinNearSteps, tinSampler, TIN_FORMAT, typ
 import { shadeBuildings, shadeLandmark, cutAway, broad, ROOF_CLUTTER, roadRasterEnabled } from './shading.ts';
 import { loadFacadeAtlas } from './facades.ts';
 import type { Footprint } from './facades.ts';
-import { Zones, parkCarsSteps, inRing, inPoly } from './parking.ts';
+import { Zones, parkCarsSteps, inRing, inPoly, kerbPaint } from './parking.ts';
 import { finish, parkingAisles } from './parkingClearance.ts';
 import { openWater } from './river.ts';
 import { readRoadProfile, withRoadProfile } from './roadProfiles.ts';
@@ -78,7 +78,7 @@ interface TileSource {
   // IPR's buildings as fetched, until a worker has taken them (then they're fetched again).
   withIpr: boolean; ipr: ArrayBuffer | null;
   extrude: (TileJSON['buildings'][number] & { base: number })[];
-  clipped: WorkerJobs['ground']['edges']; parkingZones: (string | null)[];
+  clipped: WorkerJobs['ground']['edges']; parkingZones: (string | null)[]; kerbPaint: { cat: string; pts: Point2[] }[];
   standing: { rings: Point2[][] }[]; // the buildings that stand on the ground
   footprints: Footprint[]; // the same and those round the tile, not their parts, for the party walls
   shapes: Shadower[]; trees: LandResult['trees'];
@@ -1676,6 +1676,7 @@ export class TileWorld {
     const clipped = edges.flatMap((e) => byLevel(e).flatMap((part) => clipLine(part.pts, t.box).map((pts) => (
       { pts, u: e.u, v: e.v, hw: e.hw, lanes: e.lanes, oneway: e.oneway, width: e.width, surface: e.surface, bridge: e.bridge, tunnel: e.tunnel, maxspeed: e.maxspeed, named: !!e.name, name: e.bridge ? e.name ?? undefined : undefined, level: part.level, kerb: e.kerb, park: e.park, deck: e.deck }))));
     // Paid-parking colour of each parking area's bay lines.
+    // (And the line along each kerbside row in a paid zone: kerbPaint, at the job below.)
     const parkingZones = (t.areas.parking || []).map((rs) => {
       const r = rs[0], cx = r.reduce((a, p) => a + p[0], 0) / r.length, cy = r.reduce((a, p) => a + p[1], 0) / r.length;
       return zones.at(cx, cy)?.category || null;
@@ -1718,7 +1719,7 @@ export class TileWorld {
     const bounds: Bounds = [geo.minX, geo.minY, geo.maxX, geo.maxY];
     const source: TileSource = {
       t, size: data.size, origin: data.origin, bounds, ground, levels: tileLevels, masks: [], marks, hide,
-      withIpr, ipr: withIpr ? ipr : null, extrude, clipped, parkingZones, standing: own.filter(grounded).map((b) => ({ rings: b.rings })),
+      withIpr, ipr: withIpr ? ipr : null, extrude, clipped, parkingZones, kerbPaint: TILE_LOOK.roadPaint ? kerbPaint(edges, zones, t.box, t.areas.parking, t.crossings) : [], standing: own.filter(grounded).map((b) => ({ rings: b.rings })),
       shapes, footprints: t.buildings.filter((b) => grounded(b) && !b.part).map((b) => ({ rings: b.rings, h: b.h })), trees: { matrices: new Float32Array(0), colours: new Float32Array(0), yearly: new Float32Array(0), outlines: new Float32Array(0), count: 0, big: 0, shrubs: 0, conifers: 0 },
     };
     // A tile that's in view as soon as it's loaded: its meshes' jobs go to the workers
@@ -1846,7 +1847,7 @@ export class TileWorld {
       w.run('ground', {
         d: { areas: withPatches(t), roads: t.roads, rails: t.rails, deckRails: t.deckRails, bridgeTracks: t.bridgeTracks, station, weirs: t.weirs, crossings: TILE_LOOK.roadPaint ? t.crossings : [], marks: t.marks, utility: t.utility,
           stairs: notSurveyed(groundStairs(t.walk), t.flights).map(({ pts, width }) => ({ pts, width })), flights: t.flights, ref: this.ref },
-        paint: TILE_LOOK.roadPaint, fine: STREET_QUALITY.groundFine, flat: STREET_QUALITY.groundFlat, rasterRoads: !this.ortho && !!s.ground && roadRasterEnabled(), box: s.bounds, edges: s.clipped, buildings: s.standing, parkingZones: s.parkingZones, ground: s.ground, levels: s.levels,
+        paint: TILE_LOOK.roadPaint, fine: STREET_QUALITY.groundFine, flat: STREET_QUALITY.groundFlat, rasterRoads: !this.ortho && !!s.ground && roadRasterEnabled(), box: s.bounds, edges: s.clipped, buildings: s.standing, parkingZones: s.parkingZones, kerbPaint: s.kerbPaint, ground: s.ground, levels: s.levels,
       }),
       buffer ? w.run('ipr', { buffer, box: t.box, absolute: this.index.iprRef != null, passages: tileOpenings(t), ground: s.ground, bbox: this.index.bbox_wgs84, hide: s.hide, clutter: ROOF_CLUTTER.value > 0.5, footprints: s.footprints }, [buffer]) : null,
       !s.withIpr || s.extrude.length ? w.run('roofs', { buildings: s.extrude, size: s.size, origin: s.origin, ground: s.ground, bbox: this.index.bbox_wgs84, water: t.areas?.water ?? [], passages: tileOpenings(t), stops: stopLines(t) }) : null,

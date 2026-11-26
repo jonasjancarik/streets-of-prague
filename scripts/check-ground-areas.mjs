@@ -72,6 +72,10 @@ for (const height of [null, (x, y) => .002 * x * x + .01 * y]) {
     assert.ok(g.hold.every(Number.isFinite));
     for (let i = 2; i < g.hold.length; i += 3) assert.ok(g.hold[i] > 0);
   }
+  // A kerbside row's zone line (parking.ts kerbPaint) joins the bay lines of its zone.
+  const blueOf = (r) => r.layers.find(l => l.color === '#3d7be0')?.geometry.position.length ?? 0;
+  const withRow = groundLayers(paintData, { ...opts, height, kerbPaint: [{ cat: 'RES', pts: [[15, 44], [45, 44]] }] });
+  assert.ok(blueOf(withRow) > blueOf(result), 'a kerbside row in a residents\' zone gets a blue line');
   const rail = result.layers.find(l => l.color === COLORS.steel);
   assert.ok(rail && !rail.geometry.hold, 'rails keep their physical width');
   // The straight lane dividers really are 13 cm wide before the shader widens them.

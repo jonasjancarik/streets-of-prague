@@ -41,7 +41,7 @@ Strana to about Vodičkova, 26 November). Outer districts are mapped more thinly
 |---|---|---|
 | **Easy: mapped, one instanced model** | Litter bins (348 mapped), tactile strips (1,033 `tactile_paving=yes`), plaques (234) and Stolpersteine (58), bike stands (102), parking machines (98), recycling (64), post boxes (24) | A pipeline layer and a model, the pattern of the terraces and shared bikes |
 | **Easy: no new data** | House numbers (3,512 `addr:conscriptionnumber` from the RÚIAN import), intercoms, gas and meter doors, cellar grilles | They hang on doors and plinths the façade already makes; only the door position is inferred |
-| **Medium** | Shops everywhere (below), shutters by time, projecting signs, parking-lane dashes, paving mosaics, cabinets (27 mapped, infer at signals), bollards (112 mapped, mostly inferred), weeds and litter | Zone-coloured parking lines need TSK's zone data, not checked |
+| **Medium** | Shops everywhere (below), shutters by time, projecting signs, paving mosaics, cabinets (27 mapped, infer at signals), bollards (112 mapped, mostly inferred), weeds and litter | |
 | **Hard or risky** | Traffic signs (5 `traffic_sign` in the extract), graffiti and posters, roadworks, dogs | Signs would all be inferred and must agree with traffic rules; decals have no system yet; roadworks touch routing; dogs need a new animated figure |
 
 ## Shops from OpenStreetMap
@@ -142,8 +142,7 @@ placement data: they hang off bays the game already chooses.
 |---|---|---|---|
 | **Paving mosaics** | Black-and-white limestone mosaics: chequerboard, Prague-star and wave patterns (Resslova, Na Příkopě, Václavské náměstí) | At eye level the game's pavement reads as irregular crazy paving (`fpv-vinohrady2`, `fpv-karlak2`). Most Prague pavements are 4–5 cm limestone cubes, grey with a darker border, in fans or a grid, and the patterns above on show streets. A few pattern textures chosen by district | All (it's a texture swap) |
 | **Setts on squares** | Malostranské náměstí shows as flat grey at eye level; the real square is granite setts with a granite gutter | Check the square surface material up close | All |
-| **Parking lane dashes** | White broken line between the parking lane and the traffic lane (Seifertova), bay ends at corners | Along the parked-car rows (`parking.ts`) | All |
-| **Blue zone lines** | Blue (resident), orange (short stay) and purple (mixed) lines along parking bays | Parked-car rows already exist (`parking.ts`); paint along them by zone | Low+ |
+| **Parking lines** | White broken line between the parking lane and the traffic lane (Seifertova), blue in residents' zones | DONE (27 November): mapped bays always had their outlines (`bayLines`, `src/ground.ts`); kerbside rows without a mapped area now get their TSK zone's line too (`kerbPaint`, `src/parking.ts`), short of zebras. Outside the zones none | All |
 | **Repairs and stains** | Asphalt patches in setts, darker oil under parked cars, chewing gum dots, trench scars | Decals; the oil stain can ride on the parked car's spot | High+ |
 | **Tactile paving** | Rust-red or white blister strips at every crossing and tram platform edge | At mapped crossings and stop edges | Low+ |
 | **Cigarette butts and litter** | Butts in sett joints by doors and stops, a cup or a flyer | Same scatter system as the fallen leaves (`streetLitter.ts`), all year | High+ |
@@ -187,7 +186,7 @@ placement data: they hang off bays the game already chooses.
 
 1. Remove phone boxes.
 2. House numbers and intercoms (cheap, on every door, instantly Prague).
-3. Traffic signs and parking zone signs, with blue zone lines.
+3. Traffic signs and parking zone signs (the zone lines are done).
 4. Bollards, bins, parking machines, bike stands (one instanced-props layer from OSM).
 5. Recycling nests and cabinets.
 6. Utility doors, cellar grilles, projecting shop signs, shutters by time of day.

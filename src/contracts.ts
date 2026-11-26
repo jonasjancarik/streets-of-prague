@@ -160,6 +160,7 @@ export interface WorkerJobs {
   ground: {
     d: GroundTileData; box: Bounds; edges: GroundRoadEdge[];
     buildings: { rings: Point2[][] }[]; parkingZones: (string | null)[];
+    kerbPaint?: { cat: string; pts: Point2[] }[]; // the zone lines along kerbside parking rows (parking.ts kerbPaint)
     ground: HeightGrid | null; levels: LevelInput[] | null; paint?: boolean; rasterRoads?: boolean;
     fine?: number; // maximum ground triangle edge; step cuts and road refinement stay finer
     flat?: number; // draping by error: longer edges, split down to `fine` only where the ground bends (0: off)
