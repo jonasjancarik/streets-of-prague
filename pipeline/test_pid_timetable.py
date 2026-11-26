@@ -107,7 +107,7 @@ class TimetableCacheTests(unittest.TestCase):
     def test_interrupted_summary_preserves_previous_json_and_rebuilds(self):
         pid.FEED.write_bytes(self.raw)
         previous = json.dumps({"version": 0, "previous": True})
-        pid.SUMMARY.write_text(previous)
+        pid.SUMMARY.write_text(previous, encoding="utf-8")
         write_bytes, write_text = Path.write_bytes, Path.write_text
 
         def interrupted_bytes(path, raw):
@@ -121,11 +121,11 @@ class TimetableCacheTests(unittest.TestCase):
         with patch.object(Path, "write_bytes", interrupted_bytes), patch.object(Path, "write_text", interrupted_text):
             with self.assertRaisesRegex(OSError, "interrupted"):
                 pid.summary()
-        self.assertEqual(pid.SUMMARY.read_text(), previous)
+        self.assertEqual(pid.SUMMARY.read_text(encoding="utf-8"), previous)
         data = pid.summary()
         self.assertEqual(data["version"], pid.VERSION)
         self.assertEqual([(t["ref"], t["dur"]) for t in data["trips"]], [("22", 900)])
-        self.assertEqual(json.loads(pid.SUMMARY.read_text()), data)
+        self.assertEqual(json.loads(pid.SUMMARY.read_text(encoding="utf-8")), data)
         self.assertEqual(pid.summary(), data)
         self.request.assert_not_called()
 

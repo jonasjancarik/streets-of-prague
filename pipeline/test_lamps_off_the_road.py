@@ -98,7 +98,7 @@ class CarriagewaysTest(unittest.TestCase):
             asphalt = [[[-20, -50], [20, -50], [20, 50], [-20, 50]]]
             tile = {"drive": [{"pts": [[0, -50], [0, 0]], "width": 10.75}, {"pts": [[0, 0], [-0.7, 50]], "width": 14.0}],
                     "roads": {"road": [asphalt]}}
-            (tiles / "0_0.json").write_text(json.dumps(tile))
+            (tiles / "0_0.json").write_text(json.dumps(tile), encoding="utf-8")
             with mock.patch.object(build_lamps, "OUT", Path(out)):
                 roads, _ = build_lamps.road_geometry("test")
         self.assertEqual(posts_in_road([(3.35, 0.1)], [0], roads), [0])

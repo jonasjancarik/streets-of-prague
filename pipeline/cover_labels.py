@@ -45,8 +45,8 @@ def kept_fetch(url, kind, area, t, res=G.RES, window=None):
 
 
 def hand_tiles():
-    sample = json.loads((CACHE / "sample.json").read_text())
-    truth = json.loads((CACHE / "truth.json").read_text())
+    sample = json.loads((CACHE / "sample.json").read_text(encoding="utf-8"))
+    truth = json.loads((CACHE / "truth.json").read_text(encoding="utf-8"))
     by = defaultdict(list)
     for n, (k, pid) in enumerate(sample):
         want = truth.get(str(n))
@@ -148,7 +148,7 @@ def index(area, meta):
     x0, y0, x1, y1 = meta_box(area)
     T = layers_meta(area)["tile"]
     out, kept = defaultdict(list), Counter()
-    for line in (CACHE / "surface.geojsonseq").open():
+    for line in (CACHE / "surface.geojsonseq").open(encoding="utf-8"):
         f = json.loads(line.lstrip("\x1e"))
         p = f["properties"]
         cls = G.SURFACE.get(p.get("surface"))
@@ -191,7 +191,7 @@ def tile_rows(job):
     labelled ground the way the classifier measures a patch of bare ground."""
     import shapely
     area, meta, i, j, labels, per = job
-    t = json.loads((G.OUT / f"{area}_now" / "tiles" / f"{i}_{j}.json").read_text())
+    t = json.loads((G.OUT / f"{area}_now" / "tiles" / f"{i}_{j}.json").read_text(encoding="utf-8"))
     t = {**t, "i": i, "j": j}
     rgb, known = G.joined(G.RGB, "rgb", area, t, {})
     if rgb is None:
@@ -299,7 +299,7 @@ def train(area, out_path, classes=None, drop=()):
     model = fit(X, y, classes)
     model["trained_on"] = {"rows": len(data), "tiles": len(tiles), "per_class": dict(Counter(r[0] for r in data)),
                            "held_out_tiles_right": round(float(acc), 3)}
-    Path(out_path).write_text(json.dumps(model))
+    Path(out_path).write_text(json.dumps(model), encoding="utf-8")
     return model
 
 
@@ -313,7 +313,7 @@ def main():
     ap.add_argument("area")
     ap.add_argument("--model", help="score: a model file other than cover_model.json")
     args = ap.parse_args()
-    meta = json.loads((G.OUT / f"{args.area}_now" / "index.json").read_text())
+    meta = json.loads((G.OUT / f"{args.area}_now" / "index.json").read_text(encoding="utf-8"))
     started = time.time()
     if args.cmd == "score":
         score(args.area, meta, args.model)

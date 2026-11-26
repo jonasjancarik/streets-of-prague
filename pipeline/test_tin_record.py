@@ -30,7 +30,7 @@ class TinRecordTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def put(self, t):
-        (self.dir / f"{t['i']}_{t['j']}.json").write_text(json.dumps(t))
+        (self.dir / f"{t['i']}_{t['j']}.json").write_text(json.dumps(t), encoding="utf-8")
 
     def record(self):
         return {"settings": {}, "tiles": tin_record.inputs(self.dir, TERRAIN)}

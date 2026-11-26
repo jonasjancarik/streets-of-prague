@@ -81,7 +81,7 @@ class RasterCacheTests(unittest.TestCase):
         self.assertTrue(legacy.exists())
 
     def test_sampled_arrays_follow_sampling_code_without_rekeying_each_tile(self):
-        original = Path(gc.__file__).read_text()
+        original = Path(gc.__file__).read_text(encoding="utf-8")
         copied = self.root / "sampling.py"
 
         def restart():
@@ -91,7 +91,7 @@ class RasterCacheTests(unittest.TestCase):
 
         for kind, sample in (("export", self.export), ("ipr_dsm", lambda: gc.ipr_dsm("praha", TILE, 1.0))):
             with self.subTest(kind=kind):
-                copied.write_text(original)
+                copied.write_text(original, encoding="utf-8")
                 restart()
                 with patch.object(gc, "__file__", str(copied)), \
                         patch.object(gc.ndimage, "map_coordinates", wraps=gc.ndimage.map_coordinates) as sampled, \
@@ -105,13 +105,13 @@ class RasterCacheTests(unittest.TestCase):
                     self.assertEqual(key.call_count, key_calls)
                     unrelated = original.replace("def kuwahara(img, radius=5", "def kuwahara(img, radius=6")
                     self.assertNotEqual(unrelated, original)
-                    copied.write_text(unrelated)
+                    copied.write_text(unrelated, encoding="utf-8")
                     restart()
                     np.testing.assert_array_equal(sample(), first)
                     self.assertEqual(sampled.call_count, calls)
                     changed = original.replace("return np.meshgrid(xs, ys)", "return np.meshgrid(xs, ys, copy=True)")
                     self.assertNotEqual(changed, original)
-                    copied.write_text(changed)
+                    copied.write_text(changed, encoding="utf-8")
                     restart()
                     result = sample()
                     self.assertGreater(sampled.call_count, calls)
@@ -128,6 +128,7 @@ class RasterCacheTests(unittest.TestCase):
         self.assertEqual(gc.ipr_dsm("praha", TILE, 2.0).shape, (2, 2))
         replacement = self.root / "replacement.tif"
         tifffile.imwrite(replacement, np.full((16, 16), 500, np.float32), tile=(16, 16))
+        gc._dsm[0].close()  # (Windows can't replace a file that's open; a new run would reopen it anyway)
         replacement.replace(gc.IPR_DSM)
         np.testing.assert_array_equal(gc.ipr_dsm("praha", TILE, 1.0), np.full((4, 4), 500, np.float32))
 
@@ -208,7 +209,7 @@ class RasterCacheTests(unittest.TestCase):
         legacy = image / "0_0.npy"
         for path in (legacy, current):
             path.write_bytes(b"cached raster")
-            Path(f"{path}.source.json").write_text("{}")
+            Path(f"{path}.source.json").write_text("{}", encoding="utf-8")
         with patch.object(cache_stale, "CACHE", self.root):
             stale = {p for p, _ in cache_stale.stale({})}
         self.assertIn(legacy, stale)
@@ -224,22 +225,22 @@ class ProcessingKeyTests(unittest.TestCase):
         self.assertEqual(tree_sizes.processing(), layers.treesize_processing())
 
     def test_shared_helpers_invalidate_layers_but_unrelated_prototype_edits_do_not(self):
-        source = Path(gc.__file__).read_text()
+        source = Path(gc.__file__).read_text(encoding="utf-8")
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             for name in ("young_woods.py", "tree_sizes.py"):
                 (root / name).write_bytes(Path(layers.__file__).with_name(name).read_bytes())
             copied = root / "ground_cover.py"
-            copied.write_text(source)
+            copied.write_text(source, encoding="utf-8")
             with patch.object(layers, "__file__", str(root / "layers.py")):
                 before = [layers.young_processing(), layers.treesize_processing()]
                 unrelated = source.replace("def kuwahara(img, radius=5", "def kuwahara(img, radius=6")
                 self.assertNotEqual(unrelated, source)
-                copied.write_text(unrelated)
+                copied.write_text(unrelated, encoding="utf-8")
                 self.assertEqual([layers.young_processing(), layers.treesize_processing()], before)
                 changed = source.replace('record.get("input") == inputs', 'record.get("input") != inputs')
                 self.assertNotEqual(changed, source)
-                copied.write_text(changed)
+                copied.write_text(changed, encoding="utf-8")
                 for key, previous in zip([layers.young_processing(), layers.treesize_processing()], before):
                     self.assertNotEqual(key, previous)
 

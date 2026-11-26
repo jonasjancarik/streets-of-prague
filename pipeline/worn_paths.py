@@ -61,7 +61,7 @@ class Footfall:
         """The map kept in `folder` (public/data/<area>_now), or None if there is none."""
         try:
             from PIL import Image
-            meta = json.loads((Path(folder) / "footfall.json").read_text())
+            meta = json.loads((Path(folder) / "footfall.json").read_text(encoding="utf-8"))
             grey = np.asarray(Image.open(Path(folder) / "footfall.png").convert("L"), dtype=np.float32)
         except (OSError, ValueError):
             return None

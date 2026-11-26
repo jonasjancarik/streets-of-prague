@@ -133,19 +133,19 @@ class GlbTests(unittest.TestCase):
             original = fixture()
             (area / "landmarks" / "one.glb").write_bytes(original)
             manifest = [{"name": "one", "file": "landmarks/one.glb", "home": "1_2"}]
-            (area / "landmarks.json").write_text(json.dumps(manifest))
+            (area / "landmarks.json").write_text(json.dumps(manifest), encoding="utf-8")
             self.assertEqual(migrate(area, staged, True), 0)
             self.assertFalse(staged.exists())
             self.assertEqual(migrate(area, staged), 0)
             self.assertEqual((area / "landmarks" / "one.glb").read_bytes(), original)
-            result = json.loads((staged / "landmarks.json").read_text())
+            result = json.loads((staged / "landmarks.json").read_text(encoding="utf-8"))
             self.assertEqual(result, [{**manifest[0], "file": "landmarks/one.warm-v1.glb"}])
             parse_glb((staged / result[0]["file"]).read_bytes())
             self.assertEqual(migrate(area, staged), 0)
             manifest.append({"name": "missing", "file": "landmarks/missing.glb", "home": "2_3"})
-            (area / "landmarks.json").write_text(json.dumps(manifest))
+            (area / "landmarks.json").write_text(json.dumps(manifest), encoding="utf-8")
             self.assertEqual(migrate(area, staged), 1)
-            self.assertEqual(json.loads((staged / "landmarks.json").read_text())[1], manifest[1])
+            self.assertEqual(json.loads((staged / "landmarks.json").read_text(encoding="utf-8"))[1], manifest[1])
             self.assertFalse((staged / "landmarks" / "missing.warm-v1.glb").exists())
 
     def test_same_root_rejected(self):
@@ -160,10 +160,10 @@ class GlbTests(unittest.TestCase):
             original = fixture()
             (area / "landmarks" / "one.glb").write_bytes(original)
             entry = {"name": "one", "file": "landmarks/one.glb", "home": "1_2"}
-            (area / "landmarks.json").write_text(json.dumps([entry]))
+            (area / "landmarks.json").write_text(json.dumps([entry]), encoding="utf-8")
             with patch("landmark_colours.convert_file", side_effect=OSError("disk full")):
                 self.assertEqual(migrate(area, staged), 1)
-            self.assertEqual(json.loads((staged / "landmarks.json").read_text()), [entry])
+            self.assertEqual(json.loads((staged / "landmarks.json").read_text(encoding="utf-8")), [entry])
             self.assertEqual((area / entry["file"]).read_bytes(), original)
             self.assertFalse((staged / "landmarks" / "one.warm-v1.glb").exists())
 

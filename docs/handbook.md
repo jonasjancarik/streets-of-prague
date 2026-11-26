@@ -2811,6 +2811,12 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   cd pipeline
   uv run --group cover python -B -m unittest discover -s . -p 'test_*.py'   # or npm test from the root
   ```
+
+  They run on Windows too (`npm test` in PowerShell or Command Prompt). Pipeline code
+  reads and writes text with `encoding="utf-8"`; Windows would otherwise use the
+  locale's code page. `npm test` and CI make a missing encoding an error.
+  To save a pipeline script's output to a file on Windows, set
+  `$env:PYTHONIOENCODING = "utf-8"` first, or its Czech names and arrows can't be printed.
 - **OSM.** With `pipeline/.cache/osm/czech-republic-latest.osm.pbf` from
   [Geofabrik](https://download.geofabrik.de/europe/czech-republic.html) (about 950 MB)
   the chunks are cut locally with osmium. The centre builds in under half a minute

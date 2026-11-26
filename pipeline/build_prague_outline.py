@@ -29,7 +29,7 @@ def outline():
     subprocess.run(["osmium", "tags-filter", "--overwrite", "-o", str(BOUNDARIES), str(PBF), "r/boundary=administrative"],
                    check=True)
     out = subprocess.run(["osmium", "export", "-f", "geojsonseq", "-x", "print_record_separator=false", str(BOUNDARIES)],
-                         check=True, capture_output=True, text=True).stdout
+                         check=True, capture_output=True, text=True, encoding="utf-8").stdout
     for line in out.splitlines():
         f = json.loads(line)
         p = f["properties"]
@@ -42,5 +42,5 @@ if __name__ == "__main__":
     g = outline().simplify(SIMPLIFY, preserve_topology=True)
     polys = g.geoms if isinstance(g, MultiPolygon) else [g]
     rings = [[round(v, 5) for xy in r.coords[:-1] for v in xy] for p in polys for r in (p.exterior, *p.interiors)]
-    DEST.write_text(json.dumps({"rings": rings}, separators=(",", ":")) + "\n")
+    DEST.write_text(json.dumps({"rings": rings}, separators=(",", ":")) + "\n", encoding="utf-8")
     print(f"{len(rings)} rings, {sum(len(r) for r in rings) // 2} points → {DEST} ({DEST.stat().st_size // 1024} kB)")

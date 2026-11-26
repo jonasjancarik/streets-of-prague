@@ -93,7 +93,7 @@ def summary():
     """The cached summary, rebuilt when the feed is newer."""
     path = feed()
     if SUMMARY.exists() and SUMMARY.stat().st_mtime > path.stat().st_mtime:
-        data = json.loads(SUMMARY.read_text())
+        data = json.loads(SUMMARY.read_text(encoding="utf-8"))
         if data.get("version") == VERSION:
             return data
     with zipfile.ZipFile(path) as z:

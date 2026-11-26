@@ -95,8 +95,8 @@ def dtm_geometries(package, crs):
 
 def report(area, package=None, tiles_root=None):
     root = tiles_root or OUT / f"{area}_now" / "tiles"
-    meta = json.loads((Path(__file__).parent / ".cache" / "layers" / area / "meta.json").read_text())
-    masks = [tile_masks(json.loads(path.read_text())) for path in sorted(root.glob("*.json"))]
+    meta = json.loads((Path(__file__).parent / ".cache" / "layers" / area / "meta.json").read_text(encoding="utf-8"))
+    masks = [tile_masks(json.loads(path.read_text(encoding="utf-8"))) for path in sorted(root.glob("*.json"))]
     total = sum(bounds.area for bounds, _, _, _ in masks)
     plain = sum(ground.area for _, _, _, ground in masks)
     result = {"area": area, "tiles": len(masks), "total_ha": round(total / 10000, 2),

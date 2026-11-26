@@ -61,7 +61,7 @@ VERSION = 1
 def osm(pbf: Path, tf):
     """Nodes (local metres), ways (tags, node ids) of the waterways, weirs and locks."""
     out = subprocess.run(["osmium", "tags-filter", str(pbf), "w/waterway=river,canal,weir,dam", "w/lock=yes",
-                          "-f", "opl,add_metadata=false", "-o", "-"], check=True, capture_output=True, text=True).stdout
+                          "-f", "opl,add_metadata=false", "-o", "-"], check=True, capture_output=True, text=True, encoding="utf-8").stdout
     nodes, ways = {}, []
     for line in out.splitlines():
         kind, *rest = line.split(" ")
@@ -80,7 +80,7 @@ class Water:
 
     def __init__(self, area: str, near, locks=()):
         tiles = OUT / f"{area}_now" / "tiles"
-        index = json.loads((OUT / f"{area}_now" / "index.json").read_text())
+        index = json.loads((OUT / f"{area}_now" / "index.json").read_text(encoding="utf-8"))
         ox, oy = index["origin"]
         size = index["tile"]
         zone = near.buffer(CORRIDOR)
@@ -100,7 +100,7 @@ class Water:
             path = tiles / f"{i}_{j}.json"
             if not path.exists():
                 continue
-            t = json.loads(path.read_text())
+            t = json.loads(path.read_text(encoding="utf-8"))
             weirs += [w for w in t.get("weirs", []) if len(w) > 1]
             polys = t["areas"].get("water", [])
             if not polys:
@@ -367,7 +367,7 @@ def main(area: str = "centrum") -> None:
     river = joined.intersection(clip.buffer(-60)) if joined is not None else None
     if river is None or river.is_empty:
         print(f"{area}: the Vltava isn't in this area")
-        (OUT / f"{area}_now" / "river.json").write_text(json.dumps({"version": VERSION, "fairway": [], "ferries": []}))
+        (OUT / f"{area}_now" / "river.json").write_text(json.dumps({"version": VERSION, "fairway": [], "ferries": []}), encoding="utf-8")
         return
     # One line, south to north (the longest piece, should the area's edge cut it in several).
     if river.geom_type != "LineString":
@@ -386,7 +386,7 @@ def main(area: str = "centrum") -> None:
     data = {"version": VERSION, "fairway": fairway(water, river), "locks": locks,
             "ferries": ferries(water, tf, lambda x, y: clip.contains(Point(x, y)))}
     out = OUT / f"{area}_now" / "river.json"
-    out.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")))
+    out.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"wrote {out} ({out.stat().st_size / 1024:.0f} kB)")
 
 

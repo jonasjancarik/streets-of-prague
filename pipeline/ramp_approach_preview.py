@@ -126,7 +126,7 @@ def build(data, lidar_dir, current, spec):
         if hashlib.file_digest(f, "sha256").hexdigest() != spec["source_sha256"]:
             raise ValueError("survey file differs from the reviewed ramp source")
     surveyed = gpd.read_file(shape_file)
-    index = json.loads((data / "index.json").read_text())
+    index = json.loads((data / "index.json").read_text(encoding="utf-8"))
     key, level = spec["tile"], spec["level"]
     tile = Tile(data, key, index)
     ground_at = terrain_at(data, index, {key: tile.raw})
@@ -227,11 +227,11 @@ def main():
         ap.add_argument(f"--{name}", type=Path, required=True)
     ap.add_argument("--spec", type=Path, default=Path(__file__).with_name("ramp_approaches.json"))
     args = ap.parse_args()
-    current = json.loads(args.current.read_text())
-    index = json.loads((args.data / "index.json").read_text())
+    current = json.loads(args.current.read_text(encoding="utf-8"))
+    index = json.loads((args.data / "index.json").read_text(encoding="utf-8"))
     if (current.get("version"), current.get("area"), current.get("built")) != (1, index["area"], index["built"]):
         ap.error("bridge preview does not match this map")
-    result, report = build(args.data, args.lidar, current, json.loads(args.spec.read_text()))
+    result, report = build(args.data, args.lidar, current, json.loads(args.spec.read_text(encoding="utf-8")))
     write(args.out, json.dumps(result, separators=(",", ":")) + "\n")
     write(args.report, json.dumps(report, ensure_ascii=False, indent=2) + "\n")
 

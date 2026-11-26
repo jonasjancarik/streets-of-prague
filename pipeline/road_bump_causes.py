@@ -45,7 +45,7 @@ def read(path: Path) -> bytes:
 
 
 def load_map():
-    index = json.loads((DATA / "index.json").read_text())
+    index = json.loads((DATA / "index.json").read_text(encoding="utf-8"))
     T, (ox, oy) = index["tile"], index["origin"]
     edges, structures, terraces = {}, {}, {}
     for n, (i, j, *_) in enumerate(index["tiles"]):
@@ -205,7 +205,7 @@ def main():
     print("raw LiDAR alone, streets on the ground over the limit:", dict(over), flush=True)
 
     for report in args.reports:
-        rows = json.loads(report.read_text())["rows"]
+        rows = json.loads(report.read_text(encoding="utf-8"))["rows"]
         table = Counter()
         examples = []
         for r in rows:
@@ -248,7 +248,7 @@ def main():
                   + f"{sum(table[(w, s)] for s in sources):>8d}")
         summary["reports"][str(report)] = {"table": {f"{w} | {s}": n for (w, s), n in table.items()}, "streets": examples}
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(summary, indent=1, ensure_ascii=False))
+    args.out.write_text(json.dumps(summary, indent=1, ensure_ascii=False), encoding="utf-8")
 
 
 if __name__ == "__main__":

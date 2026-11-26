@@ -11,7 +11,6 @@ import json
 import os
 import pickle
 import platform
-import resource
 import shutil
 import sys
 import time
@@ -19,6 +18,48 @@ from collections import deque
 from concurrent.futures import ProcessPoolExecutor
 from itertools import islice
 from pathlib import Path
+
+if os.name == "nt":
+    import ctypes
+    from ctypes import wintypes
+
+    class _BasicInfo(ctypes.Structure):  # FILE_BASIC_INFO
+        _fields_ = [("creation", ctypes.c_int64), ("access", ctypes.c_int64), ("write", ctypes.c_int64),
+                    ("change", ctypes.c_int64), ("attributes", wintypes.DWORD)]
+
+    class _MemoryCounters(ctypes.Structure):  # PROCESS_MEMORY_COUNTERS
+        _fields_ = [("cb", wintypes.DWORD), ("faults", wintypes.DWORD),
+                    *((name, ctypes.c_size_t) for name in (
+                        "peak_working_set", "working_set", "peak_paged_pool", "paged_pool",
+                        "peak_nonpaged_pool", "nonpaged_pool", "pagefile", "peak_pagefile"))]
+
+    _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _kernel32.CreateFileW.restype = wintypes.HANDLE
+    _kernel32.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
+                                      wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    _kernel32.GetFileInformationByHandleEx.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+    _kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    _kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    _psapi = ctypes.WinDLL("psapi", use_last_error=True)
+    _psapi.GetProcessMemoryInfo.argtypes = [wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD]
+
+    def _change_ns(path, fallback):
+        """The last change to the file's data or attributes, in ns since 1970. Windows'
+        st_ctime is the creation time, which a same-size edit with its mtime put back
+        leaves as it was."""
+        # FILE_READ_ATTRIBUTES, shared with readers, writers and deleters; BACKUP_SEMANTICS for folders.
+        handle = _kernel32.CreateFileW(str(path), 0x80, 7, None, 3, 0x02000000, None)
+        if handle in (None, wintypes.HANDLE(-1).value):
+            return fallback
+        try:
+            info = _BasicInfo()
+            if not _kernel32.GetFileInformationByHandleEx(handle, 0, ctypes.byref(info), ctypes.sizeof(info)):
+                return fallback
+        finally:
+            _kernel32.CloseHandle(handle)
+        return (info.change - 116444736000000000) * 100  # 100 ns since 1601
+else:
+    import resource
 
 
 def identity(path):
@@ -32,7 +73,8 @@ def identity(path):
         st = path.stat()
     except FileNotFoundError:
         return None
-    return [str(path.resolve()), st.st_size, st.st_mtime_ns, st.st_ctime_ns]
+    changed = _change_ns(path, st.st_ctime_ns) if os.name == "nt" else st.st_ctime_ns
+    return [str(path.resolve()), st.st_size, st.st_mtime_ns, changed]
 
 
 def osmium_identity():
@@ -108,7 +150,7 @@ def reach_key(path, roots, *, imports=False):
     they lead to (the functions they call and the constants they read, and so on down):
     a change to anything else in the file leaves it as it was. Read from the source, so
     the file's own imports aren't needed."""
-    source = Path(path).read_text()
+    source = Path(path).read_text(encoding="utf-8")
     defined = {}
     for node in ast.parse(source).body:
         if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
@@ -147,7 +189,7 @@ def runtime_key(packages=("osmnx", "shapely", "numpy", "pyproj", "lxml", "scipy"
 
 def read_json(path):
     try:
-        got = json.loads(Path(path).read_text())
+        got = json.loads(Path(path).read_text(encoding="utf-8"))
         return got if isinstance(got, dict) else {}
     except (OSError, ValueError):
         return {}
@@ -255,6 +297,10 @@ def parallel_map(function, jobs, workers):
 
 
 def peak_mb():
+    if os.name == "nt":
+        counters = _MemoryCounters(cb=ctypes.sizeof(_MemoryCounters))
+        _psapi.GetProcessMemoryInfo(_kernel32.GetCurrentProcess(), ctypes.byref(counters), counters.cb)
+        return counters.peak_working_set / 1024 ** 2
     value = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     return value / (1024 ** 2 if sys.platform == "darwin" else 1024)
 

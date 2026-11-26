@@ -109,12 +109,12 @@ class DtmLandTests(unittest.TestCase):
         kinds = {"road": (np.array([0, 0], dtype=np.int8), np.array([box(0, 0, 10, 10), box(20, 0, 30, 10)], dtype=object))}
         with tempfile.TemporaryDirectory() as tmp:
             skip = Path(tmp) / "survey_skip.json"
-            skip.write_text(json.dumps([{"name": "a block", "kind": "road", "at": [5, 5], "why": "test"}]))
+            skip.write_text(json.dumps([{"name": "a block", "kind": "road", "at": [5, 5], "why": "test"}]), encoding="utf-8")
             with patch.object(dtm, "SKIP", skip):
                 got = dtm._skipped(kinds)
                 self.assertEqual(len(got["road"][1]), 1)
                 self.assertTrue(got["road"][1][0].contains(Point(25, 5)))
-                skip.write_text(json.dumps([{"name": "put right", "kind": "road", "at": [15, 5], "why": "test"}]))
+                skip.write_text(json.dumps([{"name": "put right", "kind": "road", "at": [15, 5], "why": "test"}]), encoding="utf-8")
                 self.assertEqual(len(dtm._skipped(kinds)["road"][1]), 2)
 
     def test_a_listed_survey_surface_counts_as_another_kind(self):
@@ -129,7 +129,7 @@ class DtmLandTests(unittest.TestCase):
                  "pavement": (np.array([1], dtype=np.int8), np.array([box(0, 0, 10, 10)], dtype=object))}
         with tempfile.TemporaryDirectory() as tmp:
             skip = Path(tmp) / "survey_skip.json"
-            skip.write_text(json.dumps([{"name": "a lid", "kind": "road", "as": "pavement", "at": [5, 5], "why": "test"}]))
+            skip.write_text(json.dumps([{"name": "a lid", "kind": "road", "as": "pavement", "at": [5, 5], "why": "test"}]), encoding="utf-8")
             with patch.object(dtm, "SKIP", skip):
                 got = dtm._skipped(kinds)
         self.assertEqual(len(got["road"][1]), 1)

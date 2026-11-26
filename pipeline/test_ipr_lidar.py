@@ -48,11 +48,12 @@ class LidarTests(unittest.TestCase):
             heights, manifest = ipr_lidar.source_paths(tmp)
             np.save(heights, np.array([[200, 202], [206, 208]], dtype="<f4"))
             manifest.write_text(json.dumps({"format": ipr_lidar.CACHE_FORMAT, "source": ipr_lidar.SOURCE,
-                                            "archiveSha256": ipr_lidar.ARCHIVE_SHA256, "origin": ORIGIN, "shape": [2, 2]}))
+                                            "archiveSha256": ipr_lidar.ARCHIVE_SHA256, "origin": ORIGIN, "shape": [2, 2]}), encoding="utf-8")
             at, provenance = ipr_lidar.sampler(tmp, LOCAL)
             # The Czech datum transform round-trips within millimetres of position.
             self.assertAlmostEqual(float(at(*local_xy)), 203.5, delta=.02)
             self.assertEqual(provenance["verticalDatum"], "Bpv")
+            del at  # (its memory map: Windows can't truncate a mapped file)
             heights.write_bytes(b"")
             with self.assertRaisesRegex(ValueError, "Import DTM.zip"):
                 ipr_lidar.sampler(tmp, LOCAL)
@@ -77,7 +78,7 @@ class LidarTests(unittest.TestCase):
             heights, manifest = ipr_lidar.source_paths(tmp)
             np.save(heights, np.array([[200, 202], [206, 208]], dtype="<f4"))
             manifest.write_text(json.dumps({"format": ipr_lidar.CACHE_FORMAT, "source": ipr_lidar.SOURCE,
-                                            "archiveSha256": ipr_lidar.ARCHIVE_SHA256, "origin": ORIGIN, "shape": [2, 2]}))
+                                            "archiveSha256": ipr_lidar.ARCHIVE_SHA256, "origin": ORIGIN, "shape": [2, 2]}), encoding="utf-8")
             here = Path(tmp).resolve()
             with patch.object(ipr_lidar, "CACHE", Path(tmp)):
                 self.assertIsNone(ipr_terrain.survey_scan(args()))

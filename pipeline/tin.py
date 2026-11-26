@@ -39,7 +39,7 @@ END_JUMP, END_REACH = 2.0, 1.5  # m: a side of a step jumping this much this nea
 
 
 def load(target: Path, k: str):
-    meta = json.loads((target / f"{k}.json").read_text())
+    meta = json.loads((target / f"{k}.json").read_text(encoding="utf-8"))
     nx, ny = meta["nx"], meta["ny"]
     raw = (target / f"{k}.grid.bin").read_bytes()
     heights = np.frombuffer(raw, np.float32, nx * ny).reshape(ny, nx).astype(np.float64)
@@ -58,7 +58,7 @@ def load_kerbs(target: Path, k: str) -> list[np.ndarray]:
     f = target / f"{k}.kerbs.bin"
     if not f.exists():
         return []
-    lengths = json.loads((target / f"{k}.json").read_text()).get("kerbs", [])
+    lengths = json.loads((target / f"{k}.json").read_text(encoding="utf-8")).get("kerbs", [])
     rows = np.frombuffer(f.read_bytes(), np.float32).reshape(-1, 6).astype(np.float64)
     out, at = [], 0
     for m in lengths:
@@ -587,7 +587,7 @@ def main():
             total[f] += row[f] if f != "seconds" else sec
         print(json.dumps(row))
     print(json.dumps(dict(area=a.area, tol=a.tol, loose=a.loose, tiles=len(keys), **{f: round(v, 1) for f, v in total.items()})))
-    (out / "report.json").write_text(json.dumps(dict(tol=a.tol, loose=a.loose, rows=rows, total=total), indent=1))
+    (out / "report.json").write_text(json.dumps(dict(tol=a.tol, loose=a.loose, rows=rows, total=total), indent=1), encoding="utf-8")
 
 
 if __name__ == "__main__":

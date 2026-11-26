@@ -33,7 +33,7 @@ def size(path: Path) -> int:
 def areas() -> dict:
     out = {}
     for meta in sorted((CACHE / "layers").glob("*/meta.json")):
-        m = json.loads(meta.read_text())
+        m = json.loads(meta.read_text(encoding="utf-8"))
         out[m["area"]] = m
     return out
 

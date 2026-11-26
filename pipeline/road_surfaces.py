@@ -39,7 +39,7 @@ def design(xy, bounds):
 class Map:
     def __init__(self, data, snapshot):
         self.data = data
-        self.index = json.loads((data / "index.json").read_text())
+        self.index = json.loads((data / "index.json").read_text(encoding="utf-8"))
         w, s, e, n = self.index["bbox_wgs84"]
         local = f"+proj=tmerc +lat_0={(s+n)/2} +lon_0={(w+e)/2} +k=1 +ellps=WGS84 +units=m"
         self.tf = krovak_to_local(local)
@@ -67,7 +67,7 @@ class Map:
 
     @lru_cache(maxsize=64)
     def tile(self, i, j):
-        return json.loads((self.data / "tiles" / f"{i}_{j}.json").read_text())
+        return json.loads((self.data / "tiles" / f"{i}_{j}.json").read_text(encoding="utf-8"))
 
     def tiles(self, bounds):
         ox, oy = self.index["origin"]
@@ -273,7 +273,7 @@ def main():
     args = ap.parse_args()
     city = Map(args.data, args.survey_snapshot)
     if args.extend_junctions:
-        current = json.loads(args.extend_junctions.read_text())
+        current = json.loads(args.extend_junctions.read_text(encoding="utf-8"))
         if (current.get("version"), current.get("area"), current.get("built")) != (
                 1, city.index["area"], city.index["built"]):
             ap.error("screened surfaces do not match this map build")
@@ -282,7 +282,7 @@ def main():
         write(args.report, json.dumps(report, ensure_ascii=False, indent=2) + "\n")
         print(f"{sum(bool(r.get('radius')) for r in report)} extended junctions from {len(report)} existing fits")
         return
-    base = json.loads(args.baseline.read_text())
+    base = json.loads(args.baseline.read_text(encoding="utf-8"))
     if base["built"] != city.index["built"]:
         ap.error("baseline map build differs")
     candidates = [(name, float(lat), float(lon), float(r))

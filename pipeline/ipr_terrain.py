@@ -244,11 +244,11 @@ CATALOGUE_DENSE = "catalogue_ter_shp.json"
 def catalogue():
     path = CACHE / (CATALOGUE_DENSE if DENSE_TIN else CATALOGUE)
     if path.exists():
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
     end = "_shp" if DENSE_TIN else "_gml"
     items = {t[: -len(end)]: i for t, (i, _) in search("TER_").items() if t.endswith(end)}
     CACHE.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(items, indent=1))
+    path.write_text(json.dumps(items, indent=1), encoding="utf-8")
     return items
 
 
@@ -459,7 +459,7 @@ def kept_places(local):
     polygons in the area's metres."""
     to_local = Transformer.from_crs("EPSG:4326", local, always_xy=True)
     out = []
-    for place in json.loads((Path(__file__).parent / "terrain_keep.json").read_text()):
+    for place in json.loads((Path(__file__).parent / "terrain_keep.json").read_text(encoding="utf-8")):
         w, s, e, n = place["box"]
         out.append(Polygon(zip(*to_local.transform([w, e, e, w], [s, s, n, n]))))
     return out
@@ -470,7 +470,7 @@ def drawn_walls(local):
     area's metres."""
     to_local = Transformer.from_crs("EPSG:4326", local, always_xy=True)
     return [LineString(zip(*to_local.transform(*zip(*wall["line"]))))
-            for wall in json.loads((Path(__file__).parent / "terrain_walls.json").read_text())]
+            for wall in json.loads((Path(__file__).parent / "terrain_walls.json").read_text(encoding="utf-8"))]
 
 
 def drawn_floors(local):
@@ -478,7 +478,7 @@ def drawn_floors(local):
     area's metres."""
     to_local = Transformer.from_crs("EPSG:4326", local, always_xy=True)
     return [Polygon(zip(*to_local.transform(*zip(*floor["ring"]))))
-            for floor in json.loads((Path(__file__).parent / "terrain_floors.json").read_text())]
+            for floor in json.loads((Path(__file__).parent / "terrain_floors.json").read_text(encoding="utf-8"))]
 
 
 def source_paths(area, options):

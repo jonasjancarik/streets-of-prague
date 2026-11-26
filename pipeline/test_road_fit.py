@@ -2,6 +2,8 @@
 at any steady rate for free, bending along it costs more than the same bending across,
 and at a junction it costs the same whichever way it runs."""
 import base64
+import contextlib
+import io
 import tempfile
 import unittest
 from pathlib import Path
@@ -119,7 +121,7 @@ class AfterAssembleTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.dir = Path(tmp.name)
         self.out = self.dir / "road-fit.json"
-        self.out.write_text("{}")  # left from the map's earlier build
+        self.out.write_text("{}", encoding="utf-8")  # left from the map's earlier build
 
     PRAHA = [14.2244, 49.9419, 14.7068, 50.1774]
 
@@ -127,7 +129,8 @@ class AfterAssembleTests(unittest.TestCase):
         here = self.dir if present else self.dir / "nowhere"
         index = {"bbox_wgs84": bbox, "terrainOptions": {"survey_scan": "2023"} if options is None else options}
         with mock.patch.object(road_fit, "run", return_value={}) as run, \
-                mock.patch.multiple(road_fit, LIDAR=here, SURVEY=here, DSM=here):
+                mock.patch.multiple(road_fit, LIDAR=here, SURVEY=here, DSM=here), \
+                contextlib.redirect_stdout(io.StringIO()):  # (its "→" fails in a Windows pipe's code page)
             road_fit.after_assemble(index, self.dir, self.dir / "report")
         return run
 

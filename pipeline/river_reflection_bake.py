@@ -27,7 +27,7 @@ def render(folder):
     camera.data.longitude_min, camera.data.longitude_max = -math.pi, math.pi
     camera.data.clip_start, camera.data.clip_end = .3, 340
     camera.rotation_euler = Vector((0, 1, 0)).to_track_quat("-Z", "Y").to_euler()
-    stations = json.loads((folder / "stations.json").read_text())
+    stations = json.loads((folder / "stations.json").read_text(encoding="utf-8"))
 
     for depth in (False, True):
         survey_pass(scene, "View Distance" if depth else None, 510)

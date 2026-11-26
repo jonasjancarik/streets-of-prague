@@ -235,7 +235,7 @@ def main():
         raw.save(out / f"{name}-ground.jpg", quality=80, optimize=True)
         kb = (out / f"{name}-ground.jpg").stat().st_size / 1024 / len(tiles)
         overlay(img, px, args.area, tiles, args.scale).save(out / f"{name}.jpg", quality=88)
-        (out / f"{name}.json").write_text(json.dumps({"variant": name, "m_per_px": px, "kb_per_tile": round(kb, 1), "seconds": round(time.time() - started)}))
+        (out / f"{name}.json").write_text(json.dumps({"variant": name, "m_per_px": px, "kb_per_tile": round(kb, 1), "seconds": round(time.time() - started)}), encoding="utf-8")
         print(f"{name}: {px} m/px, {kb:.0f} KB a tile, {time.time() - started:.0f} s", flush=True)
 
 

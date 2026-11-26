@@ -15,7 +15,7 @@ import ipr_terrain
 
 
 def fixture():
-    c = json.loads((Path(__file__).parent / 'fixtures/mrazovka-clean-inputs.json').read_text())
+    c = json.loads((Path(__file__).parent / 'fixtures/mrazovka-clean-inputs.json').read_text(encoding="utf-8"))
     unpack = lambda s: gzip.decompress(base64.b64decode(s))
     n = c['N'] + 1
     tiles, labels, boxes = {}, {}, {}
@@ -72,6 +72,6 @@ if __name__=='__main__':
                          for _,_,h,_ in levels)
             rows.append({'key':list(key),'box':list(boxes[key].bounds),'structures':[{'level':lv,'kind':kind,'polys':polys}for lv,kind,_,polys in levels],
                          'encoded_levels_base64':base64.b64encode(raw).decode()})
-        Path(sys.argv[2]).write_text(json.dumps({'n':c['N']+1,'step':c['step'],'ref':180,'probes':c['probes'],'tiles':rows}))
+        Path(sys.argv[2]).write_text(json.dumps({'n':c['N']+1,'step':c['step'],'ref':180,'probes':c['probes'],'tiles':rows}), encoding="utf-8")
     else:
         unittest.main()

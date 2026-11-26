@@ -34,7 +34,7 @@ KINDS = {1: 1, 3: 2}
 def download(*, refresh=False):
     """[[lon, lat, kind]] for every tree, cached."""
     if CACHE.exists() and not refresh:
-        return json.loads(CACHE.read_text())
+        return json.loads(CACHE.read_text(encoding="utf-8"))
     CACHE.parent.mkdir(parents=True, exist_ok=True)
     out, offset = [], 0
     while True:

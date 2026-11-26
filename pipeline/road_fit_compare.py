@@ -20,7 +20,7 @@ NAMES = {"step": "Steps along the street", "bump": "Bumps", "lean": "Leaning acr
 
 def inside_ids(area):
     """Car streets whose whole axis lies inside the area (the checker's approximate degrees)."""
-    index = json.loads((DATA / "index.json").read_text())
+    index = json.loads((DATA / "index.json").read_text(encoding="utf-8"))
     w, s, e, n = index["bbox_wgs84"]
     lat0, lon0, rad = (s + n) / 2, (w + e) / 2, math.pi / 180
     m_lat = 111132.92 - 559.82 * math.cos(2 * lat0 * rad)
@@ -28,7 +28,7 @@ def inside_ids(area):
     ids, out = set(), set()
     for i, j, *_ in index["tiles"]:
         p = DATA / "tiles" / f"{i}_{j}.json"
-        t = json.loads(p.read_text())
+        t = json.loads(p.read_text(encoding="utf-8"))
         for edge in t["drive"]:
             for x, y in edge["pts"]:
                 lat = lat0 + y / m_lat
@@ -48,7 +48,7 @@ def main():
     runs = {}
     for item in args.reports:
         label, path = item.split("=", 1)
-        rows = json.loads(Path(path).read_text())["rows"]
+        rows = json.loads(Path(path).read_text(encoding="utf-8"))["rows"]
         runs[label] = {r["id"]: r for r in rows if r["id"] in ids}
     labels = list(runs)
     common = set.intersection(*(set(r) for r in runs.values()))

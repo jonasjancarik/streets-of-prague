@@ -87,7 +87,7 @@ def build(index, features, bridge, tiles_dir):
             path = tiles_dir / f"{key}.json"
             if not path.is_file():
                 continue
-            tile = json.loads(path.read_text())
+            tile = json.loads(path.read_text(encoding="utf-8"))
             overrides = bridge["decks"].get(key, {})
             outlines = {s["level"]: union_all(polygons(overrides.get(str(s["level"]), s["polys"])))
                         for s in tile.get("structures", []) if s["kind"] == "bridge"}
@@ -110,8 +110,8 @@ def main():
     parser.add_argument("data", type=Path)
     parser.add_argument("osm", type=Path)
     args = parser.parse_args()
-    index = json.loads((args.data / "index.json").read_text())
-    bridge = json.loads((args.data / "bridge-surfaces.json").read_text())
+    index = json.loads((args.data / "index.json").read_text(encoding="utf-8"))
+    bridge = json.loads((args.data / "bridge-surfaces.json").read_text(encoding="utf-8"))
     if (bridge["area"], bridge["built"]) != (index["area"], index["built"]):
         parser.error("bridge-surfaces.json must match this map build")
     result = build(index, station_features(args.osm), bridge, args.data / "tiles")

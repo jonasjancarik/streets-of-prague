@@ -37,7 +37,7 @@ def waterways(points, origin, tile):
         path = DATA / f"tiles/{i}_{j}.json"
         if not path.exists():
             continue
-        source = json.loads(path.read_text())
+        source = json.loads(path.read_text(encoding="utf-8"))
         outlines = [(wet, source["areas"].get("water", []))]
         outlines.extend((bridges, st["polys"]) for st in source.get("structures", []) if st["kind"] == "bridge")
         for destination, polygons in outlines:
@@ -111,14 +111,14 @@ def bank_mesh(points, water, bridges, crs, anchor, datum):
 
 
 def prepare():
-    index = json.loads((DATA / "index.json").read_text())
+    index = json.loads((DATA / "index.json").read_text(encoding="utf-8"))
     west, south, east, north = index["bbox_wgs84"]
     crs = CRS.from_proj4(f"+proj=tmerc +lon_0={(west+east)/2} +lat_0={(south+north)/2} +ellps=WGS84 +units=m")
     to_local = Transformer.from_crs("EPSG:4326", crs, always_xy=True)
     to_wgs = Transformer.from_crs(crs, "EPSG:4326", always_xy=True)
     anchor = np.array(to_local.transform(*ORIGIN))
     points = []
-    for reach in json.loads((DATA / "river.json").read_text())["fairway"]:
+    for reach in json.loads((DATA / "river.json").read_text(encoding="utf-8"))["fairway"]:
         pts = np.array(reach["pts"])[:, :2]
         lon, lat = to_wgs.transform(pts[:, 0], pts[:, 1])
         pts = pts[(lat > 50.0728) & (lat < 50.0970) & (lon > 14.396) & (lon < 14.4365)]
@@ -150,7 +150,7 @@ def prepare():
             shore.append(510 if hit.is_empty else round(np.clip(Point(x, y).distance(hit), 5, 510)))
         stations.append({"wgs": to_wgs.transform(x, y), "p": [x-anchor[0], y-anchor[1], height+.35],
                          "water": height+datum-180, "shore": shore})
-    (CACHE / "stations.json").write_text(json.dumps(stations))
+    (CACHE / "stations.json").write_text(json.dumps(stations), encoding="utf-8")
     return stations
 
 
@@ -192,7 +192,7 @@ def pack(stations):
     if not 2 <= len(positions) <= 44:
         raise ValueError(f"Unexpected number of river stations: {len(positions)}")
     atlas.save(ROOT / "public/vltava-banks.webp", quality=87, method=6, exact=True)
-    (ROOT / "src/riverBankStations.json").write_text(json.dumps(positions, separators=(",", ":")) + "\n")
+    (ROOT / "src/riverBankStations.json").write_text(json.dumps(positions, separators=(",", ":")) + "\n", encoding="utf-8")
     print(f"{len(positions)} water-level views")
 
 

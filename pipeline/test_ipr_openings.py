@@ -25,7 +25,7 @@ class OpeningTests(unittest.TestCase):
     def test_a_roof_keeps_its_inner_ring_as_a_hole(self):
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / "sheet.gml"
-            path.write_text(GML)
+            path.write_text(GML, encoding="utf-8")
             [(gid, [(kind, outer, holes)])] = list(ipr.buildings(path))
         self.assertEqual((gid, kind, len(outer), [len(h) for h in holes]), ("_1", 1, 4, [4]))
         self.assertAlmostEqual(plan_area(ipr.triangulate(outer, holes)), 1600 - 400)

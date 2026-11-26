@@ -115,10 +115,10 @@ CATALOGUE = "catalogue_bd3.json"
 def catalogue():
     path = CACHE / CATALOGUE
     if path.exists():
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
     items = {t: i for t, (i, kind) in search("BD3_").items() if kind == "GML"}
     CACHE.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(items, indent=1))
+    path.write_text(json.dumps(items, indent=1), encoding="utf-8")
     return items
 
 

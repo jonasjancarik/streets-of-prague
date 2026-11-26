@@ -42,7 +42,7 @@ def bake(cache):
             if not depth:
                 projection = camera.calc_matrix_camera(graph, x=w, y=h) @ camera.matrix_world.inverted()
                 views.append({"az": angle, "eye": list(eye), "aim": list(aim), "matrix": [list(row) for row in projection]})
-    (cache / "views.json").write_text(json.dumps(views))
+    (cache / "views.json").write_text(json.dumps(views), encoding="utf-8")
 
 
 if __name__ == "__main__":

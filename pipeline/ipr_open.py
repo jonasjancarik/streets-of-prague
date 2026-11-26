@@ -67,10 +67,10 @@ def cached(path, make):
     """What `make()` gives, kept as JSON at .cache/<path>."""
     file = CACHE / path
     if file.exists():
-        return json.loads(file.read_text())
+        return json.loads(file.read_text(encoding="utf-8"))
     file.parent.mkdir(parents=True, exist_ok=True)
     data = make()
     tmp = file.with_suffix(".part")
-    tmp.write_text(json.dumps(data, separators=(",", ":")))
+    tmp.write_text(json.dumps(data, separators=(",", ":")), encoding="utf-8")
     tmp.replace(file)
     return data

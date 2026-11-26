@@ -26,5 +26,9 @@ jobs:
       # (Every script, not only those the tests import: a typo can stop one for weeks.)
       - run: uv run python -m compileall -q -x '/[.](venv|cache)/' .
         working-directory: pipeline
-      - run: uv run --group cover python -B -m unittest discover -s . -p 'test_*.py'
+      # Text read or written without encoding="utf-8" is an error: on Windows it would be
+      # the locale's code page (lazy_loader, scikit-image's, is outside our hands).
+      - run: >-
+          uv run --group cover python -X warn_default_encoding -W error::EncodingWarning
+          -W ignore::EncodingWarning:lazy_loader -B -m unittest discover -s . -p 'test_*.py'
         working-directory: pipeline

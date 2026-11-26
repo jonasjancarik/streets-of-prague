@@ -250,7 +250,7 @@ def main() -> None:
     buildings, centres = load_buildings(key)
     args.out.mkdir(parents=True, exist_ok=True)
     marks_path = args.out / "skylines.json"
-    marks = json.loads(marks_path.read_text()) if marks_path.exists() else {}
+    marks = json.loads(marks_path.read_text(encoding="utf-8")) if marks_path.exists() else {}
     for name in names:
         img, mark = render(name, VIEWS[name], buildings, centres, grids, to_local, width, height, args.ss, args.reach)
         img.save(args.out / f"{name}.webp", quality=86, method=6)
@@ -258,7 +258,7 @@ def main() -> None:
             marks[name] = mark
         else:
             marks.pop(name, None)
-    marks_path.write_text(json.dumps(marks, indent=1) + "\n")
+    marks_path.write_text(json.dumps(marks, indent=1) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

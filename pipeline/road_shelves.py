@@ -23,7 +23,7 @@ REACH = 12  # metres from the ground road
 class Map:
     def __init__(self, data, lidar):
         self.data = data
-        self.index = json.loads((data / "index.json").read_text())
+        self.index = json.loads((data / "index.json").read_text(encoding="utf-8"))
         w, s, e, n = self.index["bbox_wgs84"]
         local = f"+proj=tmerc +lat_0={(s+n)/2} +lon_0={(w+e)/2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m"
         self.lidar, self.source = lidar_sampler(lidar, local)
@@ -34,7 +34,7 @@ class Map:
 
     @lru_cache(maxsize=256)
     def tile(self, i, j):
-        return json.loads((self.data / "tiles" / f"{i}_{j}.json").read_text())
+        return json.loads((self.data / "tiles" / f"{i}_{j}.json").read_text(encoding="utf-8"))
 
     def tiles(self, bounds):
         (i0, j0), (i1, j1) = np.floor((np.asarray(bounds).reshape(2, 2) + self.origin) / self.size).astype(int)
@@ -209,7 +209,7 @@ def main():
     if args.limit < 1:
         ap.error("--limit must be positive")
     city = Map(args.data, args.lidar)
-    current = json.loads(args.current.read_text())
+    current = json.loads(args.current.read_text(encoding="utf-8"))
     if (current.get("version"), current.get("area"), current.get("built")) != (1, city.index["area"], city.index["built"]):
         ap.error("current sidecar does not match the assembled map")
 

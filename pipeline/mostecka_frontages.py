@@ -40,7 +40,7 @@ def build():
             rows.append([*[round(v,7) for v in back.transform(foot.x,foot.y)], *coords, trade])
     if not rows:
         raise ValueError("No mapped frontages on Mostecká")
-    (ROOT / "src/map/mosteckaFrontages.json").write_text(json.dumps(sorted(rows),separators=(",",":"))+"\n")
+    (ROOT / "src/map/mosteckaFrontages.json").write_text(json.dumps(sorted(rows),separators=(",",":"))+"\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

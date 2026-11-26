@@ -30,7 +30,7 @@ def local_crs(index):
 class Tile:
     def __init__(self, data, key, index):
         self.key = key
-        self.raw = json.loads((data / "tiles" / f"{key}.json").read_text())
+        self.raw = json.loads((data / "tiles" / f"{key}.json").read_text(encoding="utf-8"))
         self.box = box(*self.raw["box"])
         self.n, self.step = (index["terrain"][k] for k in ("n", "step"))
         rows = self.raw.get("structures", [])
@@ -270,7 +270,7 @@ def main():
     ap.add_argument("--tiles", required=True, help="comma-separated tiles around the structures")
     ap.add_argument("--underpass", help="comma-separated ground road edges through the railway in route order")
     args = ap.parse_args()
-    index = json.loads((args.data / "index.json").read_text())
+    index = json.loads((args.data / "index.json").read_text(encoding="utf-8"))
     tiles = [Tile(args.data, key, index) for key in args.tiles.split(",")]
     local = local_crs(index)
     measured = ipr_decks(local)

@@ -111,7 +111,7 @@ def import_archive(archive, output):
                 shutil.copyfileobj(member, extracted, length=1024 * 1024)
         stats = decode(tiff, origin, heights)
         manifest = {"format": CACHE_FORMAT, "source": SOURCE, "archiveSha256": sha, "origin": origin, **stats}
-        provenance.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
+        provenance.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         os.rename(staged, output)
     return manifest
 
@@ -174,7 +174,7 @@ def range_sampler(directory):
 def _open(directory):
     heights_path, metadata_path = source_paths(directory)
     try:
-        metadata = json.loads(metadata_path.read_text())
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         heights = np.load(heights_path, mmap_mode="r", allow_pickle=False)
         origin = tuple(map(float, metadata["origin"]))
         if (metadata["format"] != CACHE_FORMAT or metadata["source"] != SOURCE

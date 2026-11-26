@@ -35,7 +35,7 @@ def report(area, pbf):
         exported = Path(tmp) / "features.geojsonseq"
         subprocess.run(["osmium", "export", "--geometry-types=linestring,polygon",
                         "-u", "type_id", "-f", "geojsonseq", "-o", str(exported), str(pbf)], check=True)
-        for line in exported.open():
+        for line in exported.open(encoding="utf-8"):
             item = json.loads(line.lstrip("\x1e"))
             tags = item["properties"]
             hw = tags.get("highway")

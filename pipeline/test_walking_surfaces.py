@@ -96,7 +96,8 @@ class WalkingSurfaceTests(unittest.TestCase):
         geoms = shapely.transform(geoms, lambda c: np.column_stack(inv.transform(c[:, 0], c[:, 1])))
         rows = [{"element": "way", "id": i+1, **tag} for i, tag in enumerate(tags)]
         with patch("osm_area.dtm.streets", return_value=Polygon()), patch("osm_area.dtm.land", return_value=land or {}), \
-                patch("osm_area.dtm.parking", return_value=Polygon()), patch("osm_area.dtm.walks", return_value=walks or {}):
+                patch("osm_area.dtm.parking", return_value=Polygon()), patch("osm_area.dtm.walks", return_value=walks or {}), \
+                patch("osm_area.di_tracks.moved", return_value={}):  # (not the surveyed axes in the local cache)
             # (No surveyed pavements either: the real ones at this spot would take the ribbons' place.)
             return extract("ujezd", features=(geoms, rows))
 

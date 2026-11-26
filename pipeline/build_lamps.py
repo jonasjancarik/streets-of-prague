@@ -101,7 +101,7 @@ STEP, STRAIGHTEN, EDGE = 0.25, 1.0, 300.0  # m: lit.bin.gz's unit, how far a way
 
 def download(url=URL, cache=CACHE):
     if cache.exists():
-        return json.loads(cache.read_text())
+        return json.loads(cache.read_text(encoding="utf-8"))
     cache.parent.mkdir(parents=True, exist_ok=True)
     where = f"ctmtp_kod IN ({','.join(map(str, KINDS))})"
     out, offset = [], 0
@@ -145,7 +145,7 @@ def osm_lighting(area):
                         "-o", str(picked)], check=True)
         subprocess.run(["osmium", "export", str(picked), "-f", "geojsonseq", "-o", str(out)], check=True)
         # (One feature a line, each after a record separator, which splitlines would split at too.)
-        with out.open() as lines:
+        with out.open(encoding="utf-8") as lines:
             for line in lines:
                 if not line.strip("\x1e \n"):
                     continue
@@ -208,7 +208,7 @@ def road_geometry(area):
     for path in sorted((OUT / f"{area}_now" / "tiles").glob("*_*.json")):
         if path.name.count(".") > 1:
             continue
-        tile = json.loads(path.read_text())
+        tile = json.loads(path.read_text(encoding="utf-8"))
         # Round ends: where a street is split into two ways at a slight bend, flat ends
         # leave a thin wedge open across it, and a post beside the joint looked like
         # one on a kerb (Sokolská). Past the street's end the asphalt still limits it.
