@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0 --port ${PORT:-5191}",
+    "dev": "vite --host 0.0.0.0",
     "build": "npm run typecheck && vite build",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview --host 0.0.0.0",

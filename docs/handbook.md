@@ -16,6 +16,13 @@ node scripts/bench.mjs   # frame times in Chrome at a few places (options in the
 node scripts/scene.mjs run all   # test scenarios in headless Chrome (see Testing below)
 ```
 
+On Windows, the same development command works in Command Prompt or PowerShell.
+Use `npm.cmd` if PowerShell blocks `npm.ps1`. The default port is 5191; set the
+`PORT` environment variable or pass `npm run dev -- --port 5192` to change it.
+Vite watches browser source, leaving `pipeline/`, `trailer/`, `public/data/` and
+other checkouts under `.claude/worktrees/` unwatched. Rebuild map data as usual;
+reload the page to see it. Dependency discovery starts from the game's `index.html`.
+
 ### Testing
 
 `scenarios/*.ts` are scripted situations with checks, e.g. "a car at 50 km/h knocks a

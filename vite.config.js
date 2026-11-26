@@ -9,6 +9,10 @@ import { betaNotes } from './scripts/beta-notes.mjs';
 // may be reached by besides localhost and IP addresses: the machine's .local name on
 // the LAN and its Tailscale name.
 const allowedHosts = ['.local', '.ts.net'];
+// These folders are not browser source. Map builds and trailer exports can contain
+// hundreds of thousands of files; watching them also hits locked files on Windows.
+const unwatched = ['pipeline', 'trailer', 'public/data', '.claude/worktrees']
+  .map((path) => join(import.meta.dirname, path).replaceAll('\\', '/'));
 
 // The libraries in the build (three.js, proj4, Leaflet…) want their licence text kept
 // with every copy, and minifying strips it. This writes licenses.txt into dist with
@@ -90,14 +94,16 @@ const built = new Date().toISOString().slice(0, 10);
 const notes = process.env.VITE_CHANNEL === 'beta' ? betaNotes().notes : null;
 
 export default defineConfig({
+  optimizeDeps: { entries: ['index.html'] },
   define: { __APP_VERSION__: JSON.stringify(version), __APP_BUILT__: JSON.stringify(built), __DATA_VERSION__: JSON.stringify(data), __BETA_NOTES__: JSON.stringify(notes) },
   server: {
     allowedHosts,
-    // Other checkouts of the game live under .claude/worktrees, each with a dev server
-    // of its own. Watching them too (and the map data and node_modules they link to)
-    // ran this server out of memory when two were made while it was running. (By this
-    // checkout's own path: a worktree's server must still watch its own files.)
-    watch: { ignored: [join(import.meta.dirname, '.claude/worktrees/**')] },
+    port: Number(process.env.PORT || 5191),
+    // Match each folder itself as well as its contents, with either path separator.
+    watch: { ignored: (file) => {
+      const path = file.replaceAll('\\', '/');
+      return unwatched.some((root) => path === root || path.startsWith(`${root}/`));
+    } },
     // Protomaps' daily planet build for ?countryside=live (src/data.ts): their server
     // lets only a few origins read it, so the dev server fetches it for the game.
     proxy: {
