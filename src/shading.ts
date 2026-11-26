@@ -362,7 +362,7 @@ vec3 mirrorOf(vec3 w, vec2 p) {
 }
 `;
 
-export const PATTERN: Record<string, number> = { flat: 0, asphalt: 1, setts: 2, mosaic: 3, slabs: 4, grass: 5, wood: 6, pitch: 7, dirt: 8, concrete: 9, water: 10, gravel: 11, field: 12, meadow: 13, lawn: 14, garden: 15, pavement: 16, quietWater: 17, groovedRail: 18, tramBed: 19, graniteKerb: 20, stairStone: 21 };
+export const PATTERN: Record<string, number> = { flat: 0, asphalt: 1, setts: 2, mosaic: 3, slabs: 4, grass: 5, wood: 6, pitch: 7, dirt: 8, concrete: 9, water: 10, gravel: 11, field: 12, meadow: 13, lawn: 14, garden: 15, pavement: 16, quietWater: 17, groovedRail: 18, graniteKerb: 20, stairStone: 21 };
 
 // Buildings: tiles laid in rows down the slope of every roof face (the slope comes
 // from the face normal), slate in smaller rows, gravel on flat roofs, and a grid of
@@ -908,7 +908,7 @@ export function patterned(
   if (patternedBy) return patternedBy(material, id, time, relief, deck, dig, photo, sheltered, seasonal, raster);
   material.userData.flatten = () => patterned(material.clone(), 0, time, relief, deck, dig, photo, sheltered);
   if (id === 18) id = PATTERN.flat;
-  if (id === 19 || id === 21) id = PATTERN.concrete;
+  if (id === 21) id = PATTERN.concrete;
   if ([5, 6, 7, 12, 13, 14, 15].includes(id)) material.userData.summerGround = () => patterned(material.clone(), id, time, relief, deck, dig, photo, sheltered, false);
   material.onBeforeCompile = (sh) => {
     sh.defines = { ...sh.defines, GROUND_YEAR: seasonal ? 1 : 0 };
@@ -946,15 +946,17 @@ export function patterned(
       sh.uniforms.uDeck = { value: deck.mask };
       sh.uniforms.uDeckBox = { value: deck.box };
     }
+    // Setts, mosaic, slabs and concrete: in the axes they are laid along (laying.ts).
+    const laid = [2, 3, 4, 9, 16].includes(id);
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vWorld;')
-      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;${laid ? '\nattribute float lay;\nvarying float vLay;' : ''}`)
+      .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>\n  vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;${laid ? '\n  vLay = lay;' : ''}`);
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;\nuniform sampler2D uRelief; uniform vec4 uReliefBox; uniform float uReliefOn;\nuniform sampler2D uSky; uniform vec4 uSkyBox; uniform float uSkyOn;\n${photo ? 'uniform sampler2D uPhoto; uniform vec4 uPhotoBox;\n' : ''}${deck ? 'uniform vec4 uCut; uniform sampler2D uDeck; uniform vec4 uDeckBox;\n' : ''}${dig ? 'uniform vec4 uDig;\n' : ''}${NOISE_GLSL}\n${PATTERNS_GLSL}\n${WEATHER_GLSL}${mirror ? MIRROR_GLSL : ''}`)
+      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;${laid ? '\nvarying float vLay;' : ''}\nuniform sampler2D uRelief; uniform vec4 uReliefBox; uniform float uReliefOn;\nuniform sampler2D uSky; uniform vec4 uSkyBox; uniform float uSkyOn;\n${photo ? 'uniform sampler2D uPhoto; uniform vec4 uPhotoBox;\n' : ''}${deck ? 'uniform vec4 uCut; uniform sampler2D uDeck; uniform vec4 uDeckBox;\n' : ''}${dig ? 'uniform vec4 uDig;\n' : ''}${NOISE_GLSL}\n${PATTERNS_GLSL}\n${WEATHER_GLSL}${mirror ? MIRROR_GLSL : ''}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
   vec2 wp = vec2(vWorld.x, -vWorld.z);
 ${deck ? `  if (vWorld.y > uCut.y && distance(vWorld.xz, uCut.xz) < uCut.w) discard;
-${deck.mask ? '  if (texture2D(uDeck, (wp - uDeckBox.xy) / (uDeckBox.zw - uDeckBox.xy)).r < .5) discard;\n' : ''}` : ''}  diffuseColor.rgb = ${photo ? 'texture2D(uPhoto, (wp - uPhotoBox.xy) / (uPhotoBox.zw - uPhotoBox.xy)).rgb' : `pattern(${id}, diffuseColor.rgb, wp)`};
+${deck.mask ? '  if (texture2D(uDeck, (wp - uDeckBox.xy) / (uDeckBox.zw - uDeckBox.xy)).r < .5) discard;\n' : ''}` : ''}  diffuseColor.rgb = ${photo ? 'texture2D(uPhoto, (wp - uPhotoBox.xy) / (uPhotoBox.zw - uPhotoBox.xy)).rgb' : `pattern(${id}, diffuseColor.rgb, ${laid ? 'mat2(cos(vLay), -sin(vLay), sin(vLay), cos(vLay)) * wp' : 'wp'})`};
   // Hill shading and the broad variation (broad), baked together for a tile.
   if (uReliefOn > .5) diffuseColor.rgb *= texture2D(uRelief, (wp - uReliefBox.xy) / (uReliefBox.zw - uReliefBox.xy)).r;
   else diffuseColor.rgb *= .93 + .14 * fbm(wp * .004);

@@ -90,22 +90,6 @@ function railProfile(base: N) {
     .add(vec3(.20,.225,.23).mul(band(.483,.865))).add(vec3(.064,.069,.066).mul(band(.54,.67)));
   return mix(base,steel,float(1).sub(smoothstep(.12,.72,fwidth(u))));
 }
-function tramConcrete(c: N,p: N) {
-  const a=trackCoord.div(6), seam=abs(fract(a.add(.5)).sub(.5)).mul(6);
-  const aa=max(.003,fwidth(trackCoord).mul(.62));
-  const joint=float(1).sub(smoothstep(float(.014).sub(aa),float(.014).add(aa),seam))
-    .mul(float(1).sub(smoothstep(.03,.20,aa)));
-  const age = vnoise(vec2(floor(a), .31)).mul(.075).add(.96);
-  const concrete = c.mul(age).mul(fbm2(p.mul(.44)).mul(.16).add(.91)).toVar();
-  If(surfaceDetail.greaterThan(.5), () => {
-    // Individual grains in cast concrete are finer and paler than the stones
-    // in the surrounding bitumen. The saw cut has a weathered arris.
-    concrete.mulAssign(aggregate(p.mul(1.65)).r.sub(.5).mul(.59).add(1));
-    const rim = float(1).sub(smoothstep(.018, .042, seam)).mul(float(1).sub(smoothstep(.014,.09,aa)));
-    concrete.mulAssign(rim.mul(.07).add(1));
-  });
-  return grit(concrete.mul(float(1).sub(joint.mul(.48))),p);
-}
 function graniteKerb(c: N, p: N) {
   const aa = max(.0015, fwidth(trackCoord).mul(.62));
   const stone = c.toVar();
@@ -252,18 +236,18 @@ function pAsphalt(c0: N, p: N) {
   });
   return c;
 }
-// Four laying directions, as on the procedural paving. Rotate the scanned normal
-// back into the street's axes before lighting it, including on a sloping road.
-function settAxes(p: N) {
-  const way = floor(hash12(floor(p.div(52).add(vec2(0.31, 0.57))).add(2.9)).mul(4)).mul(Math.PI / 4);
-  return vec2(cos(way), sin(way));
-}
+// Setts, mosaic, slabs and concrete are laid along the edges of what they cover: `lay`
+// is that direction (laying.ts). The axes turn the world into the laying's own (u along
+// it); the scanned normals are turned back before lighting, including on a sloping road.
+const lay: N = attribute('lay', 'float');
+const layAxes = () => vec2(cos(lay), sin(lay).negate());
 function settPoint(p: N, axes: N) {
   return vec2(p.x.mul(axes.x).sub(p.y.mul(axes.y)), p.x.mul(axes.y).add(p.y.mul(axes.x)));
 }
+const laid = (p: N) => settPoint(p, layAxes());
 function pSetts(c: N, p: N, sx: number, sy: number) {
   const d = detail(p, sx), s = c.mul(0.85).toVar();
-  const q = settPoint(p, settAxes(p));
+  const q = laid(p);
   If(settDetail.greaterThan(0.5), () => {
     const value = settScan.sample(q.div(2.5)).r;
     s.assign(c.mul(value.sub(0.5).mul(1.72).add(0.9)));
@@ -388,18 +372,17 @@ function pattern(id: number, c: N, p: N, time: N, seasonal: boolean): N {
       return road;
     }
     case 18: return railProfile(c);
-    case 19: return tramConcrete(c,p);
     case 20: return graniteKerb(c,p);
     case 21: return stairStone(c,p);
     case 2: return grit(pSetts(c, p, 0.17, 0.14), p);
-    case 3: return grit(pMosaic(c, p), p);
-    case 16: return grit(pPaved(c, p), p);
-    case 4: return grit(pSlabs(c, p), p);
+    case 3: return grit(pMosaic(c, laid(p)), p);
+    case 16: return grit(pPaved(c, laid(p)), p);
+    case 4: return grit(pSlabs(c, laid(p)), p);
     case 5: return pGrass(c, p, seasonal);
     case 6: return pWood(seasonal ? c.mul(uWoodSeason) : c, p);
     case 7: return pPitch(c, p, seasonal);
     case 8: return pDirt(c, p);
-    case 9: return grit(pConcrete(c, p), p);
+    case 9: return grit(pConcrete(c, laid(p)), p);
     case 10: case 17: return pWater(c, p, time);
     case 11: return pGravel(c, p);
     case 12: return pField(seasonal ? c.mul(uFieldSeason) : c, p);
@@ -413,7 +396,7 @@ function pattern(id: number, c: N, p: N, time: N, seasonal: boolean): N {
 // WEATHER_GLSL: the colour, and in .a how much of a mirror the ground is there (shine).
 function weathered(id: number, c0: N, p: N, time: N) {
   if (id === 10 || id === 17) return vec4(c0, select(uWater.greaterThan(0.5), 0, 0.35));
-  const paved = id <= 4 || id === 9 || id === 16 || id === 18 || id === 19 || id === 20 || id === 21, road = id === 1 || id === 2;
+  const paved = id <= 4 || id === 9 || id === 16 || id === 18 || id === 20 || id === 21, road = id === 1 || id === 2;
   const c = vec3(c0).toVar(), shine = float(0).toVar();
   // (Derivatives outside the branches.)
   const ripple = paved ? detail(p, 0.12) : float(0);
@@ -426,7 +409,7 @@ function weathered(id: number, c0: N, p: N, time: N) {
       // more than the sand between them, the asphalt's stones here and there, a stair's worn
       // middle, a rail's polished head (up close only).
       let gloss: N = float(1);
-      if (id === 2) gloss = select(settDetail.greaterThan(0.5), smoothstep(0.35, 0.65, settScan.sample(settPoint(p, settAxes(p)).div(2.5)).r).mul(1.1).add(0.45), float(1));
+      if (id === 2) gloss = select(settDetail.greaterThan(0.5), smoothstep(0.35, 0.65, settScan.sample(laid(p).div(2.5)).r).mul(1.1).add(0.45), float(1));
       else if (id === 1) gloss = select(surfaceDetail.greaterThan(.5), aggregate(p).r.mul(0.9).add(0.55), float(1));
       else if (id === 21) gloss = stairCoords(p).wear.mul(0.8).add(0.8);
       else if (id === 18) gloss = railBand(.483, .865, float(.01)).mul(1.5).add(0.8);
@@ -588,13 +571,13 @@ function groundGraph(id: number, time: { value: number }, { relief, deck, photo,
     })() : id === 2 ? Fn(() => {
       const n = normalWorldGeometry.toVar();
       If(settDetail.greaterThan(0.5), () => {
-        const axes = settAxes(wp), uv = settPoint(wp, axes).div(2.5);
+        const axes = layAxes(), uv = settPoint(wp, axes).div(2.5);
         const xy = settScan.sample(uv).gb.sub(0.5).mul(1.5);
         const world = vec2(dot(xy, axes), xy.y.mul(axes.x).sub(xy.x.mul(axes.y)));
         n.assign(normalize(n.add(vec3(world.x, 0, world.y.negate()).mul(abs(n.y)))));
       });
       return transformNormalToView(n);
-    })() : id === 3 || id === 16 ? pavementNormal(wp)
+    })() : id === 3 || id === 16 ? pavementNormal(laid(wp), layAxes())
       : id === 20 ? bumped(kerbHeight(wp)) : id === 21 ? bumped(stairHeight(wp)) : id === 18 ? bumped(railHeight()) : null,
     roughness: id === 18 || id === 20 || id === 21 ? closeRoughness(id, wp) : null,
   };

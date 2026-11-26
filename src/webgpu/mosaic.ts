@@ -101,10 +101,12 @@ export function pavementStones(p: N, surveyed: boolean) {
   }).Else(() => { out.assign(vec3(layout(p, stones.sample(p.div(REPEAT)), surveyed).mul(SCALE))); });
   return out;
 }
-export const pavementNormal = (p: N) => Fn(() => {
+// `p`: in the laying's own axes; `axes` turn the world into them (laying.ts).
+export const pavementNormal = (p: N, axes: N) => Fn(() => {
   const n = normalWorldGeometry.toVar();
   If(ready.greaterThan(.5), () => {
-    const xy = relief.sample(p.div(repeat)).rg.sub(.5).mul(1.6);
+    const laid: N = relief.sample(p.div(repeat)).rg.sub(.5).mul(1.6);
+    const xy = vec2(laid.x.mul(axes.x).add(laid.y.mul(axes.y)), laid.y.mul(axes.x).sub(laid.x.mul(axes.y)));
     n.assign(normalize(n.add(vec3(xy.x, 0, xy.y.negate()).mul(abs(n.y)))));
   });
   return transformNormalToView(n);

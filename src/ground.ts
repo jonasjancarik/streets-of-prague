@@ -20,6 +20,7 @@ import type { StationTracks } from './stationTracks.ts';
 import { KERB_HEIGHT, dropAt, streetDepth, type KerbDrop } from './kerbDrop.ts';
 import { joinArrays, stairGeometry, surveyedStairGeometry, type MappedStair, type SurveyedStair } from './map/stairs.ts';
 import { splitQuietWater } from './map/waterBody.ts';
+import { LAID_PATTERNS, layingAngles } from './laying.ts';
 
 export interface GroundTileData {
   areas: Record<string, Polygons | undefined>;
@@ -82,7 +83,7 @@ export const COLORS = {
   field: '#b9b27a', yard: '#a9a69e', dtmYard: '#85837e', ballast: '#99948a', bare: '#bba888',
   water: '#4d7680', pool: '#62aec2', asphalt: '#626264', sett: '#8a847a', parking: '#6a6968',
   bed: '#6f5b43', shrubBed: '#5d6b3c', iron: '#3f3d3b',
-  bridge: '#6d6c6a', trackbed: '#8a8a85', steel: '#3a3b3d', paint: '#efede4', kerb: '#aba79e', granite: '#9a9893',
+  bridge: '#6d6c6a', steel: '#3a3b3d', paint: '#efede4', kerb: '#aba79e', granite: '#9a9893',
   quay: '#7c776c', funicular: '#6e6a62', slab: '#8e8b84', stairStone: '#aca596', stairNose: '#bdb6a8', tunnel: '#46484c', tunnelWall: '#a59f93',
 };
 // Paint of parking bays by paid-parking zone: [zone, colour, dashes].
@@ -188,7 +189,7 @@ function strips(lines: Point2[][], w: number, dash: Point2 | null = null, hold =
 }
 
 // The across-track coordinate profiles the rail head; distance along a strip
-// places joints across a tram bed or kerb. Both follow bends and the same
+// places joints across a kerb. Both follow bends and the same
 // terrain cuts as the rest of the street.
 function surfaceRibbon(lines: Point2[][], bands: readonly (readonly [number, number])[], across: boolean): GroundGeometry {
   const pos: number[] = [], idx: number[] = [], coord: number[] = [];
@@ -211,8 +212,7 @@ function surfaceRibbon(lines: Point2[][], bands: readonly (readonly [number, num
   const { alpha, ...g } = finish(pos, idx, coord);
   return alpha ? { ...g, trackCoord: alpha } : g;
 }
-const tramRibbon = (lines: Point2[][], rails: boolean) =>
-  surfaceRibbon(lines, rails ? [[-.648, -.792], [.648, .792]] : [[-1.25, 1.25]], rails);
+const tramRails = (lines: Point2[][]) => surfaceRibbon(lines, [[-.648, -.792], [.648, .792]], true);
 const kerbRibbon = (lines: Point2[][], width: number) => surfaceRibbon(lines, [[-width / 2, width / 2]], false);
 
 // A street's kerbs: the row of granite on the pavement's edge, and its face down to the
@@ -670,7 +670,16 @@ function finish(pos: number[], idx: number[], extra: number[] | null = null, ras
 //
 // `steps`: the terrain knows the steps in it (the tile's terraces; its water is in `d`),
 // so the layers are cut along them and the steps get walls (see `sideOf`).
-export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [], parkingZones = [], height = null, levels = null, steps = null, roadProfile, roadSurfaceBoxes, paint = true, rasterRoads = false, fine, flat = 0, kerbs = null }: {
+//
+// Setts, mosaic, slabs and concrete carry which way they are laid (`lay`: laying.ts).
+export function groundLayers(d: GroundTileData, options: Parameters<typeof builtGround>[1]): GroundResult {
+  const result = builtGround(d, options);
+  for (const l of result.layers) {
+    if (l.pattern && LAID_PATTERNS.has(l.pattern)) l.geometry.lay = layingAngles(l.geometry.position, l.geometry.index, options.box);
+  }
+  return result;
+}
+function builtGround(d: GroundTileData, { box, edges = [], buildings = [], parkingZones = [], height = null, levels = null, steps = null, roadProfile, roadSurfaceBoxes, paint = true, rasterRoads = false, fine, flat = 0, kerbs = null }: {
   box: Bounds; edges?: GroundRoadEdge[]; buildings?: { rings: Point2[][] }[];
   parkingZones?: (string | null)[]; height?: HeightAt | null; levels?: GroundLevel[] | null; steps?: Terrace[] | null;
   // false: no lane lines (see TILE_LOOK in tiles.ts)
@@ -1046,8 +1055,7 @@ function deckLayers(polys: Polygons, trams: Point2[][], edges: GroundRoadEdge[],
     add(polygons(surveyed.pavement), COLORS.pavement, 'asphalt');
     add(polygons(surveyed.road), COLORS.asphalt, 'asphalt');
   }
-  add(tramRibbon(trams, false), COLORS.trackbed, 'tramBed');
-  add(tramRibbon(trams, true), COLORS.steel, 'groovedRail');
+  add(tramRails(trams), COLORS.steel, 'groovedRail');
   if (station && railway.length) railwayLayers(railway, (g, color, pattern) => add(g, color, pattern, true));
   else if (railway.length) add(strips(railway.flatMap(pts => [offsetLine(pts, 0.72), offsetLine(pts, -0.72)]), 0.12), COLORS.steel, 'flat', true);
   const { dashed, solid } = roadPaint(edges, trams);
@@ -1389,10 +1397,11 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
       add(strips(d.station.platformEdges, 0.23), '#d1c7b2');
     } else order += 5;
 
-    // Tram tracks: concrete bed and two rails at standard gauge.
+    // Tram tracks: two rails at standard gauge, let into whatever the street is paved
+    // with there (the survey's asphalt or setts run on between the rails, as they mostly
+    // do in Prague); on a bed of their own, into the ballast.
     const trams = d.rails.filter((r) => r.kind === 'tram').map((r) => r.pts);
-    add(onStreet(() => tramRibbon(trams, false)), COLORS.trackbed, 'tramBed');
-    add(onStreet(() => tramRibbon(trams, true)), COLORS.steel, 'groovedRail');
+    add(onStreet(() => tramRails(trams)), COLORS.steel, 'groovedRail');
     add(strips(d.rails.filter((r) => r.kind === 'funicular').map((r) => r.pts), 3), COLORS.funicular, 'concrete');
 
     const { dashed, solid } = roadPaint(edges, trams);

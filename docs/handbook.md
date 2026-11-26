@@ -1096,7 +1096,13 @@ record the measurements, merge decisions and pending landmark asset activation.
   The general pavement is asphalt grey; slab squares are lighter, and park paths stay
   warm. Squares use their own OSM `surface` tag where one exists. Otherwise, a clear
   majority of mapped pedestrian and service ways crossing the square can supply its
-  surface; Old Town Square takes the setts mapped on the ways through it. At street level on WebGPU the setts use a 2.5 m scan, including the worn stone faces and recessed joints. Walking
+  surface; Old Town Square takes the setts mapped on the ways through it. At street level on WebGPU the setts use a 2.5 m scan, including the worn stone faces and recessed joints.
+  Setts, mosaic, slabs and concrete are laid along the edges of what they cover, not along
+  the map's north (`src/laying.ts`): each joined piece of the surface takes one direction from
+  its outline (its long sides weigh most; a square grid fits both arms of an L round a block
+  corner), leaving out where the tile's edge cut it. Where pieces meet at an angle their
+  joints meet at a seam. A surface merged across a junction of streets at other than right
+  angles takes a direction between theirs. `node scripts/check-laying.mjs` checks it. Walking
   routes add no ribbon over a square of the same material; cobbled
   footways use setts, and island/link routes leave the pavement clear while keeping
   real path sections through lawns. A named
@@ -1158,7 +1164,7 @@ record the measurements, merge decisions and pending landmark asset activation.
   dado and a door or picture, the floor; a quarter of the windows have a blind half down).
   Along the edge of every carriageway runs a kerb of grey granite with a darker gutter
   inside it (`kerbs` in `src/ground.ts`), wherever what lies beside it is not carriageway.
-  The kerb is raised: the carriageway (asphalt, setts, parking bays and the trams' own bed)
+  The kerb is raised: the carriageway (asphalt, setts, parking bays and the trams' own bed of ballast)
   lies 12 cm below the pavement, with the granite's face between them, so a tree pit or a
   traffic island in the street stands up out of it too. The terrain has one height for a
   street and its pavements, so the step is made in the game (`src/kerbDrop.ts`): each tile
@@ -2144,8 +2150,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   The 15T and KT8 ride on bogies at the ends and under the two articulations.
   Close models are prepared one section at a time as a tram approaches.
 - Embedded tram rails show a polished running head and a dark flange groove on the
-  inside. Joints cross the concrete bed at right angles to the track, including on
-  curves and bridges. At walking height the asphalt beside it picks up the aggregate
+  inside. They are let into whatever the street is paved with there, as the survey has it
+  (asphalt or setts run on between and beside the rails, as they mostly do in Prague; on a
+  bed of their own, ballast), with no concrete strip of their own: the survey doesn't say
+  where a track lies in concrete panels. At walking height the asphalt picks up the aggregate
   and small surface normals of a four-metre road scan.
 - **Tram tracks** are OSM's `railway=tram` ways, including those mapped on the same way
   as a street or a bus lane (`highway=busway` or `service` with `railway=tram`, as on
