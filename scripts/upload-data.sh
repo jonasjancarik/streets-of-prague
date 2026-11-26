@@ -17,11 +17,16 @@ if [[ ${2:-} != --resume && -n $(rclone lsf "$TARGET" --max-depth 1 2>/dev/null 
   echo "Version $VERSION is already on R2. Pick a new name, or pass --resume to finish an interrupted upload of the same files." >&2
   exit 1
 fi
+# Only the areas the game ships (scripts/download-map.mjs), their parking and the countryside:
+# other folders in public/data (lattice builds, previews) are working copies. The bucket
+# locks what it is sent, so a stray folder can't be taken out of a version afterwards.
+RELEASE=(--filter '+ /{praha,centrum,ujezd}_now/**' --filter '+ /{praha,centrum,ujezd}_parking.json'
+  --filter '+ /countryside/**' --filter '- *')
 # --immutable permits safe resume: existing files must have identical checksums.
-rclone copy public/data/ "$TARGET" --checksum --immutable --transfers 32 --checkers 32 \
+rclone copy public/data/ "$TARGET" "${RELEASE[@]}" --checksum --immutable --transfers 32 --checkers 32 \
   --header-upload 'Cache-Control: public, max-age=31536000, immutable' \
   --stats 20s --stats-one-line --log-level INFO
-rclone check public/data/ "$TARGET" --checksum --checkers 32
+rclone check public/data/ "$TARGET" "${RELEASE[@]}" --checksum --checkers 32
 printf '%s\n' "$VERSION" > deploy/data-version
 # The order maps were uploaded in (oldest first), which deploy/data-oldest is read against.
 # --resume finishes a version that may already be recorded.

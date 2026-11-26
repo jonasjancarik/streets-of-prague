@@ -3087,7 +3087,9 @@ After rebuilding map data, configure a bucket-scoped R2 S3 remote named `streets
 in rclone (or set `R2_REMOTE` to another remote and bucket path). Use a temporary
 Object Read & Write key for the `streets-of-prague-data` bucket; keep its access
 key and secret outside this repository. Run `scripts/upload-data.sh <new-version>`
-to upload and checksum-check every file. It refuses a version name that is
+to upload and checksum-check the areas the game ships (`praha`, `centrum`, `ujezd`, their
+parking and `countryside`; lattice builds and previews in `public/data` stay local). The
+bucket locks what it is sent, so nothing can be taken out of a version afterwards. It refuses a version name that is
 already on R2; `--resume` finishes an interrupted upload of the same files, and
 fails if an object in that version has changed. Commit the updated
 `deploy/data-version` and app code, then release (below), which runs

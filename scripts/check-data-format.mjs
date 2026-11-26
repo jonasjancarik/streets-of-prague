@@ -4,10 +4,11 @@
 // Usage: node scripts/check-data-format.mjs <folder or URL holding the <area>_now folders>
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const base = process.argv[2];
 if (!base) { console.error('Usage: node scripts/check-data-format.mjs <data folder or URL>'); process.exit(1); }
-const root = new URL('..', import.meta.url).pathname;
+const root = fileURLToPath(new URL('..', import.meta.url));
 const number = (file, pattern) => {
   const m = readFileSync(join(root, file), 'utf8').match(pattern);
   if (!m) throw new Error(`No format number found in ${file}`);
