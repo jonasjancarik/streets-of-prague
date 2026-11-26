@@ -11,7 +11,15 @@ import { MappedFrontages } from './mappedFrontages.ts';
 // How far off walls get their depth, and how many of the nearest do, are the tier's
 // (STREET_QUALITY.wallReach and walls); one that has it keeps it 8 m further.
 interface Source { base: THREE.Mesh; groups: Uint32Array; box: readonly number[]; walls?: Wall[]; index?: THREE.BufferAttribute }
-interface Wall { src: Source; tris: Uint32Array; x0: number; x1: number; z0: number; z1: number; y0: number; y1: number; nx: number; nz: number; mesh?: THREE.Mesh; pending?: boolean; cancel?: () => void; empty?: boolean; retry?: number }
+interface Wall { src: Source; tris: Uint32Array; x0: number; x1: number; z0: number; z1: number; y0: number; y1: number; nx: number; nz: number; mesh?: THREE.Mesh; flights?: Flight[]; pending?: boolean; cancel?: () => void; empty?: boolean; retry?: number }
+// The steps up to a raised doorway (FacadeGeometry.steps) in the game's x and y: from the
+// foot at a, along the wall to b and out by o; the key of each cell of FLIGHT_CELL it
+// touches.
+interface Flight { ax: number; ay: number; bx: number; by: number; ox: number; oy: number; cells: number[] }
+const FLIGHT_CELL = 2; // m
+const flightKey = (cx: number, cy: number) => (cx + 32768) * 65536 + cy + 32768;
+// The ground (game x, y), NaN where no tile is loaded.
+type GroundAt = (x: number, y: number) => number;
 const material = new THREE.MeshLambertMaterial({ vertexColors: true });
 material.customProgramCacheKey = () => 'street-facade';
 export { material as streetFacadeMaterial };
@@ -74,8 +82,65 @@ export class StreetFacades {
   private scene: THREE.Scene;
   private workers: TileWorkers;
   private frontages: MappedFrontages;
-  constructor(scene: THREE.Scene, workers: TileWorkers, bounds?: Bounds) {
-    this.scene = scene; this.workers = workers; this.frontages=new MappedFrontages(bounds);
+  private groundAt: GroundAt;
+  private flights = new Map<number, Flight[]>();
+  constructor(scene: THREE.Scene, workers: TileWorkers, bounds?: Bounds, groundAt: GroundAt = () => NaN) {
+    this.scene = scene; this.workers = workers; this.frontages=new MappedFrontages(bounds); this.groundAt = groundAt;
+  }
+  // Whether (x, y) is on the steps up to a doorway of a wall drawn close up: they stop
+  // cars as the wall does (World.cellAt).
+  stepAt(x: number, y: number) {
+    const list = this.flights.get(flightKey(Math.floor(x / FLIGHT_CELL), Math.floor(y / FLIGHT_CELL)));
+    if (list) for (const f of list) {
+      const px = x - f.ax, py = y - f.ay, ux = f.bx - f.ax, uy = f.by - f.ay;
+      const along = (px * ux + py * uy) / (ux * ux + uy * uy), out = (px * f.ox + py * f.oy) / (f.ox * f.ox + f.oy * f.oy);
+      if (along >= 0 && along <= 1 && out >= 0 && out <= 1) return true;
+    }
+    return false;
+  }
+  // A wall is measured against the ground of the tile its building is in (facadeCoords in
+  // the tile worker), and that ground stops at the tile's edge: the edge's heights carry on
+  // level beyond it. A building across the edge had its wall's foot, and the steps to its
+  // doors with it, up to a metre above the pavement in front, and the plain wall below the
+  // foot showing as a pale band along the pavement (Vinohradská, November 2026). Here the
+  // world's ground covers the tiles round it as well: the wall is measured again before it
+  // is drawn close up, and its building's own model (the same facade coordinates) moves with it.
+  private refoot(w: Wall) {
+    const at = w.src.base.geometry.attributes, p = at.position, f = at.facade as THREE.BufferAttribute;
+    let moved = false;
+    for (const t of w.tris) {
+      let ground = Infinity;
+      for (let v = t * 3; v < t * 3 + 3; v++) ground = Math.min(ground, this.groundAt(p.getX(v), -p.getZ(v)));
+      if (!Number.isFinite(ground)) continue;
+      // The ground the worker used: the same for the triangle's three corners.
+      const shift = p.getY(t * 3) - f.getY(t * 3) - ground;
+      if (!(Math.abs(shift) > .02)) continue;
+      for (let v = t * 3; v < t * 3 + 3; v++) f.setY(v, f.getY(v) + shift);
+      f.addUpdateRange(t * 12, 12);
+      moved = true;
+    }
+    if (moved) f.needsUpdate = true;
+  }
+  private addFlights(w: Wall, steps: Float32Array) {
+    w.flights = [];
+    for (let i = 0; i + 8 <= steps.length; i += 8) {
+      const f: Flight = { ax: steps[i], ay: -steps[i + 1], bx: steps[i + 2], by: -steps[i + 3], ox: steps[i + 4], oy: -steps[i + 5], cells: [] };
+      const xs = [f.ax, f.bx, f.ax + f.ox, f.bx + f.ox], ys = [f.ay, f.by, f.ay + f.oy, f.by + f.oy];
+      for (let cx = Math.floor(Math.min(...xs) / FLIGHT_CELL); cx <= Math.floor(Math.max(...xs) / FLIGHT_CELL); cx++)
+        for (let cy = Math.floor(Math.min(...ys) / FLIGHT_CELL); cy <= Math.floor(Math.max(...ys) / FLIGHT_CELL); cy++) {
+          const k = flightKey(cx, cy), list = this.flights.get(k);
+          if (list) list.push(f); else this.flights.set(k, [f]);
+          f.cells.push(k);
+        }
+      w.flights.push(f);
+    }
+  }
+  private dropFlights(w: Wall) {
+    for (const f of w.flights ?? []) for (const k of f.cells) {
+      const list = this.flights.get(k), i = list ? list.indexOf(f) : -1;
+      if (list && i >= 0) { list.splice(i, 1); if (!list.length) this.flights.delete(k); }
+    }
+    w.flights = undefined;
   }
   register(base: THREE.Mesh, groups: Uint32Array | undefined, box: readonly number[]) {
     if (!groups?.length) return;
@@ -89,6 +154,7 @@ export class StreetFacades {
   private remove(w: Wall) {
     if (!w.mesh) return;
     this.plates?.remove(w.mesh);
+    this.dropFlights(w);
     mask(w, false); this.scene.remove(w.mesh); w.mesh.dispose(); w.mesh.geometry.dispose(); for (const child of w.mesh.children) (child as THREE.Mesh).geometry?.dispose(); w.mesh = undefined; this.live.delete(w);
   }
   update(street: boolean, x: number, y: number, z: number, finishesReady = true) {
@@ -125,6 +191,7 @@ export class StreetFacades {
       const w = this.queue.shift()!;
       if (!this.wanted.has(w) || w.pending || w.mesh) continue;
       w.pending = true; this.running++;
+      this.refoot(w);
       const wall = copyWall(w);
       const data = { ...wall, shops:this.frontages.onWall(w,wall.position,wall.facade) };
       const job = this.workers.submit('streetFacade', data, Object.values(data).map(a => a.buffer), 'optional');
@@ -155,6 +222,7 @@ export class StreetFacades {
       mesh.add(strip);
     }
     this.scene.add(mesh);
+    this.addFlights(w, data.steps);
     this.plates?.add(mesh, data.plateMounts, w.nx, w.nz);
     mask(w, true); w.mesh = mesh; this.live.add(w);
   }

@@ -73,6 +73,25 @@ const SHOP_FINISHES = [
   [0x415750, 0xe8d4ad], [0x624343, 0xa85343], [0x455263, 0xd8cbb3],
   [0x76573e, 0xb99a70], [0x444545, 0x819381], [0x4a6062, 0xdbcbac],
 ].map(pair => pair.map(hex => new THREE.Color(hex)));
+// How far the bottom step reaches out from the wall below a sill `b` above the pavement.
+const stairFront = (b: number) => .15 + (Math.ceil(b / .182) - 1) * .215;
+// The steps up to each raised doorway of a ground-floor module, as cellShape draws them:
+// across the module from lo to hi (the surround included), the sill's height and how far
+// out the bottom step reaches. (buildStreetWall: their shade on the paving, and the
+// footprint cars run into.)
+function doorSteps(layer: number, bay: number, storey: number, moduleWidth: number, style: number) {
+  const out: { lo: number; hi: number; b: number; front: number }[] = [];
+  for (const [x0, y0, x1, y1] of openings[layer] || []) {
+    const l = (bay - moduleWidth) / 2 + moduleWidth * x0 / 256, r = (bay - moduleWidth) / 2 + moduleWidth * x1 / 256;
+    const b = (1 - y1 / 512) * storey, t = (1 - y0 / 512) * storey;
+    if (!((t - b) > storey * .49 && b < storey * .22) || !(b > .045 && b < .66)) continue;
+    const pad = Math.min(style <= 1 ? .086 : .052, l * .75, (bay - r) * .75, b * .72, (storey - t) * .72);
+    if (pad < .002) continue;
+    out.push({ lo: l - pad, hi: r + pad, b, front: stairFront(b) });
+  }
+  return out;
+}
+
 function cellShape(layer: number, bay: number, storey: number, moduleWidth: number, upper: boolean, style: number, awning: boolean) {
   const tris: Triangle[] = [], holes: V2[][] = [], regions = openings[layer] || [];
   const pt = (p: V2, d: number): Point => [p[0], p[1], d];
@@ -290,7 +309,7 @@ function cellShape(layer: number, bay: number, storey: number, moduleWidth: numb
     // The upper landing continues through the reveal to the timber leaves.
     if (doorway && b > .045 && b < .66) {
       const lo = l - pad, hi = r + pad, risers = Math.ceil(b/.182), rise = b/risers;
-      const run = .215, front = .15 + (risers-1)*run;
+      const run = .215, front = stairFront(b);
       const section: V2[] = [[.003, .004], [.003, front-.014]];
       for (let step=0;step<risers;step++) {
         const height=(step+1)*rise, edge=front-step*run;
@@ -416,6 +435,9 @@ function cellShape(layer: number, bay: number, storey: number, moduleWidth: numb
 export interface FacadeGeometry {
   position: Float32Array; normal: Float32Array; color: Float32Array; facade: Float32Array; sky: Float32Array; detail: Float32Array;
   footShade: Float32Array; // the shade on the pavement along the wall's foot: triangles, x y z and darkness per corner
+  // The steps up to raised doorways, 8 floats a flight (three.js world): the two ends of
+  // its foot along the wall (x z, x z), how far out it reaches (x z), the pavement and its top.
+  steps: Float32Array;
   plateMounts: Float32Array; // a clear patch of plaster near either end, in world coordinates
 }
 const cross = (ax: number, ay: number, bx: number, by: number) => ax * by - ay * bx;
@@ -445,7 +467,7 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
   const seed = Math.floor((w - style) * 32768) % 997, bay = width / bays;
   const ground = F_GROUND[style], storey = F_STOREY[style] * (STOREY_FIT[0] + (Math.floor((w - style) * 1024) % 32) * STOREY_FIT[1] / 31);
   const pos: number[] = [], norm: number[] = [], col: number[] = [], fac: number[] = [], shade: number[] = [], detail: number[] = [];
-  const foot: number[] = [];
+  const foot: number[] = [], steps: number[] = [];
   const displays = new Map<number,number>();
   const shops=arrays.shops;
   if (shops && style<=STYLE.baroque && bay>=1.8) for (let i=0;i<shops.length;i+=2) {
@@ -542,13 +564,12 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
         for (let j=Math.max(0,Math.floor(low/bay));j<Math.min(bays,Math.ceil(high/bay));j++) {
           const layer=moduleAt(j,0), mw=Math.min(bay,F_STREET_WIDTH[layer]);
           if (!fits(layer,j,0,0,ground)) continue;
-          for (const [x0,y0,x1,y1] of openings[layer]) {
-            const b=(1-y1/512)*ground;
-            if (b<=.045 || b>=.66 || (y1-y0)/512<=.49 || b>=ground*.22) continue;
-            const start=j*bay+(bay-mw)*.5, lo=Math.max(low,start+x0/256*mw), hi=Math.min(high,start+x1/256*mw);
+          for (const s of doorSteps(layer,bay,ground,mw,style)) {
+            const lo=Math.max(low,j*bay+s.lo), hi=Math.min(high,j*bay+s.hi);
             if (hi<=lo) continue;
-            const edge=.15+(Math.ceil(b/.182)-1)*.215;
-            const a=at([lo,0]).addScaledVector(outward,edge-.012), z=at([hi,0]).addScaledVector(outward,edge-.012);
+            const foot0=at([lo,0]), foot1=at([hi,0]);
+            steps.push(foot0.x,foot0.z,foot1.x,foot1.z,outward.x*s.front,outward.z*s.front,foot0.y,foot0.y+s.b);
+            const a=foot0.clone().addScaledVector(outward,s.front-.012), z=foot1.clone().addScaledVector(outward,s.front-.012);
             const c=z.clone().addScaledVector(outward,.16), d=a.clone().addScaledVector(outward,.16);
             for (const [v,alpha] of [[a,.34],[z,.34],[c,0],[a,.34],[c,0],[d,0]] as [THREE.Vector3,number][])
               foot.push(v.x,v.y+FOOT_SHADE[2],v.z,alpha);
@@ -685,5 +706,5 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
       if ([2.75, 3.1, 2.4, 3.55].some(h => mount(end ? width - inset : inset, h))) break;
     }
   }
-  return { plateMounts: Float32Array.from(mounts), footShade: Float32Array.from(foot), position: new Float32Array(pos), normal: new Float32Array(norm), color: new Float32Array(col), facade: new Float32Array(fac), sky: new Float32Array(shade), detail: new Float32Array(detail) };
+  return { plateMounts: Float32Array.from(mounts), footShade: Float32Array.from(foot), steps: Float32Array.from(steps), position: new Float32Array(pos), normal: new Float32Array(norm), color: new Float32Array(col), facade: new Float32Array(fac), sky: new Float32Array(shade), detail: new Float32Array(detail) };
 }

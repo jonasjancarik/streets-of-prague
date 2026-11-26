@@ -2212,6 +2212,14 @@ record the measurements, merge decisions and pending landmark asset activation.
   centimetres, and from close by the plaster is mottled and grainy (`wallFoot` in
   `src/webgpu/buildings.ts`; the WebGL path has the foot only). All of it is made up from
   the wall's shape; none of it says how dirty a real house is.
+  A raised doorway in a modelled wall has stone steps up from the pavement, and while
+  the wall is modelled they are solid: a car stops against them as against the wall
+  (`stepAt` in `src/streetFacades.ts`, asked by `World.cellAt`). A wall's height above
+  the ground is measured in the tile worker on the ground of its building's tile, which
+  stops at that tile's edge. Before a wall is modelled it is measured again on the ground
+  of the loaded tiles round it, so a building across a tile edge still stands on its
+  pavement (on Vinohradská the foot and the steps were up to 0.9 m above it, with the
+  plain wall below the foot showing as a pale band).
 - **Surveyed walls, fences and railings** (`pipeline/dtm_walls.py`): where the technical
   map's survey covers a tile (30 m of its lines or more), its walls ("Zeď"), fences
   ("Plot") and railings ("Zábradlí", set 3, in `pipeline/.cache/dtm/ZPS_KR/`) stand in
