@@ -10,7 +10,7 @@ import {
   materialColor, fract, floor, mod, dot, atan, sin, cos, mix, smoothstep, step, length, abs, max, min, clamp, normalize, dFdx, dFdy, distance, select, cross, sqrt, cameraPosition, reflect, pow, uniform, renderGroup, uv,
 } from 'three/tsl';
 import { passageAtlas } from '../passageMaterial.ts';
-import { facadeFinishes, shopReady } from '../facadeFinishes.ts';
+import { facadeFinishes, shopReady, SIGN_WORDS } from '../facadeFinishes.ts';
 import { STRIPS, STRIPS_ON, onStrips, KINDS } from '../reflections.ts';
 import { FACADE_ATLAS, FACADE_ON, STREET_FACADE, F_SURFACE as S, BLANK, F_BAY as BAY_WIDTH, F_UP as UP, F_DOOR as DOOR, F_WALL as WALL, F_MOD as MOD, F_ELEVATION, INTERWAR_BAY, F_PANEL, F_STREET_WIDTH, F_GROUND as GROUND, F_STOREY as STOREY, STOREY_FIT, ROWS_STEP } from '../facades.ts';
 import { WINDOWS, ROOF_DETAIL, ROOF_CLUTTER, LANDMARK_ROOF as R, SUN_DIR, SUN_LIGHT } from '../shading.ts';
@@ -805,7 +805,7 @@ const streetWallColor = Fn(() => {
   If(kind.equal(S.shopPaint).or(kind.equal(S.canvas)), () => { wall.assign(base); });
   If(kind.equal(S.shopSign), () => {
     const u = clamp(float(.5).sub(fract(f.x.div(bay))).mul(1.55).add(.5), .004, .996);
-    const v = float(3).sub(floor(info.w)).add(fract(info.w)).mul(.25);
+    const v = float(SIGN_WORDS.length - 1).sub(floor(info.w)).add(fract(info.w)).div(SIGN_WORDS.length);
     const ink = texture(facadeFinishes.signs!, vec2(u, v)).r;
     wall.assign(mix(base, vec3(.81, .72, .53), ink));
   });

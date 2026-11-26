@@ -32,6 +32,54 @@ grille over a cellar window, blue parking lines on the setts.
   DONE (26 November): `standingMarks` keeps only hydrants, and the kiosk models, glass
   draw and furniture kind are gone. The marks stay in the tile data, so no map rebuild.
 
+## Feasibility
+
+Counted in the local OSM extract of the centre (`centrum_0_0.osm`: Hradčany and Malá
+Strana to about Vodičkova, 26 November). Outer districts are mapped more thinly.
+
+| | Items | Why |
+|---|---|---|
+| **Easy: mapped, one instanced model** | Litter bins (348 mapped), tactile strips (1,033 `tactile_paving=yes`), plaques (234) and Stolpersteine (58), bike stands (102), parking machines (98), recycling (64), post boxes (24) | A pipeline layer and a model, the pattern of the terraces and shared bikes |
+| **Easy: no new data** | House numbers (3,512 `addr:conscriptionnumber` from the RÚIAN import), intercoms, gas and meter doors, cellar grilles | They hang on doors and plinths the façade already makes; only the door position is inferred |
+| **Medium** | Shops everywhere (below), shutters by time, projecting signs, parking-lane dashes, paving mosaics, cabinets (27 mapped, infer at signals), bollards (112 mapped, mostly inferred), weeds and litter | Zone-coloured parking lines need TSK's zone data, not checked |
+| **Hard or risky** | Traffic signs (5 `traffic_sign` in the extract), graffiti and posters, roadworks, dogs | Signs would all be inferred and must agree with traffic rules; decals have no system yet; roadworks touch routing; dogs need a new animated figure |
+
+## Shops from OpenStreetMap
+
+Mostecká already does the hard part: a ray from the street to a mapped shop finds the
+ground-floor bay it crosses, and that bay becomes a shopfront with matching stock
+(`src/mappedFrontages.ts`, `displays` in `src/map/streetFacade.ts`). The extract has
+1,442 shops, cafés, restaurants and pubs (95 % named, 127 with a brand). Within 18 m
+of the street: Spálená 16 per 100 m, Myslíkova 9, Karlova 11 (really wall to wall, so
+OSM is a floor there and the inferred shopfronts fill in). The 12 commonest kinds cover
+71 %, 20 cover 80 %.
+
+1. **Citywide data** (started 26 November): `pipeline/build_shops.py` writes
+   `data/<area>_now/shops.json`, street foot and shop point per mapped shop, with its
+   trade by name; it replaces the hand-made Mostecká file. Shops on an upper `level`
+   are skipped.
+2. **Signs** (started 26 November): a Czech trade word on the mapped shop's fascia
+   (KAVÁRNA, RESTAURACE, LÉKÁRNA, POTRAVINY …). Generic words only: no OSM names, so
+   no brands and nothing that dates when a shop closes.
+3. **Stock**: today four display pictures (books, bakery, flowers, ceramics). Kinds
+   without a picture show the usual random stock. Next pictures, by count: a café or
+   restaurant room with tables, clothes, groceries, a pharmacy, hair salon.
+4. **Later**: projecting signs for pharmacies, pubs and banks; shutters after closing
+   from `opening_hours`; shops on modern façades (today only historic styles get them).
+
+Steps 1 and 2, 26 November: `build_shops.py` found 11,244 shops in `praha` (4,291 in
+`centrum`, 260 in `ujezd`); it left out 3,496 with no street within 20 m and 814 on
+another level. 32 fascia words (`SIGN_WORDS`). Seen in first person on WebGPU and
+WebGL: Spálená's west side reads CUKRÁRNA, KADEŘNICTVÍ, KAVÁRNA, the corner of
+Lazarská KNIHKUPECTVÍ, Mostecká SUVENÝRY and POTRAVINY (`docs/evidence/039-street-detail/shops-*`).
+The pharmacy opposite on Spálená is in a functionalist building and isn't drawn (step 4).
+A hairdresser or grocer still shows random stock until step 3. The live data on R2 needs
+`shops.json` uploaded with the next data version; until then the game has only inferred
+shops, Mostecká included.
+
+The distant façade pictures don't know about mapped shops, so a barred window can turn
+into a shop as the detailed walls come in. Mostecká has always behaved that way.
+
 ## Tiers
 
 Proposed for each item below, in the graphics table's terms:

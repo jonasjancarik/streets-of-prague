@@ -3,7 +3,7 @@
 // lighting and shadows. Only the nearby replacement meshes use this program.
 import { streetFacadeMaterial as material } from './streetFacades.ts';
 import { F_SURFACE as S, FACADE_ATLAS, FACADE_GLSL, FACADE_ON, STREET_FACADE } from './facades.ts';
-import { facadeFinishes, shopReady, shopTexture } from './facadeFinishes.ts';
+import { facadeFinishes, shopReady, shopTexture, SIGN_WORDS } from './facadeFinishes.ts';
 import { CUTAWAY, NOISE, NOISE_GLSL, SKY_LEAST, SKY_REF, WET, WINDOWS } from './shading.ts';
 import { KINDS, STRIPS, STRIPS_ON } from './reflections.ts';
 import { lampLit } from './lamps.ts';
@@ -78,7 +78,8 @@ const paint = `
   if (kind == ${S.balconyGlass}.) wall = layer == 125. ? vec3(.16,.21,.24) : vec3(.046,.070,.083);
   if (kind == ${S.shopPaint}. || kind == ${S.canvas}.) wall = diffuseColor.rgb;
   if (kind == ${S.shopSign}.) {
-    vec2 at = vec2(clamp(.5 + (.5 - fract(f.x / bay)) * 1.55, .004, .996), (3. - floor(vDetail.w) + fract(vDetail.w)) * .25);
+    vec2 at = vec2(clamp(.5 + (.5 - fract(f.x / bay)) * 1.55, .004, .996),
+                   (${SIGN_WORDS.length - 1}. - floor(vDetail.w) + fract(vDetail.w)) / ${SIGN_WORDS.length}.);
     wall = mix(diffuseColor.rgb, vec3(.81,.72,.53), texture(uShopSigns, at).r);
   }
   if (kind == ${S.brass}.) wall = vec3(.131, .102, .064);

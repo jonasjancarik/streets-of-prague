@@ -6,15 +6,22 @@ let shopRetry = 0;
 export const shopReady = { value: 0 };
 export const shopTexture: { value: THREE.Texture | null } = { value: null };
 
-// The four trades in shop-displays.webp, in the same order. All shop fascias
-// share this little mask; the wall material supplies the paint and lighting.
+// The words a shop's fascia can carry, one row each of the sign mask. The first four are
+// the trades in shop-displays.webp, in the same order: a shopfront the map doesn't name
+// picks one of them. The others name the trades of mapped shops (mappedFrontages.ts).
+// The shaders read row `n` of SIGN_WORDS.length.
+export const SIGN_WORDS = ['KNIHKUPECTVÍ', 'PEKAŘSTVÍ', 'KVĚTINY', 'KERAMIKA', 'KAVÁRNA', 'RESTAURACE', 'BAR', 'PIVNICE',
+  'BISTRO', 'ZMRZLINA', 'LÉKÁRNA', 'DROGERIE', 'BANKA', 'SMĚNÁRNA', 'MÓDA', 'OBUV', 'POTRAVINY', 'ŘEZNICTVÍ', 'SUVENÝRY',
+  'KADEŘNICTVÍ', 'KOSMETIKA', 'ŠPERKY', 'CUKRÁRNA', 'PAPÍRNICTVÍ', 'VINOTÉKA', 'OPTIKA', 'TRAFIKA', 'GALERIE',
+  'STAROŽITNOSTI', 'HRAČKY', 'ELEKTRO', 'MASÁŽE'];
+// All shop fascias share this little mask; the wall material supplies the paint and lighting.
 function shopLetters() {
   const canvas = document.createElement('canvas');
-  canvas.width = 512; canvas.height = 256;
+  canvas.width = 512; canvas.height = SIGN_WORDS.length * 64;
   const g = canvas.getContext('2d')!;
-  g.fillStyle = '#000'; g.fillRect(0, 0, 512, 256);
+  g.fillStyle = '#000'; g.fillRect(0, 0, canvas.width, canvas.height);
   g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  for (const [i, title] of ['KNIHKUPECTVÍ', 'PEKAŘSTVÍ', 'KVĚTINY', 'KERAMIKA'].entries()) {
+  for (const [i, title] of SIGN_WORDS.entries()) {
     g.font = i % 2 ? 'bold 44px sans-serif' : 'bold 46px Georgia, serif';
     g.fillText(title, 256, i * 64 + 34, 402);
   }

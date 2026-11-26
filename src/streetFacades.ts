@@ -5,7 +5,6 @@ import { FACADE_ON, STREET_FACADE } from './facades.ts';
 import type { StreetPlates } from './streetPlates.ts';
 import { mirrored } from './mirror.ts';
 import { STREET_QUALITY } from './streetQuality.ts';
-import type { Bounds } from './map/geo.ts';
 import { MappedFrontages } from './mappedFrontages.ts';
 
 // How far off walls get their depth, and how many of the nearest do, are the tier's
@@ -84,8 +83,12 @@ export class StreetFacades {
   private frontages: MappedFrontages;
   private groundAt: GroundAt;
   private flights = new Map<number, Flight[]>();
-  constructor(scene: THREE.Scene, workers: TileWorkers, bounds?: Bounds, groundAt: GroundAt = () => NaN) {
-    this.scene = scene; this.workers = workers; this.frontages=new MappedFrontages(bounds); this.groundAt = groundAt;
+  // `shops`: the area's shops.json, which says which bays are shops (none without it).
+  constructor(scene: THREE.Scene, workers: TileWorkers, shops?: string, groundAt: GroundAt = () => NaN) {
+    this.scene = scene; this.workers = workers; this.groundAt = groundAt;
+    this.frontages = new MappedFrontages(shops);
+    // Walls queued while the shops were still on their way go out once they're here.
+    void this.frontages.ready.then(() => this.pump());
   }
   // Whether (x, y) is on the steps up to a doorway of a wall drawn close up: they stop
   // cars as the wall does (World.cellAt).
@@ -187,7 +190,8 @@ export class StreetFacades {
     this.pump();
   }
   private pump() {
-    while (this.running < 2 && this.queue.length) {
+    // (A wall built before the shops arrived would keep its made-up shopfronts.)
+    while (this.frontages.settled && this.running < 2 && this.queue.length) {
       const w = this.queue.shift()!;
       if (!this.wanted.has(w) || w.pending || w.mesh) continue;
       w.pending = true; this.running++;

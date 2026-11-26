@@ -138,6 +138,28 @@ for (let i = 0; i < shopWall.detail.length; i += 4) {
 assert(shopPanes.length > 0 && shopPanes.every(([h, layer]) => h < 4.4 && (layer === 66 || layer === 71)));
 console.log('Ground-floor display panes stay within the authored shop windows.');
 
+// A mapped café (mappedFrontages.ts: u, stock, word): its bay becomes a shopfront with
+// the bakery stock and KAVÁRNA (SIGN_WORDS[4]) on the fascia; a shop the game has no
+// word for gets a plain fascia, and the other bay of its room carries no made-up sign.
+const mappedWall = (stock, word) => buildStreetWall({ ...buffers, shops: Float32Array.of(2.5, stock, word) }, sky, tris);
+const cafe = mappedWall(1, 4), words = new Set(), stocks = new Set();
+for (let i = 0; i < cafe.detail.length; i += 4) {
+  if (cafe.facade[i] > 5) continue;
+  if (cafe.detail[i + 2] === F_SURFACE.shopSign) words.add(Math.floor(cafe.detail[i + 3]));
+  if (cafe.detail[i + 2] === F_SURFACE.display) stocks.add(Math.floor(cafe.detail[i + 3]));
+}
+assert.deepEqual([...words], [4], 'the mapped café names itself, and only itself: ' + [...words]);
+assert.deepEqual([...stocks], [2], 'its window holds the bakery stock: ' + [...stocks]);
+const plain = mappedWall(-1, -1);
+let plainSigns = 0, plainDisplays = 0;
+for (let i = 0; i < plain.detail.length; i += 4) {
+  if (plain.facade[i] > 5) continue;
+  if (plain.detail[i + 2] === F_SURFACE.shopSign) plainSigns++;
+  if (plain.detail[i + 2] === F_SURFACE.display) plainDisplays++;
+}
+assert.ok(plainDisplays > 0 && plainSigns === 0, 'a mapped shop without a word is still a shopfront, with a plain fascia');
+console.log('Verified mapped shops: their own word and stock, and no clashing sign beside them.');
+
 // Buildings with equal period and composition can have different wall seeds
 // and storey fits around a corner. Their principal floors still belong together.
 const packed = (look, composition, wall = 0, fit = 0) =>

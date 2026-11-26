@@ -384,8 +384,13 @@ and the clouds on that side are lit warm, with only a blush on the opposite side
 At street level on WebGPU and WebGL, a glazed shopfront can show bookshelves, a bakery,
 flowers or ceramics. Look through the glass from the side to see the walls
 and floor behind the window frame. Adjacent bays share a display and some
-stay lit after dark. Along Mostecká, mapped shop and café positions guide which
-street-facing bays get a display. The stock and joinery are imagined for the game.
+stay lit after dark. Where OpenStreetMap has a shop, café, restaurant or pub on the
+ground floor, the bay in front of it becomes a shopfront with a Czech word for its
+trade on the fascia (KAVÁRNA, LÉKÁRNA, POTRAVINY …) and, for books, bakeries and
+cafés, flowers and gifts, the matching stock (`pipeline/build_shops.py` → `shops.json`,
+`src/mappedFrontages.ts`; 11,244 in `praha`). Other bays are inferred as before. A
+map without the file has only inferred shops. The words are generic: no shop names
+or brands. The stock and joinery are imagined for the game.
 Arched timber portals sit further back, with a meeting stile, a stone landing
 and enough steps to reach the threshold from the pavement.
 
@@ -2609,6 +2614,7 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   `pipeline/.cache/layers/`.
 - **Staged rebuilds and resume.** For a complete rebuild, work in an isolated copy
   with its own writable caches and output; keep the active map in place until the
+uv run build_shops.py centrum      # ground-floor shops, cafés and pubs (OSM) for the shopfronts → shops.json
   new generation has passed validation. No other pipeline job should write to that
   copy. Run these commands from its `pipeline/` directory to prepare the base
   layers. [Rebuilding the map](rebuilding-the-map.md) lists the full sequence.

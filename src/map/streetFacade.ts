@@ -468,16 +468,17 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
   const ground = F_GROUND[style], storey = F_STOREY[style] * (STOREY_FIT[0] + (Math.floor((w - style) * 1024) % 32) * STOREY_FIT[1] / 31);
   const pos: number[] = [], norm: number[] = [], col: number[] = [], fac: number[] = [], shade: number[] = [], detail: number[] = [];
   const foot: number[] = [], steps: number[] = [];
-  const displays = new Map<number,number>();
+  // Ground-floor bays a mapped shop looks out of (mappedFrontages.ts: u, stock, word).
+  const displays = new Map<number,{ stock: number; word: number }>();
   const shops=arrays.shops;
-  if (shops && style<=STYLE.baroque && bay>=1.8) for (let i=0;i<shops.length;i+=2) {
+  if (shops && style<=STYLE.baroque && bay>=1.8) for (let i=0;i+2<shops.length;i+=3) {
     const u=shops[i], j=Math.floor(u/bay);
     const neighbour = u/bay-j>.5 ? 1 : -1;
     for (const k of [j,j+neighbour,j-neighbour]) {
       if (k<0 || k>=bays || Math.abs((k+.5)*bay-u)>4 || displays.has(k)) continue;
       const layer=streetModule(w,k,0,bays);
       if (F_DOOR.includes(layer) && !SHOPFRONTS.has(layer)) continue;
-      displays.set(k,shops[i+1]); break;
+      displays.set(k,{ stock: shops[i+1], word: shops[i+2] }); break;
     }
   }
   const moduleAt = (j:number,row:number) => !row && displays.has(j)
@@ -644,10 +645,12 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
         const shop = !row && SHOPFRONTS.has(layer), group = Math.floor(j / 2);
         const finish = shop ? SHOP_FINISHES[Math.floor(pick(seed, group, 12) * SHOP_FINISHES.length)] : null;
         const awning = shop && pick(seed, group, 13) < .36;
-        // Two adjacent displays see one room; only its first fascia names it.
-        const mappedTrade = !row ? displays.get(j) : undefined;
-        const sign = shop && mappedTrade===undefined && (j % 2 === 0 || !SHOPFRONTS.has(moduleAt(j-1,0)));
-        const trade = Math.floor(pick(seed, group, 9) * 4);
+        // Two adjacent displays see one room; only its first fascia names it. A mapped
+        // shop names its own trade, and the other bay of its room stays plain.
+        const mapped = !row ? displays.get(j) : undefined;
+        const sign = shop && (mapped ? mapped.word >= 0
+          : !displays.has(j % 2 ? j - 1 : j + 1) && (j % 2 === 0 || !SHOPFRONTS.has(moduleAt(j-1,0))));
+        const trade = mapped ? mapped.word : Math.floor(pick(seed, group, 9) * 4);
         const furnishing = pick(seed, j, 20 + row);
         const key = layer * 4 + Number(!!row) * 2 + Number(awning);
         let shape = shapes.get(key);
@@ -663,7 +666,7 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
           const pane = kind === FURNISHED_PANE;
           const surface = pane ? S.glass : kind === S.shopSign && !sign ? S.shopPaint : kind;
           const finishValue = pane ? furnishing : surface === S.shopSign ? trade
-            : surface===S.display && mappedTrade!==undefined ? mappedTrade+1 : undefined;
+            : surface===S.display && mapped && mapped.stock >= 0 ? mapped.stock+1 : undefined;
           emit([l, m, r].map(([x, y, z, light]) => [dx + x, bottom + y, z, light]), layer === 113 ? 41 : layer, ao, surface, paint, finishValue);
         }
         if (openings[layer]?.length) modeled = true;
