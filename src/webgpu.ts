@@ -650,9 +650,18 @@ export function configureRenderer(renderer: WebGPURenderer) {
   // three.js's plain shadow instead. The body, the head and the dyed body never read the
   // map. The alpha-tested hair now casts its whole cards: a paused frame of four people in
   // low sun differed less than two shots of the same build, and it saves one build per avatar.
+  // (Asked for every object in the shadow pass every frame: whether a material is an avatar's
+  // is kept, since a node material's customProgramCacheKey walks its whole graph, 5% of the
+  // main thread standing on the Old Town Square.)
   const shadowNodes = (renderer as any)._getShadowNodes.bind(renderer);
+  const avatar = new WeakMap<THREE.Material, boolean>();
+  const isAvatar = (m: THREE.Material) => {
+    let a = avatar.get(m);
+    if (a === undefined) avatar.set(m, a = !(m as { isNodeMaterial?: boolean }).isNodeMaterial && /^cut-rocketbox/.test(m.customProgramCacheKey?.() ?? ''));
+    return a;
+  };
   (renderer as any)._getShadowNodes = (m: THREE.Material & { depthNode?: any; positionNode?: any; castShadowPositionNode?: any }) => {
-    if (!/^cut-rocketbox/.test(m.customProgramCacheKey?.() ?? '') || m.transparent) return shadowNodes(m);
+    if (m.transparent || !isAvatar(m)) return shadowNodes(m);
     return {
       colorNode: null,
       depthNode: m.depthNode?.isNode ? m.depthNode : null,

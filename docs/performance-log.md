@@ -2197,3 +2197,25 @@ rendering, so the counts, not the frame times, are the evidence), High, Old Town
   street trees, the shadow pass, the sky seen from the street, the covered passage and
   ironwork made on arrival, your avatar). Those would need a street frame rehearsed
   offscreen.
+
+## 27 November 2026 — the street view's frame, standing on the Old Town Square
+
+`bench.mjs --scenes stand --view third` on this machine (RTX 5060 Ti, native WebGPU, 2×,
+High): JavaScript 15.4–15.8 ms a frame (`renderer.render` 8.4–8.6), the 95th percentile
+frame 30.7–31.7 ms, about 460 draws (some 200 in the sun's shadow pass), 3.6 M triangles.
+
+- **The avatars' shared shadow** (`_getShadowNodes` in `configureRenderer`, this morning)
+  asked every material in the shadow pass for its `customProgramCacheKey` every frame, and
+  a node material's walks its whole graph: 5% of the main thread. Whether a material is an
+  avatar's is now kept per material. A/B in one run: 17.6 → 16.2 ms. Two runs each, before
+  and after: JavaScript 15.4–15.8 → 14.4–14.5 ms, render 8.4–8.6 → 7.5–7.6, the 95th
+  percentile frame 30.7–31.7 → 18.8–19.5 ms.
+- **Where the rest goes** (CPU profile): the shadow pass about 17%, the colour pass about
+  30%, nearly all of both three.js's per-object work (bindings, node updates, encoding)
+  at 20–40 µs a draw; the walkers' simulation 12% (`people.ts`; already bucketed and a
+  look ahead one frame in four); the avatars' poses 3.7% (AnimationMixer); bloom 2%;
+  matrices 0.26 ms. The life-size people are 138 of the draws (about 23 of them, three
+  meshes each, in both passes); the tiles' static meshes about 150.
+- **Tried and dropped:** posing avatars beyond 12 m every other frame: 1% (13.3 → 13.2 ms).
+- **Street grass** spends its 1 ms slice each frame until the lawns within 24 m are filled
+  (about 15 ms of work a 6 m cell, three `onPolygons` tests a blade), then nothing.
