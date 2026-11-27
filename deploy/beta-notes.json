@@ -1,6 +1,7 @@
 {
   "after": "v0.13.0",
   "en": [
+    "A hard crash can bend a wheel: with Physical handling the car then pulls to that side and slows",
     "Traffic signs, lane arrows, direction boards and gantries over the main roads, and house numbers by the doors",
     "Shops, cafés and pubs on ground floors across the city, and benches, bins and other street furniture where OpenStreetMap has it",
     "Cars dent where they are hit, with scraped paint, and crumple when they roll",
@@ -29,6 +30,7 @@
     "The National Theatre, the Jan Hus Memorial and the Old Town Square landmarks, modelled in detail"
   ],
   "cs": [
+    "Tvrdý náraz může ohnout kolo: s fyzikálním řízením pak auto táhne na tu stranu a zpomaluje",
     "Dopravní značky, šipky v pruzích, směrové tabule a portály nad hlavními silnicemi a čísla domů u dveří",
     "Obchody, kavárny a hospody v přízemích po celém městě a lavičky, koše a další mobiliář tam, kde je zná OpenStreetMap",
     "Auta se promáčknou tam, kde dostala ránu, s odřeným lakem, a při převrácení se zmačkají",
