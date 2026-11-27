@@ -1,6 +1,15 @@
 {
   "after": "v0.13.0",
   "en": [
+    "Traffic signs, lane arrows, direction boards and gantries over the main roads, and house numbers by the doors",
+    "Shops, cafés and pubs on ground floors across the city, and benches, bins and other street furniture where OpenStreetMap has it",
+    "Cars dent where they are hit, with scraped paint, and crumple when they roll",
+    "Try Physical car handling in the settings: a sprung car on four tyres",
+    "People in the streets wear a wider range of colours",
+    "Custom graphics: set every graphics option yourself, including how many people and cars are about",
+    "Smoother when you step into the street and walk among people, with fewer pauses",
+    "Olive, patchy lawns, with daisies and dandelions in spring",
+    "Paid parking zones marked along the kerbs",
     "Drive more smoothly along Wilsonova by the main station and over bridge approaches, including at Pankrác",
     "See the historic main station building and the glass stairwells across the road in more detail",
     "See how much loading time is left and choose your graphics settings on the start screen",
@@ -20,6 +29,15 @@
     "The National Theatre, the Jan Hus Memorial and the Old Town Square landmarks, modelled in detail"
   ],
   "cs": [
+    "Dopravní značky, šipky v pruzích, směrové tabule a portály nad hlavními silnicemi a čísla domů u dveří",
+    "Obchody, kavárny a hospody v přízemích po celém městě a lavičky, koše a další mobiliář tam, kde je zná OpenStreetMap",
+    "Auta se promáčknou tam, kde dostala ránu, s odřeným lakem, a při převrácení se zmačkají",
+    "Vyzkoušejte v nastavení fyzikální řízení: odpružené auto na čtyřech pneumatikách",
+    "Lidé v ulicích nosí pestřejší oblečení",
+    "Vlastní grafika: nastavte si každou volbu grafiky sami, i kolik lidí a aut je v ulicích",
+    "Plynulejší vstup do ulice i chůze mezi lidmi, s menším zadrháváním",
+    "Olivově zelené, nestejnoměrné trávníky a na jaře sedmikrásky a pampelišky",
+    "Placené parkovací zóny vyznačené podél obrubníků",
     "Plynulejší jízda po Wilsonově u hlavního nádraží a po nájezdech na mosty, včetně Pankráce",
     "Detailnější Fantova budova hlavního nádraží a prosklená schodiště na protější straně ulice",
     "Na úvodní obrazovce uvidíte, kolik času zbývá do konce načítání, a můžete si nastavit grafiku",
