@@ -35,6 +35,56 @@ export const LAMP_MAP_HIGH: { value: THREE.Texture | null } = { value: null };
 // a headlight lit the wall over a van in its way as if the van weren't there. Drawn only
 // when the cars cast shadows (LAMP_REF.w).
 export const LAMP_MAP_OPEN: { value: THREE.Texture | null } = { value: null };
+// In first and third person, the ground's lights once more into a small map round where
+// you look (NEAR), half the texels across of the first map over 40 m instead of the
+// whole view: 4 cm a texel on Ultra instead of 16. The first map's texels showed in the
+// shadows of people and cars beside you as a grid of big squares, the edge of a shadow
+// a staircase of them. Materials read it there, fading to the first map at its edge.
+// Its right half holds the light the nearest lamps' boxes keep off (CLOSE), each times how
+// far it has faded in, over the same box. (One texture for the two: a lit material already
+// reads up to sixteen, the most WebGPU promises, and three more had taken one past it.)
+// (x, z of its centre, 1 / its half width, 1 while it is drawn)
+export const LAMP_MAP_NEAR: { value: THREE.Texture | null } = { value: null };
+export const LAMP_NEAR = { value: new THREE.Vector4(0, 0, 1, 0) };
+// Its half width (m) and how far ahead of the eye its middle is (m): from 8 m behind you
+// to 32 m in front. Drawn while the cars cast shadows (High and up: LAMP_SHADOWS 2);
+// `on` false leaves it out (for comparing).
+export const NEAR = { half: 20, ahead: 12, on: true };
+// The street lamps that light you most, `count` of them (the brightest at a spot 6 m ahead of
+// the eye, within `reach` m), cast their shadows as the sun does within `roi` m of that spot,
+// in first and third person when the people cast shadows in lamplight (Ultra: LAMP_SHADOWS
+// 3), on WebGPU. Each has a depth map of what stands on LAMP_CAST_LAYER (figures.ts: people
+// as drawn, in their pose, cars as modelled), seen from its head and aimed at that circle,
+// `size` texels across (webgpu/lampShadows.ts): about 1 cm a texel where you stand. There the
+// light its boxes kept off (drawn once more into the right half of LAMP_MAP_NEAR, over the
+// same box) is given back and the light its real shadows keep off is taken away, pixel by
+// pixel (webgpu/lamps.ts, lampLight), so the shadow falls on the ground, the walls, the cars
+// and the people too. Towards the circle's edge (its last quarter) the boxes' shadows come
+// back, and a lamp fades in and out of the few over `fade` s. `on` false leaves it out.
+// (Tried first: each map over its lamp's whole pool, the boxes left out of it. Seen from the
+// head that is up to 150° across, and a car 10 m off the lamp stood on texels 15 cm wide.
+// Then 1024 texels over a 12 m circle: 6 cm, and a person's legs ran into one column.)
+export const CLOSE = { count: 3, size: 2048, reach: 30, roi: 8, fade: 0.5, on: true };
+const CLOSE_EVERY = 24; // ms between drawings of their maps (SHADOW_MS in main.ts, the sun's)
+// Each slot's lamp: its pool (x, z of the middle in three.js's axes, length, width), which
+// way the pool's length runs (x, z), its fall-off (vU in the pools' shader) and how far it
+// has faded in (0..1); its light (colour times brightness); its head (x, height, z, and how
+// wide a texel of its map is a metre away); and its shadow camera's projection times view.
+export const CLOSE_SLOTS = Array.from({ length: CLOSE.count }, () => ({
+  pool: { value: new THREE.Vector4() }, dir: { value: new THREE.Vector4() }, colour: { value: new THREE.Vector4() },
+  head: { value: new THREE.Vector4() }, matrix: { value: new THREE.Matrix4() },
+}));
+// The maps (one depth texture, the slots side by side), and 1 while any slot is in use.
+export const CLOSE_MAP: { value: THREE.Texture | null } = { value: null };
+export const CLOSE_ON = { value: 0 };
+// The circle the shadows are real in (x, z of its middle, its radius).
+export const CLOSE_ROI = { value: new THREE.Vector4() };
+// How far a surface is moved off itself along its normal before its shadow is looked up (m),
+// so it doesn't shade itself: the cars' sides and people's backs were striped without it.
+export const CLOSE_NORMAL = { value: 0.06 };
+type CloseShadows = { texture: THREE.Texture; draw(cams: (THREE.Camera | null)[]): void };
+let closeBy: ((renderer: THREE.WebGLRenderer, scene: THREE.Scene) => CloseShadows) | null = null;
+export const setClose = (f: typeof closeBy) => { closeBy = f; };
 // (x, z of the map's centre, 1 / its half width, 1 / its half depth)
 export const LAMP_BOX = { value: new THREE.Vector4(0, 0, 1, 1) };
 // (the height the map's heights are measured from, 1 when the second map has lights in it,
@@ -57,13 +107,22 @@ export const OPEN_ABOVE = [2.2, 3.4];
 // What a car is to the lamps' light (cover, in the pools' shaders): not one box but its
 // body up to `belt` of its height and a cabin on it from -cabin[0] to cabin[1] of its half
 // length and `narrow` of its width, their corners rounded off by `corner` m in plan (the
-// cabin's less), so its shadow has a car's shape instead of a crate's. Vans, lorries, buses
-// and two-wheelers stay boxes, as do trams, people and posts.
+// cabin's less), so its shadow has a car's shape instead of a crate's. Vans, lorries, buses,
+// trams and posts stay boxes.
 export const CAR_SHAPED = { belt: 0.62, cabin: [0.72, 0.38], narrow: 0.8, corner: 0.35 };
 export const carShaped = (s: { H: number; heavy?: boolean; two?: string }) => !s.heavy && !s.two && s.H < 1.7;
+// And a person (a negative half width): their body from the ground up to `shoulders` of
+// their height, rounded off in plan by their half depth (so round at the front and back),
+// and a round head on it, `head` of their half depth and half width. A crate's shadow from
+// someone standing by a lamp gave them away in third person. A two-wheeler (both halves
+// negative) is its frame: a thin box, `frame` of it keeping the light off, its rider a
+// person on it (Lamps.stand).
+export const PERSON_SHAPED = { shoulders: 0.83, head: [0.67, 0.42], frame: 0.5 };
+// A standing person's half depth and half width to the lamps (m).
+export const PERSON_HALF = [0.15, 0.22];
 export const LAMP_GLSL = /* glsl */ `
 #define OPEN_ABOVE vec2(${OPEN_ABOVE[0].toFixed(1)}, ${OPEN_ABOVE[1].toFixed(1)})
-uniform sampler2D uLampMap; uniform sampler2D uLampOpen; uniform vec4 uLampBox; uniform vec4 uLampRef; uniform float uLampOn;
+uniform sampler2D uLampMap; uniform sampler2D uLampOpen; uniform sampler2D uLampNearMap; uniform vec4 uLampBox; uniform vec4 uLampRef; uniform vec4 uLampNear; uniform float uLampOn;
 // The lamps' light at a point in the world (0 by day and off the map). With a surface
 // (n): what faces up and is well above the lamp (a bridge deck over the street, whose
 // cars' lights would otherwise show through it) gets none.
@@ -72,6 +131,12 @@ vec3 lampLightOn(vec3 w, vec3 n) {
   vec2 uv = (w.xz - uLampBox.xy) * uLampBox.zw * .5 + .5;
   if (uv.x < 0. || uv.y < 0. || uv.x > 1. || uv.y > 1.) return vec3(0.);
   vec4 l = texture2D(uLampMap, uv);
+  // Round where you look, the sharp map (LAMP_MAP_NEAR), fading to this one at its edge.
+  if (uLampNear.w > .5) {
+    vec2 q = (w.xz - uLampNear.xy) * uLampNear.z;
+    float k = 1. - smoothstep(.8, 1., max(abs(q.x), abs(q.y)));
+    if (k > 0.) l = mix(l, texture2D(uLampNearMap, vec2(q.x * .25 + .25, q.y * .5 + .5)), k);
+  }
   float dy = w.y - (l.a / max(dot(l.rgb, vec3(.3, .59, .11)), 1e-4) + uLampRef.x);
   if (uLampRef.w > .5) {
     // Above the cars, the light nothing stands in (LAMP_MAP_OPEN), which also knows the
@@ -104,6 +169,8 @@ const CLOUDS = !location.search.includes('nocloud');
 export function lampLit(sh: Shader, world?: string) {
   sh.uniforms.uLampMap = LAMP_MAP;
   sh.uniforms.uLampOpen = LAMP_MAP_OPEN;
+  sh.uniforms.uLampNearMap = LAMP_MAP_NEAR;
+  sh.uniforms.uLampNear = LAMP_NEAR;
   sh.uniforms.uLampBox = LAMP_BOX;
   sh.uniforms.uLampRef = LAMP_REF;
   sh.uniforms.uLampOn = LAMP_ON;
@@ -284,9 +351,10 @@ interface LitTram { parts: { x: number; y: number; ang: number }[]; look: {
 export interface LitCar { streetHeadlights?: CarSpec['headlights']; x: number; y: number; h: number; spec: Pick<CarSpec, 'L' | 'W' | 'H' | 'headlights'>; mode: string; two?: string; speed: number; broken?: number; braking?: boolean }
 
 // What gets in the lamps' way, as boxes: the cars, and with LAMP_SHADOWS at 3 the people,
-// the trams' sections and the posts. A texel each, two rows in a float
-// texture (x, z, forward x, forward z / half length, half width, top, ground), and for
-// every light the few nearest ones (never the car the light is on).
+// the riders, the trams' sections and the posts. A texel each, two rows in a float
+// texture (x, z, forward x, forward z / half length, half width, top, ground; the halves'
+// signs give the shape: CAR_SHAPED, PERSON_SHAPED), and for every light the few nearest
+// ones (never the car the light is on).
 const MAX_CARS = 1024;
 const CAR_CELL = 12;
 const NEAR_CARS = 12; // (8 of them used below LAMP_SHADOWS 3)
@@ -295,7 +363,7 @@ const DECK = 4;
 const LUMA = [0.3, 0.59, 0.11];
 
 // Something standing in the light: where, which way it faces (radians), half its length
-// and width, the ground under it and how tall it is.
+// and width (the width negative for a person), the ground under it and how tall it is.
 export type Block = (x: number, y: number, h: number, halfL: number, halfW: number, ground: number, tall: number) => void;
 // The flashing lights on the roof of an emergency vehicle: their light reaches `reach` m, `rate` cycles a second.
 // A searchlight on something in the air (a police helicopter): where it is (x, y, height)
@@ -338,6 +406,7 @@ export class Lamps {
   private target: THREE.WebGLRenderTarget;
   private targetHigh: THREE.WebGLRenderTarget;
   private targetOpen: THREE.WebGLRenderTarget;
+  private targetNear: THREE.WebGLRenderTarget;
   private highScene = new THREE.Scene();
   // Each lamp near the camera: how far over the ground its light falls (on a bridge's deck,
   // or a floodlight's up the walls), and whether it's on a bridge.
@@ -400,6 +469,20 @@ export class Lamps {
   private shape: THREE.InstancedBufferAttribute; // direction x, z, length (or radius), width
   private colour: THREE.InstancedBufferAttribute; // (and the height of the light over the ground)
   private view = { value: new THREE.Vector4() };
+  private nearSaved = new THREE.Vector4(); // (the first map's view, while the near one is drawn)
+  // The lamps with shadows of their own (CLOSE): each slot's lamp (-1 for none), how far it
+  // has faded in, and its shadow camera; their pools again, by themselves, for the light
+  // their boxes keep off (the right half of LAMP_MAP_NEAR: `kept`, its instances' data the
+  // same as theirs).
+  private close: CloseShadows | null = null;
+  private slots = Array.from({ length: CLOSE.count }, () => ({ lamp: -1, weight: 0, cam: new THREE.PerspectiveCamera(120, 1, 0.2, 12) }));
+  private closeAt = 0;
+  private closeDrawn = -Infinity;
+  private closeLamps = '';
+  private slotAt = new Int32Array(CLOSE.count);
+  private roiAt: [number, number] = [0, 0]; // (the circle's middle, the game's x and y)
+  private kept:THREE.InstancedBufferGeometry | null = null;
+  private keptScene = new THREE.Scene();
   private models: THREE.InstancedMesh[] = [];
   private closeLanterns = new CloseLanterns();
   street(on: boolean) {
@@ -431,9 +514,11 @@ export class Lamps {
     this.target = target();
     this.targetHigh = target();
     this.targetOpen = target(size / 4);
+    this.targetNear = new THREE.WebGLRenderTarget(size, size / 2, { type: THREE.HalfFloatType, depthBuffer: false, magFilter: THREE.LinearFilter, minFilter: THREE.LinearFilter });
     LAMP_MAP.value = this.target.texture;
     LAMP_MAP_HIGH.value = this.targetHigh.texture;
     LAMP_MAP_OPEN.value = this.targetOpen.texture;
+    LAMP_MAP_NEAR.value = this.targetNear.texture;
     // By day nothing draws into the maps, so the materials would bind them as plain textures.
     // When the lamps first come on, WebGPU sets the target up and replaces that texture,
     // the materials keep pointing at the destroyed one, and every frame after fails.
@@ -509,13 +594,15 @@ export class Lamps {
           int i = int(id + .5);
           vec4 a = texelFetch(uCars, ivec2(i, 0), 0), b = texelFetch(uCars, ivec2(i, 1), 0);
           vec2 sd = vec2(-a.w, a.z);
-          // (A car's box comes with its half length negative: CAR_SHAPED.)
-          float car = step(b.x, 0.), hl = abs(b.x), r = car * ${CAR_SHAPED.corner.toFixed(2)};
+          // (A car's box comes with its half length negative: CAR_SHAPED; a person's with its
+          // half width, and a two-wheeler's frame with both: PERSON_SHAPED.)
+          float frame = step(b.x, 0.) * step(b.y, 0.), car = step(b.x, 0.) - frame, person = step(b.y, 0.) - frame;
+          float hl = abs(b.x), hw = abs(b.y), r = car * ${CAR_SHAPED.corner.toFixed(2)} + person * min(hl, hw);
           // (The open map: only what stands taller than the light, see LAMP_MAP_OPEN.)
           if (uShadow < -1.5 && vLamp.y >= b.z) return 0.;
           if (abs(uShadow) < 1.5) {
             vec2 o = p - a.xy, l = vec2(dot(o, a.zw), dot(o, sd));
-            float d = length(max(abs(l) - vec2(hl, b.y) + r, 0.)) - r;
+            float d = length(max(abs(l) - vec2(hl, hw) + r, 0.)) - r;
             return .55 * (1. - smoothstep(0., 1.2, d)) * (1. - smoothstep(1.5, 3., abs(vH - b.w)));
           }
           vec2 o = vLamp.xz - a.xy, e = p - a.xy;
@@ -523,13 +610,16 @@ export class Lamps {
           vec3 D = vec3(dot(e, a.zw), vH - b.w, dot(e, sd)) - O;
           D += vec3(1e-4) * (step(0., D) * 2. - 1.);
           float H = b.z - b.w, len = length(D);
-          if (car < .5) return blocked(through(O, D, vec3(-hl, .12, -b.y), vec3(hl, H, b.y), 0.), len);
-          // A car: the body up to the windows, and the cabin on it, shorter and narrower; the
-          // ray's stretches through the two add up, as through one solid car.
-          float belt = H * ${CAR_SHAPED.belt.toFixed(2)};
-          vec2 body = through(O, D, vec3(-hl, .12, -b.y), vec3(hl, belt, b.y), r);
-          vec2 cabin = through(O, D, vec3(-hl * ${CAR_SHAPED.cabin[0].toFixed(2)}, belt, -b.y * ${CAR_SHAPED.narrow.toFixed(2)}), vec3(hl * ${CAR_SHAPED.cabin[1].toFixed(2)}, H, b.y * ${CAR_SHAPED.narrow.toFixed(2)}), r * .6);
-          return blocked(vec2(body.x + cabin.x, max(body.y, cabin.y)), len);
+          if (car + person < .5) return (1. - ${(1 - PERSON_SHAPED.frame).toFixed(2)} * frame) * blocked(through(O, D, vec3(-hl, .12, -hw), vec3(hl, H, hw), 0.), len);
+          // A car: the body up to the windows, and the cabin on it, shorter and narrower; a
+          // person: the body up to the shoulders, and the head. The ray's stretches through
+          // the two add up, as through one solid car or person.
+          float belt = H * (person > .5 ? ${PERSON_SHAPED.shoulders.toFixed(2)} : ${CAR_SHAPED.belt.toFixed(2)});
+          vec2 body = through(O, D, vec3(-hl, .12 * car, -hw), vec3(hl, belt, hw), r);
+          vec2 top = person > .5
+            ? through(O, D, vec3(-hl * ${PERSON_SHAPED.head[0].toFixed(2)}, belt, -hw * ${PERSON_SHAPED.head[1].toFixed(2)}), vec3(hl * ${PERSON_SHAPED.head[0].toFixed(2)}, H, hw * ${PERSON_SHAPED.head[1].toFixed(2)}), min(hl * ${PERSON_SHAPED.head[0].toFixed(2)}, hw * ${PERSON_SHAPED.head[1].toFixed(2)}))
+            : through(O, D, vec3(-hl * ${CAR_SHAPED.cabin[0].toFixed(2)}, belt, -hw * ${CAR_SHAPED.narrow.toFixed(2)}), vec3(hl * ${CAR_SHAPED.cabin[1].toFixed(2)}, H, hw * ${CAR_SHAPED.narrow.toFixed(2)}), r * .6);
+          return blocked(vec2(body.x + top.x, max(body.y, top.y)), len);
         }
         void main() {
           float f;
@@ -565,6 +655,19 @@ export class Lamps {
       const high = new THREE.Mesh(quad, poolsBy(this.view, this.carMap, 1));
       high.frustumCulled = false;
       this.highScene.add(high);
+    }
+    if (closeBy && poolsBy) {
+      this.close = closeBy(renderer, scene);
+      CLOSE_MAP.value = this.close.texture;
+      // The slots' lamps' pools by themselves, giving the light their boxes keep off (layer 2).
+      const kept = this.kept = new THREE.InstancedBufferGeometry();
+      kept.setAttribute('position', quad.getAttribute('position'));
+      kept.setIndex(quad.getIndex());
+      for (const name of ['iAt', 'iShape', 'iColour', 'iCarsA', 'iCarsB', 'iCarsC']) kept.setAttribute(name, new THREE.InstancedBufferAttribute(new Float32Array(CLOSE.count * 4), 4));
+      kept.instanceCount = 0;
+      const pools = new THREE.Mesh(kept, poolsBy(this.view, this.carMap, 2));
+      pools.frustumCulled = false;
+      this.keptScene.add(pools);
     }
 
     // Poles with a head, and the heads' glow at night.
@@ -638,7 +741,7 @@ export class Lamps {
   private wipe() {
     const renderer = this.renderer, before = renderer.getRenderTarget(), clear = renderer.getClearColor(this.c).getHex(), alpha = renderer.getClearAlpha();
     renderer.setClearColor(0x000000, 0);
-    for (const t of [this.target, this.targetHigh, this.targetOpen]) {
+    for (const t of [this.target, this.targetHigh, this.targetOpen, this.targetNear]) {
       renderer.setRenderTarget(t);
       renderer.clear(true, false, false);
     }
@@ -1046,19 +1149,27 @@ export class Lamps {
       data[i * 4] = bx; data[i * 4 + 1] = -by; data[i * 4 + 2] = Math.cos(h); data[i * 4 + 3] = -Math.sin(h);
       const o = MAX_CARS * 4 + i * 4;
       data[o] = halfL; data[o + 1] = halfW; data[o + 2] = ground + tall; data[o + 3] = ground;
-      at[i * 3] = bx; at[i * 3 + 1] = by; at[i * 3 + 2] = Math.max(Math.abs(halfL), halfW);
+      at[i * 3] = bx; at[i * 3 + 1] = by; at[i * 3 + 2] = Math.max(Math.abs(halfL), Math.abs(halfW));
       const k = Math.floor(bx / CAR_CELL) * 4096 + Math.floor(by / CAR_CELL);
       const list = this.carGrid.get(k);
       if (list) list.push(i); else this.carGrid.set(k, [i]);
       return i;
     };
+    // (One box each, in the cars' order: lightfx.ts finds a car by its box. A two-wheeler's
+    // is its frame, as long as its wheelbase and as high as its handlebars: PERSON_SHAPED.)
     for (let i = 0; i < cars.length; i++) {
       const c = cars[i], z = carHeight(c.x, c.y, c as never);
       this.carZ[i] = z;
-      if (on) this.carIndex.set(c, put(c.x, c.y, c.h, (carShaped(c.spec) ? -1 : 1) * c.spec.L / 2, c.spec.W / 2, z, c.spec.H));
+      if (on && c.two) this.carIndex.set(c, put(c.x, c.y, c.h, -0.38 * c.spec.L, -0.1 * c.spec.W, z, Math.min(1.1, c.spec.H * 0.7)));
+      else if (on) this.carIndex.set(c, put(c.x, c.y, c.h, (carShaped(c.spec) ? -1 : 1) * c.spec.L / 2, c.spec.W / 2, z, c.spec.H));
     }
     if (on && LAMP_SHADOWS.value > 2.5) {
       more?.(put);
+      // Whoever rides a two-wheeler, sitting on it (a loose one has nobody on it).
+      for (let i = 0; i < cars.length; i++) {
+        const c = cars[i];
+        if (c.two && c.mode !== 'loose') put(c.x - Math.cos(c.h) * 0.15, c.y - Math.sin(c.h) * 0.15, c.h, PERSON_HALF[0] * 1.3, -PERSON_HALF[1], this.carZ[i] + 0.75, 0.9);
+      }
       for (const v of trams) {
         if (!v.look) continue;
         v.parts.forEach((p, i) => {
@@ -1134,17 +1245,21 @@ export class Lamps {
   // looks straight down (the map then covers just that, not the whole circle of radius r);
   // `opt.flashing`: the emergency vehicles with their lights going, `opt.time` the game's
   // clock for them (s); `opt.blocks`: the people in view, as boxes; `opt.eye`: where the
-  // camera is (three.js's coordinates), `opt.wet` and `opt.murk` how wet the ground is and
-  // how hazy the air (0..1), for the beams and glints.
+  // camera is (three.js's coordinates), `opt.ahead`: in first and third person, which way it
+  // looks along the ground (a unit vector in the game's x and y; LAMP_MAP_NEAR), `opt.wet`
+  // and `opt.murk` how wet the ground is and how hazy the air (0..1), for the beams and glints.
   update<C extends LitCar>(x: number, y: number, r: number, on: number, cars: C[], carHeight: (x: number, y: number, car: C) => number, now: number, trams: LitTram[] = [], opt: {
-    box?: [number, number]; streetView?: boolean; flashing?: Flashing[]; spots?: Spot[]; time?: number; blocks?: (put: Block) => void; eye?: THREE.Vector3; wet?: number; murk?: number;
+    box?: [number, number]; streetView?: boolean; flashing?: Flashing[]; spots?: Spot[]; time?: number; blocks?: (put: Block) => void; eye?: THREE.Vector3; ahead?: [number, number]; wet?: number; murk?: number;
   } = {}) {
     LAMP_ON.value = on;
+    LAMP_NEAR.value.w = 0;
+    CLOSE_ON.value = 0;
     this.closeLanterns.lit(on);
     if (this.target.width !== LAMP_SIZE.value) {
       this.target.setSize(LAMP_SIZE.value, LAMP_SIZE.value);
       this.targetHigh.setSize(LAMP_SIZE.value, LAMP_SIZE.value);
       this.targetOpen.setSize(LAMP_SIZE.value / 4, LAMP_SIZE.value / 4);
+      this.targetNear.setSize(LAMP_SIZE.value, LAMP_SIZE.value / 2);
       this.wipe();
     }
     this.gather(x, y, r, now);
@@ -1171,6 +1286,11 @@ export class Lamps {
     const at = this.at.array as Float32Array, sh = this.shape.array as Float32Array, col = this.colour.array as Float32Array;
     const shading = LAMP_SHADOWS.value > 0, most = LAMP_SHADOWS.value > 2.5 ? NEAR_CARS : 8;
     this.stand(cars, carHeight, shading, x, y, r, trams, opt.blocks);
+    // The lamps nearest you, with shadows of their own (CLOSE).
+    this.chooseClose(this.close && CLOSE.on && LAMP_SHADOWS.value > 2.5 && opt.ahead && opt.eye ? [opt.eye, opt.ahead] : null);
+    // (Each aimed slot's lamp's pool: its index among the instances.)
+    let aimed = 0;
+    const slotAt = this.slotAt;
     const ca = this.carsA.array as Float32Array, cb = this.carsB.array as Float32Array, cc = this.carsC.array as Float32Array;
     // `up`: how high the light is over the ground (0: nothing gets in its way); `own`: the
     // car it is on, which it doesn't shine through; `high`: on a bridge (unknown: by its height).
@@ -1201,10 +1321,14 @@ export class Lamps {
       const towards = (this.kind[i] === 0 || this.kind[i] === 1) && this.facing.has(i) ? this.facing.get(i)! : null;
       // (The monuments' festive lighting goes off at midnight: FLOOD_ON.)
       if (this.kind[i] === 4 && FLOOD_ON.value <= 0.01) continue;
-      if (towards === null) add(lx, ly, z, 0, 1, 0, k.r, k.r, colour, this.kind[i] === 4 ? k.i * FLOOD_ON.value : k.i, k.raise || k.head < 3 ? 0 : k.head, (post && this.postIndex.get(post)) ?? -1, this.high[i]);
-      else {
+      const slot = this.slots.findIndex((s) => s.lamp === i);
+      if (towards === null) {
+        add(lx, ly, z, 0, 1, 0, k.r, k.r, colour, this.kind[i] === 4 ? k.i * FLOOD_ON.value : k.i, k.raise || k.head < 3 ? 0 : k.head, (post && this.postIndex.get(post)) ?? -1, this.high[i]);
+        if (slot >= 0 && n > 0) { this.aim(slot, lx, ly, z, 1, 0, k.r, k.r, colour, k.i, k.head); aimed |= 1 << slot; slotAt[slot] = n - 1; }
+      } else {
         const dx = Math.cos(towards), dy = Math.sin(towards), arm = POOL.arm[this.kind[i]];
         add(lx + dx * arm, ly + dy * arm, z, 0, dx, dy, k.r * POOL.across, k.r * POOL.along, colour, k.i, k.head, (post && this.postIndex.get(post)) ?? -1, this.high[i]);
+        if (slot >= 0 && n > 0) { this.aim(slot, lx + dx * arm, ly + dy * arm, z, dx, dy, k.r * POOL.across, k.r * POOL.along, colour, k.i, k.head); aimed |= 1 << slot; slotAt[slot] = n - 1; }
       }
       if (fx && k.head >= 3) fx.lamp(lx, ly, z, k.head, colour, k.i, this.carGrid, this.blockAt, cars, this.carZ);
     }
@@ -1335,8 +1459,148 @@ export class Lamps {
       renderer.render(this.lightScene, this.lightCam);
       LAMP_SHADOWS.value = blocking;
     }
+    // The sharp map round where you look (LAMP_MAP_NEAR): the same pools over a small box,
+    // its centre on a texel, the softest shadow edge a texel and a half of its own.
+    if (NEAR.on && opt.ahead && opt.eye && blocking > 1.5) {
+      const near = this.targetNear, side = near.height, texel = (2 * NEAR.half) / side;
+      const nx = Math.round((opt.eye.x + opt.ahead[0] * NEAR.ahead) / texel) * texel;
+      const nz = Math.round((opt.eye.z - opt.ahead[1] * NEAR.ahead) / texel) * texel;
+      const main = this.nearSaved.copy(this.view.value), softest = LAMP_REF.value.z;
+      this.view.value.set(nx, nz, 1 / NEAR.half, 1 / NEAR.half);
+      LAMP_REF.value.z = 1.5 * texel;
+      // (Each half by its viewport, the target cleared once for both.)
+      const autoClear = renderer.autoClear;
+      renderer.setRenderTarget(near);
+      renderer.clear(true, false, false);
+      renderer.autoClear = false;
+      near.viewport.set(0, 0, side, side);
+      near.scissor.set(0, 0, side, side);
+      near.scissorTest = true;
+      renderer.setRenderTarget(near);
+      renderer.render(this.lightScene, this.lightCam);
+      LAMP_NEAR.value.set(nx, nz, 1 / NEAR.half, 1);
+      // The light the nearest lamps' boxes keep off, over the same box (the right half): their
+      // pools as added above, each times how far it has faded in.
+      if (this.kept && aimed) {
+        const attr = (name: string) => this.kept!.getAttribute(name) as THREE.InstancedBufferAttribute;
+        const from = [this.at, this.shape, this.colour, this.carsA, this.carsB, this.carsC];
+        const to = ['iAt', 'iShape', 'iColour', 'iCarsA', 'iCarsB', 'iCarsC'].map(attr);
+        for (let s = 0; s < CLOSE.count; s++) {
+          const j = aimed & (1 << s) ? slotAt[s] : -1;
+          to.forEach((a, m) => {
+            const dst = a.array as Float32Array;
+            if (j < 0) dst.fill(0, s * 4, s * 4 + 4);
+            else dst.set((from[m].array as Float32Array).subarray(j * 4, j * 4 + 4), s * 4);
+          });
+          if (j >= 0) for (let c = 0; c < 3; c++) (to[2].array as Float32Array)[s * 4 + c] *= this.slots[s].weight;
+        }
+        for (const a of to) send(a, CLOSE.count);
+        this.kept.instanceCount = CLOSE.count;
+        near.viewport.set(side, 0, side, side);
+        near.scissor.set(side, 0, side, side);
+        renderer.setRenderTarget(near);
+        renderer.render(this.keptScene, this.lightCam);
+      }
+      near.viewport.set(0, 0, side * 2, side);
+      near.scissor.set(0, 0, side * 2, side);
+      near.scissorTest = false;
+      renderer.autoClear = autoClear;
+      this.view.value.copy(main);
+      LAMP_REF.value.z = softest;
+    } else aimed = 0; // (the boxes' light given back needs the near map's box)
     renderer.setRenderTarget(before);
     renderer.setClearColor(clear, alpha);
     renderer.shadowMap.autoUpdate = shadows;
+    // The nearest lamps' shadow maps (CLOSE), and where each map lies (after the drawing,
+    // which gives the cameras WebGPU's depth range).
+    for (let s = 0; s < CLOSE.count; s++) if (!(aimed & (1 << s))) CLOSE_SLOTS[s].dir.value.w = 0;
+    if (this.close && aimed) {
+      // (Drawn as the sun's is, once CLOSE_EVERY ms have passed, the frames between keeping
+      // the maps and where they lie: at 60 fps every other frame. The three passes took 2.3
+      // ms of the main thread a frame on Újezd at night. At once when a slot changes lamps.)
+      const t = performance.now(), lamps = this.slots.map((s, j) => (aimed & (1 << j) ? s.lamp : -1)).join();
+      if (t - this.closeDrawn >= CLOSE_EVERY || lamps !== this.closeLamps) {
+        this.closeDrawn = t;
+        this.closeLamps = lamps;
+        const cams = this.slots.map((s, j) => (aimed & (1 << j) ? s.cam : null));
+        this.close.draw(cams);
+        cams.forEach((cam, j) => { if (cam) CLOSE_SLOTS[j].matrix.value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse); });
+      }
+      CLOSE_ON.value = 1;
+    }
   }
+
+  // Which lamps have shadows of their own (CLOSE): the brightest at a spot 6 m ahead of the
+  // eye, on poles, arms and walls, not on bridges; `at` null for none. A lamp keeps its slot
+  // while it fades out, and a new one waits for a free slot.
+  private chooseClose(at: [THREE.Vector3, [number, number]] | null) {
+    const t = performance.now(), dt = Math.min(0.1, Math.max(0, (t - this.closeAt) / 1000));
+    this.closeAt = t;
+    const want: number[] = [], ds: number[] = [];
+    if (at) {
+      const [eye, ahead] = at, sx = eye.x + ahead[0] * 6, sy = -eye.z + ahead[1] * 6;
+      this.roiAt = [sx, sy];
+      CLOSE_ROI.value.set(sx, -sy, CLOSE.roi, 0);
+      for (const i of this.near) {
+        const kind = this.kind[i], k = KINDS[kind];
+        if (kind < 0 || k.head < 3 || k.raise || this.posts[i]?.down || this.high[i]) continue;
+        // (The brightest there, roughly: its pool's fall-off, its longest way. A lamp
+        // behind you lights you as much as one ahead, and its shadows fall where you look.)
+        const d = Math.hypot(this.xy[i * 2] - sx, this.xy[i * 2 + 1] - sy), R = k.r * POOL.along;
+        if (d > CLOSE.reach || d > R) continue;
+        const lit = -k.i * (1 - (d / R) ** 2) ** 2; // (smallest first, as distances were)
+        let j = want.length;
+        while (j > 0 && ds[j - 1] > lit) j--;
+        want.splice(j, 0, i);
+        ds.splice(j, 0, lit);
+        if (want.length > CLOSE.count) { want.pop(); ds.pop(); }
+      }
+    }
+    for (const s of this.slots) {
+      if (s.lamp < 0) continue;
+      s.weight = want.includes(s.lamp) ? Math.min(1, s.weight + dt / CLOSE.fade) : s.weight - dt / CLOSE.fade;
+      if (s.weight <= 0) { s.lamp = -1; s.weight = 0; }
+    }
+    for (const i of want) {
+      if (this.slots.some((s) => s.lamp === i)) continue;
+      const free = this.slots.find((s) => s.lamp < 0);
+      if (free) { free.lamp = i; free.weight = 0; }
+    }
+  }
+
+  // A slot's lamp, as its pool was added (the same numbers: the light lampLight takes off
+  // where the shadows fall is that pool's) and its shadow camera at its head, aimed at the
+  // circle the shadows are real in (CLOSE_ROI), wide enough for all of it up to a person's
+  // height and a little over.
+  private aim(s: number, cx: number, cy: number, z: number, dx: number, dy: number, len: number, wid: number, c: THREE.Color, i: number, head: number) {
+    const S = CLOSE_SLOTS[s], slot = this.slots[s], cam = slot.cam;
+    S.pool.value.set(cx, -cy, len, wid);
+    S.dir.value.set(dx, -dy, Math.sqrt(len * wid) / (head * POOL.height), slot.weight);
+    S.colour.value.set(c.r * i, c.g * i, c.b * i, 0);
+    const [sx, sy] = this.roiAt, gz = this.height(sx, sy), eye = this.aimFrom.set(cx, z + head, -cy);
+    const look = this.aimLook.set(sx, gz, -sy).sub(eye).normalize();
+    let widest = 0;
+    for (let k = 0; k < 8; k++) {
+      const a = (k * Math.PI) / 4;
+      for (const up of [0, 2.2]) {
+        const p = this.aimP.set(sx + Math.cos(a) * CLOSE.roi, gz + up, -(sy + Math.sin(a) * CLOSE.roi)).sub(eye).normalize();
+        widest = Math.max(widest, Math.acos(Math.min(1, p.dot(look))));
+      }
+    }
+    cam.fov = Math.min(150, 2 * THREE.MathUtils.radToDeg(widest) * 1.04);
+    cam.near = 0.2;
+    cam.far = eye.distanceTo(this.aimP.set(sx, gz, -sy)) + CLOSE.roi + 4;
+    cam.position.copy(eye);
+    if (Math.abs(look.y) > 0.7) cam.up.set(0, 0, -1);
+    else cam.up.set(0, 1, 0);
+    cam.lookAt(sx, gz, -sy);
+    cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
+    // (How wide a texel is a metre from the head: for how far a surface is moved towards
+    // the lamp before it is looked up, so it doesn't shade itself.)
+    S.head.value.set(cx, z + head, -cy, (2 * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2))) / CLOSE.size);
+  }
+  private aimFrom = new THREE.Vector3();
+  private aimLook = new THREE.Vector3();
+  private aimP = new THREE.Vector3();
 }

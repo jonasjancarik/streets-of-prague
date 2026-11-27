@@ -21,7 +21,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { clamp } from './network.ts';
 import type { RoadHint } from './roadLevels.ts';
-import { Figures, Anim, SCALE, FIGURE_SIZE } from './figures.ts';
+import { Figures, Anim, SCALE, FIGURE_SIZE, LAMP_CAST_LAYER } from './figures.ts';
 import type { FigureKit, Look } from './figures.ts';
 import type { Point2 } from './map/geo.ts';
 import { posts } from './posts.ts';
@@ -2824,6 +2824,7 @@ export class CarPool {
     mesh.count = 0;
     mesh.visible = false;
     mesh.castShadow = true;
+    mesh.layers.enable(LAMP_CAST_LAYER);
     // And in the shade of the buildings and trees they're in it too.
     mesh.receiveShadow = true;
     mesh.customDepthMaterial = depthMaterial;

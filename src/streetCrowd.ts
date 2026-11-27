@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { fetchBinary } from './terrain.ts';
 import { send } from './gpu.ts';
-import { SCALE, type Anim } from './figures.ts';
+import { SCALE, LAMP_CAST_LAYER, type Anim } from './figures.ts';
 import { lampLit } from './lamps.ts';
 import { AVATARS } from './rocketboxClips.ts';
 import { STREET_QUALITY } from './streetQuality.ts';
@@ -174,6 +174,7 @@ export class StreetCrowd {
         if (dye) { mesh.userData.dye = material.userData.dye; mesh.userData.dyeCell = material.userData.dyeCell; }
         mesh.userData.sharedMatrices = true;
         mesh.castShadow = mesh.receiveShadow = true;
+        mesh.layers.enable(LAMP_CAST_LAYER);
         mesh.customDepthMaterial = this.depth;
         mesh.frustumCulled = false; // accepted around the eye; individual groups can cross tiles
         mesh.count = 1; // (for the compile)

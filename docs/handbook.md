@@ -48,6 +48,11 @@ Scenario runs restore the previous player damage setting when they finish, inclu
 Screenshots go to `$TMPDIR/scene`. The same scenarios run in the developer panel
 ("Run and watch" plays one in real time), and "Copy this situation" there copies where
 you are, the time, weather, money, stars, car and camera as the start of a new scenario.
+Its first line links to the same situation in the game (`?go&spot=…`, on the page it was
+copied from; see the URL options under [Playing](#playing)), and its last says what the
+picture was drawn with: the graphics level (Auto's level at the time, or Custom's settings
+where they differ from Ultra's, as kept in `localStorage.graphicsCustom`), the
+reflections, the renderer and the window.
 
 #### Scenes in a busy checkout
 
@@ -179,7 +184,7 @@ only starts changing by itself once the game is under way. A game begun with it 
 weather as it changes, until you pick one yourself ([docs/live-weather.md](live-weather.md),
 which also covers ČHMÚ's open data as a source through the Worker). <kbd>P</kbd> steps through the weather.
 `?osm` shows OSM footprints instead of IPR's 3D buildings, `?dev` opens the
-developer panel, `?fps` starts in first person (the panel's First person box), `?tps` in third person (the Third person box: on foot, from a few metres behind you; driving, the same chase camera as first person, a little higher behind buses and lorries; riding or driving a tram or bus, the same chase camera, over a tram's roof from high above its middle section, while first person stays in your seat, or in the driver's seat of the front cab when you drive a tram (`cabEye` in `src/trams.ts`), `src/followCamera.ts`), `?headingup` (or the panel's Heading-up camera box) is an experiment: a GPS-style camera that keeps your car in the middle with its nose to the top of the screen and turns the map under it (`src/headingup.ts`, the camera in `src/main.ts`; cars only, the minimap stays north-up), `?dialog` plays a sample conversation, `?menu` shows only the start screen without loading the map (quick to reload while working on the screen, the beta note or the signup form; the note then shows on every press of Start), `?touch` shows the touch controls on a desktop, a new game starts at one of ten places around the city picked at random (`STARTS` in `src/main.ts`), or at a spot picked on the start screen's map (Place → Pick on the map, `src/startmap.ts`: anywhere inside Prague's city limits, from `src/prague.json`, which `pipeline/build_prague_outline.py` writes; the map is OpenFreeMap's vector tiles drawn with MapLibre in the poster's colours, `src/postermap.ts`, the same as the developer panel's map, loaded only when it's opened), and `?start=lon,lat` preselects Place → Location from link on the start screen, and `?money=N` sets how much money you start with (10,000 Kč otherwise). The game is in English and Czech: the start screen has the choice (a button naming the other language, in the line of links under Start; remembered for next time; the browser's language decides the first time), and `?lang=cs|en` sets it. All text is written in English in the code and looked up by that text in `src/cs.ts`, through `t()` in `src/i18n.ts`; a line with no Czech entry shows in English. The Czech is kept gender-neutral towards the player for now (see the note at the top of `src/cs.ts`). Elements in `index.html` marked `data-t` work the same way.
+developer panel, `?fps` starts in first person (the panel's First person box), `?tps` in third person (the Third person box: on foot, from a few metres behind you; driving, the same chase camera as first person, a little higher behind buses and lorries; riding or driving a tram or bus, the same chase camera, over a tram's roof from high above its middle section, while first person stays in your seat, or in the driver's seat of the front cab when you drive a tram (`cabEye` in `src/trams.ts`), `src/followCamera.ts`), `?headingup` (or the panel's Heading-up camera box) is an experiment: a GPS-style camera that keeps your car in the middle with its nose to the top of the screen and turns the map under it (`src/headingup.ts`, the camera in `src/main.ts`; cars only, the minimap stays north-up), `?dialog` plays a sample conversation, `?menu` shows only the start screen without loading the map (quick to reload while working on the screen, the beta note or the signup form; the note then shows on every press of Start), `?touch` shows the touch controls on a desktop, a new game starts at one of ten places around the city picked at random (`STARTS` in `src/main.ts`), or at a spot picked on the start screen's map (Place → Pick on the map, `src/startmap.ts`: anywhere inside Prague's city limits, from `src/prague.json`, which `pipeline/build_prague_outline.py` writes; the map is OpenFreeMap's vector tiles drawn with MapLibre in the poster's colours, `src/postermap.ts`, the same as the developer panel's map, loaded only when it's opened), and `?start=lon,lat` preselects Place → Location from link on the start screen, and `?money=N` sets how much money you start with (10,000 Kč otherwise). A situation's link (the first line of the developer panel's "Copy this situation") also takes `?spot=lat,lon,heading` (the map loads there, as for `?start`, and you stand exactly on it facing that way), `?stars=N`, `?health=N`, `?car=type` or `?car=type,km/h` (into a new car of that type, moving at that speed), `?look=yaw,pitch` (the street view turned from the way you face, in degrees), `?zoom=Z` (from above, at that zoom) and `?camera=lat,lon,height,tilt,heading` (the free camera); they are read once the game has begun (`fromLink` in `src/testkit.ts`), and `?spot` only when it begins where the link said. The game is in English and Czech: the start screen has the choice (a button naming the other language, in the line of links under Start; remembered for next time; the browser's language decides the first time), and `?lang=cs|en` sets it. All text is written in English in the code and looked up by that text in `src/cs.ts`, through `t()` in `src/i18n.ts`; a line with no Czech entry shows in English. The Czech is kept gender-neutral towards the player for now (see the note at the top of `src/cs.ts`). Elements in `index.html` marked `data-t` work the same way.
 HTML hints use `tHtml()` to keep key formatting while escaping names inserted from
 map and transit data; text content uses `t()`. `node scripts/check-display-text.mjs`
 checks transit hints, developer search results and scenario reports in both languages.
@@ -261,7 +266,8 @@ they intersect a single deck.
 For matched terrain comparisons, `?camera=lat,lon,altitude,height,tilt,heading`
 opens the free camera at a fixed pose. Altitude is the target elevation in metres
 above sea level. Height is the camera's rise above that target, in metres.
-Tilt and heading are in degrees.
+Tilt and heading are in degrees. Without the altitude (five numbers, as a situation's link
+gives them) the camera looks at the ground there.
 
 On WebGPU, `?roadraster` previews rasterized asphalt on shared terrain triangles.
 See [the shared asphalt trial](tiny-prague-road-rendering.md#shared-asphalt-trial-6-november-2026)
@@ -279,6 +285,8 @@ Graphics (<kbd>G</kbd> cycles it, remembered in the browser):
 | Drifting mist, mist over the river, raindrops' rings in puddles | On | On | On | On | Off |
 | Shadows in lamplight | Cars, people, trams, posts | Cars | Soft, cars | Soft, cars | Off |
 | Lamps' light map | 2048² | 1024² | 1024² | 1024² | 1024² |
+| Lamps' sharp map round you, first and third person (40 m) | 1024² | 512² | Off | Off | Off |
+| Shadows from the three lamps lighting you most, as the sun's, first and third person (WebGPU) | 2048² each | Off | Off | Off | Off |
 | Cones of light in the air, glints on cars and wet ground (WebGPU) | On | On | Off | Off | Off |
 | Bloom round lights and glints, darker corners (WebGPU) | On | On | Off | Off | Off |
 | Motion blur when driving, from the street (WebGPU) | On | On | Off | Off | Off |
@@ -1345,6 +1353,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   triangulated from OSM and coloured by world-space GLSL patterns (`src/shading.ts`,
   `src/surface.ts`): asphalt, granite setts, slabs, grass,
   water. Rails, zebras, lane markings and parking-bay outlines are thin strips on top.
+  The paint is worn (the `paint` pattern, `pPaint` in `src/shading.ts` and `src/webgpu.ts`):
+  dulled and uneven, worn through in patches to the grey of the road, flaking in clusters
+  and specked with grit up close, and under the street's grime; from above it still reads.
   The general pavement is asphalt grey; slab squares are lighter, and park paths stay
   warm. Squares use their own OSM `surface` tag where one exists. Otherwise, a clear
   majority of mapped pedestrian and service ways crossing the square can supply its
@@ -1353,9 +1364,6 @@ record the measurements, merge decisions and pending landmark asset activation.
   the map's north (`src/laying.ts`): each joined piece of the surface takes one direction from
   its outline (its long sides weigh most; a square grid fits both arms of an L round a block
   corner), leaving out where the tile's edge cut it. Where pieces meet at an angle their
-  The paint is worn (the `paint` pattern, `pPaint` in `src/shading.ts` and `src/webgpu.ts`):
-  dulled and uneven, worn through in patches to the grey of the road, flaking in clusters
-  and specked with grit up close, and under the street's grime; from above it still reads.
   joints meet at a seam. A surface merged across a junction of streets at other than right
   angles takes a direction between theirs. `node scripts/check-laying.mjs` checks it. Walking
   routes add no ribbon over a square of the same material; cobbled
@@ -1621,7 +1629,31 @@ record the measurements, merge decisions and pending landmark asset activation.
   with only the shadows that climb (those of lights lower than the car's roof, the
   headlights), and what stands more than about 3 m above the lit ground (a tree's crown
   over a parked car, the wall behind a van in someone's headlights) takes its light
-  from that copy instead. On High and Ultra the headlights' cones in the air stop at
+  from that copy instead. What stands in the light is worked out in the pools' shader
+  from a few boxes: a car is its body and a cabin on it, their corners rounded; a person
+  (on Ultra) a body round at the front and back with a head on it, standing on the
+  ground; a bicycle or motorbike a thin frame that keeps half the light off, with its
+  rider sitting on it; vans, buses, trams and posts stay boxes (`CAR_SHAPED` and
+  `PERSON_SHAPED` in `src/lamps.ts`). Until 27 November 2026 people and bikes were
+  whole boxes too, and someone standing by a lamp cast a crate's shadow in third
+  person. The map spreads its texels over the whole view, 16 cm each from the street on
+  Ultra, and up close they showed: a shadow's edge was a staircase of big squares. So in
+  first and third person on High and Ultra the ground's lights are drawn once more into
+  a small map, 40 m across from 8 m behind you to 32 m ahead (`LAMP_MAP_NEAR`, `NEAR`
+  in `src/lamps.ts`), half as many texels across as the first, 4 cm each on Ultra.
+  Materials read it there and fade to the first map over its outer tenth. On Ultra, on WebGPU,
+  the three lamps that light the spot 6 m ahead of you most cast real shadows within 8 m of
+  it, as the sun does (`CLOSE` in `src/lamps.ts`, `src/webgpu/lampShadows.ts`): each has a
+  depth map 2048 texels across, about 1 cm a texel there, seen from its head, of the people,
+  avatars, cars and two-wheelers (on `LAMP_CAST_LAYER`, `src/figures.ts`), each in its pose of
+  the moment. Within that circle the light their boxes kept off is given back (their pools
+  drawn once more by themselves into the right half of the near map) and the light their
+  real shadows keep off is taken away, pixel by pixel, so the shadows have legs and arms and
+  fall on the cars and the people too. Towards the circle's edge the boxes' shadows come
+  back; a lamp fades in or out of the three over half a second. The maps are drawn every
+  24 ms, as the sun's is: on Újezd at night the three passes took about 3 ms of the main
+  thread each time, so about 1.5 ms a frame at 60 fps. A lit material can read at most 16
+  textures on WebGPU, so the near map and the kept light share one. On High and Ultra the headlights' cones in the air stop at
   the first car in their way. Helicopter searchlights use a separate soft volume,
   sampled through the air so the beam remains visible from inside it in first and
   third person. Their daytime ground glow fades smoothly at the edges.
@@ -2603,6 +2635,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   and a car that finds another police car already stopped just ahead waits behind
   it. What the police see
   is checked with rays over the collision grid; the helicopter needs no line of sight.
+  Officers on foot go straight where nothing's in the way; otherwise an A* search over
+  0.7 m squares of the collision grid, within 30 m round the straight line, finds them a
+  way round (`Police.footway`, about a millisecond, up to 10 ms over 100 m), redone when
+  where they're going moves 3 m or every 1.5 s, and they head for the furthest point of
+  it they can walk straight to.
   Shots are decided when they're fired (likelier to hit close up, with more stars and
   against someone standing still) and drawn as a streak flying to where the bullet went.
 - **Parking** follows TSK Praha's paid-parking data: each street section gets spaces ×
@@ -2615,11 +2652,6 @@ record the measurements, merge decisions and pending landmark asset activation.
   (footprint × storeys) of flats and tenements, terraced and mid-rise houses, family
   houses and places of work, taken from the tile and its eight neighbours. Flats fill
   the street (about 90 % day and night), family houses keep their cars on the plot
-  Officers on foot go straight where nothing's in the way; otherwise an A* search over
-  0.7 m squares of the collision grid, within 30 m round the straight line, finds them a
-  way round (`Police.footway`, about a millisecond, up to 10 ms over 100 m), redone when
-  where they're going moves 3 m or every 1.5 s, and they head for the furthest point of
-  it they can walk straight to.
   (about 30 %, so 15–25 % on a sparse villa street), offices, shops, halls and
   factories fill by day and mostly empty at night (70 % and 30 %), and where little is
   built the share falls towards nothing; more building round a spot raises it (floor

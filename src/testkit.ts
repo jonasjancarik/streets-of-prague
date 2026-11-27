@@ -11,7 +11,7 @@ import { Polyline, segDist } from './network.ts';
 import { stickOnly } from './touch.ts';
 import { ownBeacon } from './beacons.ts';
 import type { DriveEdge, DriveGraph } from './network.ts';
-import type { Wallet } from './money.ts';
+import { START_MONEY, type Wallet } from './money.ts';
 import type { Police } from './police.ts';
 import type { Health } from './guns.ts';
 import type { Clock } from './clock.ts';
@@ -95,7 +95,8 @@ interface Game {
   view: (zoom: number) => void;
   // How the picture is made: the ordinary camera's zoom, the graphics setting in use, the
   // reflections setting and the renderer (for "Copy this situation").
-  look: () => { zoom: number; tier: string; reflections: string; gpu: boolean };
+  // (`graphics`: Graphics.describe(); `ratio`: the pixel ratio the game draws at.)
+  look: () => { zoom: number; tier: string; graphics: string; ratio: number; reflections: string; gpu: boolean };
   loaded: (x: number, y: number) => Promise<void>;
   grid: { at: (x: number, y: number) => number; view?: (who: Car) => { at: (x: number, y: number) => number } };
   steps: (x: number, y: number, r: number) => { edges: StepEdge[]; crossings: { x: number; y: number; dx: number; dy: number; drop: number; hw: string }[] };
@@ -1278,12 +1279,14 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     },
 
     // Where you are now as the start of a scenario: paste it into a conversation to
-    // show the spot and the situation.
+    // show the spot and the situation. Its first line links to the same situation in the
+    // game (link() below).
     snapshot() {
       const p = kit.probe(), c = g.car(), cam = kit.cam, look = g.look();
       const [clon, clat] = cam ? g.toLonLat(cam.x, cam.y) : [0, 0];
+      const ratio = Math.abs(look.ratio - devicePixelRatio) > 0.01 ? `, drawn at ${round(look.ratio, 2)}x` : '';
       return [
-        `// ${p.street ?? 'here'} · https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lon}`,
+        `// ${p.street ?? 'here'} · ${kit.link()}`,
         `await t.go([${p.lat}, ${p.lon}], { heading: ${p.heading} });`,
         `t.time('${p.time}');`,
         `t.weather('${p.weather}');`,
@@ -1295,9 +1298,57 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
         ...(!cam && kit.eyes ? [`t.eyes = { yaw: ${round(kit.eyes.yaw)}, pitch: ${round(kit.eyes.pitch)}${kit.eyes.third ? ', third: true' : ''} };`] : []),
         ...(!cam && !kit.eyes && Math.abs(look.zoom - 1) > 0.01 ? [`t.view(${round(look.zoom, 2)});`] : []),
         // (What the picture depends on that a scenario can't set: replay it with
-        // scene.mjs --size and --graphics, and --extra for the reflections.)
-        `// ${look.tier} graphics, reflections ${look.reflections}, ${look.gpu ? 'WebGPU' : 'WebGL'}, window ${innerWidth}x${innerHeight} at ${round(devicePixelRatio, 2)}x`,
+        // scene.mjs --size and --graphics, and --extra for the reflections; Custom's own
+        // settings go in localStorage.graphicsCustom.)
+        `// ${look.graphics}, reflections ${look.reflections}, ${look.gpu ? 'WebGPU' : 'WebGL'}, window ${innerWidth}x${innerHeight} at ${round(devicePixelRatio, 2)}x${ratio}`,
       ].join('\n');
+    },
+
+    // The same situation as a link that opens the game in it, with no start screen (?go):
+    // where you are and which way you face, the time, weather, date, money, stars, health,
+    // the car and the view, which the game's start and fromLink() below read. The graphics
+    // stay the viewer's own; the map and the renderer are this page's.
+    link() {
+      const p = kit.probe(), c = g.car(), cam = kit.cam, look = g.look(), here = new URLSearchParams(location.search);
+      const q = ['area', 'renderer', 'gl2', 'countryside'].filter((k) => here.has(k)).map((k) => (here.get(k) ? `${k}=${encodeURIComponent(here.get(k)!)}` : k));
+      q.push('go', `spot=${p.lat},${p.lon},${p.heading}`, `time=${p.time}`, `weather=${p.weather}`, `date=${p.date}`);
+      if (p.money !== START_MONEY) q.push(`money=${p.money}`);
+      if (p.stars) q.push(`stars=${p.stars}`);
+      if (p.health < 100) q.push(`health=${p.health}`);
+      if (c) q.push(`car=${c.type}${Math.abs(c.speed * 3.6) >= 1 ? `,${Math.round(c.speed * 3.6)}` : ''}`);
+      if (cam) {
+        const [lon, lat] = g.toLonLat(cam.x, cam.y);
+        q.push(`camera=${round(lat, 5)},${round(lon, 5)},${Math.round(cam.height)},${Math.round(cam.tilt)},${Math.round(cam.heading)}`);
+      } else if (kit.eyes) {
+        q.push(kit.eyes.third ? 'tps' : 'fps');
+        if (kit.eyes.yaw || kit.eyes.pitch) q.push(`look=${round(kit.eyes.yaw)},${round(kit.eyes.pitch)}`);
+      } else q.push(`zoom=${round(look.zoom, 2)}`);
+      return `${location.origin}${location.pathname}?${q.join('&')}`;
+    },
+
+    // A link's situation (link() above) once the game has begun: exactly on the spot, the
+    // car, stars, health and the view. (?camera, the free camera, is main.ts's.) `here`: the
+    // game began where the link said, not at a place picked instead on the start screen or
+    // in a saved game, so the spot applies.
+    async fromLink(params: URLSearchParams, here = true) {
+      const list = (k: string) => {
+        const v = params.get(k)?.split(',').map(Number) ?? [];
+        return v.every(Number.isFinite) ? v : [];
+      };
+      const [lat, lon, heading] = list('spot');
+      if (here && lat !== undefined && lon !== undefined) await kit.go([lat, lon], { heading });
+      const [type, kmh] = params.get('car')?.split(',') ?? [];
+      if (type) {
+        try {
+          await kit.drive(type);
+          if (Number(kmh)) kit.push(Number(kmh));
+        } catch (e) { console.warn(`?car=${type}:`, e); }
+      }
+      kit.set({ stars: list('stars')[0], health: list('health')[0] });
+      const [yaw, pitch] = list('look');
+      if (kit.eyes && yaw !== undefined) Object.assign(kit.eyes, { yaw, pitch: pitch ?? 0 });
+      const [zoom] = list('zoom');
+      if (zoom > 0) { kit.eyes = null; g.view(zoom); }
     },
 
     scenarios: names,

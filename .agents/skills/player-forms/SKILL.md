@@ -164,7 +164,8 @@ game), `src/feedback.ts` asks `main.ts` for a picture of the next frame and take
 canvas can't be read later), scales it to 1280 px wide and encodes a JPEG (about 100 KB).
 Sent along: `screenshot` (a JPEG data URL; the game's canvas only, not the HUD) and
 `scenario`, the snapshot as a scenario that replays the place, time, weather, season,
-money, stars, health, car and camera (paste it into `scripts/scene.mjs eval`). Traffic
+money, stars, health, car and camera (paste it into `scripts/scene.mjs eval`, or open the
+link on its first line, which starts the game in the same situation). Traffic
 and pedestrians are random and can't be replayed. The Worker keeps the JPEG as
 `feedback-shots/<date>/<time>-<id>.jpg` (outside `feedback/`, so the viewer's listing
 ignores it), puts its key in the message's JSON as `screenshot`, and mentions the

@@ -523,4 +523,15 @@ export class Graphics {
     const name = (k: string) => t(k[0].toUpperCase() + k.slice(1));
     return this.choice === 'auto' ? t('Graphics: Auto ({tier} now)', { tier: name(this.tier).toLowerCase() }) : t('Graphics: {name}', { name: name(this.choice) });
   }
+
+  // What the picture is drawn with, for the developer panel's "Copy this situation"
+  // (testkit.ts): the level, the one Auto is on now, or Custom's settings where they
+  // aren't Ultra's (as they are kept in 'graphicsCustom').
+  describe() {
+    if (this.choice === 'auto') return `auto graphics (${this.tier} now)`;
+    if (this.choice !== 'custom') return `${this.choice} graphics`;
+    const ultra: Record<string, unknown> = customFrom('ultra');
+    const own = Object.entries(this.settings()).filter(([k, v]) => ultra[k] !== v).map(([k, v]) => `${k} ${v}`);
+    return own.length ? `custom graphics (Ultra but ${own.join(', ')})` : 'custom graphics (as Ultra)';
+  }
 }

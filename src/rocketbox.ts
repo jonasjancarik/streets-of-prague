@@ -7,7 +7,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { LIFE_SIZE } from './figures.ts';
+import { LIFE_SIZE, LAMP_CAST_LAYER } from './figures.ts';
 import { MOST_AVATARS, STREET_QUALITY } from './streetQuality.ts';
 import { cutAway } from './shading.ts';
 import { fireGear } from './responderGear.ts';
@@ -237,6 +237,7 @@ export class LifeSize {
           o.morphTargetInfluences = undefined;
           o.morphTargetDictionary = undefined;
           o.castShadow = o.receiveShadow = true;
+          o.layers.enable(LAMP_CAST_LAYER);
           // (Lit by the street lamps at night, like the rest of the street.)
           for (const m of Array.isArray(o.material) ? o.material : [o.material]) cutAway(m, 'rocketbox');
           o.frustumCulled = false; // (their bounds are of the bind pose)

@@ -39,6 +39,10 @@ const NOWHERE = new THREE.Matrix4().makeScale(0, 0, 0);
 // ?peopleshadows=full|simple|none overrides the graphics setting for one visit.
 export type PeopleShadows = 'full' | 'simple' | 'none';
 export const CAST_LAYER = 5;
+// What casts shadows from the street lamps nearest you (lamps.ts, CLOSE): the people and
+// the cars, two-wheelers and avatars, on this layer as well as their own; the lamps'
+// shadow cameras see only it, not the buildings, trees and ground.
+export const LAMP_CAST_LAYER = 7;
 const askedShadows = new URLSearchParams(globalThis.location?.search ?? '').get('peopleshadows') as PeopleShadows | null;
 export const PEOPLE_SHADOWS = {
   // What the graphics setting wants.
@@ -332,6 +336,7 @@ export class Figures {
     this.mesh.userData.sharedMatrices = true; // (see configureRenderer in webgpu.ts)
     this.mesh.customDepthMaterial = kit.depthMaterial;
     this.mesh.castShadow = this.mesh.receiveShadow = true;
+    this.mesh.layers.enable(LAMP_CAST_LAYER);
     this.mesh.frustumCulled = false;
     this.mesh.count = 0;
     this.capacity = capacity;

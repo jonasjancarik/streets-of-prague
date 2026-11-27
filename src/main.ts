@@ -63,7 +63,7 @@ import { SPRITE_LIGHT, SPRITE_PIXELS } from './particles.ts';
 import { Debris } from './debris.ts';
 import { MIST_MODE } from './localmist.ts';
 import type { Kind } from './weather.ts';
-import { Lamps, type Flashing, floodlightsAt } from './lamps.ts';
+import { Lamps, type Flashing, floodlightsAt, PERSON_HALF } from './lamps.ts';
 import { bridgeLamp } from './statues.ts';
 import { Signals } from './signals.ts';
 import { Skids } from './skids.ts';
@@ -250,8 +250,13 @@ async function main() {
   const saved = params.has('go') || anywhere ? null : readSave('auto', AREA);
   const startParts = params.get('start')?.split(',').map((part) => part.trim()) ?? [];
   const [startLon, startLat] = startParts.map(Number);
+  // ?spot=lat,lon,heading (a situation's link, the developer panel's "Copy this situation"):
+  // the map loads there as for ?start, and once the game has begun the testkit puts you
+  // exactly on it (fromLink, testkit.ts).
+  const [spotLat, spotLon] = params.get('spot')?.split(',').map(Number) ?? [];
+  const spot: [number, number] | null = Math.abs(spotLat) <= 90 && Math.abs(spotLon) <= 180 ? [spotLon, spotLat] : null;
   const linkedStart: [number, number] | null = startParts.length === 2 && startParts.every(Boolean)
-    && Math.abs(startLon) <= 180 && Math.abs(startLat) <= 90 ? [startLon, startLat] : null;
+    && Math.abs(startLon) <= 180 && Math.abs(startLat) <= 90 ? [startLon, startLat] : spot;
   const dateLinked = parseDay(params.get('date')) !== null || parseDay(params.get('season')) !== null;
   let startSources: telemetry.StartSources = {
     weatherSource: weather.fixed ? 'link' : 'default',
@@ -652,15 +657,17 @@ async function main() {
   };
   const terraceView = { x: 0, y: 0, radius: 0, day: 0, loaded: (x: number, y: number) => !!world.tileAt(x, y), open: birdsView.open, ground: birdsView.ground };
   // The emergency vehicles with their lights going, and what the lamps need each frame
-  // besides the cars (the people in view stand in their light too).
+  // besides the cars (the people in view stand in their light too, with a person's shape:
+  // a negative half width, PERSON_SHAPED in lamps.ts).
   const flashing: Flashing<Car>[] = [];
+  const lookAhead = new THREE.Vector3();
   const lightOpt: Parameters<Lamps['update']>[8] & object = {
     flashing, eye: camera.position,
     blocks: (put) => {
       const person = (p: { x: number; y: number; h: number; gz?: number; state?: string; down?: number }) => {
         if (offscreen(p.x, p.y)) return;
         const lying = p.state === 'down' || (p.down ?? 0) > 0;
-        put(p.x, p.y, p.h, lying ? 0.8 : 0.22, 0.25, p.gz ?? ground(p.x, p.y), lying ? 0.3 : 1.75);
+        put(p.x, p.y, p.h, lying ? 0.8 : PERSON_HALF[0], lying ? -0.25 : -PERSON_HALF[1], p.gz ?? ground(p.x, p.y), lying ? 0.3 : 1.75);
       };
       crowd.people.forEach(person);
       police.officers.forEach(person);
@@ -3044,9 +3051,13 @@ async function main() {
   streetWarmAt = performance.now() + 3000;
   loadEnd();
   let resumed = false;
+  // Whether the game begins where a link put it (?start, ?spot): not when the start screen
+  // picked another place or the saved game.
+  let atLink = !start;
   if (start) {
     status('');
     const choice = await start.ready();
+    atLink = !choice.resume && !!linkedStart && choice.at === linkedStart;
     // After the button: moving to the start spot (when it isn't where the map loaded) and
     // the people in a street view, with their own progress on the button.
     const street = !vr && (choice.view === 'first' || choice.view === 'third');
@@ -3706,8 +3717,16 @@ async function main() {
       const tan = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
       lightOpt.box = free || eyes ? undefined : [height * tan * camera.aspect + 6, height * tan + 6];
       lightOpt.streetView = eyeStreet;
+      // In first and third person, the lamps' sharp map lies ahead of you (LAMP_MAP_NEAR).
+      if (eyes && !free && !vr?.active) {
+        camera.getWorldDirection(lookAhead);
+        const run = Math.hypot(lookAhead.x, lookAhead.z);
+        lightOpt.ahead = run > 1e-3 ? [lookAhead.x / run, -lookAhead.z / run] : [0, 0];
+      } else lightOpt.ahead = undefined;
       lightOpt.time = time.value;
       police.helis.night = sky.dark;
+      // The dark, mist, rain and snow shorten what the police see (Police.sees).
+      police.dim = Math.min(1, 0.5 * sky.dark + 0.9 * weather.now.mist + 0.3 * Math.max(weather.now.rain, weather.now.snow));
       lightOpt.spots = police.helis.lit;
       lightOpt.wet = weather.now.wet;
       lightOpt.murk = sky.murk;
@@ -3718,8 +3737,6 @@ async function main() {
     signals.street(fromStreet);
     beacons.draw(flashing, carPool, camera, time.value);
     signals.update(camPos.x, -camPos.z, viewRadius() + 10, now);
-      // The dark, mist, rain and snow shorten what the police see (Police.sees).
-      police.dim = Math.min(1, 0.5 * sky.dark + 0.9 * weather.now.mist + 0.3 * Math.max(weather.now.rain, weather.now.snow));
     streaks.update(camera, [lamps.glows, signals.flares, signals.glows], (x, y) => world.heightAt(x, y), viewRadius() + 10, time.value);
     weatherFx.tint.value.copy(sky.tint);
     weatherFx.fog.value.copy(sky.haze);
@@ -4051,7 +4068,7 @@ async function main() {
     loose,
     simulate: (dt, ctl = {}) => simulate(dt, { move: 0, turn: 0, run: false, brake: false, jump: false, aim: null, ...ctl }),
     view: (z) => { zoom = z; height = (inCar ? 120 : 100) * z; },
-    look: () => ({ zoom, tier: graphics.tier, reflections: graphics.reflections, gpu: !!(renderer as unknown as { backend?: { isWebGPUBackend?: boolean } }).backend?.isWebGPUBackend }),
+    look: () => ({ zoom, tier: graphics.tier, graphics: graphics.describe(), ratio: renderer.getPixelRatio(), reflections: graphics.reflections, gpu:!!(renderer as unknown as { backend?: { isWebGPUBackend?: boolean } }).backend?.isWebGPUBackend }),
     loaded: (x, y) => world.loadNow(x, y, 300, testkit?.cam ? Infinity : viewRadius() + world.drawBeyond),
     steps: (x, y, r) => world.stepEdgesNear(x, y, r), ground: (x, y) => world.terrainAt(x, y), levelAt: (x, y, l) => world.levelAt(x, y, l),
     streets: drive, countryside: () => !!world.country?.box, place: () => $('district').textContent || null, taxi,
@@ -4101,12 +4118,17 @@ async function main() {
   // ?fps starts in first person, as the developer panel's First person box does; ?tps in third person.
   testkit.eyes = eyesFor(vr ? 'overhead' : startView); // (VR: from above until the headset goes on)
   dev.attach(testkit);
-  // A fixed target altitude keeps before/after terrain views on the same camera.
+  // A situation from a link: ?spot, ?car, ?stars, ?health, ?look, ?zoom (testkit.ts, fromLink).
+  await testkit.fromLink(params, atLink);
+  // ?camera=lat,lon,altitude,height,tilt,heading: the free camera there. A fixed target
+  // altitude keeps before/after terrain views on the same camera; without it
+  // (lat,lon,height,tilt,heading, a situation's link) it looks at the ground there.
   const shot = params.get('camera')?.split(',').map(Number);
-  if (shot?.length === 6 && shot.every(Number.isFinite)) {
-    const [lat, lon, altitude, height, tilt, heading] = shot;
+  if ((shot?.length === 6 || shot?.length === 5) && shot.every(Number.isFinite)) {
+    const fixed = shot.length === 6;
+    const [lat, lon, altitude, height, tilt, heading] = fixed ? shot : [shot[0], shot[1], 0, ...shot.slice(2)];
     if (inside(lon, lat) && height > 0 && height <= 1500) {
-      await testkit.camera({ at: [lat, lon], targetY: altitude - world.ref, height, tilt, heading, level: true });
+      await testkit.camera(fixed ? { at: [lat, lon], targetY: altitude - world.ref, height, tilt, heading, level: true } : { at: [lat, lon], height, tilt, heading });
     }
   }
 }
