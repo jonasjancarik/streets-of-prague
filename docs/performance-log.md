@@ -2272,3 +2272,14 @@ frame 30.7–31.7 ms, about 460 draws (some 200 in the sun's shadow pass), 3.6 M
   spent: fewer draws only pays where the draws are the expensive kinds (the ground layers,
   one a layer a tile; the people), and those need bigger changes (one ground draw a tile
   with the layer chosen in the shader; fewer life-size people).
+- **The sun's shadow pass, bounded** (A/B, standing on the Old Town Square in third
+  person, 20 s windows taken in turn):
+  - skipped entirely (`shadow.autoUpdate = false`, the last map kept, no shader
+    rebuilt): JavaScript 12.7 → 10.6 ms (15%), and with the CPU slowed 4× 72.2 → 60.0
+    ms (16%). Updating the map every other frame would save about half that, with
+    moving shadows (people, cars) a frame behind them.
+  - only the static casters off (everything under the tiles, the trees, the ironwork,
+    the covered passage; people, crowd, cars and trams still casting): 12.9 → 12.4 ms
+    (3%), 73.1 → 69.5 ms slowed (5%). So caching the static casters' shadow would save
+    at most a fifth of the pass; most of it is the moving casters and the pass itself
+    (going through the scene for the sun's camera). Not worth a custom shadow cache.
