@@ -232,7 +232,7 @@ Graphics (<kbd>G</kbd> cycles it, remembered in the browser):
 | Shadows that soften with distance from what casts them | On | Off | Off | Off | Off |
 | A soft shade under every car | On | On | On | On | Off |
 | A person's shadow from the sun | Their own shape | Their own shape | Their own shape | A plain shape | A plain shape |
-| People about (1200 at most, round the Old Town Square) | As usual | As usual | As usual | As usual | Half |
+| People about (1200 at most, round the Old Town Square) | As usual | As usual | As usual | As usual | Half beyond the first 150 |
 | Cars driving about | As usual | As usual | As usual | Three quarters | Half |
 | Close detailed people, up to | 32 | 24 | 12 | 6 | 2 |
 | Detailed people within | 45 m | 36 m | 22 m | 14 m | 8 m |
@@ -291,8 +291,9 @@ setting under the Graphics row. It starts from the level you were on, and some o
 past Ultra: the screen's full pixel ratio up to 3×, an 8192 sun shadow map (where the GPU
 allows it) and close-up models reaching half as far again. Custom is kept in
 `graphicsCustom`; code that asks for the tier sees Ultra. Custom's "People in the streets"
-and "Moving cars" go from a quarter to double the usual numbers: the crowd scales
-everywhere, quiet streets too, and cars count only those driving about (not buses, parked
+and "Moving cars" go from a quarter to double the usual numbers. The crowd scales only
+the people beyond the first 150 round you, so a quiet street keeps its few and the busy
+places thin out or fill up (where the cost is); cars count only those driving about (not buses, parked
 cars or the police). Their cost is mostly simulation, from above as much as from the
 street: each car about 45 µs a frame, each person about 3.5 µs, on an RTX 5060 Ti machine.
 Every tier draws the sun's shadow map once 24 ms have passed since the last time and

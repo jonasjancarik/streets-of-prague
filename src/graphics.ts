@@ -35,8 +35,8 @@ import { setAnisotropy } from './textureQuality.ts';
 // second's freeze each way, so a computer that can't hold it doesn't go back and forth.
 // On Low and Lowest a person's shadow from the sun is a plain shape, not their own
 // (PEOPLE_SHADOWS in figures.ts: about 1 ms of 25 a frame on a Pixel 5 on a full square).
-// Lowest drops MSAA on WebGPU, roof detail and those looks, and halves the crowd and the
-// cars driving about (Low has three quarters of the cars);
+// Lowest drops MSAA on WebGPU, roof detail and those looks, and halves the crowd (beyond
+// the first 150 round you) and the cars driving about (Low has three quarters of the cars);
 // it also leaves out the drifting mist, the mist over the river and the raindrops' rings
 // in the puddles (the thin haze over the view, the rain and the wet ground stay).
 // The water's waves and reflections (webgpu/water.ts) are a setting of their own: on with
@@ -95,8 +95,8 @@ export const CHOICES: Choice[] = ['auto', 'ultra', 'high', 'medium', 'low', 'low
 // posts cast shadows from every lamp and headlight, 2 only the cars do, 1 a soft darkening
 // round each car, 0 nothing. `lights`: the cones and glints.
 // `shadowBlur`: how far the sun shadow's edge is softened, in shadow-map texels.
-// `crowd`: how many people are about, times the usual (half on Lowest; Custom from a
-// quarter to double). `traffic`: how many cars drive about, times the usual (three quarters
+// `crowd`: how many people are about beyond the first 150 round you, times the usual
+// (half on Lowest; Custom from a quarter to double; main.ts, peopleWanted). `traffic`: how many cars drive about, times the usual (three quarters
 // on Low, half on Lowest; Custom from a quarter to double). Buses, parked cars and the
 // police aren't counted. Standing in third person on the Old Town Square, each car cost
 // about 45 µs of the main thread a frame and each person about 3.5 µs, nearly all of it

@@ -2306,3 +2306,7 @@ frame 30.7–31.7 ms, about 460 draws (some 200 in the sun's shadow pass), 3.6 M
     45 µs a car); so the people are about 4 ms a 1200 (about 3.5 µs each).
   - In the tiers now: Low has three quarters of the cars, Lowest half the cars and half
     the people (on every street now, not only half the cap round the Old Town Square).
+- **The crowd setting leaves the first 150 people round you as they are** and scales only
+  the rest (`CROWD_FLOOR`, main.ts): a quiet street halved to near-empty saved little,
+  as each person costs about 3.5 µs. After 35 s: the Old Town Square 1200 as usual, 675 at
+  half, 2075 and filling at double; Slezská in Vinohrady 241, 195, 332.

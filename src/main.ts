@@ -224,6 +224,7 @@ window.addEventListener('vite:preloadError', () => {
 const BUSES = 3; // of the traffic, on the main roads
 const PEOPLE = 1200; // at most, round the Old Town Square; fewer where it's quieter (src/footfall.ts)
 const MOST_CROWD = 2; // the most graphics.crowd goes to (Custom): the crowd's buffers are sized for it
+const CROWD_FLOOR = 150; // people round you that graphics.crowd leaves as they are (peopleWanted)
 const FEW_PEOPLE = 40; // on the quietest edge of town
 const VILLAGE_BUILT = 0.08; // the share of a village's ground that buildings stand on
 const CROWD = 1; // people a metre of footpath that draws people fully (Footfall.pull)
@@ -895,8 +896,10 @@ async function main() {
   for (let i = Math.round(trafficWanted(clock.t) * graphics.traffic); i > 0; i--) traffic.spawn(lifeSpots(walker.x, walker.y, 25), firstTrafficEdges, null, firstTrafficSampler);
   // How many people are about: CROWD a metre along each footpath around you, times
   // how strongly it draws people, so a busy street adds its own crowd (Karlův most,
-  // Anděl) rather than sharing out a fixed number. At most PEOPLE; all of it times the
-  // graphics' crowd (half on Lowest, up to double on Custom).
+  // Anděl) rather than sharing out a fixed number. At most PEOPLE. The graphics' crowd (half
+  // on Lowest, a quarter to double on Custom) scales only what's beyond CROWD_FLOOR: a
+  // quiet street keeps its few people, who cost little (about 3.5 µs each a frame), and the
+  // busy places, where the cost is, thin out or fill up.
   const peopleWanted = () => {
     let draw = 0;
     for (const e of walkNear(px(), py(), LIFE_RADIUS)) {
@@ -910,7 +913,8 @@ async function main() {
       const tiles = world.around(px(), py(), LIFE_RADIUS);
       few *= clamp(tiles.reduce((sum, k) => sum + (world.builtUp.get(k) ?? 0), 0) / (tiles.length || 1) / VILLAGE_BUILT, 0.1, 1);
     }
-    return Math.round(Math.min(PEOPLE, few + CROWD * draw) * Math.min(graphics.crowd, MOST_CROWD));
+    const usual = Math.min(PEOPLE, few + CROWD * draw);
+    return Math.round(Math.min(usual, CROWD_FLOOR) + Math.max(0, usual - CROWD_FLOOR) * Math.min(graphics.crowd, MOST_CROWD));
   };
   const spawnWork = { peoplePasses: 0, peopleWeights: 0, peoplePicks: 0, peoplePrepareMs: 0 };
   // People who wander too far are moved to just outside the view, so they walk into it.
