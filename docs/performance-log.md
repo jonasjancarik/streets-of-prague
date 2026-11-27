@@ -2186,6 +2186,14 @@ rendering, so the counts, not the frame times, are the evidence), High, Old Town
   backend (`?gl2`), which doesn't flip an ImageBitmap.
 - **The Christmas garlands** called `toNonIndexed()` on each bulb, already non-indexed:
   745 three.js warnings on stepping out on the Old Town Square, about 21 ms. Dropped.
-- **Left:** the first two frames' builds and pipelines (about 570 ms). They're for things
-  already in the scene, so drawing the street-level view once behind the scenes earlier
-  (or compiling its objects) could take them out of the step; not tried.
+- **The street level compiled ahead, from above** (`warmStreetView` in main.ts, once, 3 s
+  after the map is in): what's drawn only from the street switched on
+  (`world.furnitureCamera`), culling off, and `compileAsync` aimed at the target the scene
+  is drawn into (`postTarget`, post.ts). Aimed at the screen instead, its pipelines didn't
+  match the game's (the target's colour space is part of the key), and only the shader
+  builds counted. The first two frames on stepping out 334+184 / 334+200 ms → 234+67 /
+  267+50, slow frames in all 1.49–1.59 s → 1.32–1.33 s; it costs one frame of 50 ms from
+  above. Left on the step: 18 pipelines for what a compile from above doesn't reach (the
+  street trees, the shadow pass, the sky seen from the street, the covered passage and
+  ironwork made on arrival, your avatar). Those would need a street frame rehearsed
+  offscreen.

@@ -41,6 +41,7 @@ const LIFT = 0.25;
 export function makePost(renderer: WebGPURenderer) {
   let pipeline: RenderPipeline | null = null, of: THREE.Scene | null = null, by: THREE.Camera | null = null;
   let glow: N = null;
+  let sceneTarget: THREE.RenderTarget | null = null; // (what the scene is drawn into: post.ts, postTarget)
   // The camera's travel while the shutter is open, as the camera sees it; the player's vehicle
   // there (its reach in w); the picture's width over its height.
   const travel: N = uniform(new Vector3()), player: N = uniform(new Vector4(0, 0, 0, -1)), aspect: N = uniform(1), minSmear: N = uniform(0), reach: N = uniform(REACH);
@@ -55,6 +56,7 @@ export function makePost(renderer: WebGPURenderer) {
     of = scene; by = camera;
     // (The ground's layers are drawn once a pixel with the stencil: surface.ts.)
     const scenePass: N = pass(scene, camera, { stencilBuffer: true } as any);
+    sceneTarget = scenePass.renderTarget;
     let colour: N = scenePass.getTextureNode('output');
     // A trial, off unless asked for (?ao): ambient shading worked out from the picture's
     // depth (three.js's GTAO at half resolution, the ground's depth drawn for it as in first
@@ -155,5 +157,5 @@ export function makePost(renderer: WebGPURenderer) {
       minSmear.value = (.35 / Math.max(1, renderer.domElement.height)) ** 2;
     } else travel.value.set(0, 0, 0);
     pipeline!.render();
-  });
+  }, () => sceneTarget);
 }

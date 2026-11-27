@@ -11,7 +11,7 @@ import { stationAllowed, onRadioPreferencesChange } from './radio-preferences.ts
 import * as THREE from 'three';
 import { renderMirror, renderRiverMirror, RIVER_MIRROR, RIVER_MODEL_LAYER } from './mirror.ts';
 import { renderProbe } from './probe.ts';
-import { OTHERS, POST, drawPost, motionBlurFull, motionBlurOn } from './post.ts';
+import { OTHERS, POST, drawPost, motionBlurFull, motionBlurOn, postTarget } from './post.ts';
 import { setupPhoto } from './photo.ts';
 import { FramePhotos, captureFrame, png, thumbnail } from './frameCapture.ts';
 import { streetSurfaceView } from './streetSurface.ts';
@@ -368,6 +368,32 @@ async function main() {
   // loads: your avatar and their clips at once, the crowd once the map is in (mapIn).
   let mapLoaded = () => {};
   const mapIn = new Promise<void>((done) => { mapLoaded = done; });
+  // Once, from above, a few seconds after the map is in: the street level's shaders compiled
+  // ahead, so stepping into the street doesn't build them all in its first frames (17
+  // shaders and 24 pipelines, frames of 270 and 300 ms on an RTX 5060 Ti). What's drawn
+  // only from the street (world.furnitureCamera) is shown for it, nothing is culled, and
+  // it's for the target the scene is drawn into (post.ts). compileAsync takes its list of
+  // what to draw at once, so all that is put back straight after. Street trees, shadows, the
+  // sky seen from the street and what's only made there still come on the first step.
+  let streetWarmAt = Infinity;
+  const warmStreetView = () => {
+    const dp = (renderer as unknown as { drawingPipeline?: { isCulled: (o: THREE.Object3D, c: THREE.Camera) => boolean } }).drawingPipeline;
+    if (!gpuBackend || !dp) return;
+    const culled = dp.isCulled, was = renderer.getRenderTarget(), x = camera.position.x, z = camera.position.z;
+    let done: Promise<unknown> = Promise.resolve();
+    world.furnitureCamera(true, x, z);
+    dp.isCulled = () => false;
+    try {
+      const into = postTarget();
+      if (into) renderer.setRenderTarget(into as THREE.WebGLRenderTarget); // (a WebGPU one: typed as the legacy renderer's)
+      done = renderer.compileAsync(scene, camera);
+    } finally {
+      dp.isCulled = culled;
+      renderer.setRenderTarget(was);
+      world.furnitureCamera(false, x, z);
+    }
+    done.catch((e) => console.warn('Street view warm-up', e));
+  };
   const streetPeople = (view: PlayerView) => { if (view === 'first' || view === 'third') void lifeSize.preload(mapIn); };
   if (!vr) { streetPeople(start ? start.view() : startView); viewPicked = streetPeople; }
   // Before the game opens in a street view: your avatar in, its shaders compiled. A slow
@@ -2971,6 +2997,7 @@ async function main() {
   }
   const loadMs = performance.now(); // the map is ready; what follows waits for the player
   mapLoaded();
+  streetWarmAt = performance.now() + 3000;
   loadEnd();
   let resumed = false;
   if (start) {
@@ -3601,6 +3628,7 @@ async function main() {
       if (c.mesh.visible) c.body.nearCamera(fromStreet ? near.distanceToSquared(c.mesh.position) : Infinity);
     }
     world.furnitureCamera(fromStreet, camera.position.x, camera.position.z);
+    if (!fromStreet && performance.now() > streetWarmAt) { streetWarmAt = Infinity; warmStreetView(); }
     castleHorizon.update(eyeStreet && !vr?.active,camera,sky);
     world.passageCamera(fromStreet, camera.position.x, -camera.position.z);
     ironwork.update(fromStreet, near, weather.now.wet);
