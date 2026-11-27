@@ -4,7 +4,7 @@
 // pavement, a few to a post in order with each plate under its sign, and the geometry.
 // The pipeline's inference has its own tests (pipeline/test_traffic_signs.py).
 import assert from 'node:assert/strict';
-import { signPosts, signGeometry, signStyle, atlasCols, loadTrafficSigns, KERB_SET, BOTTOM } from '../src/map/signs.ts';
+import { signPosts, signGeometry, signStyle, signIndex, atlasCols, loadTrafficSigns, KERB_SET, BOTTOM, SPARE_CELLS } from '../src/map/signs.ts';
 
 // A street along y=0, its carriageway |y| < 4; houses from y = -7 down, and from y = 4.2 up
 // beyond x = 50 (no pavement there on the north side).
@@ -60,7 +60,7 @@ const south = -Math.PI / 2;
   const file = { signs: ['crossing', 'give way'], points: [[1, 2, 1, 90], [3, 4, 7, 0]], turns: [['55', 180, 'left|through']] };
   const ok = await loadTrafficSigns('x', 1000, async () => new Response(JSON.stringify(file)));
   assert.deepEqual(Array.from(ok.points), [1, 1, 2, Math.fround(Math.PI / 2)], 'an unknown sign index is left out');
-  assert.equal(ok.cols, 2);
+  assert.equal(ok.cols, atlasCols(2 + SPARE_CELLS), 'room for the signs the game adds');
   assert.deepEqual(ok.turns.get('55'), [[Math.PI, 'left|through']]);
   assert.equal(await loadTrafficSigns('x', 1000, async () => new Response('', { status: 404 })), null);
   const late = await loadTrafficSigns('x', 50, (_, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted')))));
@@ -119,4 +119,68 @@ const south = -Math.PI / 2;
   for (let i = 0; i < g.position.length; i += 3) if (Math.abs(g.position[i + 2]) < 5.4 && g.position[i + 1] > 1) low = Math.min(low, g.position[i + 1]);
   assert(low > GANTRY_CLEAR - .1, 'clear of the traffic: ' + low);
   console.log(`Gantries: over the lanes, ${g.position.length / 9} triangles`);
+}
+
+{
+  // Paid parking: IP 12 and its plate join the names in the spare cells, each zone's area once;
+  // a sign at the start of each section along the kerb on the traffic's right, then every 70 m.
+  // (parking.ts brings in the game's modules, which need TypeScript's own transpiling.)
+  const { registerHooks } = await import('node:module'), { readFileSync } = await import('node:fs'), ts = (await import('typescript')).default;
+  registerHooks({ load(url, context, next) {
+    if (url.endsWith('.json') && url.includes('/src/')) return { format: 'json', shortCircuit: true, source: readFileSync(new URL(url), 'utf8') };
+    if (!url.endsWith('.ts')) return next(url, context);
+    const source = readFileSync(new URL(url), 'utf8').replaceAll('import.meta.env', '({})');
+    return { format: 'module', shortCircuit: true, source: ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText };
+  } });
+  globalThis.location ??= { search: '' }; globalThis.self ??= globalThis;
+  const { parkingArea, parkingSigns, Zones } = await import('../src/parking.ts?game');
+  assert.equal(parkingArea('P5-1403'), '51'); assert.equal(parkingArea('P1-0102'), '1'); assert.equal(parkingArea('X'), null);
+  const signs = { names: ['give way'], cols: atlasCols(1 + SPARE_CELLS) };
+  const index = name => signIndex(signs, name);
+  assert.equal(index('give way'), 0); assert.equal(index('nonsense'), -1, 'not a sign');
+  const square = (x0, x1) => [[[x0, -10], [x1, -10], [x1, 10], [x0, 10], [x0, -10]]];
+  const zones = new Zones({ sections: [
+    { code: 'P5-1403', category: 'MIX', spaces: 20, inside: 1, polys: [square(-1, 150)] },
+    { code: 'P5-1404', category: 'VIS', spaces: 5, inside: 1, polys: [square(150, 300)] },
+  ] });
+  const pts = [[0, 0], [300, 0]];
+  const edge = { pts, path: { length: 300 }, oneway: false, hw: 'residential', width: 12, laneOffset: 1.5, kerb: [6, 6] };
+  const out = parkingSigns([edge], zones, [-50, -50, 400, 50], [], index);
+  const placed = [];
+  for (let i = 0; i < out.length; i += 4) placed.push([signs.names[out[i]], Math.round(out[i + 1]), Math.round(out[i + 2])]);
+  const ip12 = placed.filter(p => !p[0].includes('plate'));
+  assert(ip12.every(p => p[2] < 0), 'on the right of traffic going east: ' + JSON.stringify(ip12));
+  assert.deepEqual(ip12.map(p => p[0]), ['parking MIX', 'parking MIX', 'parking VIS', 'parking VIS'], JSON.stringify(placed));
+  assert.deepEqual(ip12.map(p => p[1]), [10, 80, 150, 220], 'section starts, then every 70 m');
+  assert(placed.some(p => p[0] === 'parking plate MIX 51') && placed.some(p => p[0] === 'parking plate VIS'), 'their plates');
+  assert(signs.names.length === 5 && signs.names.every(n => signStyle(n)), signs.names.join());
+  const g = signPosts(new Float32Array(out), signs.names, (x, y) => Math.abs(y) < 4, () => false, () => 0);
+  assert(g.length === 4 && g.every(p => p.signs.length === 2 && signStyle(signs.names[p.signs[1]]).rank === 9), 'each sign on a post, its plate under it');
+  console.log(`Paid parking: ${ip12.length} signs with their plates`);
+}
+
+{
+  // A wall sign moves onto the house front as drawn: here 0.5 m behind the footprint it was
+  // hung on, then (drawn again) it stays put.
+  globalThis.document ??= { createElement: () => ({ getContext: () => null }) };
+  const THREE = await import('three');
+  const { mountOnWalls } = await import('../src/signs.ts?game');
+  const north = Math.PI / 2; // its local x (towards the wall) pointing north
+  const posts = signPosts(new Float32Array(at('one way', 60, 3, north)), names, onRoad, inside, height);
+  assert(posts.length === 1 && posts[0].wall, 'on the wall');
+  const g = signGeometry(posts, names, atlasCols(names.length));
+  assert.equal(g.mounts.length, 6, 'one mount');
+  assert(Math.abs(g.mounts[1] - 4.2) < .02, 'at the footprint within a centimetre: ' + g.mounts[1]);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(g.position, 3));
+  const mesh = new THREE.Mesh(geometry); mesh.userData.mounts = g.mounts;
+  // The drawn wall: y = 4.7 in the map (z = -4.7 in the scene), facing south (+z), 0–20 m up.
+  const quad = [[40, 0], [80, 0], [80, 20], [40, 0], [80, 20], [40, 20]].flatMap(([x, h]) => [x, h, -4.7]);
+  const wall = { position: new Float32Array(quad), normal: new Float32Array(quad.length).map((_, i) => i % 3 === 2 ? 1 : 0) };
+  const before = Float32Array.from(g.position);
+  assert.equal(mountOnWalls(mesh, [wall]), 1);
+  const shift = (i) => -(geometry.attributes.position.array[i * 3 + 2] - before[i * 3 + 2]);
+  assert(Math.abs(shift(0) - .5) < .02, 'moved onto the drawn wall: ' + shift(0));
+  assert.equal(mountOnWalls(mesh, [wall]), 0, 'and only once');
+  console.log('Wall signs: on the wall as drawn');
 }

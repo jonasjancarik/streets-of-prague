@@ -144,6 +144,55 @@ export function kerbPaint(edges: DriveEdge[], zones: Zones, box: Bounds, mapped:
   return out;
 }
 
+// A paid-parking section's area as its signs give it: TSK's code is the district, then
+// the area's digit and the section's (P5-1403 is in area 51). Districts with one area
+// number theirs 0 (and 9 for a few odd sections), and their signs give the district alone.
+export function parkingArea(code: string) {
+  const m = code.match(/^P(\d+)-(\d)/);
+  if (!m) return null;
+  return m[2] === '0' || m[2] === '9' ? m[1] : m[1] + m[2];
+}
+
+// The paid zones' signs along the kerbside rows (as kerbPaint walks them): where a
+// section starts on a street, for the traffic on its right, and again every
+// PARKING_SIGN_EVERY along it. Each is IP 12 with E 13 under it, the plate's band in the
+// zone's colour: blue for residents (RES), purple for mixed (MIX), orange for visitors
+// (VIS). `index` gives a sign name's index (or -1 for none). As traffic-signs.json's
+// points: [sign, x, y, angle], the angle the traffic's right.
+const PARKING_SIGN_EVERY = 70, PARKING_SIGN_LEAST = 12;
+export function parkingSigns(edges: DriveEdge[], zones: Zones, box: Bounds, crossings: Point2[][], index: (name: string) => number) {
+  const out: number[] = [];
+  if (!zones.sections.length) return out;
+  const nearCrossing = (x: number, y: number) => crossings.some((c) => c.some((p, i) => i > 0 && segDist(x, y, c[i - 1], p) < CROSSING_CLEAR));
+  const [x0, y0, x1, y1] = box;
+  for (const e of edges) for (const { side, o, kerb, line } of kerbRows(e)) {
+    if (side < 0) continue; // (a sign on the left of a one-way street would face away)
+    const offset = kerb + ROW_HALF_DEPTH[o];
+    const span = line.length - 2 * KERB_ROW_END;
+    if (span < PARKING_SIGN_LEAST) continue;
+    const n = Math.ceil(span / PAINT_STEP);
+    let code: string | null = null, since = 0;
+    for (let i = 0; i <= n; i++) {
+      const at = KERB_ROW_END + (span * i) / n, q = line.at(at);
+      const x = q.x + Math.sin(q.ang) * offset, y = q.y - Math.cos(q.ang) * offset;
+      const section = zones.at(x, y);
+      const here = section && ['RES', 'MIX', 'VIS'].includes(section.category) ? section : null;
+      if ((here?.code ?? null) !== code) { code = here?.code ?? null; since = -Infinity; }
+      if (!here || at - since < PARKING_SIGN_EVERY || line.length - KERB_ROW_END - at < PARKING_SIGN_LEAST) continue;
+      if (x < x0 || x >= x1 || y < y0 || y >= y1 || nearCrossing(x, y)) continue;
+      const area = parkingArea(here.code);
+      const sign = index(`parking ${here.category}`);
+      const plate = index(here.category === 'VIS' ? 'parking plate VIS' : area ? `parking plate ${here.category} ${area}` : '');
+      if (sign < 0) continue;
+      const angle = q.ang - Math.PI / 2;
+      out.push(sign, x, y, angle);
+      if (plate >= 0) out.push(plate, x, y, angle);
+      since = at;
+    }
+  }
+  return out;
+}
+
 // How the cars stand in a parking area: OSM's `orientation` if it's tagged, else a
 // guess from its width. Under 4.5 m is a parallel lane, up to 5.6 m angled bays (the
 // usual depth of those), wider rows of perpendicular bays.

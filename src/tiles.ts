@@ -26,7 +26,8 @@ import { shadeBuildings, shadeLandmark, cutAway, broad, ROOF_CLUTTER, roadRaster
 import { christmasLights, showChristmasLights } from './christmasLights.ts';
 import { loadFacadeAtlas } from './facades.ts';
 import type { Footprint } from './facades.ts';
-import { Zones, parkCarsSteps, inRing, inPoly, kerbPaint } from './parking.ts';
+import { Zones, parkCarsSteps, inRing, inPoly, kerbPaint, parkingSigns } from './parking.ts';
+import { signIndex } from './map/signs.ts';
 import { finish, parkingAisles } from './parkingClearance.ts';
 import { openWater } from './river.ts';
 import { readRoadProfile, withRoadProfile } from './roadProfiles.ts';
@@ -68,7 +69,7 @@ import { riverBanks } from './riverReflection.ts';
 import { chimneySmoke, dropChimneySmoke } from './chimneySmoke.ts';
 import { furnitureSurvey } from './furnitureSurvey.ts';
 import { mappedFurniture } from './mappedFurniture.ts';
-import { loadTrafficSigns, signMesh, lightSigns, directionMesh } from './signs.ts';
+import { loadTrafficSigns, signMesh, lightSigns, directionMesh, mountOnWalls } from './signs.ts';
 import type { TrafficSigns } from './signs.ts';
 // A tile's direction signs have a material and canvas of their own.
 const disposeDirections = (m: THREE.Mesh) => { m.geometry.dispose(); (m.material as THREE.MeshStandardMaterial).map?.dispose(); (m.material as THREE.Material).dispose(); };
@@ -1839,6 +1840,8 @@ export class TileWorld {
       const x = signsAll.points[n + 1], y = signsAll.points[n + 2];
       if (x >= x0 && x < x1 && y >= y0 && y < y1) signPoints.push(signsAll.points[n], x, y, signsAll.points[n + 3]);
     }
+    // The paid zones' signs, put up from TSK's sections as the tile loads.
+    if (signsAll && !location.search.includes('noparkingsigns')) signPoints.push(...parkingSigns(edges, zones, [x0, y0, x1, y1], t.crossings ?? [], (name) => signIndex(signsAll, name)));
     const directionsHere = (signsAll?.directions ?? []).filter(s => s.x >= x0 && s.x < x1 && s.y >= y0 && s.y < y1);
     for (let n = 0; mappedAll && n < mappedAll.length; n += 4) {
       const x = mappedAll[n + 1], y = mappedAll[n + 2];
@@ -2106,6 +2109,8 @@ export class TileWorld {
     const own = [...buildings, ...(hidden ? [hidden] : []), ...(transmission ? [transmission] : [])];
     const smoke = iprArrays?.chimneys ? chimneySmoke(iprArrays.chimneys, this.scene) : null;
     group.add(surfaces.group, ...buildings, ...tile.fixtures, ...landmarks, ...tile.furniture);
+    // The signs on house fronts, moved onto the walls as drawn.
+    for (const m of [tile.signs, tile.directions]) if (m) mountOnWalls(m, arraysOf);
     if (tile.signs) group.add(tile.signs);
     if (tile.directions) group.add(tile.directions);
     if (transmission) group.add(transmission);

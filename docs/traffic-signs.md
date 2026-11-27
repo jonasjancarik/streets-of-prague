@@ -44,20 +44,51 @@ streets) and the junction's position.
 file (with the lamp survey's three-second deadline), draws the faces and makes the mesh.
 A sign the pipeline put on the game's carriageway moves out past the kerb, one out in
 the pavement moves in to 0.5 m from the kerb. Where a house front stands at the kerb, the
-sign hangs on the wall from two arms, its edge to the wall (in the old town's lanes).
+sign hangs on the wall from two arms, its edge to the wall (in the old town's lanes). The
+worker finds that wall on the map's footprint, to a centimetre, but the houses drawn are
+IPR's survey, whose fronts can stand a metre in front of or behind it: once a tile's houses
+are built, a ray at the arms' height finds the drawn front within 1.4 m and the sign moves
+onto it (`mountOnWalls` in `src/signs.ts`, from each sign's `mounts`; the direction plates
+too). The arms reach 6 cm on into the wall.
 Signs for the same traffic within 1.2 m of each other share a 60 mm galvanised post,
 two to a post besides plates: the more important on top (priority, then prohibitions
 and zones, then orders, then information), each plate under the sign it came with. The
 lowest sign's bottom is 2.1 m above the pavement. Free-standing posts are solid in the
 collision grid.
 
-The faces are drawn on a canvas in the Czech designs, one cell per sign in the file,
-including each speed, weight and height value, with decimal commas. Each face is
+The faces are drawn on a canvas in the Czech designs (vyhláška 294/2015, checked against
+the sign drawings on Wikimedia Commons), one cell per sign in the file, including each
+speed, weight and height value, with decimal commas: the red ring 80 mm of a 700 mm disc
+with a thin white rim, give way's 100 mm border and round corners, the white line inside
+the edge of the blue signs, B 11's red bar between the car and the motorcycle, B 16's
+height over a small "m", and the zone signs as white plates with "ZÓNA" (or "PĚŠÍ ZÓNA")
+over the sign, their ends greyed and struck through; the living street is the wide blue
+sign. The lettering is the nearest common narrow sans to the DIN-like Czech one (no font
+is bundled). Each face is
 planar-mapped onto its own outline (disc, triangle, octagon, diamond, square,
 rectangle) with a grey back and a folded rim. A whole tile's signs are one draw. The lit
 crossing boxes show the sign both ways and glow after dark (`lightSigns`, with the lit
 windows' night value). The signs are drawn in the street views only: from above they are
 too small to read. `&nosigns` leaves them out.
+
+## Paid parking
+
+Prague's paid-parking zones are signed from TSK's sections (the same data the parked
+cars and the kerb lines use: `parkingSigns` in `src/parking.ts`), not from the file. Where
+a section starts along a kerbside row, and every 70 m along it, a post on the traffic's
+right carries IP 12 and an E 13 plate under it, as they stand in the city:
+
+- blue (`RES`, residents): P, a car and "RÉSERVÉ"; the plate "PO–PÁ 08–20 h S PLATNÝM
+  PARKOVACÍM OPRÁVNĚNÍM" over a blue band with the area;
+- purple (`MIX`): P, a car and the parking meter; "NEBO S PLATNÝM…", a purple band;
+- orange (`VIS`, visitors): the meter sign; "PO–PÁ 08–20 h MAX. 2 h", an orange band.
+
+The area comes from the section's code: P5-1403 is in area 51; districts whose sections are
+numbered 0xxx (or 9xxx) give the district alone. The hours are the common ones, not each
+area's own (some are signed round the clock). The signs are added to the atlas as tiles
+load, in cells kept free for them (`SPARE_CELLS`, `signIndex`), so no tile's mapping moves.
+The left side of a one-way street gets none (its sign would face away), nor does the kerb
+within 5 m of a zebra. `&noparkingsigns` leaves them out.
 
 ## Direction signs
 
@@ -125,7 +156,7 @@ setts, bridges and tunnels.
 ## Checks
 
 `node scripts/check-traffic-signs.mjs` covers placement against the kerb and walls,
-posts, order, plates, the geometry and reading the file. The pipeline's inference is
+posts, order, plates, the geometry, reading the file, the paid-parking signs and wall signs moving onto the drawn wall. The pipeline's inference is
 `pipeline/test_traffic_signs.py` (one-way, priority, crossings, lit crossings, zones,
 speed limits after junctions, limits with plates, turn bans, lane arrows and direction
 signs, gantries), and the check script covers the direction plates' faces, canvas and
@@ -133,7 +164,15 @@ posts, and the gantries' posts and clearance.
 
 ## Not done
 
-No parking or no-stopping signs (OSM barely records them), no roadworks. A gantry's place
+No no-stopping signs (OSM barely records them), no roadworks.
+
+To do: the paid-parking signs' details are the same everywhere, where the real ones depend
+on the place. The area ("OBLAST 51") is inferred from the section code, and districts with
+one area may be signed differently (Praha 1's own numbering is unchecked). The hours
+(PO–PÁ 08–20 h) and the visitors' limit (MAX. 2 h) vary by district and zone, and some
+areas are signed round the clock: they want a table per district (or per section) from
+TSK or the districts. And there is no section number plate (P5-1403) under them: each would
+need a cell of its own, or a per-tile canvas like the direction plates'. A gantry's place
 is inferred where OSM maps none, and only exits OSM names get one, so long stretches of
 the main roads have none. The zone tagging in OSM has gaps, so a zone sign can stand inside a zone
 where one street is untagged, and a speed limit of 30 may be signed on a street that is

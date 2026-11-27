@@ -4,57 +4,81 @@
 // dark (lightSigns). Optional: without the file a map has no signs.
 import * as THREE from 'three';
 import { cutAway } from './shading.ts';
-import { atlasCols, cellRect, signStyle, CELL } from './map/signs.ts';
+import { cellRect, signStyle, CELL, BOTTOM } from './map/signs.ts';
 import type { SignArrays, TrafficSigns } from './map/signs.ts';
 import { directionLayout, faceOutline, PX, PANEL_LINE, WHITE_CORNER } from './map/directions.ts';
 import type { DirectionArrays, DirectionSign, Face, PlateColour, Rect } from './map/directions.ts';
 export { loadTrafficSigns } from './map/signs.ts';
 export type { TrafficSigns } from './map/signs.ts';
 
-const RED = '#c8102e', BLUE = '#1d55a4', YELLOW = '#f4c300', WHITE = '#f7f7f3', BLACK = '#171717', GREY = '#8b8e90';
-const FONT = '"Arial Narrow", "Helvetica Neue", Arial, sans-serif';
+// The Czech signs' colours (the paints as they look on the street, a little off the pure
+// RGB of the drawings), and the zone colours of Prague's paid parking.
+const RED = '#c8102e', BLUE = '#1450a0', YELLOW = '#f6c100', WHITE = '#f7f7f3', BLACK = '#171717', GREY = '#8b8e90', FADED = '#a9abab';
+const ZONE_BAND: Record<string, string> = { RES: '#1450a0', MIX: '#6a2c8e', VIS: '#ee7203' };
+// Czech signs are lettered in a narrow, DIN-like grotesque; this is the nearest common one.
+const FONT = '"DIN Condensed", "Arial Narrow", "Roboto Condensed", "Helvetica Neue", Arial, sans-serif';
 type Ctx = CanvasRenderingContext2D;
 
 // The Czech number style on signs: a decimal comma.
 const czech = (v: string) => v.replace('.', ',');
 
-function walker(c: Ctx, x: number, y: number, h: number, colour: string, child = false) {
+function walker(c: Ctx, x: number, y: number, h: number, colour: string, child = false, hat = false) {
   // A walking figure `h` tall standing on (x, y), going right.
-  c.save(); c.strokeStyle = c.fillStyle = colour; c.lineWidth = h * (child ? .11 : .1); c.lineCap = 'round'; c.lineJoin = 'round';
-  c.beginPath(); c.arc(x + h * .04, y - h * .9, h * .09, 0, Math.PI * 2); c.fill();
-  c.beginPath(); c.moveTo(x + h * .02, y - h * .75); c.lineTo(x - h * .02, y - h * .42);
-  c.moveTo(x - h * .02, y - h * .42); c.lineTo(x + h * .16, y - h * .2); c.lineTo(x + h * .14, y);
-  c.moveTo(x - h * .02, y - h * .42); c.lineTo(x - h * .16, y - h * .18); c.lineTo(x - h * .26, y - h * .04);
-  c.moveTo(x + h * .02, y - h * .7); c.lineTo(x + h * .2, y - h * .5); c.lineTo(x + h * .26, y - h * .38);
-  c.moveTo(x + h * .02, y - h * .7); c.lineTo(x - h * .14, y - h * .52); c.lineTo(x - h * .2, y - h * .38);
+  c.save(); c.strokeStyle = c.fillStyle = colour; c.lineWidth = h * (child ? .12 : .11); c.lineCap = 'round'; c.lineJoin = 'round';
+  c.beginPath(); c.arc(x + h * .04, y - h * .89, h * .095, 0, Math.PI * 2); c.fill();
+  // The IP 6 walker's hat.
+  if (hat) { c.fillRect(x - h * .1, y - h * .97, h * .28, h * .035); c.fillRect(x - h * .04, y - h * 1.07, h * .16, h * .1); }
+  // A body that widens to the shoulders, then the legs and arms in stride.
+  c.beginPath(); c.moveTo(x + h * .03, y - h * .76); c.lineTo(x - h * .02, y - h * .44); c.stroke();
+  c.beginPath(); c.moveTo(x - h * .02, y - h * .44); c.lineTo(x + h * .15, y - h * .22); c.lineTo(x + h * .16, y);
+  c.moveTo(x - h * .02, y - h * .44); c.lineTo(x - h * .12, y - h * .2); c.lineTo(x - h * .26, y - h * .04);
+  c.moveTo(x + h * .03, y - h * .72); c.lineTo(x + h * .19, y - h * .52); c.lineTo(x + h * .27, y - h * .4);
+  c.moveTo(x + h * .03, y - h * .72); c.lineTo(x - h * .12, y - h * .54); c.lineTo(x - h * .19, y - h * .4);
   c.stroke(); c.restore();
 }
 function car(c: Ctx, x: number, y: number, w: number, colour: string) {
-  // A car seen from the side, `w` long, its wheels on (x, y) about its middle.
+  // A car seen from the side, `w` long, its wheels on (x, y) about its middle, facing left.
   c.save(); c.fillStyle = colour;
-  c.beginPath(); c.roundRect(x - w / 2, y - w * .36, w, w * .22, w * .05); c.fill();
-  c.beginPath(); c.moveTo(x - w * .3, y - w * .34); c.lineTo(x - w * .18, y - w * .55); c.lineTo(x + w * .16, y - w * .55); c.lineTo(x + w * .32, y - w * .34); c.fill();
-  for (const s of [-.3, .3]) { c.beginPath(); c.arc(x + s * w, y - w * .12, w * .12, 0, Math.PI * 2); c.fill(); }
+  c.beginPath(); c.roundRect(x - w / 2, y - w * .34, w, w * .2, w * .06); c.fill();
+  c.beginPath(); c.moveTo(x - w * .28, y - w * .32); c.lineTo(x - w * .14, y - w * .52); c.lineTo(x + w * .2, y - w * .52); c.lineTo(x + w * .34, y - w * .32); c.fill();
+  for (const s of [-.29, .29]) { c.beginPath(); c.arc(x + s * w, y - w * .13, w * .12, 0, Math.PI * 2); c.fill(); }
+  c.restore();
+}
+function carFront(c: Ctx, x: number, y: number, w: number, colour: string) {
+  // A car seen from the front, `w` wide, standing on (x, y): B 11's.
+  c.save(); c.fillStyle = colour;
+  c.beginPath(); c.moveTo(x - w * .36, y - w * .3); c.lineTo(x - w * .28, y - w * .56); c.lineTo(x + w * .28, y - w * .56); c.lineTo(x + w * .36, y - w * .3); c.fill();
+  c.beginPath(); c.roundRect(x - w / 2, y - w * .34, w, w * .24, w * .06); c.fill();
+  for (const s of [-1, 1]) c.fillRect(x + s * w * .36 - w * .08, y - w * .12, w * .16, w * .12);
+  c.fillStyle = WHITE; c.beginPath(); c.moveTo(x - w * .27, y - w * .34); c.lineTo(x - w * .22, y - w * .5); c.lineTo(x + w * .22, y - w * .5); c.lineTo(x + w * .27, y - w * .34); c.fill();
+  for (const s of [-1, 1]) { c.beginPath(); c.arc(x + s * w * .33, y - w * .23, w * .05, 0, Math.PI * 2); c.fill(); }
   c.restore();
 }
 function lorry(c: Ctx, x: number, y: number, w: number, colour: string) {
   c.save(); c.fillStyle = colour;
-  c.fillRect(x - w / 2, y - w * .62, w * .66, w * .42);
-  c.beginPath(); c.moveTo(x + w * .2, y - w * .2); c.lineTo(x + w * .2, y - w * .48); c.lineTo(x + w * .4, y - w * .48); c.lineTo(x + w * .5, y - w * .32); c.lineTo(x + w * .5, y - w * .2); c.fill();
-  for (const s of [-.32, -.1, .36]) { c.beginPath(); c.arc(x + s * w, y - w * .12, w * .1, 0, Math.PI * 2); c.fill(); }
+  c.fillRect(x - w / 2, y - w * .6, w * .64, w * .42);
+  c.beginPath(); c.moveTo(x + w * .18, y - w * .18); c.lineTo(x + w * .18, y - w * .46); c.lineTo(x + w * .38, y - w * .46); c.lineTo(x + w * .5, y - w * .3); c.lineTo(x + w * .5, y - w * .18); c.fill();
+  c.fillStyle = WHITE; c.beginPath(); c.moveTo(x + w * .3, y - w * .42); c.lineTo(x + w * .37, y - w * .42); c.lineTo(x + w * .45, y - w * .31); c.lineTo(x + w * .3, y - w * .31); c.fill();
+  c.fillStyle = colour;
+  for (const s of [-.33, -.12, .36]) { c.beginPath(); c.arc(x + s * w, y - w * .12, w * .1, 0, Math.PI * 2); c.fill(); }
   c.restore();
 }
 function motorbike(c: Ctx, x: number, y: number, w: number, colour: string) {
-  c.save(); c.strokeStyle = c.fillStyle = colour; c.lineWidth = w * .09; c.lineCap = 'round';
-  for (const s of [-.34, .34]) { c.beginPath(); c.arc(x + s * w, y - w * .17, w * .15, 0, Math.PI * 2); c.stroke(); }
-  c.beginPath(); c.moveTo(x - w * .34, y - w * .17); c.lineTo(x - w * .05, y - w * .42); c.lineTo(x + w * .2, y - w * .42); c.lineTo(x + w * .34, y - w * .17);
-  c.moveTo(x + w * .2, y - w * .42); c.lineTo(x + w * .26, y - w * .58); c.stroke();
-  c.beginPath(); c.arc(x, y - w * .7, w * .1, 0, Math.PI * 2); c.fill();
+  // A motorcycle and its rider, side on, `w` long, standing on (x, y).
+  c.save(); c.strokeStyle = c.fillStyle = colour; c.lineWidth = w * .07; c.lineCap = 'round'; c.lineJoin = 'round';
+  for (const s of [-.33, .33]) { c.beginPath(); c.arc(x + s * w, y - w * .16, w * .15, 0, Math.PI * 2); c.stroke(); }
+  c.beginPath(); c.moveTo(x - w * .33, y - w * .16); c.lineTo(x - w * .12, y - w * .34); c.lineTo(x + w * .16, y - w * .34); c.lineTo(x + w * .33, y - w * .16);
+  c.moveTo(x + w * .16, y - w * .34); c.lineTo(x + w * .24, y - w * .52); c.stroke();
+  c.beginPath(); c.ellipse(x, y - w * .38, w * .2, w * .07, 0, 0, Math.PI * 2); c.fill();
+  // The rider leaning forward.
+  c.lineWidth = w * .12;
+  c.beginPath(); c.moveTo(x - w * .06, y - w * .44); c.lineTo(x + w * .06, y - w * .72); c.lineTo(x + w * .22, y - w * .54); c.stroke();
+  c.beginPath(); c.arc(x + w * .1, y - w * .86, w * .1, 0, Math.PI * 2); c.fill();
   c.restore();
 }
 // An arrow from (x, y) up `len`, then bent by `turn` (-1 left, 1 right, 0 straight on).
 function arrow(c: Ctx, x: number, y: number, len: number, wid: number, turn: number, colour: string) {
-  c.save(); c.strokeStyle = c.fillStyle = colour; c.lineWidth = wid; c.lineJoin = 'round';
+  c.save(); c.strokeStyle = c.fillStyle = colour; c.lineWidth = wid; c.lineJoin = 'miter';
   const bend = turn ? len * .55 : len - wid * 1.6;
   c.beginPath(); c.moveTo(x, y); c.lineTo(x, y - bend);
   let tx = x, ty = y - bend, dx = 0, dy = -1;
@@ -72,110 +96,193 @@ function text(c: Ctx, s: string, x: number, y: number, size: number, colour = BL
   c.save(); c.fillStyle = colour; c.font = `${weight} ${size}px ${FONT}`; c.textAlign = 'center'; c.textBaseline = 'middle';
   c.fillText(s, x, y); c.restore();
 }
-function zoneDisc(c: Ctx, x: number, y: number, r: number, value: string, colour: string, ring: string) {
+// A closed outline with its corners rounded by `r`.
+function rounded(c: Ctx, pts: [number, number][], r: number) {
+  c.beginPath();
+  const n = pts.length, mid = (a: [number, number], b: [number, number]) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  const start = mid(pts[n - 1], pts[0]);
+  c.moveTo(start[0], start[1]);
+  for (let k = 0; k < n; k++) { const p = pts[k], q = pts[(k + 1) % n]; c.arcTo(p[0], p[1], q[0], q[1], r); }
+  c.closePath();
+}
+// A rectangular sign's field with its rounded corners, and the white (or black) line just
+// inside its edge that Czech blue and white signs have.
+function field(c: Ctx, w: number, h: number, fill: string, line: string | null, edge = .022, width = .012) {
+  c.fillStyle = fill; c.beginPath(); c.roundRect(-w / 2, -h / 2, w, h, Math.min(w, h) * .06); c.fill();
+  if (!line) return;
+  c.strokeStyle = line; c.lineWidth = width;
+  c.beginPath(); c.roundRect(-w / 2 + edge, -h / 2 + edge, w - edge * 2, h - edge * 2, Math.min(w, h) * .04); c.stroke();
+}
+// A round prohibition sign of radius `r` at (x, y): white, the red ring 80 mm of a 700 mm
+// sign, a thin white rim outside it.
+function ring(c: Ctx, x: number, y: number, r: number, colour = RED) {
   c.save(); c.fillStyle = WHITE; c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill();
-  c.strokeStyle = ring; c.lineWidth = r * .2; c.beginPath(); c.arc(x, y, r * .9, 0, Math.PI * 2); c.stroke(); c.restore();
-  text(c, value, x, y + r * .06, r * (value.length > 2 ? .85 : 1.05), colour);
+  c.strokeStyle = colour; c.lineWidth = r * .23; c.beginPath(); c.arc(x, y, r * .855, 0, Math.PI * 2); c.stroke(); c.restore();
+}
+// The parking meter in the corner of a paid-parking sign: a white square, the meter's
+// dial in the field's blue.
+function meter(c: Ctx, x: number, y: number, a: number) {
+  c.save(); c.fillStyle = WHITE; c.beginPath(); c.roundRect(x - a / 2, y - a / 2, a, a, a * .08); c.fill();
+  c.fillStyle = BLUE;
+  c.beginPath(); c.moveTo(x - a * .36, y - a * .3); c.lineTo(x + a * .36, y - a * .3); c.lineTo(x + a * .3, y + a * .05);
+  c.quadraticCurveTo(x, y + a * .42, x - a * .3, y + a * .05); c.closePath(); c.fill();
+  c.strokeStyle = WHITE; c.lineWidth = a * .045;
+  for (let k = -2; k <= 2; k++) { const t = k * .28; c.beginPath(); c.moveTo(x + Math.sin(t) * a * .12, y - a * .02 - Math.cos(t) * a * .12); c.lineTo(x + Math.sin(t) * a * .24, y - a * .02 - Math.cos(t) * a * .24); c.stroke(); }
+  c.restore();
 }
 
 // One sign's face in its cell, `s` px a metre, about the middle (canvas y down).
 function drawFace(c: Ctx, name: string, w: number, h: number, s: number) {
-  const R = w / 2 * s;
-  const disc = (fill: string) => { c.fillStyle = fill; c.beginPath(); c.arc(0, 0, R, 0, Math.PI * 2); c.fill(); };
-  const prohibition = () => { disc(WHITE); c.strokeStyle = RED; c.lineWidth = R * .2; c.beginPath(); c.arc(0, 0, R * .9, 0, Math.PI * 2); c.stroke(); };
-  const square = (fill: string) => { c.fillStyle = fill; c.beginPath(); c.roundRect(-w / 2 * s, -h / 2 * s, w * s, h * s, s * .03); c.fill(); };
+  const R = w / 2 * s, W = w * s, H = h * s;
+  const disc = (fill: string) => {
+    c.fillStyle = WHITE; c.beginPath(); c.arc(0, 0, R, 0, Math.PI * 2); c.fill();
+    c.fillStyle = fill; c.beginPath(); c.arc(0, 0, R * .965, 0, Math.PI * 2); c.fill();
+  };
+  const prohibition = () => ring(c, 0, 0, R);
+  const square = (fill: string) => field(c, W, H, fill, WHITE, s * .022, s * .012);
+  const big = (v: string) => R * (v.length > 2 ? .82 : 1.08);
   let m: RegExpMatchArray | null;
-  if (name === 'no entry') { disc(RED); c.fillStyle = WHITE; c.fillRect(-R * .72, -R * .15, R * 1.44, R * .3); return; }
-  if ((m = name.match(/^speed (\d+)$/))) { prohibition(); text(c, m[1], 0, R * .05, R * (m[1].length > 2 ? .78 : 1)); return; }
+  if (name === 'no entry') { disc(RED); c.fillStyle = WHITE; c.fillRect(-R * .74, -R * .16, R * 1.48, R * .32); return; }
+  if ((m = name.match(/^speed (\d+)$/))) { prohibition(); text(c, m[1], 0, R * .06, big(m[1])); return; }
   if ((m = name.match(/^speed (\d+) end$/))) {
-    disc(WHITE); c.strokeStyle = GREY; c.lineWidth = R * .04; c.beginPath(); c.arc(0, 0, R * .97, 0, Math.PI * 2); c.stroke();
-    text(c, m[1], 0, R * .05, R * (m[1].length > 2 ? .78 : 1), GREY);
-    c.save(); c.beginPath(); c.arc(0, 0, R * .97, 0, Math.PI * 2); c.clip(); c.strokeStyle = BLACK; c.lineWidth = R * .045;
-    for (const k of [-.24, -.12, 0, .12, .24]) { c.beginPath(); c.moveTo(R * (1 + k), -R * (1 - k)); c.lineTo(-R * (1 - k), R * (1 + k)); c.stroke(); }
+    // B 20b: no red ring; the number grey under five black bars.
+    disc(WHITE); c.strokeStyle = BLACK; c.lineWidth = R * .025; c.beginPath(); c.arc(0, 0, R * .955, 0, Math.PI * 2); c.stroke();
+    text(c, m[1], 0, R * .06, big(m[1]), FADED);
+    c.save(); c.beginPath(); c.arc(0, 0, R * .94, 0, Math.PI * 2); c.clip(); c.strokeStyle = BLACK; c.lineWidth = R * .05;
+    for (const k of [-.26, -.13, 0, .13, .26]) { c.beginPath(); c.moveTo(R * (1 + k), -R * (1 - k)); c.lineTo(-R * (1 - k), R * (1 + k)); c.stroke(); }
     c.restore(); return;
   }
-  if ((m = name.match(/^weight ([\d.]+)$/))) { prohibition(); text(c, czech(m[1]) + 't', 0, R * .04, R * (m[1].length > 2 ? .62 : .8)); return; }
+  if ((m = name.match(/^weight ([\d.]+)$/))) { prohibition(); text(c, czech(m[1]) + ' t', 0, R * .06, R * (m[1].length > 2 ? .66 : .86)); return; }
   if ((m = name.match(/^height ([\d.]+)$/))) {
-    prohibition(); text(c, czech(m[1]) + ' m', 0, R * .04, R * .5);
+    // B 16: the height over a small "m", black wedges pointing in at the top and bottom.
+    prohibition(); text(c, czech(m[1]), 0, -R * .1, R * (m[1].length > 2 ? .62 : .78)); text(c, 'm', 0, R * .3, R * .3);
     c.fillStyle = BLACK;
-    for (const d of [-1, 1]) { c.beginPath(); c.moveTo(0, d * R * .3); c.lineTo(-R * .16, d * R * .55); c.lineTo(R * .16, d * R * .55); c.fill(); }
+    for (const d of [-1, 1]) { c.beginPath(); c.moveTo(-R * .2, d * R * .76); c.lineTo(R * .2, d * R * .76); c.lineTo(0, d * R * .52); c.fill(); }
     return;
   }
-  if (name === 'no lorries') { prohibition(); lorry(c, 0, R * .32, R * 1.2, BLACK); return; }
-  if (name === 'no motor vehicles') { prohibition(); car(c, 0, -R * .02, R * .95, BLACK); motorbike(c, 0, R * .58, R * .6, BLACK); return; }
-  if (name === 'no left turn' || name === 'no right turn') {
-    prohibition(); arrow(c, name === 'no left turn' ? R * .2 : -R * .2, R * .5, R * 1.05, R * .16, name === 'no left turn' ? -1 : 1, BLACK); slash(c, R, RED, R * .2); return;
+  if (name === 'no lorries') { prohibition(); lorry(c, 0, R * .34, R * 1.2, BLACK); return; }
+  if (name === 'no motor vehicles') {
+    // B 11: a car over a motorcycle, a red bar between them.
+    prohibition(); c.fillStyle = RED; c.fillRect(-R * .76, -R * .07, R * 1.52, R * .14);
+    carFront(c, 0, -R * .16, R * .72, BLACK); motorbike(c, 0, R * .64, R * .62, BLACK); return;
   }
-  if (name === 'ahead only') { disc(BLUE); arrow(c, 0, R * .62, R * 1.25, R * .2, 0, WHITE); return; }
-  if (name === 'left only' || name === 'right only') { const t = name === 'left only' ? -1 : 1; disc(BLUE); arrow(c, -t * R * .22, R * .6, R * 1.15, R * .2, t, WHITE); return; }
+  if (name === 'no left turn' || name === 'no right turn') {
+    const t = name === 'no left turn' ? -1 : 1;
+    prohibition(); arrow(c, -t * R * .2, R * .55, R * 1.1, R * .17, t, BLACK);
+    slash(c, R, RED, R * .2); return;
+  }
+  if (name === 'ahead only') { disc(BLUE); arrow(c, 0, R * .66, R * 1.3, R * .22, 0, WHITE); return; }
+  if (name === 'left only' || name === 'right only') { const t = name === 'left only' ? -1 : 1; disc(BLUE); arrow(c, -t * R * .22, R * .62, R * 1.2, R * .22, t, WHITE); return; }
   if (name === 'roundabout') {
-    disc(BLUE); c.save(); c.strokeStyle = c.fillStyle = WHITE; c.lineWidth = R * .16;
+    // C 1: three arrows chasing each other anticlockwise.
+    disc(BLUE); c.save(); c.strokeStyle = c.fillStyle = WHITE; c.lineWidth = R * .15;
     for (let k = 0; k < 3; k++) {
-      const a0 = k * Math.PI * 2 / 3 + .35, a1 = a0 + 1.35, r = R * .52;
+      const a0 = k * Math.PI * 2 / 3 + .35, a1 = a0 + 1.3, r = R * .54;
       c.beginPath(); c.arc(0, 0, r, -a0, -a1, true); c.stroke();
       const hx = Math.cos(-a1) * r, hy = Math.sin(-a1) * r, tx = Math.sin(-a1), ty = -Math.cos(-a1);
-      c.beginPath(); c.moveTo(hx - tx * R * .2, hy - ty * R * .2); c.lineTo(hx + Math.cos(-a1) * R * .17, hy + Math.sin(-a1) * R * .17); c.lineTo(hx - Math.cos(-a1) * R * .17, hy - Math.sin(-a1) * R * .17); c.fill();
+      c.beginPath(); c.moveTo(hx - tx * R * .24, hy - ty * R * .24); c.lineTo(hx + Math.cos(-a1) * R * .19, hy + Math.sin(-a1) * R * .19); c.lineTo(hx - Math.cos(-a1) * R * .19, hy - Math.sin(-a1) * R * .19); c.fill();
     }
     c.restore(); return;
   }
   if (name === 'give way') {
-    const a = w / 2 * s, b = h / 2 * s, i = s * .1;
-    c.fillStyle = RED; c.beginPath(); c.moveTo(-a, -b); c.lineTo(a, -b); c.lineTo(0, b); c.closePath(); c.fill();
-    c.fillStyle = WHITE; c.beginPath(); c.moveTo(-a + i * 1.73, -b + i); c.lineTo(a - i * 1.73, -b + i); c.lineTo(0, b - i * 2); c.closePath(); c.fill();
+    // P 4: point down, the red border 100 mm of 900, a thin white rim, round corners.
+    const a = W / 2, b = H / 2, side = Math.hypot(a, b * 2), i = side * .11, rim = side * .012;
+    const tri = (inset: number): [number, number][] => [[-a + inset * 1.73, -b + inset], [a - inset * 1.73, -b + inset], [0, b - inset * 2]];
+    c.fillStyle = WHITE; rounded(c, tri(0), s * .06); c.fill();
+    c.fillStyle = RED; rounded(c, tri(rim), s * .055); c.fill();
+    c.fillStyle = WHITE; rounded(c, tri(i), s * .025); c.fill();
     return;
   }
   if (name === 'stop') {
     const r = R / Math.cos(Math.PI / 8);
     const oct = (rr: number) => { c.beginPath(); for (let k = 0; k < 8; k++) { const a = Math.PI / 8 + k * Math.PI / 4; c.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); } c.closePath(); };
-    c.fillStyle = WHITE; oct(r); c.fill(); c.fillStyle = RED; oct(r * .93); c.fill();
-    text(c, 'STOP', 0, R * .05, R * .55, WHITE); return;
+    c.fillStyle = WHITE; oct(r); c.fill(); c.fillStyle = RED; oct(r * .95); c.fill();
+    c.strokeStyle = WHITE; c.lineWidth = R * .03; oct(r * .9); c.stroke();
+    text(c, 'STOP', 0, R * .06, R * .66, WHITE); return;
   }
   if (name === 'main road') {
-    const a = w / 2 * s;
+    const a = W / 2;
     const dia = (rr: number) => { c.beginPath(); c.moveTo(0, -rr); c.lineTo(rr, 0); c.lineTo(0, rr); c.lineTo(-rr, 0); c.closePath(); };
-    c.fillStyle = BLACK; dia(a); c.fill(); c.fillStyle = WHITE; dia(a * .96); c.fill(); c.fillStyle = YELLOW; dia(a * .66); c.fill(); return;
+    c.fillStyle = BLACK; dia(a); c.fill(); c.fillStyle = WHITE; dia(a * .965); c.fill(); c.fillStyle = YELLOW; dia(a * .64); c.fill(); return;
   }
-  if (name === 'one way') { square(BLUE); arrow(c, 0, h * s * .4, h * s * .8, w * s * .14, 0, WHITE); return; }
+  if (name === 'one way') { square(BLUE); arrow(c, 0, H * .38, H * .78, W * .2, 0, WHITE); return; }
   if (name === 'crossing' || name === 'crossing lit') {
-    square(BLUE); const a = w / 2 * s * .84, top = -h / 2 * s * .78, bot = h / 2 * s * .72;
-    c.fillStyle = WHITE; c.beginPath(); c.moveTo(0, top); c.lineTo(a, bot); c.lineTo(-a, bot); c.closePath(); c.fill();
+    // IP 6: a white triangle on the blue, in it the man in a hat crossing the stripes.
+    square(BLUE); const a = W / 2 * .86, top = -H / 2 * .8, bot = H / 2 * .76;
+    c.fillStyle = WHITE; rounded(c, [[0, top], [a, bot], [-a, bot]], s * .02); c.fill();
     c.fillStyle = BLACK;
-    for (let k = 0; k < 4; k++) c.fillRect(-a * .62 + k * a * .34, bot - s * .055, a * .2, s * .04);
-    walker(c, 0, bot - s * .07, s * .27, BLACK); return;
+    for (let k = 0; k < 5; k++) { const x = -a * .62 + k * a * .31; c.beginPath(); c.moveTo(x - a * .08, bot - s * .015); c.lineTo(x + a * .12, bot - s * .015); c.lineTo(x + a * .09, bot - s * .065); c.lineTo(x - a * .05, bot - s * .065); c.fill(); }
+    walker(c, -s * .01, bot - s * .075, s * .3, BLACK, false, true); return;
   }
   if (name === 'speed bump') {
-    square(BLUE); c.fillStyle = WHITE; const a = w / 2 * s * .72;
-    c.beginPath(); c.moveTo(-a, s * .1); c.quadraticCurveTo(0, -s * .2, a, s * .1); c.closePath(); c.fill();
-    c.fillRect(-a, s * .12, a * 2, s * .035); return;
+    square(BLUE); c.fillStyle = WHITE; const a = W / 2 * .7;
+    c.beginPath(); c.moveTo(-a, s * .1); c.bezierCurveTo(-a * .5, s * .1, -a * .35, -s * .14, 0, -s * .14); c.bezierCurveTo(a * .35, -s * .14, a * .5, s * .1, a, s * .1); c.closePath(); c.fill();
+    c.fillRect(-a * 1.1, s * .12, a * 2.2, s * .035); return;
   }
   if ((m = name.match(/^zone (\d+)( end)?$/))) {
-    const end = !!m[2], ink = end ? GREY : BLACK;
-    c.fillStyle = BLACK; c.fillRect(-w / 2 * s, -h / 2 * s, w * s, h * s); c.fillStyle = WHITE; c.fillRect(-w / 2 * s + s * .015, -h / 2 * s + s * .015, w * s - s * .03, h * s - s * .03);
-    zoneDisc(c, 0, -h * s * .14, w * s * .34, m[1], ink, end ? GREY : RED);
-    text(c, 'ZÓNA', 0, h * s * .3, s * .17, ink);
-    if (end) { c.save(); c.strokeStyle = BLACK; c.lineWidth = s * .035; c.beginPath(); c.moveTo(w / 2 * s * .85, -h / 2 * s * .9); c.lineTo(-w / 2 * s * .85, h / 2 * s * .9); c.stroke(); c.restore(); }
+    // IZ 8a: a white plate, "ZÓNA" over the sign that holds in it; its end greyed and struck through.
+    const end = !!m[2], ink = end ? FADED : BLACK;
+    field(c, W, H, WHITE, ink, s * .025, s * .016);
+    text(c, 'ZÓNA', 0, -H * .29, s * .15, ink);
+    ring(c, 0, H * .12, W * .34, end ? FADED : RED);
+    text(c, m[1], 0, H * .12 + W * .02, W * .34 * (m[1].length > 2 ? .82 : 1.05), ink);
+    if (end) { c.save(); c.strokeStyle = BLACK; c.lineWidth = s * .04; c.beginPath(); c.moveTo(-W * .44, H * .44); c.lineTo(W * .44, -H * .44); c.stroke(); c.restore(); }
     return;
   }
-  if ((m = name.match(/^(living street|pedestrian zone)( end)?$/))) {
+  if ((m = name.match(/^living street( end)?$/))) {
+    // IZ 5a (IP 26a): wide and blue: a house, a car, someone walking, a child at play.
     square(BLUE);
-    if (m[1] === 'living street') {
-      c.fillStyle = WHITE; const hx = -w * s * .2, hy = -h * s * .1;
-      c.beginPath(); c.moveTo(hx - s * .1, hy); c.lineTo(hx - s * .1, hy - s * .16); c.lineTo(hx, hy - s * .25); c.lineTo(hx + s * .1, hy - s * .16); c.lineTo(hx + s * .1, hy); c.fill();
-      walker(c, w * s * .12, -h * s * .02, s * .28, WHITE); walker(c, w * s * .3, -h * s * .02, s * .17, WHITE, true);
-      c.beginPath(); c.arc(-w * s * .02, -h * s * .03, s * .03, 0, Math.PI * 2); c.fill();
-      car(c, 0, h * s * .34, s * .4, WHITE);
-    } else {
-      walker(c, -w * s * .1, h * s * .1, s * .36, WHITE); walker(c, w * s * .14, h * s * .1, s * .24, WHITE, true);
-      text(c, 'ZÓNA', 0, h * s * .3, s * .13, WHITE);
-    }
-    if (m[2]) slash(c, Math.min(w, h) / 2 * s * 1.3, RED, s * .05);
+    c.fillStyle = WHITE; const gx = W * .3, gy = -H * .04;
+    c.beginPath(); c.moveTo(gx - s * .08, gy); c.lineTo(gx - s * .08, gy - s * .1); c.lineTo(gx, gy - s * .17); c.lineTo(gx + s * .08, gy - s * .1); c.lineTo(gx + s * .08, gy); c.closePath(); c.fill();
+    c.fillStyle = BLUE; c.fillRect(gx - s * .02, gy - s * .07, s * .035, s * .07); c.fillStyle = WHITE;
+    car(c, W * .02, -H * .04, s * .26, WHITE);
+    c.fillRect(-W * .4, H * .07, W * .8, s * .012);
+    walker(c, -W * .3, H * .32, s * .2, WHITE);
+    walker(c, W * .1, H * .32, s * .12, WHITE, true);
+    c.beginPath(); c.arc(-W * .04, H * .3, s * .022, 0, Math.PI * 2); c.fill();
+    if (m[1]) { c.save(); c.strokeStyle = RED; c.lineWidth = s * .05; c.beginPath(); c.moveTo(-W * .44, H * .42); c.lineTo(W * .44, -H * .42); c.stroke(); c.restore(); }
+    return;
+  }
+  if ((m = name.match(/^pedestrian zone( end)?$/))) {
+    // IZ 6a (IP 27a): a white plate, "PĚŠÍ ZÓNA" over the blue footway sign.
+    const end = !!m[1], ink = end ? FADED : BLACK;
+    field(c, W, H, WHITE, ink, s * .025, s * .016);
+    fitText(c, 'PĚŠÍ ZÓNA', 0, -H * .35, s * .1, W * .84, ink, 'center');
+    const r = W * .36, cy = H * .08;
+    c.fillStyle = end ? FADED : BLUE; c.beginPath(); c.arc(0, cy, r, 0, Math.PI * 2); c.fill();
+    walker(c, -r * .22, cy + r * .66, r * 1.2, WHITE); walker(c, r * .32, cy + r * .66, r * .78, WHITE, true);
+    if (end) { c.save(); c.strokeStyle = BLACK; c.lineWidth = s * .04; c.beginPath(); c.moveTo(-W * .44, H * .44); c.lineTo(W * .44, -H * .44); c.stroke(); c.restore(); }
+    return;
+  }
+  if ((m = name.match(/^parking (RES|MIX|VIS)$/))) {
+    // IP 12 as Prague's paid zones put it up: the P and a car; "RÉSERVÉ" where only
+    // residents may park, the parking meter where anyone may pay.
+    square(BLUE);
+    const res = m[1] === 'RES';
+    c.save(); c.fillStyle = WHITE; c.font = `bold ${H * .78}px ${FONT}`; c.textAlign = 'left'; c.textBaseline = 'alphabetic';
+    c.fillText('P', -W * .36, res ? H * .2 : H * .16); c.restore();
+    car(c, W * .24, res ? H * .19 : H * .1, W * .4, WHITE);
+    if (res) fitText(c, 'RÉSERVÉ', 0, H * .36, s * .1, W * .8, WHITE, 'center');
+    else meter(c, W * .25, H * .3, W * .3);
+    return;
+  }
+  if ((m = name.match(/^parking plate (RES|MIX|VIS)(?: (\S+))?$/))) {
+    // E 13 under it: the hours, who may park, and the zone's colour (with its area).
+    field(c, W, H, WHITE, BLACK, s * .02, s * .016);
+    const lines = m[1] === 'VIS' ? ['PO–PÁ', '08–20 h', 'MAX. 2 h']
+      : ['PO–PÁ', '08–20 h', m[1] === 'MIX' ? 'NEBO S PLATNÝM' : 'S PLATNÝM', 'PARKOVACÍM', 'OPRÁVNĚNÍM'];
+    const band = s * .085, top = -H / 2 + s * .035, room = H - band - s * .07, gap = room / lines.length;
+    const size = Math.min(gap * .86, s * (m[1] === 'VIS' ? .085 : .066));
+    lines.forEach((l, k) => fitText(c, l, 0, top + gap * (k + .5), size, W * .82, BLACK, 'center'));
+    c.fillStyle = ZONE_BAND[m[1]]; c.fillRect(-W / 2 + s * .04, H / 2 - s * .04 - band, W - s * .08, band);
+    if (m[2]) fitText(c, `OBLAST ${m[2]}`, 0, H / 2 - s * .04 - band / 2, band * .8, W * .7, WHITE, 'center');
     return;
   }
   if (name === 'except access') {
-    c.fillStyle = BLACK; c.fillRect(-w / 2 * s, -h / 2 * s, w * s, h * s); c.fillStyle = WHITE; c.fillRect(-w / 2 * s + s * .012, -h / 2 * s + s * .012, w * s - s * .024, h * s - s * .024);
-    text(c, 'MIMO DOPRAVNÍ', 0, -h * s * .2, s * .062, BLACK); text(c, 'OBSLUHY', 0, h * s * .22, s * .062, BLACK); return;
+    field(c, W, H, WHITE, BLACK, s * .015, s * .012);
+    fitText(c, 'MIMO DOPRAVNÍ', 0, -H * .2, s * .07, W * .86, BLACK, 'center'); fitText(c, 'OBSLUHY', 0, H * .22, s * .07, W * .86, BLACK, 'center'); return;
   }
-  square(GREY);
+  field(c, W, H, GREY, null);
 }
 
 function drawAtlas(names: string[], cols: number, lit: boolean) {
@@ -197,16 +304,23 @@ function drawAtlas(names: string[], cols: number, lit: boolean) {
   return texture;
 }
 
-let material: THREE.MeshStandardMaterial | undefined, drawnFor: string[] | undefined;
+let material: THREE.MeshStandardMaterial | undefined, drawnFor: string[] | undefined, drawnCount = 0;
 const meshes = new Set<THREE.Mesh>();
-// The material of the signs: the atlas is drawn once for the area's sign names.
-function signMaterial(names: string[]) {
-  if (material && drawnFor === names) return material;
-  material?.map?.dispose(); material?.emissiveMap?.dispose();
-  const cols = atlasCols(names.length);
-  material = cutAway(new THREE.MeshStandardMaterial({ map: drawAtlas(names, cols, false), emissiveMap: drawAtlas(names, cols, true), emissive: '#ffffff',
-    emissiveIntensity: 0, vertexColors: true, roughness: .5, metalness: .15 }), 'furniture');
-  drawnFor = names;
+// The material of the signs: the atlas is drawn for the area's sign names, and again when
+// the game has added some (signIndex: in cells kept free, so no mapping changes).
+function signMaterial(signs: TrafficSigns) {
+  const { names, cols } = signs;
+  if (material && drawnFor === names && drawnCount === names.length) return material;
+  const map = drawAtlas(names, cols, false), emissiveMap = drawAtlas(names, cols, true);
+  if (material && drawnFor === names) {
+    material.map!.dispose(); material.emissiveMap!.dispose();
+    material.map = map; material.emissiveMap = emissiveMap; material.needsUpdate = true;
+  } else {
+    material?.map?.dispose(); material?.emissiveMap?.dispose();
+    material = cutAway(new THREE.MeshStandardMaterial({ map, emissiveMap, emissive: '#ffffff',
+      emissiveIntensity: 0, vertexColors: true, roughness: .5, metalness: .15 }), 'furniture');
+  }
+  drawnFor = names; drawnCount = names.length;
   return material;
 }
 
@@ -217,13 +331,73 @@ export function signMesh(arrays: SignArrays, signs: TrafficSigns) {
   g.setAttribute('uv', new THREE.BufferAttribute(arrays.uv, 2));
   g.setAttribute('color', new THREE.BufferAttribute(arrays.color, 3));
   g.computeBoundingSphere();
-  const mesh = new THREE.Mesh(g, signMaterial(signs.names));
-  mesh.name = 'traffic signs'; mesh.castShadow = mesh.receiveShadow = true; mesh.userData.posts = arrays.posts;
+  const mesh = new THREE.Mesh(g, signMaterial(signs));
+  mesh.name = 'traffic signs'; mesh.castShadow = mesh.receiveShadow = true; mesh.userData.posts = arrays.posts; mesh.userData.mounts = arrays.mounts;
   mesh.addEventListener('added', () => meshes.add(mesh));
   mesh.addEventListener('removed', () => meshes.delete(mesh));
   return mesh;
 }
 
+// The signs hung on house fronts, moved onto the walls as they are drawn: the worker hung
+// them on the map's footprints, and the houses drawn (IPR's survey) can stand up to a
+// metre or so in front of or behind those. From well out in front of each, a ray at the
+// height of its arms along the way it faces the wall finds the first wall facing back
+// along it, and the sign and its arms move by the difference (no more than REACH). Each
+// `walls` is a tile's buildings' triangles, in the scene's frame.
+const REACH = 1.4;
+export function mountOnWalls(mesh: THREE.Mesh, walls: { position: Float32Array; normal: Float32Array }[]) {
+  const mounts = mesh.userData.mounts as Float32Array | undefined;
+  if (!mounts?.length || !walls.length) return 0;
+  const pos = mesh.geometry.attributes.position.array as Float32Array;
+  // (How far each has been moved already: a tile drawn again measures again.)
+  const applied: Float32Array = mesh.userData.mounted ??= new Float32Array(mounts.length / 6);
+  let moved = 0;
+  for (let i = 0; i + 5 < mounts.length; i += 6) {
+    const [x, y, z, angle, first, count] = Array.from(mounts.subarray(i, i + 6));
+    const dx = Math.cos(angle), dy = Math.sin(angle);
+    const hits = [BOTTOM + .25, BOTTOM + .55].map(h => wallAlong(walls, x - dx * REACH, y - dy * REACH, z + h, dx, dy, REACH * 2));
+    const found = hits.filter((d): d is number => d !== null).map(d => d - REACH);
+    if (!found.length) continue;
+    const d = Math.min(...found), step = d - applied[i / 6];
+    if (Math.abs(step) < .005) continue;
+    for (let v = first; v < first + count; v++) { pos[v * 3] += dx * step; pos[v * 3 + 2] -= dy * step; }
+    applied[i / 6] = d; moved++;
+  }
+  if (moved) { mesh.geometry.attributes.position.needsUpdate = true; mesh.geometry.computeBoundingSphere(); }
+  return moved;
+}
+// How far along (dx, dy) from (x, y) at height h the first wall facing back stands, within `far`.
+function wallAlong(walls: { position: Float32Array; normal: Float32Array }[], x: number, y: number, h: number, dx: number, dy: number, far: number) {
+  // In the scene's frame: (x, h, -y), going (dx, 0, -dy).
+  const ox = x, oz = -y, vx = dx, vz = -dy;
+  const minX = Math.min(ox, ox + vx * far) - .01, maxX = Math.max(ox, ox + vx * far) + .01;
+  const minZ = Math.min(oz, oz + vz * far) - .01, maxZ = Math.max(oz, oz + vz * far) + .01;
+  let best: number | null = null;
+  for (const { position: p, normal: nrm } of walls) {
+    for (let k = 0; k + 8 < p.length; k += 9) {
+      const ax = p[k], ay = p[k + 1], az = p[k + 2], bx = p[k + 3], by = p[k + 4], bz = p[k + 5], cx = p[k + 6], cy = p[k + 7], cz = p[k + 8];
+      if (Math.max(ax, bx, cx) < minX || Math.min(ax, bx, cx) > maxX || Math.max(az, bz, cz) < minZ || Math.min(az, bz, cz) > maxZ) continue;
+      if (Math.max(ay, by, cy) < h || Math.min(ay, by, cy) > h) continue;
+      // Möller–Trumbore, the ray level (direction (vx, 0, vz)).
+      const e1x = bx - ax, e1y = by - ay, e1z = bz - az, e2x = cx - ax, e2y = cy - ay, e2z = cz - az;
+      const px = -vz * e2y, py = vz * e2x - vx * e2z, pz = vx * e2y; // dir × e2
+      const det = e1x * px + e1y * py + e1z * pz;
+      if (Math.abs(det) < 1e-9) continue;
+      const inv = 1 / det, tx = ox - ax, ty = h - ay, tz = oz - az;
+      const u = (tx * px + ty * py + tz * pz) * inv;
+      if (u < 0 || u > 1) continue;
+      const qx = ty * e1z - tz * e1y, qy = tz * e1x - tx * e1z, qz = tx * e1y - ty * e1x;
+      const v = (vx * qx + vz * qz) * inv;
+      if (v < 0 || u + v > 1) continue;
+      const t = (e2x * qx + e2y * qy + e2z * qz) * inv;
+      if (t < 0 || t > far || (best !== null && t >= best)) continue;
+      // Only a wall's outside, facing back along the ray (not one it leaves a house through).
+      if (nrm[k] * vx + nrm[k + 2] * vz > -.3) continue;
+      best = t;
+    }
+  }
+  return best;
+}
 // Every frame: the lit crossing boxes after dark (`night`: 0 by day, 1 at night).
 export function lightSigns(night: number) {
   if (material) material.emissiveIntensity = Math.min(1, night * 2) * 1.6;
@@ -389,7 +563,7 @@ export function directionMesh(arrays: DirectionArrays, signs: DirectionSign[]) {
   g.computeBoundingSphere();
   const mesh = new THREE.Mesh(g, cutAway(new THREE.MeshStandardMaterial({ map, vertexColors: true, roughness: .5, metalness: .15 }), 'furniture'));
   mesh.name = 'direction signs'; mesh.castShadow = mesh.receiveShadow = true;
-  mesh.userData.posts = arrays.posts; mesh.userData.ownMaterial = true;
+  mesh.userData.posts = arrays.posts; mesh.userData.mounts = arrays.mounts; mesh.userData.ownMaterial = true;
   mesh.addEventListener('added', () => meshes.add(mesh));
   mesh.addEventListener('removed', () => meshes.delete(mesh));
   return mesh;

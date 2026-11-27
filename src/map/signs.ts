@@ -32,8 +32,27 @@ export function signStyle(name: string): SignStyle | null {
   if (INFORMATION.has(name)) return { shape: 'square', w: .5, h: .5, rank: 3 };
   if (ORDERS.has(name)) return { shape: 'disc', w: .6, h: .6, rank: 2 };
   if (PROHIBITIONS.has(name) || /^(speed \d+( end)?|weight [\d.]+|height [\d.]+)$/.test(name)) return { shape: 'disc', w: .6, h: .6, rank: 1 };
-  if (/^(zone \d+|living street|pedestrian zone)( end)?$/.test(name)) return { shape: 'rect', w: .6, h: .85, rank: 1 };
+  if (/^living street( end)?$/.test(name)) return { shape: 'rect', w: .75, h: .5, rank: 1 };
+  if (/^(zone \d+|pedestrian zone)( end)?$/.test(name)) return { shape: 'rect', w: .5, h: .7, rank: 1 };
+  // Prague's paid parking (parking.ts parkingSigns): IP 12, and E 13 with the zone under it.
+  if (/^parking (RES|MIX|VIS)$/.test(name)) return { shape: 'rect', w: .5, h: .7, rank: 3 };
+  if (name === 'parking plate VIS') return { shape: 'plate', w: .5, h: .36, rank: 9 };
+  if (/^parking plate (RES|MIX) \S+$/.test(name)) return { shape: 'plate', w: .5, h: .5, rank: 9 };
   return null;
+}
+
+// Cells the atlas keeps free for signs the game adds as tiles load (the paid-parking
+// zones' signs, one pair a zone's area): `cols` is fixed when the file is read, so these
+// take free cells and every tile's mapping stays as it was.
+export const SPARE_CELLS = 80;
+// A sign's index in `signs.names`, added if it isn't there and there's a cell free for it
+// (else -1).
+export function signIndex(signs: { names: string[]; cols: number }, name: string) {
+  const k = signs.names.indexOf(name);
+  if (k >= 0) return k;
+  if (signs.names.length + 1 >= signs.cols * signs.cols || !signStyle(name)) return -1;
+  signs.names.push(name);
+  return signs.names.length - 1;
 }
 
 // The sign atlas: square cells of CELL px, `cols` to a row, cell 0 plain white, the signs
@@ -47,6 +66,9 @@ export function cellRect(cell: number, cols: number, style: Pick<SignStyle, 'w' 
 }
 
 export const KERB_SET = .5, JOIN = 1.2, PER_POST = 2, BOTTOM = 2.1, PLATE = 9;
+// m: how far a wall sign's arms reach on into the wall (out of sight), to meet it where
+// the house front stands a little off where it was measured.
+export const ARM_INTO = .06;
 const GAP = .05, POST_R = .03, PULL = 4, PUSH = 8, STEP = .25;
 // How far apart two headings are, 0 to π.
 const turnBetween = (a: number, b: number) => Math.abs(((a - b) % (Math.PI * 2) + Math.PI * 3) % (Math.PI * 2) - Math.PI);
@@ -74,6 +96,10 @@ export function stand(x: number, y: number, angle: number, onRoad: (x: number, y
     let moved = 0;
     while (moved < PUSH && inside(x, y)) { x -= dx * STEP / 2; y -= dy * STEP / 2; moved += STEP / 2; }
     if (inside(x, y)) return null;
+    // To the footprint's wall itself, within a centimetre.
+    let lo = 0, hi = STEP / 2;
+    while (hi - lo > .01) { const m = (lo + hi) / 2; if (inside(x + dx * m, y + dy * m)) hi = m; else lo = m; }
+    x += dx * lo; y += dy * lo;
     wall = true;
   }
   return { x, y, wall };
@@ -204,18 +230,26 @@ export class SignParts {
   }
 }
 // The posts' geometries as one geometry's arrays, with where each post stands (x, y, 1 on a
-// wall, how many faces) for tests and collision.
-export function mergedArrays(parts: THREE.BufferGeometry[], posts: { x: number; y: number; wall: boolean; count: number }[]) {
+// wall, how many faces) for tests and collision. `walls`: the parts hung on a house front,
+// as `mounts` (x, y, z, angle, first vertex, vertices each), for the game to move onto the
+// rendered façade (signs.ts mountOnWalls): the houses drawn are IPR's survey, not the
+// footprints the wall was found on here.
+export interface WallMount { part: number; x: number; y: number; z: number; angle: number }
+export function mergedArrays(parts: THREE.BufferGeometry[], posts: { x: number; y: number; wall: boolean; count: number }[], walls: WallMount[] = []) {
   if (!parts.length) return null;
+  const starts: number[] = [];
+  let n = 0;
+  for (const g of parts) { starts.push(n); n += g.attributes.position.count; }
+  const mounts = new Float32Array(walls.flatMap(w => [w.x, w.y, w.z, w.angle, starts[w.part], parts[w.part].attributes.position.count]));
   const merged = mergeGeometries(parts)!;
   parts.forEach(g => g.dispose());
   const a = (name: string) => merged.attributes[name].array as Float32Array;
-  return { position: a('position'), normal: a('normal'), uv: a('uv'), color: a('color'), posts: new Float32Array(posts.flatMap(p => [p.x, p.y, p.wall ? 1 : 0, p.count])) };
+  return { position: a('position'), normal: a('normal'), uv: a('uv'), color: a('color'), posts: new Float32Array(posts.flatMap(p => [p.x, p.y, p.wall ? 1 : 0, p.count])), mounts };
 }
 
 // One tile's posts as one geometry's arrays. `cols`: the atlas's (atlasCols).
 export function signGeometry(posts: SignPost[], names: string[], cols: number) {
-  const size = cols * CELL, out: THREE.BufferGeometry[] = [];
+  const size = cols * CELL, out: THREE.BufferGeometry[] = [], walls: WallMount[] = [];
   for (const post of posts) {
     const o = new SignParts([.5 / cols, 1 - .5 / cols]);
     const styles = post.signs.map(s => signStyle(names[s])!);
@@ -230,7 +264,7 @@ export function signGeometry(posts: SignPost[], names: string[], cols: number) {
     if (post.wall) {
       for (let k = 0; k < styles.length; k++) for (const s of [-1, 1]) {
         const ay = mids[k] + s * styles[k].h * .3;
-        o.block(cx - .02, .02, ay - .015, ay + .015, -.015, .015);
+        o.block(cx - .02, ARM_INTO, ay - .015, ay + .015, -.015, .015);
       }
     } else o.post(y - GAP);
     for (let k = 0; k < styles.length; k++) {
@@ -241,9 +275,10 @@ export function signGeometry(posts: SignPost[], names: string[], cols: number) {
       if (!post.wall) for (const s of [-1, 1]) o.block(cx - .035, cx + .035, my + s * style.h * .28 - .02, my + s * style.h * .28 + .02, 0, back);
       o.plate(outline(style), cx, my, back, box ? .16 : .015, uvAt, box);
     }
+    if (post.wall) walls.push({ part: out.length, x: post.x, y: post.y, z: post.z, angle: post.angle });
     out.push(o.placed(post.x, post.y, post.z, post.angle));
   }
-  return mergedArrays(out, posts.map(p => ({ x: p.x, y: p.y, wall: p.wall, count: p.signs.length })));
+  return mergedArrays(out, posts.map(p => ({ x: p.x, y: p.y, wall: p.wall, count: p.signs.length })), walls);
 }
 export type SignArrays = NonNullable<ReturnType<typeof signGeometry>>;
 
@@ -276,7 +311,7 @@ export async function loadTrafficSigns(url: string, timeout = 3000, fetcher: typ
         const key = String(row[0]), list = byNode.get(key) ?? [];
         list.push([Number(row[1]) * Math.PI / 180, row[2]]); byNode.set(key, list);
       }
-      return { names, cols: atlasCols(names.length), points: new Float32Array(out), turns: byNode, directions: readDirections(directions) };
+      return { names, cols: atlasCols(names.length + SPARE_CELLS), points: new Float32Array(out), turns: byNode, directions: readDirections(directions) };
     } catch { return null; }
   };
   try {

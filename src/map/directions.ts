@@ -7,7 +7,8 @@
 // draws its signs' faces onto a canvas of its own (src/signs.ts drawDirections); this
 // module lays the canvas out the same way in the land worker, which builds the geometry.
 import * as THREE from 'three';
-import { SignParts, mergedArrays, stand } from './signs.ts';
+import { SignParts, mergedArrays, stand, ARM_INTO } from './signs.ts';
+import type { WallMount } from './signs.ts';
 import type { Point2 } from './geo.ts';
 
 export type PlateColour = 'green' | 'blue' | 'white' | 'brown';
@@ -96,7 +97,7 @@ export function directionGeometry(signs: DirectionSign[], onRoad: (x: number, y:
   height: (x: number, y: number) => number) {
   const { faces, rects, width, height: H } = directionLayout(signs);
   const white = [WHITE_CORNER / 2 / width, 1 - WHITE_CORNER / 2 / H];
-  const out: THREE.BufferGeometry[] = [], posts: { x: number; y: number; wall: boolean; count: number }[] = [];
+  const out: THREE.BufferGeometry[] = [], posts: { x: number; y: number; wall: boolean; count: number }[] = [], walls: WallMount[] = [];
   let k = 0;
   for (const sign of signs) {
     const own = faces.slice(k, k += signFaces(sign).length), boxes = rects.slice(k - own.length, k);
@@ -139,14 +140,15 @@ export function directionGeometry(signs: DirectionSign[], onRoad: (x: number, y:
     const cx = at.wall ? -(widest / 2 + .1) : 0;
     if (!at.wall) o.post(y - PLATE_GAP);
     own.forEach((f, i) => {
-      if (at.wall) for (const s of [-1, 1]) o.block(cx - .02, .02, mids[i] + s * f.h * .28 - .015, mids[i] + s * f.h * .28 + .015, -.015, .015);
+      if (at.wall) for (const s of [-1, 1]) o.block(cx - .02, ARM_INTO, mids[i] + s * f.h * .28 - .015, mids[i] + s * f.h * .28 + .015, -.015, .015);
       else o.block(-.035, .035, mids[i] - .02, mids[i] + .02, 0, POST_R + .025);
       o.plate(faceOutline(f), cx, mids[i], at.wall ? .02 : POST_R + .025, .02, uvFor(boxes[i]));
     });
+    if (at.wall) walls.push({ part: out.length, x: at.x, y: at.y, z, angle: sign.angle });
     out.push(o.placed(at.x, at.y, z, sign.angle));
     posts.push({ x: at.x, y: at.y, wall: at.wall, count: own.length });
   }
-  return mergedArrays(out, posts);
+  return mergedArrays(out, posts, walls);
 }
 export type DirectionArrays = NonNullable<ReturnType<typeof directionGeometry>>;
 
