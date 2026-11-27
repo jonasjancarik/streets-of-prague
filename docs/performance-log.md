@@ -2240,3 +2240,12 @@ frame 30.7–31.7 ms, about 460 draws (some 200 in the sun's shadow pass), 3.6 M
   instanced mesh per kind per tile, all `cut-furniture` (33 instanced and 9 plain shadow
   draws, 18 colour). A `BatchedMesh` per tile could draw a tile's furniture in one draw a
   pass, about 45 fewer.
+- **Tried and dropped: each tile's street furniture as a `BatchedMesh`** (one a material,
+  from above and from the street) instead of an instanced mesh a kind. The furniture's
+  draws went from about 60 to 13 (7 colour, 6 shadow), and it looked the same (the
+  benches' patch differed by at most 20 levels on 269 pixels). But the frame barely moved:
+  JavaScript 13.9–14.4 against 14.4–14.5 ms on this machine; with the CPU slowed 4×,
+  three runs each taken in turn, 76.3, 76.7, 79.1 against 80.2, 80.4, 75.8 ms. An
+  instanced draw with few bindings costs much less than the 20–40 µs average, and a
+  batch has work of its own each pass, so the count of draws alone is a poor guide:
+  measure what a kind of draw costs before merging it.
