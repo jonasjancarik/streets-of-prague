@@ -10,12 +10,12 @@ import type { RawStreetEdge } from '../network.ts';
 // use: bench, bin, courtyard planter; mapped in OSM (MAPPED, build_street_furniture.py): the
 // rest down to the drinking fountain, and benches and bins too; a post box mapped by a
 // building hangs on its wall (mappedSpots); inferred: the grate round a street tree in
-// paving (treeGrates) and the signs of the one-way streets (oneWaySigns). (No standing
+// paving (treeGrates). (The traffic signs are map/signs.ts's.) (No standing
 // hydrants: Prague's are underground, their covers drawn with the street's ironwork.)
 export const KIND = {
   bench: 0, bin: 1, planter: 2, bikeStand: 3, parkingMachine: 4, bollard: 5, postBox: 6,
   glass: 7, clearGlass: 8, paper: 9, plastic: 10, cartons: 11, metal: 12, wallPostBox: 13, stolperstein: 14,
-  cabinet: 15, advertisingColumn: 16, posterCase: 17, drinkingFountain: 18, treeGrate: 19, noEntry: 20, oneWay: 21,
+  cabinet: 15, advertisingColumn: 16, posterCase: 17, drinkingFountain: 18, treeGrate: 19,
 } as const;
 export type FurnitureKind = (typeof KIND)[keyof typeof KIND];
 // Kinds that lie flat in the ground and stop nobody.
@@ -64,12 +64,6 @@ export function mappedSpots(m: Float32Array, buildings: { rings: Point2[][] }[],
       x = hung.x + Math.sin(angle) * .13; y = hung.y - Math.cos(angle) * .13;
       // (Its front, the slot, faces local -z on the freestanding box; on the wall it faces out.)
       kind = KIND.wallPostBox;
-    } else if (kind === KIND.noEntry || kind === KIND.oneWay) {
-      // A sign is put by OSM's width of the street, and the game's carriageway can be wider
-      // (its parking lanes): out to the right, its local x, till it stands off the road.
-      for (let out = 0; out < 8 && onRoad(x, y); out += .5) { x += Math.cos(angle) * .5; y += Math.sin(angle) * .5; }
-      if (onRoad(x, y) || inside(x, y)) continue;
-      x += Math.cos(angle) * .4; y += Math.sin(angle) * .4;
     } else if (inside(x, y) || onRoad(x, y)) continue;
     out.push({ kind, x, y, z: height(x, y), angle });
   }
@@ -100,45 +94,11 @@ export function treeGrates(trees: readonly (readonly (number | undefined)[])[], 
   return out;
 }
 
-// The signs a one-way street has, from the streets the traffic drives (one edge each way on
-// a two-way street, one along the traffic on a one-way one): where it runs into a junction,
-// a no-entry sign facing those who would turn in against it; where it starts from one, a
-// one-way sign facing those turning in. On the right of the way they face, by the kerb, a
-// few metres into the street; only on the town's ordinary streets, not main roads, whose
-// one-way halves have signs of their own. [kind, x, y, angle] as mappedFurniture gives.
-const SIGNED = new Set(['secondary', 'tertiary', 'residential', 'unclassified', 'living_street']);
-export function oneWaySigns(drive: readonly { u: string; v: string; hw: string; oneway?: boolean; pts: Point2[]; width: number; bridge?: boolean; tunnel?: boolean }[]) {
-  const ends = new Map<string, Set<string>>();
-  for (const e of drive) for (const [a, b] of [[e.u, e.v], [e.v, e.u]]) {
-    const s = ends.get(a) ?? new Set<string>(); s.add(b); ends.set(a, s);
-  }
-  const out: number[] = [];
-  const sign = (kind: number, [x, y]: Point2, [dx, dy]: Point2, side: number, face: Point2) => {
-    // In from the junction along (dx, dy), and out to the right of whoever drives up to it
-    // (they come towards its face, along -face: their right is (-face.y, face.x)).
-    out.push(kind, x + dx * 3 - face[1] * side, y + dy * 3 + face[0] * side, Math.atan2(face[0], -face[1]));
-  };
-  for (const e of drive) {
-    if (!e.oneway || !SIGNED.has(e.hw) || e.bridge || e.tunnel || e.pts.length < 2) continue;
-    let len = 0;
-    for (let i = 1; i < e.pts.length; i++) len += Math.hypot(e.pts[i][0] - e.pts[i - 1][0], e.pts[i][1] - e.pts[i - 1][1]);
-    if (len < 15) continue;
-    const unit = (a: Point2, b: Point2): Point2 => { const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1; return [(b[0] - a[0]) / l, (b[1] - a[1]) / l]; };
-    const first = unit(e.pts[0], e.pts[1]), n = e.pts.length, last = unit(e.pts[n - 2], e.pts[n - 1]);
-    const side = e.width / 2 + 1;
-    // Its end: those coming from the junction would drive back along -last; the sign faces them (+last).
-    if ((ends.get(e.v)?.size ?? 0) >= 3) sign(KIND.noEntry, e.pts[n - 1], [-last[0], -last[1]], side, last);
-    // Its start: those turning in drive along +first; the sign faces them (-first).
-    if ((ends.get(e.u)?.size ?? 0) >= 3) sign(KIND.oneWay, e.pts[0], first, side, [-first[0], -first[1]]);
-  }
-  return out;
-}
-
 // Half its footprint along its local x and z (m), for collision.
 export const FURNITURE_SIZE = [[0.95, 0.42], [0.32, 0.32], [0.65, 0.65],
   [0.05, 0.40], [0.24, 0.18], [0.12, 0.12], [0.2, 0.16],
   [0.66, 0.66], [0.66, 0.66], [0.70, 0.56], [0.70, 0.56], [0.70, 0.56], [0.70, 0.56], [0.18, 0.12], [0.05, 0.05],
-  [0.42, 0.2], [0.62, 0.62], [0.62, 0.1], [0.2, 0.2], [0.6, 0.6], [0.06, 0.06], [0.06, 0.06]] as const;
+  [0.42, 0.2], [0.62, 0.62], [0.62, 0.1], [0.2, 0.2], [0.6, 0.6]] as const;
 export const FURNITURE_KINDS = FURNITURE_SIZE.length;
 const STEP = 14;
 const INSET = 12; // neighbouring generated tree crowns can reach across a tile edge

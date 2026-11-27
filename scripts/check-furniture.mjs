@@ -87,23 +87,3 @@ console.log('Survey parsing, deadline, abort and immutable unavailable outcome p
   assert(Math.sin(g[0].angle) < 0, 'turned towards the road it found');
   console.log('Tree grates: paving by a road, not lawns, not far from roads, not outside the tile');
 }
-
-// A one-way street that runs from one junction to another: a one-way sign where it starts,
-// facing the traffic turning in, and a no-entry sign where it ends, facing those who would
-// turn in against it, each on the right of whoever comes up to it.
-{
-  const { oneWaySigns } = await import('../src/map/furniture.ts');
-  const e = (u, v, pts, oneway = false) => ({ u, v, hw: 'residential', oneway, pts, width: 6 });
-  const drive = [e('A', 'B', [[0, 0], [100, 0]], true),
-    e('A', 'C', [[0, 0], [0, 50]]), e('C', 'A', [[0, 50], [0, 0]]), e('A', 'D', [[0, 0], [0, -50]]), e('D', 'A', [[0, -50], [0, 0]]),
-    e('B', 'E', [[100, 0], [100, 50]]), e('E', 'B', [[100, 50], [100, 0]]), e('B', 'F', [[100, 0], [100, -50]]), e('F', 'B', [[100, -50], [100, 0]])];
-  const s = oneWaySigns(drive), signs = [];
-  for (let i = 0; i < s.length; i += 4) signs.push({ kind: s[i], x: s[i + 1], y: s[i + 2], a: s[i + 3] });
-  const one = signs.find(q => q.kind === KIND.oneWay), stop = signs.find(q => q.kind === KIND.noEntry);
-  assert(one && stop && signs.length === 2, 'a sign at each end: ' + JSON.stringify(signs));
-  // Traffic runs east: turning in at A it drives east, its right is south; the sign faces west.
-  assert(one.x === 3 && one.y === -4 && Math.abs(Math.sin(one.a) + 1) < 1e-9, 'one-way sign at the start: ' + JSON.stringify(one));
-  // Against it at B one would drive west, the right is north; the sign faces east.
-  assert(stop.x === 97 && stop.y === 4 && Math.abs(Math.sin(stop.a) - 1) < 1e-9, 'no-entry sign at the end: ' + JSON.stringify(stop));
-  console.log('One-way signs: at each end, facing the right way, on the right');
-}

@@ -423,6 +423,10 @@ OpenStreetMap maps a memorial plaque, a stone or bronze tablet hangs on the near
 plaster at about head height (`plaqueMounts`, `src/plaques.ts`); its engraving is only
 lines, not the real inscription. The brass Stolpersteine lie in the pavement where they
 are mapped (street furniture, `docs/furniture.md`).
+The traffic signs stand on grey posts by the kerb, or hang from a house front where there is
+no pavement, inferred from OSM's rules: one-way streets, give way, crossings (lit boxes
+where IPR's survey has a powered sign), zones, speed and vehicle limits and turn bans; the
+lanes before a junction have their painted arrows (`docs/traffic-signs.md`).
 Higher up, now and then an air conditioner hangs on brackets under a window, mostly on
 functionalist and panel fronts, and once in a while a satellite dish beside one
 (`airConditioner`, `satelliteDish`).
@@ -2710,6 +2714,7 @@ uv run build_terraces.py centrum   # cafés, restaurants and pubs with tables ou
 uv run build_shops.py centrum      # ground-floor shops, cafés and pubs (OSM) for the shopfronts → shops.json
 uv run build_addresses.py centrum  # house numbers (RÚIAN via OSM) for the plates by the doors → addresses.json, addresses/
 uv run build_street_furniture.py centrum  # benches, bins, bike stands, bollards, cabinets, plaques … (OSM) → street-furniture.json
+uv run --with osmium build_traffic_signs.py centrum  # traffic signs and lane arrows from OSM's rules → traffic-signs.json
 uv run build_districts.py centrum  # parts of town from OSM's cadastral areas → districts.json
 uv run landmarks.py centrum        # landmarks from IPR's photorealistic mesh → landmarks/
 ```
@@ -3069,6 +3074,12 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   other share one cycle (a crossing of two dual carriageways is four nodes); the main
   street gets the longer green. Lights for a pedestrian crossing alone are left out.
   It takes a few seconds, even for the whole city.
+- **Traffic signs.** `build_traffic_signs.py` reads the local OSM extract (with pyosmium:
+  `uv run --with osmium`) and IPR's powered traffic signs (downloaded once into
+  `.cache/utility/powered-signs.json`), and infers the signs from the rules OSM records:
+  one-way streets, give way and the main road, crossings, zones, speed and vehicle limits,
+  turn bans, and the lanes' arrows (`docs/traffic-signs.md`). About 25 seconds for the
+  whole city.
 - **Metro.** `build_metro.py` takes the metro from the same timetables: each line's
   stations in order with the typical minutes between them, how often it runs,
   every station's entrances (PID's feed has them all, 331), and the track from the

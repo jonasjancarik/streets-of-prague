@@ -44,6 +44,7 @@ import type { DriveEdge, WalkEdge, WalkGraph } from './network.ts';
 import type { Car } from './car.ts';
 import type { Landmark, TileJSON, MapIndex, TilePassage, BuildingArrays, HeightGrid, LevelInput, LandResult, TreeTrunk, WorkerJobs, WorkerResults } from './contracts.ts';
 import type { LevelMask } from './ground.ts';
+import { turnArrows } from './ground.ts';
 import { isTileJSON } from './contracts.ts';
 import { TileWorkers } from './tileWorkers.ts';
 import { SkyRefresh } from './skyRefresh.ts';
@@ -66,7 +67,8 @@ import { riverBanks } from './riverReflection.ts';
 import { chimneySmoke, dropChimneySmoke } from './chimneySmoke.ts';
 import { furnitureSurvey } from './furnitureSurvey.ts';
 import { mappedFurniture } from './mappedFurniture.ts';
-import { oneWaySigns } from './map/furniture.ts';
+import { loadTrafficSigns, signMesh, lightSigns } from './signs.ts';
+import type { TrafficSigns } from './signs.ts';
 import { CountrysideTiles } from './countrysideTiles.ts';
 import { blendHeights, edgeGrid } from './countrysideJoin.ts';
 
@@ -82,6 +84,7 @@ interface TileSource {
   withIpr: boolean; ipr: ArrayBuffer | null;
   extrude: (TileJSON['buildings'][number] & { base: number })[];
   clipped: WorkerJobs['ground']['edges']; parkingZones: (string | null)[]; kerbPaint: { cat: string; pts: Point2[] }[];
+  arrows: Polygons; // the lanes' arrows (ground.ts turnArrows)
   standing: { rings: Point2[][] }[]; // the buildings that stand on the ground
   footprints: Footprint[]; // the same and those round the tile, not their parts, for the party walls
   shapes: Shadower[]; trees: LandResult['trees'];
@@ -121,6 +124,7 @@ interface Tile {
   poles: Post[]; // the wires' poles, among the posts a car can hit
   fences: FenceSection[];
   furniture: THREE.InstancedMesh[];
+  signs: THREE.Mesh | null; // the traffic signs on their posts (signs.ts)
   relief: { texture: THREE.DataTexture; box: number[]; sample: (x: number, y: number, side?: number | boolean) => number; hm: Float32Array; labels: Uint8Array | null; edges: () => void } | null;
   sample?: (x: number, y: number, side?: number | boolean) => number;
   // The tile's water (the river and ponds), each polygon with its bounding box.
@@ -568,6 +572,8 @@ export class TileWorld {
     this.streetFurniture = street;
     for (const tile of this.loaded.values()) {
       furnitureView(tile.furniture, street);
+      // (The traffic signs are too small to read from above: drawn in the street views only.)
+      if (tile.signs) tile.signs.visible = street;
       tile.drawn?.surfaces.bridgeView(street);
       const panel = tile.fences.find(section => !section.hedge && !section.rail);
       if (panel) fenceCamera(panel.mesh, street);
@@ -719,6 +725,8 @@ export class TileWorld {
   furnitureReserved: Promise<Float32Array | null>;
   // OSM's street furniture (mappedFurniture.ts): [kind, x, y, angle] per item, or none.
   furnitureMapped: Promise<Float32Array | null>;
+  // The traffic signs (signs.ts), or none.
+  trafficSigns: Promise<TrafficSigns | null>;
   private roadSurfaces: Promise<ReturnType<typeof readRoadSurfaces>> | null;
   private roadProfiles: Promise<ReturnType<typeof readRoadProfile>> | null;
   private stationTracks: Promise<ReturnType<typeof readStationTracks>> | null;
@@ -845,6 +853,7 @@ export class TileWorld {
     // A stable survey source, independent of the live post index and load order.
     this.furnitureReserved = furnitureSurvey(dataUrl(area, 'lamps.bin.gz'));
     this.furnitureMapped = mappedFurniture(dataUrl(area, 'street-furniture.json'));
+    this.trafficSigns = loadTrafficSigns(dataUrl(area, 'traffic-signs.json'));
     // Collision lookups across tiles; anywhere not loaded counts as solid.
     // Game y = 0 is this height above sea level (IPR buildings are stored against it).
     this.ref = index.iprRef ?? 180;
@@ -1458,6 +1467,7 @@ export class TileWorld {
     this.turns.shift()?.();
     this.street = !!view;
     showChristmasLights(SEASON.value.w > .5, WINDOWS.value);
+    lightSigns(WINDOWS.value);
     for (let n = 0; n < 6 && this.reveal.length; n++) this.reveal.shift()!.visible = true;
     const far = view ? FAR_GROUND.value : 0;
     for (const tile of this.loaded.values()) {
@@ -1722,13 +1732,12 @@ export class TileWorld {
       const x = reservedAll[n], y = reservedAll[n + 1];
       if (x > x0 - 4 && x < x1 + 4 && y > y0 - 4 && y < y1 + 4) reserved.push(x, y);
     }
-    // Each item belongs to the one tile its point is in. With them the signs the one-way
-    // streets have (oneWaySigns), from the streets traffic drives here.
+    // Each item belongs to the one tile its point is in; so does each traffic sign.
     const mappedAll = await this.furnitureMapped, mapped: number[] = [];
-    const signs = oneWaySigns(t.drive ?? []);
-    for (let n = 0; n < signs.length; n += 4) {
-      const x = signs[n + 1], y = signs[n + 2];
-      if (x >= x0 && x < x1 && y >= y0 && y < y1) mapped.push(signs[n], x, y, signs[n + 3]);
+    const signsAll = await this.trafficSigns, signPoints: number[] = [];
+    for (let n = 0; signsAll && n < signsAll.points.length; n += 4) {
+      const x = signsAll.points[n + 1], y = signsAll.points[n + 2];
+      if (x >= x0 && x < x1 && y >= y0 && y < y1) signPoints.push(signsAll.points[n], x, y, signsAll.points[n + 3]);
     }
     for (let n = 0; mappedAll && n < mappedAll.length; n += 4) {
       const x = mappedAll[n + 1], y = mappedAll[n + 2];
@@ -1738,7 +1747,8 @@ export class TileWorld {
     const bounds: Bounds = [geo.minX, geo.minY, geo.maxX, geo.maxY];
     const source: TileSource = {
       t, size: data.size, origin: data.origin, bounds, ground, levels: tileLevels, masks: [], marks, hide,
-      withIpr, ipr: withIpr ? ipr : null, extrude, clipped, parkingZones, kerbPaint: TILE_LOOK.roadPaint ? kerbPaint(edges, zones, t.box, t.areas.parking, t.crossings) : [], standing: own.filter(grounded).map((b) => ({ rings: b.rings })),
+      withIpr, ipr: withIpr ? ipr : null, extrude, clipped, parkingZones, kerbPaint: TILE_LOOK.roadPaint ? kerbPaint(edges, zones, t.box, t.areas.parking, t.crossings) : [],
+      arrows: TILE_LOOK.roadPaint && signsAll ? turnArrows(edges, signsAll.turns, t.box) : [], standing: own.filter(grounded).map((b) => ({ rings: b.rings })),
       shapes, footprints: t.buildings.filter((b) => grounded(b) && !b.part).map((b) => ({ rings: b.rings, h: b.h })), trees: { matrices: new Float32Array(0), colours: new Float32Array(0), yearly: new Float32Array(0), outlines: new Float32Array(0), count: 0, big: 0, shrubs: 0, conifers: 0 },
     };
     // A tile that's in view as soon as it's loaded: its meshes' jobs go to the workers
@@ -1746,7 +1756,7 @@ export class TileWorld {
     const early = this.shown.has(k) ? this.meshJobs(k, source) : null;
     early?.catch(() => {});
     const landJob = this.workers.run('land', {
-      data: { size: data.size, origin: data.origin, areas: withPatches(t), roads: t.roads, buildings: outlines, walls: t.walls, fences: t.fences, sheds: t.sheds ?? [], trees: t.trees, shrubs: t.shrubs, canopy: t.canopy, utility: t.utility, mapped: new Float32Array(mapped), passages: t.passages || [], levels: !!tileLevels, crossers, stepEdges: !location.search.includes('nostepedges'),
+      data: { size: data.size, origin: data.origin, areas: withPatches(t), roads: t.roads, buildings: outlines, walls: t.walls, fences: t.fences, sheds: t.sheds ?? [], trees: t.trees, shrubs: t.shrubs, canopy: t.canopy, utility: t.utility, mapped: new Float32Array(mapped), signs: signsAll && !location.search.includes('nosigns') ? { names: signsAll.names, cols: signsAll.cols, points: new Float32Array(signPoints) } : undefined, passages: t.passages || [], levels: !!tileLevels, crossers, stepEdges: !location.search.includes('nostepedges'),
         walk: t.walk ?? [], reserved: new Float32Array(reserved), structures: structures.flatMap(s => s.polys), furnitureBuildings: [...t.buildings.map(b => ({ rings: b.rings })), ...hide.map(rings => ({ rings }))], furnitureEnabled: reservedAll !== null && !location.search.includes('nofurniture') },
       seeds: seedArray, ground, bridges: (tileLevels || []).filter((l) => l.kind === 'bridge').map((l) => l.heights),
       box: bounds, structures: tileLevels ? structures : [],
@@ -1769,6 +1779,8 @@ export class TileWorld {
     const fenceRows = fenceMeshes(land.fences, this.streetFurniture);
     const sheds = shedMesh(land.sheds);
     const furniture = furnitureMeshes(land.furniture, this.streetFurniture);
+    const signs = land.signs && signsAll ? signMesh(land.signs, signsAll) : null;
+    if (signs) signs.visible = this.streetFurniture;
     const statues = this.statueFixtures(onLevels, t.box);
     const fenceSections = fences.sections(k, land.fences.sections, fenceRows);
     streetHedges.add(k, fenceSections);
@@ -1822,7 +1834,7 @@ export class TileWorld {
     const tile: Tile = {
       k, i: t.i, j: t.j, box: t.box, passages: t.passages || [], raised: t.buildings.filter((b) => !grounded(b)).map((b) => b.rings), grid, trunkCells: land.trunkCells, levels: onLevels, cars, ms,
       source, shown: false, dressing: null, drawn: null, drawMs: {}, drawAfter: 0, fixtures: [walls, ...(handrails ? [handrails] : []), fenceRows.fence, fenceRows.hedge, fenceRows.rail, ...(sheds ? [sheds] : []), ...wires, ...lights, ...statues, ...stairwells],
-      roads, crossers, poles, fences: fenceSections, furniture, relief: shade, sample: shade?.sample,
+      roads, crossers, poles, fences: fenceSections, furniture, signs, relief: shade, sample: shade?.sample,
       water: (t.areas.water || []).map((rings) => {
         const xs = rings[0].map((p) => p[0]), ys = rings[0].map((p) => p[1]);
         return { rings, box: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] as Bounds };
@@ -1844,6 +1856,7 @@ export class TileWorld {
       this.onCars(cars, tile);
     } catch (error) {
       disposeFurniture(furniture);
+      signs?.geometry.dispose();
       this.loaded.delete(k);
       this.byIndex.delete(key);
       this.last.i = NaN;
@@ -1869,7 +1882,7 @@ export class TileWorld {
       w.run('ground', {
         d: { areas: withPatches(t), roads: t.roads, rails: t.rails, deckRails: t.deckRails, bridgeTracks: t.bridgeTracks, station, weirs: t.weirs, crossings: TILE_LOOK.roadPaint ? t.crossings : [], marks: t.marks, utility: t.utility,
           stairs: notSurveyed(groundStairs(t.walk), t.flights).map(({ pts, width }) => ({ pts, width })), flights: t.flights, ref: this.ref },
-        paint: TILE_LOOK.roadPaint, fine: STREET_QUALITY.groundFine, flat: STREET_QUALITY.groundFlat, rasterRoads: !this.ortho && !!s.ground && roadRasterEnabled(), box: s.bounds, edges: s.clipped, buildings: s.standing, parkingZones: s.parkingZones, kerbPaint: s.kerbPaint, ground: s.ground, levels: s.levels,
+        paint: TILE_LOOK.roadPaint, fine: STREET_QUALITY.groundFine, flat: STREET_QUALITY.groundFlat, rasterRoads: !this.ortho && !!s.ground && roadRasterEnabled(), box: s.bounds, edges: s.clipped, buildings: s.standing, parkingZones: s.parkingZones, kerbPaint: s.kerbPaint, arrows: s.arrows, ground: s.ground, levels: s.levels,
       }),
       buffer ? w.run('ipr', { buffer, box: t.box, absolute: this.index.iprRef != null, passages: tileOpenings(t), ground: s.ground, bbox: this.index.bbox_wgs84, hide: s.hide, clutter: ROOF_CLUTTER.value > 0.5, footprints: s.footprints }, [buffer]) : null,
       !s.withIpr || s.extrude.length ? w.run('roofs', { buildings: s.extrude, size: s.size, origin: s.origin, ground: s.ground, bbox: this.index.bbox_wgs84, water: t.areas?.water ?? [], passages: tileOpenings(t), stops: stopLines(t) }) : null,
@@ -1990,6 +2003,7 @@ export class TileWorld {
     const own = [...buildings, ...(hidden ? [hidden] : []), ...(transmission ? [transmission] : [])];
     const smoke = iprArrays?.chimneys ? chimneySmoke(iprArrays.chimneys, this.scene) : null;
     group.add(surfaces.group, ...buildings, ...tile.fixtures, ...landmarks, ...tile.furniture);
+    if (tile.signs) group.add(tile.signs);
     if (transmission) group.add(transmission);
     if (smoke) group.add(smoke);
     // Nothing in a tile ever moves: its matrices are worked out once, not every frame,
@@ -2115,6 +2129,7 @@ export class TileWorld {
     if (!t) return;
     this.undress(t);
     disposeFurniture(t.furniture);
+    t.signs?.geometry.dispose();
     this.sky.delete(t.i * 65536 + t.j);
     this.dropPhoto(k);
     for (const m of t.fixtures) {

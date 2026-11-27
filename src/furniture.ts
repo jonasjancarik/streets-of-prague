@@ -19,7 +19,7 @@ function prepareStreet() {
 }
 const names = ['benches', 'bins', 'courtyard planters', 'bike stands', 'parking machines', 'bollards', 'post boxes',
   'glass bells', 'clear glass bells', 'paper containers', 'plastic containers', 'carton containers', 'metal containers', 'post boxes on walls', 'Stolpersteine',
-  'street cabinets', 'advertising columns', 'poster cases', 'drinking fountains', 'tree grates', 'no-entry signs', 'one-way signs'];
+  'street cabinets', 'advertising columns', 'poster cases', 'drinking fountains', 'tree grates'];
 
 function changeModel(body: THREE.InstancedMesh, fromStreet: boolean) {
   const kind: number = body.userData.kind;

@@ -80,12 +80,7 @@ Without the file a map has only the inferred furniture.
 A surveyed tree standing in paving (no mapped green under it, and a road within 7 m or a
 paved square round it) gets a flat cast-iron grate round its foot (`treeGrates`).
 
-The one-way streets have their signs, inferred from the streets traffic drives (OSM has
-almost no `traffic_sign` points): where one ends at a junction, a no-entry sign on the
-right of whoever would turn in against it, facing them; where it starts, a one-way sign
-facing the traffic turning in (`oneWaySigns`). Only ordinary town streets (secondary
-down to living streets, at least 15 m long, between junctions of three or more ways);
-a sign that lands on the game's carriageway moves out to the kerb.
+The traffic signs, including the one-way streets', are `docs/traffic-signs.md`.
 
 Run `node scripts/check-furniture.mjs` for deterministic placement, seams, clearance,
 slopes and density. With Vite running, `node scripts/check-furniture-browser.mjs

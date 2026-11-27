@@ -141,6 +141,8 @@ export interface TreeTrunk { x: number; y: number; radius: number }
 
 export interface LandResult {
   furniture: FurnitureInstances;
+  // The tile's traffic signs on their posts as one geometry (map/signs.ts), or none.
+  signs: import('./map/signs.ts').SignArrays | null;
   trees: { matrices: Float32Array; colours: Float32Array; yearly: Float32Array; outlines: Float32Array; count: number; big: number; shrubs: number; conifers: number };
   walls: { position: Float32Array; normal: Float32Array };
   fences: FenceBuffers;
@@ -161,6 +163,7 @@ export interface WorkerJobs {
     d: GroundTileData; box: Bounds; edges: GroundRoadEdge[];
     buildings: { rings: Point2[][] }[]; parkingZones: (string | null)[];
     kerbPaint?: { cat: string; pts: Point2[] }[]; // the zone lines along kerbside parking rows (parking.ts kerbPaint)
+    arrows?: Polygons; // the lanes' arrows (ground.ts turnArrows)
     ground: HeightGrid | null; levels: LevelInput[] | null; paint?: boolean; rasterRoads?: boolean;
     fine?: number; // maximum ground triangle edge; step cuts and road refinement stay finer
     flat?: number; // draping by error: longer edges, split down to `fine` only where the ground bends (0: off)
@@ -169,7 +172,7 @@ export interface WorkerJobs {
   // The tile's raised kerbs (kerbDrop.ts): its carriageway, and its bridges and tunnels.
   kerbs: { box: Bounds; low: Point2[][][]; joins: Point2[][][] };
   land: {
-    data: FurnitureData & { levels: boolean; utility?: UtilityMark[]; mapped?: Float32Array; crossers: Crosser[]; stepEdges: boolean; fences: FenceTile['fences']; sheds: Shed[]; furnitureBuildings: { rings: Point2[][] }[]; furnitureEnabled: boolean };
+    data: FurnitureData & { levels: boolean; utility?: UtilityMark[]; mapped?: Float32Array; signs?: { names: string[]; cols: number; points: Float32Array }; crossers: Crosser[]; stepEdges: boolean; fences: FenceTile['fences']; sheds: Shed[]; furnitureBuildings: { rings: Point2[][] }[]; furnitureEnabled: boolean };
     seeds: Float64Array; ground: HeightGrid | null; bridges: HeightGrid[];
     // The bridges and tunnels to rasterise, each a level to get about on (ground.ts).
     box: Bounds; structures: TileStructure[];

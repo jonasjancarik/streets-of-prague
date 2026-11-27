@@ -249,25 +249,6 @@ function treeGrate() {
   return join(parts);
 }
 
-// Traffic signs on a grey post, their face towards local +z and a grey back.
-function signPost(face: THREE.BufferGeometry[], y: number, square = false) {
-  // A grey back the face's own shape, a little behind it.
-  const back = (square ? new THREE.PlaneGeometry(.5, .5) : new THREE.CircleGeometry(.315, 24)).rotateY(Math.PI).translate(0, y, .015);
-  return join([rod([0, 0, 0], [0, y + .35, 0], .03, 8, '#8e9394'), finish(back, '#9a9d9c'), ...face]);
-}
-// No entry (B2 in the Czech rules): a red disc with a white bar.
-function noEntrySign() {
-  const y = 2.25;
-  return signPost([finish(new THREE.CircleGeometry(.3, 24).translate(0, y, .035), '#c4271f'),
-    finish(new THREE.CircleGeometry(.315, 24).translate(0, y, .032), '#f2f0ea'), box(.42, .085, .01, 0, y, .042, '#f4f2ec')], y);
-}
-// One way (IP4b): a blue square with a white arrow pointing up.
-function oneWaySign() {
-  const y = 2.2, arrow = new THREE.Shape([new THREE.Vector2(-.13, -.02), new THREE.Vector2(0, .17), new THREE.Vector2(.13, -.02)]);
-  return signPost([box(.5, .5, .02, 0, y, .03, '#1f4fa0'), box(.07, .26, .01, 0, y - .1, .045, '#f4f2ec'),
-    finish(new THREE.ShapeGeometry(arrow).translate(0, y, .046), '#f4f2ec')], y, true);
-}
-
 // A drinking fountain (pítko): a dark steel post with a basin and a push tap.
 function drinkingFountain() {
   const dark = '#3a3f3f';
@@ -311,5 +292,5 @@ export const CONTAINER_COLOURS = ['#2f6b3a', '#e6e6dc', '#2a5aa8', '#e8c22a', '#
 export function furnitureModels() {
   return [bench(), bin(), planter(), bikeStand(), parkingMachine(), bollard(), postBox(),
     glassBell(CONTAINER_COLOURS[0]), glassBell(CONTAINER_COLOURS[1]), ...CONTAINER_COLOURS.slice(2).map(container), wallPostBox(), stolperstein(),
-    cabinet(), advertisingColumn(), posterCase(), drinkingFountain(), treeGrate(), noEntrySign(), oneWaySign()];
+    cabinet(), advertisingColumn(), posterCase(), drinkingFountain(), treeGrate()];
 }

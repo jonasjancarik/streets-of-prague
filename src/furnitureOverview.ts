@@ -39,7 +39,5 @@ export function furnitureOverview() {
   return [merge(bench), merge(bin), merge(planter), merge(stand), merge(machine), merge(post), merge(box2),
     ...bells.map(merge), ...bins.map(merge), merge([box(0.34, 0.46, 0.22, 0, 1.13, 0, '#e7862a')]), merge([box(0.1, 0.05, 0.1, 0, 0.03, 0, '#b8933f')]),
     merge([box(0.8, 1.2, 0.36, 0, 0.6, 0, '#9a9b94')]), merge([box(1.15, 2.7, 1.15, 0, 1.35, 0, '#a9785a'), box(1.25, 0.4, 1.25, 0, 2.9, 0, '#2f4a3c')]),
-    merge([box(1.2, 1.9, 0.14, 0, 1.15, 0, '#565c5e')]), merge([box(0.35, 1.0, 0.35, 0, 0.5, 0, '#3a3f3f')]), merge([box(1.2, 0.05, 1.2, 0, 0.03, 0, '#2c2e2c')]),
-    merge([box(0.06, 2.5, 0.06, 0, 1.25, 0, '#8e9394'), box(0.6, 0.6, 0.04, 0, 2.25, 0, '#c4271f')]),
-    merge([box(0.06, 2.5, 0.06, 0, 1.25, 0, '#8e9394'), box(0.5, 0.5, 0.04, 0, 2.2, 0, '#1f4fa0')])];
+    merge([box(1.2, 1.9, 0.14, 0, 1.15, 0, '#565c5e')]), merge([box(0.35, 1.0, 0.35, 0, 0.5, 0, '#3a3f3f')]), merge([box(1.2, 0.05, 1.2, 0, 0.03, 0, '#2c2e2c')])];
 }
