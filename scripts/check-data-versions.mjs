@@ -6,8 +6,9 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const root = new URL('..', import.meta.url).pathname;
+const root = fileURLToPath(new URL('..', import.meta.url));
 const lines = (file) => readFileSync(join(root, 'deploy', file), 'utf8').split('\n').map((l) => l.trim()).filter(Boolean);
 const history = lines('data-history');
 const [version] = lines('data-version');

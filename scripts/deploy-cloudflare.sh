@@ -36,7 +36,7 @@ if [[ -n ${TURNSTILE_SITE_KEY:-} ]]; then export VITE_TURNSTILE_SITE_KEY=$TURNST
 BEACON=
 if [[ -f deploy/web-analytics-token ]]; then BEACON=$(tr -d '\n' < deploy/web-analytics-token); fi
 VITE_TELEMETRY_URL=/api/report VITE_CF_BEACON_TOKEN=$BEACON VITE_DATA_URL=$DATA_URL VITE_DATA_VERSION=$VERSION node --input-type=module -e "import { build } from 'vite'; await build({ publicDir: false, build: { outDir: 'dist-cf' } })"
-(cd public && git ls-files -z) | rsync -a --from0 --files-from=- public/ dist-cf/
+(cd public && git ls-files -z | tar -cf - --null -T -) | tar -xf - -C dist-cf
 # version.json says what is current (src/update.ts reads it in open tabs), so it is
 # never cached.
 cat > dist-cf/_headers <<'HEADERS'
@@ -48,7 +48,7 @@ HEADERS
 node scripts/write-version-json.mjs dist-cf "$VERSION"
 
 # cf's Build Output keeps the deployment byte-for-byte equal to this build.
-if [[ -d .cloudflare/output ]]; then trash .cloudflare/output; fi
+if [[ -d .cloudflare/output ]]; then if command -v trash >/dev/null; then trash .cloudflare/output; else rm -rf .cloudflare/output; fi; fi
 OUTPUT=.cloudflare/output/v0
 mkdir -p "$OUTPUT/workers/default/assets"
 cat > "$OUTPUT/config.json" <<'CONFIG'
@@ -86,7 +86,7 @@ console.log(JSON.stringify({
     RATE: { type: "rate-limit", namespace: "1001", simple: { limit: 5, period: 60 } },
   },
 }))' > "$OUTPUT/workers/default/worker.config.json"
-rsync -a dist-cf/ "$OUTPUT/workers/default/assets/"
+cp -R dist-cf/. "$OUTPUT/workers/default/assets/"
 printf 'Cloudflare app data: %s\n' "$DATA_URL"
 export CLOUDFLARE_ACCOUNT_ID=7756b12931ecfb3900a31049e157d706
 cf deploy --prebuilt --dry-run
