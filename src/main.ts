@@ -108,7 +108,7 @@ import type { Surface, HornKind, Rotor } from './audio.ts';
 import { tunnelFinishesView } from './tunnelFinish.ts';
 import { StreetIronwork } from './streetIronwork.ts';
 import { StreetPlates } from './streetPlates.ts';
-import { eyesFor, firstPersonOptions, initialView, inStreetCone, savePlayerView, vrSupported, WalkingGait, type Eyes, type PlayerView } from './streetView.ts';
+import { carHandling, eyesFor, firstPersonOptions, initialView, inStreetCone, savePlayerView, vrSupported, WalkingGait, type Eyes, type PlayerView } from './streetView.ts';
 import { setupTouch } from './touch.ts';
 import { setupGamepad, padLabels, usingPad } from './gamepad.ts';
 import './credits.ts';
@@ -2458,8 +2458,8 @@ async function main() {
     if (!footView && gaitActive) gait.reset();
     gaitActive = footView;
     if (inCar) {
-      // (Overhead, every car drives with the classic handling.)
-      const handling = !!testkit?.eyes && !testkit.cam ? firstPersonOptions.handling : 'classic';
+      // (Each view has its own handling: carHandling.)
+      const handling = carHandling[cameraChoice.get()];
       let steer = ctl.aim ? steerToward(inCar, ctl.aim.h, ctl.move) : ctl.turn;
       if (ctl.run) {
         const a = assist.steer(inCar, steer, handling !== 'classic' ? inCar.physics ?? inCar.suspension : undefined);

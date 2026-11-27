@@ -16,13 +16,11 @@ export type PlayerView = 'overhead' | 'first' | 'third' | 'vr';
 
 export type CarHandling = 'classic' | 'realistic' | 'physical';
 export interface FirstPersonOptions { handling: CarHandling; fov: number; sensitivity: number; motion: 'device' | 'steady' | 'gentle'; vrShortView: boolean }
-export const firstPersonOptions: FirstPersonOptions = { fov: 55, sensitivity: 100, motion: 'device', handling: 'realistic', vrShortView: false };
+export const firstPersonOptions: FirstPersonOptions = { fov: 55, sensitivity: 100, motion: 'device', handling: 'physical', vrShortView: false };
 export function setFirstPersonOptions(pick: Partial<FirstPersonOptions>, save = true) {
   if (typeof pick.vrShortView === 'boolean') firstPersonOptions.vrShortView = pick.vrShortView;
-  if (pick.handling === 'classic' || pick.handling === 'realistic' || pick.handling === 'physical') {
-    firstPersonOptions.handling = pick.handling;
-    if (save) try { localStorage.setItem(HANDLING_KEY, pick.handling); } catch { /* optional */ }
-  }
+  // (The handling of all three street views at once, as scenarios set it: setCarHandling.)
+  if (isHandling(pick.handling)) for (const view of ['first', 'third', 'vr'] as const) setCarHandling(view, pick.handling, save);
   if (typeof pick.fov === 'number' && Number.isFinite(pick.fov))
     firstPersonOptions.fov = Math.round(Math.min(80, Math.max(45, pick.fov)));
   if (typeof pick.sensitivity === 'number' && Number.isFinite(pick.sensitivity))
@@ -30,12 +28,28 @@ export function setFirstPersonOptions(pick: Partial<FirstPersonOptions>, save = 
   if (pick.motion === 'device' || pick.motion === 'steady' || pick.motion === 'gentle') firstPersonOptions.motion = pick.motion;
   if (save) try { const { handling: _, ...rest } = firstPersonOptions; localStorage.setItem('firstPersonOptions', JSON.stringify(rest)); } catch { /* optional */ }
 }
-// The handling is kept under a key of its own: until Realistic became the default, every
-// saved set of options held 'classic', picked or not, so the old copy of it is left unread.
+// The car handling of each view (Settings → Car handling sets the one you're in): Classic
+// from above, Physical in the street. (`firstPersonOptions.handling` is first person's.)
+export const carHandling: Record<PlayerView, CarHandling> = { overhead: 'classic', first: 'physical', third: 'physical', vr: 'physical' };
+const isHandling = (h: unknown): h is CarHandling => h === 'classic' || h === 'realistic' || h === 'physical';
+export function setCarHandling(view: PlayerView, handling: CarHandling, save = true) {
+  carHandling[view] = handling;
+  if (view === 'first') firstPersonOptions.handling = handling;
+  if (save) try { localStorage.setItem(`${HANDLING_KEY}.${view}`, handling); } catch { /* optional */ }
+}
+// Each view's handling is kept under a key of its own, saved only when picked. Before each
+// view had its own, one pick (`carHandling`) served the three street views, and stands
+// for them until they're picked again. (Until Realistic became the default, every saved
+// set of options held 'classic', picked or not, so that old copy is left unread.)
 const HANDLING_KEY = 'carHandling';
 try {
   const { handling: _, ...rest } = (JSON.parse(localStorage.getItem('firstPersonOptions') || '{}') ?? {}) as Partial<FirstPersonOptions>;
-  setFirstPersonOptions({ ...rest, handling: (localStorage.getItem(HANDLING_KEY) ?? undefined) as CarHandling | undefined }, false);
+  setFirstPersonOptions(rest, false);
+  const street = localStorage.getItem(HANDLING_KEY);
+  for (const view of Object.keys(carHandling) as PlayerView[]) {
+    const own = localStorage.getItem(`${HANDLING_KEY}.${view}`) ?? (view === 'overhead' ? null : street);
+    if (isHandling(own)) setCarHandling(view, own, false);
+  }
 } catch { /* defaults */ }
 
 export function lookAround(eyes: Eyes, right: number, down: number) {

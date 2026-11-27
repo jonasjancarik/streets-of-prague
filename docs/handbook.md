@@ -581,12 +581,15 @@ The metro ride uses its overhead cutaway camera.
   snow not yet cleared from the streets clearly more. Braking hard, the handbrake and sliding round a
   corner leave dark tyre marks that fade after a minute (`src/skids.ts`); so do the
   police and cars sent skidding by a crash.
-- **Car handling.** In first and third person and in VR, cars drive with **Realistic** handling by
-  default; Settings → Car handling switches to **Classic** or **Physical** (below). The choice is remembered
-  between games (`carHandling` in the browser's storage) and takes effect on the next driving step. It applies to the car, van
-  or pickup you drive, including taxis and patrol cars. Overhead driving, heavy vehicles
-  and AI drivers use Classic; two-wheelers have their own handling (below).
-  With Realistic selected, feed in the steering as you approach a bend. Braking or
+- **Car handling.** Each camera view has its own handling (`carHandling` in `src/streetView.ts`):
+  overhead, cars drive with **Classic** by default, and in first and third person and in VR with
+  **Physical** (below). Settings → Car handling sets it for the view you're in: **Classic**,
+  **Advanced** (`realistic` in the code) or **Physical**. Each view's choice is remembered between
+  games (`carHandling.<view>` in the browser's storage; an older single `carHandling` pick still
+  stands for the three street views) and takes effect on the next driving step. It applies to
+  the car, van or pickup you drive, including taxis and patrol cars. Heavy vehicles and AI
+  drivers use Classic; two-wheelers have their own handling (below).
+  With Advanced selected, feed in the steering as you approach a bend. Braking or
   accelerating hard leaves the tyres less grip for turning. A short handbrake pull
   lets the tail step out. Release it and unwind the steering to catch the slide.
   Holding the opposite pedal brakes first, then selects the other direction after a
@@ -597,7 +600,7 @@ The metro ride uses its overhead cutaway camera.
   Run `node scripts/check-street-handling.mjs` to compare launches, stops and cornering
   on a flat test road. The `street-handling` scene checks the driving modes in-game.
 - **Physical handling** (Settings → Car handling → **Physical**, `src/physicalHandling.ts`).
-  The same cars as Realistic, in the same views, but as a rigid body with all six degrees
+  The same cars as Advanced, in the same views, but as a rigid body with all six degrees
   of freedom on four sprung wheels, stepped 240 times a second. Gravity, a spring and
   damper at each corner, an anti-roll bar per axle and each tyre's grip where it touches
   the road do everything; nothing about a slide, a lean or a rollover is scripted.
