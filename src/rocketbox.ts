@@ -11,6 +11,7 @@ import { LIFE_SIZE } from './figures.ts';
 import { MOST_AVATARS, STREET_QUALITY } from './streetQuality.ts';
 import { cutAway } from './shading.ts';
 import { fireGear } from './responderGear.ts';
+import { DYES, dyeMaterial, dress, type DyeState } from './avatarDyes.ts';
 import type { Anim, Figures, UniformRole } from './figures.ts';
 import { shape as umbrellaShape, material as umbrellaMaterial, colour as umbrellaColour, chance } from './umbrellas.ts';
 
@@ -55,7 +56,7 @@ const TURN = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0),
 
 // The clips by name: the gaits, the ways of standing, 'umbrella' (standing with one) and
 // 'arm' (just its left arm).
-interface Kind { seatedHips: THREE.Vector3; template: THREE.Object3D; clips: Record<string, THREE.AnimationClip>; stride: Record<Move, number>; contactPhase: number; standing: string[]; uniform?: THREE.MeshStandardMaterial; role?: UniformRole }
+interface Kind { name: string; seatedHips: THREE.Vector3; template: THREE.Object3D; clips: Record<string, THREE.AnimationClip>; stride: Record<Move, number>; contactPhase: number; standing: string[]; uniform?: THREE.MeshStandardMaterial; role?: UniformRole }
 interface Person {
   kind: number;
   root: THREE.Object3D;
@@ -83,6 +84,7 @@ interface Person {
   mounted: boolean;
   yieldSlot: boolean;
   nozzle?: THREE.Mesh;
+  dye?: THREE.MeshStandardMaterial; // their own body material, in their colourway (avatarDyes.ts)
 }
 
 // Same two donors as assets/cars/build.py. Keep the identity after the
@@ -135,7 +137,7 @@ export class LifeSize {
       // a full rig uses the door-aware instanced figure drawn by the crowd.
       if (fig.self || anim.driverExit || fig.lifeSize !== true || umbrella >= 0) return false;
       const gid = this.ids.get(fig);
-      return gid !== undefined && this.middle.offer(appearance(fig,anim,gid,id), id, matrix, anim);
+      return gid !== undefined && this.middle.offer(appearance(fig,anim,gid,id), id, matrix, anim, anim.driverDonor === undefined ? fig.colours(id) : undefined);
     };
   }
 
@@ -194,7 +196,7 @@ export class LifeSize {
           o.userData.cullRadius = 1.3; // (round the hips, for leaving out those the buildings hide: occlusion.ts)
         });
         const hips = g.scene.getObjectByName('Bip01')?.position.y ?? 0.9;
-        const kind: Kind = { seatedHips:new THREE.Vector3(), template: g.scene, clips: {}, stride: {} as Kind['stride'], contactPhase: sex === 'm' ? .97 : .425, standing: STANDING[sex] };
+        const kind: Kind = { name, seatedHips:new THREE.Vector3(), template: g.scene, clips: {}, stride: {} as Kind['stride'], contactPhase: sex === 'm' ? .97 : .425, standing: STANDING[sex] };
         for (const move of GAITS) [kind.clips[move], kind.stride[move]] = inPlace(byName[`${sex}_${CLIPS[move]}`], hips);
         for (const name of STANDING[sex]) kind.clips[name] = inPlace(byName[`${sex}_${name}`], hips)[0];
         const umbrella = (kind.clips.umbrella = inPlace(byName[`${sex}_${UMBRELLA[sex]}`], hips)[0]);
@@ -303,6 +305,7 @@ export class LifeSize {
     if (this.gear) { free(this.gear.helmet); free(this.gear.nozzle); }
     for (const t of textures) t.dispose();
     for (const p of [...this.live.values(), ...this.spare.flat()]) {
+      p.dye?.dispose();
       p.mixer.uncacheRoot(p.root);
       p.root.traverse((m) => { if (m instanceof THREE.SkinnedMesh) m.skeleton.dispose(); });
     }
@@ -343,6 +346,8 @@ export class LifeSize {
       }
       if (next) this.nextCivilian = undefined;
       p = this.take(kind);
+      // (Drivers keep the outfit their seated figure in the car has.)
+      if (p.dye) dress(p.dye.userData.dye as DyeState, anim.driverDonor === undefined ? fig.colours(id) : undefined);
       p.self = fig.self;
       p.mounted = false;
       p.yieldSlot = false;
@@ -439,6 +444,10 @@ export class LifeSize {
     if (uniform) root.traverse((o) => {
       if (o instanceof THREE.SkinnedMesh && o.material.name === uniform.name) o.material = uniform;
     });
+    let dye: THREE.MeshStandardMaterial | undefined;
+    if (!k.role && DYES[k.name]) root.traverse((o) => {
+      if (o instanceof THREE.SkinnedMesh && o.material instanceof THREE.MeshStandardMaterial && o.material.name.endsWith('_body')) o.material = dye = dyeMaterial(o.material, k.name, o);
+    });
     let nozzle: THREE.Mesh | undefined;
     if (k.role === 'fire') {
       this.gear ??= fireGear();
@@ -471,7 +480,7 @@ export class LifeSize {
     }
     this.group.add(root);
     return {
-      kind, root, mixer, actions, w, want, t, nozzle, phase: 0, strideSign: 1, strideYaw: 0, rest: k.standing[0], umbrella: -1,
+      kind, root, mixer, actions, w, want, t, nozzle, dye, phase: 0, strideSign: 1, strideYaw: 0, rest: k.standing[0], umbrella: -1,
       hand: root.getObjectByName('Bip01_L_Hand') ?? root, phone,
       pos: new THREE.Vector3(), last: new THREE.Vector3(), turn: new THREE.Quaternion(), speed: 0, seen: false, self: false, mounted: false, yieldSlot: false,
     };

@@ -54,7 +54,7 @@ addPort(/^figures-true$/, (node, legacy) => {
 
 // Two reads animate a textured middle-distance walker. Each half-float texel
 // contains its position and a ten-bit octahedral normal (assets/rocketbox/crowd.mjs).
-addPort(/^street-crowd$/, (node, legacy) => {
+addPort(/^street-crowd(-dye-.+)?$/, (node, legacy) => {
   const proto = Object.getPrototypeOf(node);
   const vat: N = texture(legacy.userData.crowdPoses), pose: N = attribute('crowdPose', 'vec3');
   const fetch = (row: N) => vat.load(ivec2(int(vertexIndex as N), int(row))).toVar();

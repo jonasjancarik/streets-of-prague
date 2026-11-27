@@ -6,6 +6,7 @@ import { lampLit } from './lamps.ts';
 import { AVATARS } from './rocketboxClips.ts';
 import { STREET_QUALITY } from './streetQuality.ts';
 import { inStreetCone } from './streetView.ts';
+import { DYES, DYE_GLSL, dyeRegions, dyeUniforms, outfit, wear } from './avatarDyes.ts';
 
 // The same people as the individual Rocketbox avatars, with their photographed
 // clothes and four baked motions. A batch shares one mesh for each identity.
@@ -13,10 +14,15 @@ type Motion = 'idle' | 'walk' | 'jog' | 'run';
 interface Clip { row: number; frames: number; duration: number }
 interface Model { name: string; vertices: number; uv: number; index: number; indices: number; clips: Record<Motion, Clip> }
 interface Header { version: number; width: number; height: number; poses: number; models: Model[] }
-interface Batch { model: Model; mesh: THREE.InstancedMesh; pose: THREE.InstancedBufferAttribute; next: number }
+// `dye`: for an avatar with colourways (avatarDyes.ts), each instance's top and bottom.
+interface Batch { model: Model; mesh: THREE.InstancedMesh; pose: THREE.InstancedBufferAttribute; next: number; dye?: THREE.InstancedBufferAttribute[] }
 const MAX = 64;
+// The atlas's cells, as assets/rocketbox/crowd.mjs lays them out: four materials an avatar,
+// the body first, each in a square cell with a gutter round it.
+const CELL = 128, GUTTER = 4, PARTS = 4;
 const inverseScale = new THREE.Vector3(1 / SCALE, 1 / SCALE, 1 / SCALE);
 const matrix = new THREE.Matrix4();
+const DYED: number[] = [];
 
 async function unpack(buffer: ArrayBuffer) {
   const length = new DataView(buffer).getUint32(0, true);
@@ -50,10 +56,23 @@ async function unpack(buffer: ArrayBuffer) {
   return { header, words, texels };
 }
 
-function bindPoses(material: THREE.MeshLambertMaterial | THREE.MeshDepthMaterial, vat: THREE.DataTexture, colour: boolean) {
+// `dye`: an avatar with colourways, dyed in each instance's (crowdTop, crowdBottom) at the
+// body's place in the atlas (`material.userData.dyeCell`; webgpu/avatars.ts in TSL).
+function bindPoses(material: THREE.MeshLambertMaterial | THREE.MeshDepthMaterial, vat: THREE.DataTexture, colour: boolean, dye?: string) {
   material.userData.crowdPoses = vat;
-  material.customProgramCacheKey = () => colour ? 'street-crowd' : 'street-crowd-depth';
+  material.customProgramCacheKey = () => colour ? (dye ? 'street-crowd-dye-' + dye : 'street-crowd') : 'street-crowd-depth';
   material.onBeforeCompile = shader => {
+    if (dye) {
+      Object.assign(shader.uniforms, dyeUniforms(material.userData.dye), { uDyeCell: { value: material.userData.dyeCell } });
+      shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>
+        attribute vec4 crowdTop, crowdBottom;
+        varying vec4 vDyeTop, vDyeBottom;`).replace('#include <uv_vertex>', '#include <uv_vertex>\nvDyeTop = crowdTop; vDyeBottom = crowdBottom;');
+      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>
+        ${DYE_GLSL}
+        uniform vec4 uDyeCell;
+        varying vec4 vDyeTop, vDyeBottom;`).replace('#include <map_fragment>', `#include <map_fragment>
+        diffuseColor.rgb = dyed(diffuseColor.rgb, vMapUv * uDyeCell.xy + uDyeCell.zw, vDyeTop, vDyeBottom);`);
+    }
     shader.uniforms.uCrowdPoses = { value: vat };
     shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>
       uniform highp sampler2D uCrowdPoses;
@@ -106,13 +125,14 @@ export class StreetCrowd {
       const { header, words, texels } = await unpack(data.value);
       if (this.disposed) return;
       atlas.colorSpace = THREE.SRGBColorSpace; atlas.flipY = false; atlas.anisotropy = 4; atlas.needsUpdate = true;
+      const { width: atlasWidth, height: atlasHeight } = atlas.image as HTMLImageElement, atlasSize = [atlasWidth, atlasHeight];
       const vat = this.vat = new THREE.DataTexture(texels, header.width, header.height, THREE.RGBAFormat, THREE.HalfFloatType);
       vat.needsUpdate = true;
       this.material = new THREE.MeshLambertMaterial({ map: atlas, side: THREE.DoubleSide, alphaTest: .35 });
       this.depth = new THREE.MeshDepthMaterial({ map: atlas, side: THREE.DoubleSide, alphaTest: .35, depthPacking: THREE.RGBADepthPacking });
       atlas = undefined; // now owned by this.material
       bindPoses(this.material, vat, true); bindPoses(this.depth, vat, false);
-      for (const model of header.models) {
+      for (const [catalogue, model] of header.models.entries()) {
         const geometry = new THREE.BufferGeometry(), positions = new Float32Array(model.vertices * 3);
         const idle = model.clips.idle.row * header.width;
         for (let i = 0; i < model.vertices; i++) for (let axis = 0; axis < 3; axis++)
@@ -123,7 +143,23 @@ export class StreetCrowd {
         geometry.computeVertexNormals();
         const pose = new THREE.InstancedBufferAttribute(new Float32Array(MAX * 3), 3);
         geometry.setAttribute('crowdPose', pose);
-        const mesh = new THREE.InstancedMesh(geometry, this.material, MAX);
+        let material = this.material, dye: Batch['dye'];
+        if (DYES[model.name]) {
+          // The body texture's 512 units from the atlas's uv: its cell's corner and size.
+          const slot = catalogue * PARTS, across = atlasSize[0] / CELL, inner = CELL - 2 * GUTTER;
+          const x = slot % across * CELL + GUTTER, y = Math.floor(slot / across) * CELL + GUTTER;
+          // (Not a clone: that would copy userData, the pose texture included.)
+          material = new THREE.MeshLambertMaterial({ map: this.material.map, side: THREE.DoubleSide, alphaTest: .35 });
+          material.userData.dye = dyeRegions(model.name);
+          material.userData.dyeCell = new THREE.Vector4(atlasSize[0] * 512 / inner, atlasSize[1] * 512 / inner, -x * 512 / inner, -y * 512 / inner);
+          bindPoses(material, vat, true, model.name);
+          dye = ['crowdTop', 'crowdBottom'].map(name => {
+            const a = new THREE.InstancedBufferAttribute(new Float32Array(MAX * 4), 4);
+            geometry.setAttribute(name, a);
+            return a;
+          });
+        }
+        const mesh = new THREE.InstancedMesh(geometry, material, MAX);
         mesh.name = 'Street crowd ' + model.name;
         mesh.userData.sharedMatrices = true;
         mesh.castShadow = mesh.receiveShadow = true;
@@ -131,7 +167,7 @@ export class StreetCrowd {
         mesh.frustumCulled = false; // accepted around the eye; individual groups can cross tiles
         mesh.count = 0; mesh.visible = false;
         this.group.add(mesh);
-        this.batches.push({ model, mesh, pose, next: 0 });
+        this.batches.push({ model, mesh, pose, next: 0, dye });
       }
     } catch {
       this.release();
@@ -139,7 +175,8 @@ export class StreetCrowd {
     } finally { atlas?.dispose(); this.loading = false; }
   }
 
-  offer(catalogue: number, id: number, transform: THREE.Matrix4, anim: Anim) {
+  // `wearing`: the person's colours (Figures.colours), for the colourway they wear up close.
+  offer(catalogue: number, id: number, transform: THREE.Matrix4, anim: Anim, wearing?: ArrayLike<number>) {
     if (!this.active || !this.enabled) return false;
     const motion = anim.name;
     if (motion !== 'idle' && motion !== 'walk' && motion !== 'jog' && motion !== 'run') return false;
@@ -158,6 +195,11 @@ export class StreetCrowd {
     const phase = gait === 'idle' ? this.elapsed / clip.duration + id * .618034 : anim.phase;
     const frame = (phase - Math.floor(phase)) * clip.frames, i = Math.floor(frame);
     batch.pose.setXYZ(batch.next, clip.row + i, clip.row + (i + 1) % clip.frames, frame - i);
+    if (batch.dye) {
+      wear(batch.model.name, outfit(batch.model.name, wearing), DYED);
+      batch.dye[0].setXYZW(batch.next, DYED[0], DYED[1], DYED[2], DYED[3]);
+      batch.dye[1].setXYZW(batch.next, DYED[4], DYED[5], DYED[6], DYED[7]);
+    }
     batch.mesh.setMatrixAt(batch.next++, matrix.copy(transform).scale(inverseScale));
     this.count++;
     return true;
@@ -173,7 +215,10 @@ export class StreetCrowd {
     for (const batch of this.batches) {
       batch.mesh.count = batch.next;
       batch.mesh.visible = this.active && batch.next > 0;
-      if (batch.mesh.visible) { send(batch.mesh.instanceMatrix, batch.next); send(batch.pose, batch.next); }
+      if (batch.mesh.visible) {
+        send(batch.mesh.instanceMatrix, batch.next); send(batch.pose, batch.next);
+        for (const d of batch.dye ?? []) send(d, batch.next);
+      }
       batch.next = 0;
     }
     this.offered.length = this.count = 0;
@@ -190,7 +235,10 @@ export class StreetCrowd {
   }
 
   private release() {
-    for (const { mesh } of this.batches) { mesh.removeFromParent(); mesh.dispose(); mesh.geometry.dispose(); }
+    for (const { mesh } of this.batches) {
+      mesh.removeFromParent(); mesh.dispose(); mesh.geometry.dispose();
+      if (mesh.material !== this.material) (mesh.material as THREE.Material).dispose(); // (an avatar's dyed one: the atlas is this.material's)
+    }
     this.batches.length = 0;
     this.material?.map?.dispose(); this.material?.dispose(); this.depth?.dispose(); this.vat?.dispose();
     this.material = this.depth = this.vat = undefined;

@@ -2058,6 +2058,15 @@ record the measurements, merge decisions and pending landmark asset activation.
   gardens) have tables under square parasols outside: 1,212 places in `praha`
   (`pipeline/build_terraces.py` → `terraces.json`; a map without the file has none). OSM
   doesn't say where the tables stand or how many, so each place gets a row of two to
+  Each civilian outfit also comes in a few hand-picked colourways (`src/avatarDyes.ts`),
+  dyed in the shader at the texture's garment regions, so the fourteen outfits make 125
+  looks. A pedestrian's colourway is picked by chance from the
+  colours their overhead figure wears, mostly the ones nearest its top, so winter's dark
+  coats bring out dark colourways. They wear the same one on the close model and the
+  street model. Skin, shoes, belts, inner layers and white stripes keep their texture.
+  Drivers and uniformed crews keep their outfits. To add a colourway or an outfit, mark
+  the garment's rects in the body texture (512 units, rows from the top) and list its
+  colours there; the shader has a GLSL and a TSL copy (`src/webgpu/avatars.ts`).
   six on the open ground nearest its point on the map, along the house, wherever a
   table fits clear of walls, roads and water; on a narrow pavement that may be one, or
   none. In first and third person the nearest tables have folding chairs on crossed

@@ -359,6 +359,9 @@ export class Figures {
     this.wear(i, i);
   }
 
+  // Person `id`'s colours (linear rgb): shirt, trousers, skin and hair; all 0 if they have no look.
+  colours(id: number) { return this.wardrobe.subarray(id * 12, id * 12 + 12); }
+
   // Slot `slot` in person `id`'s colours.
   wear(slot: number, id: number) {
     if (this.wearing[slot] === id) return;
