@@ -1,38 +1,110 @@
 ---
 name: scene-testing
-description: How to check what happens in Streets of Prague (driving, crashes, police, fares, trams, weather, camera views) by scripting the real game in headless Chrome with scripts/scene.mjs, the test API in src/testkit.ts (window.__test) and the scenarios in scenarios/. Use when verifying a gameplay change, reproducing a bug the user describes, replaying coordinates or a "Copy this situation" snippet the user pasted, taking a screenshot of a place or from a camera angle, or adding a regression scenario. Not for frame times (use scripts/bench.mjs and the performance skill).
+description: How to check what happens in Streets of Prague (driving, crashes, police, fares, trams, weather, camera views) by scripting the real game in headless Chrome with scripts/scene.mjs, the test API in src/testkit.ts (window.__test) and the scenarios in scenarios/. Use when verifying a gameplay change, reproducing a bug the user describes, replaying coordinates or a "Copy this situation" snippet the user pasted, looking at a model, a dent or any visual change from above and at eye height (t.look's contact sheet), taking a screenshot of a place or from a camera angle, or adding a regression scenario. Not for frame times (use scripts/bench.mjs and the performance skill).
 ---
 
 # Testing in the game
 
-Don't write throwaway Playwright scripts. The game has a test API and a runner that
-keeps it loaded, so a check takes seconds, not a minute of loading per attempt.
+Don't write throwaway Playwright scripts, and don't test in the browser pane. The game
+has a test API and a runner that keeps it loaded, so a check takes seconds, and one
+command shows a change from every side.
 
-## The loop
+## The fast path
 
-1. The dev server must be up (`npm run dev`, port 5191; check with
-   `lsof -nP -iTCP:5191 -sTCP:LISTEN`).
-2. Start the scene server in the background: `node scripts/scene.mjs serve`
-   (loads the game once in headless Chrome, listens on 5199). It follows the dev
-   server's reloads: after you edit source, the next command waits for the page to
-   load again.
-3. Explore with `eval`, one shot of JS with `t` = `window.__test` (and `__drive`,
-   the game's raw objects):
-   `node scripts/scene.mjs eval "await t.go('karlova'); await t.drive('sedan'); return t.probe()"`
-   A bare expression is returned as it is; with `;` or `return`, it's a function body.
-4. If the check is worth repeating, make it a scenario (below) and run it:
+1. The dev server must be up (`npm run dev`, port 5191; `curl -s localhost:5191 >/dev/null && echo up`).
+2. Run commands. The first one starts this session's scene server in the background
+   (the game loaded in headless Chrome, 10–40 s) and leaves it running; the next ones
+   take a second or two. Pass the window and situation on that first command, since
+   the server keeps them: `--size 1816x1117`, `--place`, `--time`, `--weather`,
+   `--date` (`10-20` or a season), `--graphics`, `--extra "&tps"`.
+3. Anything longer than a line goes in through `--stdin`, not files patched between runs:
+
+   ```bash
+   node scripts/scene.mjs eval --stdin <<'EOF'
+   await t.go('staromak');
+   const c = t.car('hatch', { ahead: 8 });
+   t.dent(c, c.spec.L / 2, 0.3, 9);
+   return (await t.look(c, { name: 'dent' })).sheet;
+   EOF
+   ```
+
+   `t` is `window.__test` (and `__drive` holds the game's raw objects). A bare
+   expression is returned as it is; with `;` or `return`, it's a function body.
+4. Look with `t.look` (below): one sheet, one Read. Show the user the sheets that matter.
+5. If the check is worth repeating, make it a scenario (below) and run it:
    `node scripts/scene.mjs run <name>`; `run all` before committing gameplay changes.
-5. Look at screenshots with Read (they go to `$TMPDIR/scene/<name>.png`), and show
-   the user the ones that matter.
-6. `node scripts/scene.mjs stop` when done (it holds a Chrome with a GPU context).
 
-Without `serve`, each command loads the game itself (fine for a one-off).
+Each edit to browser source reloads the game (yours and every other session's, in a
+shared checkout), and a reload starts the world afresh. So put the setup (place, car,
+dents) in each command rather than counting on the last one's. When other sessions are
+saving files all the time ("Execution context was destroyed", or a command that waits
+for a load it didn't cause), run your own dev server without live reloading and point
+the scene server at it (see "Scenes in a busy checkout" in docs/handbook.md):
+`SOP_STILL=1 npx vite --host 127.0.0.1 --strictPort --port 5295` in the background, then
+`--url http://127.0.0.1:5295/` on the first command. It shows your edits once you
+`stop` the scene server and the next command starts it again. Stop that dev server when
+you're done: on Windows, stopping the background task can leave `vite` itself listening,
+so check the port and end that `node … vite.js` process too.
+
+### Looking at a change: `t.look`
+
+`await t.look(subject, opt)` takes the subject from several sides at once and saves one
+labelled sheet (`$TMPDIR/scene/<name>.jpg`, its path in `.sheet`). The default views are
+the two checks CLAUDE.md asks for and the corners: `top` (straight down from the game's
+normal 100 m: does it read from above?), `high` (a three-quarter view from above), and
+`front-left`, `front-right`, `rear-left`, `rear-right` at standing eye height (1.6 m:
+does it look real from the street?). The eye-height views are drawn as first person
+draws (life-size people, a 55° lens, the sky). The camera is placed from the subject's
+position, heading and size, so there's no heading arithmetic, and a camera that would
+stand in a building comes in to just short of its wall (its label says "nearer: a wall").
+
+- Subject: a car (`t.car(…)`, `t.drive(…)`), anything with `x, y` (and `h`, `spec`),
+  a place name or `[lat, lon]` (with `heading` and `size` in the options), or nothing /
+  `'me'` for you or your car.
+- `views`: names (`top`, `high`, `front`, `left`, `rear`, `right` and the four corners)
+  or `{ from, dist, eye, elev, top, label }`: `from` in degrees round the subject from its
+  front (90 = its left side), `dist` metres from its middle, `eye` height above the
+  ground, `elev` degrees to look down from instead, `top` a height to look straight down from.
+- `rows: { 'before': () => …, 'after': () => … }` shoots the same views after each setup,
+  one row each: try a value in the page (`c.blows[0].depth = 0.6; c.dentVersion++`, a
+  uniform, a constant exported as an object such as `DENT_SHAPE` via
+  `await import('/src/car.ts')`) next to the current one, and edit the source once, with
+  the value that won.
+- `name`, `width` (each picture, 640 px), `columns`, `settle` (frames before each
+  picture, 5), `keep` (leave the camera on the last view).
+- It returns each view's camera too: `t.cam = r.views[2].cam` looks from it again,
+  and `t.shot(name)` takes that one large.
+- The world is paused while it shoots, so every picture shows the same moment.
+
+### What not to spend time on
+
+- The browser pane for testing: without `&go` it stops at the title screen, a script
+  there times out after 45 s while the map loads, it slows down when hidden, and other
+  sessions' saves reload it under you. Use it only to show the user something,
+  opening a `?go&spot=…` link ("Copy this situation").
+- Hand-made camera poses for a car or a person: `t.look`. Raw `t.cam` is for a
+  place, or a pose `t.look` returned.
+- Searching `src/testkit.ts` for names: the API is listed below. The ones most often
+  looked for: `t.drive(type)` puts you in a new car at once and `t.enter(car)` in an
+  existing one (`t.press()` is the E key, walking to the door first); a car's `x`, `y`
+  are metres east and north, `h` its heading in radians (0 east, anticlockwise:
+  `t.where().heading` gives compass degrees), `spec.L`, `spec.W`, `spec.H` its size.
+
+### Scene servers
+
+Each Claude Code session gets its own port (5300–5699, from its session id), so sessions
+don't move each other's player. A server stops itself after 10 minutes without a command
+(`--idle <minutes>` when it starts; 0 for never), when the session that started it ends,
+or when its dev server stops answering. `node scripts/scene.mjs servers` lists those
+running on the machine, `stop` stops this session's, and `stop --all` stops every one.
+`--once` loads the game just for one command; `--fresh` does that too, for URL options
+the running server didn't start with.
+
 A command waits while another session runs a benchmark ("Waiting for the benchmark
 from …" on stderr), and at most three sessions run scenes at once; the rest queue
 (`scripts/game-lock.mjs`). Leave it waiting. Between commands a scene server's page
-stands still under a benchmark.
-Options: `--place`, `--time`, `--weather`, `--date` (`10-20` or a season's name; today otherwise), `--graphics`, `--show` (a visible window),
-`--out`.
+stands still under a benchmark. Other options: `--show` (a visible window), `--out`
+(where screenshots go).
 
 ## The API (`src/testkit.ts`)
 
@@ -180,6 +252,9 @@ in compass degrees (0 north, 90 east), speeds in km/h.
   compass heading. Scenario `stick-only`.
 - `t.probe()`: position, speed, car type/damage/burning/broken lamps/braking/ram, money, stars, police cars,
   health, ticket, time, weather, date.
+- `t.look(subject, { views, rows, name })`: a labelled sheet of the subject from above
+  and from the street at once (see "Looking at a change" above). The free camera it uses
+  takes `street: true` (drawn as first person draws) and `fov` besides the fields below.
 - `t.camera({ at, height, tilt, heading, level })` looks from anywhere without moving you
   (tilt 0 = straight down, up to 75); `height` is metres above the terrain at the
   target. Both the eye and the look-at point follow that terrain. When comparing

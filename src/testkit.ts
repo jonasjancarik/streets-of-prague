@@ -6,6 +6,7 @@ import { posts } from './posts.ts';
 import { fences } from './fences.ts';
 import type { Post } from './posts.ts';
 import type { Point2 } from './map/geo.ts';
+import type { LookOptions, LookSubject } from './lookSheet.ts';
 import { Polyline, segDist } from './network.ts';
 import { stickOnly } from './touch.ts';
 import { ownBeacon } from './beacons.ts';
@@ -60,8 +61,10 @@ export type Where = string | Point2 | { lat: number; lon: number };
 // The free camera: looking at (x, y) from `height` m up, tilted `tilt`° from straight
 // down, facing `heading` (compass degrees).
 // `level`: the picture's top is the way the camera faces (the horizon stays level whatever
-// the heading); without it the top is north, as on the map.
-export interface FreeCam { x: number; y: number; height: number; tilt: number; heading: number; level?: boolean; targetY?: number }
+// the heading); without it the top is north, as on the map. `street`: drawn as from the
+// street, as first person is (life-size people, the sky and haze, a near near plane), with
+// a `fov`° lens (55); t.look's views at eye height use it.
+export interface FreeCam { x: number; y: number; height: number; tilt: number; heading: number; level?: boolean; targetY?: number; street?: boolean; fov?: number }
 
 export interface Check { name: string; pass: boolean; detail?: string }
 export interface Result { name: string; title: string; pass: boolean; checks: Check[]; ms: number; error?: string }
@@ -1189,6 +1192,16 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       }
       cam.heading = ((heading % 360) + 360) % 360;
       cam.level = true;
+    },
+    // One picture of a car, a person or a spot (you, or your car, by default) from several
+    // sides at once: from above at the normal height, a high three-quarter view and the four
+    // corners at eye height, labelled, as $TMPDIR/scene/<name>.jpg (scripts/scene.mjs only).
+    // `views` picks others ('front', 'left', … or { from, dist, eye, elev, top }); `rows`
+    // shoots them again after each setup, for before and after side by side. It returns
+    // the sheet's path and each view's camera (`t.cam = views[i].cam`). src/lookSheet.ts.
+    async look(subject?: LookSubject, opt: LookOptions = {}) {
+      const { lookSheet } = await import('./lookSheet.ts');
+      return lookSheet(kit, g, subject, opt);
     },
     // A screenshot (headless only: scripts/scene.mjs saves it; in the panel it's skipped).
     async shot(name: string) {

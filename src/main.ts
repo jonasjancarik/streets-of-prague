@@ -3458,6 +3458,8 @@ async function main() {
     }
     let closeWall = false, followed = false;
     const free = testkit?.cam;
+    // Drawn as from the street: first person, or the free camera told to (t.look's eye-height views).
+    const streetCam = !!eyes || !!free?.street;
     if (free) {
       // The developer panel's free camera: tilted back from the spot it looks at.
       chased = null;
@@ -3619,11 +3621,11 @@ async function main() {
     DIG.value.set(hx, -hy, (underway || (deep && !eyes)) && cutR > 0.3 ? cutR : 0, 0);
 
     sun.target.position.set(camPos.x, camGround, camPos.z);
-    sky.street = !!eyes;
-    sky.update(clock.t % 86400, weather.now, eyes ? 300 : height, season.day);
+    sky.street = streetCam;
+    sky.update(clock.t % 86400, weather.now, streetCam ? 300 : height, season.day);
     // In first person the horizon shows: a sky behind the city, and haze on the far
     // streets so the edge of what's loaded fades out.
-    if (eyes) {
+    if (streetCam) {
       const w = weather.now;
       const haze = Math.max(w.rain * .60, w.storm * .76, w.snow * .85, w.mist * .92);
       sky.fog.near = Math.min(sky.fog.near, 120 - 105 * haze, eyeReach * .3);
@@ -3635,19 +3637,19 @@ async function main() {
     const horizon = seeSky ? DOME_NODE.value : null;
     if (horizon) wantCloudBank();
     if ((scene as { backgroundNode?: unknown }).backgroundNode !== horizon) (scene as { backgroundNode?: unknown }).backgroundNode = horizon;
-    const nearPlane = closeWall ? .055 : eyes ? .2 : 1;
+    const nearPlane = closeWall ? .055 : streetCam ? .2 : 1;
     // A wider view at street level (38° from above, which would feel like a telephoto lens).
     // (Driving, the chase camera widens a little with speed: followCamera.ts.)
-    const fov = eyes ? eyes.onFoot ? firstPersonOptions.fov : followed ? (crashCam.cut ? crashCam.fov : follow.fov) : 55 : 38;
+    const fov = eyes ? eyes.onFoot ? firstPersonOptions.fov : followed ? (crashCam.cut ? crashCam.fov : follow.fov) : 55 : free?.street ? free.fov ?? 55 : 38;
     cinema?.classList.toggle('on', followed && crashCam.cut);
     if (camera.fov !== fov) { camera.fov = fov; camera.updateProjectionMatrix(); }
     // Down at street level, people (and their bikes) are life size: from above they're drawn bigger to read.
-    FIGURE_SIZE.value = eyes ? 1 : SCALE;
+    FIGURE_SIZE.value = streetCam ? 1 : SCALE;
     // Out of first person, the mouse it took to look round with is let go.
     if ((!eyes || paused || metro.active) && document.pointerLockElement === renderer.domElement) document.exitPointerLock();
     if (camera.near !== nearPlane) { camera.near = nearPlane; camera.updateProjectionMatrix(); }
     // From street level the ground hides what's behind it (see GROUND_DEPTH).
-    groundDepthView(!!eyes || (POST.ao && POST.on));
+    groundDepthView(streetCam || (POST.ao && POST.on));
     tunnelEarthView(!!eyes && !!body && (body.level ?? 0) < 0, !!eyes);
     // …and the trees near you are the ones made to be stood under (map/streetTree.ts).
     // (The free camera too, once it is tilted well off straight down.)

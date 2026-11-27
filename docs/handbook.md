@@ -31,11 +31,18 @@ lamp post over". They drive the real game through the test API in `src/testkit.t
 latitude/longitude), set the time, weather, money, stars and health, get into a new
 car, aim it at the nearest post, push it to a speed, run the world for a few seconds
 with given controls, read back the numbers (`t.probe()`), look from anywhere with
-`t.camera()`, and take screenshots.
+`t.camera()`, and take screenshots. `t.look(car)` takes a car, a person or a spot from
+above and from several sides at eye height in one labelled sheet (`src/lookSheet.ts`),
+with `rows` for before and after side by side.
 
-`node scripts/scene.mjs serve` keeps headless Chrome open with the game loaded; then
-`run <name…|all>`, `eval "<js with t>"` and `shot` take a second or two each, and follow
-the dev server's reloads. Without a server each command loads the game itself.
+`node scripts/scene.mjs run <name…|all>`, `eval "<js with t>"` (or `eval --stdin`) and
+`shot` go through a scene server, headless Chrome with the game loaded: the first
+command starts one in the background (one per Claude Code session, on a port from its
+session id; 5199 otherwise), and the next take a second or two each, following the dev
+server's reloads. A server stops itself after 10 minutes without a command (`--idle`),
+when the Claude Code session that started it ends, or when its dev server stops
+answering; `servers` lists the running ones, `stop` stops this session's and `stop --all`
+every one. `--once` loads the game just for the command.
 Scenario runs restore the previous player damage setting when they finish, including after a failed check.
 Screenshots go to `$TMPDIR/scene`. The same scenarios run in the developer panel
 ("Run and watch" plays one in real time), and "Copy this situation" there copies where
