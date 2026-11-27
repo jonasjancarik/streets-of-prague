@@ -637,6 +637,20 @@ export function configureRenderer(renderer: WebGPURenderer) {
     }
     return node;
   };
+  // In the shadow pass three.js gives every material with a map a shadow colour of its own
+  // (the map's alpha, for an alpha test), so each is built apart: six builds for each of
+  // the avatars as it first comes near. An opaque avatar's (no alpha test, not transparent:
+  // the body, the head and the dyed body; the hair keeps its own) never reads it, so those
+  // share three.js's plain shadow instead.
+  const shadowNodes = (renderer as any)._getShadowNodes.bind(renderer);
+  (renderer as any)._getShadowNodes = (m: THREE.Material & { depthNode?: any; positionNode?: any; castShadowPositionNode?: any; alphaMap?: unknown }) => {
+    if (!/^cut-rocketbox/.test(m.customProgramCacheKey?.() ?? '') || m.transparent || m.alphaTest > 0 || m.alphaMap) return shadowNodes(m);
+    return {
+      colorNode: null,
+      depthNode: m.depthNode?.isNode ? m.depthNode : null,
+      positionNode: m.castShadowPositionNode?.isNode ? m.castShadowPositionNode : m.positionNode?.isNode ? m.positionNode : null,
+    };
+  };
   // The tiles' ground and buildings share their node graphs (groundGraph, the building and
   // cutaway ports), so a builder state made for one tile serves every later tile with that
   // variant. three.js drops a state as soon as no object uses it, which happens when the

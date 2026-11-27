@@ -2123,3 +2123,30 @@ Square at Medium (`--dpr tier`), third person on foot, effects 12 m ahead of the
 - The phone switched between two states during the session (JavaScript ~42 ms or ~62 ms a
   frame; 1.5 GB in swap, many tabs from other projects). Windows taken in the slow state
   hide GPU costs; the flames-only run landed there and was inconclusive.
+
+## 27 November 2026 — the life-size people's shader builds
+
+Counted on this Windows machine in headless Chrome (WebGPU through `?gl2`, software
+rendering, so the counts, not the frame times, are the evidence), High, Old Town Square.
+
+- **The colourways' dye** had a shader per avatar, up close and in the street crowd (up to
+  28, each the first time an outfit came near). One shader each now, the regions uniforms
+  read from the mesh being drawn (`src/webgpu/avatars.ts`): builder states 412 → 383 after
+  half a minute and a lineup of all fourteen avatars.
+- **The street crowd** loads once you're on the street. Its first frame built 15–18 shaders
+  on WebGPU. Its batches are now compiled out of the scene and then each drawn once, shrunk
+  to nothing, one a frame, before anyone walks in it (`src/streetCrowd.ts`): 0–2 builds in
+  its first frame, 1–4 a frame over the warm-up. `compileAsync` alone didn't cover it: each
+  batch has builds of its own, and the shadow pass isn't compiled.
+- **Stepping into the street mid-game**, nearly all the avatars' builds were the sun's shadow:
+  three.js gives each material with a map a shadow colour of its own (`_getShadowNodes`,
+  the map's alpha for an alpha test), about six builds for each avatar as it first comes
+  near. The opaque avatar materials (body, head, dyed body) now share the plain shadow
+  (`configureRenderer`); the hair, alpha-tested, keeps its own. Over 45 s after stepping
+  out, avatar and crowd builds 101–109 → 45, shadow builds 93–101 → 37, the most in one
+  frame 18–21 → 7–12. A paused frame with and without differs less than two shots of the
+  same mode do.
+- **Tried and dropped:** warming every avatar as it loads (compiled, then drawn shrunk to
+  nothing for the shadow pass) before showing anyone in it. The same builds landed a couple
+  of seconds sooner, with the same peaks (9–10 against 11 a frame).
+- Not measured: native WebGPU, and frame times on real hardware.
