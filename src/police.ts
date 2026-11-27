@@ -39,7 +39,11 @@ interface Pit { phase: 'line' | 'hit' | 'off'; t: number; side: number; ok: numb
 // they've caught up; `at`: the door of your car they're making for. `post`: where they
 // stand at a roadblock, behind their car.
 // `looked`: seconds they've spent looking round where you were, once they've lost you.
-export interface Officer { avatarId: number; x: number; y: number; h: number; vx: number; vy: number; car: Car; fig: Figures; anim: Anim; down: number; back: boolean; out?: number; gone?: boolean; level?: number; gz?: number; detour?: number; reload?: number; door?: number; led?: boolean; grip?: number; slot?: number; at?: number; post?: Point2; block?: Roadblock; sprint?: number; winded?: number; dive?: Dive; diveRest?: number; looked?: number }
+// `way`: their way round the buildings to where they're going (see Police.towards).
+export interface Officer { avatarId: number; x: number; y: number; h: number; vx: number; vy: number; car: Car; fig: Figures; anim: Anim; down: number; back: boolean; out?: number; gone?: boolean; level?: number; gz?: number; detour?: number; reload?: number; door?: number; led?: boolean; grip?: number; slot?: number; at?: number; post?: Point2; block?: Roadblock; sprint?: number; winded?: number; dive?: Dive; diveRest?: number; looked?: number; way?: Footway }
+// A way round the buildings for an officer on foot: the points along it still ahead, where
+// it leads, and seconds before they look for a new one.
+interface Footway { pts: Point2[]; tx: number; ty: number; t: number }
 // An officer's dive at your legs: `t` since they left their feet, which way, how fast they
 // set off, and whether it's been decided yet.
 interface Dive { t: number; ux: number; uy: number; v: number; done: boolean }
@@ -186,6 +190,11 @@ const SEARCH_APART = 50; // m: two cars don't look at corners nearer each other 
 const SEARCH_TOP = 13; // m/s
 const LOOK_GIVE_UP = 45; // s to get to a spot before it looks somewhere else
 const LOOK_FOR = 6; // s
+// Officers on foot find their way round the buildings, walls and fences in the way
+// (Police.footway): over squares of FOOT_CELL m within FOOT_MARGIN m round the straight
+// line, looking at no more than FOOT_MOST of them, again when where they're going has
+// moved FOOT_MOVED m or after FOOT_AGAIN s. Nothing in the way, they go straight.
+const FOOT_CELL = 0.7, FOOT_MARGIN = 30, FOOT_MOST = 9000, FOOT_MOVED = 3, FOOT_AGAIN = 1.5;
 
 // Walking towards (tx, ty) at `speed`: round the cars and trams in the way, not into
 // them: the first way clear a step ahead, turning further and further off the straight
@@ -895,8 +904,8 @@ export class Police {
       } else if (o.back) {
         // No car to go back to: they walk off.
         const tx = ride ? o.car.x : 2 * o.x - me.x, ty = ride ? o.car.y : 2 * o.y - me.y;
-        const d = Math.hypot(tx - o.x, ty - o.y) || 1;
-        steer(o, tx, ty, ride ? RUN : 1.4, this.bodyAt, o.car, this.r);
+        const d = Math.hypot(tx - o.x, ty - o.y) || 1, [wx, wy] = ride ? this.towards(o, tx, ty, dt) : [tx, ty];
+        steer(o, wx, wy, ride ? RUN : 1.4, this.bodyAt, o.car, this.r);
         if (ride && d < 2.6) { o.gone = true; o.car.crew = true; if (o.door) o.car.open(o.door, false); return; }
       } else if (posted) {
         this.arrive(o, o.post![0], o.post![1], Math.atan2(me.y - o.y, me.x - o.x), dt);
@@ -940,8 +949,114 @@ export class Police {
   // keep up with on top of closing in; `top`, as fast as they'll go.
   arrive(o: Officer, tx: number, ty: number, face: number, dt: number, pace = 0, top = RUN) {
     const d = Math.hypot(tx - o.x, ty - o.y), h = o.h;
-    if (d < 0.12 && pace < 0.2) { o.vx = o.vy = 0; o.detour = 0; } else steer(o, tx, ty, Math.min(top, pace + 0.5 + d * 3), this.bodyAt, null, this.r);
+    if (d < 0.12 && pace < 0.2) { o.vx = o.vy = 0; o.detour = 0; }
+    else {
+      const [wx, wy] = d > 1.5 ? this.towards(o, tx, ty, dt) : [tx, ty];
+      steer(o, wx, wy, Math.min(top, pace + 0.5 + d * 3), this.bodyAt, null, this.r);
+    }
     if (d < 1.5) o.h = h + turnOf(h, face) * Math.min(1, 10 * dt);
+  }
+
+  // Whether an officer can walk straight from (ax, ay) to (bx, by): no building, wall or
+  // fence on the line (in 0.4 m steps).
+  walkable(ax: number, ay: number, bx: number, by: number) {
+    const n = Math.ceil(Math.hypot(bx - ax, by - ay) / 0.4);
+    for (let i = 1; i < n; i++) if (this.blocked(ax + ((bx - ax) * i) / n, ay + ((by - ay) * i) / n)) return false;
+    return true;
+  }
+
+  // Where an officer heads for on the way to (tx, ty): straight there when nothing's in
+  // the way; otherwise along their way round (footway), at the furthest point of it they
+  // can walk straight to. With no way round found, straight on, as before.
+  towards(o: Officer, tx: number, ty: number, dt: number): Point2 {
+    if (this.walkable(o.x, o.y, tx, ty)) { o.way = undefined; return [tx, ty]; }
+    let w = o.way;
+    if (w) w.t -= dt;
+    if (!w || w.t < 0 || Math.hypot(w.tx - tx, w.ty - ty) > FOOT_MOVED) {
+      // (None found: not looking again so soon, a search that fails having looked at them all.)
+      const pts = this.footway(o.x, o.y, tx, ty);
+      w = o.way = { pts: pts ?? [], tx, ty, t: (pts ? FOOT_AGAIN : 4) + this.r() * 0.5 };
+    }
+    if (!w.pts.length) return [tx, ty];
+    for (let i = w.pts.length - 1; i >= 0; i--) {
+      if (i > 0 && !this.walkable(o.x, o.y, w.pts[i][0], w.pts[i][1])) continue;
+      w.pts.splice(0, i);
+      return w.pts[0];
+    }
+    return w.pts[0];
+  }
+
+  // The shortest way on foot from (ax, ay) to (bx, by) round whatever's in the way (an A*
+  // search over squares of FOOT_CELL m, diagonals too but not across a corner), as points
+  // ending at (bx, by); or null when there's none near enough. Somewhere blocked at the
+  // end (beside a wall, or you're in a car against one) counts as reached from a square
+  // next to it.
+  footway(ax: number, ay: number, bx: number, by: number): Point2[] | null {
+    const C = FOOT_CELL, x0 = Math.min(ax, bx) - FOOT_MARGIN, y0 = Math.min(ay, by) - FOOT_MARGIN;
+    const W = Math.ceil((Math.max(ax, bx) + FOOT_MARGIN - x0) / C), H = Math.ceil((Math.max(ay, by) + FOOT_MARGIN - y0) / C);
+    if (W * H > 250000) return null;
+    const cx = (i: number) => x0 + (i % W + 0.5) * C, cy = (i: number) => y0 + (Math.floor(i / W) + 0.5) * C;
+    const cell = (x: number, y: number) => Math.floor((y - y0) / C) * W + Math.floor((x - x0) / C);
+    // (0 not looked at yet, 1 free, 2 blocked.)
+    const state = new Uint8Array(W * H);
+    const free = (i: number) => (state[i] ||= this.blocked(cx(i), cy(i)) ? 2 : 1) === 1;
+    const start = cell(ax, ay), goal = cell(bx, by), gx = goal % W, gy = Math.floor(goal / W);
+    const near = (i: number) => Math.max(Math.abs(i % W - gx), Math.abs(Math.floor(i / W) - gy)) <= 1;
+    const est = (i: number) => { const dx = Math.abs(i % W - gx), dy = Math.abs(Math.floor(i / W) - gy); return Math.max(dx, dy) + 0.414 * Math.min(dx, dy); };
+    const g = new Float32Array(W * H).fill(Infinity), from = new Int32Array(W * H).fill(-1);
+    // A binary heap of cells by their estimate.
+    const heap: number[] = [], f: number[] = [];
+    const push = (i: number, k: number) => {
+      let n = heap.length;
+      heap.push(i); f.push(k);
+      while (n > 0) {
+        const p = (n - 1) >> 1;
+        if (f[p] <= f[n]) break;
+        [heap[p], heap[n]] = [heap[n], heap[p]]; [f[p], f[n]] = [f[n], f[p]];
+        n = p;
+      }
+    };
+    const pop = () => {
+      const top = heap[0], lastI = heap.pop()!, lastF = f.pop()!;
+      if (heap.length) {
+        heap[0] = lastI; f[0] = lastF;
+        for (let n = 0; ;) {
+          const l = 2 * n + 1, r = l + 1;
+          let m = n;
+          if (l < heap.length && f[l] < f[m]) m = l;
+          if (r < heap.length && f[r] < f[m]) m = r;
+          if (m === n) break;
+          [heap[m], heap[n]] = [heap[n], heap[m]]; [f[m], f[n]] = [f[n], f[m]];
+          n = m;
+        }
+      }
+      return top;
+    };
+    g[start] = 0;
+    push(start, est(start));
+    let end = -1;
+    for (let pops = 0; heap.length && pops < FOOT_MOST; pops++) {
+      const i = pop(), x = i % W, y = Math.floor(i / W);
+      if (i === goal || (near(i) && !free(goal))) { end = i; break; }
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        if (!dx && !dy) continue;
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        const j = ny * W + nx;
+        if (!free(j) && j !== goal) continue;
+        if (dx && dy && (!free(y * W + nx) || !free(ny * W + x))) continue;
+        const c = g[i] + (dx && dy ? 1.414 : 1);
+        if (c >= g[j]) continue;
+        g[j] = c;
+        from[j] = i;
+        push(j, c + est(j));
+      }
+    }
+    if (end < 0) return null;
+    const pts: Point2[] = [[bx, by]];
+    for (let i = from[end]; i >= 0 && i !== start; i = from[i]) pts.unshift([cx(i), cy(i)]);
+    if (end !== goal) pts.unshift([cx(end), cy(end)]);
+    return pts;
   }
 
   // Whether the officer dives at you now: when, setting off as fast as it takes (no

@@ -922,7 +922,8 @@ The metro ride uses its overhead cutaway camera.
   on the road and stop at the kerb nearest you; then (or when you stop the car) an
   officer gets out (their door stays open till they're back; a car rammed or shot at
   while it's moving pulls up first, scenario `police-door`) and runs after you, to
-  your door if you're in a car. They stop at arm's length, facing you, spread round you
+  your door if you're in a car, round a building, wall or fence that's in the way
+  rather than into it (scenario `police-footway`). They stop at arm's length, facing you, spread round you
   rather than piling into one spot (two don't make for the same door of your car). Once they have hold of you it takes them a moment
   (about a second and a half on foot, two and a half at the door of a car you've
   stopped in) and then you're busted (the police keep the car). Walking off doesn't
@@ -2534,6 +2535,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   (footprint × storeys) of flats and tenements, terraced and mid-rise houses, family
   houses and places of work, taken from the tile and its eight neighbours. Flats fill
   the street (about 90 % day and night), family houses keep their cars on the plot
+  Officers on foot go straight where nothing's in the way; otherwise an A* search over
+  0.7 m squares of the collision grid, within 30 m round the straight line, finds them a
+  way round (`Police.footway`, about a millisecond, up to 10 ms over 100 m), redone when
+  where they're going moves 3 m or every 1.5 s, and they head for the furthest point of
+  it they can walk straight to.
   (about 30 %, so 15–25 % on a sparse villa street), offices, shops, halls and
   factories fill by day and mostly empty at night (70 % and 30 %), and where little is
   built the share falls towards nothing; more building round a spot raises it (floor
