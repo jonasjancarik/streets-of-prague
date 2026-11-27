@@ -154,14 +154,22 @@ export class LifeSize {
   }
 
   // Compiles the avatars' shaders behind the loading screen, so the first person to step
-  // up close doesn't stall a frame: a copy of your avatar, put in the scene for it.
+  // up close doesn't stall a frame: a copy of your avatar, put in the scene for it, and a
+  // passer-by in it, dyed (the one shader every colourway uses, avatarDyes.ts), who then
+  // waits among the spares.
   async warm(compile: (o: THREE.Object3D) => Promise<unknown>) {
     const player = this.playerSeed === undefined ? undefined : this.baseKinds[this.playerSeed % AVATARS.length];
-    const k = player === undefined ? this.kinds[0] : this.kinds[player];
+    const kind = player ?? 0, k = this.kinds[kind];
     if (!k) return;
-    const copy = SkeletonUtils.clone(k.template);
+    const copy = new THREE.Group();
+    copy.add(SkeletonUtils.clone(k.template));
+    const passer = !k.role && DYES[k.name] ? this.take(kind) : undefined;
+    if (passer) copy.add(passer.root);
     this.group.add(copy);
-    try { await compile(copy); } finally { this.group.remove(copy); }
+    try { await compile(copy); } finally {
+      this.group.remove(copy);
+      if (passer) { passer.root.visible = false; this.group.add(passer.root); this.spare[kind].push(passer); }
+    }
   }
 
   private async load(crowdAfter: Promise<unknown> = Promise.resolve()) {

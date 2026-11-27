@@ -57,10 +57,11 @@ async function unpack(buffer: ArrayBuffer) {
 }
 
 // `dye`: an avatar with colourways, dyed in each instance's (crowdTop, crowdBottom) at the
-// body's place in the atlas (`material.userData.dyeCell`; webgpu/avatars.ts in TSL).
-function bindPoses(material: THREE.MeshLambertMaterial | THREE.MeshDepthMaterial, vat: THREE.DataTexture, colour: boolean, dye?: string) {
+// body's place in the atlas (`material.userData.dyeCell`). Every avatar shares the shader:
+// the regions are uniforms (webgpu/avatars.ts reads them from the batch's mesh).
+function bindPoses(material: THREE.MeshLambertMaterial | THREE.MeshDepthMaterial, vat: THREE.DataTexture, colour: boolean, dye = false) {
   material.userData.crowdPoses = vat;
-  material.customProgramCacheKey = () => colour ? (dye ? 'street-crowd-dye-' + dye : 'street-crowd') : 'street-crowd-depth';
+  material.customProgramCacheKey = () => colour ? (dye ? 'street-crowd-dye' : 'street-crowd') : 'street-crowd-depth';
   material.onBeforeCompile = shader => {
     if (dye) {
       Object.assign(shader.uniforms, dyeUniforms(material.userData.dye), { uDyeCell: { value: material.userData.dyeCell } });
@@ -152,7 +153,7 @@ export class StreetCrowd {
           material = new THREE.MeshLambertMaterial({ map: this.material.map, side: THREE.DoubleSide, alphaTest: .35 });
           material.userData.dye = dyeRegions(model.name);
           material.userData.dyeCell = new THREE.Vector4(atlasSize[0] * 512 / inner, atlasSize[1] * 512 / inner, -x * 512 / inner, -y * 512 / inner);
-          bindPoses(material, vat, true, model.name);
+          bindPoses(material, vat, true, true);
           dye = ['crowdTop', 'crowdBottom'].map(name => {
             const a = new THREE.InstancedBufferAttribute(new Float32Array(MAX * 4), 4);
             geometry.setAttribute(name, a);
@@ -161,6 +162,7 @@ export class StreetCrowd {
         }
         const mesh = new THREE.InstancedMesh(geometry, material, MAX);
         mesh.name = 'Street crowd ' + model.name;
+        if (dye) { mesh.userData.dye = material.userData.dye; mesh.userData.dyeCell = material.userData.dyeCell; }
         mesh.userData.sharedMatrices = true;
         mesh.castShadow = mesh.receiveShadow = true;
         mesh.customDepthMaterial = this.depth;

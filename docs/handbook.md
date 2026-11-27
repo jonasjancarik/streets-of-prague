@@ -2091,7 +2091,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   street model. Skin, shoes, belts, inner layers and white stripes keep their texture.
   Drivers and uniformed crews keep their outfits. To add a colourway or an outfit, mark
   the garment's rects in the body texture (512 units, rows from the top) and list its
-  colours there; the shader has a GLSL and a TSL copy (`src/webgpu/avatars.ts`).
+  colours there; the shader has a GLSL and a TSL copy (`src/webgpu/avatars.ts`). Every
+  avatar shares one dyed shader up close and one in the street crowd, with the regions as
+  uniforms (on WebGPU read from the mesh being drawn), and the close one is compiled
+  behind the loading screen. Keep it that way: a shader per avatar was compiled the
+  first time each outfit came into view, mid-walk.
   The player's model starts loading alongside the animation clips. The player gets
   a random avatar each session and keeps it when switching between
   first and third person, including after the detailed models are freed and reloaded.

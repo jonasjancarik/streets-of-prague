@@ -167,9 +167,9 @@ export const dyeUniforms = (r: DyeRegions) => ({ uDyeRect: { value: r.rects }, u
 
 
 // A clone of the avatar's body material that can be dyed, for one person: `mesh` wears it.
-// Its key is cutAway's plus "-dye-" and the avatar, so the WebGPU ports for both apply
-// (webgpu/avatars.ts). WebGPU shares one compiled graph between materials with the same
-// key, so there the colours are read from the mesh, and the regions differ by avatar.
+// Its key is cutAway's plus "-dye", so the WebGPU ports for both apply (webgpu/avatars.ts).
+// Every avatar shares the one shader: the regions and colours are uniforms, which WebGPU
+// (one compiled graph for all materials with the key) reads from the mesh being drawn.
 export function dyeMaterial(body: THREE.MeshStandardMaterial, name: string, mesh: THREE.Object3D) {
   const m = cutAway(body.clone(), 'rocketbox');
   const state: DyeState = { ...dyeRegions(name), top: new THREE.Vector4(), bottom: new THREE.Vector4() };
@@ -182,7 +182,7 @@ export function dyeMaterial(body: THREE.MeshStandardMaterial, name: string, mesh
       .replace('#include <common>', `#include <common>\n${DYE_GLSL}\nuniform vec4 uDyeTop; uniform vec4 uDyeBottom;`)
       .replace('#include <map_fragment>', '#include <map_fragment>\n  diffuseColor.rgb = dyed(diffuseColor.rgb, vMapUv * 512., uDyeTop, uDyeBottom);');
   };
-  m.customProgramCacheKey = () => `cut-rocketbox-dye-${name}`;
+  m.customProgramCacheKey = () => 'cut-rocketbox-dye';
   return m;
 }
 
