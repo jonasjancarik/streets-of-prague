@@ -21,7 +21,16 @@ import type { Point3 } from './guns.ts';
 // `pit`: trying a PIT manoeuvre on you (see pitting); `trick`: seconds before it thinks of
 // trying one. `block`: parked across the road as part of a roadblock (see roadblock.ts).
 // (`halt`: pulling up to let its officer out, see Police.crime.)
-interface ChaseCar extends Follower { car: Car; calm: boolean; wrecked: boolean; gone?: boolean; reload?: number; side?: number; pit?: Pit; trick?: number; block?: Roadblock; halt?: boolean }
+// (`look`: where it's looking for you once they've lost you, see Police.lookout.)
+interface ChaseCar extends Follower { car: Car; calm: boolean; wrecked: boolean; gone?: boolean; reload?: number; side?: number; pit?: Pit; trick?: number; block?: Roadblock; halt?: boolean; look?: Look }
+// A search for you once they've lost sight of you: from where they last knew you to be,
+// the way you were heading then (a unit vector, or 0 for a crime phoned in), seconds
+// they've been at it, whether a car has been to see the spot itself, and the street
+// corners they've looked at since.
+interface Search { x: number; y: number; hx: number; hy: number; t: number; checked: boolean; been: Set<string> }
+// Where one car is going to look: the spot itself, or (`node`) a street corner; `t`, the
+// seconds it has left to get there before it looks somewhere else.
+interface Look { x: number; y: number; node?: string; of: Search; t: number }
 // (`ok`: seconds it has kept its place beside you; `cramped`: seconds that place has been
 // in a wall or another car.)
 interface Pit { phase: 'line' | 'hit' | 'off'; t: number; side: number; ok: number; cramped: number }
@@ -29,7 +38,8 @@ interface Pit { phase: 'line' | 'hit' | 'off'; t: number; side: number; ok: numb
 // an arrest, moved by src/arrest.ts. `slot`: the way round you (radians) they stand when
 // they've caught up; `at`: the door of your car they're making for. `post`: where they
 // stand at a roadblock, behind their car.
-export interface Officer { avatarId: number; x: number; y: number; h: number; vx: number; vy: number; car: Car; fig: Figures; anim: Anim; down: number; back: boolean; out?: number; gone?: boolean; level?: number; gz?: number; detour?: number; reload?: number; door?: number; led?: boolean; grip?: number; slot?: number; at?: number; post?: Point2; block?: Roadblock; sprint?: number; winded?: number; dive?: Dive; diveRest?: number }
+// `looked`: seconds they've spent looking round where you were, once they've lost you.
+export interface Officer { avatarId: number; x: number; y: number; h: number; vx: number; vy: number; car: Car; fig: Figures; anim: Anim; down: number; back: boolean; out?: number; gone?: boolean; level?: number; gz?: number; detour?: number; reload?: number; door?: number; led?: boolean; grip?: number; slot?: number; at?: number; post?: Point2; block?: Roadblock; sprint?: number; winded?: number; dive?: Dive; diveRest?: number; looked?: number }
 // An officer's dive at your legs: `t` since they left their feet, which way, how fast they
 // set off, and whether it's been decided yet.
 interface Dive { t: number; ux: number; uy: number; v: number; done: boolean }
@@ -156,6 +166,26 @@ const BLOCK_MASS = 1.6;
 const ARM = 0.85; // m
 const SPREAD = 1.1;
 const STAND_BY = 2.6; // m
+// What they see (Police.sees). This near they notice you whatever's between (they hear
+// you); further off they need a clear line, and someone on another level (on the street
+// over the tunnel you're in) doesn't see you at all. A car that isn't after you yet
+// notices you behind it only within BEHIND m (they look ahead, not in the mirror). The
+// dark, mist and rain or snow bring the range in (Police.dim, down to DIM_MOST less).
+const HEAR = 8; // m
+const BEHIND = 30; // m
+const DIM_MOST = 0.55;
+// Searching once they've lost you (Police.lookout): the car nearest goes to where you
+// were; the others go to street corners round it, further out the longer it takes
+// (SEARCH_NEAR m along the streets at first, SEARCH_GROW m more a second, SEARCH_FAR at
+// most), ahead the way you were going, each to a different one. They drive at
+// SEARCH_TOP m/s, looking. Officers out on foot look round the spot for LOOK_FOR s and
+// go back to their car.
+const SEARCH_NEAR = 70, SEARCH_GROW = 9, SEARCH_FAR = 360; // m, m/s, m
+const SEARCH_THERE = 14; // m from a spot: they've looked there
+const SEARCH_APART = 50; // m: two cars don't look at corners nearer each other than this
+const SEARCH_TOP = 13; // m/s
+const LOOK_GIVE_UP = 45; // s to get to a spot before it looks somewhere else
+const LOOK_FOR = 6; // s
 
 // Walking towards (tx, ty) at `speed`: round the cars and trams in the way, not into
 // them: the first way clear a step ahead, turning further and further off the straight
@@ -254,6 +284,14 @@ export class Police {
   private was: Point2 | null = null;
   // Driving a fire engine or an ambulance (PlayerTarget.duty), as of the last update.
   private duty = false;
+  // How hard it is to see far (0 a clear day, 1 the darkest murk), from main.ts: see HEAR.
+  dim = 0;
+  // Your height and level as of the last update, for what they see (sees).
+  private at = { z: 0, level: 0 };
+  // The way you were going while they last saw you (a unit vector), if you were moving.
+  private headed: Point2 | null = null;
+  // Looking for you, once they've lost you (see Search).
+  search: Search | null = null;
 
   constructor({ scene, drive, traffic, grid, height, rng, edgesNear, walk = undefined, walkNear = () => [], offscreen, onBusted, kit, bodyAt = () => false, onShot = () => {}, trackNear = () => false }: PoliceOptions) {
     this.scene = scene; this.drive = drive; this.traffic = traffic; this.grid = grid;
@@ -304,11 +342,20 @@ export class Police {
     return true;
   }
 
-  sees(x: number, y: number, far = 110) {
+  // Whether any of them sees (x, y), at height `z` on `level` (yours, by default). See HEAR.
+  sees(x: number, y: number, far = 110, z = this.at.z, level = this.at.level) {
+    const reach = far * (1 - DIM_MOST * clamp(this.dim, 0, 1));
     for (const e of this.eyes()) {
       const d = Math.hypot(e.x - x, e.y - y);
       if ('air' in e && e.air) { if (d < HELI_SIGHT) return true; continue; }
-      if (d < 40 || (d < far && this.clear(e.x, e.y, x, y))) return true;
+      const who = e as Car | Officer;
+      // On another level and well above or below: the street over the tunnel, the bridge
+      // over the street. (Both, so a steep street or a bridge's ramp doesn't count.)
+      if (Math.sign(who.level ?? 0) !== Math.sign(level) && Math.abs(this.height(who.x, who.y, who) - z) >= LEVEL_APART) continue;
+      if (d < HEAR) return true;
+      let r = reach;
+      if (who instanceof Car && !this.seen && (x - who.x) * Math.cos(who.h) + (y - who.y) * Math.sin(who.h) < -0.3 * d) r = Math.min(r, BEHIND);
+      if (d < r && this.clear(who.x, who.y, x, y)) return true;
     }
     return false;
   }
@@ -372,6 +419,8 @@ export class Police {
     this.cars = [];
     this.reports = [];
     this.known = null;
+    this.headed = null;
+    this.search = null;
     this.block = null;
     this.helis.reset();
   }
@@ -602,11 +651,14 @@ export class Police {
     const dx = me.x - c.x, dy = me.y - c.y, dist = Math.hypot(dx, dy);
     // (Not on the street over the tunnel you're in, nor in the tunnel under you.)
     const level = this.level(c, me);
+    // Lost you: `me` is a spot it's looking at (lookout), driven to like a car would be, at
+    // a looking pace, not rammed.
+    const hunting = !this.seen && this.heat > 0, drives = !!me.car || hunting;
     let tx, ty, want;
-    if (!me.car || dist >= 40 || !level) p.pit = undefined;
-    const pit = me.car && dist < 40 && level ? this.pitting(p, me, me.car, dt) : null;
+    if (!me.car || dist >= 40 || !level || hunting) p.pit = undefined;
+    const pit = !hunting && me.car && dist < 40 && level ? this.pitting(p, me, me.car, dt) : null;
     if (pit) ({ tx, ty, want } = pit);
-    else if (me.car && dist < 40 && level && this.clear(c.x, c.y, me.x, me.y)) {
+    else if (!hunting && me.car && dist < 40 && level && this.clear(c.x, c.y, me.x, me.y)) {
       // In sight and you're driving: straight at you, to ram you.
       tx = me.x + me.vx * Math.min(0.8, dist / 25);
       ty = me.y + me.vy * Math.min(0.8, dist / 25);
@@ -634,7 +686,7 @@ export class Police {
       // not every frame: a search that fails has looked at thousands of streets. On
       // foot the way ends at the roadside nearest you, and the car doesn't look for a
       // new one while its officer is out.
-      if (c.crew && (p.replan < 0 || (me.car && p.path && p.s > p.path.length - 6))) {
+      if (c.crew && (p.replan < 0 || (drives && p.path && p.s > p.path.length - 6))) {
         const to = me.car ? null : this.roadside(me.x, me.y, true, me.level);
         p.path = this.route(c.x, c.y, to ? to.x : me.x, to ? to.y : me.y, true, [c.level ?? 0, me.level]);
         p.s = 0;
@@ -642,16 +694,16 @@ export class Police {
       }
       if (!p.path) { tx = me.x; ty = me.y; want = 8; }
       else {
-        ({ tx, ty, want } = along(c, p, p.path));
+        ({ tx, ty, want } = along(c, p, p.path, hunting ? SEARCH_TOP : 24));
         // On foot: slow down for the end of the way and stop there.
-        if (!me.car) want = Math.min(want, clamp((p.path.length - p.s - 4) * 0.9, 0, 24));
+        if (!drives) want = Math.min(want, clamp((p.path.length - p.s - 4) * 0.9, 0, 24));
       }
       // And stop short of you, should you be out in the road.
-      if (!me.car) want = Math.min(want, dist < 12 ? 0 : clamp((dist - 10) * 0.8, 3, 24));
+      if (!drives) want = Math.min(want, dist < 12 ? 0 : clamp((dist - 10) * 0.8, 3, 24));
     }
     // Another police car got there first and stands just ahead: stop behind it, not
     // squeeze past it over the parked cars.
-    const behind = !me.car && dist < 60 && this.cars.some((q) => q !== p && q.car.speed < 2
+    const behind = !drives && dist < 60 && this.cars.some((q) => q !== p && q.car.speed < 2
       && Math.hypot(q.car.x - c.x, q.car.y - c.y) < 9 && (q.car.x - c.x) * Math.cos(c.h) + (q.car.y - c.y) * Math.sin(c.h) > 0);
     if (behind) want = 0;
     // An officer out on foot: the car waits (and doesn't back up with its door open, if it
@@ -668,7 +720,8 @@ export class Police {
     if (c.crew && this.seen && !me.air && level && c.speed < 1 && (me.car ? me.speed < 2 && dist < 14 : dist < 18 || there)) this.getOut(c);
     // Near you and in sight, from four stars: a shot out of the window now and then.
     p.reload = (p.reload ?? 1) - dt;
-    if (c.crew && this.stars >= FROM_CARS && !me.air && level && dist < RANGE && p.reload <= 0 && this.clear(c.x, c.y, me.x, me.y)) {
+    // (Only at you, in sight: not at where they're looking for you.)
+    if (c.crew && !hunting && this.stars >= FROM_CARS && !me.air && level && dist < RANGE && p.reload <= 0 && this.clear(c.x, c.y, me.x, me.y)) {
       p.reload = this.pace() + 1;
       this.shoot(c.x, c.y, c, me);
     }
@@ -806,7 +859,12 @@ export class Police {
       // Back to the car when you drive off (or the chase is over); after you otherwise.
       // At a roadblock they keep their places (until it's cleared, below).
       const toMe = Math.hypot(me.x - o.x, me.y - o.y);
-      o.back = this.heat <= 0 || (!o.post && !!(ride && me.car && me.speed > 6 && toMe > 12));
+      // Lost you: they look round where you were for a while, then go back to their car to
+      // look further off (lookout). Seeing you again, they're after you once more.
+      const lost = goal !== me && !o.post;
+      if (!lost) o.looked = 0;
+      else if (Math.hypot(goal.x - o.x, goal.y - o.y) < 4) o.looked = (o.looked ?? 0) + dt;
+      o.back = this.heat <= 0 || (lost && (o.looked ?? 0) > LOOK_FOR) || (!o.post && !!(ride && me.car && me.speed > 6 && toMe > 12));
       // At a roadblock: behind their car while you drive up (or are far off). Once you've
       // stopped near them, they come for you as anyone would.
       const posted = !o.back && !!o.post && (toMe > 30 || (!!me.car && me.speed > 2));
@@ -854,7 +912,9 @@ export class Police {
         if (running && this.lunge(o, me)) return;
         // Caught up: at your door, or at arm's length (round your car when both doors are
         // taken), facing you. On your heels while you walk: they keep up with you.
-        if (o.at !== undefined) this.arrive(o, gx, gy, Math.atan2(me.car!.y - o.y, me.car!.x - o.x), dt);
+        // Lost you: to where you were, and they stand there looking round.
+        if (lost) this.lookRound(o, goal.x, goal.y, dt);
+        else if (o.at !== undefined) this.arrive(o, gx, gy, Math.atan2(me.car!.y - o.y, me.car!.x - o.x), dt);
         else this.standRound(o, goal.x, goal.y, goal === me && me.car ? me.car.spec.L / 2 + 1.2 : ARM, dt, after ? this.moved : 0, o.sprint ? SPRINT : RUN);
         if (this.heat > 0 && !me.air && level) {
           // Hold of you, or at the door of the car you've stopped in: it takes a moment, and
@@ -928,6 +988,17 @@ export class Police {
     }
   }
 
+  // To (x, y), where they last knew you to be, at a jog; there they stop and turn this way
+  // and that, looking for you (not standing round the empty spot as if they had you).
+  lookRound(o: Officer, x: number, y: number, dt: number) {
+    // (Each a step or so off it, not all on the one spot.)
+    x += Math.cos(o.avatarId * 2.4) * 1.5;
+    y += Math.sin(o.avatarId * 2.4) * 1.5;
+    if (Math.hypot(x - o.x, y - o.y) > 1) { this.arrive(o, x, y, o.h, dt, 0, RUN * 0.7); return; }
+    o.vx = o.vy = 0;
+    o.h += Math.sin((o.looked ?? 0) * 1.1 + o.avatarId) * 1.4 * dt;
+  }
+
   standable(x: number, y: number) { return !this.blocked(x, y) && !this.bodyAt(x, y, 0.3, null); }
 
   // Stands r m from (cx, cy) (you, or where they last knew you to be), facing it: on the
@@ -969,6 +1040,7 @@ export class Police {
     this.duty = !!me.duty;
     this.moved = this.was && dt > 0 ? Math.hypot(me.x - this.was[0], me.y - this.was[1]) / dt : 0;
     this.was = [me.x, me.y];
+    this.at = { z: me.z, level: me.level };
 
     // Patrols ride along with the traffic.
     const patrols = this.traffic.agents.filter((a) => a.car.type === 'police');
@@ -1008,7 +1080,8 @@ export class Police {
     for (const p of this.reports) {
       if ((p.t -= dt) > 0) continue;
       this.heat = Math.min(40, this.heat + p.heat);
-      if (!this.seen) this.known = [p.x, p.y];
+      // (Where it happened, not which way you went from there.)
+      if (!this.seen) { this.known = [p.x, p.y]; this.headed = null; }
     }
     this.reports = this.reports.filter((p) => p.t > 0);
     if (me.duty && this.stars === 0) this.heat = Math.max(0, this.heat - ON_DUTY.drain * dt);
@@ -1016,7 +1089,15 @@ export class Police {
     // Where they're after you: where you are while they see you, otherwise where they
     // last knew you to be. (Wanted by other means, say a job's, they know.)
     if (this.seen || !this.known) this.known = [me.x, me.y];
+    if (this.seen) this.headed = me.speed > 2 ? [me.vx / me.speed, me.vy / me.speed] : null;
     const goal: PlayerTarget = this.seen ? me : { ...me, x: this.known[0], y: this.known[1], vx: 0, vy: 0, speed: 0 };
+    // Out of sight: a search from there (a new one when they hear of somewhere else).
+    if (this.seen || this.heat <= 0) this.search = null;
+    else {
+      const [x, y] = this.known, [hx, hy] = this.headed ?? [0, 0];
+      if (!this.search || this.search.x !== x || this.search.y !== y) this.search = { x, y, hx, hy, t: 0, checked: false, been: new Set() };
+      this.search.t += dt;
+    }
 
     // As many cars on your tail as your stars call for: patrols nearby join in first.
     const want = CHASERS[this.stars];
@@ -1055,7 +1136,7 @@ export class Police {
         // moving it turns as it's shoved (one with a driver would keep its line).
         if (c.speed > 1.5) c.mode = 'loose';
         ctl = BRAKED;
-      } else if (!p.wrecked && !p.calm) ctl = this.chase(p, dt, goal);
+      } else if (!p.wrecked && !p.calm) ctl = this.chase(p, dt, this.search ? this.lookout(p, goal, this.search, dt) : goal);
       else if (!p.wrecked) ctl = { throttle: c.forwardSpeed > 0.3 ? -1 : 0, steer: 0, handbrake: false };
       // (Rolled over, it keeps its crew, belted in their seats.)
       if (p.wrecked && !c.roll) c.mode = 'loose';
@@ -1073,10 +1154,73 @@ export class Police {
     }
     this.cars = this.cars.filter((p) => !p.gone);
 
-    this.helis.update(dt, goal, HELIS[this.stars]);
+    // Searching, the helicopter sweeps its light round the spot, wider as it goes on.
+    const s = this.search, sweep = s ? Math.min(70, 15 + s.t * 4) : 0;
+    this.helis.update(dt, s ? { ...goal, x: s.x + Math.cos(s.t * 0.3) * sweep, y: s.y + Math.sin(s.t * 0.3) * sweep } : goal, HELIS[this.stars]);
     for (const o of this.officers) this.walk(o, dt, me, goal);
     for (const o of this.officers) if (o.gone) this.dismiss(o);
     this.officers = this.officers.filter((o) => !o.gone);
+  }
+
+  // ---- Searching ----------------------------------------------------------
+
+  // Where a car that has lost you goes to look (as a target for chase): the spot it was
+  // given, until it gets there or gives up on it, and then another (pickSpot).
+  lookout(p: ChaseCar, goal: PlayerTarget, s: Search, dt: number): PlayerTarget {
+    const c = p.car, l = p.look;
+    if (l && (l.of !== s || (l.t -= dt) < 0)) p.look = undefined;
+    else if (l && Math.hypot(l.x - c.x, l.y - c.y) < SEARCH_THERE) {
+      if (l.node) s.been.add(l.node);
+      else s.checked = true;
+      p.look = undefined;
+    }
+    if (!p.look) {
+      p.look = this.pickSpot(p, s);
+      p.replan = 0;
+    }
+    return { ...goal, x: p.look.x, y: p.look.y };
+  }
+
+  // The next place for a car to look. The one nearest goes to the spot itself first; the
+  // others, and then everyone, to the street corners round it: within SEARCH_NEAR m by
+  // road at first and further out as time goes on, ahead the way you were going, at
+  // corners nobody has looked at yet and away from where the other cars are looking.
+  pickSpot(p: ChaseCar, s: Search): Look {
+    const others = this.chasing.filter((q) => q !== p && q.look?.of === s);
+    if (!s.checked && !others.some((q) => !q.look!.node)) {
+      const d = (q: ChaseCar) => Math.hypot(q.car.x - s.x, q.car.y - s.y);
+      // (As near it as the road goes: you were in a park, say.)
+      const to = this.roadside(s.x, s.y, true, this.at.level) ?? { x: s.x, y: s.y };
+      if (!this.chasing.some((q) => q !== p && q.look?.of !== s && d(q) < d(p))) return { x: to.x, y: to.y, of: s, t: LOOK_GIVE_UP };
+    }
+    this.sync();
+    const st = this.nearestStreet(s.x, s.y, 60);
+    if (!st) return { x: s.x, y: s.y, of: s, t: 10 };
+    const far = Math.min(SEARCH_FAR, SEARCH_NEAR + s.t * SEARCH_GROW);
+    const g = new Map<string, number>(), heap = new Heap();
+    for (const [n, d] of [[st.e.u, st.s], [st.e.v, st.e.mid.length - st.s]] as [string, number][]) { g.set(n, d); heap.push([d, n]); }
+    let best: Look | null = null, top = -Infinity;
+    for (let pops = 0; heap.size && pops < 3000; pops++) {
+      const [d, n] = heap.pop()!;
+      if (d > (g.get(n) ?? Infinity)) continue; // stale entry
+      const at = this.nodes.get(n);
+      if (!at) continue;
+      if (d > 25) {
+        const dx = at[0] - s.x, dy = at[1] - s.y, r = Math.hypot(dx, dy) || 1;
+        let score = -Math.abs(d - far * 0.7) / far + 0.7 * (dx * s.hx + dy * s.hy) / r + this.r() * 0.35;
+        if (s.been.has(n)) score -= 1;
+        for (const q of others) if (Math.hypot(q.look!.x - at[0], q.look!.y - at[1]) < SEARCH_APART) score -= 0.8;
+        if (score > top) { top = score; best = { x: at[0], y: at[1], node: n, of: s, t: LOOK_GIVE_UP }; }
+      }
+      for (const l of this.links.get(n) || []) {
+        if (l.foot) continue;
+        const c = d + (l.e.mid?.length ?? 0);
+        if (c > far || c >= (g.get(l.to) ?? Infinity)) continue;
+        g.set(l.to, c);
+        heap.push([c, l.to]);
+      }
+    }
+    return best ?? { x: s.x, y: s.y, of: s, t: 10 };
   }
 
   // Hands a stopped police car to the traffic, on the lane that's nearest and runs most the way
@@ -1200,6 +1344,8 @@ export class Police {
     this.lose = 0;
     this.reports = [];
     this.known = null;
+    this.headed = null;
+    this.search = null;
     for (const p of this.cars) p.calm = true;
   }
 

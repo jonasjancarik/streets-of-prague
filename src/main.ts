@@ -3699,6 +3699,8 @@ async function main() {
     signals.street(fromStreet);
     beacons.draw(flashing, carPool, camera, time.value);
     signals.update(camPos.x, -camPos.z, viewRadius() + 10, now);
+      // The dark, mist, rain and snow shorten what the police see (Police.sees).
+      police.dim = Math.min(1, 0.5 * sky.dark + 0.9 * weather.now.mist + 0.3 * Math.max(weather.now.rain, weather.now.snow));
     streaks.update(camera, [lamps.glows, signals.flares, signals.glows], (x, y) => world.heightAt(x, y), viewRadius() + 10, time.value);
     weatherFx.tint.value.copy(sky.tint);
     weatherFx.fog.value.copy(sky.haze);

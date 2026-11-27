@@ -885,7 +885,16 @@ The metro ride uses its overhead cutaway camera.
   the limit) earn stars, up to five; crimes the police see count three times as much.
   A crime none of them saw is phoned in six to eleven seconds later, and they go to
   where it happened rather than to you: the police only know where you are while they
-  can see you, and otherwise make for where they last saw you.
+  can see you, and otherwise make for where they last saw you. Within 8 m they notice you
+  whatever is between; further off they need a clear line, a car that isn't after you
+  yet sees behind it only within 30 m, and nobody sees you on another level (from the
+  street over the tunnel you're in). The dark, mist and rain or snow bring their sight
+  in, to about half in thick mist (`Police.sees`, `dim`).
+  Once they've lost you they search (`Police.lookout`, scenario `police-search`): the
+  car nearest goes to where you were, the others to street corners round it, ahead the
+  way you were going and each to a different one, further out the longer it takes, at
+  about 45 km/h. Officers out on foot look round the spot for a few seconds and go back
+  to their car, and the helicopter sweeps its light round it.
   Police cars chase you along the streets and ram you; one stuck behind another goes
   round it to come up alongside you rather than ramming it. Some carry a ram frame on the
   nose, more of them the more stars you have. From two stars, when you're doing more than
