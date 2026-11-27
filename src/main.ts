@@ -2488,6 +2488,14 @@ async function main() {
       if (hit > 6) { shake = Math.min(1.2, shake + hit * 0.04); hapticCrash(hit); }
       jolt = hit;
       if (inCar.fell) throwOff(inCar.fell);
+      // Over a bridge's parapet (physicalHandling.ts): into the river, back on the deck; onto
+      // the ground, a long drop hurts you.
+      if (inCar.splashed) { inCar.splashed = false; showBanner(t('Back where you went over after a splash')); }
+      if (inCar.dropped) {
+        const hard = Math.min(1, (inCar.dropped - 8) / (35 - 8));
+        inCar.dropped = 0;
+        if (hard > 0) hurt(100 * hard);
+      }
     } else if (!scripted && !arrest.active && !inHeli && !ride.on && !boats.me && !funicular.me && !ferries.me && !passenger()) {
       // In first person, looking round turns you: you walk the way you look.
       const eyes = !testkit?.cam && testkit?.eyes;
@@ -3492,7 +3500,8 @@ async function main() {
         // Like a driving game's chase camera: high enough to see the road over the roof,
         // the car in the lower third of the picture, swinging round after it as it turns.
         // A wall behind the car brings it in (not in a tunnel or under a bridge).
-        const floor = inHeli ? inHeli.z : deep && body ? body.gz ?? 0 : ground(me.x, me.y, body);
+        // (Going over a bridge's parapet, after the body as it falls.)
+        const floor = inHeli ? inHeli.z : inCar?.overboard && inCar.physics ? inCar.physics.origin[2] : deep && body ? body.gz ?? 0 : ground(me.x, me.y, body);
         const open = !inHeli && !deep && !(body && world.covered(body));
         const big = inCar ?? busOn;
         follow.chase(dt, carried, {

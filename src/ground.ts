@@ -870,7 +870,7 @@ function splitByLevel(lines: Point2[][], level: (x: number, y: number) => number
   return out;
 }
 
-const FASCIA = 1.2; // m: the deck's edge below its surface
+export const FASCIA = 1.2; // m: the deck's edge below its surface
 export const PARAPET = 1.0; // m: the parapet above it
 export const PARAPET_W = 0.35;
 const TUNNEL_H = 5.5; // m: a tunnel's walls

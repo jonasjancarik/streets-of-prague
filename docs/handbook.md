@@ -629,6 +629,17 @@ The metro ride uses its overhead cutaway camera.
     height, so a van hitting a wall dives onto its nose. Once a car lies still on its
     side or roof it is handed to `Rollover` as an ordinary overturned car (`Rollover.lying`).
     A car you jump out of keeps its physics until it is back on its wheels.
+  - *Bridge parapets.* A bridge's parapet is a metre of stone the body meets in all
+    three dimensions (`TileWorld.rimAt`): any wheel or point of the body (its outline
+    every 35 cm at the sills, bumpers, shoulders and roof) below its top is stopped
+    against it, and one above goes on over it, resting on the top if it gets no further.
+    Driven into, even head on at 60 km/h, a car bounces off; one tumbling or thrown
+    high enough goes over the edge and falls. It keeps to the deck's level until it has
+    fallen below the deck, and the chase camera follows the body down. Onto dry ground a
+    long drop damages the car and, from 8 m, hurts you (35 m is fatal). Into the river
+    it's back on the deck where it last stood on its wheels, as on foot. Arcade and
+    Advanced handling still bounce off the parapet as off any wall. The `bridge-overboard`
+    scene checks it on most Legií.
   - *Drawing.* The body takes its pose straight from the physics. On the street model
     each wheel moves in its arch with its own suspension travel (`WHEEL_LEVEL`,
     `WHEEL_SHIFT` and the diagonal twist); the shadow stays on the ground.

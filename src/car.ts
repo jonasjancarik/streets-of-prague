@@ -1,6 +1,6 @@
 import { GLYPHS, letteringGeometry } from './vehicleLettering.ts';
 import { StreetHandling, ROLL_CENTRE } from './streetHandling.ts';
-import { PhysicalHandling, WHEEL_BEND, type Axles } from './physicalHandling.ts';
+import { PhysicalHandling, WHEEL_BEND, type Axles, type Rim } from './physicalHandling.ts';
 import { KEEP, STREET_QUALITY } from './streetQuality.ts';
 import { drivingSpec } from './driveTune.ts';
 import { Rollover, SCRAPE, tripSpeed } from './rollover.ts';
@@ -82,6 +82,10 @@ export interface CarGrid {
   height?: (x: number, y: number) => number;
   view?: (car: Car) => CarGrid;
   trunkAt?: (x: number, y: number) => TreeTrunk | undefined;
+  // A bridge's parapet and the air past it, as the physical handling meets them in
+  // three dimensions (TileWorld.rimAt), and the water's level where there's water (NaN).
+  rim?: (x: number, y: number) => Rim;
+  water?: (x: number, y: number) => number;
 }
 // (`upset`: told of the turn a blow gave it, `dw`, landing (rx, ry) from its middle; see Car.upset.)
 // (`jolted`: told of the change of speed (m/s) a blow gave it, for a rollover; see Car.jolted.)
@@ -1875,6 +1879,17 @@ export class Car {
   // A car or van rolling over, or lying where it stopped (rollover.ts); gone once it's
   // back on its wheels.
   roll?: Rollover;
+  // Gone over a bridge's parapet (in the physical handling): the deck it came off and its
+  // height there, and the highest its body has been since (see Car.overSide). Where it
+  // last stood on its wheels before, to come back to after a splash.
+  overboard?: { level: number; z: number; down?: boolean };
+  private fallPeak = 0;
+  private lastDeck?: { level: number; z: number };
+  private ashore?: { x: number; y: number; h: number; level: number; gz: number };
+  // Told once (cleared by main.ts): back where it went over after a splash; how far it
+  // fell onto dry ground (m).
+  splashed = false;
+  dropped = 0;
   r: number;
   offsets: number[];
   samples: Point2[];
@@ -2216,7 +2231,7 @@ export class Car {
     // The physical handling: while you drive with it, and until a car it tipped or threw
     // into the air is back on all four wheels (or lies still on its side or roof).
     const physical = handling === 'physical' && this.mode === 'player' && !!S.cabin && !S.two;
-    if (this.physics && !physical && this.physics.planted) this.physics = undefined;
+    if (this.physics && !physical && this.physics.planted && !this.overboard) this.physics = undefined;
     if (!this.physics && physical) {
       this.suspension = this.wheels = undefined;
       this.physics = new PhysicalHandling(this, S, axlesOf(this), grid.height ?? FLAT);
@@ -2280,7 +2295,8 @@ export class Car {
     for (let i = 0; i < steps; i++) {
       this.x += (this.vx * dt) / steps;
       this.y += (this.vy * dt) / steps;
-      const post = posts.collide(this), fence = fences.collide(this), wall = this.collideGrid(grid);
+      // (Falling from a bridge, it's above the posts and fences by the street below.)
+      const post = this.overboard ? 0 : posts.collide(this), fence = this.overboard ? 0 : fences.collide(this), wall = this.collideGrid(grid);
       if (post > impact) { impact = post; struck = 'post'; }
       if (fence > impact) { impact = fence; struck = fences.struck; }
       if (wall > impact) { impact = wall; struck = 'wall'; }
@@ -2300,7 +2316,7 @@ export class Car {
       const { radius } = ph.axles;
       ph.bend(ph.wheels.map((w) => { const b = wheelBend(this.blows, w.ax, radius, -w.ay); return [b[0], -b[2], b[1]]; }), this.dentVersion);
     }
-    const landing = ph.advance(this, S, ctl, road, dt, grid.height ?? FLAT);
+    const landing = ph.advance(this, S, ctl, road, dt, grid.height ?? FLAT, grid.rim);
     this.lean = 0;
     this.spin = 0;
     let hit = 0;
@@ -2313,11 +2329,59 @@ export class Car {
     // Lying still on its side or roof: from now on it's any overturned car (rollover.ts).
     if (ph.tipped && ph.still > .6) {
       this.roll = Rollover.lying(this.spec, ph.rollAngle);
-      this.physics = undefined;
+      this.physics = this.overboard = undefined;
       this.vx = this.vy = this.w = 0;
       this.lean = -this.roll.angle;
     }
-    return Math.max(this.move(dt, grid), hit);
+    const moved = this.move(dt, grid);
+    if (this.physics) {
+      const fall = this.overSide(this.physics, grid);
+      if (fall < 0) return moved;
+      hit = Math.max(hit, fall);
+    }
+    return Math.max(moved, hit);
+  }
+
+  // Over a bridge's edge: once its middle is out over the parapet (only a body above
+  // the parapet's top gets there), going over, on the deck's level until it has fallen
+  // below the deck; down on dry ground, a hard landing; down in the water, back on the
+  // deck where it last stood (as you are on foot). Returns the landing's blow, -1 for a splash.
+  private overSide(ph: PhysicalHandling, grid: CarGrid) {
+    const level = this.level ?? 0, z = ph.origin[2], ground = grid.height?.(this.x, this.y) ?? 0;
+    if (!this.overboard) {
+      const edge = level > 0 ? grid.rim?.(this.x, this.y) : null;
+      if (edge && this.lastDeck?.level === level) {
+        this.overboard = { ...this.lastDeck };
+        this.fallPeak = z;
+        return 0;
+      }
+      this.lastDeck = level > 0 && !edge ? { level, z: this.gz ?? 0 } : undefined;
+      if (ph.planted && !edge) this.ashore = { x: this.x, y: this.y, h: this.h, level, gz: this.gz ?? 0 };
+      return 0;
+    }
+    if (!this.overboard.down && z < this.overboard.z - 1.2) this.overboard.down = true;
+    this.fallPeak = Math.max(this.fallPeak, z);
+    const water = grid.water?.(this.x, this.y) ?? NaN;
+    if (Number.isFinite(water) && z < water + .3) {
+      const at = this.ashore;
+      this.overboard = this.lastDeck = undefined;
+      this.physics = undefined;
+      this.vx = this.vy = this.w = 0;
+      if (at) {
+        Object.assign(this, { x: at.x, y: at.y, h: at.h, level: at.level, gz: at.gz, _tx: at.x, _ty: at.y });
+        this.sync();
+      }
+      this.splashed = true;
+      return -1;
+    }
+    if (z - ground > 1 || !ph.wheels.some((w) => w.contact) && ph.speed > 1) return 0;
+    // Down on the ground below. (The body's own landing, if it came down on its side or
+    // roof, has dented it already: physicalStep.)
+    const drop = this.fallPeak - z, speed = Math.sqrt(2 * 9.81 * Math.max(0, drop));
+    this.overboard = this.lastDeck = undefined;
+    this.dropped = drop;
+    if (speed > 5) this.takeImpactDamage((speed - 5) * 3);
+    return speed;
   }
 
   // Rolling over, or lying on its side or roof: no driving, the body scraping along the
@@ -2448,7 +2512,15 @@ export class Car {
   collideGrid(grid: CarGrid) {
     const escape = this.mode === 'player' && grid.trunkAt ? this.treeEscape : undefined;
     const ignored = escape?.ignored, seeking = escape?.seeking;
-    const solid = (x: number, y: number) => grid.at(x, y) && (!ignored || grid.trunkAt?.(x, y) !== ignored) ? 1 : 0;
+    // (The physical handling meets a bridge's parapet itself, in three dimensions: here
+    // it holds only where the body is below its top, against a shove, and the air past
+    // it is open.)
+    const ph = this.physics, rim = ph ? grid.rim : undefined;
+    const open = (x: number, y: number) => {
+      const r = rim?.(x, y);
+      return !!r && (r === 'air' || !!this.overboard || ph!.lowAt(x, y) > r.top - .15);
+    };
+    const solid = (x: number, y: number) => grid.at(x, y) && (!ignored || grid.trunkAt?.(x, y) !== ignored) && !open(x, y) ? 1 : 0;
     let nx = 0, ny = 0, hits = 0, cx = 0, cy = 0;
     for (const [x, y] of this.worldOutline()) {
       if (!solid(x, y)) continue;

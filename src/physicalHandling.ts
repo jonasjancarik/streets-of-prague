@@ -50,6 +50,9 @@ const TYRES = [tyre(1.45), tyre(1.3)];
 // A tyre locked by the handbrake: its share of the peak.
 const LOCKED = .8;
 
+// How far below a parapet's top a point of the body still comes to rest on it (m), not against it.
+const RIM_REST = .15;
+
 // Below this forward speed (m/s) the slip angle is measured against it instead, so a car
 // standing still doesn't jitter on its tyres.
 const SLOW = 2;
@@ -63,6 +66,11 @@ export interface PlanBody {
   braking: boolean; skidFront: number; skidBack: number;
 }
 type Ground = (x: number, y: number) => number;
+// A bridge's parapet at a point, as the body meets it (TileWorld.rimAt): its top, its foot
+// (the deck's edge below) and the way out of it (back onto the deck, or out past it),
+// 'air' past it, null where there's none.
+export type Rim = { top: number; foot: number; nx: number; ny: number } | 'air' | null;
+type Rims = (x: number, y: number) => Rim;
 
 // What a step did: the hardest landing of the body on the road (m/s into it) and where.
 export interface Landing { speed: number; x: number; y: number }
@@ -109,6 +117,7 @@ export class PhysicalHandling {
   private omega = new Float64Array(3); // world frame
   private R = new Float64Array(9); // row-major, body → world
   private hull: [number, number, number][];
+  private around: [number, number, number][];
   private springs: { k: number; bump: number; rebound: number; arb: number; travel: number; droop: number }[];
   private statics: number[];
   private grip: number;
@@ -150,6 +159,7 @@ export class PhysicalHandling {
       ax, ay, front: i < 2, x: 0, rate: 0, contact: true, load: this.statics[i], cx: 0, cy: 0, cz: 0, ground: 0, slide: 0, toe: 0, grip: 1, scrub: 0,
     }));
     this.hull = hullOf(s);
+    this.around = aroundOf(s);
     this.gearDirection = car.vx * Math.cos(car.h) + car.vy * Math.sin(car.h) < -.25 ? -1 : 1;
     this.place(car, ground);
   }
@@ -201,6 +211,19 @@ export class PhysicalHandling {
   get speed() { return Math.hypot(this.v[0], this.v[1], this.v[2]); }
   get spin() { return Math.hypot(this.omega[0], this.omega[1], this.omega[2]); }
 
+  // How low the body comes over a point of the map (m, world), Infinity where it isn't
+  // over it: for the flat game's walls, which hold the car at a parapet the body is
+  // below the top of (so a shove from a tram can't put it through).
+  lowAt(x: number, y: number) {
+    const at = this.at;
+    let low = Infinity;
+    for (const pt of this.around) {
+      this.point(pt[0], pt[1], pt[2], at);
+      if (Math.abs(at[0] - x) < .45 && Math.abs(at[1] - y) < .45) low = Math.min(low, at[2]);
+    }
+    return low;
+  }
+
   // Each wheel's travel in the body (m, + up), front left, front right, rear left, rear right.
   travel(i: number) { return clamp(this.wheels[i].x, -this.springs[i >> 1].droop, this.springs[i >> 1].travel); }
 
@@ -217,13 +240,20 @@ export class PhysicalHandling {
   }
 
   // Moves it on by dt. Returns the hardest landing of the body on the road, if any.
-  advance(car: PlanBody, s: CarSpec, ctl: CarControl, road: number, dt: number, ground: Ground): Landing | null {
+  advance(car: PlanBody, s: CarSpec, ctl: CarControl, road: number, dt: number, ground: Ground, rims?: Rims): Landing | null {
     this.absorb(car, ground);
     const x0 = car.x, y0 = car.y;
+    // (A parapet anywhere near: the body is tested against it all round.)
+    if (rims) {
+      const c = Math.cos(car.h), sn = Math.sin(car.h), L = s.L / 2 + 1.5, W = s.W / 2 + 1.5;
+      let near = false;
+      for (let a = -L; a <= L && !near; a += .5) for (let l = -W; l <= W && !near; l += .5) near = !!rims(car.x + c * a - sn * l, car.y + sn * a + c * l);
+      if (!near) rims = undefined;
+    }
     const steps = Math.max(1, Math.ceil(dt * RATE - 1e-9)), h = dt / steps;
     let landing: Landing | null = null;
     for (let i = 0; i < steps; i++) {
-      const l = this.step(s, ctl, road, h, ground);
+      const l = this.step(s, ctl, road, h, ground, rims);
       if (l && (!landing || l.speed > landing.speed)) landing = l;
     }
     this.publish(car, dt, x0, y0);
@@ -357,7 +387,7 @@ export class PhysicalHandling {
     return -vn;
   }
 
-  private step(s: CarSpec, ctl: CarControl, road: number, dt: number, ground: Ground): Landing | null {
+  private step(s: CarSpec, ctl: CarControl, road: number, dt: number, ground: Ground, rims?: Rims): Landing | null {
     this.matrix();
     const R = this.R, p = this.p, v = this.v, o = this.omega, m = this.m, at = this.at;
     const upZ = R[8];
@@ -528,6 +558,24 @@ export class PhysicalHandling {
       this.touch(rx, ry, rz + hit, -lx * side, -ly * side, 0, .05, .3);
     }
 
+    // A bridge's parapet: the wheels and the points of the body below its top are stopped
+    // against it, and those above go on over it, so a car thrown or tumbling high enough
+    // goes over the edge and falls (the ground beyond is what's below the bridge). Up on
+    // its top, the body rests on it.
+    let wall = 0, wx = 0, wy = 0;
+    const parapet = (rx: number, ry: number, rz: number) => {
+      const r = rims!(p[0] + rx, p[1] + ry);
+      if (!r || r === 'air' || p[2] + rz > r.top - RIM_REST || p[2] + rz < r.foot) return;
+      this.touch(rx, ry, rz, r.nx, r.ny, 0, .1, .4);
+      wall++; wx += r.nx; wy += r.ny;
+    };
+    if (rims) {
+      for (const w of W) parapet(w.cx - p[0], w.cy - p[1], w.cz - p[2]);
+      for (const pt of this.around) { this.point(pt[0], pt[1], pt[2], at); parapet(at[0] - p[0], at[1] - p[1], at[2] - p[2]); }
+      // (Out of the stone: the plan position the flat game keeps follows the body.)
+      if (wall) { const l = Math.hypot(wx, wy) || 1; p[0] += wx / l * .004; p[1] += wy / l * .004; }
+    }
+
     // The body on the road: the points of it that are below the ground.
     let landing: Landing | null = null;
     this.point(0, 0, this.hcg, at);
@@ -535,8 +583,9 @@ export class PhysicalHandling {
     let n = 0;
     for (let j = 0; j < pts.length; j++) {
       this.point(pts[j][0], pts[j][1], pts[j][2], at);
-      if (at[2] > middle + .9) continue;
-      const g = ground(at[0], at[1]), d = g - at[2];
+      const r = rims?.(at[0], at[1]), onTop = !!r && r !== 'air' && at[2] > r.top - RIM_REST;
+      if (at[2] > middle + .9 && !onTop) continue;
+      const g = onTop ? Math.max(ground(at[0], at[1]), (r as { top: number }).top) : ground(at[0], at[1]), d = g - at[2];
       if (d <= 0) continue;
       deep[n * 4] = at[0] - p[0]; deep[n * 4 + 1] = at[1] - p[1]; deep[n * 4 + 2] = at[2] - p[2]; deep[n * 4 + 3] = d;
       n++;
@@ -583,6 +632,19 @@ function hullOf(s: CarSpec): [number, number, number][] {
   for (const y of [W - .2, .2 - W]) for (const x of [L, -L]) pts.push([x * .99, y, floor + .2]);
   for (const y of [W, -W]) for (const x of [L - .2, 0, .2 - L]) pts.push([x, y, shoulder]);
   for (const y of [top, -top]) for (const x of [roofFront, roofBack]) pts.push([x, y, H]);
+  return pts;
+}
+
+// The body all round, for a parapet (which comes up to it from the side): its outline
+// every 0.35 m or so at the sills, the bumpers, the shoulders and the roof.
+function aroundOf(s: CarSpec): [number, number, number][] {
+  const L = s.L / 2, W = s.W / 2, H = s.H, floor = clamp(H * .12, .15, .26), pts: [number, number, number][] = [];
+  const along = Math.ceil(s.L / .35), across = Math.ceil(s.W / .35);
+  for (const z of [floor, floor + .3, H * .6, H]) {
+    const w = z === H ? W * .86 : W, l = z === H ? L * .55 : L;
+    for (let i = 0; i <= along; i++) { const x = -l + 2 * l * i / along; pts.push([x, w, z], [x, -w, z]); }
+    for (let i = 1; i < across; i++) { const y = -w + 2 * w * i / across; pts.push([l, y, z], [-l, y, z]); }
+  }
   return pts;
 }
 

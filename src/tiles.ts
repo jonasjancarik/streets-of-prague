@@ -44,7 +44,8 @@ import type { DriveEdge, WalkEdge, WalkGraph } from './network.ts';
 import type { Car } from './car.ts';
 import type { Landmark, TileJSON, MapIndex, TilePassage, BuildingArrays, HeightGrid, LevelInput, LandResult, TreeTrunk, WorkerJobs, WorkerResults } from './contracts.ts';
 import type { LevelMask } from './ground.ts';
-import { turnArrows } from './ground.ts';
+import { turnArrows, PARAPET, PARAPET_W, FASCIA } from './ground.ts';
+import type { Rim } from './physicalHandling.ts';
 import { isTileJSON } from './contracts.ts';
 import { TileWorkers } from './tileWorkers.ts';
 import { SkyRefresh } from './skyRefresh.ts';
@@ -143,6 +144,11 @@ export interface Tracked {
   // Kept on the ground, whatever is under it or over it (a car in traffic on a street
   // at ground level, see Traffic.update).
   grounded?: boolean;
+  // Gone over a bridge's parapet and falling (a car in the physical handling): the
+  // deck it came off and its height there. Its parapet still stands in the way, and
+  // the water below is open to it. It keeps to the deck's level (the deck still under
+  // the part of it that isn't over the edge) until it's `down` below the deck.
+  overboard?: { level: number; z: number; down?: boolean };
   e?: { bridge?: boolean; tunnel?: boolean; level?: number }; _view?: TrackedGrid;
 }
 
@@ -151,6 +157,8 @@ interface TrackedGrid {
   height: (x: number, y: number) => number;
   at: (x: number, y: number) => number;
   trunkAt: (x: number, y: number) => TreeTrunk | undefined;
+  rim: (x: number, y: number) => Rim;
+  water: (x: number, y: number) => number;
 }
 
 // Streams the map in square tiles (pipeline/build_tiles.py) around the camera. Each
@@ -1086,6 +1094,13 @@ export class TileWorld {
     who._tx = who.x;
     who._ty = who.y;
     const { x, y } = who, t = this.tileAt(x, y);
+    if (who.overboard) {
+      // Fallen below the deck, what's under it then (not the deck it fell past).
+      const level = who.overboard.down ? this.below(x, y, who.overboard.z - FASCIA - CLIMB).level : who.level ?? who.overboard.level;
+      who.level = level;
+      who.gz = this.surfaceAt(x, y, level);
+      return level;
+    }
     if (who.level === ROOFTOP) {
       const top = this.rooftopAt(x, y);
       if (Number.isFinite(top)) { who.gz = top; return ROOFTOP; }
@@ -1213,8 +1228,61 @@ export class TileWorld {
         const tile = this.tileAt(x, y);
         return tile?.trunkCells.get(tile.grid.indexAt(x, y));
       },
+      rim: (x, y) => {
+        const level = who.level ?? 0, over = who.overboard;
+        if (over) return this.rimAt(x, y, over.level, over.z) ?? (this.waterAt(x, y) ? 'air' : null);
+        return level > 0 ? this.rimAt(x, y, level, who.gz ?? 0) : null;
+      },
+      water: (x, y) => this.waterAt(x, y) ? this.terrainAt(x, y, true) : NaN,
     });
   }
+
+  // A bridge's edge as a body moving in all three dimensions meets it (a car in the
+  // physical handling, physicalHandling.ts), at a point by deck `level` (at height z):
+  // the parapet, along the deck's outline PARAPET_W in from it and PARAPET high, as
+  // its top, its foot (the deck's edge, FASCIA under it) and the way out of it, back
+  // onto the deck from the deck's side, out into the air past it from the outside; the open air past it ('air'), where the
+  // deck stands high over the ground or the water; null elsewhere on the deck, or
+  // where the collision grid's wall goes all the way up (a building, a statue's pedestal).
+  rimAt(x: number, y: number, level: number, z: number): Rim {
+    if (level <= 0) return null;
+    const stamp = this.terrainRevision * 1024 + this.loaded.size;
+    if (stamp !== this.rimStamp || this.rims.size > 100000) { this.rims.clear(); this.rimStamp = stamp; }
+    const key = ((level + 64) * 1e6 + Math.floor(x * 8) + 5e5) * 1e6 + Math.floor(y * 8) + 5e5;
+    const known = this.rims.get(key);
+    if (known !== undefined) return known;
+    // Off the deck and high over what's below, with nothing built up to it.
+    const drop = (px: number, py: number) => {
+      if (Number.isFinite(this.levelAt(px, py, level)) || this.cellAt(px, py, level, z) === 0) return false;
+      const below = this.below(px, py, z), roof = this.rooftopAt(px, py);
+      return below.h < z - CLIMB && roof < z + PARAPET && roof < below.h + 1;
+    };
+    let rim: Rim = null, nx = 0, ny = 0, n = 0;
+    const here = this.levelAt(x, y, level);
+    if (Number.isFinite(here) && this.cellAt(x, y, level, z) === 0) {
+      // On the deck within the parapet: away from the drops beside it.
+      for (let k = 0; k < 8; k++) {
+        const a = (k * Math.PI) / 4, c = Math.cos(a), s = Math.sin(a);
+        if (drop(x + c * PARAPET_W, y + s * PARAPET_W)) { nx -= c; ny -= s; n++; }
+      }
+      const l = Math.hypot(nx, ny);
+      if (n && l > 1e-6) rim = { top: here + PARAPET, foot: here - FASCIA, nx: nx / l, ny: ny / l };
+    } else if (drop(x, y)) {
+      // Just off the deck (the grid's cells are half a metre): still the parapet; past it, air.
+      let top = -Infinity;
+      for (let k = 0; k < 8; k++) {
+        const a = (k * Math.PI) / 4, c = Math.cos(a), s = Math.sin(a), h = this.levelAt(x + c * 0.3, y + s * 0.3, level);
+        if (!Number.isFinite(h) || Math.abs(h - z) > CLIMB) continue;
+        nx += c; ny += s; top = Math.max(top, h);
+      }
+      const l = Math.hypot(nx, ny);
+      rim = top === -Infinity ? 'air' : l > 1e-6 ? { top: top + PARAPET, foot: top - FASCIA, nx: -nx / l, ny: -ny / l } : null;
+    }
+    this.rims.set(key, rim);
+    return rim;
+  }
+  private rims = new Map<number, Rim>();
+  private rimStamp = -1;
 
   // Whether (x, y) is in a passage through a building (under its upper floors), or
   // under a building raised off the ground (see RAISED).
