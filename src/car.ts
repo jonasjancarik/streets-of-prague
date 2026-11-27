@@ -1343,13 +1343,13 @@ if (KINDS.length * AREA_STEP > DENT_STEP) throw new Error('Too many kinds of are
 // through the trim behind them. A knock's push eases off by `roof` from the doors up, so
 // the roof doesn't come down on the people inside (a landing's doesn't: that's the roof
 // coming down). A blow pushes in `deep` metres a level
-// (DENT), `most` at most, and reaches `wide` plus `spread` times its depth, up to `beam`
+// (DENT), `most` at most (`side` at most into a side), and reaches `wide` plus `spread` times its depth, up to `beam`
 // more on the nose or tail (the bumper spreads it), `widest` at most; a blow within `merge` of an earlier one's width of it, pushing much the same
 // way, deepens that one instead. Windows within `reach` metres in from a blow and less
 // than twice its width to either side break once it's pushed in `glass` metres (less
 // further from it; BROKEN_GLASS), and lose pieces at 1.5 times that.
 export const DENT_SHAPE = {
-  deep: 0.16, most: 0.6, wide: 0.3, spread: 1.6, beam: 0.5, widest: 1.4, flat: 0.3, merge: 0.4,
+  deep: 0.16, most: 0.6, side: 0.3, wide: 0.3, spread: 1.6, beam: 0.5, widest: 1.4, flat: 0.3, merge: 0.4,
   zone: 0.35, give: 1.6, fold: 0.45, buckle: 0.35, roof: 0.65, reach: [1.6, 2.6], glass: 0.24,
 };
 const DS = DENT_SHAPE;
@@ -2092,7 +2092,9 @@ export class Car {
     // Back along that way to the outline.
     const t = Math.min(dx ? (dx < 0 ? L - x : x + L) / Math.abs(dx) : Infinity, dz ? (dz < 0 ? W - z : z + W) / Math.abs(dz) : Infinity);
     if (Number.isFinite(t)) { x -= dx * t; z -= dz * t; }
-    this.blow({ x, y: 0.5, z, dx, dy: 0, dz, depth, r: 0 }, (d) => Math.min(DS.widest, (DS.wide + DS.spread * d) * (1 + DS.beam * Math.abs(dx))));
+    // A door has no crumple zone behind it: from the side the car gives `side` at most.
+    const most = DS.side + (DS.most - DS.side) * dx * dx;
+    this.blow({ x, y: 0.5, z, dx, dy: 0, dz, depth: Math.min(most, depth), r: 0 }, (d) => Math.min(DS.widest, (DS.wide + DS.spread * d) * (1 + DS.beam * Math.abs(dx))), most);
   }
   // A rolling car landing on the corner `across` (+ its left) and `up` from its middle and
   // the ground, `angle` turned about its long axis (Rollover), at `speed` m/s.

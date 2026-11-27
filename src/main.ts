@@ -1836,7 +1836,7 @@ async function main() {
     car.radio = s.car.radio;
     if (s.car.ram) car.armour();
     car.broken = s.car.broken ?? 0;
-    if (s.car.blows) { car.blows = s.car.blows.slice(0, BLOWS).map((b) => ({ ...b, y: b.y ?? 0.5, dy: b.dy ?? 0, depth: Math.max(0, Math.min(DENT_SHAPE.most, b.depth)) })); car.dentVersion++; }
+    if (s.car.blows) { car.blows = s.car.blows.slice(0, BLOWS).map((b) => ({ ...b, y: b.y ?? 0.5, dy: b.dy ?? 0, depth: Math.max(0, Math.min(b.landed ? DENT_SHAPE.most : DENT_SHAPE.side + (DENT_SHAPE.most - DENT_SHAPE.side) * b.dx * b.dx, b.depth)) })); car.dentVersion++; }
     else if (s.car.crush) car.uncrush(s.car.crush);
     for (let i = loose.length - 1; i >= 0; i--) if (Math.hypot(loose[i].x - car.x, loose[i].y - car.y) < 5) loose.splice(i, 1);
     car.mode = 'loose';
