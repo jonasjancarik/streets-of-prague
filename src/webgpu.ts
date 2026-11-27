@@ -14,7 +14,7 @@ import {
   Fn, If, Discard, float, vec2, vec3, vec4, texture, materialReference, positionWorld, normalView, normalWorldGeometry, materialColor, fract, floor, mod, dot,
   mix, smoothstep, step, length, fwidth, abs, sqrt, min, max, distance, cos, sin, select, clamp, transformNormalToView,
   attribute, positionLocal, modelViewMatrix, cameraProjectionMatrix, screenSize, uniform, renderGroup, uv, cameraPosition, normalize,
-  dFdx, dFdy, cross, sign,
+  dFdx, dFdy, cross, sign, atan,
 } from 'three/tsl';
 import { GRASS_SEASON, WOOD_SEASON, FIELD_SEASON, HEDGE_SEASON } from './groundSeason.ts';
 import { setPatterned, setHeld, HOLD_PX, SKY_REF, GRIT, GRIT_M, LAMP_MIRROR, SEASON } from './shading.ts';
@@ -307,15 +307,57 @@ function pGrass(c0: N, p: N, seasonal: boolean, season: typeof uGroundSeason = u
       c.mulAssign(float(1).add(blade.sub(0.5).mul(0.5).add(fine.sub(0.5).mul(0.34)).mul(near)));
       c.assign(mix(c, c.mul(vec3(1.14, 1.12, 0.82)), smoothstep(0.62, 0.9, blade).mul(near).mul(0.5)));
     });
-    // Daisies and dandelions while the trees are in blossom: a white or yellow dot here and there.
-    if (seasonal) {
-      const cell = floor(p.mul(2.6)), h = hash12(cell.add(7.7));
-      const at = fract(p.mul(2.6)).sub(vec2(fract(h.mul(13.1)), fract(h.mul(29.3))).mul(0.6).add(0.2));
-      const flower = float(1).sub(smoothstep(0.1, 0.2, length(at))).mul(step(h, uBloom.y.mul(0.16))).mul(d);
-      c.assign(mix(c, mix(vec3(0.82, 0.8, 0.72), vec3(0.8, 0.62, 0.08), step(0.5, fract(h.mul(91.7)))), flower.mul(0.85)));
-    }
   });
+  if (seasonal) c.assign(flowers(c, p, clump));
   return c;
+}
+// Daisies and dandelions while the trees are in blossom. Daisies in drifts a couple of
+// metres across, dandelions where the grass is thin; at most one flower in each cell of
+// FLOWER_CELL. A daisy is a head 1.5-2.2 cm across, a ring of white petals (some pink at
+// the tips) round a yellow eye; a dandelion a ragged yellow head 3-4 cm across, deeper
+// orange in the middle. Both shade the grass a little. Too small for the pixel, they become
+// what they'd add up to: a faint white or yellow over the drifts. `clump`: the lawn's
+// lush and thin patches (pGrass).
+const FLOWER_CELL = 0.08;
+function flowers(c: N, p: N, clump: N) {
+  const w: N = length(abs(dFdx(p)).add(abs(dFdy(p))));
+  // (In drifts, and within them in clusters of a few dozen centimetres.)
+  const cluster: N = smoothstep(0.25, 0.7, vnoise(p.mul(2.5).add(5)));
+  const daisies: N = uBloom.y.mul(smoothstep(0.4, 0.75, vnoise(p.mul(0.45).add(23)))).mul(cluster).mul(0.95);
+  const dandelions: N = uBloom.y.mul(smoothstep(0.5, 0.2, clump).mul(0.22).add(0.02));
+  // From afar: a daisy covers about 3.4 % of its cell, a dandelion 15 %, made a little
+  // more of, as bright flowers in grass catch the eye beyond their share.
+  const out = mix(c, vec3(0.82, 0.8, 0.74), daisies.mul(0.12)).toVar();
+  out.assign(mix(out, vec3(0.8, 0.6, 0.08), dandelions.mul(0.25)));
+  // (Drawn on as faint dots while a head is still about a pixel across.)
+  const seen: N = float(1).sub(smoothstep(0.015, 0.04, w));
+  If(seen.greaterThan(0), () => {
+    const g: N = p.div(FLOWER_CELL), cell: N = floor(g), h: N = hash12(cell.add(7.7)), pick: N = hash12(cell.add(3.1));
+    const isDaisy: N = step(pick, daisies), isDandelion: N = step(float(1).sub(dandelions), pick);
+    // Anywhere in the cell that the head fits (a grid shows through otherwise).
+    const R: N = h.mul(0.0035).add(0.0075), D: N = h.mul(0.005).add(0.015);
+    const room: N = float(1).sub(select(isDandelion.greaterThan(0.5), D, R).mul(2 / FLOWER_CELL));
+    const at: N = fract(g).sub(vec2(fract(h.mul(13.1)), fract(h.mul(29.3))).sub(0.5).mul(room).add(0.5)).mul(FLOWER_CELL);
+    const r: N = length(at), a: N = atan(at.y, at.x), edge: N = max(w.mul(0.5), 0.0015);
+    // A daisy: 14 petals, the eye a third of the way out.
+    const petalTip: N = R.mul(abs(cos(a.mul(7).add(h.mul(40)))).mul(0.3).add(0.7));
+    const inDaisy: N = float(1).sub(smoothstep(petalTip.sub(edge), petalTip.add(edge), r));
+    const eye: N = float(1).sub(smoothstep(R.mul(0.3).sub(edge), R.mul(0.3).add(edge), r));
+    const pink: N = smoothstep(R.mul(0.6), R, r).mul(step(0.6, fract(h.mul(53.7)))).mul(0.6);
+    const daisy: N = mix(mix(vec3(0.84, 0.83, 0.79), vec3(0.8, 0.52, 0.6), pink), vec3(0.86, 0.62, 0.08), eye);
+    // A dandelion: a ragged edge, fine florets out from the middle.
+    const rim: N = D.mul(sin(a.mul(23).add(h.mul(31))).mul(0.07).add(sin(a.mul(37).add(h.mul(17))).mul(0.05)).add(0.88));
+    const inDandelion: N = float(1).sub(smoothstep(rim.sub(edge), rim.add(edge), r));
+    const dandelion: N = mix(vec3(0.82, 0.42, 0.04), vec3(0.88, 0.7, 0.1), smoothstep(0, D.mul(0.7), r)).mul(float(1).sub(abs(sin(a.mul(60))).mul(0.15)));
+    // The grass under a head in its shade.
+    const head: N = select(isDandelion.greaterThan(0.5), D, R);
+    const shade: N = float(1).sub(smoothstep(head, head.mul(1.5), r)).mul(isDaisy.add(isDandelion)).mul(0.3);
+    const near = c.mul(float(1).sub(shade)).toVar();
+    near.assign(mix(near, daisy, inDaisy.mul(isDaisy)));
+    near.assign(mix(near, dandelion, inDandelion.mul(isDandelion)));
+    out.assign(mix(out, near, seen));
+  });
+  return out;
 }
 const pWood = (c: N, p: N) => c.mul(fbm(p.mul(0.12)).mul(0.45).add(0.75)).add(vnoise(p.mul(3)).sub(0.5).mul(0.05));
 const pPitch = (c: N, p: N, seasonal: boolean) => pGrass(c, p, seasonal, uPitchSeason).mul(step(0.5, fract(p.x.div(6))).mul(0.1).add(0.94));
