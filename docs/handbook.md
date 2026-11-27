@@ -426,7 +426,8 @@ are mapped (street furniture, `docs/furniture.md`).
 The traffic signs stand on grey posts by the kerb, or hang from a house front where there is
 no pavement, inferred from OSM's rules: one-way streets, give way, crossings (lit boxes
 where IPR's survey has a powered sign), zones, speed and vehicle limits and turn bans; the
-lanes before a junction have their painted arrows (`docs/traffic-signs.md`).
+lanes before a junction have their painted arrows. On the main roads, arrow plates at the
+junctions and boards before them show where each way leads (`docs/traffic-signs.md`).
 Higher up, now and then an air conditioner hangs on brackets under a window, mostly on
 functionalist and panel fronts, and once in a while a satellite dish beside one
 (`airConditioner`, `satelliteDish`).
@@ -3078,8 +3079,8 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   `uv run --with osmium`) and IPR's powered traffic signs (downloaded once into
   `.cache/utility/powered-signs.json`), and infers the signs from the rules OSM records:
   one-way streets, give way and the main road, crossings, zones, speed and vehicle limits,
-  turn bans, and the lanes' arrows (`docs/traffic-signs.md`). About 25 seconds for the
-  whole city.
+  turn bans, the lanes' arrows, and the direction plates and boards where OSM names where a
+  street leads (`docs/traffic-signs.md`). About 25 seconds for the whole city.
 - **Metro.** `build_metro.py` takes the metro from the same timetables: each line's
   stations in order with the typical minutes between them, how often it runs,
   every station's entrances (PID's feed has them all, 331), and the track from the

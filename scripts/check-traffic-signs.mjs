@@ -67,3 +67,35 @@ const south = -Math.PI / 2;
   assert.equal(late, null, 'past the deadline');
   console.log('The signs file: read, missing and late');
 }
+
+{
+  // Direction plates: one per branch (two places to a plate), straight on square, left and right
+  // pointed; laid out on the tile's canvas, a post with the plates or a board on two.
+  const { signFaces, directionLayout, directionGeometry, readDirections, PLATE_BOTTOM, WIDTH } = await import('../src/map/directions.ts');
+  const signs = readDirections([
+    [10, -5, 270, 'plates', [[0, 'Brno;Benešov;Kolín', 'D1', '', 'green'], [90, 'Vinohrady', '', '', 'white'], [-88, 'Kbely', '', '', 'blue']]],
+    [30, 5, 90, 'board', [[0, 'Brno', 'D1', '', 'green'], [90, 'Vinohrady', '', '', 'white']]],
+    [1, 2, 0, 'nonsense', []],
+  ]);
+  assert.equal(signs.length, 2, 'a row that is not a sign is left out');
+  const faces = signFaces(signs[0]);
+  assert.deepEqual(faces.map(f => [f.point, f.places.join(';'), f.refs.join()]), [[0, 'Brno;Benešov', 'D1'], [0, 'Kolín', ''], [-1, 'Vinohrady', ''], [1, 'Kbely', '']]);
+  assert(faces.every(f => f.w >= .9 && f.w <= 2.2) && faces[0].h > faces[1].h, 'plate sizes: ' + faces.map(f => [f.w, f.h]));
+  const { rects, width, height: tall } = directionLayout(signs);
+  assert(rects.length === 5 && width === WIDTH && rects.every(r => r.x >= 0 && r.y >= 0 && r.x + r.w <= width && r.y + r.h <= tall), 'on the canvas');
+  for (let i = 0; i < rects.length; i++) for (let j = 0; j < i; j++) {
+    const a = rects[i], b = rects[j];
+    assert(a.x >= b.x + b.w || b.x >= a.x + a.w || a.y >= b.y + b.h || b.y >= a.y + a.h, 'faces do not overlap');
+  }
+  const g = directionGeometry(signs, onRoad, inside, height);
+  assert(g && g.uv.every(v => v >= 0 && v <= 1), 'canvas coordinates');
+  // The plates' post, then the board's two posts, all free-standing.
+  assert.deepEqual(Array.from(g.posts).filter((_, i) => i % 4 === 2), [0, 0, 0]);
+  let top = -Infinity;
+  for (let i = 1; i < g.position.length; i += 3) top = Math.max(top, g.position[i]);
+  assert(top > 10 + PLATE_BOTTOM + faces.reduce((h, f) => h + f.h, 0), 'four plates stacked: ' + top);
+  // A board with a house where it would stand is left out.
+  const none = directionGeometry([signs[1]], onRoad, (x, y) => inside(x, y) || y > 6, height);
+  assert.equal(none, null);
+  console.log(`Direction signs: ${faces.length} plates on a post and a board, ${g.position.length / 9} triangles`);
+}

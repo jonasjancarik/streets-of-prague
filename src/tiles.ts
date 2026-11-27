@@ -67,8 +67,10 @@ import { riverBanks } from './riverReflection.ts';
 import { chimneySmoke, dropChimneySmoke } from './chimneySmoke.ts';
 import { furnitureSurvey } from './furnitureSurvey.ts';
 import { mappedFurniture } from './mappedFurniture.ts';
-import { loadTrafficSigns, signMesh, lightSigns } from './signs.ts';
+import { loadTrafficSigns, signMesh, lightSigns, directionMesh } from './signs.ts';
 import type { TrafficSigns } from './signs.ts';
+// A tile's direction signs have a material and canvas of their own.
+const disposeDirections = (m: THREE.Mesh) => { m.geometry.dispose(); (m.material as THREE.MeshStandardMaterial).map?.dispose(); (m.material as THREE.Material).dispose(); };
 import { CountrysideTiles } from './countrysideTiles.ts';
 import { blendHeights, edgeGrid } from './countrysideJoin.ts';
 
@@ -125,6 +127,7 @@ interface Tile {
   fences: FenceSection[];
   furniture: THREE.InstancedMesh[];
   signs: THREE.Mesh | null; // the traffic signs on their posts (signs.ts)
+  directions: THREE.Mesh | null; // the direction plates and boards (signs.ts directionMesh), with a material and canvas of their own
   relief: { texture: THREE.DataTexture; box: number[]; sample: (x: number, y: number, side?: number | boolean) => number; hm: Float32Array; labels: Uint8Array | null; edges: () => void } | null;
   sample?: (x: number, y: number, side?: number | boolean) => number;
   // The tile's water (the river and ponds), each polygon with its bounding box.
@@ -574,6 +577,7 @@ export class TileWorld {
       furnitureView(tile.furniture, street);
       // (The traffic signs are too small to read from above: drawn in the street views only.)
       if (tile.signs) tile.signs.visible = street;
+      if (tile.directions) tile.directions.visible = street;
       tile.drawn?.surfaces.bridgeView(street);
       const panel = tile.fences.find(section => !section.hedge && !section.rail);
       if (panel) fenceCamera(panel.mesh, street);
@@ -1739,6 +1743,7 @@ export class TileWorld {
       const x = signsAll.points[n + 1], y = signsAll.points[n + 2];
       if (x >= x0 && x < x1 && y >= y0 && y < y1) signPoints.push(signsAll.points[n], x, y, signsAll.points[n + 3]);
     }
+    const directionsHere = (signsAll?.directions ?? []).filter(s => s.x >= x0 && s.x < x1 && s.y >= y0 && s.y < y1);
     for (let n = 0; mappedAll && n < mappedAll.length; n += 4) {
       const x = mappedAll[n + 1], y = mappedAll[n + 2];
       if (x >= x0 && x < x1 && y >= y0 && y < y1) mapped.push(mappedAll[n], x, y, mappedAll[n + 3]);
@@ -1756,7 +1761,7 @@ export class TileWorld {
     const early = this.shown.has(k) ? this.meshJobs(k, source) : null;
     early?.catch(() => {});
     const landJob = this.workers.run('land', {
-      data: { size: data.size, origin: data.origin, areas: withPatches(t), roads: t.roads, buildings: outlines, walls: t.walls, fences: t.fences, sheds: t.sheds ?? [], trees: t.trees, shrubs: t.shrubs, canopy: t.canopy, utility: t.utility, mapped: new Float32Array(mapped), signs: signsAll && !location.search.includes('nosigns') ? { names: signsAll.names, cols: signsAll.cols, points: new Float32Array(signPoints) } : undefined, passages: t.passages || [], levels: !!tileLevels, crossers, stepEdges: !location.search.includes('nostepedges'),
+      data: { size: data.size, origin: data.origin, areas: withPatches(t), roads: t.roads, buildings: outlines, walls: t.walls, fences: t.fences, sheds: t.sheds ?? [], trees: t.trees, shrubs: t.shrubs, canopy: t.canopy, utility: t.utility, mapped: new Float32Array(mapped), signs: signsAll && !location.search.includes('nosigns') ? { names: signsAll.names, cols: signsAll.cols, points: new Float32Array(signPoints) } : undefined, directions: signsAll && !location.search.includes('nosigns') ? directionsHere : undefined, passages: t.passages || [], levels: !!tileLevels, crossers, stepEdges: !location.search.includes('nostepedges'),
         walk: t.walk ?? [], reserved: new Float32Array(reserved), structures: structures.flatMap(s => s.polys), furnitureBuildings: [...t.buildings.map(b => ({ rings: b.rings })), ...hide.map(rings => ({ rings }))], furnitureEnabled: reservedAll !== null && !location.search.includes('nofurniture') },
       seeds: seedArray, ground, bridges: (tileLevels || []).filter((l) => l.kind === 'bridge').map((l) => l.heights),
       box: bounds, structures: tileLevels ? structures : [],
@@ -1780,7 +1785,8 @@ export class TileWorld {
     const sheds = shedMesh(land.sheds);
     const furniture = furnitureMeshes(land.furniture, this.streetFurniture);
     const signs = land.signs && signsAll ? signMesh(land.signs, signsAll) : null;
-    if (signs) signs.visible = this.streetFurniture;
+    const directions = land.directions ? directionMesh(land.directions, directionsHere) : null;
+    for (const m of [signs, directions]) if (m) m.visible = this.streetFurniture;
     const statues = this.statueFixtures(onLevels, t.box);
     const fenceSections = fences.sections(k, land.fences.sections, fenceRows);
     streetHedges.add(k, fenceSections);
@@ -1834,7 +1840,7 @@ export class TileWorld {
     const tile: Tile = {
       k, i: t.i, j: t.j, box: t.box, passages: t.passages || [], raised: t.buildings.filter((b) => !grounded(b)).map((b) => b.rings), grid, trunkCells: land.trunkCells, levels: onLevels, cars, ms,
       source, shown: false, dressing: null, drawn: null, drawMs: {}, drawAfter: 0, fixtures: [walls, ...(handrails ? [handrails] : []), fenceRows.fence, fenceRows.hedge, fenceRows.rail, ...(sheds ? [sheds] : []), ...wires, ...lights, ...statues, ...stairwells],
-      roads, crossers, poles, fences: fenceSections, furniture, signs, relief: shade, sample: shade?.sample,
+      roads, crossers, poles, fences: fenceSections, furniture, signs, directions, relief: shade, sample: shade?.sample,
       water: (t.areas.water || []).map((rings) => {
         const xs = rings[0].map((p) => p[0]), ys = rings[0].map((p) => p[1]);
         return { rings, box: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] as Bounds };
@@ -1857,6 +1863,7 @@ export class TileWorld {
     } catch (error) {
       disposeFurniture(furniture);
       signs?.geometry.dispose();
+      if (directions) disposeDirections(directions);
       this.loaded.delete(k);
       this.byIndex.delete(key);
       this.last.i = NaN;
@@ -2004,6 +2011,7 @@ export class TileWorld {
     const smoke = iprArrays?.chimneys ? chimneySmoke(iprArrays.chimneys, this.scene) : null;
     group.add(surfaces.group, ...buildings, ...tile.fixtures, ...landmarks, ...tile.furniture);
     if (tile.signs) group.add(tile.signs);
+    if (tile.directions) group.add(tile.directions);
     if (transmission) group.add(transmission);
     if (smoke) group.add(smoke);
     // Nothing in a tile ever moves: its matrices are worked out once, not every frame,
@@ -2130,6 +2138,7 @@ export class TileWorld {
     this.undress(t);
     disposeFurniture(t.furniture);
     t.signs?.geometry.dispose();
+    if (t.directions) disposeDirections(t.directions);
     this.sky.delete(t.i * 65536 + t.j);
     this.dropPhoto(k);
     for (const m of t.fixtures) {

@@ -22,6 +22,7 @@ import { treeInstances } from './map/vegetation.ts';
 import { furnitureInstances, furnitureMatrices, FURNITURE_SIZE, FLAT_FURNITURE, KIND, mappedSpots, treeGrates } from './map/furniture.ts';
 import { onPolygons } from './map/geo.ts';
 import { signPosts, signGeometry } from './map/signs.ts';
+import { directionGeometry } from './map/directions.ts';
 import { Geo, Grid, fillPolys, strokeLines } from './map/geo.ts';
 import { styleFor, facadeCoords, paintWalls, mansardCoords, finishWalls, splitWindowRows, WALL_CODES, BLANK } from './facades.ts';
 import type { WallLine } from './facades.ts';
@@ -420,14 +421,21 @@ function land({ data, seeds, ground, bridges, box, structures }: WorkerJobs['lan
     furniture.matrices = furnitureMatrices(furniture.spots);
   }
   // The traffic signs (map/signs.ts): off the carriageway, a few to a post, or on the wall.
-  let signs: LandResult['signs'] = null;
+  // And the direction plates and boards (map/directions.ts).
+  let signs: LandResult['signs'] = null, directions: LandResult['directions'] = null;
   const posts: { x: number; y: number }[] = [];
-  if (ground && data.signs?.points.length) {
+  if (ground && (data.signs?.points.length || data.directions?.length)) {
     const onRoad = onPolygons([...(data.roads.road || []), ...(data.roads.sett || []), ...(data.roads.dirt || [])]);
     const inside = onPolygons(data.buildings.map(b => b.rings));
-    const standing = signPosts(data.signs.points, data.signs.names, onRoad, inside, hAt);
-    signs = signGeometry(standing, data.signs.names, data.signs.cols);
-    for (const p of standing) if (!p.wall) posts.push(p);
+    if (data.signs?.points.length) {
+      const standing = signPosts(data.signs.points, data.signs.names, onRoad, inside, hAt);
+      signs = signGeometry(standing, data.signs.names, data.signs.cols);
+      for (const p of standing) if (!p.wall) posts.push(p);
+    }
+    if (data.directions?.length) {
+      directions = directionGeometry(data.directions, onRoad, inside, hAt);
+      for (let i = 0; directions && i < directions.posts.length; i += 4) if (!directions.posts[i + 2]) posts.push({ x: directions.posts[i], y: directions.posts[i + 1] });
+    }
   }
   // The same solid-cell convention as tree trunks, stamped before parking.
   // (A sign post as a 12 cm square.)
@@ -443,7 +451,7 @@ function land({ data, seeds, ground, bridges, box, structures }: WorkerJobs['lan
     }
   }
   const trunkCells = stampTrunks(grid, geo, trees);
-  return { trees, walls, fences, sheds, furniture, signs, cells: grid.cells, trunkCells, masks: structures.map((l) => levelMask(box, l.polys, l.level)) };
+  return { trees, walls, fences, sheds, furniture, signs, directions, cells: grid.cells, trunkCells, masks: structures.map((l) => levelMask(box, l.polys, l.level)) };
 }
 
 function isRequest(value: unknown): value is WorkerRequest {
@@ -530,6 +538,7 @@ worker.onmessage = async (event: MessageEvent<unknown>) => {
         const buffers = [result.trees.matrices.buffer, result.trees.colours.buffer, result.trees.yearly.buffer, result.trees.outlines.buffer, result.walls.position.buffer, result.walls.normal.buffer, ...Object.values(result.fences.fence).map((a) => a.buffer), ...Object.values(result.fences.hedge).map((a) => a.buffer), ...Object.values(result.fences.rail).map((a) => a.buffer), result.fences.sections.buffer, ...Object.values(result.sheds).map((a) => a.buffer), result.cells.buffer, ...result.masks.map((m) => m.cells.buffer)];
         buffers.push(...result.furniture.matrices.map(a => a.buffer));
         if (result.signs) buffers.push(...Object.values(result.signs).map(a => a.buffer));
+        if (result.directions) buffers.push(...Object.values(result.directions).map(a => a.buffer));
         if (buffers.some((buffer) => !(buffer instanceof ArrayBuffer))) throw new Error('Land transfer requires ArrayBuffer storage');
         worker.postMessage({ id, result } satisfies WorkerResponse, buffers as ArrayBuffer[]);
         break;

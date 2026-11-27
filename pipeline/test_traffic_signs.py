@@ -4,7 +4,7 @@ street plans: where each stands, which way it faces, and which junctions get non
 import math
 import unittest
 
-from build_traffic_signs import KERB_GAP, Way, traffic_signs
+from build_traffic_signs import KERB_GAP, Way, direction_signs, traffic_signs
 
 
 def way(osm_id, pts, nodes, **tags):
@@ -128,6 +128,43 @@ class TrafficSigns(unittest.TestCase):
         ways[0].tags["turn:lanes:forward"] = "left|through;right"
         _, turns = traffic_signs(ways, {}, [])
         self.assertEqual([(n, round(math.degrees(h)), lanes, xy) for n, h, lanes, xy in turns], [(2, 0, "left|through;right", (100, 0))])
+
+
+class DirectionSigns(unittest.TestCase):
+    def junction(self):
+        """A secondary road east along y=0 through node 2 (at 100, 0), streets north and
+        south from it, each named where it leads."""
+        return [way(10, [(0, 0), (100, 0)], [1, 2], highway="secondary"),
+                way(11, [(100, 0), (200, 0)], [2, 3], highway="secondary", **{"destination:forward": "Brno;Benešov", "destination:ref:forward": "D1"}),
+                way(12, [(100, 0), (100, 100)], [2, 4], **{"destination:forward": "Vinohrady"}),
+                way(13, [(100, 0), (100, -100)], [2, 5], highway="tertiary", oneway="yes", destination="Kbely")]
+
+    def test_plates_and_a_board_for_the_road_coming_up(self):
+        signs = [s for s in direction_signs(self.junction(), frozenset({"Vinohrady"})) if facing(s[:2] + (None, s[3]))[0] < -.9]
+        plates, = [s for s in signs if s[2] == "plates"]
+        board, = [s for s in signs if s[2] == "board"]
+        # Driving east: on the right (south), 6 m and 70 m short of the junction, facing west.
+        self.assertAlmostEqual(plates[0], 94)
+        self.assertLess(plates[1], 0)
+        self.assertAlmostEqual(board[0], 30)
+        # Straight on first, then left (north), then right (south); white for the city's own part.
+        self.assertEqual([(b[0], b[1], b[2], b[4]) for b in plates[4]],
+                         [(0, "Brno;Benešov", "D1", "green"), (90, "Vinohrady", "", "white"), (-90, "Kbely", "", "blue")])
+
+    def test_none_where_nothing_is_named_or_against_the_traffic(self):
+        signs = direction_signs(self.junction())
+        # From the north and the east there are plates; nobody drives north up the one-way 13.
+        self.assertFalse([s for s in signs if facing(s[:2] + (None, s[3]))[1] < -.9])
+        self.assertFalse(direction_signs(cross()))
+
+    def test_across_a_dual_carriageway(self):
+        # Coming up from the south, across a 12 m gap between the two carriageways to the street on north.
+        ways = [way(1, [(0, 0), (100, 0)], [1, 2], highway="primary", oneway="yes"), way(2, [(100, 0), (200, 0)], [2, 3], highway="primary", oneway="yes"),
+                way(3, [(200, 12), (100, 12)], [6, 7], highway="primary", oneway="yes"), way(4, [(100, 12), (0, 12)], [7, 8], highway="primary", oneway="yes"),
+                way(5, [(100, -100), (100, 0)], [9, 2]), way(6, [(100, 0), (100, 12)], [2, 7]),
+                way(7, [(100, 12), (100, 100)], [7, 10], **{"destination:forward": "Letňany"})]
+        plates = [s for s in direction_signs(ways) if s[2] == "plates" and facing(s[:2] + (None, s[3]))[1] < -.9]
+        self.assertEqual([b[1] for s in plates for b in s[4]], ["Letňany"])
 
 
 if __name__ == "__main__":

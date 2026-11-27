@@ -6,6 +6,8 @@ import * as THREE from 'three';
 import { cutAway } from './shading.ts';
 import { atlasCols, cellRect, signStyle, CELL } from './map/signs.ts';
 import type { SignArrays, TrafficSigns } from './map/signs.ts';
+import { directionLayout, faceOutline, PX, WHITE_CORNER } from './map/directions.ts';
+import type { DirectionArrays, DirectionSign, Face, PlateColour, Rect } from './map/directions.ts';
 export { loadTrafficSigns } from './map/signs.ts';
 export type { TrafficSigns } from './map/signs.ts';
 
@@ -231,3 +233,134 @@ export function lightSigns(night: number) {
 export const signAtlas = () => (material?.map?.image as HTMLCanvasElement | undefined)?.toDataURL('image/png') ?? null;
 export const signsOnShow = () => ({ meshes: meshes.size, posts: [...meshes].flatMap(m => Array.from({ length: m.userData.posts.length / 4 }, (_, i) => Array.from(m.userData.posts.subarray(i * 4, i * 4 + 4) as Float32Array, v => Math.round(v * 10) / 10))), triangles: [...meshes].reduce((n, m) => n + m.geometry.attributes.position.count / 3, 0),
   names: drawnFor ?? [], lit: material?.emissiveIntensity ?? 0 });
+
+// ---- Direction signs: each tile's plates and boards drawn onto a canvas of its own ----
+
+const GREEN = '#0d7a3e';
+const PLATE_INK: Record<PlateColour, [string, string]> = {
+  green: [GREEN, WHITE], blue: [BLUE, WHITE], white: [WHITE, BLACK], brown: ['#7a4b2a', WHITE],
+};
+// A road number's badge, `h` px high with its left edge at x: red for motorways and the
+// first-class roads (one or two digits), green for E roads, white with a black edge for the
+// rest. Gives its width.
+function badge(c: Ctx, ref: string, x: number, y: number, h: number) {
+  const red = /^D\d/.test(ref) || /^\d{1,2}$/.test(ref), green = /^E\s?\d/.test(ref);
+  c.save(); c.font = `bold ${h * .72}px ${FONT}`;
+  const w = Math.max(h * 1.2, c.measureText(ref).width + h * .5);
+  c.fillStyle = red ? RED : green ? GREEN : WHITE;
+  c.beginPath(); c.roundRect(x, y - h / 2, w, h, h * .12); c.fill();
+  c.strokeStyle = red || green ? WHITE : BLACK; c.lineWidth = h * .08; c.stroke();
+  c.fillStyle = red || green ? WHITE : BLACK; c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.fillText(ref, x + w / 2, y + h * .05); c.restore();
+  return w;
+}
+// The airport symbol, `s` px across.
+function plane(c: Ctx, x: number, y: number, s: number, colour: string) {
+  c.save(); c.translate(x, y); c.rotate(-Math.PI / 4); c.fillStyle = colour;
+  const p = [[0, -.5], [.07, -.1], [.45, .1], [.45, .18], [.07, .08], [.06, .34], [.17, .43], [.17, .5], [0, .45]];
+  c.beginPath();
+  for (const [px, py] of p) c.lineTo(px * s, py * s);
+  for (const [px, py] of p.slice(1, -1).reverse()) c.lineTo(-px * s, py * s);
+  c.closePath(); c.fill(); c.restore();
+}
+// Text no more than `room` px wide: narrowed to fit.
+function fitText(c: Ctx, s: string, x: number, y: number, size: number, room: number, colour: string, align: 'left' | 'right' | 'center' = 'left') {
+  c.save(); c.font = `bold ${size}px ${FONT}`; c.fillStyle = colour; c.textBaseline = 'middle';
+  const w = c.measureText(s).width, k = w > room ? room / w : 1;
+  const left = align === 'left' ? x : align === 'right' ? x - w * k : x - w * k / 2;
+  c.translate(left, y); c.scale(k, 1); c.textAlign = 'left'; c.fillText(s, 0, 0); c.restore();
+}
+function drawPlate(c: Ctx, f: Face, r: Rect) {
+  const b = f.branch!, [bg, ink] = PLATE_INK[b.colour], s = PX;
+  c.save(); c.translate(r.x + r.w / 2, r.y + r.h / 2);
+  const ring = faceOutline(f);
+  const path = (inset: number) => {
+    c.beginPath();
+    ring.forEach(([x, y], i) => {
+      const px = x * s * (1 - inset / f.w * 2), py = -y * s * (1 - inset / f.h * 2);
+      if (i) c.lineTo(px, py); else c.moveTo(px, py);
+    });
+    c.closePath();
+  };
+  c.fillStyle = bg; path(0); c.fill();
+  c.strokeStyle = ink; c.lineWidth = s * .018; path(.03); c.stroke();
+  // The text between the plate's square end and its point (or after the straight-on arrow).
+  const a = f.w / 2 * s, hh = f.h / 2 * s;
+  let left = -a + s * .09, right = a - s * .09;
+  if (f.point > 0) right = a - hh - s * .02;
+  else if (f.point < 0) left = -a + hh + s * .02;
+  else { arrow(c, left + s * .1, hh * .7, hh * 1.4, s * .05, 0, ink); left += s * .26; }
+  const lines = Math.max(1, f.places.length), gap = (hh * 2 - s * .06) / lines;
+  for (let i = 0; i < lines; i++) {
+    let x = left;
+    const y = -hh + s * .03 + gap * (i + .5);
+    if (i === 0) {
+      for (const ref of f.refs) x += badge(c, ref, x, y, s * .17) + s * .04;
+      if (b.symbol === 'airport') { plane(c, x + s * .1, y, s * .2, ink); x += s * .24; }
+    }
+    if (f.places[i]) fitText(c, f.places[i], x, y + s * .005, s * .15, right - x, ink);
+  }
+  c.restore();
+}
+function drawBoard(c: Ctx, f: Face, r: Rect) {
+  const s = PX, a = f.w / 2 * s, hh = f.h / 2 * s, branches = f.sign.branches;
+  const field = branches.every(b => b.colour === 'green') ? GREEN : BLUE;
+  c.save(); c.translate(r.x + r.w / 2, r.y + r.h / 2);
+  c.fillStyle = field; c.fillRect(-a, -hh, a * 2, hh * 2);
+  c.strokeStyle = WHITE; c.lineWidth = s * .03; c.strokeRect(-a + s * .04, -hh + s * .04, a * 2 - s * .08, hh * 2 - s * .08);
+  // The junction: the stem from the bottom, then a line out along each branch with its head.
+  const jy = hh * .25, len = s * .38, wide = s * .1;
+  c.strokeStyle = WHITE; c.lineWidth = wide;
+  c.beginPath(); c.moveTo(0, hh - s * .1); c.lineTo(0, jy); c.stroke();
+  for (const b of branches) {
+    const t = b.turn * Math.PI / 180, ux = -Math.sin(t), uy = -Math.cos(t);
+    const ex = ux * len, ey = jy + uy * len;
+    c.strokeStyle = c.fillStyle = WHITE;
+    c.beginPath(); c.moveTo(0, jy); c.lineTo(ex, ey); c.stroke();
+    c.beginPath(); c.moveTo(ex + ux * wide * 1.6, ey + uy * wide * 1.6); c.lineTo(ex - uy * wide * 1.1, ey + ux * wide * 1.1); c.lineTo(ex + uy * wide * 1.1, ey - ux * wide * 1.1); c.fill();
+    // Its places by the head: left of a left branch, right of a right one, above straight on.
+    const lines = b.places.slice(0, 3), lineH = s * .17, blockH = lineH * (Math.max(1, lines.length) + (b.refs.length ? 1 : 0));
+    const side = Math.abs(b.turn) < 30 ? 0 : b.turn > 0 ? -1 : 1;
+    const bw = side ? Math.max(s * .6, a - Math.abs(ex) - s * .16 - wide) : a * 1.1;
+    let bx = side < 0 ? ex - wide * 2 - bw : side > 0 ? ex + wide * 2 : -bw / 2;
+    let by = side ? ey - blockH / 2 : ey - wide * 2 - blockH;
+    bx = Math.max(-a + s * .08, Math.min(a - s * .08 - bw, bx)); by = Math.max(-hh + s * .08, Math.min(hh - s * .08 - blockH, by));
+    const [bg, ink] = PLATE_INK[b.colour];
+    if (bg !== field) { c.fillStyle = bg; c.beginPath(); c.roundRect(bx - s * .03, by - s * .02, bw + s * .06, blockH + s * .04, s * .03); c.fill(); }
+    let y = by + lineH / 2;
+    if (b.refs.length) {
+      let x = side < 0 ? bx + bw - b.refs.length * s * .3 : bx;
+      for (const ref of b.refs) x += badge(c, ref, x, y, s * .15) + s * .04;
+      y += lineH;
+    }
+    for (const place of lines) {
+      fitText(c, place, side < 0 ? bx + bw : side > 0 ? bx : bx + bw / 2, y, s * .14, bw, ink, side < 0 ? 'right' : side > 0 ? 'left' : 'center');
+      y += lineH;
+    }
+  }
+  c.restore();
+}
+// A tile's direction signs as a mesh, their faces drawn on a canvas of its own (laid out as
+// map/directions.ts lays it out for the geometry). Its material and canvas are its own.
+export function directionMesh(arrays: DirectionArrays, signs: DirectionSign[]) {
+  const { faces, rects, width, height } = directionLayout(signs);
+  const canvas = document.createElement('canvas');
+  canvas.width = width; canvas.height = height;
+  const c = canvas.getContext('2d')!;
+  c.fillStyle = '#fff'; c.fillRect(0, 0, WHITE_CORNER, WHITE_CORNER);
+  faces.forEach((f, i) => (f.kind === 'board' ? drawBoard : drawPlate)(c, f, rects[i]));
+  const map = new THREE.CanvasTexture(canvas);
+  map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = 8;
+  const g = new THREE.BufferGeometry();
+  for (const [name, size] of [['position', 3], ['normal', 3], ['uv', 2], ['color', 3]] as const) g.setAttribute(name, new THREE.BufferAttribute(arrays[name], size));
+  g.computeBoundingSphere();
+  const mesh = new THREE.Mesh(g, cutAway(new THREE.MeshStandardMaterial({ map, vertexColors: true, roughness: .5, metalness: .15 }), 'furniture'));
+  mesh.name = 'direction signs'; mesh.castShadow = mesh.receiveShadow = true;
+  mesh.userData.posts = arrays.posts; mesh.userData.ownMaterial = true;
+  mesh.addEventListener('added', () => meshes.add(mesh));
+  mesh.addEventListener('removed', () => meshes.delete(mesh));
+  return mesh;
+}
+// For tests: the direction signs' canvases in the scene, as PNGs.
+export const directionCanvases = () => [...meshes].filter(m => m.userData.ownMaterial)
+  .map(m => ((m.material as THREE.MeshStandardMaterial).map!.image as HTMLCanvasElement).toDataURL('image/png'));

@@ -143,6 +143,7 @@ export interface LandResult {
   furniture: FurnitureInstances;
   // The tile's traffic signs on their posts as one geometry (map/signs.ts), or none.
   signs: import('./map/signs.ts').SignArrays | null;
+  directions: import('./map/directions.ts').DirectionArrays | null; // the direction plates and boards
   trees: { matrices: Float32Array; colours: Float32Array; yearly: Float32Array; outlines: Float32Array; count: number; big: number; shrubs: number; conifers: number };
   walls: { position: Float32Array; normal: Float32Array };
   fences: FenceBuffers;
@@ -172,7 +173,7 @@ export interface WorkerJobs {
   // The tile's raised kerbs (kerbDrop.ts): its carriageway, and its bridges and tunnels.
   kerbs: { box: Bounds; low: Point2[][][]; joins: Point2[][][] };
   land: {
-    data: FurnitureData & { levels: boolean; utility?: UtilityMark[]; mapped?: Float32Array; signs?: { names: string[]; cols: number; points: Float32Array }; crossers: Crosser[]; stepEdges: boolean; fences: FenceTile['fences']; sheds: Shed[]; furnitureBuildings: { rings: Point2[][] }[]; furnitureEnabled: boolean };
+    data: FurnitureData & { levels: boolean; utility?: UtilityMark[]; mapped?: Float32Array; signs?: { names: string[]; cols: number; points: Float32Array }; directions?: import('./map/directions.ts').DirectionSign[]; crossers: Crosser[]; stepEdges: boolean; fences: FenceTile['fences']; sheds: Shed[]; furnitureBuildings: { rings: Point2[][] }[]; furnitureEnabled: boolean };
     seeds: Float64Array; ground: HeightGrid | null; bridges: HeightGrid[];
     // The bridges and tunnels to rasterise, each a level to get about on (ground.ts).
     box: Bounds; structures: TileStructure[];

@@ -179,13 +179,10 @@ class Way:
         return None
 
 
-def traffic_signs(ways, nodes, restrictions, lit=()):
-    """The signs: ([(x, y, name, angle in radians)], [(node, heading in radians, turn lanes, (x, y))]).
-    `ways`: [Way]; `nodes`: {node id: (tags, (x, y))} for the tagged nodes;
-    `restrictions`: [(restriction, from way id, via node id, to way id)]; `lit`: [(x, y)]."""
-    by_id = {w.id: w for w in ways}
-    at = defaultdict(list)  # node → [(way, index)]
-    ends = Counter()  # node → public way ends meeting there (a way through it counts twice)
+def network(ways):
+    """{node: [(way, index)]} and {node: the public way ends meeting there (a way through
+    it counts twice)}."""
+    at, ends = defaultdict(list), Counter()
     for w in ways:
         last = len(w.nodes) - 1
         for i, n in enumerate(w.nodes):
@@ -194,22 +191,35 @@ def traffic_signs(ways, nodes, restrictions, lit=()):
             at[n].append((w, i))
             if w.hw in PUBLIC:
                 ends[n] += 1 if i in (0, last) and w.nodes[0] != w.nodes[last] else 2
+    return at, ends
+
+
+def arms_at(at, n, kinds=PUBLIC):
+    """(way, index, d): the streets leaving node n, d the way along each."""
+    out = []
+    for w, i in at[n]:
+        if w.hw not in kinds:
+            continue
+        closed = w.nodes[0] == w.nodes[-1]
+        if i < len(w.nodes) - 1:
+            out.append((w, i, 1))
+        if i > 0:
+            out.append((w, i, -1))
+        elif closed:
+            out.append((w, len(w.nodes) - 1, -1))
+    return out
+
+
+def traffic_signs(ways, nodes, restrictions, lit=()):
+    """The signs: ([(x, y, name, angle in radians)], [(node, heading in radians, turn lanes, (x, y))]).
+    `ways`: [Way]; `nodes`: {node id: (tags, (x, y))} for the tagged nodes;
+    `restrictions`: [(restriction, from way id, via node id, to way id)]; `lit`: [(x, y)]."""
+    by_id = {w.id: w for w in ways}
+    at, ends = network(ways)
     junction = lambda n: ends[n] >= 3
 
     def arms(n, kinds=PUBLIC):
-        """(way, index, d): the streets leaving node n, d the way along each."""
-        out = []
-        for w, i in at[n]:
-            if w.hw not in kinds:
-                continue
-            closed = w.nodes[0] == w.nodes[-1]
-            if i < len(w.nodes) - 1:
-                out.append((w, i, 1))
-            if i > 0:
-                out.append((w, i, -1))
-            elif closed:
-                out.append((w, len(w.nodes) - 1, -1))
-        return out
+        return arms_at(at, n, kinds)
 
     signs = []
 
@@ -430,6 +440,132 @@ def traffic_signs(ways, nodes, restrictions, lit=()):
     return kept, turns
 
 
+# Direction signs: at a junction, an arrow plate for each way on that leads somewhere OSM
+# names (`destination` on the street leaving it); on the bigger roads also a board
+# BOARD_BACK m before it with the junction drawn and the places on each branch.
+STRAIGHT = 30  # degrees either side of straight on
+BOARD_ON = {"trunk", "primary", "secondary"}
+BOARD_BACK = 70
+PLATES_BACK = 6
+FOLLOW = 40  # m: a branch this short into another junction (across a dual carriageway) is followed on
+LANE_TURNS = {"through": 0, "left": 90, "right": -90, "slight_left": 45, "slight_right": -45, "sharp_left": 135, "sharp_right": -135}
+GREEN = ("motorway", "motorway_link")
+
+
+def destination(w, d):
+    """Where the traffic on w in direction d is signed to: (places, road numbers, symbol,
+    colour), or None. A plain `destination` on a two-way street is taken as its forward one."""
+    t = w.tags
+
+    def get(key):
+        if w.oneway:
+            return t.get(key)
+        return t.get(f"{key}:{'forward' if d > 0 else 'backward'}") or (t.get(key) if d > 0 else None)
+    to, ref = get("destination"), get("destination:ref") or get("destination:int_ref")
+    if not to and not ref:
+        return None
+    return to or "", ref or "", get("destination:symbol") or "", get("destination:colour") or ""
+
+
+def sign_colour(w, to, ref, sym, given, local):
+    """The plate's colour: as OSM gives it, else green to the motorway, white where every
+    place is a part of the city (`local`), blue otherwise."""
+    given = given.split(";")[0]
+    if given in ("green", "blue", "white", "brown"):
+        return given
+    if w.hw in GREEN or "motorway" in sym or re.match(r"D\d", ref):
+        return "green"
+    names = [p.strip() for p in to.split(";") if p.strip()]
+    return "white" if names and all(p in local or p.lower() == "centrum" for p in names) else "blue"
+
+
+def direction_signs(ways, local=frozenset()):
+    """[(x, y, 'plates' | 'board', angle, [(turn in degrees, left positive; places; road
+    numbers; symbol; colour)])] for the traffic coming up to each junction, the straight
+    on first, then left to right."""
+    at, ends = network(ways)
+    junction = lambda n: ends[n] >= 3
+    out = []
+
+    def heading(w, i, d, dist=15):
+        r = w.along(i, d, min(dist, max(.5, w.length - .1)))
+        if r is None:
+            return None
+        x0, y0 = w.pts[i]
+        return math.atan2(r[0][1] - y0, r[0][0] - x0)
+
+    def follow(w, i, d):
+        """The signed destination of w leaving node i in direction d, or of the way straight
+        on from it where w only crosses to another junction; and the way it is on."""
+        got = destination(w, d)
+        if got or w.length > FOLLOW:
+            return got, w
+        e = w.end(d)
+        h = heading(w, e, -d, 10)
+        if not junction(w.nodes[e]) or h is None:
+            return None, w
+        h += math.pi
+        best = None
+        for o, j, f in arms_at(at, w.nodes[e]):
+            ho = None if (o is w and f == -d) or not o.allowed(f) else heading(o, j, f)
+            if ho is not None:
+                turn = abs(math.degrees(math.remainder(ho - h, 2 * math.pi)))
+                if turn < 35 and (best is None or turn < best[0]):
+                    best = (turn, o, f)
+        return (destination(best[1], best[2]), best[1]) if best else (None, w)
+
+    for n in list(at):
+        if not junction(n):
+            continue
+        here = arms_at(at, n)
+        for a, i, d in here:
+            # (Not on a short link from another junction, across a dual carriageway: the
+            # signs before that junction show the way on.)
+            if a.length <= FOLLOW and junction(a.nodes[a.end(d)]):
+                continue
+            h_in = heading(a, i, d) if a.allowed(-d) else None
+            if h_in is None:
+                continue
+            h_in += math.pi
+            branches = []
+            for b, j, e in here:
+                if (b is a and e == d) or not b.allowed(e):
+                    continue
+                h_out = heading(b, j, e)
+                if h_out is None:
+                    continue
+                turn = math.degrees(math.remainder(h_out - h_in, 2 * math.pi))
+                got, way = follow(b, j, e) if abs(turn) <= 150 else (None, b)
+                if got:
+                    branches.append((round(turn), *got[:3], sign_colour(way, *got, local)))
+            if not branches:
+                # The lanes' own destinations, where the street coming up names them.
+                t, side = a.tags, "backward" if d > 0 else "forward"
+                to_lanes = t.get("destination:lanes") if a.oneway else t.get(f"destination:lanes:{side}")
+                turn_lanes = t.get("turn:lanes") if a.oneway else t.get(f"turn:lanes:{side}")
+                if to_lanes and turn_lanes and len(to_lanes.split("|")) == len(turn_lanes.split("|")):
+                    seen = {}
+                    for to, turn in zip(to_lanes.split("|"), turn_lanes.split("|")):
+                        first = (turn.split(";")[0] or "through").strip()
+                        if to and first in LANE_TURNS:
+                            seen.setdefault(to, LANE_TURNS[first])
+                    branches = [(turn, to, "", "", sign_colour(a, to, "", "", "", local)) for to, turn in seen.items()]
+            if not branches:
+                continue
+            branches.sort(key=lambda b: (abs(b[0]) >= STRAIGHT, -b[0]))
+            for kind, back in (("plates", PLATES_BACK), ("board", BOARD_BACK)):
+                if kind == "board" and (a.hw not in BOARD_ON or len(branches) < 2):
+                    continue
+                r = a.along(i, d, back)
+                if r is None:
+                    continue
+                (x, y), h = r
+                h += math.pi
+                off = a.half + KERB_GAP
+                out.append((x + math.sin(h) * off, y - math.cos(h) * off, kind, h - math.pi / 2, branches))
+    return out
+
+
 def _near_pairs(signs, crossings, lit):
     grid = defaultdict(list)
     for m, (x, y) in enumerate(lit):
@@ -504,12 +640,20 @@ def build(area):
         pbf = cut((w - 0.01, s - 0.01, e + 0.01, n + 0.01), pbf)
     ways, nodes, restrictions = read(pbf, tf)
     signs, turns = traffic_signs(ways, nodes, restrictions, powered_signs(tf))
+    # The city's parts (build_districts.py), for the white plates of local destinations.
+    districts = OUT / f"{area}_now" / "districts.json"
+    local = frozenset(d["name"] for d in json.loads(districts.read_text(encoding="utf-8"))["districts"]) if districts.exists() else frozenset()
+    directions = direction_signs(ways, local)
     names = sorted({name for _, _, name, _ in signs})
     index = {name: k for k, name in enumerate(names)}
     points = sorted([round(x, 1), round(y, 1), index[name], round(math.degrees(a)) % 360] for x, y, name, a in signs)
     counts = Counter(name for _, _, name, _ in signs)
     print(f"{len(points)} signs:", ", ".join(f"{k} {v}" for k, v in counts.most_common()), f"and {len(turns)} lane arrow sets")
-    return {"signs": names, "points": points, "turns": sorted([str(n), round(math.degrees(h)) % 360, lanes, round(x, 1), round(y, 1)] for n, h, lanes, (x, y) in turns)}
+    print(f"{len(directions)} direction signs:", dict(Counter(kind for _, _, kind, _, _ in directions)),
+          "plates", dict(Counter(b[4] for *_, bs in directions for b in bs)))
+    return {"signs": names, "points": points,
+            "directions": sorted([round(x, 1), round(y, 1), round(math.degrees(a)) % 360, kind, [list(b) for b in bs]] for x, y, kind, a, bs in directions),
+            "turns": sorted([str(n), round(math.degrees(h)) % 360, lanes, round(x, 1), round(y, 1)] for n, h, lanes, (x, y) in turns)}
 
 
 if __name__ == "__main__":
