@@ -2249,3 +2249,26 @@ frame 30.7–31.7 ms, about 460 draws (some 200 in the sun's shadow pass), 3.6 M
   instanced draw with few bindings costs much less than the 20–40 µs average, and a
   batch has work of its own each pass, so the count of draws alone is a poor guide:
   measure what a kind of draw costs before merging it.
+- **What each kind of draw costs** (three.js's `_renderObjectDirect`, its own time, 240
+  frames standing on the Old Town Square in third person, this machine; timing adds a
+  little to each):
+
+  | Kind of draw | Draws a frame | Each | A frame |
+  |---|---|---|---|
+  | ground layers (colour) | 64 | 15–31 µs | about 1–2 ms |
+  | life-size people (colour and shadow) | 144 | 14–18 µs | about 2.1 ms |
+  | trees, street crowd, furniture, buildings | 5–33 a kind | 5–15 µs | under 0.25 ms a kind |
+
+  The ground layers and the people go through three.js's full refresh every draw (a node
+  material with nodes of its own, `hasNode`, or a skinned mesh, `hasAnimation`, in
+  `NodeMaterialObserver.needsRefresh`); buildings and furniture in the colour pass mostly
+  skip it. Inside a ground draw: uniform buffers 4.7 µs, node updates 3.5, the draw call
+  2.9, finding the render object 1.5. A ground layer's 11 per-object uniforms and its
+  textures are the `materialReference` values that let every tile share one shader.
+  Letting the ground skip the full refresh (A/B, `hasNode` off for them) was 1.1% (12.9 →
+  12.8 ms): the cost is spread over every step of a draw, not the refresh. Not kept (its
+  textures and boxes aren't on three.js's list of what to watch for changes).
+- So the cost of a draw is mostly three.js's fixed work, and the cheap ways round it are
+  spent: fewer draws only pays where the draws are the expensive kinds (the ground layers,
+  one a layer a tile; the people), and those need bigger changes (one ground draw a tile
+  with the layer chosen in the shader; fewer life-size people).
