@@ -1006,6 +1006,18 @@ The metro ride uses its overhead cutaway camera.
   the sun or mirror the sky, so a patch of it glints as you walk past. An explosion throws burning embers and
   charred pieces far around. Smoke and flames face the camera, so they read from the
   street as well as from above (`src/debris.ts`, `src/particles.ts`).
+- **Crash slow motion** (`src/crashCam.ts`, Settings → Crash slow motion, off unless you turn it on).
+  In the street views, a big moment of your driving plays at 0.3× speed, seen from the
+  side between black bars, as in a film: a hit that changes the car's speed by 40 km/h
+  or more in one step (so a brush with a police car in a chase doesn't count), a quarter
+  of a second in the air with the body 60 cm off the ground, going over a bridge's
+  parapet, or a car tipping over at more than 50 km/h. It eases in over 0.12 s, holds
+  1–1.6 s (in the air or falling, until it's down, 3.5 s at most) and eases out over
+  0.35 s; then nothing more for 10 s. The camera stands 4–7 m to one side of the way
+  the car was going and a little ahead, on the side with no building between, and drifts
+  after it; with no room for it, the game only slows. Not in the headset, from above, in
+  a door's animation or an arrest, nor while a scenario steps the world itself (its waits
+  run at full speed). The `crash-slowmo` scene checks it in the live game.
 - **Dents.** A car is dented where it was actually hit, pushed in the way the blow went
   (a wall's or the other car's): a car keeps up to eight blows, and one that lands near
   an earlier one pushed the same way deepens it. Around each the metal goes in most where

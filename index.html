@@ -728,10 +728,16 @@
         #t-gas { width: 84px; }
         #touch .t-row button { padding: 0 11px; }
       }
+      /* A big moment of your driving in slow motion (src/crashCam.ts): bars top and bottom, as in a film. */
+      #cinema::before, #cinema::after { content: ''; position: fixed; left: 0; right: 0; height: 0; background: #000; z-index: 3; pointer-events: none; transition: height 0.25s ease-out; }
+      #cinema::before { top: 0; }
+      #cinema::after { bottom: 0; }
+      #cinema.on::before, #cinema.on::after { height: 7vh; }
     </style>
   </head>
   <body>
     <div id="app"></div>
+    <div id="cinema" aria-hidden="true"></div>
     <div id="hud" class="panel">
       <div class="hud-top"><div id="street">Praha</div><div id="clock"></div></div>
       <div id="vehicle" hidden></div>

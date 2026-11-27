@@ -17,6 +17,7 @@ import { hapticsOn, setHaptics } from './haptics.ts';
 import { touchDrive, setTouchDrive } from './touch.ts';
 import { minimapOn, setMinimap } from './minimap.ts';
 import { motionBlurOn, setMotionBlur } from './post.ts';
+import { crashSlowMoOn, setCrashSlowMo } from './crashCam.ts';
 import type { TouchDrive } from './touch.ts';
 import { TUNNEL_VIEWS, tunnelView, setTunnelView } from './tunnelView.ts';
 import type { TunnelView } from './tunnelView.ts';
@@ -438,6 +439,10 @@ export function setupSettings({ sound, graphics, weather, saves, cameraChoice }:
   ], () => carHandling[cameraChoice.get()], handling => setCarHandling(cameraChoice.get(), handling));
   const handlingNote = el('p', 'settings-note', handlingRow);
   relabel.push(() => { handlingNote.textContent = t('Each camera view keeps its own handling.') + ' ' + t('Advanced handling gives cars, vans and pickups more gradual acceleration, longer stops and body roll.') + ' ' + t('Physical handling drives them as a body on four sprung wheels: they slide, go up on two wheels, jump and roll over as the forces have it.'); });
+  // A big crash, a car in the air or over a bridge's edge, slowed and seen from the side (src/crashCam.ts).
+  const slowRow = onOff('Crash slow motion', crashSlowMoOn, setCrashSlowMo);
+  const slowNote = el('p', 'settings-note', slowRow);
+  relabel.push(() => { slowNote.textContent = t('A hard crash, a car thrown into the air or over a bridge’s edge plays in slow motion, seen from the side. In the street views only.'); });
   // How the on-screen controls drive a car (src/touch.ts): with the pedals, or one-handed.
   if (matchMedia('(pointer: coarse)').matches || new URLSearchParams(location.search).has('touch')) {
     const r = row<TouchDrive>('Driving', [{ id: 'pedals', label: () => t('Stick and pedals') }, { id: 'stick', label: () => t('Stick only') }], touchDrive, setTouchDrive);

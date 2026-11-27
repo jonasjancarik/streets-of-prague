@@ -4,6 +4,7 @@ import { DriverExit } from './driverExit.ts';
 import { ROOFTOP } from './roofSurface.ts';
 import { headingUpOn } from './headingup.ts';
 import { FollowCamera } from './followCamera.ts';
+import { CrashCam, crashSlowMoOn } from './crashCam.ts';
 import { DATA_FORMAT, dataUrl, mapData } from './data.ts';
 import { ANYWHERE, anywhereIndex } from './countrysideTiles.ts';
 import { STATIONS } from './radio.ts';
@@ -724,6 +725,9 @@ async function main() {
   // The chase camera and third person's camera over your shoulder (followCamera.ts); the
   // headset keeps the simpler chase above, as its view from a helicopter rides on it.
   const follow = new FollowCamera();
+  // The big moments of your driving in slow motion, from the side (crashCam.ts).
+  const crashCam = new CrashCam();
+  const cinema = document.getElementById('cinema');
   let cutR = 0; // radius of the hole above a passage, under a bridge or down into a tunnel (see CUTAWAY)
 
   // First person: how far the city is loaded and drawn, and which way the view looks.
@@ -2993,6 +2997,7 @@ async function main() {
     }
     // New traffic out of sight, a few times a second rather than every step (finding
     // the streets around you and a spot on them takes a while).
+    crashCam.notice(inCar, dt, (x, y) => ground(x, y, inCar));
     spawnT -= dt;
     const wanted = testkit?.quiet ? 0 : carsWanted();
     if (spawnT < 0 && traffic.agents.length < wanted) {
@@ -3240,8 +3245,10 @@ async function main() {
       if (lost) showBanner(t('The bus stopped running. You got off'));
     }
     const scale = ride.on ? ride.speedUp(dt, ctl.run || touch.fast) : funicular.me ? funicular.speedUp(dt, ctl.run || touch.fast) : ferries.me ? ferries.speedUp(dt, ctl.run || touch.fast) : taxi.riding ? taxi.speedUp(dt, ctl.run || touch.fast) : busRide.on ? busRide.speedUp(dt, ctl.run || touch.fast) : waitScale;
-    // (The developer panel can pause the world or slow it down.)
-    const run = testkit?.paused ? 0 : scale * (testkit?.speed ?? 1);
+    // (The developer panel can pause the world or slow it down; so can a crash, in the street
+    // views: crashCam.ts. Not while the panel runs the world itself.)
+    crashCam.live = crashSlowMoOn() && !!eyes && !testkit?.cam && !vr?.active && !testkit?.paused && !!inCar && !arrest.active && !getIn.active;
+    const run = testkit?.paused ? 0 : scale * (testkit?.speed ?? 1) * crashCam.step(dt);
     const steps = metro.active || !(dt * run > 0) ? 0 : Math.ceil(run - 1e-6); // underground, the street waits (and paused, nothing steps)
     for (let i = 0; i < steps; i++) {
       simulate((dt * run) / steps, ctl);
@@ -3509,6 +3516,8 @@ async function main() {
           forwardSpeed: inCar ? inCar.forwardSpeed : 0, slide: !!(inCar?.suspension || inCar?.physics), yaw, pitch,
           blocked: open ? (x, y) => !!grid.at(x, y) : undefined,
         }, camera);
+        // A big moment, slowed: the camera off to the side (not in a tunnel or under a bridge).
+        if (inCar && carried === inCar) crashCam.frame(inCar, camera, (x, y) => ground(x, y, inCar), open ? (x, y) => world.rooftopAt(x, y) > -Infinity : () => true, dt);
         followed = true;
       } else if (vehicle) {
         // (A new vehicle, or after a teleport, starts straight behind it.)
@@ -3626,7 +3635,8 @@ async function main() {
     const nearPlane = closeWall ? .055 : eyes ? .2 : 1;
     // A wider view at street level (38° from above, which would feel like a telephoto lens).
     // (Driving, the chase camera widens a little with speed: followCamera.ts.)
-    const fov = eyes ? eyes.onFoot ? firstPersonOptions.fov : followed ? follow.fov : 55 : 38;
+    const fov = eyes ? eyes.onFoot ? firstPersonOptions.fov : followed ? (crashCam.cut ? crashCam.fov : follow.fov) : 55 : 38;
+    cinema?.classList.toggle('on', followed && crashCam.cut);
     if (camera.fov !== fov) { camera.fov = fov; camera.updateProjectionMatrix(); }
     // Down at street level, people (and their bikes) are life size: from above they're drawn bigger to read.
     FIGURE_SIZE.value = eyes ? 1 : SCALE;
@@ -4012,7 +4022,7 @@ async function main() {
     // (The least time between drawings of the sun's shadow map, ms: 0 for every frame.)
     get shadowMs() { return shadowMsTest ?? (graphics.sunEveryFrame ? 0 : SHADOW_MS); }, set shadowMs(ms: number | null) { shadowMsTest = ms; },
     get heli() { return inHeli; },
-    choppers, addChopper,
+    choppers, addChopper, crashCam,
     teleport: (x: number, y: number) => { (inCar || inHeli || walker).x = x; (inCar || inHeli || walker).y = y; camPos.set(x, 0, -y); },
     enterOrExit, teleportTo, dev, touch, dialog, missions, repute,
     // One step of the world with these controls (for tests, and while the tab is hidden).

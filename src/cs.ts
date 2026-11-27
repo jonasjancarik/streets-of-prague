@@ -563,6 +563,8 @@ export const CS: Record<string, string> = {
   'Jump. Press Space again in freefall to open your parachute. A/D steer, W dives and S slows you down': 'Skok. Při pádu znovu stiskni mezerník a otevřeš padák. A/D zatáčí, W zrychluje sestup a S brzdí.',
   'Back where you jumped after a splash': 'Po pádu do vody jsi zpátky na místě odrazu',
   'Back where you went over after a splash': 'Po pádu do vody jsi zpátky na mostě',
+  'Crash slow motion': 'Zpomalení při nehodě',
+  'A hard crash, a car thrown into the air or over a bridge’s edge plays in slow motion, seen from the side. In the street views only.': 'Tvrdá nehoda, auto vymrštěné do vzduchu nebo přes okraj mostu se přehraje zpomaleně a z boku. Jen v pohledech z ulice.',
   Timetable: 'Jízdní řád',
   'Get into the nearest car, onto a bike or motorbike, or onto a tram at a stop': 'Nastoupit do nejbližšího auta, na kolo nebo motorku, nebo na zastávce do tramvaje',
   'Get a taxi: wave one down or order one through an app': 'Taxi: zastavit na ulici nebo objednat přes aplikaci',

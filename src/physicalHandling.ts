@@ -224,6 +224,17 @@ export class PhysicalHandling {
     return low;
   }
 
+  // How far the body is off the ground (m) at its lowest point: in the air, or on it (0).
+  clearance(ground: Ground) {
+    const at = this.at;
+    let low = Infinity;
+    for (const pt of this.hull) {
+      this.point(pt[0], pt[1], pt[2], at);
+      low = Math.min(low, at[2] - ground(at[0], at[1]));
+    }
+    return Math.max(0, low);
+  }
+
   // Each wheel's travel in the body (m, + up), front left, front right, rear left, rear right.
   travel(i: number) { return clamp(this.wheels[i].x, -this.springs[i >> 1].droop, this.springs[i >> 1].travel); }
 
