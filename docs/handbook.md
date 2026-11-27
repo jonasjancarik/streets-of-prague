@@ -840,7 +840,21 @@ The metro ride uses its overhead cutaway camera.
   the sun or mirror the sky, so a patch of it glints as you walk past. An explosion throws burning embers and
   charred pieces far around. Smoke and flames face the camera, so they read from the
   street as well as from above (`src/debris.ts`, `src/particles.ts`).
-  A window at a corner or side crumpled hard (level 2 of 3) breaks the way car glass
+- **Dents.** A car is dented where it was actually hit, pushed in the way the blow went
+  (a wall's or the other car's): a car keeps up to eight blows, and one that lands near
+  an earlier one pushed the same way deepens it. Around each the metal goes in most where
+  the blow landed and less towards its edge, crumpled in uneven folds, the bonnet or boot
+  lid buckling where an end is crushed; a nose or tail hit spreads along the bumper. The
+  parts at one spot come in together and close up on each other only inside the crumple
+  zone, so panels don't pass through the trim behind them, and the push eases off above
+  the doors so the roof stays clear of the people inside (the seated driver moves in
+  with a crushed door). Where the metal went in deepest the paint is duller and
+  scratched to bare metal in streaks. The blows go to the shaders in a small texture, a
+  row a dented car (`Car.dent`, `DENT_SHAPE`, `SCRAPED` and `DENT_GLSL` in `src/car.ts`,
+  `crumple` in `src/webgpu/vehicles.ts`); a car with no dents pays only for a branch, and
+  every car in view dented cost about 0.4 ms a frame on an M5 (High). Saves keep the
+  blows; older saves' corner and side levels turn into blows at those places.
+  A window near a hard blow (pushed in about a quarter of a metre there) breaks the way car glass
   does. The windscreen is laminated and stays in, crazed in spider webs: a small crushed
   spot, cracks running out from it, broken rings round it, and a crack where two webs
   meet. The side and rear windows are toughened and craze all over into centimetre

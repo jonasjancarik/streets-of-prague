@@ -1,6 +1,7 @@
 import { getLang, t } from './i18n.ts';
 import { kc } from './money.ts';
 import type { Kind } from './weather.ts';
+import type { Blow } from './car.ts';
 
 // Saved games, in the browser's localStorage. The game saves itself by itself into the
 // "auto" slot (every few seconds and when the page is left), so a refresh puts you
@@ -26,7 +27,7 @@ export interface SaveData {
   // as the map's local metres, so a save survives a change to the map's origin.
   lat: number; lon: number; heading: number;
   street: string | null;
-  car: { type: string; paint: string; box?: string; variant: string | null; damage: number; radio?: number; broken?: number; crush?: number[]; ram?: boolean } | null;
+  car: { type: string; paint: string; box?: string; variant: string | null; damage: number; radio?: number; broken?: number; crush?: number[]; blows?: Blow[]; ram?: boolean } | null;
   money: number;
   ticket: { from: number; minutes: number } | null;
   health: number;
@@ -55,6 +56,8 @@ function carData(value: unknown) {
     && (value.box === undefined || typeof value.box === 'string')
     && optionalNumber(value.radio) && optionalNumber(value.broken)
     && (value.crush === undefined || (Array.isArray(value.crush) && value.crush.length === 6 && value.crush.every(num)))
+    && (value.blows === undefined || (Array.isArray(value.blows) && value.blows.every((b) => object(b)
+      && ['x', 'z', 'dx', 'dz', 'depth', 'r', 'seed'].every((k) => num(b[k])))))
     && (value.ram === undefined || typeof value.ram === 'boolean'));
 }
 

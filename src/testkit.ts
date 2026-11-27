@@ -475,7 +475,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     // you're driving for a few seconds).
     // Crumples a car where a blow `along` and `left` of its middle (metres) would land, by
     // `levels` (see DENT in car.ts).
-    dent(c: Car, along: number, left: number, levels = 3) { c.dent(along, left, levels); return [...c.crush]; },
+    dent(c: Car, along: number, left: number, levels = 3) { c.dent(along, left, levels); return c.blows.map((b) => ({ ...b })); },
     ignite(c: Car) {
       c.damage = Math.max(c.damage, 95);
       g.fires.check(c);

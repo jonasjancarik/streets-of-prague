@@ -27,7 +27,7 @@ import type { BusDepartures } from './buses.ts';
 import { BusPilot } from './busPilot.ts';
 import type { BusPilotData } from './busPilot.ts';
 import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp, streetShare } from './network.ts';
-import { Car, TYPES, CarPool, VR_CAB, VR_GLASS, VR_SEAT, collideBodies, contact, loadCars, ordinaryCarBodies, useKit, variantName } from './car.ts';
+import { BLOWS, DENT_SHAPE, Car, TYPES, CarPool, VR_CAB, VR_GLASS, VR_SEAT, collideBodies, contact, loadCars, ordinaryCarBodies, useKit, variantName } from './car.ts';
 import type { Fall } from './twoWheel.ts';
 import { CarOutline } from './carOutline.ts';
 import { RestingCars } from './restingCars.ts';
@@ -1733,7 +1733,7 @@ async function main() {
     const [lon, lat] = dev.toLonLat(who.x, who.y);
     return {
       v: 2, area: AREA, at: Date.now(), lat, lon, heading: ((((90 - (who.h * 180) / Math.PI) % 360) + 360) % 360), street,
-      car: c ? { type: c.type, paint: c.paint, box: c.courier, variant: c.modelName, damage: c.damage, radio: c.radio, broken: c.broken, crush: [...c.crush], ram: c.ram } : null,
+      car: c ? { type: c.type, paint: c.paint, box: c.courier, variant: c.modelName, damage: c.damage, radio: c.radio, broken: c.broken, blows: c.blows.map((b) => ({ ...b })), ram: c.ram } : null,
       money: wallet.balance, ticket: wallet.held, health: health.value, heat: police.heat,
       clock: clock.t, season: season.day, weather: { kind: weather.kind, fixed: weather.fixed },
       jobs: structuredClone(missions.progress), rep: repute.saved,
@@ -1784,7 +1784,8 @@ async function main() {
     car.radio = s.car.radio;
     if (s.car.ram) car.armour();
     car.broken = s.car.broken ?? 0;
-    if (s.car.crush) car.crush = s.car.crush.map((v) => Math.max(0, Math.min(3, v)));
+    if (s.car.blows) { car.blows = s.car.blows.slice(0, BLOWS).map((b) => ({ ...b, depth: Math.max(0, Math.min(DENT_SHAPE.most, b.depth)) })); car.dentVersion++; }
+    else if (s.car.crush) car.uncrush(s.car.crush);
     for (let i = loose.length - 1; i >= 0; i--) if (Math.hypot(loose[i].x - car.x, loose[i].y - car.y) < 5) loose.splice(i, 1);
     car.mode = 'loose';
     loose.push(car);
@@ -2581,7 +2582,7 @@ async function main() {
     // ---- Collisions ------------------------------------------------------
     // Two cars that have just met: the lamps the blow landed on break.
     const smash = (a: Car, b: Car, hit: number) => {
-      a.knock(contact.x, contact.y, hit); b.knock(contact.x, contact.y, hit);
+      a.knock(contact.x, contact.y, hit, -contact.nx, -contact.ny); b.knock(contact.x, contact.y, hit, contact.nx, contact.ny);
       if (hit < 1) return;
       if (a.mode === 'loose') tipBike(a, a.x - contact.x, a.y - contact.y);
       if (b.mode === 'loose') tipBike(b, b.x - contact.x, b.y - contact.y);

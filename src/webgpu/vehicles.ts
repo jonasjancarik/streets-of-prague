@@ -4,8 +4,8 @@
 // the 'cars', 'trams', 'funicular' and 'boats' materials (see addPort).
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Fn, If, float, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, cameraWorldMatrix, diffuseColor, renderGroup, positionLocal, positionWorld, positionViewDirection, normalLocal, positionGeometry, materialColor, materialSpecular, normalize, dot, smoothstep, mix, select, sin, min, cos, max, floor, mod, exp2, reflect, atan, pow, uniform, texture, cubeTexture, length, clamp, step, distance, cross, fract, abs, fwidth, normalGeometry } from 'three/tsl';
-import { LAMP_GLOW, CAR_GLOSS, DUSTCART_COAT, CAR_MIRROR, CAR_STREET, WHEEL_LEVEL, CAR_REFLECT as R, CAR_STRIPS as CS, AREA_STEP, DENT_STEP, DENT_SHAPE as DS, BROKEN_GLASS as BG } from '../car.ts';
+import { Fn, If, float, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, cameraWorldMatrix, diffuseColor, renderGroup, positionLocal, positionWorld, positionViewDirection, normalLocal, positionGeometry, materialColor, materialSpecular, normalize, dot, smoothstep, mix, select, sin, min, cos, max, floor, mod, exp2, reflect, atan, pow, uniform, texture, cubeTexture, length, clamp, step, distance, cross, fract, abs, fwidth, normalGeometry, int, ivec2, Loop, Break } from 'three/tsl';
+import { LAMP_GLOW, CAR_GLOSS, DUSTCART_COAT, CAR_MIRROR, CAR_STREET, WHEEL_LEVEL, CAR_REFLECT as R, CAR_STRIPS as CS, AREA_STEP, DENT_STEP, DENT_SHAPE as DS, BROKEN_GLASS as BG, SCRAPED as SC, BLOWS, DENT_MAP } from '../car.ts';
 import { ROLL_CENTRE } from '../streetHandling.ts';
 import { sedanInstruments, sedanWeave } from '../sedanFinish.ts';
 import { registrationAtlas } from '../registrationPlates.ts';
@@ -58,26 +58,47 @@ const packed: N = lit.add(mod(floor(paint.w.div(AREA_STEP)), DENT_STEP / AREA_ST
 const area: N = floor(packed.add(1.5).div(4));
 const shine: N = packed.sub(area.mul(4));
 
-// The dents (DENT_GLSL in car.ts): where on the car a vertex is, how crumpled each
-// corner and side is, how far the nose, tail, left and right are pushed in there.
-const dentLevel = (i: number): N => mod(floor(floor(paint.w.div(DENT_STEP)).div(4 ** i)), 4);
-const zone: N = floor(painted.div(16));
-const at: N = vec2(mod(zone, 32).div(15.5).sub(1), float(1).sub(floor(zone.div(32)).div(15.5)));
-const dentAt = (): N => {
-  const l: N = smoothstep(-0.9, 0.7, at.y), r: N = smoothstep(-0.9, 0.7, at.y.negate()), mid: N = float(1).sub(at.x.mul(at.x));
-  const nose: N = smoothstep(0.45, 1, at.x).mul(dentLevel(0).mul(l).add(dentLevel(1).mul(r)));
-  const tail: N = smoothstep(0.45, 1, at.x.negate()).mul(dentLevel(2).mul(l).add(dentLevel(3).mul(r)));
-  const left: N = smoothstep(0.15, 0.7, at.y).mul(mid).mul(dentLevel(4)), right: N = smoothstep(0.15, 0.7, at.y.negate()).mul(mid).mul(dentLevel(5));
-  return vec4(nose, tail, left, right);
+// The dents (DENT_GLSL in car.ts, which says what they do): the car's row of DENT_MAP
+// (-1: no dents), how far a blow pushes a point, and how far all of them push it in and
+// its normal once they have.
+const dentRow: N = int(floor(paint.w.div(DENT_STEP))).sub(1);
+const dentMap = texture(DENT_MAP);
+const blowAt = (p: N, a: N, b: N): N => {
+  const rel: N = p.xz.sub(a.xy);
+  const s: N = max(dot(rel, a.zw), 0), lat: N = rel.y.mul(a.z).sub(rel.x.mul(a.w));
+  const w: N = smoothstep(b.y.mul(DS.flat), b.y, abs(lat)).oneMinus();
+  const fold: N = abs(fract(lat.mul(2.4).add(p.y.mul(0.6)).add(b.z)).sub(0.5)).mul(1.2).add(abs(fract(p.y.mul(3.3).sub(lat.mul(0.5)).add(b.z.mul(1.7))).sub(0.5)).mul(0.8));
+  const push: N = b.x.mul(w).mul(fold.sub(0.5).mul(DS.fold).add(1)).mul(clamp(float(1).sub(s.div(b.x.mul(DS.give).add(DS.zone))), 0, 1))
+    .mul(float(1).sub(smoothstep(0.85, 1.35, p.y).mul(DS.roof)));
+  return vec3(a.z.mul(push), push.mul(DS.buckle).mul(fold.sub(0.5)).mul(smoothstep(0.6, 0.85, p.y)).mul(abs(a.z)), a.w.mul(push));
 };
-const bumpy = (p: N): N => sin(p.x.mul(11).add(p.z.mul(7))).add(sin(p.z.mul(13).sub(p.y.mul(9)).add(2))).mul(0.25).add(0.5);
-const dented = (p: N, d: N): N => {
-  const along = bumpy(vec3(0, p.y, p.z)).add(0.5), across = bumpy(vec3(p.x, p.y, 0)).add(0.5).mul(float(1).sub(smoothstep(0.85, 1.35, p.y).mul(0.65))), all = d.x.add(d.y).add(d.z).add(d.w);
-  const q = vec3(p.x.add(d.y.sub(d.x).mul(DS.nose).mul(along)), p.y, p.z.add(d.z.sub(d.w).mul(DS.side).mul(across)));
-  return vec3(q.x, q.y.mul(float(1).sub(all.mul(DS.sag).mul(bumpy(q.zyx)))), q.z);
+const crumple = (p: N, n: N) => {
+  const move = vec3(0).toVar(), m1 = vec3(0).toVar(), m2 = vec3(0).toVar();
+  const t1: N = normalize(cross(n, select(abs(n.y).lessThan(0.9), vec3(0, 1, 0), vec3(1, 0, 0)))).toVar(), t2: N = cross(n, t1).toVar();
+  If(dentRow.greaterThanEqual(0), () => {
+    Loop(BLOWS, ({ i }: { i: N }) => {
+      const a: N = dentMap.load(ivec2(i.mul(2), dentRow)).toVar(), b: N = dentMap.load(ivec2(i.mul(2).add(1), dentRow)).toVar();
+      If(b.x.lessThanEqual(0), () => { Break(); });
+      move.addAssign(blowAt(p, a, b));
+      m1.addAssign(blowAt(p.add(t1.mul(0.03)), a, b));
+      m2.addAssign(blowAt(p.add(t2.mul(0.03)), a, b));
+    });
+  });
+  return { move, normal: normalize(cross(t1.mul(0.03).add(m1).sub(move), t2.mul(0.03).add(m2).sub(move))) };
 };
-const dentNormal = (n: N, p: N, d: N): N =>
-  normalize(n.add(vec3(sin(p.z.mul(17).add(1)), 0, sin(p.x.mul(19))).mul(d.x.add(d.y).add(d.z).add(d.w).mul(DS.tilt))));
+// How hard a window was hit where p is (0 to 3): from 2 it's broken.
+const crackLevel = (p: N): N => {
+  const hit = float(0).toVar();
+  If(dentRow.greaterThanEqual(0), () => {
+    Loop(BLOWS, ({ i }: { i: N }) => {
+      const a: N = dentMap.load(ivec2(i.mul(2), dentRow)).toVar(), b: N = dentMap.load(ivec2(i.mul(2).add(1), dentRow)).toVar();
+      If(b.x.lessThanEqual(0), () => { Break(); });
+      const rel: N = p.xz.sub(a.xy), s: N = max(dot(rel, a.zw), 0), lat: N = rel.y.mul(a.z).sub(rel.x.mul(a.w));
+      hit.addAssign(b.x.mul(smoothstep(b.y.mul(0.6), b.y.mul(1.8), abs(lat)).oneMinus()).mul(smoothstep(DS.reach[0], DS.reach[1], s).oneMinus()));
+    });
+  });
+  return min(3, hit.mul(2 / DS.glass));
+};
 // The colour of a vertex, painted (in the vertex stage, in place of the vertex colour's
 // own varying).
 const tinted: N = attribute('color', 'vec3').mul(mix(vec3(1), paint.rgb, own.sub(lampAt.mul(2)))).toVarying('vTint');
@@ -85,13 +106,16 @@ const tinted: N = attribute('color', 'vec3').mul(mix(vec3(1), paint.rgb, own.sub
 // (0 to 3; 0 where it isn't glass). `glass`: which of the material's surfaces are glass:
 // by their colour (the distant bodies, the passengers' glass), all of it (a coach's
 // glass) or none (the close bodies, whose glass is a material of its own).
-const crackFor = (glass: 'colour' | 'all' | 'none'): N => {
-  if (glass === 'none') return vec4(0);
+// The rest of the painted body carries how far in it was pushed (`push`), negative, for
+// the scraped paint. (`push` and `level`, crackLevel, are worked out in setupPosition: a
+// loop is only run in the stage it's written in, and the varying needs it in the vertex
+// stage.)
+const crackFor = (glass: 'colour' | 'all' | 'none', push: N, level: N): N => {
+  const scrape: N = select(own.sub(lampAt.mul(2)).greaterThan(0.5), push.negate(), float(0));
+  if (glass === 'none') return vec4(positionGeometry, scrape).toVarying('vCrack');
   const c: N = attribute('color', 'vec3');
-  const end = select(at.x.greaterThan(0.05), max(dentLevel(0), dentLevel(1)), select(at.x.lessThan(-0.05), max(dentLevel(2), dentLevel(3)), float(0)));
-  const side = select(at.y.greaterThan(0.4), dentLevel(4), select(at.y.lessThan(-0.4), dentLevel(5), float(0)));
   const glassy = glass === 'all' ? own.lessThan(0.5) : own.lessThan(0.5).and(luma(c).lessThan(0.04)).and(c.z.greaterThan(c.x.mul(1.25)));
-  return vec4(positionGeometry, select(glassy, max(end, side), float(0))).toVarying('vCrack');
+  return vec4(positionGeometry, select(glassy, level, scrape)).toVarying('vCrack');
 };
 // Broken glass (BROKEN_GLASS_GLSL in car.ts, the same). A windscreen is laminated: it stays
 // in, crazed in spider webs round where it was hit (a crushed white spot, cracks running
@@ -141,6 +165,15 @@ const brokenGlass = (q: N, aa: N, laminated: N, level: N) => {
   const gone = step(0.64, smooth1(q.mul(1.7)).add(h.sub(0.5).mul(float(0.06).sub(smoothstep(0.0015, 0.004, aa).mul(0.05))))).mul(step(2.5, level)).mul(tempered);
   const lines = max(max(spoke, ring), max(seam, joint.mul(tempered)));
   return { lines, crush, frost: tone.mul(tempered), gone };
+};
+// The paint scraped where the metal was pushed in `push` metres (SCRAPED_GLSL in car.ts,
+// the same); `u` and `fw`: where across the streaks the point is, and how many a pixel takes.
+const scraped = (c: N, p: N, push: N, u: N, fw: N): N => {
+  const a: N = smoothstep(SC.from, SC.full, push), share: N = a.mul(SC.lines);
+  const h: N = hash1(vec2(floor(u), floor(p.x.mul(3).add(p.z.mul(3)))));
+  const line: N = step(h, share).mul(fract(h.mul(7.13)).mul(0.6).add(0.4))
+    .mul(smoothstep(SC.width, fw.add(SC.width), abs(fract(u).sub(0.5))).oneMinus());
+  return mix(c.mul(a.mul(-SC.dull).add(1)), vec3(...SC.metal), mix(line, share.mul(2 * SC.width), smoothstep(0.4, 1.2, fw)));
 };
 // The gloss (CAR_GLOSS in car.ts): the sky and the lamps' light mirrored by what faces up, and
 // more of it by what's seen at a slant; more when wet.
@@ -237,6 +270,7 @@ addPort(/^cars(?:-service|-dustcart|-close|-coachglass|-coachwork)?$/, (node, le
     return select(hinge.x.greaterThan(0), vec3(c.mul(x).add(steer.mul(p.z)), y, c.mul(p.z).sub(steer.mul(x))), vec3(x,y,p.z));
   };
   const proto = Object.getPrototypeOf(node);
+  let dentPush: N = float(0), dentGlass: N = float(0); // (how far in the dents pushed the vertex, and crackLevel there: setupPosition)
   // (Before the instance's own transform goes on, in setupPosition.)
   node.setupPosition = function (builder: N) {
     shareInstances(builder);
@@ -259,7 +293,9 @@ addPort(/^cars(?:-service|-dustcart|-close|-coachglass|-coachwork)?$/, (node, le
       pos = select(wheel, wheelPos, pos);
       nrm = select(wheel, wheelNormal, nrm);
     }
-    const d = dentAt(), bent = dented(pos, d), normal = dentNormal(nrm, positionGeometry, d);
+    const dent = crumple(positionGeometry, nrm), bent: N = pos.add(dent.move), normal: N = dent.normal;
+    dentPush = length(dent.move);
+    if (!closeCar) dentGlass = crackLevel(positionGeometry);
     const p = swing(bent.xz.sub(hinge.xy), closeCar).add(hinge.xy), n = swing(normal.xz, closeCar);
     positionLocal.assign(vec3(p.x, bent.y, p.y));
     normalLocal.assign(vec3(n.x, normal.y, n.y));
@@ -291,7 +327,9 @@ addPort(/^cars(?:-service|-dustcart|-close|-coachglass|-coachwork)?$/, (node, le
       });
     }
     // Broken glass (brokenGlass), from level 2. Its plane is the one the pane faces most.
-    const crack = crackFor(key === 'cars-coachglass' ? 'all' : closeCar ? 'none' : 'colour');
+    const crack = crackFor(key === 'cars-coachglass' ? 'all' : closeCar ? 'none' : 'colour', dentPush, dentGlass);
+    const scrapeU: N = crack.y.mul(100).add(sin(crack.x.mul(4.1).add(crack.z.mul(3.7))).mul(1.5)), scrapeFw: N = fwidth(scrapeU);
+    If(crack.w.lessThan(-0.002), () => { diffuseColor.rgb.assign(scraped(diffuseColor.rgb, crack.xyz, crack.w.negate(), scrapeU, scrapeFw)); });
     const frost = float(0).toVar(), gone = float(0).toVar();
     if (!closeCar) {
       const n: N = normalGeometry.abs(), p: N = crack.xyz;

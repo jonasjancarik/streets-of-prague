@@ -78,7 +78,8 @@ in compass degrees (0 north, 90 east), speeds in km/h.
   `{ kind, kmh, mine }`; `.stop()` when done. Scenario `crash-sound` (wall, lamp post,
   parked car). The sound itself is measured offline (sound-levels skill, `bangs.mjs`).
 - `t.dent(car, along, left, levels)` crumples a car as a blow that far along and to the left of
-  its middle would (metres; `DENT` in `src/car.ts`) and returns `car.crush`.
+  its middle would, square to its outline there (metres; a level pushes in `DENT_SHAPE.deep`,
+  `src/car.ts`), and returns a copy of `car.blows`.
 - `t.ignite(car)` sets a car on fire; `t.fire(car)`: whether it burns, is a wreck, still
   has flames, what the fire engine sent to it is doing (`go`, `work`, `leave`) and how
   many hoses are on it, whether its roof cannon sprays and how far away it is.

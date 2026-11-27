@@ -250,14 +250,17 @@ const CITY_PATROL = 'police_city', CITY_WHITE = '#e9ebe7';
 // `broken`, plus 16 with the headlamps on, plus 32 with the tail lamps on or 64 braking.
 export const LAMP = { headLeft: 1, headRight: 2, tailLeft: 4, tailRight: 8 };
 const BREAKS = 4.5; // m/s: a knock this hard breaks a lamp it lands on
-// A car's dents, `Car.crush`: how crumpled (0 to 3) its front left and right corners, its
-// rear left and right ones, and the middle of its left and right sides are. A knock
-// harder than `from` (m/s) crumples where it lands by a level for every `per` m/s more;
-// a blow within `end` metres of the nose or the tail lands on the corners. Two bits each
-// in `paint.w` above the lamps and the kind of area (DENT_STEP), for the shader to push
-// those parts in; a corner at level 2 or more cracks the window at its end, a side its
-// side windows.
-export const DENT = { from: 3, per: 5, end: 0.9 };
+// A car's dents are the blows that crumpled it (`Car.blows`, BLOWS at most): a knock
+// harder than `from` (m/s) pushes the car in where it lands by DENT_SHAPE.deep for every
+// `per` m/s more. The shaders find them in DENT_MAP, in the row whose number (plus one)
+// is in `paint.w` above the lamps and the kind of area (DENT_STEP).
+export const DENT = { from: 3, per: 5 };
+export const BLOWS = 8;
+// A blow (Car.blows): where it landed on the car's outline (`x` along it, `z` across,
+// left negative, metres from its middle), the way it pushed (`dx`, `dz`: a unit vector,
+// into the car), how far in (`depth`, m), how wide (`r`: metres from where it landed to
+// where the metal is untouched) and `seed`, which sets where the folds fall.
+export type Blow = { x: number; z: number; dx: number; dz: number; depth: number; r: number; seed: number };
 // A blow to a driven car's tail that turns it faster than `from` rad/s sets it spinning
 // (Car.upset): the turn grows by `carry` times the blow's own (the back tyres let go), to
 // no more than `fastest`, for `per` seconds per rad/s of it, `most` at most, the last
@@ -334,7 +337,6 @@ function carGeometry(type: string, box?: string): THREE.BufferGeometry {
     : type === 'ambulance' ? ambulanceGeometry(S)
     : type === 'garbage' ? garbageGeometry(S)
     : bodyGeometry(type, box);
-  markZones(geometry);
   cache.set(k, geometry);
   return geometry;
 }
@@ -355,7 +357,6 @@ function prepareStreetCar(type: string, box?: string) {
   const key = bodyKey(type, box), street = key + '|street-wheels';
   if (!cache.has(street)) {
     const g = bodyGeometry(type, box, true);
-    markZones(g);
     cache.set(street, g);
     closeBodies.set(key, { key: street, type, box, radius: mounts[1], wheelbase: Math.abs(mounts[0] - mounts[8]), front: mounts[0], rear: mounts[8], track: 2 * Math.abs(mounts[2]), layout: bodies?.getObjectByName(type)?.userData.cabinLayout });
   }
@@ -379,7 +380,6 @@ function prepareFleetBody(type: string, box?: string): string | undefined {
   else if (type === 'truck' || type === 'artic') g = truckGeometry(type, spec, true);
   else if (type === 'garbage') g = garbageGeometry(spec, true);
   else return;
-  if (!spec.two) markZones(g);
   cache.set(street, g);
   streetFleet.set(key, street);
   return street;
@@ -404,7 +404,6 @@ function requestStreetForm(type: string) {
     for (const fit of closeBodies.values()) {
       if (fit.type !== type || fit.formed) continue;
       const g = bodyGeometry(type, fit.box, true, { shell, trim });
-      markZones(g);
       const key = sedan ? STREET_SEDAN : bodyKey(type, fit.box) + '|formed|street-wheels';
       cache.set(key, g);
       if (Array.isArray(lens) && lens.length === 3 && lens.every(Number.isFinite)) {
@@ -425,7 +424,6 @@ function prepareStreetFire() {
   const builder = boxBuilder(TYPES.fire.color, 'fire');
   fireEngineStreet(builder);
   const body = builder.done();
-  markZones(body);
   cache.set(STREET_FIRE, body);
 }
 
@@ -434,7 +432,6 @@ function streetAmbulanceBody() {
   let body = cache.get(STREET_AMBULANCE);
   if (!body) {
     body = ambulanceGeometry(TYPES.ambulance, true);
-    markZones(body);
     cache.set(STREET_AMBULANCE, body);
   }
   return body;
@@ -453,19 +450,6 @@ function charBody(k: string, body: THREE.BufferGeometry, colour: string) {
     }
     for (let i = 0; i < painted.count; i++) painted.setX(i, Math.floor(painted.getX(i) / 16) * 16);
     cache.set(k, g);
-  }
-}
-
-// Where on the car each vertex is, for the dents: along it (-1 the tail, 1 the nose) and
-// across (-1 the left, 1 the right), each in 32 steps, as 16 × (along + 32 × across)
-// on top of what `painted` holds (under 16).
-function markZones(g: THREE.BufferGeometry) {
-  g.computeBoundingBox();
-  const { min, max } = g.boundingBox!, pos = g.getAttribute('position'), painted = g.getAttribute('painted');
-  const step = (v: number, lo: number, hi: number) => Math.round(Math.min(1, Math.max(0, v > 0 ? 0.5 + 0.5 * v / hi : 0.5 - 0.5 * v / lo)) * 31);
-  for (let i = 0; i < pos.count; i++) {
-    const along = step(pos.getX(i), min.x, max.x), across = step(pos.getZ(i), min.z, max.z);
-    painted.setX(i, painted.getX(i) + 16 * (along + 32 * across));
   }
 }
 
@@ -1324,77 +1308,152 @@ export const CAR_STRIPS = { stripTop: 0.7, stripHorizon: 0.806, stripGain: 3.5, 
 // in the vertex stage into vLit, 4 a step, so it needs no varying of its own.
 export const AREA_STEP = 256;
 if (KINDS.length * AREA_STEP > DENT_STEP) throw new Error('Too many kinds of area for paint.w');
-// The dents in the vertex stage (DENT; the same in TSL: webgpu/vehicles.ts). `zoneAt`:
-// where on the car a vertex is (markZones), along it and across, left positive.
-// `dentAt`: how far in the nose, the tail, the left and the right are pushed there (0
-// to 3). `bumpy`: a smooth unevenness (0 to 1), so the crumpled metal isn't flat.
-// A dented part comes in by up to `nose` or `side` metres a level, sags by up to `sag`
-// of its height and tilts by up to `tilt`. Everything at one spot of the side (or the
-// nose, or the tail) comes in by the same amount, whatever its depth in the car: the
-// unevenness doesn't depend on how far in a part is, and a side dent comes in fully
-// over the outer third of the car's width, so the panels and the trim just inside them
-// move together instead of the panels passing through the trim (or the bumper through
-// the grille). It eases off above the doors, so the roof doesn't come down on the people inside.
-export const DENT_SHAPE = { nose: 0.13, side: 0.11, sag: 0.03, tilt: 0.12 };
-// What the dents (DENT_GLSL) do to a seated driver, whose figure isn't part of the car's
-// model: how far in from their door (m) a crumpled side pushes them, so the door doesn't
-// pass through them, and the share of its height the car keeps over them (the sag). The
-// seat is at `x` along the car and `z` across it (left negative), the pelvis and the roof
-// at `pelvis` and `roof` metres up; `halfL` and `halfW` are half the car's size.
-export function seatDent(crush: readonly number[], halfL: number, halfW: number, x: number, pelvis: number, z: number, roof: number): [number, number] {
-  const level = (i: number) => Math.min(3, Math.floor(crush[i]));
-  const ease = (a: number, b: number, v: number) => { const t = clamp((v - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
-  const bumpy = (a: number, b: number, c: number) => 0.5 + 0.25 * (Math.sin(a * 11 + c * 7) + Math.sin(c * 13 - b * 9 + 2));
-  const ax = clamp(x / halfL, -1, 1), mid = 1 - ax * ax;
-  // The door beside the seat (at.y ±1), from the pelvis to the shoulders, where it comes in most.
-  const door = level(z < 0 ? 4 : 5) * mid;
+// The dents in the vertex stage (DENT_GLSL; the same in TSL: crumple in
+// webgpu/vehicles.ts, and blowMove here for the drivers). Around each blow the metal is
+// pushed in the blow's way: fully within `flat` of its width of where it landed, less
+// further out, to nothing at its edge. Folds across it (creases running up the panels,
+// and fainter ones along them) make it push in `fold` more or less in places, and where an end is
+// crushed the bonnet or boot lid buckles up and down by `buckle` of the push. Everything
+// at one spot comes in together whatever its depth in the car, until the crumple zone
+// (`zone` plus `give` times the depth, m, in from where the blow landed) ends: beyond it
+// nothing moves, and in it the parts close up on each other, so the panels can't pass
+// through the trim behind them. The push eases off by `roof` from the doors up, so the
+// roof doesn't come down on the people inside. A blow pushes in `deep` metres a level
+// (DENT), `most` at most, and reaches `wide` plus `spread` times its depth, up to `beam`
+// more on the nose or tail (the bumper spreads it), `widest` at most; a blow within `merge` of an earlier one's width of it, pushing much the same
+// way, deepens that one instead. Windows within `reach` metres in from a blow and less
+// than twice its width to either side break once it's pushed in `glass` metres (less
+// further from it; BROKEN_GLASS), and lose pieces at 1.5 times that.
+export const DENT_SHAPE = {
+  deep: 0.16, most: 0.6, wide: 0.3, spread: 1.6, beam: 0.5, widest: 1.4, flat: 0.3, merge: 0.4,
+  zone: 0.35, give: 1.6, fold: 0.45, buckle: 0.35, roof: 0.65, reach: [1.6, 2.6], glass: 0.24,
+};
+const DS = DENT_SHAPE;
+const ease = (a: number, b: number, v: number) => { const t = clamp((v - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const fract = (v: number) => v - Math.floor(v);
+// How far a blow pushes the point (x, y, z) of its car (DENT_GLSL's blowAt), into `out`.
+function blowMove(b: Blow, x: number, y: number, z: number, out: [number, number, number]) {
+  const rx = x - b.x, rz = z - b.z, s = Math.max(rx * b.dx + rz * b.dz, 0), lat = rz * b.dx - rx * b.dz;
+  const w = 1 - ease(DS.flat * b.r, b.r, Math.abs(lat));
+  const fold = 1.2 * Math.abs(fract(lat * 2.4 + y * 0.6 + b.seed) - 0.5) + 0.8 * Math.abs(fract(y * 3.3 - lat * 0.5 + b.seed * 1.7) - 0.5);
+  const push = b.depth * w * (1 + DS.fold * (fold - 0.5)) * clamp(1 - s / (DS.zone + DS.give * b.depth), 0, 1) * (1 - DS.roof * ease(0.85, 1.35, y));
+  out[0] += b.dx * push;
+  out[1] += push * DS.buckle * (fold - 0.5) * ease(0.6, 0.85, y) * Math.abs(b.dx);
+  out[2] += b.dz * push;
+}
+// What the dents do to a seated driver, whose figure isn't part of the car's model: how
+// far in from their door (m) the blows push them, so the door doesn't pass through them,
+// and the share of its height the car keeps over them. The seat is at `x` along the car
+// and `z` across it (left negative), the pelvis and the roof `pelvis` and `roof` metres up.
+export function seatDent(blows: readonly Blow[], x: number, pelvis: number, z: number, roof: number): [number, number] {
+  const m: [number, number, number] = [0, 0, 0], side = Math.sign(z) || -1;
   let inward = 0;
   for (let y = pelvis; y <= pelvis + 0.6; y += 0.15) {
-    inward = Math.max(inward, door * DENT_SHAPE.side * (0.5 + bumpy(x, y, 0)) * (1 - 0.65 * ease(0.85, 1.35, y)));
+    m.fill(0);
+    for (const b of blows) blowMove(b, x + 0.3, y, z + side * 0.25, m);
+    inward = Math.max(inward, -side * m[2]);
   }
-  // The roof over the seat.
-  const ay = clamp(-z / halfW, -1, 1), l = ease(-0.9, 0.7, ay), r = ease(-0.9, 0.7, -ay);
-  const sum = ease(0.45, 1, ax) * (level(0) * l + level(1) * r) + ease(0.45, 1, -ax) * (level(2) * l + level(3) * r)
-    + (ease(0.15, 0.7, ay) * level(4) + ease(0.15, 0.7, -ay) * level(5)) * mid;
-  return [inward, 1 - sum * DENT_SHAPE.sag * bumpy(z, roof, x)];
+  m.fill(0);
+  for (const b of blows) blowMove(b, x, roof, z, m);
+  return [inward, 1 + Math.min(0, m[1]) / roof];
+}
+// The blows of the cars being drawn, for the shaders: a row a dented car, two texels a
+// blow (x, z, dx, dz; depth, r, seed), given out as the cars are drawn and taken back
+// from those drawn longest ago when they run out.
+const DENT_ROWS = 1024;
+export const DENT_MAP = new THREE.DataTexture(new Float32Array(BLOWS * 8 * DENT_ROWS), BLOWS * 2, DENT_ROWS, THREE.RGBAFormat, THREE.FloatType);
+DENT_MAP.needsUpdate = true;
+const dentRows = new Map<Car, { row: number; version: number; seen: number }>();
+let dentFrame = 0;
+// The car's row of DENT_MAP (-1: it has no dents), written afresh if its blows changed.
+function dentRow(c: Car) {
+  if (!c.blows.length) return -1;
+  let e = dentRows.get(c);
+  if (!e) {
+    let row = dentRows.size;
+    if (row >= DENT_ROWS) {
+      let oldest: Car | undefined;
+      for (const [car, x] of dentRows) if (!oldest || x.seen < dentRows.get(oldest)!.seen) oldest = car;
+      row = dentRows.get(oldest!)!.row;
+      dentRows.delete(oldest!);
+    }
+    e = { row, version: -1, seen: 0 };
+    dentRows.set(c, e);
+  }
+  e.seen = dentFrame;
+  if (e.version !== c.dentVersion) {
+    const data = DENT_MAP.image.data as Float32Array, at = e.row * BLOWS * 8;
+    data.fill(0, at, at + BLOWS * 8);
+    c.blows.forEach((b, i) => data.set([b.x, b.z, b.dx, b.dz, b.depth, b.r, b.seed, 0], at + i * 8));
+    e.version = c.dentVersion;
+    DENT_MAP.needsUpdate = true;
+  }
+  return e.row;
 }
 // Broken glass (BROKEN_GLASS_GLSL; brokenGlass in webgpu/vehicles.ts): the cracks and
 // crushed glass are `white`, a crazed toughened pane is frosted up to `frost` of the way
 // to it, a windscreen's crushed spot `crush` of the way, and where pieces of a pane are
 // gone the car's dark `inside` shows (on glass you can see through, nothing).
+// Paint scraped where a blow pushed the metal in (SCRAPED_GLSL; scraped in
+// webgpu/vehicles.ts): from `from` metres in to `full`, the paint turns up to `dull`er
+// and scratched down to the bare `metal` in streaks along the car (up to `lines` of the
+// places a streak could run, each `width` of the gap between them), some deeper than others.
+export const SCRAPED = { from: 0.05, full: 0.22, dull: 0.15, metal: [0.5, 0.51, 0.52], lines: 0.14, width: 0.07 };
 export const BROKEN_GLASS = { white: [0.72, 0.75, 0.77], frost: 0.55, crush: 0.45, inside: [0.02, 0.02, 0.022] };
 const DENT_GLSL = /* glsl */ `
-float dentLevel(float i) { return mod(floor(floor(paint.w / ${DENT_STEP}.) / exp2(2. * i)), 4.); }
-vec2 zoneAt() { float z = floor(painted / 16.); return vec2(mod(z, 32.) / 15.5 - 1., 1. - floor(z / 32.) / 15.5); }
-vec4 dentAt(vec2 at) {
-  float l = smoothstep(-.9, .7, at.y), r = smoothstep(-.9, .7, -at.y), mid = 1. - at.x * at.x;
-  return vec4(smoothstep(.45, 1., at.x) * (dentLevel(0.) * l + dentLevel(1.) * r),
-    smoothstep(.45, 1., -at.x) * (dentLevel(2.) * l + dentLevel(3.) * r),
-    smoothstep(.15, .7, at.y) * mid * dentLevel(4.), smoothstep(.15, .7, -at.y) * mid * dentLevel(5.));
+uniform sampler2D uDents;
+int dentRow() { return int(floor(paint.w / ${DENT_STEP}.)) - 1; }
+vec3 blowAt(vec3 p, vec4 a, vec4 b) {
+  vec2 rel = p.xz - a.xy;
+  float s = max(dot(rel, a.zw), 0.), lat = rel.y * a.z - rel.x * a.w;
+  float w = 1. - smoothstep(${DS.flat} * b.y, b.y, abs(lat));
+  float fold = 1.2 * abs(fract(lat * 2.4 + p.y * .6 + b.z) - .5) + .8 * abs(fract(p.y * 3.3 - lat * .5 + b.z * 1.7) - .5);
+  float push = b.x * w * (1. + ${DS.fold} * (fold - .5)) * clamp(1. - s / (${DS.zone} + ${DS.give} * b.x), 0., 1.) * (1. - ${DS.roof} * smoothstep(.85, 1.35, p.y));
+  return vec3(a.z * push, push * ${DS.buckle} * (fold - .5) * smoothstep(.6, .85, p.y) * abs(a.z), a.w * push);
 }
-float bumpy(vec3 p) { return .5 + .25 * (sin(p.x * 11. + p.z * 7.) + sin(p.z * 13. - p.y * 9. + 2.)); }
-vec3 dented(vec3 p, vec4 d) {
-  float along = .5 + bumpy(vec3(0., p.yz)), across = (.5 + bumpy(vec3(p.xy, 0.))) * (1. - .65 * smoothstep(.85, 1.35, p.y));
-  p.x += (d.y - d.x) * ${DENT_SHAPE.nose.toFixed(2)} * along;
-  p.z += (d.z - d.w) * ${DENT_SHAPE.side.toFixed(2)} * across;
-  p.y *= 1. - (d.x + d.y + d.z + d.w) * ${DENT_SHAPE.sag.toFixed(2)} * bumpy(p.zyx);
-  return p;
+// How far the blows push the vertex at p in (\`move\`), and its normal n once they have.
+vec3 crumple(vec3 p, vec3 n, out vec3 move) {
+  move = vec3(0.);
+  int row = dentRow();
+  if (row < 0) return n;
+  vec3 t1 = normalize(cross(n, abs(n.y) < .9 ? vec3(0., 1., 0.) : vec3(1., 0., 0.))), t2 = cross(n, t1), m1 = vec3(0.), m2 = vec3(0.);
+  for (int i = 0; i < ${BLOWS}; i++) {
+    vec4 a = texelFetch(uDents, ivec2(2 * i, row), 0), b = texelFetch(uDents, ivec2(2 * i + 1, row), 0);
+    if (b.x <= 0.) break;
+    move += blowAt(p, a, b);
+    m1 += blowAt(p + t1 * .03, a, b);
+    m2 += blowAt(p + t2 * .03, a, b);
+  }
+  return normalize(cross(t1 * .03 + m1 - move, t2 * .03 + m2 - move));
 }
-vec3 dentNormal(vec3 n, vec3 p, vec4 d) {
-  float k = (d.x + d.y + d.z + d.w) * ${DENT_SHAPE.tilt.toFixed(2)};
-  return normalize(n + vec3(sin(p.z * 17. + 1.), 0., sin(p.x * 19.)) * k);
-}
-// How crumpled the corner or side a window is at is (0 to 3): from 2 it's broken.
-float crackLevel(vec2 at) {
-  float end = at.x > .05 ? max(dentLevel(0.), dentLevel(1.)) : at.x < -.05 ? max(dentLevel(2.), dentLevel(3.)) : 0.;
-  float side = at.y > .4 ? dentLevel(4.) : at.y < -.4 ? dentLevel(5.) : 0.;
-  return max(end, side);
+// How hard a window was hit where p is (0 to 3): from 2 it's broken.
+float crackLevel(vec3 p) {
+  int row = dentRow();
+  if (row < 0) return 0.;
+  float hit = 0.;
+  for (int i = 0; i < ${BLOWS}; i++) {
+    vec4 a = texelFetch(uDents, ivec2(2 * i, row), 0), b = texelFetch(uDents, ivec2(2 * i + 1, row), 0);
+    if (b.x <= 0.) break;
+    vec2 rel = p.xz - a.xy;
+    float s = max(dot(rel, a.zw), 0.), lat = rel.y * a.z - rel.x * a.w;
+    hit += b.x * (1. - smoothstep(b.y * .6, b.y * 1.8, abs(lat))) * (1. - smoothstep(${DS.reach[0]}, ${DS.reach[1]}, s));
+  }
+  return min(3., 2. * hit / ${DS.glass});
 }`;
 // Broken glass (BROKEN_GLASS; the same as brokenGlass in webgpu/vehicles.ts, which says
 // what it draws). `q`: the point in the pane's plane (metres), `aa`: metres a pixel.
 // Returns the cracks, the windscreen's crushed spot, the toughened glass's frost and
 // whether a piece is gone.
 const BROKEN_GLASS_GLSL = /* glsl */ `
+// The paint scraped where the metal was pushed in \`push\` metres (SCRAPED); \`u\` and \`fw\`:
+// where across the streaks the point is, and how many of them a pixel takes.
+vec3 scraped(vec3 c, vec3 p, float push, float u, float fw) {
+  float a = smoothstep(${SCRAPED.from}, ${SCRAPED.full}, push), share = a * ${SCRAPED.lines};
+  float h = fract(sin(dot(vec2(floor(u), floor(p.x * 3. + p.z * 3.)), vec2(127.1, 311.7))) * 43758.5453);
+  float line = step(h, share) * (.4 + .6 * fract(h * 7.13)) * (1. - smoothstep(${SCRAPED.width}, ${SCRAPED.width} + fw, abs(fract(u) - .5)));
+  line = mix(line, share * ${2 * SCRAPED.width}, smoothstep(.4, 1.2, fw));
+  return mix(c * (1. - ${SCRAPED.dull} * a), vec3(${SCRAPED.metal.join(', ')}), line);
+}
 float bgHash(vec2 c) { return fract(sin(dot(c, vec2(127.1, 311.7))) * 43758.5453); }
 vec2 bgHash2(vec2 c) { return fract(sin(vec2(dot(c, vec2(127.1, 311.7)), dot(c, vec2(269.5, 183.3)))) * 43758.5453); }
 float bgSmooth(vec2 p) {
@@ -1502,7 +1561,7 @@ ${DENT_GLSL}`)
     .replace('#include <color_vertex>', `#include <color_vertex>
 float own = mod(floor(painted), 16.), lamp = floor(own * .5 + .01);
 vColor.rgb *= mix(vec3(1.), paint.rgb, own - 2. * lamp);
-vCrack = vec4(position, own < .5 && CRACK_GLASS ? crackLevel(zoneAt()) : 0.);
+vCrack = vec4(position, own < .5 && CRACK_GLASS ? crackLevel(position) : 0.);
 vLit = 0.;
 if (lamp > .5) {
   float tail = mod(floor(paint.w / 32.), 4.);
@@ -1510,9 +1569,10 @@ if (lamp > .5) {
   if (mod(floor(paint.w / exp2(lamp - 1.)), 2.) > .5) { vLit = -1.; vColor.rgb = vec3(.05, .05, .055); }
 }
 vLit += 4. * mod(floor(paint.w / ${AREA_STEP}.), ${DENT_STEP / AREA_STEP}.);`)
-    .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nvCrackN = objectNormal;\nvec4 dents = dentAt(zoneAt());\nobjectNormal = dentNormal(objectNormal, position, dents);\nobjectNormal.xz = swing(objectNormal.xz);')
-    .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed = dented(transformed, dents);\ntransformed.xz = hinge.xy + swing(transformed.xz - hinge.xy);');
+    .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nvCrackN = objectNormal;\nvec3 dentMove;\nobjectNormal = crumple(position, objectNormal, dentMove);\nobjectNormal.xz = swing(objectNormal.xz);\nif (vCrack.w <= 0. && own - 2. * lamp > .5) vCrack.w = -length(dentMove);')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed += dentMove;\ntransformed.xz = hinge.xy + swing(transformed.xz - hinge.xy);');
   sh.uniforms.uSnow = SNOW;
+  sh.uniforms.uDents = { value: DENT_MAP };
   Object.assign(sh.uniforms, { uWet: WET, ...VEHICLE_VIEW_UNIFORMS, uMirror: CAR_MIRROR, uVrAt: VR_GLASS.at, uVrBox: VR_GLASS.box });
   sh.fragmentShader = sh.fragmentShader
     .replace('#include <common>', `#include <common>\nuniform float uSnow;\nvarying float vLit;\nvarying vec4 vCrack;\nvarying vec3 vCrackN;\nuniform vec4 uVrAt, uVrBox;\n#define VR_GLAZED (dot(vColor.rgb, vec3(.3, .59, .11)) < .04 && vColor.b > vColor.r * 1.25)\n${COAT_GLSL}\n${BROKEN_GLASS_GLSL}`)
@@ -1534,6 +1594,8 @@ vLit += 4. * mod(floor(paint.w / ${AREA_STEP}.), ${DENT_STEP / AREA_STEP}.);`)
   vec3 crackN = abs(vCrackN);
   vec2 crackQ = crackN.z >= max(crackN.x, crackN.y) ? vCrack.xy : crackN.x >= crackN.y ? vCrack.zy : vCrack.xz;
   float crackAa = max(max(fwidth(crackQ.x), fwidth(crackQ.y)), .0002), glassFrost = 0., glassGone = 0.;
+  float scrapeU = vCrack.y * 100. + 1.5 * sin(vCrack.x * 4.1 + vCrack.z * 3.7), scrapeFw = fwidth(scrapeU);
+  if (vCrack.w < -.002) diffuseColor.rgb = scraped(diffuseColor.rgb, vCrack.xyz, -vCrack.w, scrapeU, scrapeFw);
   if (vCrack.w > 1.5) {
     vec4 b = brokenGlass(crackQ, crackAa, vCrackN.x > .25 && vCrack.x > 0. && crackN.z < max(crackN.x, crackN.y) ? 1. : 0., vCrack.w);
     vec3 pale = vec3(${BROKEN_GLASS.white.map((v) => v.toFixed(2)).join(', ')});
@@ -1613,8 +1675,8 @@ vec3 rollWheel(vec3 p) {
   return hinge.x > 0. ? vec3(c*spun.x+steer*p.z, spun.y, -steer*spun.x+c*p.z) : vec3(spun,p.z);
 }
 vec2 swing(vec2 p)`)
-    .replace('vec4 dents = dentAt(zoneAt());', 'vec4 dents = dentAt(zoneAt()); if (hinge.z < 0.) { objectNormal = rollWheel(objectNormal); if (roll.w < 0.) objectNormal = wheelLevel(objectNormal); }')
-    .replace('transformed = dented(transformed, dents);', `float brightness = dot(color.rgb,vec3(.3,.59,.11));
+    .replace('objectNormal = crumple(position, objectNormal, dentMove);', 'objectNormal = crumple(position, objectNormal, dentMove); if (hinge.z < 0.) { objectNormal = rollWheel(objectNormal); if (roll.w < 0.) objectNormal = wheelLevel(objectNormal); }')
+    .replace('transformed += dentMove;', `float brightness = dot(color.rgb,vec3(.3,.59,.11));
 bool glazed = brightness < .04 && color.b > color.r*1.25;
 vWheelCoat = (mod(floor(painted),16.) == 0. && !glazed) ? mix(.08,1.,smoothstep(.035,.17,brightness)) : 1.;
 vPlateUV = vec2(-1.);
@@ -1634,7 +1696,7 @@ if (hinge.z < 0.) {
   vWheelCoat = mix(.045,.45,smoothstep(.045,.24,dot(color.rgb,vec3(.3,.59,.11))));
 }
 if (hinge.z > 11.5) vWheelCoat = .065;
-transformed = dented(transformed, dents);`);
+transformed += dentMove;`);
   sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vWheelCoat; varying vec2 vPlateUV; uniform sampler2D uRegistration;')
     .replace('#include <color_fragment>', '#include <color_fragment>\n if (vPlateUV.x >= 0.) diffuseColor.rgb *= texture2D(uRegistration, vPlateUV).rgb;')
     .replace('#include <specularmap_fragment>', '#include <specularmap_fragment>\n specularStrength *= vWheelCoat;')
@@ -1801,7 +1863,9 @@ export class Car {
   // Which lamps are smashed (bits of LAMP), and whether the brake lights are on.
   broken = 0;
   // How crumpled the corners and sides are (see DENT).
-  crush = [0, 0, 0, 0, 0, 0];
+  // The blows that crumpled it (Blow), and a count of their changes.
+  blows: Blow[] = [];
+  dentVersion = 0;
   braking = false;
   treeEscape?: TreeEscape;
   // A police car with the frame on its nose, which keeps its headlamps from breaking.
@@ -1952,14 +2016,15 @@ export class Car {
     carGeometry(this.bodyType, RAM);
   }
 
-  // Something hit the car at (x, y) at `force` m/s: a lamp the blow lands on is smashed.
+  // Something hit the car at (x, y) at `force` m/s, pushing it the way of (`pushX`,
+  // `pushY`) if that's known: it's dented there, and a lamp the blow lands on is smashed.
   // The harder the knock, the further from it a lamp still breaks.
-  knock(x: number, y: number, force: number) {
+  knock(x: number, y: number, force: number, pushX?: number, pushY?: number) {
     if (this.two || force < DENT.from) return;
     const c = Math.cos(this.h), s = Math.sin(this.h), dx = x - this.x, dy = y - this.y;
     const L = this.spec.L / 2, W = this.spec.W / 2;
     const along = clamp(dx * c + dy * s, -L, L), left = clamp(dy * c - dx * s, -W, W);
-    this.dent(along, left, (force - DENT.from) / DENT.per);
+    this.dent(along, left, (force - DENT.from) / DENT.per, pushX === undefined ? undefined : [pushX * c + pushY! * s, pushY! * c - pushX * s]);
     if (force < BREAKS || this.broken === 15) return;
     // (A wall met nose first is first touched with one corner: at 60 km/h the blow still
     // reaches the lamp at the other one, at 50 it doesn't.)
@@ -1970,23 +2035,41 @@ export class Car {
     }
   }
 
-  // Crumples the car where a blow lands (`along` and `left` of its middle) by `levels`:
-  // the corners at that end, the more the nearer it is (a blow in the middle of the nose
-  // takes both), or the side.
-  dent(along: number, left: number, levels: number) {
-    const L = this.spec.L / 2, u = left / (this.spec.W / 2), k = this.crush;
-    const add = (i: number, v: number) => { k[i] = Math.min(3, k[i] + levels * clamp(v, 0, 1)); };
-    if (Math.abs(along) > L - DENT.end) {
-      const i = along > 0 ? 0 : 2;
-      add(i, 1 + 1.5 * u);
-      add(i + 1, 1 - 1.5 * u);
-    } else add(u > 0 ? 4 : 5, 0.7);
+  // Crumples the car where a blow lands (`along` and `left` of its middle) by `levels`,
+  // pushing it `push` (forwards and left, any length), or square to its outline there.
+  dent(along: number, left: number, levels: number, push?: [number, number]) {
+    const depth = Math.min(DS.most, levels * DS.deep);
+    if (!(depth > 0.005) || this.two) return;
+    const L = this.spec.L / 2, W = this.spec.W / 2;
+    let x = clamp(along, -L, L), z = -clamp(left, -W, W);
+    // Into the car: square to its outline (a box with rounded corners) where the blow
+    // landed, or the blow's own way where that goes in.
+    let dx = -Math.sign(x) * (Math.abs(x) / L) ** 4 / L, dz = -Math.sign(z) * (Math.abs(z) / W) ** 4 / W;
+    if (push && push[0] * dx - push[1] * dz > 0) [dx, dz] = [push[0], -push[1]];
+    const n = Math.hypot(dx, dz);
+    if (n < 1e-9) [dx, dz] = [0, z > 0 ? -1 : 1];
+    else { dx /= n; dz /= n; }
+    // Back along that way to the outline.
+    const t = Math.min(dx ? (dx < 0 ? L - x : x + L) / Math.abs(dx) : Infinity, dz ? (dz < 0 ? W - z : z + W) / Math.abs(dz) : Infinity);
+    if (Number.isFinite(t)) { x -= dx * t; z -= dz * t; }
+    const reach = (d: number) => Math.min(DS.widest, (DS.wide + DS.spread * d) * (1 + DS.beam * Math.abs(dx)));
+    const r = reach(depth);
+    let b = this.blows.find((o) => Math.hypot(o.x - x, o.z - z) < DS.merge * Math.max(o.r, r) && o.dx * dx + o.dz * dz > 0.7);
+    if (!b && this.blows.length >= BLOWS) b = this.blows.reduce((a, o) => Math.hypot(o.x - x, o.z - z) < Math.hypot(a.x - x, a.z - z) ? o : a);
+    if (b) {
+      const k = depth / (b.depth + depth), ex = b.dx + (dx - b.dx) * k, ez = b.dz + (dz - b.dz) * k, e = Math.hypot(ex, ez) || 1;
+      b.x += (x - b.x) * k; b.z += (z - b.z) * k; b.dx = ex / e; b.dz = ez / e;
+      b.depth = Math.min(DS.most, b.depth + depth);
+      b.r = Math.max(b.r, r, reach(b.depth));
+    } else this.blows.push({ x, z, dx, dz, depth, r, seed: fract(Math.sin(x * 12.9898 + z * 78.233) * 43758.5453) * 7 });
+    this.dentVersion++;
   }
-  // The dents as the shader takes them (DENT).
-  get dents() {
-    let d = 0;
-    for (let i = 0; i < 6; i++) d += Math.min(3, Math.floor(this.crush[i])) * 4 ** i;
-    return d;
+  // The dents of a game saved before blows (`crush`: how crumpled, 0 to 3, its front
+  // left and right corners, its rear ones and the middle of its sides were), as blows.
+  uncrush(crush: readonly number[]) {
+    const L = this.spec.L / 2, W = this.spec.W / 2;
+    const at = [[L, W * 0.6], [L, -W * 0.6], [-L, W * 0.6], [-L, -W * 0.6], [0, W], [0, -W]];
+    crush.forEach((v, i) => { if (v > 0) this.dent(at[i][0], at[i][1], Math.min(3, v)); });
   }
 
   // Choose (or choose again) which model of its type this is, by the variants' weights.
@@ -2276,7 +2359,7 @@ export class Car {
     const rx = cx / hits - this.x, ry = cy / hits - this.y;
     this.w += (rx * ny - ry * nx) * vn * 0.09;
     this.takeImpactDamage(Math.max(0, -vn - (this.spec.tough ?? 3)));
-    this.knock(cx / hits, cy / hits, -vn);
+    this.knock(cx / hits, cy / hits, -vn, nx, ny);
     return -vn;
   }
 
@@ -2688,6 +2771,7 @@ export class CarPool {
     // By night the cars that are driving have their lamps on (as in lamps.ts); the brake
     // lights show by day as well.
     const night = LAMP_ON.value > 0.005;
+    dentFrame++;
     for (const [k, list] of this.groups) {
       let pages = this.meshes.get(k);
       if (!pages) { this.latePages++; this.page(k); pages = this.meshes.get(k)!; }
@@ -2772,13 +2856,13 @@ export class CarPool {
             VR_SEAT.eye.set(l[9] - 0.06, Math.min(pelvis + 0.74, l[5] - 0.1), -l[10]).applyMatrix4(d.matrix);
             VR_SEAT.frame = VR_SEAT.frames;
           } else if (occupied && fit.layout) {
-            const l = fit.layout, dent = c.dents ? seatDent(c.crush, c.spec.L / 2, c.spec.W / 2, l[9] - .14, l[3] + .205, -l[10], l[5]) : undefined;
+            const l = fit.layout, dent = c.blows.length ? seatDent(c.blows, l[9] - .14, l[3] + .205, -l[10], l[5]) : undefined;
             const seat=this.drivers?.put(fit.layout,travel.plate,c.type==='police' && c.mode!=='player',d.matrix,dent);
             if (c.entryDriver) this.rememberDriver(c,travel.plate%2,seat);
           }
         }
         if (driverSeat && (c.mode !== 'loose' || c.entryDriver) && c !== VR_SEAT.car) {
-          const dent = c.dents ? seatDent(c.crush, c.spec.L / 2, c.spec.W / 2, driverSeat[0], driverSeat[1], driverSeat[2], driverSeat[3]) : undefined;
+          const dent = c.blows.length ? seatDent(c.blows, driverSeat[0], driverSeat[1], driverSeat[2], driverSeat[3]) : undefined;
           const seat=this.drivers?.putAt(driverSeat[0],driverSeat[1],driverSeat[2],driverSeat[3],0,false,d.matrix,dent);
           if (c.entryDriver) this.rememberDriver(c,0,seat);
         }
@@ -2789,7 +2873,7 @@ export class CarPool {
         let paint = this.colours.get(c.paint);
         if (!paint) { paint = new THREE.Color(c.paint); this.colours.set(c.paint, paint); }
         const on = night && !c.burnt && !(c.mode === 'loose' && c.speed < 0.5);
-        const lamps = c.broken + (on ? 16 : 0) + (c.braking && c.mode !== 'loose' ? 64 : on ? 32 : 0) + AREA_STEP * this.areaOf(c) + DENT_STEP * c.dents;
+        const lamps = c.broken + (on ? 16 : 0) + (c.braking && c.mode !== 'loose' ? 64 : on ? 32 : 0) + AREA_STEP * this.areaOf(c) + DENT_STEP * (dentRow(c) + 1);
         (m.geometry.getAttribute('paint') as THREE.InstancedBufferAttribute).setXYZW(slot, paint.r, paint.g, paint.b, lamps);
         if (c.rider && this.ride(c,riders,d.matrix,dt,streetView)) riders++;
         if (c.two === 'bike' && cache.get(k)?.userData.movingCranks) {
@@ -2898,7 +2982,8 @@ export class CarPool {
 }
 
 // Where the last two bodies that collided met.
-export const contact = { x: 0, y: 0 };
+// (`nx`, `ny`: the way from the first towards the second.)
+export const contact = { x: 0, y: 0, nx: 0, ny: 0 };
 // Circle-based collision between two bodies. `ia`/`ib` are inverse masses (0 = immovable).
 // Returns the closing speed at contact, or 0 if they don't touch.
 export function collideBodies(a: Body, ca: Point2[], ra: number, ia: number, b: Body, cb: Point2[], rb: number, ib: number, restitution = 0.25) {
@@ -2914,6 +2999,8 @@ export function collideBodies(a: Body, ca: Point2[], ra: number, ia: number, b: 
   const { pen, nx, ny } = best;
   contact.x = best.px;
   contact.y = best.py;
+  contact.nx = nx;
+  contact.ny = ny;
   const sa = ia / (ia + ib), sb = ib / (ia + ib);
   a.x -= nx * pen * sa;
   a.y -= ny * pen * sa;
