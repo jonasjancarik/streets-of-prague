@@ -69,7 +69,9 @@ export function christmasLights(streets: { name?: string | null; pts: Point2[] }
     }
   }
   if (!bulbs.length) return [];
-  const lit = new THREE.Mesh(mergeGeometries(bulbs.map(g => g.toNonIndexed())), new THREE.MeshBasicMaterial({ color: DAY }));
+  // (An octahedron is non-indexed already: toNonIndexed() only warned, 745 times on
+  // stepping into the street on the Old Town Square.)
+  const lit = new THREE.Mesh(mergeGeometries(bulbs), new THREE.MeshBasicMaterial({ color: DAY }));
   bulbs.forEach(g => g.dispose());
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(wires, 3));

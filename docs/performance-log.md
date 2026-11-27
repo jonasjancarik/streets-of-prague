@@ -2158,14 +2158,34 @@ rendering, so the counts, not the frame times, are the evidence), High, Old Town
   shadow pass) before anyone is shown in it life size. Tried first with shadows of their
   own, it only moved the same builds a couple of seconds sooner (9–10 against 11 a frame).
   With the shared ones: 27 → 21 builds, the most in one frame 5–10 → 3.
-- **Frame times, on this machine's RTX 5060 Ti** (scene.mjs has drawn on the GPU since
-  `gpu-flags.mjs`; standing still, 16.7 ms a frame): the warm-up made no difference I
-  could measure. Native WebGPU and WebGL2 both had about 46 frames over 50 ms after
-  stepping out, the worst 300–1300 ms, with it and without.
-- **What stepping into the street costs instead** (CPU profile of the 10 s after
-  `onFoot`, native WebGPU, no avatars in yet): about 2.5 s of stall. First two frames of
-  540 and 170 ms with the main thread idle (outside JavaScript, likely the GPU process
-  with the street-level view). Then 150–400 ms frames with the main thread busy: about
-  half the street simulation (`people.ts` avoid/follow/spot, traffic, `network.near`,
-  fences), texture uploads (`copyExternalImageToTexture`, 250 ms in all, one frame 145 ms),
-  shader builds (about 160 ms in all, 45 ms at most in a frame), and garbage collection.
+- **A trap in measuring frame times:** `t.wait(s)` fast-forwards, 60 simulation steps to
+  each drawn frame, so every frame it draws is a second of the street simulated at once
+  (150–400 ms). Frame times read while it runs say nothing about the game; wait in real
+  time instead (`setTimeout`). The counts above were taken under it: the totals hold,
+  but with one drawn frame a simulated second the most in one frame may read high.
+- **Stepping into the street, in real time** (this machine's RTX 5060 Ti, native WebGPU;
+  scene.mjs has drawn on the GPU since `gpu-flags.mjs`; 16.7 ms a frame standing still).
+  About 3.3 s before it holds 60 fps:
+  - first frame 267 ms: 17 shader builds (48 ms of JavaScript), 15 render pipelines and
+    22 shader modules, nearly all for things already in the scene but not drawn from
+    above (ground layers, traffic signs, advertising columns, post boxes, garden fences,
+    their shadows), and the background sphere;
+  - second frame 300 ms with the main thread idle: the GPU process compiling those;
+  - third frame 250 ms: textures decoded on the main thread as they were uploaded
+    (`copyExternalImageToTexture` with an `<img>`): `cloud-bank.webp` 87 ms, the street
+    surfaces, fences, ironwork, shop displays and passage finishes 15–30 ms each, 210 ms
+    in the one frame;
+  - then about 2.5 s of 50–100 ms frames as the street level streams in: more shader
+    builds and shadows, tile meshes (`tiles.ts` make), the street crowd's and avatars'
+    models and compiles, occlusion, garbage collection. No one of them dominates.
+- **Textures as ImageBitmaps on WebGPU** (`configureRenderer` replaces TextureLoader's
+  `load`): decoded off the main thread as they load, `cloud-bank.webp` then uploads in
+  1.3 ms (from 87) and the asphalt in 0.3 (from 26); `img.decode()` beforehand didn't
+  help (82 ms). Slow frames on stepping out 3.0 s → 1.8 s in all, the 250 ms texture
+  frame gone. A paused frame of the setts matched to within 1 level. Not on the WebGL
+  backend (`?gl2`), which doesn't flip an ImageBitmap.
+- **The Christmas garlands** called `toNonIndexed()` on each bulb, already non-indexed:
+  745 three.js warnings on stepping out on the Old Town Square, about 21 ms. Dropped.
+- **Left:** the first two frames' builds and pipelines (about 570 ms). They're for things
+  already in the scene, so drawing the street-level view once behind the scenes earlier
+  (or compiling its objects) could take them out of the step; not tried.

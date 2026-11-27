@@ -676,6 +676,34 @@ export function configureRenderer(renderer: WebGPURenderer) {
   const getForRender = nodes.getForRender.bind(nodes);
   const webgpu = 'isWebGPUBackend' in renderer.backend && renderer.backend.isWebGPUBackend === true;
   const backend = renderer.backend as any;
+  // A texture loaded as an <img> is decoded on the main thread when it's uploaded, in the
+  // first frame that draws it: cloud-bank.webp took 87 ms, and the street's textures 210 ms
+  // in one frame on stepping into the street (RTX 5060 Ti). An ImageBitmap is decoded off
+  // the main thread as it loads, and its upload took 1 ms, so on WebGPU the TextureLoader
+  // hands one instead. (Not on the WebGL backend, ?gl2: WebGL doesn't flip an ImageBitmap.)
+  if (webgpu && typeof createImageBitmap === 'function') {
+    THREE.TextureLoader.prototype.load = function (url, onLoad, onProgress, onError) {
+      // (Typed as an <img>: what reads it uses its width and height, which both have.)
+      const texture = new THREE.Texture() as THREE.Texture<HTMLImageElement>, manager = this.manager;
+      const full = manager.resolveURL((this.path ?? '') + url);
+      manager.itemStart(full);
+      fetch(full, { credentials: this.withCredentials ? 'include' : 'same-origin' })
+        .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}: ${full}`); return r.blob(); })
+        .then((blob) => createImageBitmap(blob, { premultiplyAlpha: 'none' }))
+        .then((bitmap) => {
+          texture.image = bitmap as unknown as HTMLImageElement;
+          texture.needsUpdate = true;
+          onLoad?.(texture);
+          manager.itemEnd(full);
+        }, (e) => {
+          if (onError) onError(e); else console.error('TextureLoader', e);
+          manager.itemError(full);
+          manager.itemEnd(full);
+        });
+      void onProgress;
+      return texture;
+    };
+  }
   // Instance matrices three.js keeps in a uniform buffer (a mesh with too many attributes
   // for its shared build: the trees, the people), by their array.
   const matrices = new WeakMap<object, THREE.InstancedBufferAttribute>();
