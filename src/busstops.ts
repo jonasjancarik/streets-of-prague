@@ -73,7 +73,7 @@ interface BusStopsOptions {
   edgesNear: (x: number, y: number, r: number) => DriveEdge[];
   solid: (x: number, y: number) => boolean; // a building or a wall there
   loaded: (x: number, y: number) => boolean; // the ground there has loaded
-  onRoad: (x: number, y: number) => boolean; // on the carriageway
+  onRoad: (x: number, y: number) => boolean; // on the carriageway (with its parking bays and the trams' bed)
   offscreen: (x: number, y: number) => boolean;
   send: (line: BusLine, along: number) => boolean; // a bus onto `line` at `along` (out of sight)
   rng: () => number;
@@ -141,9 +141,13 @@ export class BusStops {
     // (The surveyed kerb where there is one: a parking lane or a bay can lie between it and the lane.)
     let off = Math.max(1.8, (e.kerb?.[0] ?? e.width / 2) - e.laneOffset + 0.8);
     if (!o.loaded(q.x, q.y) || !o.loaded(x(off + 2), y(off + 2))) return false;
-    while (off < 12 && o.onRoad(x(off), y(off))) off += 0.25;
-    off += 0.3; // (a little way onto the pavement)
-    while (off > 1.2 && o.solid(x(off), y(off))) off -= 0.25;
+    while (off < 16 && o.onRoad(x(off), y(off))) off += 0.25;
+    // No pavement on this side within reach (or not loaded yet): tried again later.
+    if (o.onRoad(x(off), y(off))) return false;
+    // A little way onto the pavement, but not into a house nor back off the kerb.
+    const kerb = off;
+    off += 0.4;
+    while (off > kerb + 0.1 && (o.solid(x(off), y(off)) || o.onRoad(x(off), y(off)))) off -= 0.1;
     const sx = q.x + rx * off, sy = q.y + ry * off;
     this.slack = Math.max(this.slack, Math.abs(sx - s.x), Math.abs(sy - s.y));
     Object.assign(s, { x: sx, y: sy, ang: q.ang, placed: true });
