@@ -2229,3 +2229,14 @@ frame 30.7–31.7 ms, about 460 draws (some 200 in the sun's shadow pass), 3.6 M
 - **The life-size people's shadows** (69 of the shadow pass's draws, three meshes each):
   all of them off is 13.0 → 12.4 ms (A/B), so one merged shadow mesh a person would save
   about 0.4 ms. Not done.
+- **With the CPU slowed 4×** (`--cpu 4`, a stand-in for a phone's main thread): 12 fps,
+  JavaScript 80 ms a frame, `renderer.render` 46 of it. The shares are the fast machine's:
+  rendering 56% (the shadow pass 20%), the simulation 21% (the walkers 11.7%), avatars 4%,
+  matrices 3.6%, bloom 3.3%. The renderer's cost a draw comes first on slower machines too.
+- **The tiles' draws by tile and material** (one frame on the Old Town Square): colour 131
+  draws over 10 tiles with 121 tile-and-material pairs, so merging a tile's meshes by
+  material would save 10; 59 of them are ground layers, each a material of its own.
+  Shadow 66 draws, 25 sharing a material in a tile, nearly all street furniture: one
+  instanced mesh per kind per tile, all `cut-furniture` (33 instanced and 9 plain shadow
+  draws, 18 colour). A `BatchedMesh` per tile could draw a tile's furniture in one draw a
+  pass, about 45 fewer.
