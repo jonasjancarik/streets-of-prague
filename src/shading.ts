@@ -303,9 +303,31 @@ vec3 pPaint(vec3 c, vec2 p) {
   c *= 1. - specks * .35;
   return grit(grit(c, p), p + 41.);
 }
+// Tactile paving (p in its laying's axes, x along the strip): 40 cm concrete tiles, studs
+// 6 cm apart (23) or ribs across the strip's width running along it (24), lit from above
+// up close and plain from afar (as tactile() in webgpu.ts).
+vec3 pTactile(vec3 c, vec2 p, bool studs) {
+  float tile = blocks(p, vec2(.4, .4)).x, d = detail(p, .06);
+  c *= .92 + .1 * fbm(p * 3.) ;
+  c *= mix(.86, 1., smoothstep(.004, .012, tile));
+  if (d > 0.) {
+    float relief;
+    if (studs) {
+      vec2 q = fract(p / .06) - .5;
+      float r = length(q), top = smoothstep(.27, .2, r);
+      relief = top * (.12 + .1 * (q.y - q.x) / .3) - .14 * smoothstep(.36, .27, r) * (1. - top);
+    } else {
+      float r = abs(fract(p.y / .075) - .5) * 2.;
+      relief = .14 * smoothstep(.55, .25, r) - .1 * smoothstep(.75, .95, r);
+    }
+    c *= 1. + relief * d;
+  }
+  return c;
+}
 vec3 pattern(int id, vec3 c, vec2 p) {
   if (id == 1) return grit(pAsphalt(c, p), p);
   if (id == 22) return pPaint(c, p);
+  if (id == 23 || id == 24) return grit(pTactile(c, p, id == 23), p);
   if (id == 2) return grit(pSetts(c, p, vec2(.17, .14)), p);
   if (id == 3 || id == 16) return grit(pMosaic(c, p), p);
   if (id == 4) return grit(pSlabs(c, p), p);
@@ -343,7 +365,7 @@ float ripples(vec2 p) {
 }
 vec3 weathered(int id, vec3 c, vec2 p, inout float shine) {
   if (id == 10 || id == 17) { shine = .35; return c; }
-  bool paved = id <= 4 || id == 9 || id == 16 || id == 20 || id == 22, road = id == 1 || id == 2;
+  bool paved = id <= 4 || id == 9 || id == 16 || id == 20 || id >= 22, road = id == 1 || id == 2;
   // Streets cleared of snow are wet with the slush.
   float wet = paved && uSnow > .01 ? max(uWet, uSnow * (1. - uStreetSnow) * .8) : uWet;
   if (wet > .01) {
@@ -388,7 +410,7 @@ vec3 mirrorOf(vec3 w, vec2 p) {
 }
 `;
 
-export const PATTERN: Record<string, number> = { flat: 0, asphalt: 1, setts: 2, mosaic: 3, slabs: 4, grass: 5, wood: 6, pitch: 7, dirt: 8, concrete: 9, water: 10, gravel: 11, field: 12, meadow: 13, lawn: 14, garden: 15, pavement: 16, quietWater: 17, groovedRail: 18, graniteKerb: 20, stairStone: 21, paint: 22 };
+export const PATTERN: Record<string, number> = { flat: 0, asphalt: 1, setts: 2, mosaic: 3, slabs: 4, grass: 5, wood: 6, pitch: 7, dirt: 8, concrete: 9, water: 10, gravel: 11, field: 12, meadow: 13, lawn: 14, garden: 15, pavement: 16, quietWater: 17, groovedRail: 18, graniteKerb: 20, stairStone: 21, paint: 22, tactileStuds: 23, tactileRibs: 24 };
 
 // Buildings: tiles laid in rows down the slope of every roof face (the slope comes
 // from the face normal), slate in smaller rows, gravel on flat roofs, and a grid of
@@ -1014,7 +1036,7 @@ export function patterned(
       sh.uniforms.uDeckBox = { value: deck.box };
     }
     // Setts, mosaic, slabs and concrete: in the axes they are laid along (laying.ts).
-    const laid = [2, 3, 4, 9, 16].includes(id);
+    const laid = [2, 3, 4, 9, 16, 23, 24].includes(id);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;${laid ? '\nattribute float lay;\nvarying float vLay;' : ''}`)
       .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>\n  vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;${laid ? '\n  vLay = lay;' : ''}`);

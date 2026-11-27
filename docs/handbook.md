@@ -1356,6 +1356,12 @@ record the measurements, merge decisions and pending landmark asset activation.
   The paint is worn (the `paint` pattern, `pPaint` in `src/shading.ts` and `src/webgpu.ts`):
   dulled and uneven, worn through in patches to the grey of the road, flaking in clusters
   and specked with grit up close, and under the street's grime; from above it still reads.
+  At each zebra's kerbs lies Prague's red tactile paving (`tactile` in `src/ground.ts`, the
+  `tactileStuds` and `tactileRibs` patterns): a warning strip of studs 0.4 m deep along the
+  kerb, the zebra's width (shortened where a corner's kerb curves away), and a ribbed guide
+  strip 0.8 m wide from it back across the pavement to the house front or 4 m. The kerb is
+  where the road's surface stops past the zebra's end, beyond a parking lane mapped across
+  it; none where a house, another road or water is behind it.
   The general pavement is asphalt grey; slab squares are lighter, and park paths stay
   warm. Squares use their own OSM `surface` tag where one exists. Otherwise, a clear
   majority of mapped pedestrian and service ways crossing the square can supply its

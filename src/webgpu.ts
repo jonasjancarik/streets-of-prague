@@ -428,9 +428,26 @@ function pPaint(c0: N, p: N) {
   c.mulAssign(float(1).sub(specks.mul(.35)));
   return grit(grit(c, p), p.add(41));
 }
+// Tactile paving (pTactile in shading.ts): 40 cm tiles, studs 6 cm apart or ribs along the strip.
+function tactile(c0: N, p: N, studs: boolean) {
+  const q = laid(p), d = detail(p, .06), tile = blocks(q, .4, .4).x;
+  const c = vec3(c0).mul(fbm(q.mul(3)).mul(.1).add(.92)).mul(mix(.86, 1, smoothstep(.004, .012, tile))).toVar();
+  let relief: N;
+  if (studs) {
+    const f = fract(q.div(.06)).sub(.5), r = length(f), top = smoothstep(.27, .2, r);
+    relief = top.mul(f.y.sub(f.x).div(.3).mul(.1).add(.12)).sub(smoothstep(.36, .27, r).mul(top.oneMinus()).mul(.14));
+  } else {
+    const r = abs(fract(q.y.div(.075)).sub(.5)).mul(2);
+    relief = smoothstep(.55, .25, r).mul(.14).sub(smoothstep(.75, .95, r).mul(.1));
+  }
+  c.mulAssign(relief.mul(d).add(1));
+  return grit(c, p);
+}
 function pattern(id: number, c: N, p: N, time: N, seasonal: boolean): N {
   switch (id) {
     case 22: return pPaint(c, p);
+    case 23: return tactile(c, p, true);
+    case 24: return tactile(c, p, false);
     case 1: {
       const road = pAsphalt(c,p).toVar();
       If(surfaceDetail.lessThan(.5),()=>{ road.assign(grit(road,p)); });
@@ -461,7 +478,7 @@ function pattern(id: number, c: N, p: N, time: N, seasonal: boolean): N {
 // WEATHER_GLSL: the colour, and in .a how much of a mirror the ground is there (shine).
 function weathered(id: number, c0: N, p: N, time: N) {
   if (id === 10 || id === 17) return vec4(c0, select(uWater.greaterThan(0.5), 0, 0.35));
-  const paved = id <= 4 || id === 9 || id === 16 || id === 18 || id === 20 || id === 21 || id === 22, road = id === 1 || id === 2;
+  const paved = id <= 4 || id === 9 || id === 16 || id === 18 || id === 20 || id === 21 || id >= 22, road = id === 1 || id === 2;
   const c = vec3(c0).toVar(), shine = float(0).toVar();
   // (Derivatives outside the branches.)
   const ripple = paved ? detail(p, 0.12) : float(0);

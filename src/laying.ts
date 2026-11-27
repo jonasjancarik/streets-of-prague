@@ -9,7 +9,7 @@
 // x axis towards its y = north): the same over a piece, so the pattern is turned about
 // the world's origin and stays put however the piece is cut into triangles.
 
-export const LAID_PATTERNS = new Set(['setts', 'mosaic', 'pavement', 'slabs', 'concrete']);
+export const LAID_PATTERNS = new Set(['setts', 'mosaic', 'pavement', 'slabs', 'concrete', 'tactileStuds', 'tactileRibs']);
 
 // Pieces of the same pavement in two tiles may come out a hair apart; rounded to a
 // degree they agree, and their joints run on across the tile's edge.

@@ -85,7 +85,7 @@ export const COLORS = {
   field: '#b9b27a', yard: '#a9a69e', dtmYard: '#85837e', ballast: '#99948a', bare: '#bba888',
   water: '#4d7680', pool: '#62aec2', asphalt: '#626264', sett: '#8a847a', parking: '#6a6968',
   bed: '#6f5b43', shrubBed: '#5d6b3c', iron: '#3f3d3b',
-  bridge: '#6d6c6a', steel: '#3a3b3d', paint: '#efede4', kerb: '#aba79e', granite: '#9a9893',
+  bridge: '#6d6c6a', steel: '#3a3b3d', paint: '#efede4', tactile: '#8e4a3e', kerb: '#aba79e', granite: '#9a9893',
   quay: '#7c776c', funicular: '#6e6a62', slab: '#8e8b84', stairStone: '#aca596', stairNose: '#bdb6a8', tunnel: '#46484c', tunnelWall: '#a59f93',
 };
 // Paint of parking bays by paid-parking zone: [zone, colour, dashes].
@@ -1364,6 +1364,12 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, kerbPa
     // (pipeline/pavements.py): asphalt like the unmapped ground, or Prague's mosaic.
     add(polygons(R.pavement_asphalt || []), COLORS.pavement, 'asphalt');
     add(polygons(R.pavement || []), COLORS.path, 'pavement');
+    // The zebras (drawn with the road's paint below), and the tactile paving at their kerbs.
+    const crossingEnds: CrossingEnd[] = [];
+    const zebraBars = zebras(d.crossings || [], edges, [...(R.road || []), ...(R.sett || [])], box, crossingEnds);
+    const touch = paintRoads ? tactile(crossingEnds, onPolygons([...(R.road ?? []), ...(R.sett ?? []), ...(A.parking ?? []), ...(R.trambed ?? []), ...(A.water ?? []), ...buildings.map((b) => b.rings)])) : { studs: [], ribs: [] };
+    add(polygons(touch.studs), COLORS.tactile, 'tactileStuds');
+    add(polygons(touch.ribs), COLORS.tactile, 'tactileRibs');
     add(street(() => polygons(R.sett || [])), COLORS.sett, 'setts');
     if (rasterRoads) {
       if (roadRaster) {
@@ -1415,7 +1421,7 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, kerbPa
     add(onStreet(() => strips(dashed, 0.13, [3, 6], true)), COLORS.paint, 'paint');
     add(onStreet(() => strips(solid, 0.13, null, true)), COLORS.paint, 'paint');
     if (paintRoads && arrows.length) add(onStreet(() => polygons(arrows)), COLORS.paint, 'paint');
-    add(onStreet(() => strips(zebras(d.crossings || [], edges, [...(R.road || []), ...(R.sett || [])], box), 0.5, null, true)), COLORS.paint, 'paint');
+    add(onStreet(() => strips(zebraBars, 0.5, null, true)), COLORS.paint, 'paint');
     // Manhole covers and storm drains: all of the tile's in one mesh.
     const street0 = groundHeight;
     add(coverGeometry(d.utility || [], edges.map((e) => e.pts), street0 ? (x, y) => street0(x, y) - kerbDepth(x, y, ON_STREET) : () => 0), COLORS.iron);
@@ -1667,9 +1673,46 @@ function offOtherRoads(line: Point2[], own: GroundRoadEdge, edges: GroundRoadEdg
 // mapped 30° to 60° off square, as some are: then along the way it's mapped), as
 // far as the road surface goes on each side, with the bars evened out between them.
 const BAR = 0.5, PITCH = 1, BAR_LEN = 3, KERB_GAP = 0.3, REACH_SLACK = 2, SQUARE = Math.cos(Math.PI / 6);
-function zebras(crossings: Point2[][], edges: GroundRoadEdge[], road: Polygons, box: Bounds): Point2[][] {
+
+// Tactile paving at a zebra, as Prague lays it on the pavement each side: a warning strip
+// of studs along the kerb the zebra's width (varovný pás, 0.4 m deep, behind the kerb
+// stone), and a guide strip of ribs (signální pás, 0.8 m wide) from it straight back across
+// the pavement, to the house front or TACTILE_REACH. None where there's no pavement behind
+// the kerb (a house or another road there). Rings for `studs` and `ribs`.
+const KERB_STONE = 0.25, WARN = 0.4, GUIDE = 0.8, TACTILE_REACH = 4;
+function tactile(ends: CrossingEnd[], blocked: (x: number, y: number) => boolean) {
+  const studs: Polygons = [], ribs: Polygons = [];
+  const rect = (cx: number, cy: number, ux: number, uy: number, len: number, wid: number): Point2[] => {
+    const vx = -uy, vy = ux, a = len / 2, b = wid / 2;
+    return [[cx - ux * a - vx * b, cy - uy * a - vy * b], [cx + ux * a - vx * b, cy + uy * a - vy * b], [cx + ux * a + vx * b, cy + uy * a + vy * b], [cx - ux * a + vx * b, cy - uy * a + vy * b], [cx - ux * a - vx * b, cy - uy * a - vy * b]];
+  };
+  for (const { at: [kx, ky], out: [ox, oy], along: [rx, ry], width } of ends) {
+    const at = (d: number, s = 0): Point2 => [kx + ox * d + rx * s, ky + oy * d + ry * s];
+    // Past a parking lane or bay mapped across the crossing's end, to where the pavement
+    // begins (its kerb); the warning strip's whole length must lie on the pavement.
+    let kerb = 0;
+    while (kerb < 3 && blocked(...at(kerb + 0.05))) kerb += 0.1;
+    const w0 = kerb + KERB_STONE, w1 = w0 + WARN;
+    // At a corner the kerb curves away: each end of the strip comes in as far as the pavement does.
+    const clear = (s: number) => !blocked(...at(w0 + 0.05, s)) && !blocked(...at(w1 - 0.05, s));
+    let left = width / 2, right = width / 2;
+    while (left > 0 && !clear(-left)) left -= 0.1;
+    while (right > 0 && !clear(right)) right -= 0.1;
+    if (left + right < 1.2 || !clear(0)) continue;
+    studs.push([rect(...at((w0 + w1) / 2, (right - left) / 2), rx, ry, left + right, WARN)]);
+    let reach = w1;
+    while (reach < TACTILE_REACH && !blocked(...at(reach + 0.25)) && !blocked(...at(reach + 0.25, GUIDE / 2)) && !blocked(...at(reach + 0.25, -GUIDE / 2))) reach += 0.25;
+    if (reach - w1 >= 0.75) ribs.push([rect(...at((w1 + reach) / 2), ox, oy, reach - w1, GUIDE)]);
+  }
+  return { studs, ribs };
+}
+// Where a zebra meets each kerb: the point on the road's edge, the way out onto the
+// pavement, the street's direction and the zebra's width (for the tactile paving).
+interface CrossingEnd { at: Point2; out: Point2; along: Point2; width: number }
+function zebras(crossings: Point2[][], edges: GroundRoadEdge[], road: Polygons, box: Bounds, ends: CrossingEnd[] = []): Point2[][] {
   const bars: Point2[][] = [];
   const done: Point2[] = [];
+  const inRoad = onPolygons(road);
   for (const pts of crossings) {
     for (const hit of crossingHits(pts, edges)) {
       if (done.some((q) => Math.hypot(q[0] - hit.at[0], q[1] - hit.at[1]) < 2.5)) continue; // a two-way street's other edge
@@ -1697,6 +1740,13 @@ function zebras(crossings: Point2[][], edges: GroundRoadEdge[], road: Polygons, 
       // Bars evened out between the kerbs, a little in from each.
       const width = (hi - lo) * k - 2 * KERB_GAP;
       if (width < BAR || width > 40) continue;
+      // Each kerb: on from the zebra's end to where the road's surface stops, within 4 m
+      // (not where that runs off the tile).
+      for (const [t0, sx] of [[lo, -1], [hi, 1]] as const) {
+        let t = t0 * k;
+        while (t * sx < t0 * k * sx + 4 && inRoad(px + ax * t / k, py + ay * t / k)) t += sx * 0.1;
+        if (!offTile(t / k) && !inRoad(px + ax * t / k, py + ay * t / k)) ends.push({ at: [px + ax * t / k, py + ay * t / k], out: [sx * ax, sx * ay], along: [rx, ry], width: BAR_LEN });
+      }
       const n = Math.floor((width - BAR) / PITCH) + 1;
       const first = lo * k + KERB_GAP + (width - (BAR + (n - 1) * PITCH)) / 2 + BAR / 2;
       for (let i = 0; i < n; i++) {
