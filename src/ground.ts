@@ -1063,8 +1063,8 @@ function deckLayers(polys: Polygons, trams: Point2[][], edges: GroundRoadEdge[],
   if (station && railway.length) railwayLayers(railway, (g, color, pattern) => add(g, color, pattern, true));
   else if (railway.length) add(strips(railway.flatMap(pts => [offsetLine(pts, 0.72), offsetLine(pts, -0.72)]), 0.12), COLORS.steel, 'flat', true);
   const { dashed, solid } = roadPaint(edges, trams);
-  add(strips(dashed, 0.13, [3, 6], true), COLORS.paint);
-  add(strips(solid, 0.13, null, true), COLORS.paint);
+  add(strips(dashed, 0.13, [3, 6], true), COLORS.paint, 'paint');
+  add(strips(solid, 0.13, null, true), COLORS.paint, 'paint');
   return out;
 }
 
@@ -1171,8 +1171,8 @@ function tunnelLayers(polys: Polygons, box: Bounds, mask: LevelMask, H: HeightAt
   groundHeight = (x: number, y: number) => (inner ? inner(x, y) : 0) + 0.05;
   try {
     const { dashed, solid } = roadPaint(edges, []);
-    add(-698, strips(dashed, 0.13, [3, 6], true), COLORS.paint);
-    add(-697, strips(solid, 0.13, null, true), COLORS.paint);
+    add(-698, strips(dashed, 0.13, [3, 6], true), COLORS.paint, 'paint');
+    add(-697, strips(solid, 0.13, null, true), COLORS.paint, 'paint');
   } finally { groundHeight = inner; }
   return out;
 }
@@ -1336,7 +1336,7 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, kerbPa
     woodEdges();
     for (const [key, color, pattern] of PITCH_LOOKS) add(polygons(A[key] || []), color, pattern);
     add(polygons(A.pitch || []), COLORS.pitch, 'pitch');
-    add(strips(d.marks || [], 0.12, null, true), COLORS.paint);
+    add(strips(d.marks || [], 0.12, null, true), COLORS.paint, 'paint');
     add(polygons(A.square || []), COLORS.square, 'slabs');
     add(polygons(A.square_setts || []), COLORS.squareSetts, 'setts');
     add(polygons(A.square_asphalt || []), COLORS.asphalt, 'asphalt');
@@ -1387,7 +1387,7 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, kerbPa
     for (const [cat, color, dash] of BAY_PAINT) {
       const rings = (A.parking || []).filter((rs, k) => (parkingZones[k] || null) === cat);
       const rows = kerbPaint.filter((k) => k.cat === cat).map((k) => k.pts);
-      add(onStreet(() => strips([...bayLines(rings.map((rs) => rs[0]), edges, cut), ...rows], 0.15, dash, true)), color);
+      add(onStreet(() => strips([...bayLines(rings.map((rs) => rs[0]), edges, cut), ...rows], 0.15, dash, true)), color, 'paint');
     }
 
     // Bridges: a soft shadow on the water, then the deck (unless the decks are drawn
@@ -1412,10 +1412,10 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, kerbPa
     add(strips(d.rails.filter((r) => r.kind === 'funicular').map((r) => r.pts), 3), COLORS.funicular, 'concrete');
 
     const { dashed, solid } = roadPaint(edges, trams);
-    add(onStreet(() => strips(dashed, 0.13, [3, 6], true)), COLORS.paint);
-    add(onStreet(() => strips(solid, 0.13, null, true)), COLORS.paint);
-    if (paintRoads && arrows.length) add(onStreet(() => polygons(arrows)), COLORS.paint);
-    add(onStreet(() => strips(zebras(d.crossings || [], edges, [...(R.road || []), ...(R.sett || [])], box), 0.5, null, true)), COLORS.paint);
+    add(onStreet(() => strips(dashed, 0.13, [3, 6], true)), COLORS.paint, 'paint');
+    add(onStreet(() => strips(solid, 0.13, null, true)), COLORS.paint, 'paint');
+    if (paintRoads && arrows.length) add(onStreet(() => polygons(arrows)), COLORS.paint, 'paint');
+    add(onStreet(() => strips(zebras(d.crossings || [], edges, [...(R.road || []), ...(R.sett || [])], box), 0.5, null, true)), COLORS.paint, 'paint');
     // Manhole covers and storm drains: all of the tile's in one mesh.
     const street0 = groundHeight;
     add(coverGeometry(d.utility || [], edges.map((e) => e.pts), street0 ? (x, y) => street0(x, y) - kerbDepth(x, y, ON_STREET) : () => 0), COLORS.iron);

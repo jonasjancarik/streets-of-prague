@@ -288,8 +288,24 @@ vec3 grit(vec3 c, vec2 p) {
   vec2 g = texture(uGrit, p * ${1 / GRIT_M}).rg;
   return c * (1. - .22 * g.r) * (1. - .12 * g.g * detail(p, .6));
 }
+// Road paint after a few winters: dulled and uneven, worn through in patches to the grey of
+// the road under it, chipped up close, with the street's grime over it (as PAINT_WEAR in
+// webgpu.ts). From above the lines still read; from the pavement they're no longer new.
+vec3 pPaint(vec3 c, vec2 p) {
+  c *= vec3(.93, .92, .88) * (.88 + .14 * fbm(p * .35));
+  float wear = smoothstep(.5, .8, fbm(p * 1.1 + 13.) * .7 + vnoise(p * 4.3) * .3);
+  float near = detail(p, .04);
+  // Flaking in clusters (where the paint has started to go), not evenly over it.
+  float flaky = smoothstep(.45, .7, fbm(p * 2.3 + 5.));
+  float chips = near > 0. ? smoothstep(.55, .7, vnoise(p * 34.)) * flaky * near : 0.;
+  float specks = near > 0. ? smoothstep(.86, .95, vnoise(p * 61. + 7.)) * near : 0.;
+  c = mix(c, vec3(.3, .3, .29), clamp(wear * .72 + chips * .7, 0., .85));
+  c *= 1. - specks * .35;
+  return grit(grit(c, p), p + 41.);
+}
 vec3 pattern(int id, vec3 c, vec2 p) {
   if (id == 1) return grit(pAsphalt(c, p), p);
+  if (id == 22) return pPaint(c, p);
   if (id == 2) return grit(pSetts(c, p, vec2(.17, .14)), p);
   if (id == 3 || id == 16) return grit(pMosaic(c, p), p);
   if (id == 4) return grit(pSlabs(c, p), p);
@@ -327,7 +343,7 @@ float ripples(vec2 p) {
 }
 vec3 weathered(int id, vec3 c, vec2 p, inout float shine) {
   if (id == 10 || id == 17) { shine = .35; return c; }
-  bool paved = id <= 4 || id == 9 || id == 16 || id == 20, road = id == 1 || id == 2;
+  bool paved = id <= 4 || id == 9 || id == 16 || id == 20 || id == 22, road = id == 1 || id == 2;
   // Streets cleared of snow are wet with the slush.
   float wet = paved && uSnow > .01 ? max(uWet, uSnow * (1. - uStreetSnow) * .8) : uWet;
   if (wet > .01) {
@@ -372,7 +388,7 @@ vec3 mirrorOf(vec3 w, vec2 p) {
 }
 `;
 
-export const PATTERN: Record<string, number> = { flat: 0, asphalt: 1, setts: 2, mosaic: 3, slabs: 4, grass: 5, wood: 6, pitch: 7, dirt: 8, concrete: 9, water: 10, gravel: 11, field: 12, meadow: 13, lawn: 14, garden: 15, pavement: 16, quietWater: 17, groovedRail: 18, graniteKerb: 20, stairStone: 21 };
+export const PATTERN: Record<string, number> = { flat: 0, asphalt: 1, setts: 2, mosaic: 3, slabs: 4, grass: 5, wood: 6, pitch: 7, dirt: 8, concrete: 9, water: 10, gravel: 11, field: 12, meadow: 13, lawn: 14, garden: 15, pavement: 16, quietWater: 17, groovedRail: 18, graniteKerb: 20, stairStone: 21, paint: 22 };
 
 // Buildings: tiles laid in rows down the slope of every roof face (the slope comes
 // from the face normal), slate in smaller rows, gravel on flat roofs, and a grid of

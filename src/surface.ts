@@ -275,7 +275,7 @@ function surfaceMaterial(l: GroundLayer, time: { value: number }, relief: Surfac
   // A tunnel is solid too, and under the ground (see TileWorld's depth-only ground):
   // it shows only round you, when you're in it. Its paint lies on its floor.
   if (l.tunnel) {
-    const paint = l.pattern === 'flat';
+    const paint = l.pattern === 'flat' || l.pattern === 'paint';
     const mat = patterned(new THREE.MeshLambertMaterial({ color: l.color, side: THREE.DoubleSide, depthWrite: !paint }), PATTERN[l.pattern ?? 'flat'], time, null, null, false, null, true);
     if (paint) Object.assign(mat, { polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -8 });
     return mat;

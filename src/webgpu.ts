@@ -414,8 +414,23 @@ function grit(c0: N, p: N) {
   });
   return c;
 }
+// Road paint after a few winters (pPaint in shading.ts): dulled and uneven, worn through in
+// patches to the grey of the road under it, chipped up close, with the street's grime.
+function pPaint(c0: N, p: N) {
+  const c = vec3(c0).mul(vec3(.93, .92, .88)).mul(fbm(p.mul(.35)).mul(.14).add(.88)).toVar();
+  const wear = smoothstep(.5, .8, fbm(p.mul(1.1).add(13)).mul(.7).add(vnoise(p.mul(4.3)).mul(.3)));
+  const near = detail(p, .04);
+  // Flaking in clusters (where the paint has started to go), not evenly over it.
+  const flaky = smoothstep(.45, .7, fbm(p.mul(2.3).add(5)));
+  const chips = smoothstep(.55, .7, vnoise(p.mul(34))).mul(flaky).mul(near);
+  const specks = smoothstep(.86, .95, vnoise(p.mul(61).add(7))).mul(near);
+  c.assign(mix(c, vec3(.3, .3, .29), clamp(wear.mul(.72).add(chips.mul(.7)), 0, .85)));
+  c.mulAssign(float(1).sub(specks.mul(.35)));
+  return grit(grit(c, p), p.add(41));
+}
 function pattern(id: number, c: N, p: N, time: N, seasonal: boolean): N {
   switch (id) {
+    case 22: return pPaint(c, p);
     case 1: {
       const road = pAsphalt(c,p).toVar();
       If(surfaceDetail.lessThan(.5),()=>{ road.assign(grit(road,p)); });
@@ -446,7 +461,7 @@ function pattern(id: number, c: N, p: N, time: N, seasonal: boolean): N {
 // WEATHER_GLSL: the colour, and in .a how much of a mirror the ground is there (shine).
 function weathered(id: number, c0: N, p: N, time: N) {
   if (id === 10 || id === 17) return vec4(c0, select(uWater.greaterThan(0.5), 0, 0.35));
-  const paved = id <= 4 || id === 9 || id === 16 || id === 18 || id === 20 || id === 21, road = id === 1 || id === 2;
+  const paved = id <= 4 || id === 9 || id === 16 || id === 18 || id === 20 || id === 21 || id === 22, road = id === 1 || id === 2;
   const c = vec3(c0).toVar(), shine = float(0).toVar();
   // (Derivatives outside the branches.)
   const ripple = paved ? detail(p, 0.12) : float(0);

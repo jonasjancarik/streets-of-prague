@@ -1353,6 +1353,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   the map's north (`src/laying.ts`): each joined piece of the surface takes one direction from
   its outline (its long sides weigh most; a square grid fits both arms of an L round a block
   corner), leaving out where the tile's edge cut it. Where pieces meet at an angle their
+  The paint is worn (the `paint` pattern, `pPaint` in `src/shading.ts` and `src/webgpu.ts`):
+  dulled and uneven, worn through in patches to the grey of the road, flaking in clusters
+  and specked with grit up close, and under the street's grime; from above it still reads.
   joints meet at a seam. A surface merged across a junction of streets at other than right
   angles takes a direction between theirs. `node scripts/check-laying.mjs` checks it. Walking
   routes add no ribbon over a square of the same material; cobbled
