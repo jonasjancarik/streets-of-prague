@@ -220,7 +220,16 @@ try {
   const lines = [];
   if (co.linked) {
     lines.push(`This session works in a git worktree, ${co.root}, of the main checkout ${co.main}.`);
-    if (port) lines.push(`Its own dev server: npm run dev (http://localhost:${port}/, not ${MAIN_PORT}, which is the main checkout's); scripts/scene.mjs uses it unless given --url. Saves here reload only games from this dev server.`);
+    // (A worktree of a commit before this setup has a vite.config.js and scene.mjs that
+    // don't know the port: it goes on their command lines.)
+    let knows = false;
+    try { knows = readFileSync(join(co.root, 'vite.config.js'), 'utf8').includes('checkout.mjs'); } catch {}
+    if (port) {
+      lines.push(knows
+        ? `Its own dev server: npm run dev (http://localhost:${port}/, not ${MAIN_PORT}, which is the main checkout's); scripts/scene.mjs uses it unless given --url.`
+        : `Its own dev server: npm run dev -- --port ${port} --strictPort (http://localhost:${port}/, not ${MAIN_PORT}, which is the main checkout's), and scripts/scene.mjs needs --url http://localhost:${port}/ (this commit's vite.config.js and scene.mjs predate scripts/worktree-setup.mjs).`);
+      lines.push('Saves here reload only games from this dev server.');
+    }
   }
   if (done.length) lines.push(`worktree-setup: ${done.join('; ')}.`);
   for (const a of advice) lines.push(`worktree-setup: ${a}`);

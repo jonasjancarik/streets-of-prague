@@ -77,7 +77,10 @@ each Claude Code session starts:
 
 Then run `npm run dev` there in the background and scene commands as usual. On
 28 November an edit in a worktree reloaded only the pages of its own dev server, and the
-main checkout's saves only the main server's.
+main checkout's saves only the main server's. A worktree of a commit from before the
+setup has neither the hook nor the script: run the main checkout's copy in it
+(`node ../../../scripts/worktree-setup.mjs`), which says what to pass instead
+(`npm run dev -- --port <its port> --strictPort`, and `--url` to scene.mjs).
 
 Windows can't create symlinks without Developer Mode, and the repository's config said
 `core.symlinks = true`. So on 27 November the desktop app's new worktrees stopped at checkout
