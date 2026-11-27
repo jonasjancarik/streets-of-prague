@@ -49,10 +49,11 @@ node scripts/write-version-json.mjs dist-cf "$VERSION"
 
 # cf's Build Output keeps the deployment byte-for-byte equal to this build.
 if [[ -d .cloudflare/output ]]; then if command -v trash >/dev/null; then trash .cloudflare/output; else rm -rf .cloudflare/output; fi; fi
-OUTPUT=.cloudflare/output/v0
+# (cf reads Build Output v1: the account comes from CLOUDFLARE_ACCOUNT_ID below, not config.json.)
+OUTPUT=.cloudflare/output/v1
 mkdir -p "$OUTPUT/workers/default/assets"
 cat > "$OUTPUT/config.json" <<'CONFIG'
-{"accountId":"7756b12931ecfb3900a31049e157d706","buildContext":{"isPreview":false}}
+{"buildContext":{"isPreview":false}}
 CONFIG
 mkdir -p "$OUTPUT/workers/default/bundle"
 cp worker/index.js worker/stats.js worker/weather.js "$OUTPUT/workers/default/bundle/"
