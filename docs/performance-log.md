@@ -2146,6 +2146,11 @@ rendering, so the counts, not the frame times, are the evidence), High, Old Town
   out, avatar and crowd builds 101–109 → 45, shadow builds 93–101 → 37, the most in one
   frame 18–21 → 7–12. A paused frame with and without differs less than two shots of the
   same mode do.
+- **The hair's shadow** then shares it too, casting its whole cards instead of the
+  alpha-tested strands. Estimated beforehand at 15–20 builds saved; measured 45–46 → 27
+  (hair shadow builds 19 → 3). The 14 left are the street crowd's shadows, which are
+  what bunch up: the most in one frame stayed 7–10. A close paused frame of four people
+  in low sun differed less than two shots of the same build (4167 against 5106 pixels).
 - **Tried and dropped:** warming every avatar as it loads (compiled, then drawn shrunk to
   nothing for the shadow pass) before showing anyone in it. The same builds landed a couple
   of seconds sooner, with the same peaks (9–10 against 11 a frame).

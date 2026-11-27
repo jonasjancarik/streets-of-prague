@@ -639,12 +639,13 @@ export function configureRenderer(renderer: WebGPURenderer) {
   };
   // In the shadow pass three.js gives every material with a map a shadow colour of its own
   // (the map's alpha, for an alpha test), so each is built apart: six builds for each of
-  // the avatars as it first comes near. An opaque avatar's (no alpha test, not transparent:
-  // the body, the head and the dyed body; the hair keeps its own) never reads it, so those
-  // share three.js's plain shadow instead.
+  // the avatars as it first comes near. The avatars' (all but anything transparent) share
+  // three.js's plain shadow instead. The body, the head and the dyed body never read the
+  // map. The alpha-tested hair now casts its whole cards: a paused frame of four people in
+  // low sun differed less than two shots of the same build, and it saves one build per avatar.
   const shadowNodes = (renderer as any)._getShadowNodes.bind(renderer);
-  (renderer as any)._getShadowNodes = (m: THREE.Material & { depthNode?: any; positionNode?: any; castShadowPositionNode?: any; alphaMap?: unknown }) => {
-    if (!/^cut-rocketbox/.test(m.customProgramCacheKey?.() ?? '') || m.transparent || m.alphaTest > 0 || m.alphaMap) return shadowNodes(m);
+  (renderer as any)._getShadowNodes = (m: THREE.Material & { depthNode?: any; positionNode?: any; castShadowPositionNode?: any }) => {
+    if (!/^cut-rocketbox/.test(m.customProgramCacheKey?.() ?? '') || m.transparent) return shadowNodes(m);
     return {
       colorNode: null,
       depthNode: m.depthNode?.isNode ? m.depthNode : null,
