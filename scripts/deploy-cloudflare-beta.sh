@@ -27,8 +27,10 @@ if rclone check public/data/ "$REMOTE/$PROD" --exclude .DS_Store --checksum --ch
   VERSION=$PROD
   echo "Map data: $VERSION (the same as production's)"
 else
-  # Paths, sizes and modification times of every file, as scripts/deploy-mbxp.sh has it.
-  ID=$(cd public/data && find . -type f ! -name .DS_Store -exec stat -f '%N %z %m' {} + | LC_ALL=C sort | shasum -a 256 | cut -c1-12)
+  # Paths, sizes and modification times of every file, as scripts/deploy-mbxp.sh has it
+  # (GNU stat's options where it is GNU's, as in Git for Windows: the same three fields).
+  if stat -c '%n' . >/dev/null 2>&1; then STAT=(-c '%n %s %Y'); else STAT=(-f '%N %z %m'); fi
+  ID=$(cd public/data && find . -type f ! -name .DS_Store -exec stat "${STAT[@]}" {} + | LC_ALL=C sort | shasum -a 256 | cut -c1-12)
   VERSION=beta-$ID
   echo "Map data: $VERSION"
   # --immutable: files already there must be the same, so a rerun only sends what's missing.
@@ -47,7 +49,7 @@ if [[ -n ${FEEDBACK_TO:-} ]]; then export VITE_FEEDBACK_URL=$API/feedback; fi
 if [[ -n ${TURNSTILE_SITE_KEY:-} ]]; then export VITE_TURNSTILE_SITE_KEY=$TURNSTILE_SITE_KEY; fi
 OUT=dist-cf-beta
 VITE_TELEMETRY_URL=$API/report VITE_DATA_URL=$DATA_URL VITE_DATA_VERSION=$VERSION node --input-type=module -e "import { build } from 'vite'; await build({ publicDir: false, build: { outDir: '$OUT' } })"
-(cd public && git ls-files -z) | rsync -a --from0 --files-from=- public/ "$OUT/"
+(cd public && git ls-files -z | tar -cf - --null -T -) | tar -xf - -C "$OUT"
 cat > "$OUT/_headers" <<'HEADERS'
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
@@ -56,7 +58,7 @@ cat > "$OUT/_headers" <<'HEADERS'
 HEADERS
 node scripts/write-version-json.mjs "$OUT" "$VERSION"
 
-if [[ -d .cloudflare/output ]]; then trash .cloudflare/output; fi
+if [[ -d .cloudflare/output ]]; then if command -v trash >/dev/null; then trash .cloudflare/output; else rm -rf .cloudflare/output; fi; fi
 OUTPUT=.cloudflare/output/v0
 mkdir -p "$OUTPUT/workers/default/assets"
 cat > "$OUTPUT/config.json" <<'CONFIG'
@@ -66,7 +68,7 @@ CONFIG
 cat > "$OUTPUT/workers/default/worker.config.json" <<'CONFIG'
 {"name":"streets-of-prague-beta","compatibilityDate":"2026-10-01","workersDev":true,"domains":["beta.streetsofprague.com"],"env":{"ASSETS":{"type":"assets"}}}
 CONFIG
-rsync -a "$OUT/" "$OUTPUT/workers/default/assets/"
+cp -R "$OUT/." "$OUTPUT/workers/default/assets/"
 export CLOUDFLARE_ACCOUNT_ID=7756b12931ecfb3900a31049e157d706
 cf deploy --prebuilt --dry-run
 [[ ${1:-} == --dry-run ]] || cf deploy --prebuilt
