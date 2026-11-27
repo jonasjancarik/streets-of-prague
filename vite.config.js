@@ -4,11 +4,16 @@ import { join } from 'node:path';
 import { defineConfig } from 'vite';
 import { runningBench } from './scripts/game-lock.mjs';
 import { betaNotes } from './scripts/beta-notes.mjs';
+import { checkoutOf, devPort } from './scripts/checkout.mjs';
 
 // The dev server listens on every interface (package.json); these are the names it
 // may be reached by besides localhost and IP addresses: the machine's .local name on
 // the LAN and its Tailscale name.
 const allowedHosts = ['.local', '.ts.net'];
+// The main checkout, or a git worktree of it (scripts/checkout.mjs).
+const here = checkoutOf(import.meta.dirname);
+const port = devPort(here);
+if (!port) console.warn('This worktree has no dev server port of its own yet: run node scripts/worktree-setup.mjs (docs/handbook.md, "Scenes in a busy checkout").');
 // These folders are not browser source. Map builds and trailer exports can contain
 // hundreds of thousands of files; watching them also hits locked files on Windows.
 const unwatched = ['pipeline', 'trailer', 'public/data', '.claude/worktrees']
@@ -98,7 +103,11 @@ export default defineConfig({
   define: { __APP_VERSION__: JSON.stringify(version), __APP_BUILT__: JSON.stringify(built), __DATA_VERSION__: JSON.stringify(data), __BETA_NOTES__: JSON.stringify(notes) },
   server: {
     allowedHosts,
-    port: Number(process.env.PORT || 5191),
+    // 5191, or in a git worktree the port scripts/worktree-setup.mjs gave it (in its
+    // .claude/launch.json), and only that one: on another, scripts/scene.mjs would drive
+    // some other checkout's game ($PORT or --port overrides both).
+    port: port ?? 5191,
+    strictPort: !!here?.linked,
     // SOP_STILL=1: no live reloading. A game open from this server stays as it loaded
     // while files change (it gets them as they are on its next load). For scene runs in
     // a checkout other sessions are editing: every edit reloads a watched page, and the

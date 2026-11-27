@@ -19,8 +19,10 @@
 // game just for the command, as before. A running server keeps the options it started
 // with: a command passing others says so (stop it, or use --fresh for a one-off).
 //
-// Common options: [--url http://localhost:5191/] [--out dir for screenshots (default
-// $TMPDIR/scene)] [--place staromak] [--time 14:00] [--weather clear] [--graphics high]
+// Common options: [--url http://localhost:5191/ (the default: this checkout's dev
+// server, 5191 or a git worktree's own port, scripts/worktree-setup.mjs)] [--out dir
+// for screenshots (default $TMPDIR/scene)] [--place staromak] [--time 14:00]
+// [--weather clear] [--graphics high]
 // [--date 10-20 (or spring, summer, autumn, winter; today's date otherwise)]
 // [--extra "&area=centrum" (more of the game's URL parameters)] [--size 1920x1080 (the
 // window; t.film saves footage frame by frame at that size)] [--jpeg (screenshots as JPEG)]
@@ -41,6 +43,7 @@ import { closeSync, mkdirSync, openSync, readFileSync, readdirSync, unlinkSync, 
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { checkoutOf, devPort } from './checkout.mjs';
 import { checkIn } from './game-lock.mjs';
 import { gpuFlags } from './gpu-flags.mjs';
 
@@ -57,7 +60,10 @@ for (let i = 0; i < rest.length; i++) {
 const sessionPort = (id) => { let h = 0; for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return 5300 + (h % 400); };
 const SESSION = process.env.CLAUDE_CODE_SESSION_ID || '';
 const PORT = Number(args.port || (SESSION ? sessionPort(SESSION) : 5199));
-const URL_BASE = args.url || 'http://localhost:5191/';
+// This checkout's dev server: in a git worktree, its own (docs/handbook.md, "Scenes in a
+// busy checkout"), so that a session there drives the game as its own files have it.
+const DEV_PORT = devPort(checkoutOf(fileURLToPath(new URL('..', import.meta.url))));
+const URL_BASE = args.url || (DEV_PORT ? `http://localhost:${DEV_PORT}/` : null);
 const OUT = args.out || join(tmpdir(), 'scene');
 // How long the game may take to load: minutes on a machine busy with other sessions
 // (SOP_LOAD_TIMEOUT, in seconds).
@@ -81,6 +87,15 @@ function servers() {
   }
   return out.sort((a, b) => a.port - b.port);
 }
+
+// Whether the dev server answers.
+const devUp = () => new Promise((resolve) => {
+  if (!URL_BASE) return resolve(false);
+  const req = get(URL_BASE, (res) => { res.resume(); resolve(true); });
+  req.setTimeout(5000, () => { req.destroy(); resolve(false); });
+  req.on('error', () => resolve(false));
+});
+const noDevServer = () => new Error(!URL_BASE ? 'This worktree has no dev server port of its own yet: run node scripts/worktree-setup.mjs, then npm run dev (or pass --url)' : `No dev server answers at ${URL_BASE}${args.url ? '' : ', the one for this checkout'}: start it with npm run dev in ${fileURLToPath(new URL('..', import.meta.url))}, or pass --url`);
 
 // Talking to a running server.
 const call = (body, port = PORT) => new Promise((resolve, reject) => {
@@ -221,7 +236,7 @@ async function openGame({ show = false } = {}) {
 const startedWith = () => Object.fromEntries(SERVER_OPTS.filter((k) => k !== 'idle' && args[k] !== undefined).map((k) => [k, args[k]]));
 
 async function handle(game, { cmd, name, code }) {
-  if (cmd === 'ping') return { value: 'ok', opts: startedWith() };
+  if (cmd === 'ping') return { value: 'ok', opts: startedWith(), url: URL_BASE };
   if (cmd === 'list') return game.scenarios();
   if (cmd === 'run') return game.scenario(name);
   if (cmd === 'eval') return game.eval(code);
@@ -238,17 +253,23 @@ const scenarioNames = () => readdirSync(join(ROOT, 'scenarios')).filter((f) => f
 async function withGame(bodies) {
   if (!args.fresh && !args.once) {
     let up = await ping();
-    if (!up) { await startServer(); up = await ping(); }
+    if (!up) {
+      if (!(await devUp())) throw noDevServer();
+      await startServer();
+      up = await ping();
+    }
     if (up) {
       // Options that only apply when a server starts.
       const had = up.opts || {}, own = startedWith();
       const differ = Object.keys(own).filter((k) => String(own[k]) !== String(had[k] ?? ''));
+      if (up.url && up.url !== URL_BASE) console.error(`Note: the scene server on port ${PORT} plays the game from ${up.url}, not ${URL_BASE} (node scripts/scene.mjs stop first to change).`);
       if (differ.length) console.error(`Note: the scene server on port ${PORT} started with ${Object.entries(had).map(([k, v]) => `--${k} ${v}`).join(' ') || 'the defaults'}; this command's ${differ.map((k) => `--${k}`).join(', ')} don't apply to it (node scripts/scene.mjs stop first, or --fresh for a one-off).`);
       const out = [];
       for (const b of bodies) out.push(await call(b));
       return out;
     }
   }
+  if (!(await devUp())) throw noDevServer();
   console.error(args.fresh ? 'Loading the game in a fresh browser…' : 'Loading the game for this command…');
   const game = await openGame({ show: !!args.show });
   try {
@@ -270,6 +291,7 @@ const report = (r) => {
 
 if (cmd === 'serve') {
   if (await alive()) { console.error(`A scene server is already running on port ${PORT}`); process.exit(1); }
+  if (!URL_BASE) throw noDevServer();
   const game = await openGame({ show: !!args.show });
   slot.rest();
   // When to go: after IDLE without a command, once the Claude Code session that started
@@ -292,11 +314,6 @@ if (cmd === 'serve') {
     await game.close().catch(() => {});
     process.exit(0);
   };
-  const devUp = () => new Promise((resolve) => {
-    const req = get(URL_BASE, (res) => { res.resume(); resolve(true); });
-    req.setTimeout(5000, () => { req.destroy(); resolve(false); });
-    req.on('error', () => resolve(false));
-  });
   setInterval(async () => {
     if (busy) return;
     if (IDLE && Date.now() - last > IDLE) return quit(`no command for ${IDLE / 60_000} min`);

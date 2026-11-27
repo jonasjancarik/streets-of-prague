@@ -11,7 +11,9 @@ command shows a change from every side.
 
 ## The fast path
 
-1. The dev server must be up (`npm run dev`, port 5191; `curl -s localhost:5191 >/dev/null && echo up`).
+1. The dev server must be up: `npm run dev` in your checkout (port 5191 in the main one;
+   in a worktree its own port, which `node scripts/worktree-setup.mjs` prints and
+   scene.mjs finds by itself; `curl -s localhost:<port> >/dev/null && echo up`).
 2. Run commands. The first one starts this session's scene server in the background
    (the game loaded in headless Chrome, 10–40 s) and leaves it running; the next ones
    take a second or two. Pass the window and situation on that first command, since
@@ -38,8 +40,16 @@ Each edit to browser source reloads the game (yours and every other session's, i
 shared checkout), and a reload starts the world afresh. So put the setup (place, car,
 dents) in each command rather than counting on the last one's. When other sessions are
 saving files all the time ("Execution context was destroyed", or a command that waits
-for a load it didn't cause), run your own dev server without live reloading and point
-the scene server at it (see "Scenes in a busy checkout" in docs/handbook.md):
+for a load it didn't cause), work in a git worktree of your own: a new session in a
+worktree in the desktop app, or `git worktree add .claude/worktrees/<name> -b <branch>`
+(see "Scenes in a busy checkout" in docs/handbook.md). The hook at session start sets it
+up (`node scripts/worktree-setup.mjs` does it by hand): the main checkout's map data
+and packages linked, not copied, and a dev server port of its own. Start `npm run dev`
+there in the background; scene commands then play the game from that server, which
+only your saves reload, and need no `--url`. Your commits go on the worktree's branch.
+
+Staying in the shared checkout, run your own dev server without live reloading and
+point the scene server at it:
 `SOP_STILL=1 npx vite --host 127.0.0.1 --strictPort --port <port>` in the background, on
 a port nobody uses (other sessions follow this recipe too: check with
 `curl -s localhost:<port>` first, and avoid 5191–5199), then

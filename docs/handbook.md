@@ -18,7 +18,8 @@ node scripts/scene.mjs run all   # test scenarios in headless Chrome (see Testin
 
 On Windows, the same development command works in Command Prompt or PowerShell.
 Use `npm.cmd` if PowerShell blocks `npm.ps1`. The default port is 5191; set the
-`PORT` environment variable or pass `npm run dev -- --port 5192` to change it.
+`PORT` environment variable or pass `npm run dev -- --port 5192` to change it. A git
+worktree's dev server has a port of its own (see "Scenes in a busy checkout" below).
 Vite watches browser source, leaving `pipeline/`, `trailer/`, `public/data/` and
 other checkouts under `.claude/worktrees/` unwatched. Rebuild map data as usual;
 reload the page to see it. Dependency discovery starts from the game's `index.html`.
@@ -51,13 +52,57 @@ you are, the time, weather, money, stars, car and camera as the start of a new s
 #### Scenes in a busy checkout
 
 When several sessions edit the same checkout, every saved file reloads each game open
-from a watched dev server, and a scene command starts over with a 30–70 s load. Run your
-own dev server without live reloading and a scene server on it; a game it opens stays as
-it loaded, and files changed since come in on its next load (a restart of the server):
+from a watched dev server, and a scene command starts over with a 30–70 s load. So give
+each session a git worktree of its own under `.claude/worktrees/` (a new session in a
+worktree in the desktop app, or `git worktree add .claude/worktrees/<name> -b <branch>`),
+which the main checkout's dev server doesn't watch. `node scripts/worktree-setup.mjs`
+makes a worktree runnable, and the hook in `.claude/settings.json` runs it (`--hook`) as
+each Claude Code session starts:
+
+- `public/data` becomes a link to the main checkout's map data (a junction on Windows),
+  so nothing is copied. `git worktree remove`, `rm -rf`, `rmdir /s` and PowerShell's
+  `Remove-Item -Recurse` delete the link and leave the data (tried on 28 November 2026);
+  `git worktree remove` leaves the folder with the links in it, for `rm -rf`.
+- The packages are the main checkout's: Node and Vite find its `node_modules` by
+  looking up the folders, and Vite keeps a cache of its own in the worktree
+  (`node_modules/.vite`). A worktree elsewhere, or one whose `package-lock.json`
+  installs other packages, gets `npm ci`.
+- The dev server gets a port of its own, 5200–5289, kept in the worktree's
+  `.claude/launch.json`, the desktop app's dev server settings. `npm run dev` there
+  listens on that port and no other, and `scripts/scene.mjs` plays the game from it
+  without `--url`. Before the setup has run, both say so rather than use 5191, the main
+  checkout's.
+- The repository's symlink `.claude/skills` (to `.agents/skills`) becomes a junction,
+  which git is told to skip (`git update-index --skip-worktree`).
+
+Then run `npm run dev` there in the background and scene commands as usual. On
+28 November an edit in a worktree reloaded only the pages of its own dev server, and the
+main checkout's saves only the main server's.
+
+Windows can't create symlinks without Developer Mode, and the repository's config said
+`core.symlinks = true`. So on 27 November the desktop app's new worktrees stopped at checkout
+("unable to create symlink CLAUDE.md: Permission denied"), and the desktop app removed
+it again and didn't start the session ("Background full checkout failed:
+permission-denied" in its log). Now `.git/config` gives worktrees `core.symlinks = false`:
+git checks a symlink out as a small text file holding its target, and the setup turns
+that into a junction. The main checkout keeps `true`, and its symlinks, through an
+`includeIf` for its own `.git` folder (`.git/config.main-checkout`); a setting in its
+`config.worktree` wouldn't do, as `git worktree add` copies that file into each new
+worktree. That config isn't in git: the setup writes it on a machine that can't make
+symlinks. `CLAUDE.md` is a one-line file importing `AGENTS.md` (`@AGENTS.md`) rather than
+a symlink to it.
+
+Staying in the shared checkout, run your own dev server without live reloading and a
+scene server on it; a game it opens stays as it loaded, and files changed since come in
+on its next load (a restart of the server):
 
     SOP_STILL=1 PORT=5291 npx vite --host 127.0.0.1 --strictPort
     node scripts/scene.mjs serve --url http://127.0.0.1:5291/ --port 5207 --extra "&fps"
     node scripts/scene.mjs eval "…" --port 5207
+
+That server shares `node_modules/.vite` with the main one: when it starts on a newer
+commit or another day, it optimises the dependencies again under the main server's
+pages, which can then reload (`.agents/skills/performance/SKILL.md`).
 
 The scripts draw the game on the GPU with the platform's own backend
 (`scripts/gpu-flags.mjs`). Until 27 November 2026 they asked for Metal everywhere, and on
