@@ -151,6 +151,16 @@ export class SignParts {
     for (let k = 0; k < P.length; k += 9) this.tri([[P[k], P[k + 1], P[k + 2]], [P[k + 3], P[k + 4], P[k + 5]], [P[k + 6], P[k + 7], P[k + 8]]], [N[k], N[k + 1], N[k + 2]], null, col);
     g.dispose();
   }
+  // A six-sided tube of radius `r` from a to b.
+  tube(a: number[], b: number[], r: number, col = GREY) {
+    const start = new THREE.Vector3(a[0], a[1], a[2]), delta = new THREE.Vector3(b[0], b[1], b[2]).sub(start);
+    const g = new THREE.CylinderGeometry(r, r, delta.length(), 6, 1, true).toNonIndexed();
+    g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), delta.clone().normalize()));
+    g.translate(start.x + delta.x / 2, start.y + delta.y / 2, start.z + delta.z / 2);
+    const P = g.attributes.position.array, N = g.attributes.normal.array;
+    for (let k = 0; k < P.length; k += 9) this.tri([[P[k], P[k + 1], P[k + 2]], [P[k + 3], P[k + 4], P[k + 5]], [P[k + 6], P[k + 7], P[k + 8]]], [N[k], N[k + 1], N[k + 2]], null, col);
+    g.dispose();
+  }
   // A galvanised tube of radius `r` from the ground up to `top`, capped.
   post(top: number, x = 0, r = POST_R) {
     const sides = 8;

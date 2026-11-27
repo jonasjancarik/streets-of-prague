@@ -99,3 +99,24 @@ const south = -Math.PI / 2;
   assert.equal(none, null);
   console.log(`Direction signs: ${faces.length} plates on a post and a board, ${g.position.length / 9} triangles`);
 }
+
+{
+  // A gantry over the three lanes of a carriageway along y=0 (|y| < 5.5 here), facing the
+  // east-bound traffic: two posts past its edges, the panels 5.3 m up; an arm from the right
+  // where only the right lane has a panel.
+  const { readDirections, directionGeometry, GANTRY_CLEAR } = await import('../src/map/directions.ts');
+  const wide = (x, y) => Math.abs(y) < 5.5;
+  const row = panels => [0, 0, 270, 'gantry', panels, 3, 1, 5.4];
+  const [full, armed] = readDirections([row([[0, 1, 'centrum', '', '', 'white', 'through|through'], [2, 2, 'Brno', 'D1', '', 'green', 'slight_right']]),
+    row([[2, 2, 'Brno', 'D1', '', 'green', 'slight_right']])]);
+  assert(full.gantry.panels.length === 2 && armed.gantry.panels.length === 1, 'gantries read');
+  // (The edges found in quarter metres: 5.25 m out, the posts a metre past them.)
+  const posts = s => Array.from(directionGeometry([s], wide, () => false, () => 0).posts).filter((_, i) => i % 4 === 1).map(y => Math.round(y * 4) / 4);
+  assert.deepEqual(posts(full), [6.25, -6.25], 'a post past each edge: ' + posts(full));
+  assert.deepEqual(posts(armed), [-6.25], 'an arm from the right (south) edge');
+  const g = directionGeometry([full], wide, () => false, () => 0);
+  let low = Infinity;
+  for (let i = 0; i < g.position.length; i += 3) if (Math.abs(g.position[i + 2]) < 5.4 && g.position[i + 1] > 1) low = Math.min(low, g.position[i + 1]);
+  assert(low > GANTRY_CLEAR - .1, 'clear of the traffic: ' + low);
+  console.log(`Gantries: over the lanes, ${g.position.length / 9} triangles`);
+}

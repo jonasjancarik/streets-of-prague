@@ -53,6 +53,8 @@ import sys
 from collections import Counter, defaultdict
 
 from pyproj import Transformer
+from shapely import STRtree
+from shapely.geometry import LineString
 
 from build_tiles import PBF, cut
 from osm_area import AREAS, OUT, road_width
@@ -448,6 +450,11 @@ BOARD_ON = {"trunk", "primary", "secondary"}
 BOARD_BACK = 70
 PLATES_BACK = 6
 FOLLOW = 40  # m: a branch this short into another junction (across a dual carriageway) is followed on
+# Gantries: over the lanes of motorways and trunk roads with two or more each way, primary
+# roads with three, coming up to a junction whose ways on are named lane by lane or two or
+# more of them; where OSM maps one within reach, else GANTRY_BACK m before the junction.
+GANTRY_ON = {"motorway", "trunk", "primary"}
+GANTRY_BACK, GANTRY_MIN, GANTRY_REACH = 110, 35, 300
 LANE_TURNS = {"through": 0, "left": 90, "right": -90, "slight_left": 45, "slight_right": -45, "sharp_left": 135, "sharp_right": -135}
 GREEN = ("motorway", "motorway_link")
 
@@ -479,10 +486,12 @@ def sign_colour(w, to, ref, sym, given, local):
     return "white" if names and all(p in local or p.lower() == "centrum" for p in names) else "blue"
 
 
-def direction_signs(ways, local=frozenset()):
+def direction_signs(ways, local=frozenset(), gantries=()):
     """[(x, y, 'plates' | 'board', angle, [(turn in degrees, left positive; places; road
     numbers; symbol; colour)])] for the traffic coming up to each junction, the straight
-    on first, then left to right."""
+    on first, then left to right; and [(x, y, 'gantry', angle, [(first lane, last lane,
+    places, road numbers, symbol, colour, the lanes' turns)], lanes, one way, half width)]
+    for the gantries, (x, y) on the street's line. `gantries`: OSM's, as LineStrings."""
     at, ends = network(ways)
     junction = lambda n: ends[n] >= 3
     out = []
@@ -513,6 +522,98 @@ def direction_signs(ways, local=frozenset()):
                 if turn < 35 and (best is None or turn < best[0]):
                     best = (turn, o, f)
         return (destination(best[1], best[2]), best[1]) if best else (None, w)
+
+    gantry_tree = STRtree(gantries) if gantries else None
+
+    def back_from(a, i, d, reach):
+        """The street back from the junction (node i of a, along d), on through the ways it
+        runs on into where no other street meets it, `reach` m at most: its points."""
+        pts, w, j, dd, run = [a.pts[i]], a, i, d, 0.0
+        while run < reach:
+            while 0 <= j + dd < len(w.nodes) and run < reach:
+                run += math.dist(w.pts[j], w.pts[j + dd])
+                j += dd
+                pts.append(w.pts[j])
+            if run >= reach or junction(w.nodes[j]):
+                break
+            on = [(o, k, f) for o, k, f in arms_at(at, w.nodes[j]) if o is not w and o.allowed(-f)]
+            if len(on) != 1:
+                break
+            w, j, dd = on[0]
+        return LineString(pts) if len(pts) > 1 else None
+
+    def lanes_into(a, d):
+        """How many lanes the traffic coming up to the junction along a (against d) has."""
+        t = a.tags
+        if a.oneway:
+            n = number(t.get("lanes"))
+        else:
+            n = number(t.get("lanes:backward" if d > 0 else "lanes:forward")) or (number(t.get("lanes")) or 0) // 2
+        return int(n) if n else 0
+
+    def gantry_at(a, i, d, branches):
+        """A gantry over the lanes coming up to the junction: where OSM maps one over them,
+        else GANTRY_BACK m back; a panel over each run of lanes going the same way."""
+        if a.hw not in GANTRY_ON or not a.allowed(-d):
+            return None
+        # (A motorway or trunk carriageway OSM gives no lanes has two.)
+        n = lanes_into(a, d) or (2 if a.oneway and a.hw != "primary" else 0)
+        if n < (3 if a.hw == "primary" else 2):
+            return None
+        t, side = a.tags, "backward" if d > 0 else "forward"
+        lane_tag = (lambda k: t.get(k)) if a.oneway else (lambda k: t.get(f"{k}:{side}"))
+        turns = (lane_tag("turn:lanes") or "").split("|")
+        turns = [(x.split(";")[0] or "through").strip() for x in turns] if len(turns) == n else ["through"] * n
+        by_lane = [None] * n
+        to_lanes = (lane_tag("destination:lanes") or "").split("|")
+        if len(to_lanes) == n and any(to_lanes):
+            refs = (lane_tag("destination:ref:lanes") or "").split("|")
+            syms = (lane_tag("destination:symbol:lanes") or "").split("|")
+            for k, to in enumerate(to_lanes):
+                if to:
+                    ref = refs[k] if len(refs) == n else ""
+                    sym = syms[k] if len(syms) == n else ""
+                    by_lane[k] = (to, ref, sym, sign_colour(a, to, ref, sym, "", local))
+        else:
+            # The branches over their lanes: a turn over the lanes turning that way (the
+            # outermost lane where the lanes don't say), straight on over the rest.
+            for b in sorted(branches, key=lambda b: abs(b[0])):
+                cls = "through" if abs(b[0]) < 15 else ("left" if b[0] > 0 else "right")
+                lanes = [k for k, x in enumerate(turns) if by_lane[k] is None and (x == cls or x.endswith("_" + cls) or (cls == "through" and x == "none"))]
+                if not lanes and cls != "through":
+                    edge = 0 if cls == "left" else n - 1
+                    lanes = [edge] if by_lane[edge] is None else []
+                if not lanes and cls == "through":
+                    lanes = [k for k in range(n) if by_lane[k] is None and turns[k] == "through"]
+                for k in lanes:
+                    by_lane[k] = b[1:]
+        panels, k = [], 0
+        while k < n:
+            if by_lane[k] is None:
+                k += 1
+                continue
+            e = k
+            while e + 1 < n and by_lane[e + 1] == by_lane[k]:
+                e += 1
+            panels.append((k, e, *by_lane[k], "|".join(turns[k:e + 1])))
+            k = e + 1
+        # (One panel will do over lanes turning off, where only the exit is named: a sign on
+        # an arm over them; none for the lanes straight on alone.)
+        if not panels or (len(panels) == 1 and all(x == "through" for x in panels[0][-1].split("|"))):
+            return None
+        line = back_from(a, i, d, GANTRY_REACH)
+        if line is None or line.length < GANTRY_MIN:
+            return None
+        back = min(GANTRY_BACK, line.length - 10)
+        # The nearest gantry OSM maps over the street in reach, if there is one.
+        mapped = [line.project(p) for g in (gantry_tree.query(line, predicate="intersects") if gantry_tree else [])
+                  for hit in [line.intersection(gantries[g])] for p in getattr(hit, "geoms", [hit])]
+        mapped = [s for s in mapped if GANTRY_MIN <= s <= line.length - 5]
+        if mapped:
+            back = min(mapped)
+        p, q = line.interpolate(back), line.interpolate(max(0, back - 2))
+        h = math.atan2(q.y - p.y, q.x - p.x)  # the way the traffic drives there
+        return (p.x, p.y, "gantry", h - math.pi / 2, panels, n, 1 if a.oneway else 0, round(a.half, 2))
 
     for n in list(at):
         if not junction(n):
@@ -550,11 +651,14 @@ def direction_signs(ways, local=frozenset()):
                         if to and first in LANE_TURNS:
                             seen.setdefault(to, LANE_TURNS[first])
                     branches = [(turn, to, "", "", sign_colour(a, to, "", "", "", local)) for to, turn in seen.items()]
+            gantry = gantry_at(a, i, d, branches)
+            if gantry:
+                out.append(gantry)
             if not branches:
                 continue
             branches.sort(key=lambda b: (abs(b[0]) >= STRAIGHT, -b[0]))
             for kind, back in (("plates", PLATES_BACK), ("board", BOARD_BACK)):
-                if kind == "board" and (a.hw not in BOARD_ON or len(branches) < 2):
+                if kind == "board" and (a.hw not in BOARD_ON or len(branches) < 2 or gantry):
                     continue
                 r = a.along(i, d, back)
                 if r is None:
@@ -584,10 +688,10 @@ def _near_pairs(signs, crossings, lit):
 
 
 def read(pbf, tf):
-    """Ways, tagged nodes and turn restrictions from an extract, in local metres."""
+    """Ways, tagged nodes, turn restrictions and gantries (LineStrings) from an extract, in local metres."""
     import osmium
 
-    ways, nodes, restrictions = [], {}, []
+    ways, nodes, restrictions, gantries = [], {}, [], []
 
     class Handler(osmium.SimpleHandler):
         def node(self, n):
@@ -597,6 +701,12 @@ def read(pbf, tf):
 
         def way(self, w):
             hw = w.tags.get("highway")
+            if w.tags.get("man_made") == "gantry":
+                try:
+                    gantries.append(LineString([tf.transform(n.lon, n.lat) for n in w.nodes]))
+                except (osmium.InvalidLocationError, ValueError):
+                    pass
+                return
             if (hw not in CAR and hw != "pedestrian") or w.tags.get("area") == "yes" or len(w.nodes) < 2:
                 return
             try:
@@ -617,7 +727,7 @@ def read(pbf, tf):
                 restrictions.append((kind, f[0], via[0], to[0]))
 
     Handler().apply_file(str(pbf), locations=True)
-    return ways, nodes, restrictions
+    return ways, nodes, restrictions, gantries
 
 
 def powered_signs(tf):
@@ -638,21 +748,21 @@ def build(area):
         if not PBF.exists():
             sys.exit(f"needs the OSM extract {PBF} (see 'Building the map' in docs/handbook.md)")
         pbf = cut((w - 0.01, s - 0.01, e + 0.01, n + 0.01), pbf)
-    ways, nodes, restrictions = read(pbf, tf)
+    ways, nodes, restrictions, gantries = read(pbf, tf)
     signs, turns = traffic_signs(ways, nodes, restrictions, powered_signs(tf))
     # The city's parts (build_districts.py), for the white plates of local destinations.
     districts = OUT / f"{area}_now" / "districts.json"
     local = frozenset(d["name"] for d in json.loads(districts.read_text(encoding="utf-8"))["districts"]) if districts.exists() else frozenset()
-    directions = direction_signs(ways, local)
+    directions = direction_signs(ways, local, gantries)
     names = sorted({name for _, _, name, _ in signs})
     index = {name: k for k, name in enumerate(names)}
     points = sorted([round(x, 1), round(y, 1), index[name], round(math.degrees(a)) % 360] for x, y, name, a in signs)
     counts = Counter(name for _, _, name, _ in signs)
     print(f"{len(points)} signs:", ", ".join(f"{k} {v}" for k, v in counts.most_common()), f"and {len(turns)} lane arrow sets")
-    print(f"{len(directions)} direction signs:", dict(Counter(kind for _, _, kind, _, _ in directions)),
-          "plates", dict(Counter(b[4] for *_, bs in directions for b in bs)))
+    print(f"{len(directions)} direction signs:", dict(Counter(d[2] for d in directions)),
+          "plates", dict(Counter(b[4] for d in directions if d[2] != "gantry" for b in d[4])))
     return {"signs": names, "points": points,
-            "directions": sorted([round(x, 1), round(y, 1), round(math.degrees(a)) % 360, kind, [list(b) for b in bs]] for x, y, kind, a, bs in directions),
+            "directions": sorted([round(x, 1), round(y, 1), round(math.degrees(a)) % 360, kind, [list(b) for b in bs], *extra] for x, y, kind, a, bs, *extra in directions),
             "turns": sorted([str(n), round(math.degrees(h)) % 360, lanes, round(x, 1), round(y, 1)] for n, h, lanes, (x, y) in turns)}
 
 

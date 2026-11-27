@@ -157,6 +157,28 @@ class DirectionSigns(unittest.TestCase):
         self.assertFalse([s for s in signs if facing(s[:2] + (None, s[3]))[1] < -.9])
         self.assertFalse(direction_signs(cross()))
 
+    def test_gantry_over_the_lanes_before_an_exit(self):
+        # A three-lane trunk carriageway east, its exit to the south-east named, its lanes
+        # turning; and an OSM gantry over it 60 m before the split.
+        from shapely.geometry import LineString
+        ways = [way(1, [(-300, 0), (0, 0)], [1, 2], highway="trunk", oneway="yes", lanes="3", **{"turn:lanes": "through|through|slight_right"}),
+                way(2, [(0, 0), (300, 0)], [2, 3], highway="trunk", oneway="yes", lanes="2"),
+                way(3, [(0, 0), (100, -60)], [2, 4], highway="trunk_link", oneway="yes", destination="Brno", **{"destination:ref": "D1"}),
+                way(4, [(300, 0), (300, 100)], [3, 5])]
+        gantry, = [s for s in direction_signs(ways) if s[2] == "gantry"]
+        x, y, _, angle, panels, lanes, oneway, _ = gantry
+        self.assertEqual((lanes, oneway), (3, 1))
+        self.assertAlmostEqual(x, -110)  # GANTRY_BACK before the split, on the line
+        self.assertAlmostEqual(y, 0)
+        self.assertAlmostEqual(facing(gantry)[0], -1)
+        self.assertEqual(panels, [(2, 2, "Brno", "D1", "", "green", "slight_right")])
+        mapped, = [s for s in direction_signs(ways, gantries=[LineString([(-60, -10), (-60, 10)])]) if s[2] == "gantry"]
+        self.assertAlmostEqual(mapped[0], -60)
+        # No gantry on a carriageway of one lane, nor a board where there is one.
+        ways[0].tags["lanes"] = "1"
+        ways[0].tags.pop("turn:lanes")
+        self.assertFalse([s for s in direction_signs([Way(w.id, w.tags, w.nodes, w.pts) for w in ways]) if s[2] == "gantry"])
+
     def test_across_a_dual_carriageway(self):
         # Coming up from the south, across a 12 m gap between the two carriageways to the street on north.
         ways = [way(1, [(0, 0), (100, 0)], [1, 2], highway="primary", oneway="yes"), way(2, [(100, 0), (200, 0)], [2, 3], highway="primary", oneway="yes"),

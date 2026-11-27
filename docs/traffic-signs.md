@@ -85,7 +85,29 @@ may name its lanes (`destination:lanes` with `turn:lanes`). U-turns are left out
   junction drawn as a stem and a line out to each branch's head, its places beside it on
   a panel of its own colour. Only where the board's whole width is clear of houses.
 
-About 830 junction approaches get plates and 90 a board. Each tile draws its signs' faces
+- **Gantries** over the carriageway, in place of the board, on motorway and trunk
+  carriageways with two lanes or more coming up to the junction (two where OSM gives none)
+  and primary ones with three. A panel hangs over each run of lanes going the same way.
+  The lanes come from `destination:lanes` (with `destination:ref:lanes` and
+  `destination:symbol:lanes`) where the street coming up has it. Otherwise the named
+  branches are shared out over `turn:lanes`: a turn over the lanes turning that way (the
+  outermost lane where the lanes don't say), straight on over the rest. One panel is
+  enough over lanes turning off, where only the exit is named; none for the lanes
+  straight on alone. The gantry stands at the nearest `man_made=gantry` OSM maps over the
+  street within 300 m (only a few dozen of OSM's 131 are over roads), else 110 m before the
+  junction, following the street back through the ways it runs on into. It needs 35 m.
+  In the game (`gantry` in `src/map/directions.ts`):
+  - The carriageway's edges are found on the game's own road out from the street's line,
+    and the lanes shared out evenly between them.
+  - Each panel hangs over its lanes, narrowed where they are narrower than 3.3 m, its
+    bottom 5.3 m up, with an arrow over each lane: down for straight on, up and out for
+    a lane turning off.
+  - A truss of two chords and zigzag braces spans the road between two posts on concrete
+    footings, a metre past each edge. Where only the right-hand lanes have a panel, it is
+    an arm from a post on the right.
+  - About 50 in the city.
+
+About 830 junction approaches get plates and 75 a board. Each tile draws its signs' faces
 on a canvas of its own (`directionLayout` packs them; `src/signs.ts` draws them in a
 narrow sans, narrowed to fit), one draw per tile with a material of its own.
 
@@ -106,11 +128,13 @@ setts, bridges and tunnels.
 posts, order, plates, the geometry and reading the file. The pipeline's inference is
 `pipeline/test_traffic_signs.py` (one-way, priority, crossings, lit crossings, zones,
 speed limits after junctions, limits with plates, turn bans, lane arrows and direction
-signs), and the check script covers the direction plates' faces, canvas and posts.
+signs, gantries), and the check script covers the direction plates' faces, canvas and
+posts, and the gantries' posts and clearance.
 
 ## Not done
 
-No parking or no-stopping signs (OSM barely records them), no overhead gantries over the
-main roads yet, no roadworks. The zone tagging in OSM has gaps, so a zone sign can stand inside a zone
+No parking or no-stopping signs (OSM barely records them), no roadworks. A gantry's place
+is inferred where OSM maps none, and only exits OSM names get one, so long stretches of
+the main roads have none. The zone tagging in OSM has gaps, so a zone sign can stand inside a zone
 where one street is untagged, and a speed limit of 30 may be signed on a street that is
 really part of a zone.

@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { cutAway } from './shading.ts';
 import { atlasCols, cellRect, signStyle, CELL } from './map/signs.ts';
 import type { SignArrays, TrafficSigns } from './map/signs.ts';
-import { directionLayout, faceOutline, PX, WHITE_CORNER } from './map/directions.ts';
+import { directionLayout, faceOutline, PX, PANEL_LINE, WHITE_CORNER } from './map/directions.ts';
 import type { DirectionArrays, DirectionSign, Face, PlateColour, Rect } from './map/directions.ts';
 export { loadTrafficSigns } from './map/signs.ts';
 export type { TrafficSigns } from './map/signs.ts';
@@ -340,6 +340,39 @@ function drawBoard(c: Ctx, f: Face, r: Rect) {
   }
   c.restore();
 }
+// A gantry's panel: its road numbers, its places, and an arrow over each of its lanes, down
+// for straight on, up and out for a lane turning off.
+function drawPanel(c: Ctx, f: Face, r: Rect) {
+  const p = f.panel!, s = f.px, a = f.w / 2 * s, hh = f.h / 2 * s, [bg, ink] = PLATE_INK[p.colour];
+  c.save(); c.translate(r.x + r.w / 2, r.y + r.h / 2);
+  c.fillStyle = bg; c.fillRect(-a, -hh, a * 2, hh * 2);
+  c.strokeStyle = ink; c.lineWidth = s * .05; c.strokeRect(-a + s * .08, -hh + s * .08, a * 2 - s * .16, hh * 2 - s * .16);
+  let y = -hh + s * .25 + s * PANEL_LINE / 2;
+  if (p.refs.length) {
+    c.font = `bold ${s * .25}px ${FONT}`;
+    const widths = p.refs.map(ref => Math.max(s * .42, c.measureText(ref).width + s * .18));
+    let x = -(widths.reduce((t, w) => t + w + s * .1, 0) - s * .1) / 2;
+    for (const ref of p.refs) x += badge(c, ref, x, y, s * .34) + s * .1;
+    y += s * PANEL_LINE;
+  }
+  for (const place of f.places) {
+    fitText(c, place, 0, y, s * .3, a * 2 - s * .4, ink, 'center');
+    y += s * PANEL_LINE;
+  }
+  const lanes = p.last - p.first + 1, ay = hh - s * .32;
+  for (let k = 0; k < lanes; k++) {
+    const x = -a + (k + .5) * a * 2 / lanes, turn = p.turns[k] ?? 'through';
+    const side = /right/.test(turn) ? 1 : /left/.test(turn) ? -1 : 0;
+    // Down over a lane going on, up and to its side over a lane turning off.
+    const ux = side * .7, uy = side ? -.7 : 1, len = s * .38, w = s * .07;
+    c.save(); c.strokeStyle = c.fillStyle = ink; c.lineWidth = w;
+    const x0 = x - ux * len / 2, y0 = ay - uy * len / 2, x1 = x + ux * len / 2, y1 = ay + uy * len / 2;
+    c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1 - ux * w * 1.5, y1 - uy * w * 1.5); c.stroke();
+    c.beginPath(); c.moveTo(x1 + ux * w * .6, y1 + uy * w * .6); c.lineTo(x1 - ux * w * 2 - uy * w * 1.6, y1 - uy * w * 2 + ux * w * 1.6);
+    c.lineTo(x1 - ux * w * 2 + uy * w * 1.6, y1 - uy * w * 2 - ux * w * 1.6); c.fill(); c.restore();
+  }
+  c.restore();
+}
 // A tile's direction signs as a mesh, their faces drawn on a canvas of its own (laid out as
 // map/directions.ts lays it out for the geometry). Its material and canvas are its own.
 export function directionMesh(arrays: DirectionArrays, signs: DirectionSign[]) {
@@ -348,7 +381,7 @@ export function directionMesh(arrays: DirectionArrays, signs: DirectionSign[]) {
   canvas.width = width; canvas.height = height;
   const c = canvas.getContext('2d')!;
   c.fillStyle = '#fff'; c.fillRect(0, 0, WHITE_CORNER, WHITE_CORNER);
-  faces.forEach((f, i) => (f.kind === 'board' ? drawBoard : drawPlate)(c, f, rects[i]));
+  faces.forEach((f, i) => (f.kind === 'board' ? drawBoard : f.kind === 'panel' ? drawPanel : drawPlate)(c, f, rects[i]));
   const map = new THREE.CanvasTexture(canvas);
   map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = 8;
   const g = new THREE.BufferGeometry();

@@ -427,7 +427,8 @@ The traffic signs stand on grey posts by the kerb, or hang from a house front wh
 no pavement, inferred from OSM's rules: one-way streets, give way, crossings (lit boxes
 where IPR's survey has a powered sign), zones, speed and vehicle limits and turn bans; the
 lanes before a junction have their painted arrows. On the main roads, arrow plates at the
-junctions and boards before them show where each way leads (`docs/traffic-signs.md`).
+junctions, and boards or gantries over the lanes before them, show where each way leads
+(`docs/traffic-signs.md`).
 Higher up, now and then an air conditioner hangs on brackets under a window, mostly on
 functionalist and panel fronts, and once in a while a satellite dish beside one
 (`airConditioner`, `satelliteDish`).
