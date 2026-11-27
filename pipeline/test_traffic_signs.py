@@ -47,6 +47,20 @@ class TrafficSigns(unittest.TestCase):
         self.assertAlmostEqual(no[1], half)
         self.assertAlmostEqual(facing(no)[0], 1)
 
+    def test_no_one_way_signs_on_the_halves_of_a_divided_street(self):
+        # A two-way street that parts round a tram island between x=100 and x=200 (as Újezd
+        # does), with side streets at both ends of the island.
+        ways = [way(1, [(0, 0), (100, 0)], [1, 2], name="Újezd"), way(2, [(200, 0), (300, 0)], [3, 4], name="Újezd"),
+                way(3, [(100, 0), (150, -8), (200, 0)], [2, 5, 3], name="Újezd", oneway="yes"),
+                way(4, [(200, 0), (150, 8), (100, 0)], [3, 6, 2], name="Újezd", oneway="yes"),
+                way(5, [(100, 0), (100, -60)], [2, 7]), way(6, [(200, 0), (200, 60)], [3, 8])]
+        signs, _ = traffic_signs(ways, {}, [])
+        self.assertFalse([s for s in signs if s[2] in ("one way", "no entry")], signs)
+        # A one-way street of another name beside it is one-way all the same.
+        ways[3] = way(4, [(200, 0), (150, 8), (100, 0)], [3, 6, 2], name="Hellichova", oneway="yes")
+        signs, _ = traffic_signs(ways, {}, [])
+        self.assertTrue([s for s in signs if s[2] == "no entry"])
+
     def test_side_street_gives_way_and_the_main_road_is_signed(self):
         signs, _ = traffic_signs(cross(), {}, [])
         give, = named(signs, "give way")

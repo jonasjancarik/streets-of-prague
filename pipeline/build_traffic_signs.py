@@ -212,6 +212,36 @@ def arms_at(at, n, kinds=PUBLIC):
     return out
 
 
+PAIRED = 30  # m: a one-way carriageway with the other way's this near is half of a two-way street
+
+
+def divided(ways):
+    """The ids of the one-way ways that are half of a two-way street: with a one-way way of
+    the same name (or, unnamed, any) running the other way beside them, within PAIRED of
+    their middle, its traffic going within about 45 degrees of the opposite way."""
+    one = [w for w in ways if w.oneway and w.hw in CAR and len(w.pts) > 1]
+    lines = [LineString(w.pts if w.oneway > 0 else w.pts[::-1]) for w in one]
+    tree = STRtree(lines)
+    out = set()
+    for w, line in zip(one, lines):
+        mid = line.interpolate(.5, normalized=True)
+        ahead = line.interpolate(min(line.length, line.project(mid) + 2))
+        dx, dy = ahead.x - mid.x, ahead.y - mid.y
+        for k in tree.query(mid.buffer(PAIRED)):
+            o, other = one[k], lines[k]
+            if o is w or (w.tags.get("name") and o.tags.get("name") != w.tags.get("name")):
+                continue
+            s = other.project(mid)
+            if other.interpolate(s).distance(mid) > PAIRED:
+                continue
+            a, b = other.interpolate(max(0, s - 1)), other.interpolate(min(other.length, s + 1))
+            ox, oy = b.x - a.x, b.y - a.y
+            if (dx * ox + dy * oy) < -.7 * math.hypot(dx, dy) * math.hypot(ox, oy):
+                out.add(w.id)
+                break
+    return out
+
+
 def traffic_signs(ways, nodes, restrictions, lit=()):
     """The signs: ([(x, y, name, angle in radians)], [(node, heading in radians, turn lanes, (x, y))]).
     `ways`: [Way]; `nodes`: {node id: (tags, (x, y))} for the tagged nodes;
@@ -254,10 +284,12 @@ def traffic_signs(ways, nodes, restrictions, lit=()):
         w, i = at[n][0]
         return w.pts[i]
 
-    # One way and no entry.
+    # One way and no entry: not on a half of a two-way street mapped as two one-way
+    # carriageways (round a tram island or a median, as on Újezd).
+    halves = divided(ways)
     for w in ways:
         if not w.oneway or w.hw not in SIGNED_ONE_WAY or w.length < 15 or w.tags.get("bridge") or w.tags.get("tunnel") \
-                or w.tags.get("junction") in ("roundabout", "circular"):
+                or w.tags.get("junction") in ("roundabout", "circular") or w.id in halves:
             continue
         d = w.oneway
         start, end = w.end(-d), w.end(d)
