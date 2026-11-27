@@ -1791,8 +1791,11 @@ async function main() {
       jobs: structuredClone(missions.progress), rep: repute.saved,
     };
   };
+  // Not while you're wasted, arrested, dead or flying (you're hidden where you boarded):
+  // a save then would bring you back out of it.
+  const settled = () => wastedT <= 0 && !arrest.active && !health.dead && !inHeli;
   const autosave = () => {
-    if (playing && saving && wastedT <= 0 && !arrest.active && !health.dead && !inHeli) return writeSave('auto', capture());
+    if (playing && saving && settled()) return writeSave('auto', capture());
   };
   window.addEventListener('pagehide', autosave);
   document.addEventListener('visibilitychange', () => { if (document.hidden) autosave(); });
@@ -1850,8 +1853,11 @@ async function main() {
   const restart = () => { saving = false; location.reload(); };
   const saves = {
     list: () => listSaves(AREA),
-    save: () => {
-      if (anywhere || !writeSave(newSlot(), capture())) return false;
+    // 'busy' when the game can't be saved just now (settled).
+    save: (): boolean | 'busy' => {
+      if (anywhere) return false;
+      if (!settled()) return 'busy';
+      if (!writeSave(newSlot(), capture())) return false;
       telemetry.count('saves'); telemetry.did('saved the game by hand');
       return true;
     },

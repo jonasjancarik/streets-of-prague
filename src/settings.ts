@@ -130,7 +130,7 @@ export function setupSettings({ sound, graphics, weather, saves, cameraChoice }:
   weather: { kinds: Kind[]; get: () => Kind | 'auto'; set: (k: Kind | 'auto') => void };
   // Saved games: the list, saving the game as a new one, loading one (which restarts
   // the page, see main.ts), deleting one and starting again from the beginning.
-  saves: { list: () => { slot: Slot; data: SaveData | null }[]; save: () => boolean; load: (slot: Slot) => boolean; remove: (slot: Slot) => boolean; newGame: () => boolean; exit: () => boolean };
+  saves: { list: () => { slot: Slot; data: SaveData | null }[]; save: () => boolean | 'busy'; load: (slot: Slot) => boolean; remove: (slot: Slot) => boolean; newGame: () => boolean; exit: () => boolean };
 }) {
   const corner = el('div', 'corner', document.body);
   // Full screen, where the browser allows it. In a phone's landscape it also locks the
@@ -259,7 +259,9 @@ export function setupSettings({ sound, graphics, weather, saves, cameraChoice }:
   const saveStatus = el('p', 'settings-note', savesBox);
   saveStatus.setAttribute('role', 'status');
   refresh.push(() => { saveStatus.textContent = saveError ? t(saveError) : ''; saveStatus.hidden = !saveError; });
-  const sure = (b: HTMLButtonElement, label: () => string, act: () => void) => {
+  // (`keep`: relabelled on a language change; the list's buttons aren't, since the list
+  // is made again then.)
+  const sure = (b: HTMLButtonElement, label: () => string, act: () => void, keep = true) => {
     let timer = 0;
     const reset = () => { clearTimeout(timer); timer = 0; b.textContent = label(); };
     b.addEventListener('click', () => {
@@ -267,7 +269,7 @@ export function setupSettings({ sound, graphics, weather, saves, cameraChoice }:
       b.textContent = t('Sure?');
       timer = window.setTimeout(reset, 3000);
     });
-    relabel.push(reset);
+    if (keep) relabel.push(reset);
     reset();
   };
   const buttons = el('div', 'settings-chips', savesBox);
@@ -275,7 +277,9 @@ export function setupSettings({ sound, graphics, weather, saves, cameraChoice }:
   add.type = 'button';
   relabel.push(() => { add.textContent = t('Save game'); });
   add.addEventListener('click', () => {
-    saveError = saves.save() ? '' : 'The browser couldn’t save your game. Keep this page open and try again.';
+    const saved = saves.save();
+    saveError = saved === 'busy' ? 'You can’t save the game right now. Try again once you’re back on your feet.'
+      : saved ? '' : 'The browser couldn’t save your game. Keep this page open and try again.';
     update();
   });
   const again = el('button', 'settings-chip', buttons) as HTMLButtonElement;
@@ -289,21 +293,28 @@ export function setupSettings({ sound, graphics, weather, saves, cameraChoice }:
     saveError = saves.exit() ? '' : 'The browser couldn’t save your game. Keep this page open and try again.';
   });
   const list = el('div', 'settings-saves', savesBox);
+  // Made again only when what it shows has changed (a save, the language, the minutes
+  // since), so a Load or Delete waiting on "Sure?" isn't undone by another setting.
+  let shown = '';
   refresh.push(() => {
+    const now = saves.list().map(({ slot, data }) => ({ slot, data, text: data ? describe(data) : t('A saved game this version can’t open') }));
+    const key = JSON.stringify(now.map(({ slot, text }) => [slot, text, t('Load'), t('Delete')]));
+    if (key === shown) return;
+    shown = key;
     list.textContent = '';
-    for (const { slot, data } of saves.list()) {
+    for (const { slot, data, text } of now) {
       const line = el('div', 'settings-slot', list);
-      el('span', 'settings-slot-text', line, data ? describe(data) : t('A saved game this version can’t open'));
+      el('span', 'settings-slot-text', line, text);
       const load = el('button', 'settings-chip', line) as HTMLButtonElement;
       const del = el('button', 'settings-chip', line) as HTMLButtonElement;
       load.type = del.type = 'button';
       load.hidden = !data;
       sure(load, () => t('Load'), () => {
         saveError = saves.load(slot) ? '' : 'The saved game couldn’t be loaded. Your current game is still open. Try again.';
-      });
+      }, false);
       sure(del, () => t('Delete'), () => {
         saveError = saves.remove(slot) ? '' : 'The browser couldn’t change your saved games. Your current game is still open. Try again.';
-      });
+      }, false);
     }
   });
 

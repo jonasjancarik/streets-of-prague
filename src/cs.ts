@@ -176,6 +176,7 @@ export const CS: Record<string, string> = {
   'Sure?': 'Opravdu?',
   'Exit to main menu': 'Zpět do hlavní nabídky',
   'Save game': 'Uložit hru',
+  'You can’t save the game right now. Try again once you’re back on your feet.': 'Teď hru uložit nejde. Zkus to znovu, až budeš zase na nohou.',
   'The browser couldn’t save your game. Keep this page open and try again.': 'Prohlížeči se nepodařilo hru uložit. Nech tuto stránku otevřenou a zkus to znovu.',
   'The saved game couldn’t be loaded. Your current game is still open. Try again.': 'Uloženou hru se nepodařilo načíst. Současná hra zůstává otevřená. Zkus to znovu.',
   'The browser couldn’t change your saved games. Your current game is still open. Try again.': 'Prohlížeči se nepodařilo změnit uložené hry. Současná hra zůstává otevřená. Zkus to znovu.',

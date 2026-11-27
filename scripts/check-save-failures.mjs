@@ -21,14 +21,15 @@ globalThis.location = { search: '?lang=en' };
 globalThis.window = { setTimeout: () => 1 };
 globalThis.document = { querySelectorAll: () => [], documentElement: {} };
 const compile = source => ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
-const server = await createServer({ configFile: false, optimizeDeps: { noDiscovery: true, include: [] }, server: { middlewareMode: true, hmr: false, ws: false } });
+const server = await createServer({ configFile: false, optimizeDeps: { noDiscovery: true, include: [] }, server: { middlewareMode: true, hmr: false, ws: false, watch: null } });
 try {
   const api = await server.ssrLoadModule('/src/save.ts');
   const { t, setLang } = await server.ssrLoadModule('/src/i18n.ts');
   const main = await readFile(new URL('../src/main.ts', import.meta.url), 'utf8');
+  const settledSource = main.match(/const settled = \(\) => .*;/)?.[0];
   const autoSource = main.match(/const autosave = \(\) => \{[\s\S]*?\n  \};/)?.[0];
   const callbacksSource = main.match(/const saves = \{[\s\S]*?\n  \};/)?.[0];
-  assert.ok(autoSource && callbacksSource, 'locate the production save handlers');
+  assert.ok(settledSource && autoSource && callbacksSource, 'locate the production save handlers');
   const game = { v: 2, area: 'test', at: Date.now(), lat: 50, lon: 14, heading: 90, street: null, car: null, money: 1000, ticket: null, health: 100, heat: 0, clock: 3600, weather: { kind: 'clear', fixed: true }, jobs: { done: {}, failed: 0, earned: 0 }, rep: {} };
   const original = { ...game, money: 10 }, selected = { ...game, money: 20 };
   const setup = (overrides = {}) => {
@@ -42,7 +43,7 @@ try {
       restart: () => { restarts++; }, anywhere: null, playing: true, saving: true, wastedT: 0, arrest: { active: false }, health: { dead: false }, inHeli: null,
       ...overrides,
     };
-    const handlers = new Function(...Object.keys(dependencies), compile(`${autoSource}\n${callbacksSource}\nreturn { saves, autosave };`))(...Object.values(dependencies));
+    const handlers = new Function(...Object.keys(dependencies), compile(`${settledSource}\n${autoSource}\n${callbacksSource}\nreturn { saves, autosave };`))(...Object.values(dependencies));
     return { ...handlers, events, session, get restarts() { return restarts; } };
   };
   for (const mode of ['quota', 'blocked']) {
@@ -74,6 +75,11 @@ try {
     assert.equal(f.autosave(), undefined, 'deliberately skipped autosave is distinct from a failed write');
     assert.equal(f.saves.exit(), true, 'exit still works in intentional skip states, including test runs before playing');
     assert.equal(f.restarts, 1);
+    if (!('playing' in skipped || 'saving' in skipped)) {
+      failure = '';
+      assert.equal(f.saves.save(), 'busy', 'a hand save is refused while wasted, arrested, dead or flying');
+      assert.equal(storage.has('save:hand:new'), false);
+    }
   }
   for (const action of ['save', 'load', 'newGame', 'exit']) {
     const f = setup();
@@ -96,7 +102,7 @@ try {
     click() { for (const fn of this.listeners.click ?? []) fn(); }
   }
   const settings = await readFile(new URL('../src/settings.ts', import.meta.url), 'utf8');
-  const section = settings.slice(settings.indexOf('  const savesBox ='), settings.indexOf('  const feedback ='));
+  const section = settings.slice(settings.indexOf('  const savesBox ='), settings.indexOf("  row<Level>('Difficulty'"));
   assert.ok(section.includes('Saved games'));
   const factory = new Function('el', 'rows', 'relabel', 'refresh', 'saves', 't', 'describe', 'update', compile(`${section}\nreturn { box: savesBox, status: saveStatus };`));
   const controls = saves => {
@@ -107,7 +113,7 @@ try {
     const label = () => { for (const fn of relabel) fn(); update(); };
     const all = node => [node, ...node.children.flatMap(all)];
     label();
-    return { ...ui, label, click(text, confirm = false) { const b = all(rows).find(e => e.tag === 'button' && e.textContent === text); assert.ok(b, text); b.click(); if (confirm) b.click(); } };
+    return { ...ui, label, relabel, all: () => all(rows), click(text, confirm = false) { const b = all(rows).find(e => e.tag === 'button' && e.textContent === text); assert.ok(b, text); b.click(); if (confirm) b.click(); } };
   };
   for (const [action, label] of [['save', 'Save game'], ['load', 'Load'], ['remove', 'Delete'], ['newGame', 'New game'], ['exit', 'Exit to main menu']]) {
     const f = setup(), ui = controls(f.saves);
@@ -123,6 +129,16 @@ try {
     failure = ''; ui.label(); ui.click(label, action !== 'save');
     assert.equal(ui.status.hidden, true, `${action}: a successful retry clears the failure note`);
     assert.equal(ui.status.textContent, '');
+  }
+  // Opening the settings again and again doesn't pile up the list's labels, and a
+  // Delete waiting on "Sure?" survives another setting's update.
+  {
+    const ui = controls(setup().saves), before = ui.relabel.length;
+    for (let n = 0; n < 20; n++) ui.label();
+    assert.equal(ui.relabel.length, before, 'the saved-games list does not grow relabel');
+    const del = () => ui.all().find(e => e.tag === 'button' && (e.textContent === 'Delete' || e.textContent === 'Sure?'));
+    del().click(); ui.label();
+    assert.equal(del().textContent, 'Sure?', 'an armed Delete is kept across updates');
   }
   console.log('Save failures: quota/access errors preserve progress and slots, prevent success telemetry/reloads, keep autosave skips quiet, and show localized retry status for all manual actions.');
 } finally { await server.close(); }
