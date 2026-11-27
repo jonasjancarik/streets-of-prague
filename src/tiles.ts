@@ -1281,6 +1281,34 @@ export class TileWorld {
     this.rims.set(key, rim);
     return rim;
   }
+  // Whether anything stands between two points, for a camera looking at a car: a
+  // building over the line, the ground (a slope, a retaining wall), a wall of the
+  // collision grid (2.5 m high where there's no roof to say), a fence or hedge, a tree,
+  // or another bridge's deck or the parapet of `level`, the deck the car is on (whose
+  // surface the line runs along).
+  sightBlocked(ax: number, ay: number, az: number, bx: number, by: number, bz: number, level = 0) {
+    const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / 0.4));
+    for (let i = 1; i <= n; i++) {
+      const k = i / n, x = ax + (bx - ax) * k, y = ay + (by - ay) * k, z = az + (bz - az) * k;
+      const t = this.tileAt(x, y);
+      if (!t) return true;
+      if (this.rooftopAt(x, y) > z) return true;
+      const g = this.terrainAt(x, y), water = this.waterAt(x, y);
+      if (g > z - 0.2 && !water) return true;
+      if (!water && this.cellAt(x, y, 0, g) && g + 2.5 > z) return true;
+      if (fences.blocks(x, y, 0.15, z - g)) return true;
+      if (t.trunkCells.has(t.grid.indexAt(x, y)) && z < g + 8) return true;
+      for (const l of t.levels) {
+        if (l.level === 0 || !l.grid.at(x, y)) continue;
+        const h = this.levelAt(x, y, l.level);
+        if (l.level !== level && z > h - FASCIA - 0.2 && z < h + PARAPET) return true;
+      }
+      const rim = level > 0 ? this.rimAt(x, y, level, az) : null;
+      if (rim && rim !== 'air' && z < rim.top) return true;
+    }
+    return false;
+  }
+
   private rims = new Map<number, Rim>();
   private rimStamp = -1;
 

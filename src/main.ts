@@ -3517,7 +3517,10 @@ async function main() {
           blocked: open ? (x, y) => !!grid.at(x, y) : undefined,
         }, camera);
         // A big moment, slowed: the camera off to the side (not in a tunnel or under a bridge).
-        if (inCar && carried === inCar) crashCam.frame(inCar, camera, (x, y) => ground(x, y, inCar), open ? (x, y) => world.rooftopAt(x, y) > -Infinity : () => true, dt);
+        if (inCar && carried === inCar) {
+          const deck = inCar.overboard?.level ?? Math.max(0, inCar.level ?? 0);
+          crashCam.frame(inCar, camera, (x, y) => ground(x, y, inCar), open ? (ax, ay, az, bx, by, bz) => world.sightBlocked(ax, ay, az, bx, by, bz, deck) : undefined, dt);
+        }
         followed = true;
       } else if (vehicle) {
         // (A new vehicle, or after a teleport, starts straight behind it.)
