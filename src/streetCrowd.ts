@@ -95,6 +95,12 @@ function bindPoses(material: THREE.MeshLambertMaterial | THREE.MeshDepthMaterial
 export class StreetCrowd {
   enabled = true;
   loading = false;
+  // Compiles an object's shaders (renderer.compileAsync, from lifesize.ts): the batches'
+  // are compiled once loaded, before anyone is drawn in them, so they don't stall a frame.
+  compile?: (o: THREE.Object3D) => Promise<unknown>;
+  // Batches still to be drawn once, shrunk to nothing, before anyone walks in the crowd:
+  // one a frame, for what compile doesn't cover (each batch's own builds, the shadow pass).
+  private warming = 0;
   private disposed = false;
   private retryAt = 0;
   private batches: Batch[] = [];
@@ -133,6 +139,9 @@ export class StreetCrowd {
       this.depth = new THREE.MeshDepthMaterial({ map: atlas, side: THREE.DoubleSide, alphaTest: .35, depthPacking: THREE.RGBADepthPacking });
       atlas = undefined; // now owned by this.material
       bindPoses(this.material, vat, true); bindPoses(this.depth, vat, false);
+      // The batches while their shaders compile: out of the scene, so none is drawn (the
+      // scene's lights still go into the compile).
+      const staging = new THREE.Group();
       for (const [catalogue, model] of header.models.entries()) {
         const geometry = new THREE.BufferGeometry(), positions = new Float32Array(model.vertices * 3);
         const idle = model.clips.idle.row * header.width;
@@ -167,10 +176,14 @@ export class StreetCrowd {
         mesh.castShadow = mesh.receiveShadow = true;
         mesh.customDepthMaterial = this.depth;
         mesh.frustumCulled = false; // accepted around the eye; individual groups can cross tiles
-        mesh.count = 0; mesh.visible = false;
-        this.group.add(mesh);
+        mesh.count = 1; // (for the compile)
+        staging.add(mesh);
         this.batches.push({ model, mesh, pose, next: 0, dye });
       }
+      try { await this.compile?.(staging); } catch (e) { console.warn('Street crowd shaders', e); }
+      for (const { mesh } of this.batches) { mesh.count = 0; mesh.visible = false; this.group.add(mesh); }
+      this.warming = this.batches.length;
+      if (this.disposed) this.release();
     } catch {
       this.release();
       this.retryAt = performance.now() + 60000;
@@ -185,8 +198,8 @@ export class StreetCrowd {
     const e = transform.elements, dx = e[12] - this.eye.x, dz = e[14] - this.eye.z, d2 = dx * dx + dz * dz;
     if (d2 < .09 || d2 > this.range * this.range ||
         (this.cosHalf > 0 && !inStreetCone(dx, dz, this.direction.x, this.direction.z, this.sinHalf, this.cosHalf, 4))) return false;
-    if (!this.batches.length) {
-      if (!this.loading && performance.now() >= this.retryAt) void this.load();
+    if (!this.batches.length || this.loading || this.warming) {
+      if (!this.batches.length && !this.loading && performance.now() >= this.retryAt) void this.load();
       return false;
     }
     this.offered.push(d2);
@@ -214,7 +227,7 @@ export class StreetCrowd {
     this.limit = Math.min(MAX, STREET_QUALITY.avatars * 2);
     this.range = Math.min(85, STREET_QUALITY.avatarReach * 1.9);
     this.reach = this.offered.length > this.limit ? this.offered.sort((a, b) => a - b)[this.limit - 1] : this.range * this.range;
-    for (const batch of this.batches) {
+    for (const batch of this.loading ? [] : this.batches) { // (none drawn while compiling)
       batch.mesh.count = batch.next;
       batch.mesh.visible = this.active && batch.next > 0;
       if (batch.mesh.visible) {
@@ -222,6 +235,12 @@ export class StreetCrowd {
         for (const d of batch.dye ?? []) send(d, batch.next);
       }
       batch.next = 0;
+    }
+    if (this.warming && active && !this.loading) {
+      const { mesh } = this.batches[--this.warming];
+      mesh.setMatrixAt(0, matrix.makeScale(1e-4, 1e-4, 1e-4).setPosition(camera.position));
+      mesh.count = 1; mesh.visible = true;
+      send(mesh.instanceMatrix, 1);
     }
     this.offered.length = this.count = 0;
     if (!this.active) return;
@@ -241,7 +260,7 @@ export class StreetCrowd {
       mesh.removeFromParent(); mesh.dispose(); mesh.geometry.dispose();
       if (mesh.material !== this.material) (mesh.material as THREE.Material).dispose(); // (an avatar's dyed one: the atlas is this.material's)
     }
-    this.batches.length = 0;
+    this.batches.length = this.warming = 0;
     this.material?.map?.dispose(); this.material?.dispose(); this.depth?.dispose(); this.vat?.dispose();
     this.material = this.depth = this.vat = undefined;
   }

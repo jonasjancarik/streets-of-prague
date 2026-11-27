@@ -348,6 +348,7 @@ async function main() {
   const scene = new THREE.Scene();
   // First person: life-size people near you (lifesize.ts, rocketbox.ts), loaded the first time it's on.
   const lifeSize = new LifeSize(scene, renderer);
+  lifeSize.compile = (o) => renderer.compileAsync(o, camera, scene);
   // (?rocketbox=0 keeps the usual figures, to compare.)
   lifeSize.enabled = params.get('rocketbox') !== '0';
   // Who you are in the street, picked now so your avatar can load with the map (the Walker
@@ -373,7 +374,7 @@ async function main() {
   // connection doesn't keep the game shut for long: the crowd's stand-ins fill in meanwhile.
   const streetPeopleReady = async () => {
     status('Bringing in the people…');
-    const ready = lifeSize.preload(mapIn).then(() => lifeSize.warm((o) => renderer.compileAsync(o, camera, scene)));
+    const ready = lifeSize.preload(mapIn).then(() => lifeSize.warm(lifeSize.compile!));
     await Promise.race([ready, new Promise((done) => setTimeout(done, 15_000))]);
     status('');
   };

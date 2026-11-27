@@ -13,6 +13,9 @@ export class LifeSize {
   enabled = true;
   playerSeed?: number;
   freeAfter = 120; // seconds out of first person (shorter in tests)
+  // Compiles an object's shaders (renderer.compileAsync): the street crowd's batches are
+  // compiled with it before anyone is drawn in them, however the game was opened.
+  compile?: (o: THREE.Object3D) => Promise<unknown>;
   private avatars: Avatars | null = null;
   private importing = false;
   private since = performance.now(); // when first person was last on
@@ -24,7 +27,11 @@ export class LifeSize {
   private open() {
     this.importing = true;
     return this.preloading ??= import('./rocketbox.ts').then(
-      (m) => (this.avatars = new m.LifeSize(this.scene, this.renderer, this.playerSeed)),
+      (m) => {
+        this.avatars = new m.LifeSize(this.scene, this.renderer, this.playerSeed);
+        this.avatars.middle.compile = this.compile;
+        return this.avatars;
+      },
       (e) => { console.warn('Life-size people could not load', e); return null; },
     ).finally(() => { this.importing = false; this.preloading = null; });
   }

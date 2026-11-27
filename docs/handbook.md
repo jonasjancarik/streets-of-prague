@@ -2095,7 +2095,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   avatar shares one dyed shader up close and one in the street crowd, with the regions as
   uniforms (on WebGPU read from the mesh being drawn), and the close one is compiled
   behind the loading screen. Keep it that way: a shader per avatar was compiled the
-  first time each outfit came into view, mid-walk.
+  first time each outfit came into view, mid-walk. The street crowd loads once you're
+  on the street; its shaders are compiled before anyone walks in it (`compileAsync`),
+  then each batch is drawn once, shrunk to nothing, one a frame, for the builds that
+  only a draw makes (on WebGPU each batch has its own, and the shadow pass). Without
+  that, its first frame built 15–18 shaders on WebGPU.
   The player's model starts loading alongside the animation clips. The player gets
   a random avatar each session and keeps it when switching between
   first and third person, including after the detailed models are freed and reloaded.
