@@ -6,10 +6,11 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const [outdir, map, flag] = process.argv.slice(2);
 if (!outdir || !map) { console.error('Usage: node scripts/write-version-json.mjs <outdir> <map> [--fixed]'); process.exit(1); }
-const root = new URL('..', import.meta.url).pathname;
+const root = fileURLToPath(new URL('..', import.meta.url));
 const git = (args) => { try { return execFileSync('git', args, { cwd: root, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch { return ''; } };
 // The same string vite.config.js gives the game as __APP_VERSION__.
 const game = git(['describe', '--tags', '--always', '--dirty']) || 'dev';

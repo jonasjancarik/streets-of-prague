@@ -110,6 +110,10 @@ export const GRIT = {
 export const NOISE_GLSL = /* glsl */ `
 uniform sampler2D uNoise;
 float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+// A building's own number from its colour. The colour is rounded to 8-bit steps first:
+// interpolation leaves it a hair different from pixel to pixel and as the camera moves,
+// and a hash of the raw value turned that into a different number, so stains jumped.
+float colourSeed(vec3 c) { vec3 k = floor(c * 255. + .5); return hash12(k.xy + k.z * vec2(.37, 1.71)); }
 float vnoise(vec2 p) {
   vec2 i = floor(p), f = p - i;
   return textureLod(uNoise, (mod(i, ${NOISE_SIZE}.) + f * f * (3. - 2. * f) + .5) * (1. / ${NOISE_SIZE}.), 0.).r;
@@ -213,6 +217,12 @@ vec3 pGrass(vec3 c, vec2 p, vec4 season) {
 #endif
   c = mix(c, c * vec3(1.12, 1.05, .78), dry);  // same dry patches, changing through the year
   c = mix(c, c * vec3(1.05, .9, .7), smoothstep(.6, .8, fbm2(p * .15 + 3.)) * .6);  // worn to earth
+  // Lusher patches a metre or so across (darker, bluer) and thinner ones (paler, yellower),
+  // and a finer mottle of tufts, each until it's too small for the pixel (pGrass in webgpu.ts).
+  float clump = vnoise(p * .85 + 41.), seen1 = detail(p, 1.2);
+  c = mix(c, c * vec3(.84, .92, .96), smoothstep(.55, .8, clump) * seen1 * .7);
+  c = mix(c, c * vec3(1.1, 1.04, .86), smoothstep(.45, .2, clump) * seen1 * .45);
+  c *= 1. + (vnoise(p * 2.3 + 17.) - .5) * .2 * detail(p, .45);
   float d = detail(p, .2);
   if (d > 0.) c += (vnoise(p * 5.) - .5) * .07 * d;
   return c;
@@ -362,12 +372,28 @@ vec3 mirrorOf(vec3 w, vec2 p) {
 }
 `;
 
-export const PATTERN: Record<string, number> = { flat: 0, asphalt: 1, setts: 2, mosaic: 3, slabs: 4, grass: 5, wood: 6, pitch: 7, dirt: 8, concrete: 9, water: 10, gravel: 11, field: 12, meadow: 13, lawn: 14, garden: 15, pavement: 16, quietWater: 17, groovedRail: 18, tramBed: 19, graniteKerb: 20, stairStone: 21 };
+export const PATTERN: Record<string, number> = { flat: 0, asphalt: 1, setts: 2, mosaic: 3, slabs: 4, grass: 5, wood: 6, pitch: 7, dirt: 8, concrete: 9, water: 10, gravel: 11, field: 12, meadow: 13, lawn: 14, garden: 15, pavement: 16, quietWater: 17, groovedRail: 18, graniteKerb: 20, stairStone: 21 };
 
 // Buildings: tiles laid in rows down the slope of every roof face (the slope comes
 // from the face normal), slate in smaller rows, gravel on flat roofs, and a grid of
 // windows on the walls, one row per storey (fStorey) with shopfronts at street level.
 const BUILDING_GLSL = /* glsl */ `
+// A line width m wide, dist m from the pixel, as a pixel w across sees it: one too thin
+// to draw is drawn wider and fainter, keeping its share of the pixel, instead of dropped.
+// It fades out when lines period m apart come too close to draw apart (they'd shimmer).
+float thinLine(float dist, float width, float w, float period) {
+  float ww = max(w * .75, width);
+  return (1. - smoothstep(ww * .35, ww, dist)) * width / ww * (1. - smoothstep(period * .3, period * .6, w));
+}
+// Tiles of a roof aren't all alike: some patches newer, some more weathered, in streaks
+// along the rows. Fixed to the roof (q: across and down the slope, m), and broad enough to
+// stay when the tiles and rows are too fine to draw. The finer part fades by rowMap, a
+// row's depth on the map; w: the pixel's footprint.
+float tileMottle(vec2 q, float w, float rowMap) {
+  float fine = (vnoise(vec2(q.x / 1.4, q.y / .6) + 3.7) - .5) * .2;
+  float broad = (vnoise(vec2(q.x / 4.5, q.y / 1.8) + 11.3) - .5) * .16;
+  return 1. + fine * (1. - smoothstep(rowMap * 1.2, rowMap * 2.6, w)) + broad;
+}
 vec3 roofTilesAs(vec3 c, vec2 wp, vec3 n, float slate) {
   vec2 down = normalize(vec2(n.x, -n.z) + vec2(0., .0001));   // the nudge keeps a flat face from being 0/0
   vec2 across = vec2(-down.y, down.x);
@@ -375,12 +401,17 @@ vec3 roofTilesAs(vec3 c, vec2 wp, vec3 n, float slate) {
   vec2 q = vec2(dot(wp, across), dot(wp, down) / max(n.y, .3));
   vec2 b = blocks(q, size);
   float row = fract(q.y / size.y);
-  float d = detail(wp, size.y);
+  float rowTone = .96 + .08 * hash12(vec2(floor(q.y / size.y), 4.7));
   vec3 t = c * (.9 + .2 * b.y);
   t *= mix(vec3(1.07, .95, .86), vec3(.95, 1., 1.05), fract(b.y * 7.3));           // fired-clay variation, tile by tile
-  t *= .8 + .25 * smoothstep(0., .4, row);                                     // overlap shadow
+  t *= (.8 + .25 * smoothstep(0., .4, row)) * rowTone;                         // overlap shadow
   t = mix(t * .72, t, smoothstep(0., .012, b.x));
-  c = mix(c * .95, t, d);
+  // Further off, the rows without their tiles, then all of it averaged (beaverTiles).
+  vec3 mean = c * vec3(.98, .945, .925);
+  vec3 rows = mean * (.8 + .25 * smoothstep(0., .4, row)) * rowTone;
+  float rowMap = max(n.y, .3) * size.y, w = length(fwidth(wp));
+  float tilesSeen = 1. - smoothstep(size.x * .25, size.x * .7, w), rowsSeen = 1. - smoothstep(rowMap * .3, rowMap * .7, w);
+  c = mix(mean * .99, mix(rows, t, tilesSeen), rowsSeen) * tileMottle(q, w, rowMap);
   c *= .88 + .24 * fbm(wp * .22);                                              // weathering
   return mix(c, c * vec3(.86, .9, .8), smoothstep(.62, .75, fbm(wp * .09 + 4.)) * .7);
 }
@@ -399,12 +430,21 @@ vec3 beaverTiles(vec3 c, vec2 wp, vec3 n) {
   float col = floor(x), fx = fract(x);
   float h = hash12(vec2(col, row * 2. + 1. - top));
   float patch_ = vnoise(vec2(col, row) * .23);
+  float rowTone = .96 + .08 * hash12(vec2(row, 4.7));   // a row laid together, a shade of its own
   vec3 t = c * (.8 + .28 * h) * (1.08 - .28 * smoothstep(.55, .85, patch_));
   t *= mix(vec3(1.06, .97, .9), vec3(.9, .94, 1.), fract(h * 7.3));
-  t *= .9 + .14 * smoothstep(0., .6, fy);
+  t *= (.9 + .14 * smoothstep(0., .6, fy)) * rowTone;
   t *= mix(1., mix(.45, .72, under), 1. - top);  // under the top layer, in its shadow
   t *= mix(.62, 1., smoothstep(0., .05, min(fx, 1. - fx)));
-  c = mix(c * .95, t, detail(wp, .18));
+  // Further off, the tiles across a row are too fine to draw but the rows, deeper, aren't
+  // yet: the row as its tiles average out (colour, joints, the gaps between the round
+  // ends). Further still, all of that averaged, and a mottle fixed to the roof that stays.
+  vec3 mean = c * vec3(.93, .905, .9);
+  float a = 1. - clamp((1. - fy) / .32, 0., 1.), gap = 1. - sqrt(max(0., 1. - a * a));
+  vec3 rows = mean * (.9 + .14 * smoothstep(0., .6, fy)) * (1. - .42 * gap) * rowTone;
+  float rowMap = max(n.y, .3) * .3, w = length(fwidth(wp));
+  float tilesSeen = 1. - smoothstep(.045, .126, w), rowsSeen = 1. - smoothstep(rowMap * .3, rowMap * .7, w);
+  c = mix(mean * .99 * .971, mix(rows, t, tilesSeen), rowsSeen) * tileMottle(q * vec2(.18, .3), w, rowMap);
   c *= .9 + .2 * fbm(wp * .22);
   return mix(c, c * vec3(.86, .9, .8), smoothstep(.62, .75, fbm(wp * .09 + 4.)) * .7);
 }
@@ -428,7 +468,10 @@ vec3 sheetRoof(vec3 c, vec2 wp, vec3 n, float copper) {
   tone = mix(tone, tone * vec3(1.02, .8, .62), step(.97, sheet) * (1. - copper));
   vec3 t = tone * (1. + .07 * (1. - smoothstep(0., .035, seam)) - .06 * smoothstep(.94, 1., seam));
   t = mix(t, t * vec3(.82, 1.1, 1.02) + vec3(.02, .06, .05), copper * smoothstep(.45, .8, fbm(wp * .25)) * .7);
-  return mix(mix(c, tone, detail(wp, .6)), t, detail(wp, .3)) * (.95 + .1 * fbm(wp * .04));
+  // Further off, each seam a thin dark line between the pans.
+  float w = length(fwidth(wp));
+  vec3 lines = mix(c, tone, detail(wp, .6)) * (1. - .25 * thinLine(min(seam, 1. - seam) * .6, .03, w, .6));
+  return mix(lines, t, detail(wp, .3)) * (.95 + .1 * fbm(wp * .04));
 }
 // A mansard's steep lower slope (facades.ts, mansardCoords): a window in every bay of
 // about 3.2 m, 1.3 m high from 0.6 m up the slope, in a light frame. mansardGlass is 1 on
@@ -475,6 +518,7 @@ vec3 flatAge(vec3 c, vec2 wp, vec2 q, float seed) {
 vec3 flatRoof(vec3 c, vec2 wp, vec2 q, float seed) {
   c *= .86 + .22 * fbm(wp * .5);
   c *= 1. + (vnoise(wp * 7.) - .5) * .22 * detail(wp, .15) + (vnoise(wp * 23. + 5.) - .5) * .2 * detail(wp, .05);
+  c *= 1. + (vnoise(wp * 2.2 + 9.1) - .5) * .12 * detail(wp, .45);   // raked and trodden unevenly
   return flatAge(c, wp, q, seed);
 }
 // Bitumen in rolls a metre wide and about eight long, each a shade of its own, the next
@@ -482,11 +526,14 @@ vec3 flatRoof(vec3 c, vec2 wp, vec2 q, float seed) {
 // q: the roof's own axes.
 vec3 bitumenRoof(vec3 c, vec2 wp, vec2 q, float seed) {
   float row = floor(q.y), along = q.x / 8. + hash12(vec2(row, seed * 91.));
-  vec3 t = c * (.91 + .18 * hash12(vec2(row, floor(along)) + seed * 13.));
+  float rollTone = .91 + .18 * hash12(vec2(row, floor(along)) + seed * 13.);
+  vec3 t = c * rollTone;
   float s = fract(q.y), e = fract(along) * 8.;
   t *= 1. - .3 * (1. - smoothstep(.02, .08, s)) + .06 * smoothstep(.08, .14, s) * (1. - smoothstep(.14, .3, s));
   t *= 1. - .12 * (1. - smoothstep(0., .05, min(e, 8. - e)));
-  t = mix(c, t, detail(wp, .4));
+  // Further off, the rolls a shade each and their laps thin dark lines, a metre apart.
+  vec3 rolls = mix(c, c * rollTone, detail(wp, 1.)) * (1. - .3 * thinLine(min(s, 1. - s), .05, length(fwidth(wp)), 1.));
+  t = mix(rolls, t, detail(wp, .4));
   // Patches: one in a few cells of 5 by 4 m, square to the walls.
   vec2 cs = vec2(5., 4.), cq = q / cs + seed * 3.7, id = floor(cq), f = fract(cq);
   vec3 h = vec3(hash12(id), hash12(id + 7.3), hash12(id + 19.1));
@@ -503,12 +550,13 @@ vec3 bitumenRoof(vec3 c, vec2 wp, vec2 q, float seed) {
 vec3 membraneRoof(vec3 c, vec2 wp, vec2 q, float seed) {
   float row = floor(q.y / 2.), s = fract(q.y / 2.) * 2., along = q.x / 18. + hash12(vec2(row, seed * 37.));
   float e = fract(along) * 18.;
-  vec3 t = c * (.96 + .08 * hash12(vec2(row, floor(along)) + seed * 11.));
+  float sheetTone = .96 + .08 * hash12(vec2(row, floor(along)) + seed * 11.);
+  vec3 t = c * sheetTone;
   // The weld: a paler strip 4 cm wide, the edge of the sheet over it a fine dark line,
   // and dirt caught along it.
   float weld = 1. - smoothstep(.015, .045, s), edge = 1. - smoothstep(.0, .015, s);
   t *= 1. + .12 * weld - .22 * edge;
-  t = mix(c, t, detail(wp, .25));
+  t = mix(mix(c, c * sheetTone, detail(wp, 2.)), t, detail(wp, .25));   // (further off the sheets keep their shades)
   t *= 1. - (.12 + .06 * vnoise(wp * 2.)) * (1. - smoothstep(.04, .16, s)) * detail(wp, .6);
   t *= 1. - .14 * (1. - smoothstep(.0, .06, min(e, 18. - e))) * detail(wp, .4);
   t *= .97 + .06 * vnoise(wp * 1.3) + (vnoise(wp * 6. + 2.) - .5) * .05 * detail(wp, .1);
@@ -580,7 +628,7 @@ float darkRoofAs(vec3 c) {
 // number taken from its colour. Flat roofs get only a little. c0: the colour before shading.
 // more: 0-1, thicker moss (ROOF_CLUTTER, on clay tiles).
 vec3 roofWeatherMore(vec3 c, vec3 c0, vec2 wp, vec3 n, float more) {
-  float seed = fract(sin(dot(c0, vec3(127.1, 311.7, 74.7))) * 43758.5453);
+  float seed = colourSeed(c0);
   float age = .25 + .75 * smoothstep(.2, .9, fract(seed * 7.3 + vnoise(wp * .02) * .35));
   float flat_ = smoothstep(.85, .97, n.y);
   vec2 down = normalize(vec2(n.x, -n.z));
@@ -658,7 +706,8 @@ export const WEATHER_DETAIL = { value: 1 };
 // (vegetation.ts).
 export const BARE = { value: 0 };
 // The time of year for the trees (season.ts, set by weather.ts): how far the leaves have
-// turned, how much the fruit trees are in flower, and how fresh the new leaves are.
+// turned, how much the fruit trees are in flower, and how fresh the new leaves are; and
+// whether the Christmas lights are up (w, christmasLights.ts).
 export const SEASON = { value: new THREE.Vector4(0, 0, 0, 0) };
 // The wind in the trees seen from the street (webgpu/streetTrees.ts): the clock in seconds,
 // how hard it blows (about 0.3 on a calm day, 1 in a storm) and which way (x, z).
@@ -780,7 +829,7 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
   bool roofWin = abs(vFacade.w - 10.) < .5 && bn.y > .15;
   if (roofWin) diffuseColor.rgb = roofWindow(vFacade);
   else if (uRoofDetail > .5 && bn.y > .97 && (vFacade.w < .5 || vFacade.w > 4.5)) {
-    float m = floor(vFacade.w + .001), seed = fract(sin(dot(roofBase, vec3(127.1, 311.7, 74.7))) * 43758.5453);
+    float m = floor(vFacade.w + .001), seed = colourSeed(roofBase);
     vec2 q = roofAxes(bwp, vFacade.w);
     vec3 r;
     if (m > 4.5 && m < 5.5) { float as = darkRoofAs(roofBase); m = as > 1.5 ? 10. : as > .5 ? 8. : m; }
@@ -834,7 +883,9 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
     windowGlow = mix(vec3(1., .62, .3), vec3(1., .8, .55), fHash(floor(vWorld.z), 3.)) * lit * roofGlass(vFacade) * .45;
   } else if (uWindows > .005 && bn.y > .15 && bn.y < .5 && vFacade.z > .1) {
     float cell = floor(vFacade.x / vFacade.z * max(1., floor(vFacade.z / 3.2 + .5)));
-    float lit = step(fHash(cell + vFacade.z * .37, 7.), uWindows);
+    // (The face's length rounded first: as it reaches each pixel it can be a hair off, and
+    // the hash would turn that into windows switching on and off as the camera moves.)
+    float lit = step(fHash(cell + floor(vFacade.z * 8. + .5) * .04625, 7.), uWindows);
     windowGlow = mix(vec3(1., .62, .3), vec3(1., .8, .55), fHash(7., cell)) * lit * mansardGlass(vFacade, 0.) * .55;
   }
   // Rain darkens the walls and the roofs; snow lies on the roofs, less on steep ones.
@@ -908,7 +959,7 @@ export function patterned(
   if (patternedBy) return patternedBy(material, id, time, relief, deck, dig, photo, sheltered, seasonal, raster);
   material.userData.flatten = () => patterned(material.clone(), 0, time, relief, deck, dig, photo, sheltered);
   if (id === 18) id = PATTERN.flat;
-  if (id === 19 || id === 21) id = PATTERN.concrete;
+  if (id === 21) id = PATTERN.concrete;
   if ([5, 6, 7, 12, 13, 14, 15].includes(id)) material.userData.summerGround = () => patterned(material.clone(), id, time, relief, deck, dig, photo, sheltered, false);
   material.onBeforeCompile = (sh) => {
     sh.defines = { ...sh.defines, GROUND_YEAR: seasonal ? 1 : 0 };
@@ -946,15 +997,17 @@ export function patterned(
       sh.uniforms.uDeck = { value: deck.mask };
       sh.uniforms.uDeckBox = { value: deck.box };
     }
+    // Setts, mosaic, slabs and concrete: in the axes they are laid along (laying.ts).
+    const laid = [2, 3, 4, 9, 16].includes(id);
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vWorld;')
-      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;${laid ? '\nattribute float lay;\nvarying float vLay;' : ''}`)
+      .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>\n  vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;${laid ? '\n  vLay = lay;' : ''}`);
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;\nuniform sampler2D uRelief; uniform vec4 uReliefBox; uniform float uReliefOn;\nuniform sampler2D uSky; uniform vec4 uSkyBox; uniform float uSkyOn;\n${photo ? 'uniform sampler2D uPhoto; uniform vec4 uPhotoBox;\n' : ''}${deck ? 'uniform vec4 uCut; uniform sampler2D uDeck; uniform vec4 uDeckBox;\n' : ''}${dig ? 'uniform vec4 uDig;\n' : ''}${NOISE_GLSL}\n${PATTERNS_GLSL}\n${WEATHER_GLSL}${mirror ? MIRROR_GLSL : ''}`)
+      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;${laid ? '\nvarying float vLay;' : ''}\nuniform sampler2D uRelief; uniform vec4 uReliefBox; uniform float uReliefOn;\nuniform sampler2D uSky; uniform vec4 uSkyBox; uniform float uSkyOn;\n${photo ? 'uniform sampler2D uPhoto; uniform vec4 uPhotoBox;\n' : ''}${deck ? 'uniform vec4 uCut; uniform sampler2D uDeck; uniform vec4 uDeckBox;\n' : ''}${dig ? 'uniform vec4 uDig;\n' : ''}${NOISE_GLSL}\n${PATTERNS_GLSL}\n${WEATHER_GLSL}${mirror ? MIRROR_GLSL : ''}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
   vec2 wp = vec2(vWorld.x, -vWorld.z);
 ${deck ? `  if (vWorld.y > uCut.y && distance(vWorld.xz, uCut.xz) < uCut.w) discard;
-${deck.mask ? '  if (texture2D(uDeck, (wp - uDeckBox.xy) / (uDeckBox.zw - uDeckBox.xy)).r < .5) discard;\n' : ''}` : ''}  diffuseColor.rgb = ${photo ? 'texture2D(uPhoto, (wp - uPhotoBox.xy) / (uPhotoBox.zw - uPhotoBox.xy)).rgb' : `pattern(${id}, diffuseColor.rgb, wp)`};
+${deck.mask ? '  if (texture2D(uDeck, (wp - uDeckBox.xy) / (uDeckBox.zw - uDeckBox.xy)).r < .5) discard;\n' : ''}` : ''}  diffuseColor.rgb = ${photo ? 'texture2D(uPhoto, (wp - uPhotoBox.xy) / (uPhotoBox.zw - uPhotoBox.xy)).rgb' : `pattern(${id}, diffuseColor.rgb, ${laid ? 'mat2(cos(vLay), -sin(vLay), sin(vLay), cos(vLay)) * wp' : 'wp'})`};
   // Hill shading and the broad variation (broad), baked together for a tile.
   if (uReliefOn > .5) diffuseColor.rgb *= texture2D(uRelief, (wp - uReliefBox.xy) / (uReliefBox.zw - uReliefBox.xy)).r;
   else diffuseColor.rgb *= .93 + .14 * fbm(wp * .004);

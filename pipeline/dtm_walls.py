@@ -228,7 +228,7 @@ def main():
 
     def metres(path):
         try:
-            t = json.loads(path.read_text())
+            t = json.loads(path.read_text(encoding="utf-8"))
         except OSError:
             return None
         out = {"wall": [0.0, 0.0], "fence": [0.0, 0.0], "hedge": [0.0, 0.0], "guard_rail": [0.0, 0.0]}
@@ -244,7 +244,7 @@ def main():
         (0.9 m wide in the collision grid), the plots' gates in one, and the same for
         fences (which stop only the player) → {kind: [(what, x, y)]}."""
         try:
-            t = json.loads(path.read_text())
+            t = json.loads(path.read_text(encoding="utf-8"))
         except OSError:
             return {}
         bx = shapely.box(*t["box"])

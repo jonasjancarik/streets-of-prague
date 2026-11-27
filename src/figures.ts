@@ -126,7 +126,7 @@ export async function loadKit(url = 'figures.glb') {
   let rows = 0;
   for (const clip of gltf.animations) {
     const frames = Math.round(clip.duration * FPS);
-    clips[clip.name] = { row: rows, frames, duration: frames / FPS, loop: ['idle', 'walk', 'jog', 'run', 'bike', 'moto', 'cuffedwalk', 'escort', 'cuff', 'push', 'hold', 'attend', 'hose', 'hosewalk'].includes(clip.name) };
+    clips[clip.name] = { row: rows, frames, duration: frames / FPS, loop: ['idle', 'walk', 'jog', 'run', 'bike', 'moto', 'cuffedwalk', 'escort', 'cuff', 'pin', 'push', 'hold', 'attend', 'hose', 'hosewalk'].includes(clip.name) };
     rows += frames + 1;
   }
   const pos = new Float32Array(N * rows * 4), nrm = new Float32Array(N * rows * 4);
@@ -358,6 +358,9 @@ export class Figures {
     for (let k = 0; k < this.capacity; k++) if (this.wearing[k] === i) this.wearing[k] = -1;
     this.wear(i, i);
   }
+
+  // Person `id`'s colours (linear rgb): shirt, trousers, skin and hair; all 0 if they have no look.
+  colours(id: number) { return this.wardrobe.subarray(id * 12, id * 12 + 12); }
 
   // Slot `slot` in person `id`'s colours.
   wear(slot: number, id: number) {

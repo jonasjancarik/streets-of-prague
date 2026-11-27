@@ -53,7 +53,7 @@ def load_pbf(bbox):
         subprocess.run(["osmium", "tags-filter", "--overwrite", "-o", str(out), str(PBF),
                         "r/route=tram", "w/railway=tram"], check=True)
     opl = subprocess.run(["osmium", "cat", "-f", "opl,add_metadata=false", str(out)],
-                         check=True, capture_output=True, text=True).stdout
+                         check=True, capture_output=True, text=True, encoding="utf-8").stdout
     unesc = lambda s: re.sub(r"%([0-9a-f]+)%", lambda m: chr(int(m.group(1), 16)), s)  # noqa: E731
     nodes, ways, rels = {}, {}, {}
     for line in opl.splitlines():
@@ -281,7 +281,7 @@ def main(area: str = "centrum") -> None:
 
     frequencies(lines)
     out = OUT / f"{area}_now" / "lines.json"
-    out.write_text(json.dumps({"lines": lines}, ensure_ascii=False, separators=(",", ":")))
+    out.write_text(json.dumps({"lines": lines}, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"{len(lines)} lines, {out.stat().st_size / 1e6:.2f} MB → {out.relative_to(OUT.parent)}")
 
 

@@ -63,7 +63,7 @@ def frames(data, index, axis, normal):
         if not footprint.intersects(box(x, y, x + tile, y + tile)):
             continue
         key = f"{i}_{j}"
-        t = json.loads((data / "tiles" / f"{key}.json").read_text())
+        t = json.loads((data / "tiles" / f"{key}.json").read_text(encoding="utf-8"))
         tiles[key] = t
         for step in t.get("terraces", []) + t.get("structures", []):
             forbidden += polygons(step["polys"])
@@ -201,11 +201,11 @@ def fit_profile(length, samples):
 
 
 def generate(data, survey_snapshot=None):
-    index = json.loads((data / "index.json").read_text())
+    index = json.loads((data / "index.json").read_text(encoding="utf-8"))
     built = index["built"]
     if index["area"] != "praha":
         raise ValueError("this pilot is specific to the Prague map")
-    seed = json.loads((data / "tiles" / f"{SEED_TILE}.json").read_text())
+    seed = json.loads((data / "tiles" / f"{SEED_TILE}.json").read_text(encoding="utf-8"))
     edge = next((e for e in seed["drive"] if e["id"] == EDGE), None)
     if not edge or edge["name"] != "Italská" or any(edge.get(f) for f in ("level", "levels", "bridge", "tunnel")):
         raise ValueError("expected the same at-grade Italská edge")
@@ -244,7 +244,7 @@ def main():
     print(json.dumps({**profile, "trainingPairs": report["trainingPairs"], "heldOutPairs": len(report["heldOutPairs"]),
                       "sourceElevations": report["sourceElevations"]}, indent=2))
     if args.write:
-        built = json.loads((args.data / "index.json").read_text())["built"]
+        built = json.loads((args.data / "index.json").read_text(encoding="utf-8"))["built"]
         if built != profile["built"]:
             raise ValueError("map changed during the fit; rerun on a stable build")
         write(args.data / "road-profile.json", json.dumps(profile, indent=2) + "\n")

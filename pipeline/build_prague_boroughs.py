@@ -18,7 +18,7 @@ DEST = Path(__file__).resolve().parents[1] / "src/map/pragueBoroughs.json"
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
-        doc = json.loads(Path(sys.argv[1]).read_text())
+        doc = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
     else:
         response = requests.get(SOURCE, params={"where": "1=1", "outFields": "nazev", "outSR": 4326, "f": "geojson"}, timeout=60)
         response.raise_for_status()
@@ -32,5 +32,5 @@ if __name__ == "__main__":
         polygons = geom.geoms if geom.geom_type == "MultiPolygon" else [geom]
         rings = [[round(v, 6) for xy in r.coords[:-1] for v in xy] for p in polygons for r in (p.exterior, *p.interiors)]
         result.append({"box": [round(v, 6) for v in geom.bounds], "rings": rings})
-    DEST.write_text(json.dumps(result, separators=(",", ":")) + "\n")
+    DEST.write_text(json.dumps(result, separators=(",", ":")) + "\n", encoding="utf-8")
     print(DEST, DEST.stat().st_size)

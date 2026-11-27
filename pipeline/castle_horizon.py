@@ -176,7 +176,7 @@ def write_horizon(path, cameras, meshes, atlas):
 
 
 def pack():
-    cameras = json.loads((CACHE / "views.json").read_text())
+    cameras = json.loads((CACHE / "views.json").read_text(encoding="utf-8"))
     atlas = Image.new("RGBA",(2048,1024),(130,133,129,0))
     night = Image.new("RGBA",(1024,512))
     areas = footprints(LOCAL,ROOT / "pipeline/.cache/osm/praha.osm.pbf")

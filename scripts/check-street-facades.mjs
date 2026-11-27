@@ -52,6 +52,19 @@ for (let i = 0; i < count; i += 3) {
   if (result.position[i * 3 + 2] === 0 && result.normal[i * 3 + 2] > .99) front++;
 }
 assert.ok(front && deep && sill && glass && jambs, 'front planes, actual recesses, projecting stone, straight jambs and panes');
+// The steps up to the raised doorways: each flight's foot on the pavement along the wall
+// (z 0), reaching out in front of it as far as the stone drawn there.
+assert.ok(result.steps.length > 0 && result.steps.length % 8 === 0, 'the test wall has steps up to a door');
+for (let i = 0; i < result.steps.length; i += 8) {
+  const [ax, az, bx, bz, ox, oz, low, top] = result.steps.subarray(i, i + 8);
+  assert.ok(az === 0 && bz === 0 && bx > ax && ox === 0 && oz > .1 && oz < 1 && low === 0 && top > low, 'a flight stands on the pavement in front of the wall');
+  let reach = 0;
+  for (let k = 0; k < count; k++) {
+    const x = result.position[k * 3], y = result.position[k * 3 + 1], z = result.position[k * 3 + 2];
+    if (result.detail[k * 4 + 2] === F_SURFACE.dressedStone && x > ax - .001 && x < bx + .001 && y < top) reach = Math.max(reach, z);
+  }
+  assert.ok(Math.abs(reach - oz) < .02, `a flight's footprint reaches as far as its bottom step (${reach.toFixed(3)} against ${oz.toFixed(3)})`);
+}
 const blank = buffers.facade.slice(); for (let i = 3; i < blank.length; i += 4)blank[i] += 5;
 assert.equal(packStreetWalls(blank, [{ tris: [...tris] }]).length, 0, 'party walls excluded');
 assert.equal(streetModule(1 + .5 / 32768, 0, 0, 1) === 19, false, 'an inferred entrance never masquerades as an open tunnel');
@@ -77,14 +90,41 @@ manager.update(false, 4, 1, 4); assert.equal(cancelled, 1);
 ready(result); await tick(); assert.equal(scene.children.length, 1); assert.equal(geom.index, null);
 manager.update(true, 4, 1, 4); ready(result); await tick();
 assert.equal(scene.children.length, 2); assert.equal(geom.index.array[1], 0);
+// Cars run into the steps while the wall is drawn close up (game y is three.js -z).
+const flight = result.steps.subarray(0, 8), onStep = [(flight[0] + flight[2]) / 2, -flight[5] / 2];
+assert.ok(manager.stepAt(...onStep) && !manager.stepAt(onStep[0], -flight[5] - .2), 'the steps are solid, the paving in front of them is not');
 const fitted = scene.children.find(o => o.name === 'Street façade');
 let disposedObject = false;
 fitted.addEventListener('dispose', () => { disposedObject = true; });
 manager.update(false, 4, 1, 4); assert.equal(scene.children.length, 1);
 assert.ok(disposedObject, 'retiring the fitted wall releases its renderer object as well as its vertex buffers');
 for (let i = 0; i < geom.index.count; i++)assert.equal(geom.index.array[i], i, 'original triangle restored');
+assert.ok(!manager.stepAt(...onStep), 'the steps go with the close-up wall');
 manager.update(true, 4, 1, 4); manager.drop(base); ready(result); await tick(); assert.equal(scene.children.length, 1);
 console.log('Verified recessed geometry, stone profiles, passage clipping, camera swaps and late worker results.', count / 3, 'triangles in the test wall.');
+
+// A wall measured on the ground of another tile, which stops at that tile's edge: its foot
+// stood 0.6 m above the pavement. Measured again on the world's ground before it is drawn
+// close up, its building's model and the close-up one both start at the pavement.
+{
+  const lifted = buffers.facade.slice(); for (let i = 1; i < lifted.length; i += 4) lifted[i] -= .6;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(buffers.position.slice(), 3));
+  g.setAttribute('facade', new THREE.BufferAttribute(lifted, 4));
+  g.setAttribute('color', new THREE.BufferAttribute(buffers.color.slice(), 3));
+  g.setAttribute('sky', new THREE.BufferAttribute(sky.slice(), 1));
+  g.computeVertexNormals();
+  let sent = null;
+  const ground = new StreetFacades(new THREE.Scene(), { submit: (_, data) => { sent = data; return { promise: new Promise(() => {}), cancel: () => {} }; } }, undefined, () => 0);
+  ground.register(new THREE.Mesh(g), groups, [-10, -10, 30, 30]);
+  ground.update(true, 4, 1, 4);
+  assert.ok(sent, 'the wall is sent to be built');
+  for (let v = 0; v < buffers.position.length / 3; v++) {
+    assert.ok(Math.abs(sent.facade[v * 4 + 1] - buffers.position[v * 3 + 1]) < 1e-5, 'the close-up wall stands on the world\'s ground');
+    assert.ok(Math.abs(lifted[v * 4 + 1] - buffers.position[v * 3 + 1]) < 1e-5, 'the building\'s own model moves with it');
+  }
+  console.log('Verified walls measured again on the ground round them, and the steps cars run into.');
+}
 
 // An Art Nouveau shopfront has glass above its sill and solid joinery round
 // the panes. The display finish cannot leak into the doors or the flats above.
@@ -97,6 +137,28 @@ for (let i = 0; i < shopWall.detail.length; i += 4) {
 }
 assert(shopPanes.length > 0 && shopPanes.every(([h, layer]) => h < 4.4 && (layer === 66 || layer === 71)));
 console.log('Ground-floor display panes stay within the authored shop windows.');
+
+// A mapped café (mappedFrontages.ts: u, stock, word): its bay becomes a shopfront with
+// the bakery stock and KAVÁRNA (SIGN_WORDS[4]) on the fascia; a shop the game has no
+// word for gets a plain fascia, and the other bay of its room carries no made-up sign.
+const mappedWall = (stock, word) => buildStreetWall({ ...buffers, shops: Float32Array.of(2.5, stock, word) }, sky, tris);
+const cafe = mappedWall(1, 4), words = new Set(), stocks = new Set();
+for (let i = 0; i < cafe.detail.length; i += 4) {
+  if (cafe.facade[i] > 5) continue;
+  if (cafe.detail[i + 2] === F_SURFACE.shopSign) words.add(Math.floor(cafe.detail[i + 3]));
+  if (cafe.detail[i + 2] === F_SURFACE.display) stocks.add(Math.floor(cafe.detail[i + 3]));
+}
+assert.deepEqual([...words], [4], 'the mapped café names itself, and only itself: ' + [...words]);
+assert.deepEqual([...stocks], [2], 'its window holds the bakery stock: ' + [...stocks]);
+const plain = mappedWall(-1, -1);
+let plainSigns = 0, plainDisplays = 0;
+for (let i = 0; i < plain.detail.length; i += 4) {
+  if (plain.facade[i] > 5) continue;
+  if (plain.detail[i + 2] === F_SURFACE.shopSign) plainSigns++;
+  if (plain.detail[i + 2] === F_SURFACE.display) plainDisplays++;
+}
+assert.ok(plainDisplays > 0 && plainSigns === 0, 'a mapped shop without a word is still a shopfront, with a plain fascia');
+console.log('Verified mapped shops: their own word and stock, and no clashing sign beside them.');
 
 // Buildings with equal period and composition can have different wall seeds
 // and storey fits around a corner. Their principal floors still belong together.
@@ -118,6 +180,26 @@ const residential = Array.from({ length: 8 }, (_, bay) => streetModule(packed(1,
 assert.equal(residential.filter(layer => layer === 18).length, 1, 'a single residential entrance');
 assert.ok(residential.includes(21) && residential.includes(23) && residential.every(layer => [18, 21, 23].includes(layer)),
   'an Old Town residential front has a barred window and sheltered plaster beside its portal');
+// The house door gets a bell panel beside it and a place for its number plates on the
+// other side (houseNumbers.ts), clear of the portal; a shop door gets neither.
+const frontOf = (w, width) => {
+  const at = [[0, 0], [width, 0], [width, 13], [0, 0], [width, 13], [0, 13]];
+  return buildStreetWall({ position: Float32Array.from(at.flatMap(([x, y]) => [x, y, 0])), color: new Float32Array(18).fill(.5),
+    facade: Float32Array.from(at.flatMap(([x, y]) => [x, y, width, w])) }, new Float32Array(6).fill(.8), Uint32Array.of(0, 1));
+};
+const house = frontOf(packed(1, 6), 16);
+assert.equal(house.doorPlates.length, 3, 'one house door, one set of number plates: ' + house.doorPlates.length / 3);
+const [plateX, plateY] = house.doorPlates;
+assert.ok(plateY > 2.1 && plateY < 2.4 && plateX > .2 && plateX < 15.8, `the plates hang at head height on the wall: ${plateX}, ${plateY}`);
+let panel = 0, overlap = 0;
+for (let i = 0; i < house.detail.length; i += 4) {
+  const [x, y, z] = [house.position[i / 4 * 3], house.position[i / 4 * 3 + 1], house.position[i / 4 * 3 + 2]];
+  if (house.detail[i + 2] === F_SURFACE.metalFrame && y > 1.1 && y < 1.6 && z > .001) panel++;
+  if (Math.abs(x - plateX) < .12 && y > 2.08 && y < 2.44 && z > .03) overlap++;
+}
+assert.ok(panel >= 6, 'a steel bell panel stands proud of the plaster beside the door: ' + panel);
+assert.equal(overlap, 0, 'nothing of the portal stands where the plates hang');
+console.log('Verified house doors: a bell panel and a clear place for the number plates.');
 
 const awningWall = buildStreetWall({ ...buffers, facade: Float32Array.from(shopFacade, (v, i) =>
   i % 4 === 3 ? (101 + .25) / 32768 : v) }, sky, tris);
@@ -193,3 +275,24 @@ for (const floor of [1,2,4]) assert.deepEqual(upper(pitched,floor,countFlats),[1
 const [l,t,r,b] = apertures[25][0];
 assert.ok((r-l)/256 > .9 && (b-t)/512 > .49, 'ribbon lights fill the bay and reach about half a storey');
 assert.deepEqual(apertures[41], apertures[113], 'the pictured balcony and its physical door coincide');
+// Upper storeys now and then carry an air conditioner under a window or a dish beside one,
+// more on modern fronts than old ones; they are painted kit (shopPaint) off the plaster.
+{
+  const count = (look, style) => {
+    let kit = 0;
+    for (let wall = 0; wall < 24; wall++) {
+      const front = frontOf(style + packed(look, wall % 8, wall), 24);
+      if (!front) continue;
+      for (let i = 0; i < front.detail.length; i += 4) {
+        const y = front.position[i / 4 * 3 + 1], z = front.position[i / 4 * 3 + 2];
+        // The conditioner's face, off the wall at 33 cm (airConditioner), not a window box's.
+        if (front.detail[i + 2] === F_SURFACE.shopPaint && y > 4.5 && Math.abs(z - .33) < .001) kit++;
+      }
+    }
+    return kit;
+  };
+  const modern = count(LOOK.functionalist, 2), old = count(LOOK.neoRenaissance, 0);
+  assert.ok(modern > 0, 'some modern upper storeys have air conditioners: ' + modern);
+  assert.ok(modern > old, `more on modern fronts than old ones: ${modern} against ${old}`);
+  console.log('Verified air conditioners and dishes on upper storeys.');
+}

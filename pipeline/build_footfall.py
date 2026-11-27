@@ -119,7 +119,7 @@ def pois(area, tf):
     expr = [f"nwr/{k}" for k in WEIGHTS] + ["w/highway=pedestrian", "w/area:highway=pedestrian", "w/place=square"]
     subprocess.run(["osmium", "tags-filter", "--overwrite", "-o", str(tagged), str(src), *expr], check=True)
     out = subprocess.run(["osmium", "export", "-f", "geojsonseq", "-x", "print_record_separator=false",
-                          str(tagged)], check=True, capture_output=True, text=True).stdout
+                          str(tagged)], check=True, capture_output=True, text=True, encoding="utf-8").stdout
     pts, kinds = [], Counter()
     for line in out.splitlines():
         f = json.loads(line)
@@ -162,7 +162,7 @@ def transit(tf):
         return []
     cache = CACHE / "pid" / "departures.json"
     if cache.exists() and cache.stat().st_mtime > path.stat().st_mtime:
-        stops = json.loads(cache.read_text())
+        stops = json.loads(cache.read_text(encoding="utf-8"))
     else:
         print("counting departures at every stop…")
         with zipfile.ZipFile(path) as z:
@@ -178,7 +178,7 @@ def transit(tf):
                     if t:
                         count[r[3]][t] += 1
         stops = [[*where[s], dict(c)] for s, c in count.items() if s in where]
-        cache.write_text(json.dumps(stops))
+        cache.write_text(json.dumps(stops), encoding="utf-8")
     out = []
     for lon, lat, deps in stops:
         x, y = tf.transform(lon, lat)
@@ -249,18 +249,18 @@ def main(area="centrum"):
     kept = CACHE / "footfall_reference.json"
     ref = peak(tf, (x0, y0, x1, y1), total)
     if ref is None and kept.exists():
-        ref = json.loads(kept.read_text())["ref"]
+        ref = json.loads(kept.read_text(encoding="utf-8"))["ref"]
     if ref is None:
         print("measuring the Old Town Square on centrum's grid, for reference")
         ref = peak(*grid("centrum"))
-    kept.write_text(json.dumps({"ref": ref}))
+    kept.write_text(json.dumps({"ref": ref}), encoding="utf-8")
     share = np.clip(total / ref, 0, 1)
 
     out_dir = OUT / f"{area}_now"
     grey = np.round(np.sqrt(share) * 255).astype(np.uint8)
     Image.fromarray(grey, "L").save(out_dir / "footfall.png", optimize=True)
     (out_dir / "footfall.json").write_text(json.dumps({"box": [round(v, 2) for v in (x0, y0, x1, y1)], "cell": CELL,
-                                                       "size": [w, h]}))
+                                                       "size": [w, h]}), encoding="utf-8")
     size = (out_dir / "footfall.png").stat().st_size
     print(f"→ {out_dir.name}/footfall.png ({size / 1e3:.0f} kB); share of cells busier than "
           + ", ".join(f"{t}: {(share > t).mean() * 100:.1f} %" for t in (0.02, 0.1, 0.3, 0.6)))

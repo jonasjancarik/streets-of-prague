@@ -75,6 +75,74 @@ const ANGLE = 0.9, ANGLED_STEP = 3.0;
 const NO_KERB_PARKING = new Set(['motorway', 'motorway_link', 'trunk', 'trunk_link', 'primary_link', 'secondary_link', 'tertiary_link']);
 const DIVIDED = new Set(['primary', 'secondary']);
 const LANE = 3.0; // m: the least a driving lane takes of a carriageway
+// m: how far from either end of a street its kerbside row stops (the junction's corner).
+const KERB_ROW_END = 10;
+
+// The rows of cars along a street's kerbs: each side as OSM tags it (`park`: [right,
+// left] of this edge); parallel if it doesn't say. Cars stand along the kerb (`kerb`:
+// its distance from the centre on the right and left, from the pipeline's kerbs.py),
+// angled and perpendicular ones never inside the driving width, where they'd block the
+// lane. Tiles built before the kerbs only have that width: parallel cars stand inside
+// its edge, the others just outside it. `kerb` here is how far the cars' middles are
+// from the street's line, on `side`. (Where a building is in the way, they don't fit:
+// see place().)
+function kerbRows(e: DriveEdge) {
+  const out: { side: 1 | -1; o: BayOrientation; kerb: number; line: Polyline }[] = [];
+  if (e.bridge || e.tunnel || e.path.length < 30) return out;
+  for (const side of e.oneway ? [1, -1] as const : [1] as const) {
+    const tagged = e.park?.[side > 0 ? 0 : 1];
+    const o = tagged || (NO_KERB_PARKING.has(e.hw) ? 'no' : 'parallel');
+    if (o === 'no') continue;
+    const edge = e.kerb?.[side > 0 ? 0 : 1];
+    // One carriageway of a divided main road: nobody parks in its lanes, only where
+    // the kerb leaves room beside them (a lay-by, a parking lane).
+    if (!tagged && edge != null && e.oneway && (e.lanes ?? 0) >= 2 && DIVIDED.has(e.hw) && edge - (e.lanes! * LANE) / 2 < 1.9) continue;
+    const kerb = edge == null
+      ? e.width / 2 + { parallel: -1.05, diagonal: 2.55, perpendicular: 2.5 }[o]
+      : o === 'parallel' ? edge - 1.05 : Math.max(edge - 2.45, e.width / 2 + 2.55);
+    if (o === 'parallel' && Math.abs(side * kerb - e.laneOffset) < 2.3) continue;
+    out.push({ side, o, kerb, line: new Polyline(e.pts) });
+  }
+  return out;
+}
+
+// Half of how deep a row of cars is across the street: a parallel car's width, an
+// angled or perpendicular one's reach out from the kerb.
+const ROW_HALF_DEPTH: Record<BayOrientation, number> = { parallel: 1.05, diagonal: 2.3, perpendicular: 2.3 };
+// m between the points of a painted line along a row.
+const PAINT_STEP = 2;
+
+// The line Prague paints along the traffic side of a kerbside parking row in a paid
+// zone (TSK's section, `category` RES, MIX or VIS): one run per stretch of a section,
+// clipped to `box`. Rows outside the zones, and stretches over a mapped parking area
+// (`mapped`, which paints its own outline: ground.ts bayLines), get none. Nor does the
+// kerb within 5 m of a zebra crossing (`crossings`, the lines across the street), where
+// the law keeps cars off.
+const CROSSING_CLEAR = 5;
+export function kerbPaint(edges: DriveEdge[], zones: Zones, box: Bounds, mapped: Polygons = [], crossings: Point2[][] = []) {
+  const nearCrossing = (x: number, y: number) => crossings.some((c) => c.some((p, i) => i > 0 && segDist(x, y, c[i - 1], p) < CROSSING_CLEAR));
+  const out: { cat: string; pts: Point2[] }[] = [];
+  const [x0, y0, x1, y1] = box;
+  for (const e of edges) for (const { side, o, kerb, line } of kerbRows(e)) {
+    const offset = (kerb - ROW_HALF_DEPTH[o]) * side;
+    let run: Point2[] = [], cat: string | null = null;
+    const end = () => { if (cat && run.length > 1) out.push({ cat, pts: run }); run = []; };
+    const span = line.length - 2 * KERB_ROW_END, n = Math.ceil(span / PAINT_STEP);
+    for (let i = 0; i <= n; i++) {
+      const q = line.at(KERB_ROW_END + (span * i) / n);
+      const x = q.x + Math.sin(q.ang) * offset, y = q.y - Math.cos(q.ang) * offset;
+      const here = x < x0 || x > x1 || y < y0 || y > y1 || mapped.some((rings) => inPoly(x, y, rings)) || nearCrossing(x, y) ? null : zones.at(x, y)?.category ?? null;
+      if (here !== cat) {
+        // Keep the line going to where the next stretch starts.
+        if (cat && run.length) run.push([x, y]);
+        end(); cat = here;
+      }
+      if (cat) run.push([x, y]);
+    }
+    end();
+  }
+  return out;
+}
 
 // How the cars stand in a parking area: OSM's `orientation` if it's tagged, else a
 // guess from its width. Under 4.5 m is a parallel lane, up to 5.6 m angled bays (the
@@ -241,30 +309,11 @@ function slots(data: ParkingData, edges: DriveEdge[]) {
   }
   const lots = out.length;
   for (const e of edges) {
-    if (e.bridge || e.tunnel || e.path.length < 30) continue;
-    // Each side as OSM tags it (`park`: [right, left] of this edge); parallel if it
-    // doesn't say. Cars stand along the kerb (`kerb`: its distance from the centre on
-    // the right and left, from the pipeline's kerbs.py), angled and perpendicular ones
-    // never inside the driving width, where they'd block the lane. Tiles built before
-    // the kerbs only have that width: parallel cars stand inside its edge, the others
-    // just outside it. Where a building is in the way, they don't fit (see place()).
-    for (const side of e.oneway ? [1, -1] : [1]) {
-      const tagged = e.park?.[side > 0 ? 0 : 1];
-      const o = tagged || (NO_KERB_PARKING.has(e.hw) ? 'no' : 'parallel');
-      if (o === 'no') continue;
-      const edge = e.kerb?.[side > 0 ? 0 : 1];
-      // One carriageway of a divided main road: nobody parks in its lanes, only where
-      // the kerb leaves room beside them (a lay-by, a parking lane).
-      if (!tagged && edge != null && e.oneway && (e.lanes ?? 0) >= 2 && DIVIDED.has(e.hw) && edge - (e.lanes! * LANE) / 2 < 1.9) continue;
-      const kerb = edge == null
-        ? e.width / 2 + { parallel: -1.05, diagonal: 2.55, perpendicular: 2.5 }[o]
-        : o === 'parallel' ? edge - 1.05 : Math.max(edge - 2.45, e.width / 2 + 2.55);
-      if (o === 'parallel' && Math.abs(side * kerb - e.laneOffset) < 2.3) continue;
+    for (const { side, o, kerb, line } of kerbRows(e)) {
       const step = { parallel: 6, diagonal: ANGLED_STEP, perpendicular: 2.6 }[o];
       // Angled cars nose in: turned right on the right-hand side, left on the left.
       const turn = { parallel: 0, diagonal: -ANGLE * side, perpendicular: -Math.PI / 2 * side }[o];
-      const line = new Polyline(e.pts);
-      for (let s = 10; s < line.length - 10; s += step) {
+      for (let s = KERB_ROW_END; s < line.length - KERB_ROW_END; s += step) {
         const q = line.at(s);
         const x = q.x + Math.sin(q.ang) * kerb * side, y = q.y - Math.cos(q.ang) * kerb * side;
         // A mapped parking lane already covers this stretch.

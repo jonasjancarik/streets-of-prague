@@ -35,7 +35,7 @@ def kind_of(dow: int) -> int:
 def main(path: Path = DEFAULT_CSV, year: int = 2025) -> None:
     # (route, day type, hour) → [sum of travel times, count]
     acc: dict[tuple[str, int, int], list[float]] = defaultdict(lambda: [0.0, 0])
-    with open(path, newline="") as f:
+    with open(path, newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
             if row["year"] != str(year):
                 continue

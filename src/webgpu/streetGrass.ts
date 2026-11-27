@@ -15,7 +15,7 @@ import { type N, followVec, uWet, uSnow, vnoise } from './common.ts';
 
 const uSway: N = followVec(TREE_SWAY), uSeason: N = followVec(GRASS_SEASON.park);
 // The lawn's green as the ground draws it (COLORS.park in ground.ts, linear light), a little livelier.
-const GREEN = vec3(0.21, 0.37, 0.085);
+const GREEN = vec3(0.21, 0.31, 0.095);
 
 const picture = new THREE.Texture();
 picture.colorSpace = THREE.SRGBColorSpace;

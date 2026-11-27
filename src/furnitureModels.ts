@@ -131,52 +131,166 @@ function planter() {
   return join(parts);
 }
 
-function hydrant() {
-  const red = '#a13c2b', joint = '#56443c';
-  const parts = [spun([[.001, .02], [.151, .02], [.151, .055], [.14, .068], [.114, .08], [.113, .16], [.095, .22], [.09, .53], [.102, .60], [.119, .62], [.119, .65], [.108, .66], [.108, .71], [.095, .747], [.053, .77], [.001, .773]], 16, red)];
-  parts.push(spun([[.117, .146], [.128, .152], [.128, .173], [.112, .181]], 16, joint), rod([0, .759, 0], [0, .808, 0], .037, 6, '#7b6050'));
-  for (const s of [-1, 1]) {
-    parts.push(rod([s * .077, .525, 0], [s * .145, .549, 0], .073, 12, red),
-      rod([s * .145, .549, 0], [s * .169, .556, 0], .08, 12, '#7d7768'), rod([s * .168, .556, 0], [s * .18, .558, 0], .056, 8, '#aaa391'));
-    const p: Point[] = [[s * .169, .529, .035], [s * .163, .47, .052], [s * .127, .431, .065], [s * .095, .455, .071], [s * .086, .519, .062]];
-    for (let i = 1; i < p.length; i++) parts.push(rod(p[i - 1], p[i], .005, 5, joint));
+// The mapped street furniture (MAPPED in map/furniture.ts). Each model's local x runs
+// along its street and its +z faces the street.
+
+// Prague's galvanised inverted U, set across the kerb so a bike leans along it.
+function bikeStand() {
+  const steel = '#a7aca9', parts: THREE.BufferGeometry[] = [];
+  const r = .024, half = .36, top = .74, bend = .12;
+  for (const z of [-half, half]) parts.push(rod([0, 0, z], [0, top - bend, z], r, 8, steel), rod([0, -.01, z], [0, .01, z], .045, 8, '#7c807d'));
+  const arc: Point[] = [];
+  for (let i = 0; i <= 8; i++) {
+    const a = Math.PI * i / 8;
+    arc.push([0, top - bend + Math.sin(a) * bend, -Math.cos(a) * half]);
   }
-  for (let i = 0; i < 4; i++) {
-    const x = Math.cos(i * Math.PI / 2 + .78) * .125, z = Math.sin(i * Math.PI / 2 + .78) * .125;
-    parts.push(rod([x, .054, z], [x, .069, z], .013, 6, joint));
+  for (let i = 1; i < arc.length; i++) parts.push(rod(arc[i - 1], arc[i], r, 8, steel));
+  // A low cross bar to lock a wheel to.
+  parts.push(rod([0, .30, -half], [0, .30, half], .018, 6, steel));
+  return join(parts);
+}
+
+// The city's pay-and-display machine: a grey cabinet on a plinth, its screen and slots on
+// the pavement side, under a blue P sign.
+function parkingMachine() {
+  const grey = '#8b9194', dark = '#22272a', blue = '#1f4f9c', white = '#eef1f2';
+  const parts = [box(.36, .09, .26, 0, .045, 0, '#5d6264'), box(.42, 1.12, .3, 0, .65, 0, grey), box(.44, .05, .32, 0, 1.235, 0, '#6f7578')];
+  parts.push(box(.22, .16, .01, 0, .98, -.155, dark), box(.30, .05, .02, 0, .82, -.155, '#3a4043'), box(.08, .03, .02, .08, .70, -.155, dark),
+    box(.14, .26, .02, 0, .40, -.155, '#7a8083'));
+  // The sign: a white P on blue, on both faces.
+  parts.push(rod([0, 1.26, 0], [0, 1.42, 0], .025, 6, '#6f7578'), box(.34, .34, .03, 0, 1.58, 0, blue));
+  for (const z of [-.017, .017]) {
+    parts.push(box(.045, .24, .004, -.05, 1.58, z, white), box(.12, .04, .004, .0, 1.68, z, white),
+      box(.12, .04, .004, .0, 1.58, z, white), box(.04, .14, .004, .06, 1.63, z, white));
   }
   return join(parts);
 }
 
-function kiosk() {
-  const foot = '#737675', metal = '#b5b9b6', gasket = '#475152';
-  const parts = [box(.91, .066, .92, 0, .042, 0, foot), box(.94, .055, .94, 0, 2.105, 0, gasket),
-  box(.94, .148, .94, 0, 2.20, 0, '#c9a343'), box(.948, .036, .948, 0, 2.286, 0, '#d2d1bf')];
-  const title: Swatch = [265, 262, 507, 312], keys: Swatch = [265, 328, 425, 500];
-  for (const angle of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) parts.push(finish(new THREE.PlaneGeometry(.615, .133).translate(0, 2.2, .472).rotateY(angle), '#ffffff', title));
-  for (const x of [-.426, .426]) for (const z of [-.426, .426]) {
-    parts.push(box(.047, 2.07, .047, x, 1.076, z, metal), box(.074, .15, .074, x, .106, z, gasket));
-  }
-  const panes: THREE.BufferGeometry[] = [];
-  for (const angle of [Math.PI, Math.PI / 2, -Math.PI / 2]) {
-    for (const y of [.235, 1.026, 2.046]) parts.push(box(.82, .041, .037, 0, y, .427, metal).rotateY(angle));
-    parts.push(box(.808, .128, .027, 0, .151, .427, gasket).rotateY(angle));
-    panes.push(new THREE.PlaneGeometry(.802, 1.78).translate(0, 1.141, .428).rotateY(angle));
-    for (let i = -2; i <= 2; i++) parts.push(box(.063, .012, .008, i * .145, 1.494, .431, '#bfc8c1').rotateY(angle));
-  }
-  // Back board, payphone cabinet, recessed keypad and handset on a coiled tether.
-  parts.push(box(.514, .89, .043, 0, 1.31, -.395, metal), box(.366, .574, .137, 0, 1.374, -.31, '#666f71'),
-    box(.37, .031, .194, 0, 1.079, -.28, gasket), box(.27, .06, .095, .035, 1.205, -.22, '#596062'),
-    finish(new THREE.PlaneGeometry(.181, .230).translate(.054, 1.473, -.239), '#fff', keys),
-    box(.105, .014, .015, .051, 1.294, -.232, '#30383b'));
-  const hand: Point[] = [[-.136, 1.59, -.206], [-.131, 1.55, -.176], [-.137, 1.404, -.168], [-.134, 1.38, -.194]];
-  for (let i = 1; i < hand.length; i++) parts.push(rod(hand[i - 1], hand[i], .019, 8, '#303c3c'));
-  for (const y of [1.38, 1.589]) parts.push(box(.058, .057, .057, -.136, y, -.194, '#354042'));
-  const cord: Point[] = [[-.138, 1.356, -.193], [-.155, 1.16, -.182], [-.124, 1.084, -.18], [-.090, 1.116, -.197], [-.076, 1.215, -.23]];
-  for (let i = 1; i < cord.length; i++) parts.push(rod(cord[i - 1], cord[i], .005, 5, gasket));
-  return { body: join(parts), glass: join(panes) };
+// The cast-iron Prague bollard (pražský sloupek): a dark fluted post with a collar and a
+// rounded cap.
+function bollard() {
+  const iron = '#2d3130';
+  const g = spun([[.001, 0], [.105, 0], [.105, .05], [.088, .07], [.078, .12], [.07, .62], [.086, .64], [.09, .68], [.076, .70],
+    [.072, .78], [.06, .84], [.036, .875], [.001, .885]], 12, iron, undefined, true);
+  return join([g, spun([[.074, .30], [.082, .31], [.082, .34], [.072, .35]], 12, '#3a3f3d')]);
 }
+
+// The orange Česká pošta box on a grey post, its slot facing the pavement.
+function postBox() {
+  const orange = '#e7862a', post = '#6b6f6e', dark = '#2a2423';
+  const parts = [rod([0, 0, 0], [0, .92, 0], .03, 8, post), box(.34, .44, .22, 0, 1.12, 0, orange)];
+  // A roof sloping to the back sheds rain; the slot has a hood, the front the post's horn
+  // and a white collection-times card.
+  parts.push(box(.37, .03, .26, 0, 0, 0, orange).rotateX(.18).translate(0, 1.36, .01),
+    box(.2, .022, .01, 0, 1.24, -.115, dark), box(.24, .018, .04, 0, 1.262, -.128, orange),
+    box(.10, .07, .006, 0, 1.06, -.113, '#24459a'), box(.16, .05, .006, 0, .96, -.113, '#f2ede4'));
+  return join(parts);
+}
+
+// The same box hung on a house wall at local -z, its slot facing out (+z).
+function wallPostBox() {
+  const orange = '#e7862a', dark = '#2a2423';
+  return join([box(.30, .08, .04, 0, 1.12, -.11, '#5a5e5d'), box(.34, .44, .22, 0, 1.12, 0, orange),
+    box(.37, .03, .26, 0, 0, 0, orange).rotateX(-.18).translate(0, 1.36, -.01),
+    box(.2, .022, .01, 0, 1.24, .115, dark), box(.24, .018, .04, 0, 1.262, .128, orange),
+    box(.10, .07, .006, 0, 1.06, .113, '#24459a'), box(.16, .05, .006, 0, .96, .113, '#f2ede4')]);
+}
+
+// A Stolperstein: a 10 cm brass plate on its cobble, its top level with the paving (the
+// furniture stands 4 cm down: furnitureMatrices).
+function stolperstein() {
+  return join([box(.096, .03, .096, 0, .03, 0, '#c19a45'), box(.1, .006, .1, 0, .0455, 0, '#d8b25a')]);
+}
+
+// A street cabinet of the power or signal people: grey steel, two doors, on a concrete foot.
+function cabinet() {
+  const steel = '#9a9b94', seam = '#5f625d';
+  const parts = [box(.84, .12, .38, 0, .06, 0, '#8e8b84'), box(.8, 1.1, .34, 0, .67, 0, steel), box(.86, .04, .4, 0, 1.24, 0, '#86877f')];
+  for (const s of [-1, 1]) parts.push(box(.01, 1.0, .012, 0, .67, s * .171, seam), box(.03, .09, .02, s * .06, .78, s * .175, '#3b3d3a'));
+  for (let i = 0; i < 4; i++) parts.push(box(.3, .012, .01, -.2, 1.0 + i * .04, -.172, seam), box(.3, .012, .01, -.2, 1.0 + i * .04, .172, seam));
+  return join(parts);
+}
+
+// The round advertising column (reklamní sloup): a green cast foot and crown, and a drum
+// of posters between, each in its own faded colours.
+function advertisingColumn() {
+  const green = '#2f4a3c', posters = ['#c9b48a', '#a3402f', '#e2ddcf', '#2f5d86', '#d8a531', '#55734f', '#c96b8c', '#efe8d8', '#7a3b2e', '#4a4a52'];
+  const parts = [spun([[.001, 0], [.66, 0], [.66, .1], [.6, .16], [.58, .42], [.62, .46], [.001, .46]], 24, green, undefined, true)];
+  for (let i = 0; i < 12; i++) {
+    const a0 = i * Math.PI / 6, a1 = (i + 1) * Math.PI / 6, r = .57, low = .46 + (i % 3) * .02, high = 2.62 - (i % 2) * .05;
+    const g = new THREE.CylinderGeometry(r, r, high - low, 3, 1, true, a0, a1 - a0).translate(0, (low + high) / 2, 0);
+    parts.push(finish(g, posters[(i * 7) % posters.length]));
+    const top = new THREE.CylinderGeometry(r, r, .9, 3, 1, true, a0, (a1 - a0) / 2).translate(0, 1.95, 0);
+    parts.push(finish(top.scale(1.004, 1, 1.004), posters[(i * 3 + 4) % posters.length]));
+  }
+  parts.push(spun([[.001, 2.6], [.6, 2.6], [.66, 2.66], [.7, 2.72], [.66, 2.78], [.5, 2.95], [.28, 3.1], [.1, 3.22], [.05, 3.42], [.08, 3.5], [.001, 3.56]], 24, green, undefined, true));
+  return join(parts);
+}
+
+// A poster case on the pavement: an aluminium frame on two legs, a poster behind glass on
+// either face.
+function posterCase() {
+  const frame = '#5d6365', parts = [box(1.24, 1.84, .12, 0, 1.18, 0, frame)];
+  for (const z of [-.061, .061]) parts.push(box(1.12, 1.7, .004, 0, 1.18, z, z > 0 ? '#d7c59a' : '#7d9db5'), box(.9, .3, .004, 0, 1.6, z * 1.02, '#a8452f'));
+  for (const x of [-.5, .5]) parts.push(box(.08, .3, .08, x, .14, 0, frame), box(.2, .03, .2, x, .015, 0, '#45494a'));
+  return join(parts);
+}
+
+// The cast-iron grate round a street tree: a square frame, two rings of bars round the
+// trunk's hole, level with the paving (the furniture stands 4 cm down).
+function treeGrate() {
+  const iron = '#2b2d2b', parts: THREE.BufferGeometry[] = [], y = .035;
+  for (const s of [-1, 1]) parts.push(box(1.2, .03, .06, 0, y, s * .57, iron), box(.06, .03, 1.2, s * .57, y, 0, iron));
+  for (const r of [.3, .45]) for (const s of [-1, 1]) parts.push(box(r * 2, .03, .03, 0, y, s * r, iron), box(.03, .03, r * 2, s * r, y, 0, iron));
+  for (let i = 0; i < 16; i++) {
+    const a = i * Math.PI / 8, c = Math.cos(a), sn = Math.sin(a), lo = .22 / Math.max(Math.abs(c), Math.abs(sn)), hi = .56 / Math.max(Math.abs(c), Math.abs(sn));
+    parts.push(rod([c * lo, y, sn * lo], [c * hi, y, sn * hi], .012, 4, iron));
+  }
+  return join(parts);
+}
+
+// A drinking fountain (pítko): a dark steel post with a basin and a push tap.
+function drinkingFountain() {
+  const dark = '#3a3f3f';
+  return join([spun([[.001, 0], [.2, 0], [.2, .04], [.13, .06], [.12, .86], [.001, .86]], 16, dark, undefined, true),
+    spun([[.001, .82], [.2, .82], [.24, .9], [.22, .93], [.17, .88], [.001, .88]], 18, '#6e7372'),
+    rod([0, .86, 0], [0, 1.02, 0], .03, 8, dark), rod([0, 1.02, 0], [.08, 1.02, 0], .016, 6, '#8d9291'),
+    box(.05, .03, .05, 0, 1.05, 0, '#b9bdbc')]);
+}
+
+// A glass bell: a round fibreglass dome with two openings and a lifting hook.
+function glassBell(color: string) {
+  const g = spun([[.001, .05], [.62, .05], [.66, .12], [.68, .55], [.66, .95], [.58, 1.22], [.42, 1.42], [.2, 1.52], [.001, 1.545]], 20, color, undefined, false);
+  const parts = [g, rod([0, 1.53, 0], [0, 1.72, 0], .03, 6, '#5c625f')];
+  // Ring for the crane's hook.
+  for (let i = 0; i < 8; i++) {
+    const a = i * Math.PI / 4, b = (i + 1) * Math.PI / 4;
+    parts.push(rod([Math.cos(a) * .09, 1.80 + Math.sin(a) * .09, 0], [Math.cos(b) * .09, 1.80 + Math.sin(b) * .09, 0], .018, 5, '#5c625f'));
+  }
+  for (const a of [Math.PI / 2, -Math.PI / 2]) {
+    const disc = new THREE.CircleGeometry(.11, 14);
+    const at = new THREE.Vector3(Math.sin(a) * .675, 1.02, Math.cos(a) * .675);
+    disc.lookAt(at.clone().setY(0).normalize()).translate(at.x, at.y, at.z);
+    parts.push(finish(disc, '#151816'), box(.30, .06, .06, at.x * .99, 1.17, at.z * .99, color).rotateY(a));
+  }
+  return join(parts);
+}
+
+// A 1100 l steel container on four castors with a domed plastic lid.
+function container(color: string) {
+  const body = color, lid = color, dark = '#2b2e2d';
+  const parts = [box(1.30, .95, 1.0, 0, .62, 0, body), box(1.36, .06, 1.06, 0, 1.11, 0, '#4e5352')];
+  const dome = spun([[.001, 0], [.5, 0], [.48, .09], [.36, .17], [.001, .2]], 16, lid, undefined, true);
+  dome.scale(1.32, 1, 1.02); dome.translate(0, 1.14, 0);
+  parts.push(dome, box(1.2, .04, .05, 0, 1.12, .53, dark));
+  for (const x of [-.55, .55]) for (const z of [-.4, .4]) parts.push(rod([x, .02, z], [x, .14, z], .05, 8, dark));
+  parts.push(rod([-.67, .95, -.2], [-.67, .95, .2], .02, 6, '#7d8281'), rod([.67, .95, -.2], [.67, .95, .2], .02, 6, '#7d8281'));
+  return join(parts);
+}
+export const CONTAINER_COLOURS = ['#2f6b3a', '#e6e6dc', '#2a5aa8', '#e8c22a', '#e27a24', '#7b8180'];
+
 export function furnitureModels() {
-  const phone = kiosk();
-  return { bodies: [bench(), bin(), planter(), hydrant(), phone.body], glass: phone.glass };
+  return [bench(), bin(), planter(), bikeStand(), parkingMachine(), bollard(), postBox(),
+    glassBell(CONTAINER_COLOURS[0]), glassBell(CONTAINER_COLOURS[1]), ...CONTAINER_COLOURS.slice(2).map(container), wallPostBox(), stolperstein(),
+    cabinet(), advertisingColumn(), posterCase(), drinkingFountain(), treeGrate()];
 }

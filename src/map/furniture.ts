@@ -1,12 +1,32 @@
 // Conservative scenery inferred from mapped land use, made once in a tile worker.
 import * as THREE from 'three';
-import { Grid, fillPolys, strokeLines, rng } from './geo.ts';
+import { Grid, fillPolys, strokeLines, rng, onPolygons } from './geo.ts';
 import { PITCH_KINDS } from './pitches.ts';
 import type { Geo, Point2, Bounds, Polygons } from './geo.ts';
 import type { TreeTileData, TreeInstances } from './vegetation.ts';
 import type { RawStreetEdge } from '../network.ts';
 
-export type FurnitureKind = 0 | 1 | 2 | 3 | 4; // bench, bin, courtyard planter; surveyed: hydrant, phone box (map/utility.ts)
+// The furniture's kinds, the index of each one's model, size and draw. Inferred from land
+// use: bench, bin, courtyard planter; mapped in OSM (MAPPED, build_street_furniture.py): the
+// rest down to the drinking fountain, and benches and bins too; a post box mapped by a
+// building hangs on its wall (mappedSpots); inferred: the grate round a street tree in
+// paving (treeGrates). (The traffic signs are map/signs.ts's.) (No standing
+// hydrants: Prague's are underground, their covers drawn with the street's ironwork.)
+export const KIND = {
+  bench: 0, bin: 1, planter: 2, bikeStand: 3, parkingMachine: 4, bollard: 5, postBox: 6,
+  glass: 7, clearGlass: 8, paper: 9, plastic: 10, cartons: 11, metal: 12, wallPostBox: 13, stolperstein: 14,
+  cabinet: 15, advertisingColumn: 16, posterCase: 17, drinkingFountain: 18, treeGrate: 19,
+} as const;
+export type FurnitureKind = (typeof KIND)[keyof typeof KIND];
+// Kinds that lie flat in the ground and stop nobody.
+export const FLAT_FURNITURE = new Set<number>([KIND.stolperstein, KIND.treeGrate]);
+// pipeline/build_street_furniture.py's kinds, by name.
+export const MAPPED: Record<string, FurnitureKind> = {
+  bin: KIND.bin, 'bike stand': KIND.bikeStand, 'parking machine': KIND.parkingMachine, bollard: KIND.bollard, 'post box': KIND.postBox,
+  glass: KIND.glass, 'clear glass': KIND.clearGlass, paper: KIND.paper, plastic: KIND.plastic, cartons: KIND.cartons, metal: KIND.metal,
+  stolperstein: KIND.stolperstein, bench: KIND.bench, cabinet: KIND.cabinet, 'advertising column': KIND.advertisingColumn,
+  'poster case': KIND.posterCase, 'drinking fountain': KIND.drinkingFountain,
+};
 export interface FurnitureSpot { kind: FurnitureKind; x: number; y: number; z: number; angle: number }
 export interface FurnitureInstances { matrices: Float32Array[]; spots: FurnitureSpot[] }
 export interface FurnitureData extends TreeTileData {
@@ -16,7 +36,69 @@ export interface FurnitureData extends TreeTileData {
   reserved: Float32Array; // surveyed lamps, independent of tile arrival order
   structures: Polygons;
 }
-export const FURNITURE_SIZE = [[0.95, 0.42], [0.32, 0.32], [0.65, 0.65], [0.16, 0.16], [0.47, 0.47]] as const;
+// The mapped items of a tile (mappedFurniture.ts: kind, x, y, angle) as spots. A post box
+// mapped within WALL_BOX of a building hangs on its wall, facing out (KIND.wallPostBox); anything
+// else whose point is inside a building, or on the game's carriageway, is left out.
+const WALL_BOX = 1.2;
+export function mappedSpots(m: Float32Array, buildings: { rings: Point2[][] }[], onRoad: (x: number, y: number) => boolean,
+  height: (x: number, y: number) => number) {
+  const inside = onPolygons(buildings.map(b => b.rings));
+  const wall = (x: number, y: number) => {
+    let best: { x: number; y: number; d: number; angle: number } | null = null;
+    for (const { rings } of buildings) for (const ring of rings) for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [ax, ay] = ring[j], [bx, by] = ring[i], dx = bx - ax, dy = by - ay, len = dx * dx + dy * dy;
+      if (!len || x < Math.min(ax, bx) - WALL_BOX || x > Math.max(ax, bx) + WALL_BOX || y < Math.min(ay, by) - WALL_BOX || y > Math.max(ay, by) + WALL_BOX) continue;
+      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / len)), px = ax + dx * t, py = ay + dy * t, d = Math.hypot(px - x, py - y);
+      if (d <= WALL_BOX && (!best || d < best.d)) best = { x: px, y: py, d, angle: Math.atan2(dy, dx) };
+    }
+    return best;
+  };
+  const out: FurnitureSpot[] = [];
+  for (let i = 0; i + 3 < m.length; i += 4) {
+    let kind = m[i] as FurnitureKind, x = m[i + 1], y = m[i + 2], angle = m[i + 3];
+    const hung = kind === KIND.postBox ? wall(x, y) : null;
+    if (hung) {
+      // Local +z is (sin a, -cos a): turn it away from the building, and stand just off the wall.
+      const backwards = inside(hung.x + Math.sin(hung.angle) * .3, hung.y - Math.cos(hung.angle) * .3);
+      angle = hung.angle + (backwards ? Math.PI : 0);
+      x = hung.x + Math.sin(angle) * .13; y = hung.y - Math.cos(angle) * .13;
+      // (Its front, the slot, faces local -z on the freestanding box; on the wall it faces out.)
+      kind = KIND.wallPostBox;
+    } else if (inside(x, y) || onRoad(x, y)) continue;
+    out.push({ kind, x, y, z: height(x, y), angle });
+  }
+  return out;
+}
+
+// A surveyed tree planted in paving (no mapped green under it, and a road within
+// GRATE_ROAD or a paved square round it) has a cast-iron grate round its foot, square to
+// the nearest road it finds.
+const GRATE_ROAD = 7;
+export function treeGrates(trees: readonly (readonly (number | undefined)[])[], areas: Record<string, Polygons | undefined>, onRoad: (x: number, y: number) => boolean,
+  box: Bounds, height: (x: number, y: number) => number) {
+  const green = onPolygons(["park", "garden", "lawn", "verge", "meadow", "field", "wood", "orchard", "cover_grass", "dtm_green", "dtm_garden", "dtm_wood", "dtm_yard", "dtm_pitch", "bare",
+    "ipr_lawn", "ipr_meadow", "ipr_bed", "ipr_shrubs", "ipr_grove"].flatMap(k => areas[k] ?? []));
+  const square = onPolygons(["square", "square_setts", "square_asphalt"].flatMap(k => areas[k] ?? []));
+  const out: FurnitureSpot[] = [];
+  for (const tree of trees) {
+    const x = tree[0] ?? NaN, y = tree[1] ?? NaN;
+    if (!(x >= box[0]) || x >= box[2] || y < box[1] || y >= box[3] || green(x, y) || onRoad(x, y)) continue;
+    let angle = NaN;
+    for (let r = 1.5; r <= GRATE_ROAD && Number.isNaN(angle); r += 1.5) for (let k = 0; k < 8; k++) {
+      const a = k * Math.PI / 4;
+      if (onRoad(x + Math.cos(a) * r, y + Math.sin(a) * r)) { angle = a; break; }
+    }
+    if (Number.isNaN(angle) && !square(x, y)) continue;
+    out.push({ kind: KIND.treeGrate, x, y, z: height(x, y), angle: Number.isNaN(angle) ? 0 : angle });
+  }
+  return out;
+}
+
+// Half its footprint along its local x and z (m), for collision.
+export const FURNITURE_SIZE = [[0.95, 0.42], [0.32, 0.32], [0.65, 0.65],
+  [0.05, 0.40], [0.24, 0.18], [0.12, 0.12], [0.2, 0.16],
+  [0.66, 0.66], [0.66, 0.66], [0.70, 0.56], [0.70, 0.56], [0.70, 0.56], [0.70, 0.56], [0.18, 0.12], [0.05, 0.05],
+  [0.42, 0.2], [0.62, 0.62], [0.62, 0.1], [0.2, 0.2], [0.6, 0.6]] as const;
 export const FURNITURE_KINDS = FURNITURE_SIZE.length;
 const STEP = 14;
 const INSET = 12; // neighbouring generated tree crowns can reach across a tile edge

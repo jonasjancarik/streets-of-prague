@@ -1,3 +1,5 @@
+// (First: it sets every texture's filtering, so it must come before any texture is made.)
+import './textureQuality.ts';
 import { DriverExit } from './driverExit.ts';
 import { ROOFTOP } from './roofSurface.ts';
 import { headingUpOn } from './headingup.ts';
@@ -9,7 +11,7 @@ import { stationAllowed, onRadioPreferencesChange } from './radio-preferences.ts
 import * as THREE from 'three';
 import { renderMirror, renderRiverMirror, RIVER_MIRROR, RIVER_MODEL_LAYER } from './mirror.ts';
 import { renderProbe } from './probe.ts';
-import { POST, drawPost, motionBlurFull, motionBlurOn } from './post.ts';
+import { OTHERS, POST, drawPost, motionBlurFull, motionBlurOn, postTarget } from './post.ts';
 import { setupPhoto } from './photo.ts';
 import { FramePhotos, captureFrame, png, thumbnail } from './frameCapture.ts';
 import { streetSurfaceView } from './streetSurface.ts';
@@ -69,7 +71,7 @@ import { Spray } from './spray.ts';
 import { Water } from './water.ts';
 import { Beacons, ownBeacon } from './beacons.ts';
 import { Cannon, TANK, HOSE } from './cannon.ts';
-import { Graphics, savedChoice, type Choice } from './graphics.ts';
+import { Graphics, savedChoice, ABOVE_HEIGHT, type Choice } from './graphics.ts';
 import { createGameRenderer, retryStart } from './renderer.ts';
 import { setupVR } from './vr.ts';
 import { StopBoard } from './board.ts';
@@ -346,6 +348,7 @@ async function main() {
   const scene = new THREE.Scene();
   // First person: life-size people near you (lifesize.ts, rocketbox.ts), loaded the first time it's on.
   const lifeSize = new LifeSize(scene, renderer);
+  lifeSize.compile = (o) => renderer.compileAsync(o, camera, scene);
   // (?rocketbox=0 keeps the usual figures, to compare.)
   lifeSize.enabled = params.get('rocketbox') !== '0';
   // Who you are in the street, picked now so your avatar can load with the map (the Walker
@@ -365,13 +368,39 @@ async function main() {
   // loads: your avatar and their clips at once, the crowd once the map is in (mapIn).
   let mapLoaded = () => {};
   const mapIn = new Promise<void>((done) => { mapLoaded = done; });
+  // Once, from above, a few seconds after the map is in: the street level's shaders compiled
+  // ahead, so stepping into the street doesn't build them all in its first frames (17
+  // shaders and 24 pipelines, frames of 270 and 300 ms on an RTX 5060 Ti). What's drawn
+  // only from the street (world.furnitureCamera) is shown for it, nothing is culled, and
+  // it's for the target the scene is drawn into (post.ts). compileAsync takes its list of
+  // what to draw at once, so all that is put back straight after. Street trees, shadows, the
+  // sky seen from the street and what's only made there still come on the first step.
+  let streetWarmAt = Infinity;
+  const warmStreetView = () => {
+    const dp = (renderer as unknown as { drawingPipeline?: { isCulled: (o: THREE.Object3D, c: THREE.Camera) => boolean } }).drawingPipeline;
+    if (!gpuBackend || !dp) return;
+    const culled = dp.isCulled, was = renderer.getRenderTarget(), x = camera.position.x, z = camera.position.z;
+    let done: Promise<unknown> = Promise.resolve();
+    world.furnitureCamera(true, x, z);
+    dp.isCulled = () => false;
+    try {
+      const into = postTarget();
+      if (into) renderer.setRenderTarget(into as THREE.WebGLRenderTarget); // (a WebGPU one: typed as the legacy renderer's)
+      done = renderer.compileAsync(scene, camera);
+    } finally {
+      dp.isCulled = culled;
+      renderer.setRenderTarget(was);
+      world.furnitureCamera(false, x, z);
+    }
+    done.catch((e) => console.warn('Street view warm-up', e));
+  };
   const streetPeople = (view: PlayerView) => { if (view === 'first' || view === 'third') void lifeSize.preload(mapIn); };
   if (!vr) { streetPeople(start ? start.view() : startView); viewPicked = streetPeople; }
   // Before the game opens in a street view: your avatar in, its shaders compiled. A slow
   // connection doesn't keep the game shut for long: the crowd's stand-ins fill in meanwhile.
   const streetPeopleReady = async () => {
     status('Bringing in the people…');
-    const ready = lifeSize.preload(mapIn).then(() => lifeSize.warm((o) => renderer.compileAsync(o, camera, scene)));
+    const ready = lifeSize.preload(mapIn).then(() => lifeSize.warm());
     await Promise.race([ready, new Promise((done) => setTimeout(done, 15_000))]);
     status('');
   };
@@ -681,7 +710,8 @@ async function main() {
   let cutR = 0; // radius of the hole above a passage, under a bridge or down into a tunnel (see CUTAWAY)
 
   // First person: how far the city is loaded and drawn, and which way the view looks.
-  const EYES_REACH = 400, STEP5 = THREE.MathUtils.degToRad(5), looking = new THREE.Vector3(), view = { h: 0, spread: 1 };
+  const aboveAt = new THREE.Vector3();
+  const STEP5 = THREE.MathUtils.degToRad(5), looking = new THREE.Vector3(), view = { h: 0, spread: 1 };
   const viewRadius = (h = height) => h * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * Math.hypot(1, camera.aspect) + 15;
   // The sun's shadow map covers only what is on screen: the view's rectangle from a
   // little below the lowest ground in it to 40 m above the highest (the roofs), as the
@@ -932,7 +962,8 @@ async function main() {
   // Busted: out of the car (the police keep it), and a moment before you can move again.
   const stats = { knocked: 0, wrecked: 0, busted: 0, wasted: 0 };
   let frozen = 0;
-  const busted = (by?: Officer) => {
+  // (`tackled`: brought down on foot by an officer's dive, src/police.ts.)
+  const busted = (by?: Officer, tackled = false) => {
     if (frozen > 0 || testkit?.unarrested) return;
     missions.onBusted();
     getIn.cancel();
@@ -958,7 +989,7 @@ async function main() {
     // Not a jump: the banner comes up as the handcuffs go on, you're walked to the police
     // car, the screen fades out, you're taken to the station, and it fades back in.
     frozen = Infinity;
-    arrest.begin(by ?? null, car);
+    arrest.begin(by ?? null, car, tackled && !car);
     showBanner(text, true);
   };
   // What you were driving when you were caught: gone when you come out.
@@ -2354,7 +2385,7 @@ async function main() {
   const apart = (a: { gz?: number }, b: { gz?: number }) => a.gz !== undefined && b.gz !== undefined && Math.abs(a.gz - b.gz) > 3;
   // A car on the road above a tunnel you walk in (or under your bridge) is out of reach.
   const apartOnFoot = (c: Car) => { world.track(c); world.track(walker); return apart(c, walker); };
-  const moving = (c: Car) => c.mode === 'player' || c.vx * c.vx + c.vy * c.vy > 0.0025 || Math.abs(c.w) > 0.01; // over 5 cm/s
+  const moving = (c: Car) => c.mode === 'player' || !!c.physics || c.vx * c.vx + c.vy * c.vy > 0.0025 || Math.abs(c.w) > 0.01; // over 5 cm/s (or still tumbling: physicalHandling.ts)
   let restingCount = -1;
   const syncResting = () => {
     if (incremental) { restingByCar.sync(loose, moving); return; }
@@ -2406,24 +2437,26 @@ async function main() {
     if (!footView && gaitActive) gait.reset();
     gaitActive = footView;
     if (inCar) {
-      const realistic = firstPersonOptions.handling === 'realistic' && !!testkit?.eyes && !testkit.cam;
+      // (Overhead, every car drives with the classic handling.)
+      const handling = !!testkit?.eyes && !testkit.cam ? firstPersonOptions.handling : 'classic';
       let steer = ctl.aim ? steerToward(inCar, ctl.aim.h, ctl.move) : ctl.turn;
       if (ctl.run) {
-        const a = assist.steer(inCar, steer, realistic ? inCar.suspension : undefined);
+        const a = assist.steer(inCar, steer, handling !== 'classic' ? inCar.physics ?? inCar.suspension : undefined);
         if (a !== null) { steer = a; assisted = true; }
       } else assist.reset();
       held = ctl.aim && !assisted ? { h: ctl.aim.h, throttle: ctl.move, handbrake: ctl.brake } : null;
       // Keeping to the lane, you keep to the speed limit too.
       const cap = assisted ? (assist.limit ?? 50) / 3.6 : null;
       inCar.touchDriving = touch.active;
-      const upright = !inCar.roll;
+      const upright = !inCar.roll && !inCar.physics?.tipped;
       // (A bus stands still while its doors are open, and until they've shut.)
       const doorsOpen = stopWaiting.doorsOpen(inCar) || (isBus(inCar) && !!inCar.door && inCar.door[2] + inCar.door[3] > 0.02);
-      const hit = inCar.update(dt, { throttle: doorsOpen ? 0 : ctl.move, steer, handbrake: doorsOpen || ctl.brake, cap }, grid, realistic);
-      // Rolling over (rollover.ts): each landing on a new corner knocks you about.
-      if (inCar.roll) {
+      const hit = inCar.update(dt, { throttle: doorsOpen ? 0 : ctl.move, steer, handbrake: doorsOpen || ctl.brake, cap }, grid, handling);
+      // Rolling over (rollover.ts, or physicalHandling.ts): each landing on a new corner
+      // knocks you about.
+      if (inCar.roll || inCar.physics?.tipped) {
         if (upright) telemetry.did('rolled a car over');
-        if (inCar.roll.moving && hit > 4) hurt(hit * 0.6);
+        if ((inCar.roll?.moving || inCar.physics?.tumbling) && hit > 4) hurt(hit * 0.6);
       }
       if (hit > 6) { shake = Math.min(1.2, shake + hit * 0.04); hapticCrash(hit); }
       jolt = hit;
@@ -2965,6 +2998,7 @@ async function main() {
   }
   const loadMs = performance.now(); // the map is ready; what follows waits for the player
   mapLoaded();
+  streetWarmAt = performance.now() + 3000;
   loadEnd();
   let resumed = false;
   if (start) {
@@ -3105,10 +3139,11 @@ async function main() {
     // The city lives well beyond the screen; only the tiles near it are drawn.
     // (The developer panel's free camera can look far across the city: everything is drawn.)
     // Zooming out, the tiles the view is about to take in are drawn before it gets there.
-    // (In first person you see along the street: 400 m of it, as far as the haze lets you,
-    // and of that only the tiles the view looks towards are drawn.)
+    // (In first person you see along the street: 400 m of it on High, as far as the haze lets
+    // you, and of that only the tiles the view looks towards are drawn. graphics.ts: view.)
     const eyes = !testkit?.cam && testkit?.eyes;
-    const eyeReach = vr?.active && firstPersonOptions.vrShortView ? 120 : EYES_REACH;
+    const EYES_REACH = graphics.viewDistance;
+    const eyeReach = vr?.active && firstPersonOptions.vrShortView ? Math.min(120, EYES_REACH) : EYES_REACH;
     if (eyes) {
       camera.getWorldDirection(looking);
       // (A little wider than the picture, so turning doesn't show an empty edge at once;
@@ -3214,7 +3249,16 @@ async function main() {
     } else ferryAt = undefined;
     if (ride.on && ride.arrived() && inspector.phase !== 'decide') getOff();
     if (police.stars === 0 && inspector.owed) inspector.owed = 0;
-    const fromStreet = !!eyes || (testkit?.cam?.tilt ?? 0) > 35;
+    // `eyeStreet`: the camera is at street level. `above` (Custom's street models from
+    // above): the overhead view, zoomed in, draws the street's own models too, reaching
+    // across the screen from the middle of the view (`near`, on the ground under it) rather
+    // than from the camera high above. What only makes sense at eye height (the sky, the
+    // haze, the trees made to stand under, grass, motion blur) stays with `eyeStreet`.
+    const eyeStreet = !!eyes || (testkit?.cam?.tilt ?? 0) > 35;
+    const above = !eyeStreet && !testkit?.cam && !vr?.active && graphics.above && height <= ABOVE_HEIGHT;
+    graphics.overhead(above ? viewRadius() : null);
+    const fromStreet = eyeStreet || above;
+    const near = above ? aboveAt.set(camPos.x, camGround + 1.7, camPos.z) : camera.position;
     const stereoCone = vr?.active && Math.abs(vr.headPitch) < .7;
     const head = vr?.headH ?? 0, forwardX = Math.cos(head), forwardY = Math.sin(head);
     // The XR projection describes the combined eyes. The canvas aspect ratio
@@ -3235,10 +3279,10 @@ async function main() {
         inStreetCone(x - camPos.x, y + camPos.z, forwardX, forwardY, sinHalf, cosHalf, peopleMargin)))),
     eyes && weather.now.rain > .01 ? weatherFx.sheltered : undefined);
     birds.update(dt, Object.assign(birdsView, { x: camPos.x, y: -camPos.z, radius: viewRadius(), height: eyes ? 1000 : height, dark: sky.dark, rain: weather.now.rain, snow: weather.now.snow }),
-      fromStreet ? camera.position : undefined);
+      fromStreet ? near : undefined);
     terraces.update(dt, Object.assign(terraceView, { x: camPos.x, y: -camPos.z, radius: viewRadius(), day: season.day }),
       fromStreet ? STREET_QUALITY.carReach : 0);
-    police.render(ground, time.value, fromStreet ? camera.position : undefined);
+    police.render(ground, time.value, fromStreet ? near : undefined);
     {
       const chasing = police.lit, engines = brigade.lit, rescue = ambulances.lit, carts = refuse.lit;
       // The one you're driving, as you've set its lights.
@@ -3282,7 +3326,7 @@ async function main() {
       for (const r of ambulances.rigs) see(r.car);
     }
     VR_SEAT.car = vr?.active ? inCar : null; VR_SEAT.frames++;
-    carPool.render(drawn, ground, dt, world.terrainRevision, fromStreet, camera.position);
+    carPool.render(drawn, ground, dt, world.terrainRevision, fromStreet, near);
     refuse.render(carPool);
     blinkers.update(dt, inCar, inCar ? satnav.signal(inCar.speed) : null, carPool);
     skids.update(dt * scale, drawn, ground);
@@ -3298,7 +3342,7 @@ async function main() {
       busy = clamp(footfall.around(px(), py(), 150) / 0.2, 0, 1);
       road = roadNoise(edgesNear(px(), py(), ROAD_FAR), px(), py());
     }
-    for (const c of choppers) c.render(fromStreet ? camera.position : undefined);
+    for (const c of choppers) c.render(fromStreet ? near : undefined);
     if (hornHeld && !inCar && !ride.driving) honk(false);
     if (hornHeld && (hornT -= dt) < 0) { hornT = 0.5; scareAhead(); }
     // Helicopters with their rotors turning: yours, others winding down and the police's.
@@ -3318,8 +3362,18 @@ async function main() {
     // ---- Camera ----------------------------------------------------------
     const vehicle = inCar || inHeli, sp = vehicle ? vehicle.speed : 0;
     // Motion blur from the street while driving: from about 20 km/h, full by about 60 (post.ts).
-    POST.blur = inCar && fromStreet && motionBlurOn() ? (motionBlurFull ? 1 : THREE.MathUtils.smoothstep(Math.abs(sp), 6, 17)) : 0;
+    POST.blur = inCar && eyeStreet && motionBlurOn() ? (motionBlurFull ? 1 : THREE.MathUtils.smoothstep(Math.abs(sp), 6, 17)) : 0;
     if (inCar) { const { L, W, H } = inCar.spec; POST.car = [inCar.x, world.heightAt(inCar.x, inCar.y) + H / 2, -inCar.y, 1]; POST.box = [L / 2, W / 2, H / 2, inCar.h]; POST.going = [Math.cos(inCar.h) * sp, 0, -Math.sin(inCar.h) * sp]; }
+    POST.others.length = 0;
+    if (inCar && POST.blur > 0.001) {
+      // The nearest vehicles under way within BLUR_NEAR (m), each smeared by how it moves against yours.
+      const BLUR_NEAR = 60, me = inCar, far = (c: Car) => (c.x - me.x) ** 2 + (c.y - me.y) ** 2;
+      const near = allCars().filter((c) => c !== me && c.vx * c.vx + c.vy * c.vy > 1 && far(c) < BLUR_NEAR ** 2).sort((a, b) => far(a) - far(b));
+      for (const c of near.slice(0, OTHERS)) {
+        const { L, W, H } = c.spec;
+        POST.others.push({ mid: [c.x, world.heightAt(c.x, c.y) + H / 2, -c.y], box: [L / 2, W / 2, H / 2, c.h], going: [c.vx, 0, -c.vy] });
+      }
+    }
     // On the metro, over the train as it goes (see Metro.view).
     const underway = metro.view();
     // In the air the camera rises with the helicopter, so it stays well above it.
@@ -3416,7 +3470,7 @@ async function main() {
         const big = inCar ?? busOn;
         follow.chase(dt, carried, {
           ground: floor, len: big ? big.spec.L : tramOn ? 10.2 : 14, tall: big ? big.spec.H : tramOn ? 3.6 : 4, car: !inHeli, tram: !!tramOn,
-          forwardSpeed: inCar ? inCar.forwardSpeed : 0, slide: !!inCar?.suspension, yaw, pitch,
+          forwardSpeed: inCar ? inCar.forwardSpeed : 0, slide: !!(inCar?.suspension || inCar?.physics), yaw, pitch,
           blocked: open ? (x, y) => !!grid.at(x, y) : undefined,
         }, camera);
         followed = true;
@@ -3424,7 +3478,7 @@ async function main() {
         // (A new vehicle, or after a teleport, starts straight behind it.)
         if (chased !== vehicle) { chased = vehicle; chaseH = vehicle.h; }
         let followHeading = vehicle.h;
-        if (inCar?.suspension && inCar.forwardSpeed > 3) {
+        if ((inCar?.suspension || inCar?.physics) && inCar.forwardSpeed > 3) {
           // Let the car turn across the view in a slide, with the road ahead still in sight.
           const slip = turnOf(inCar.h, Math.atan2(inCar.vy, inCar.vx));
           followHeading += .55 * clamp(slip, -.85, .85);
@@ -3550,38 +3604,39 @@ async function main() {
     // (The free camera too, once it is tilted well off straight down.)
     PEOPLE_SHADOWS.street = fromStreet; // (people cast their own shapes there)
     // Keep the player's ring visible through tree crowns in the overhead view.
-    walker.ring.material.depthTest = fromStreet;
+    walker.ring.material.depthTest = eyeStreet;
     // (Seen from just behind you, the ring is only in the way.)
     walker.ring.visible = !eyes && !vr?.active;
     // At street level you're a life-size person too, like everyone round you (rocketbox.ts).
     // (Not in the headset, where your eyes are inside your own head.)
-    walker.fig.lifeSize = walker.fig.self = !!eyes && !underway && !vr?.active;
+    walker.fig.lifeSize = walker.fig.self = (!!eyes || above) && !underway && !vr?.active;
     if (vr?.active) walker.fig.commit(0);
     else if (walker.mesh.visible) walker.drawFigure();
-    carOutline.update(fromStreet ? null : inCar, carPool);
-    streetSurfaceView(fromStreet && !!DOME_NODE.value);
-    riverBanks.view(fromStreet && !vr?.active && !!DOME_NODE.value && graphics.water && graphics.tier !== 'lowest', camera.position.x, camera.position.z);
+    carOutline.update(eyeStreet ? null : inCar, carPool);
+    streetSurfaceView(eyeStreet && !!DOME_NODE.value);
+    riverBanks.view(eyeStreet && !vr?.active && !!DOME_NODE.value && graphics.water && graphics.tier !== 'lowest', camera.position.x, camera.position.z);
     const streetWalls = fromStreet;
     if (streetWalls && graphics.tier !== 'lowest') loadFacadeFinishes();
-    world.facades.update(streetWalls, camera.position.x, camera.position.y, camera.position.z, !!facadeFinishes.masks);
+    world.facades.update(streetWalls, near.x, near.y, near.z, !!facadeFinishes.masks);
     tunnelFinishesView(!!eyes && !underway);
     for (const b of boats.list) {
-      if (b.live) b.mesh.nearCamera(fromStreet ? camera.position.distanceToSquared(b.mesh.position) : Infinity);
+      if (b.live) b.mesh.nearCamera(fromStreet ? near.distanceToSquared(b.mesh.position) : Infinity);
     }
     for (const f of ferries.list) {
-      if (f.mesh.visible) f.mesh.nearCamera(fromStreet ? camera.position.distanceToSquared(f.mesh.position) : Infinity);
+      if (f.mesh.visible) f.mesh.nearCamera(fromStreet ? near.distanceToSquared(f.mesh.position) : Infinity);
     }
     for (const c of funicular.cars) {
-      if (c.mesh.visible) c.body.nearCamera(fromStreet ? camera.position.distanceToSquared(c.mesh.position) : Infinity);
+      if (c.mesh.visible) c.body.nearCamera(fromStreet ? near.distanceToSquared(c.mesh.position) : Infinity);
     }
     world.furnitureCamera(fromStreet, camera.position.x, camera.position.z);
-    castleHorizon.update(fromStreet && !vr?.active,camera,sky);
+    if (!fromStreet && performance.now() > streetWarmAt) { streetWarmAt = Infinity; warmStreetView(); }
+    castleHorizon.update(eyeStreet && !vr?.active,camera,sky);
     world.passageCamera(fromStreet, camera.position.x, -camera.position.z);
-    ironwork.update(fromStreet, camera.position, weather.now.wet);
-    world.trees.street(fromStreet, free ? free.x : camera.position.x, free ? -free.y : camera.position.z, eyes && !vr?.active ? camera : undefined, underway ? undefined : litterGround, world.terrainRevision + world.joined);
-    streetHedges.street(fromStreet, free ? free.x : camera.position.x, free ? free.y : -camera.position.z);
-    streetGrass.street(fromStreet && !underway, free ? free.x : camera.position.x, free ? free.y : -camera.position.z, grassGround, world.terrainRevision + world.joined);
-    world.trees.canopy(true, fromStreet);
+    ironwork.update(fromStreet, near, weather.now.wet);
+    world.trees.street(eyeStreet, free ? free.x : camera.position.x, free ? -free.y : camera.position.z, eyes && !vr?.active ? camera : undefined, underway ? undefined : litterGround, world.terrainRevision + world.joined);
+    streetHedges.street(eyeStreet, free ? free.x : camera.position.x, free ? free.y : -camera.position.z);
+    streetGrass.street(eyeStreet && !underway, free ? free.x : camera.position.x, free ? free.y : -camera.position.z, grassGround, world.terrainRevision + world.joined);
+    world.trees.canopy(true, eyeStreet);
     sun.position.copy(sun.target.position).add(sky.offset);
     fitShadow();
     // Street lamps and headlights, and the rain, snow and mist round the view.
@@ -3589,7 +3644,7 @@ async function main() {
       // Looking straight down, the light map covers what's in view; the free camera sees further.
       const tan = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
       lightOpt.box = free || eyes ? undefined : [height * tan * camera.aspect + 6, height * tan + 6];
-      lightOpt.streetView = fromStreet;
+      lightOpt.streetView = eyeStreet;
       lightOpt.time = time.value;
       police.helis.night = sky.dark;
       lightOpt.spots = police.helis.lit;
@@ -3684,7 +3739,7 @@ async function main() {
     } else if (walker.flight && !walker.flight.open) {
       hint = touch.active ? t('Tap Jump to open your parachute') : t('Press <b>Space</b> to open your parachute');
     } else if (inCar?.overturned) {
-      hint = inCar.roll?.moving ? '' : touch.active ? t('Overturned') : t('Overturned · <b>E</b> get out');
+      hint = inCar.roll?.moving || inCar.physics?.tumbling ? '' : touch.active ? t('Overturned') : t('Overturned · <b>E</b> get out');
     } else if (inCar) {
       if (busAtStop(inCar)) hint = touch.active ? '' : stopWaiting.doorsOpen(inCar) ? t('<b>X</b> close the doors') : t('<b>X</b> open the doors · <b>E</b> get out');
       else if (!assisted) hint = touch.active ? '' : inCar.type === 'fire' ? t('<b>E</b> get out · <b>F</b> water cannon · <b>X</b> blue lights · <b>Shift</b> lane assist') : inCar.type === 'ambulance' || inCar.type === 'police' ? t('<b>E</b> get out · <b>X</b> blue lights · <b>Shift</b> lane assist') : t(inCar.two ? '<b>E</b> get off · <b>Shift</b> lane assist' : '<b>E</b> get out · <b>Shift</b> lane assist');
@@ -3835,7 +3890,7 @@ async function main() {
 
     dev.update();
     // (Ultra: the street round the middle of the view, for the cars to mirror.)
-    lifeSize.frame(dt, !!eyes && !underway, camera);
+    lifeSize.frame(dt, (!!eyes || above) && !underway, camera);
     if (!vr?.active) culler?.update(camera, !!eyes && !underway && !metro.active);
     hitches.render(() => {
       if (vr?.active) {

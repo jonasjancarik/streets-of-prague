@@ -20,7 +20,7 @@ def tile_profiles(meta):
     ox, oy = meta["origin"]
     size = meta["tile"]
     out = defaultdict(list)
-    routes = json.loads(Path(__file__).with_name("magistrala_profiles.json").read_text())
+    routes = json.loads(Path(__file__).with_name("magistrala_profiles.json").read_text(encoding="utf-8"))
     def tiles_between(a, b, pad, origin, count):
         first = math.floor((min(a, b) - pad + origin) / size)
         last = math.floor((max(a, b) + pad + origin) / size)

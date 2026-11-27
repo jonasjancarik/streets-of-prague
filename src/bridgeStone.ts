@@ -84,6 +84,8 @@ export function finishBridgeStone(layers: GroundLayer[], bridge: Bridge, box: Bo
     }
     if (walk.length) {
       layer.charlesSetts = walk.length;
+      // The setts run with the bridge (east-south-east, as its parapet stones: laying.ts).
+      layer.geometry.lay = new Float32Array(p.length / 3).fill(Math.atan2(-.259, .966));
       if (other.length) { index.set(walk); index.set(other,walk.length); }
     }
   }

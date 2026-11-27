@@ -33,6 +33,8 @@ The navy overshirt in `assets/rocketbox/overshirt/` is a worked example. `build.
 
 Rebuild the close GLB from the pristine input. Keep meshopt compression, mipmapped KTX2 textures, and the material name suffixes the crowd baker reads (`_body`, `_head`, and, where used, `_opacity` or `_glasses`). Compare triangles, material primitives and download size with the donor. For a frame-time question, use the project’s performance skill.
 
+A new outfit or texture layout also needs its entry in `DYES` (`src/avatarDyes.ts`): the garment rects in the body texture, any colour key or brightness limit that spares an inner layer or stripes, the garment's mean colour, and its colourways. Check a few colourways up close, front and back, before relying on them.
+
 After a clothing, face or geometry change, run `node assets/rocketbox/crowd.mjs` to regenerate `public/rocketbox/crowd.bin.gz` and `crowd.webp`. Repeat the capture against the rebuilt assets. Approach a passer-by in first person to check that their face and outfit agree across the switch to the close model. Check the established figures at normal overhead zoom. For a full refit, use the existing scene checks for vehicle contacts, dismounts and the crowd handoff.
 
 ```sh

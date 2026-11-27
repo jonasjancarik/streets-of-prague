@@ -44,7 +44,7 @@ def terraces(area):
         src = cut((w - 0.01, s - 0.01, e + 0.01, n + 0.01), PBF.parent / f"{area}.osm.pbf")
         subprocess.run(["osmium", "tags-filter", "--overwrite", "-o", str(tagged), str(src), *[f"nwr/{k}" for k in POI_KEYS]], check=True)
     out = subprocess.run(["osmium", "export", "-f", "geojsonseq", "-x", "print_record_separator=false", str(tagged)],
-                         check=True, capture_output=True, text=True).stdout
+                         check=True, capture_output=True, text=True, encoding="utf-8").stdout
     found, kinds = [], Counter()
     for line in out.splitlines():
         f = json.loads(line)
@@ -69,5 +69,5 @@ def terraces(area):
 if __name__ == "__main__":
     area = sys.argv[1] if len(sys.argv) > 1 else "centrum"
     path = OUT / f"{area}_now" / "terraces.json"
-    path.write_text(json.dumps({"terraces": terraces(area)}, separators=(",", ":")))
+    path.write_text(json.dumps({"terraces": terraces(area)}, separators=(",", ":")), encoding="utf-8")
     print("wrote", path, path.stat().st_size, "bytes")

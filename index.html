@@ -483,10 +483,11 @@
       /* Bebas has no descenders, so on a full line box its capitals sit high. Where the
          browser can trim the box to the capitals, it does, and the padding centres them. */
       @supports (text-box: trim-both cap alphabetic) {
-        .ls-chip, .ls-go, .settings-chip, .metro-tab, #credits-box form button, .news-go { text-box: trim-both cap alphabetic; }
+        .ls-chip, .ls-go, .settings-chip, .settings-tab, .metro-tab, #credits-box form button, .news-go { text-box: trim-both cap alphabetic; }
         .ls-chip { padding: calc(max(calc(0.6 * var(--u)), 5px) + 0.2em) max(calc(1.4 * var(--u)), 8px); }
         .ls-go { padding: calc(max(calc(1.2 * var(--u)), 8px) + 0.15em) max(calc(3 * var(--u)), 16px); }
         .settings-chip { padding: 9px 11px; }
+        .settings-tab { padding: 11px 6px 8px; }
         .metro-tab { padding: 7px 14px; }
         #credits-box form button, .news-go { padding: 10px 16px; }
       }
@@ -558,14 +559,23 @@
       .corner-btn:hover { opacity: 1; border-color: var(--ink); }
       .corner-btn[aria-pressed='true'] { color: var(--accent); }
       body.touch .corner-btn { width: 42px; height: 42px; }
-      .settings { width: min(460px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); box-sizing: border-box; overflow: auto; padding: 16px 20px 18px; color: var(--ink); background: rgba(20, 13, 12, 0.96); border: 0; border-left: 5px solid var(--edge); box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.4); font: 13px/1.4 Inter, system-ui, sans-serif; }
+      .settings { width: min(460px, calc(100vw - 32px)); height: min(620px, calc(100dvh - 32px)); box-sizing: border-box; overflow: auto; padding: 16px 20px 18px; color: var(--ink); background: rgba(20, 13, 12, 0.96); border: 0; border-left: 5px solid var(--edge); box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.4); font: 13px/1.4 Inter, system-ui, sans-serif; }
       /* Every scrollbar in the game (the panels, the metro lists, the developer tools) is thin and in the game's colours, instead of the browser's white one. */
       * { scrollbar-width: thin; scrollbar-color: rgba(236, 228, 214, 0.35) transparent; }
       .settings::backdrop { background: rgba(0, 0, 0, 0.35); }
-      .settings-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; position: sticky; top: -16px; z-index: 1; padding: 16px 0 4px; margin-top: -16px; background: rgba(20, 13, 12, 0.96); }
+      .settings-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; margin-bottom: 14px; position: sticky; top: -16px; z-index: 1; padding: 16px 0 4px; margin-top: -16px; background: rgba(20, 13, 12, 0.96); }
       .settings h2 { margin: 0; font: 30px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; }
       .settings-close { font: 26px/1 Inter, system-ui, sans-serif; color: var(--ink); background: none; border: 0; padding: 0 4px; cursor: pointer; }
       .settings-rows { display: flex; flex-direction: column; gap: 12px; }
+      .settings-rows[hidden] { display: none; }
+      /* The tabs under the title, the open one underlined in the poster red. */
+      .settings-tabs { flex-basis: 100%; display: flex; margin-top: 12px; border-bottom: 1px solid rgba(236, 228, 214, 0.2); }
+      .settings-tab { flex: 1 1 auto; font: 17px/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; color: var(--ink); background: none; border: 0; border-bottom: 3px solid transparent; margin-bottom: -1px; padding: 9px 6px 6px; cursor: pointer; opacity: 0.6; }
+      .settings-tab:hover { opacity: 0.9; }
+      .settings-tab[aria-selected='true'] { opacity: 1; border-bottom-color: var(--edge); }
+      .settings-tab:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+      .settings-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+      .settings-links .settings-news:first-child { margin-top: 4px; }
       .settings-label { display: block; margin-bottom: 5px; font: 17px/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; color: var(--accent); }
       .settings-chips { display: flex; flex-wrap: wrap; gap: 5px; }
       .settings-chip { font: 16px/1 'Bebas Neue', sans-serif; letter-spacing: 0.05em; color: var(--ink); background: var(--key); border: 1px solid rgba(236, 228, 214, 0.35); padding: 7px 11px 5px; cursor: pointer; }

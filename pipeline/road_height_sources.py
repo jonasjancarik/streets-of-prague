@@ -74,10 +74,10 @@ class Map:
     def __init__(self):
         w, s, e, n = AREAS["praha"]
         self.local = f"+proj=tmerc +lat_0={(s + n) / 2} +lon_0={(w + e) / 2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m"
-        index = json.loads((DATA / "index.json").read_text())
+        index = json.loads((DATA / "index.json").read_text(encoding="utf-8"))
         self.T, (self.ox, self.oy) = index["tile"], index["origin"]
         self.n, self.step = index["terrain"]["n"], index["terrain"]["step"]
-        self.names = json.loads((DATA / "names.json").read_text())
+        self.names = json.loads((DATA / "names.json").read_text(encoding="utf-8"))
         self._tiles, self._lattice = {}, {}
 
     def tile_of(self, x, y):
@@ -555,7 +555,7 @@ def run_site(m: Map, key, samplers, out_dir: Path):
                 r["vs_kerbs"] = {"n": int(len(d)), "bias": bias, "spread": float(1.4826 * np.median(np.abs(d - bias))),
                                  "p95": float(np.percentile(np.abs(d - bias), 95))}
         result["sources"][src] = r
-    (out_dir / f"{key}.json").write_text(json.dumps(result, indent=1, ensure_ascii=False))
+    (out_dir / f"{key}.json").write_text(json.dumps(result, indent=1, ensure_ascii=False), encoding="utf-8")
     draw(key, name, what, S, Tt, X, Y, H, run, ref, ss, st, sv, kerb, road, box, (mx0, my0, mtop), m, samplers,
          on_deck, result, out_dir)
     j = int(np.argmin(np.abs(Tt + 1.8)))
@@ -689,7 +689,7 @@ def main():
     samplers = {"lidar": lidar_at, "dsm": dsm_sampler(to_krovak)}
     done = [run_site(m, key, samplers, args.out) for key in args.sites.split(",")]
     results = [r for r, _ in done]
-    (args.out / "summary.json").write_text(json.dumps(results, indent=1, ensure_ascii=False))
+    (args.out / "summary.json").write_text(json.dumps(results, indent=1, ensure_ascii=False), encoding="utf-8")
     overview(done, args.out)
 
 

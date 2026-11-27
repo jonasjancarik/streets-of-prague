@@ -165,7 +165,7 @@ export class Weather {
     RAIN.value = this.now.rain * WEATHER_DETAIL.value;
     // The broadleaf trees are bare while their leaves aren't out, and under snow any time.
     BARE.value = Math.max(1 - this.season.leaf, this.now.cover);
-    SEASON.value.set(this.season.turn, this.season.blossom, this.season.fresh, 0);
+    SEASON.value.set(this.season.turn, this.season.blossom, this.season.fresh, this.season.festive);
     shareGroundSeason(this.season);
   }
 

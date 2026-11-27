@@ -48,7 +48,7 @@ def get(url, name, headers=None):
     """A feed as JSON, cached a day under `name`."""
     path = CACHE / f"{name}.json"
     if path.exists() and time.time() - path.stat().st_mtime < 86400:
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
     for attempt in range(4):
         try:
             r = requests.get(url, headers=headers, timeout=60)
@@ -60,7 +60,7 @@ def get(url, name, headers=None):
                 raise
             time.sleep(2 ** attempt)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data))
+    path.write_text(json.dumps(data), encoding="utf-8")
     return data
 
 
@@ -106,7 +106,7 @@ def rekola_stands():
     only answers a visitor who has opened the page, so its cookie is fetched first."""
     path = CACHE / "rekola.stands.json"
     if path.exists() and time.time() - path.stat().st_mtime < 86400:
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
     session = requests.Session()
     session.headers["User-Agent"] = "Mozilla/5.0"
     session.get(REKOLA, timeout=60).raise_for_status()
@@ -115,7 +115,7 @@ def rekola_stands():
     r.raise_for_status()
     data = r.json()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data))
+    path.write_text(json.dumps(data), encoding="utf-8")
     return data
 
 
@@ -172,7 +172,7 @@ def build(area):
         out["systems"].append(sys_)
         print(f"{area}: {sys_['name']}: {len(here)} stations")
     dest = OUT / f"{area}_now" / "bikes.json"
-    dest.write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")))
+    dest.write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"→ {dest} ({dest.stat().st_size // 1024} kB)")
 
 

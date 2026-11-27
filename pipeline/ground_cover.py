@@ -102,8 +102,8 @@ def tile_json(area, i, j):
     snap = CACHE / "tiles" / area / f"{i}_{j}.json"
     if not snap.exists():
         snap.parent.mkdir(parents=True, exist_ok=True)
-        snap.write_text((OUT / f"{area}_now" / "tiles" / f"{i}_{j}.json").read_text())
-    return json.loads(snap.read_text())
+        snap.write_text((OUT / f"{area}_now" / "tiles" / f"{i}_{j}.json").read_text(encoding="utf-8"), encoding="utf-8")
+    return json.loads(snap.read_text(encoding="utf-8"))
 
 
 def terrain(area, meta, t):
@@ -571,7 +571,7 @@ def osm_surfaces(area, t):
         geoms, cls = [], []
         src = CACHE / "surface.geojsonseq"
         if src.exists():
-            for line in src.open():
+            for line in src.open(encoding="utf-8"):
                 f = json.loads(line.lstrip("\x1e"))
                 s = f["properties"].get("surface")
                 if s not in SURFACE:
@@ -619,7 +619,7 @@ def jev(states):
     """Ask Jev for each piece (one request per piece, answers cached by text)."""
     key = os.environ.get("TYPESAFE_API_KEY")
     cache_f = CACHE / "jev_answers.json"
-    cache = json.loads(cache_f.read_text()) if cache_f.exists() else {}
+    cache = json.loads(cache_f.read_text(encoding="utf-8")) if cache_f.exists() else {}
     out, tokens = {}, 0
     for pid, state in states.items():
         if state in cache:
@@ -642,7 +642,7 @@ def jev(states):
         a = d["answers"]["surface"]
         cache[state] = {"choice": a["choice"], "confidence": a.get("confidence"), "tokens": d.get("usage", {}).get("input_tokens")}
         out[pid] = cache[state]
-    cache_f.write_text(json.dumps(cache, ensure_ascii=False))
+    cache_f.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
     return out
 
 
@@ -921,13 +921,13 @@ def sheet(area, meta, tiles):
         p = CACHE / f"sheet_{s // per}.png"
         page.save(p)
         print(p)
-    (CACHE / "sample.json").write_text(json.dumps([[f"{i}_{j}", pid] for (i, j), pid in sample]))
+    (CACHE / "sample.json").write_text(json.dumps([[f"{i}_{j}", pid] for (i, j), pid in sample]), encoding="utf-8")
 
 
 def score(area, meta, tiles, model, model_nodtmp):
     """Every method against the hand labels (.cache/cover/truth.json: {"#": class})."""
-    truth = json.loads((CACHE / "truth.json").read_text())
-    sample = json.loads((CACHE / "sample.json").read_text())
+    truth = json.loads((CACHE / "truth.json").read_text(encoding="utf-8"))
+    sample = json.loads((CACHE / "sample.json").read_text(encoding="utf-8"))
     rows = {m: [] for m in ("rules", "model", "model_nodtmp", "dtmp_only", "jev")}
     DT = {"green": "grass", "paved": "concrete", "parking": "asphalt", "footway": "paving", "road": "asphalt", "rail": "gravel", "yard": "paving"}
     for n, (k, pid) in enumerate(sample):
@@ -1324,7 +1324,7 @@ def main():
             layers.assemble(args.area)
         print(f"build: {time.time() - started:.0f} s")
         return
-    meta = json.loads((OUT / f"{args.area}_now" / "index.json").read_text())
+    meta = json.loads((OUT / f"{args.area}_now" / "index.json").read_text(encoding="utf-8"))
     tiles = tiles_in(*args.tiles, skip=args.skip)
     t0 = time.time()
     if args.cmd == "fetch":

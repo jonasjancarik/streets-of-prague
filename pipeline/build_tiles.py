@@ -295,7 +295,7 @@ def load_sections(area):
     sections = []
     parking = OUT / f"{area}_parking.json"
     if parking.exists():
-        for sec in json.loads(parking.read_text())["sections"]:
+        for sec in json.loads(parking.read_text(encoding="utf-8"))["sections"]:
             polys = [Polygon(r[0], r[1:]) for r in sec["polys"]]
             full = sum(p.area for p in polys) / max(sec["inside"], 1e-6)
             meta = {k: sec.get(k) for k in ("code", "category", "spaces", "occDay", "occNight")}

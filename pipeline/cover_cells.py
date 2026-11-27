@@ -156,7 +156,7 @@ _model = {}
 def load_model(path=MODEL):
     path = Path(path)
     if path not in _model:
-        _model[path] = json.loads(path.read_text()) if path.exists() else None
+        _model[path] = json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
     return _model[path]
 
 

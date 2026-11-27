@@ -107,7 +107,7 @@ def folder(area: str) -> Path:
 
 def read_meta(area: str) -> dict | None:
     p = folder(area) / "meta.json"
-    return json.loads(p.read_text()) if p.exists() else None
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
 def write_meta(area: str, meta: dict):
@@ -122,13 +122,13 @@ def read_chunk(area: str, layer: str, ci: int, cj: int) -> dict:
     p = chunk_path(area, layer, ci, cj)
     if not p.exists():
         raise SystemExit(f"{area}: the {layer} layer of chunk {ci},{cj} hasn't been built; run build_tiles.py {area} first")
-    return json.loads(p.read_text())
+    return json.loads(p.read_text(encoding="utf-8"))
 
 
 def read_layer(area: str, layer: str) -> dict | None:
     """ipr or terrain: None if that step hasn't been run for the area."""
     p = folder(area) / f"{layer}.json"
-    return json.loads(p.read_text()) if p.exists() else None
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
 def grid_key(meta):
@@ -414,7 +414,7 @@ def pipeline_commit() -> str:
     """The commit the map is being built from, with -dirty if files differ from it."""
     try:
         return subprocess.run(["git", "describe", "--always", "--dirty", "--abbrev=10", "--exclude", "*"],
-                              cwd=Path(__file__).parent, capture_output=True, text=True, check=True).stdout.strip()
+                              cwd=Path(__file__).parent, capture_output=True, text=True, check=True, encoding="utf-8").stdout.strip()
     except (OSError, subprocess.CalledProcessError):
         return ""
 

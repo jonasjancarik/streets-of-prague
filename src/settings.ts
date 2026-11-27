@@ -1,7 +1,7 @@
 import { firstPersonOptions, setFirstPersonOptions, vrSupported, type CarHandling, type FirstPersonOptions, type PlayerView } from './streetView.ts';
 import { LANGS, getLang, onLang, setLang, t } from './i18n.ts';
 import type { Lang } from './i18n.ts';
-import type { Graphics, Choice, Reflections } from './graphics.ts';
+import type { Graphics, Choice, Reflections, Custom } from './graphics.ts';
 import type { Bus } from './audio.ts';
 import { BUSES } from './audio.ts';
 import type { Kind } from './weather.ts';
@@ -32,13 +32,55 @@ declare const __APP_BUILT__: string;
 declare const __DATA_VERSION__: string;
 
 // Two buttons in the top right corner: sound on or off, always in view, and the
-// settings (language, sound, graphics, weather) in a panel like the start screen's.
-// The panel is a modal dialog, so keys don't reach the game while it's open; Escape,
-// the cross or a click beside it closes it. M, G and P still work, and the buttons
-// follow them. On a phone the credits move in here from that corner.
+// settings in a panel like the start screen's. The panel is a modal dialog, so keys
+// don't reach the game while it's open; Escape, the cross or a click beside it closes
+// it. M, G and P still work, and the buttons follow them. On a phone the credits move
+// in here from that corner.
+//
+// The settings are split into tabs, so no list is long: the game itself (saves,
+// difficulty, weather, language), what you see, how you control it, what you hear, and
+// the rest. The panel opens on the tab it was left on.
+
+const TABS = [
+  { id: 'game', label: 'Game' },
+  { id: 'display', label: 'Display' },
+  { id: 'controls', label: 'Controls' },
+  { id: 'sound', label: 'Sound' },
+  { id: 'more', label: 'More' },
+] as const;
+type Tab = typeof TABS[number]['id'];
 
 const GRAPHICS: { id: Choice; label: string }[] = [
-  { id: 'auto', label: 'Auto' }, { id: 'ultra', label: 'Ultra' }, { id: 'high', label: 'High' }, { id: 'medium', label: 'Medium' }, { id: 'low', label: 'Low' }, { id: 'lowest', label: 'Lowest' },
+  { id: 'auto', label: 'Auto' }, { id: 'ultra', label: 'Ultra' }, { id: 'high', label: 'High' }, { id: 'medium', label: 'Medium' }, { id: 'low', label: 'Low' }, { id: 'lowest', label: 'Lowest' }, { id: 'custom', label: 'Custom' },
+];
+// Custom's settings, one list each: what the player sees, and what it sets (graphics.ts).
+// Some go past Ultra: the full pixel ratio, an 8192 shadow map and the furthest detail.
+type Option = [string, Partial<Custom>];
+const on = (yes: Partial<Custom>, no: Partial<Custom>): Option[] => [['On', yes], ['Off', no]];
+const CUSTOM: [string, Option[]][] = [
+  ['Sharpness', [['Up to 1×', { maxRatio: 1 }], ['Up to 1.5×', { maxRatio: 1.5 }], ['Up to 2×', { maxRatio: 2 }], ['The screen’s own, up to 3× (demanding)', { maxRatio: 3 }]]],
+  ['View distance from the street', [['250 m', { view: 250 }], ['300 m', { view: 300 }], ['400 m', { view: 400 }], ['500 m', { view: 500 }], ['700 m (demanding)', { view: 700 }], ['1000 m (demanding)', { view: 1000 }]]],
+  ['Texture filtering', [['Off', { aniso: 0 }], ['Half', { aniso: 0.5 }], ['As made', { aniso: 1 }], ['Double', { aniso: 2 }], ['Most (16×)', { aniso: 16 }]]],
+  ['Texture resolution (from the next start)', [['Half', { textures: 'half' }], ['Full', { textures: 'full' }]]],
+  ['Ground mesh in new tiles', [['Coarse (4 m)', { ground: 4 }], ['Normal (2 m)', { ground: 2 }], ['Fine (1 m, demanding)', { ground: 1 }]]],
+  ['Street models from above', [['Off', { above: false }], ['When zoomed in (demanding)', { above: true }]]],
+  ['Smooth edges (MSAA)', [['Off', { samples: 0 }], ['4×', { samples: 4 }]]],
+  ['Sun shadows', [['Coarse (1024)', { shadowSize: 1024 }], ['Normal (2048)', { shadowSize: 2048 }], ['Sharp (4096)', { shadowSize: 4096 }], ['Sharpest (8192, demanding)', { shadowSize: 8192 }]]],
+  ['Shadow edges', [['Crisp', { shadowBlur: 1, softShadows: false }], ['Soft', { shadowBlur: 2, softShadows: false }], ['Softer further off', { shadowBlur: 2, softShadows: true }]]],
+  ['People’s shadows', [['Their own shape', { people: 'full' }], ['Simple', { people: 'simple' }]]],
+  ['Shadows in lamplight', [['None', { cars: 0 }], ['Soft under cars', { cars: 1 }], ['Cars', { cars: 2 }], ['Cars, people, trams and posts', { cars: 3 }]]],
+  ['Lamp shadow detail', [['Normal (1024)', { lampMap: 1024 }], ['Sharp (2048)', { lampMap: 2048 }]]],
+  ['Light beams and glints', on({ lights: true }, { lights: false })],
+  ['Glow round bright lights', on({ post: true }, { post: false })],
+  ['Cars mirror the street', on({ probe: true }, { probe: false })],
+  ['Grime, leaves and weathering', on({ look: true }, { look: false })],
+  ['Detailed roofs', on({ roofs: true }, { roofs: false })],
+  ['Chimneys and roof clutter', on({ clutter: true }, { clutter: false })],
+  ['Leaves on tree crowns', on({ canopy: true }, { canopy: false })],
+  ['Hedges and grass up close', on({ streetDetail: true }, { streetDetail: false })],
+  ['Relief on kerbs, steps and rails', on({ closeRelief: true }, { closeRelief: false })],
+  ['Detailed models up close', [['Lowest', { street: 'lowest' }], ['Low', { street: 'low' }], ['Medium', { street: 'medium' }], ['High', { street: 'high' }], ['Ultra', { street: 'ultra' }], ['Furthest (demanding)', { street: 'max' }]]],
+  ['People in the streets', [['Half', { crowd: 0.5 }], ['All', { crowd: 1 }]]],
 ];
 const WEATHER: Record<Kind, string> = { clear: 'Clear', cloudy: 'Cloudy', rain: 'Rain', storm: 'Thunderstorm', mist: 'Mist', snow: 'Snow' };
 
@@ -67,6 +109,14 @@ const el = (tag: string, cls: string, parent: HTMLElement, text = '') => {
   return e;
 };
 
+const storedTab = (): Tab => {
+  try {
+    const saved = localStorage.getItem('settingsTab');
+    if (TABS.some((tab) => tab.id === saved)) return saved as Tab;
+  } catch { /* no storage: the first tab */ }
+  return 'game';
+};
+
 export function setupSettings({ sound, graphics, weather, saves, cameraChoice }: {
   sound: { on: boolean; volumes: Record<Bus, number>; setVolume: (b: Bus, v: number) => void; toggle: () => void; radioOn: boolean; setRadio: (on: boolean) => void; anc: boolean; setAnc: (on: boolean) => void };
   graphics: Graphics;
@@ -91,7 +141,7 @@ export function setupSettings({ sound, graphics, weather, saves, cameraChoice }:
   full.addEventListener('click', async () => {
     full.blur();
     if (!document.fullscreenEnabled) {
-      show();
+      show('more');
       appBox.scrollIntoView({ block: 'center' });
       return;
     }
@@ -118,11 +168,58 @@ export function setupSettings({ sound, graphics, weather, saves, cameraChoice }:
   const close = el('button', 'settings-close', head) as HTMLButtonElement;
   close.type = 'button';
   close.textContent = '×';
-  const rows = el('div', 'settings-rows', box);
 
   // Text that follows the language, and the chips that follow the game's state.
   const relabel: (() => void)[] = [];
   const refresh: (() => void)[] = [];
+
+  // The tabs, in the sticky head, and a panel for each below it.
+  const tabBar = el('div', 'settings-tabs', head);
+  tabBar.setAttribute('role', 'tablist');
+  const panels = {} as Record<Tab, HTMLElement>;
+  const tabButtons = {} as Record<Tab, HTMLButtonElement>;
+  let tab: Tab = storedTab();
+  const pickTab = (id: Tab) => {
+    tab = id;
+    try { localStorage.setItem('settingsTab', id); } catch { /* not kept */ }
+    for (const { id: other } of TABS) {
+      const on = other === id;
+      tabButtons[other].setAttribute('aria-selected', String(on));
+      tabButtons[other].tabIndex = on ? 0 : -1;
+      panels[other].hidden = !on;
+    }
+    box.scrollTop = 0;
+  };
+  for (const { id, label } of TABS) {
+    const b = el('button', 'settings-tab', tabBar) as HTMLButtonElement;
+    b.type = 'button';
+    b.id = `settings-tab-${id}`;
+    b.setAttribute('role', 'tab');
+    b.setAttribute('aria-controls', `settings-panel-${id}`);
+    relabel.push(() => { b.textContent = t(label); });
+    b.addEventListener('click', () => pickTab(id));
+    tabButtons[id] = b;
+    const p = el('div', 'settings-rows', box);
+    p.id = `settings-panel-${id}`;
+    p.setAttribute('role', 'tabpanel');
+    p.setAttribute('aria-labelledby', b.id);
+    panels[id] = p;
+  }
+  // Left and right (and Home, End) move between the tabs, as in any tab list.
+  tabBar.addEventListener('keydown', (e) => {
+    const i = TABS.findIndex((x) => x.id === tab);
+    const to = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? TABS.length - 1 : null;
+    if (to === null) return;
+    e.preventDefault();
+    const next = TABS[(to + TABS.length) % TABS.length].id;
+    pickTab(next);
+    tabButtons[next].focus();
+  });
+  // An update ready to load shows whichever tab is open.
+  updateNotice(box, 'settings-update');
+
+  // Rows go into the panel named here.
+  let rows = panels.game;
 
   function row<T extends string>(label: string, items: { id: T; label: () => string }[], current: () => T, pick: (id: T) => void) {
     const r = el('div', 'settings-row', rows);
@@ -139,174 +236,13 @@ export function setupSettings({ sound, graphics, weather, saves, cameraChoice }:
     refresh.push(() => { for (const { b, id, label } of buttons) { b.setAttribute('aria-pressed', String(id === current())); b.textContent = label(); } });
     return r;
   }
+  const onOff = (label: string, current: () => boolean, set: (on: boolean) => void) =>
+    row(label, [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (current() ? 'on' : 'off'), (id) => set(id === 'on'));
 
   const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
   const fixed = (s: string) => () => s;
-  row<Lang>('Language', LANGS.map((l) => ({ id: l.id, label: fixed(l.label) })), getLang, setLang);
-  // Installing the game as an app (src/install.ts), where the browser can.
-  const appBox = el('div', 'settings-row', rows);
-  const appName = el('span', 'settings-label', appBox);
-  const appChips = el('div', 'settings-chips', appBox);
-  const appGo = el('button', 'settings-chip', appChips) as HTMLButtonElement;
-  appGo.type = 'button';
-  appGo.addEventListener('click', () => { telemetry.did('installed the app'); install(); });
-  const appNote = el('p', 'settings-note', appBox);
-  const appText = () => {
-    const way = installWay();
-    appBox.hidden = !way;
-    appGo.hidden = way !== 'prompt';
-    appName.textContent = t('Play as an app');
-    appGo.textContent = t('Install');
-    appNote.textContent = way === 'share'
-      ? t(apple && !document.fullscreenEnabled
-        ? 'To play full screen on an iPhone, tap the Share button in the browser, then Add to Home Screen, and start the game from its icon.'
-        : 'Tap the Share button in the browser, then Add to Home Screen. Started from its icon, the game opens full screen, without the browser’s bars.')
-      : t('Puts the game on your home screen or desktop. It then opens full screen, without the browser’s bars.');
-  };
-  relabel.push(appText);
-  refresh.push(appText);
-  onInstallChange(() => { appText(); full.hidden = fullHidden(); });
-  row('Sound', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (sound.on ? 'on' : 'off'), (id) => { if ((id === 'on') !== sound.on) sound.toggle(); });
-  const radioRow = row('Car radio', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (sound.radioOn ? 'on' : 'off'), (id) => sound.setRadio(id === 'on'));
-  const radioDetails = el('details', 'settings-radio', radioRow);
-  const radioSummary = el('summary', '', radioDetails);
-  relabel.push(() => { radioSummary.textContent = t('Radio settings'); });
-  const distributionLabel = el('label', 'settings-radio-station', radioDetails);
-  const distributionName = el('span', '', distributionLabel);
-  const distributionSelect = el('select', 'settings-chip', distributionLabel) as HTMLSelectElement;
-  const equal = new Option('', 'random'), audience = new Option('', 'audience');
-  distributionSelect.add(equal);
-  distributionSelect.add(audience);
-  relabel.push(() => {
-    distributionName.textContent = t('Stations in new cars');
-    equal.textContent = t('Equal chance');
-    audience.textContent = t('By listener numbers');
-  });
-  distributionSelect.addEventListener('change', () => { setStationDistribution(distributionSelect.value === 'audience' ? 'audience' : 'random'); update(); });
-  refresh.push(() => { distributionSelect.value = stationDistribution(); });
-  const distributionNote = el('p', 'settings-note', radioDetails);
-  const distributionText = () => {
-    distributionNote.textContent = stationDistribution() === 'random'
-      ? t('Each selected station has an equal chance. Cars you have already used keep their station.')
-      : t('Stations with more daily listeners appear more often, using audience figures published in May 2026. Stations without comparable figures get the same small chance. Cars you have already used keep their station.');
-  };
-  relabel.push(distributionText);
-  refresh.push(distributionText);
-  const radioNote = el('p', 'settings-note', radioDetails);
-  relabel.push(() => { radioNote.textContent = t('Choose the stations you want to hear. Unchecked stations are skipped in every car.'); });
-  for (const station of STATIONS) {
-    const label = el('label', 'settings-radio-station', radioDetails);
-    const checkbox = el('input', '', label) as HTMLInputElement;
-    checkbox.type = 'checkbox';
-    el('span', '', label, station.name);
-    checkbox.addEventListener('change', () => { setStationAllowed(station.id, checkbox.checked); update(); });
-    refresh.push(() => { checkbox.checked = stationAllowed(station.id); });
-  }
-  const radioEmpty = el('p', 'settings-note', radioDetails);
-  relabel.push(() => { radioEmpty.textContent = t('No stations selected. Select a station to hear the radio again.'); });
-  refresh.push(() => { radioEmpty.hidden = STATIONS.some((station) => stationAllowed(station.id)); });
-  row('Noise cancelling', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (sound.anc ? 'on' : 'off'), (id) => sound.setAnc(id === 'on'));
-  // Only on a touch screen: a computer can't buzz.
-  if (matchMedia('(pointer: coarse)').matches) row('Vibration', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (hapticsOn() ? 'on' : 'off'), (id) => setHaptics(id === 'on'));
-  // How the on-screen controls drive a car (src/touch.ts): with the pedals, or one-handed.
-  if (matchMedia('(pointer: coarse)').matches || new URLSearchParams(location.search).has('touch')) {
-    const r = row<TouchDrive>('Driving', [{ id: 'pedals', label: () => t('Stick and pedals') }, { id: 'stick', label: () => t('Stick only') }], touchDrive, setTouchDrive);
-    const note = el('p', 'settings-note', r);
-    relabel.push(() => { note.textContent = t('With the stick only, you drive with one thumb: push further to go faster, point behind the car to brake and turn round, let go to coast.'); });
-  }
-  row<Choice>('Graphics', GRAPHICS.map((g) => ({ id: g.id, label: () => (g.id === 'auto' ? t('Auto ({tier})', { tier: t(cap(graphics.tier)).toLowerCase() }) : t(g.label)) })), () => graphics.choice, (id) => graphics.set(id));
-  const viewRow = row<PlayerView>('Camera view', [
-    { id: 'overhead', label: () => t('From above') },
-    { id: 'first', label: () => t('First person') },
-    { id: 'third', label: () => t('Third person') },
-    { id: 'vr', label: () => t('VR') },
-  ], cameraChoice.get, cameraChoice.set);
-  // VR only where the phone can show it (Chrome on Android, in a Cardboard-style headset).
-  const vrChip = viewRow.querySelectorAll('button')[3] as HTMLButtonElement;
-  vrChip.hidden = true;
-  void vrSupported().then((ok) => { vrChip.hidden = !ok && cameraChoice.get() !== 'vr'; });
-  const lookNote = el('p', 'settings-note', viewRow);
-  const updateLookNote = () => {
-    const view = cameraChoice.get();
-    lookNote.hidden = view === 'overhead';
-    lookNote.textContent = view === 'vr'
-      ? t('Put the phone in a VR headset. You walk the way you look: steer with a gamepad, or look straight down for a moment to start or stop walking.')
-      : t('Click the street and move the mouse to look around, swipe on a touchscreen, or use the right stick.');
-  };
-  refresh.push(updateLookNote);
-  const vrDistance = row('Shorter view in VR', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }],
-    () => firstPersonOptions.vrShortView ? 'on' : 'off', id => setFirstPersonOptions({ vrShortView: id === 'on' }));
-  const vrDistanceNote = el('p', 'settings-note', vrDistance);
-  relabel.push(() => { vrDistanceNote.textContent = t('Limits the view to 120 m and adds haze to help VR run faster. Off keeps the usual 400 m view.'); });
-  refresh.push(() => { vrDistance.hidden = cameraChoice.get() !== 'vr'; });
-  const walkSettings = el('details', 'settings-radio', viewRow);
-  const walkSummary = el('summary', '', walkSettings);
-  relabel.push(() => { walkSummary.textContent = t('First-person controls'); });
-  refresh.push(() => { walkSettings.hidden = cameraChoice.get() !== 'first'; });
-  const ranges = [
-    ['fov', 'Field of view', 45, 80, 1, '°'],
-    ['sensitivity', 'Look sensitivity', 25, 200, 5, '%'],
-  ] as const;
-  for (const [key, label, low, high, step, unit] of ranges) {
-    const line = el('label', 'settings-mix', walkSettings);
-    const name = el('span', '', line), slider = el('input', '', line) as HTMLInputElement;
-    slider.type = 'range'; slider.min = String(low); slider.max = String(high); slider.step = String(step);
-    slider.dataset.camera = key;
-    const reading = el('span', 'settings-mix-pct', line);
-    relabel.push(() => { name.textContent = t(label); });
-    const read = () => { slider.value = String(firstPersonOptions[key]); reading.textContent = slider.value + unit; };
-    slider.oninput = () => { setFirstPersonOptions({ [key]: Number(slider.value) }); read(); };
-    refresh.push(read);
-  }
-  const motionLine = el('label', 'settings-radio-station', walkSettings);
-  const motionTitle = el('span', '', motionLine), motion = el('select', 'settings-chip', motionLine) as HTMLSelectElement;
-  motion.dataset.camera = 'motion';
-  const motions = [['device', 'Use device setting'], ['gentle', 'Gentle movement'], ['steady', 'Keep steady']] as const;
-  for (const [id,label] of motions) {
-    const option = new Option('',id); motion.add(option);
-    relabel.push(() => { option.textContent = t(label); });
-  }
-  relabel.push(() => { motionTitle.textContent = t('Walking camera'); });
-  motion.onchange = () => setFirstPersonOptions({ motion: motion.value as FirstPersonOptions['motion'] });
-  refresh.push(() => { motion.value = firstPersonOptions.motion; });
-  const handlingRow = row<CarHandling>('Car handling', [
-    { id: 'classic', label: () => t('Classic') },
-    { id: 'realistic', label: () => t('Realistic') },
-  ], () => firstPersonOptions.handling, handling => setFirstPersonOptions({ handling }));
-  const handlingNote = el('p', 'settings-note', handlingRow);
-  relabel.push(() => { handlingNote.textContent = t('Realistic handling gives cars, vans and pickups more gradual acceleration, longer stops and body roll in first and third person.'); });
-  row('Motion blur when driving', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (motionBlurOn() ? 'on' : 'off'), (id) => setMotionBlur(id === 'on'));
-  row('Minimap', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (minimapOn() ? 'on' : 'off'), (id) => setMinimap(id === 'on'));
-  row<TunnelView>('Tunnels', TUNNEL_VIEWS.map((v) => ({ id: v, label: () => t(TUNNEL_LABEL[v]) })), tunnelView, setTunnelView);
-  row<Reflections>('Wet streets', [{ id: 'none', label: () => t('No reflections') }, { id: 'lights', label: () => t('Lights reflect') }, { id: 'mirror', label: () => t('Full mirror (demanding)') }], () => graphics.reflections, (id) => graphics.setReflections(id));
-  row('Water', [{ id: 'waves', label: () => t('Waves and reflections') }, { id: 'plain', label: () => t('Plain') }], () => (graphics.water ? 'waves' : 'plain'), (id) => graphics.setWater(id === 'waves'));
-  row<Kind | 'auto'>('Weather', [{ id: 'auto', label: () => t('Changing') }, ...weather.kinds.map((k) => ({ id: k, label: () => t(WEATHER[k]) }))], weather.get, weather.set);
 
-  row<Level>('Difficulty', LEVELS.map((l) => ({ id: l, label: () => t(LEVEL[l]) })), difficulty, setDifficulty);
-
-  // Only where the game sends statistics at all (src/telemetry.ts).
-  if (telemetry.available) {
-    const r = row(STATISTICS, [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (telemetry.enabled() ? 'on' : 'off'), (id) => telemetry.setEnabled(id === 'on'));
-    const note = el('p', 'settings-note', r);
-    relabel.push(() => { note.textContent = t('Tells us how well the game runs for you, which errors come up and what gets played. Nothing in it identifies you.'); });
-  }
-
-  // The mixer: one slider per group of sounds, from silent to twice as loud.
-  const mixer = el('div', 'settings-row', rows);
-  const mixName = el('span', 'settings-label', mixer);
-  relabel.push(() => { mixName.textContent = t('Mixer'); });
-  for (const b of BUSES) {
-    const line = el('label', 'settings-mix', mixer);
-    const name = el('span', '', line);
-    const slider = el('input', '', line) as HTMLInputElement;
-    const pct = el('span', 'settings-mix-pct', line);
-    slider.type = 'range';
-    slider.min = '0'; slider.max = '200'; slider.step = '5';
-    slider.addEventListener('input', () => { sound.setVolume(b, Number(slider.value) / 100); pct.textContent = `${slider.value} %`; });
-    slider.addEventListener('keydown', (e) => e.stopPropagation());
-    relabel.push(() => { name.textContent = t(MIX[b]); });
-    refresh.push(() => { slider.value = String(Math.round(sound.volumes[b] * 100)); pct.textContent = `${slider.value} %`; });
-  }
+  // ---- Game: the saved games, difficulty, weather and language.
 
   // The saved games: as many as you like. Loading one, deleting one and starting again
   // take a second press within 3 s, so progress isn't lost by accident.
@@ -365,8 +301,211 @@ export function setupSettings({ sound, graphics, weather, saves, cameraChoice }:
     }
   });
 
-  const feedback = feedbackLink(box, 'settings-news', { before: () => box.close(), extra: () => `Graphics: ${graphics.choice}${graphics.choice === 'auto' ? ` (${graphics.tier} now)` : ''} · ${graphics.api}` });
-  newsletterLink(box, 'settings-news', { before: () => box.close() });
+  row<Level>('Difficulty', LEVELS.map((l) => ({ id: l, label: () => t(LEVEL[l]) })), difficulty, setDifficulty);
+  row<Kind | 'auto'>('Weather', [{ id: 'auto', label: () => t('Changing') }, ...weather.kinds.map((k) => ({ id: k, label: () => t(WEATHER[k]) }))], weather.get, weather.set);
+  row<Lang>('Language', LANGS.map((l) => ({ id: l.id, label: fixed(l.label) })), getLang, setLang);
+
+  // ---- Display: how the city is drawn, and what's shown over it.
+  rows = panels.display;
+
+  row<Choice>('Graphics', GRAPHICS.map((g) => ({ id: g.id, label: () => (g.id === 'auto' ? t('Auto ({tier})', { tier: t(cap(graphics.tier)).toLowerCase() }) : t(g.label)) })), () => graphics.choice, (id) => graphics.set(id));
+  // Custom's own settings, under the row while it is chosen.
+  const customBox = el('details', 'settings-radio', rows.lastElementChild as HTMLElement) as HTMLDetailsElement;
+  customBox.open = true;
+  const customSummary = el('summary', '', customBox);
+  relabel.push(() => { customSummary.textContent = t('Custom graphics'); });
+  const customNote = el('p', 'settings-note', customBox);
+  relabel.push(() => { customNote.textContent = t('Starts from the level you were on. Settings marked demanding go past Ultra and need a fast graphics card.'); });
+  refresh.push(() => { customBox.hidden = graphics.choice !== 'custom'; });
+  for (const [label, options] of CUSTOM) {
+    const line = el('label', 'settings-radio-station', customBox);
+    const name = el('span', '', line), pick = el('select', 'settings-chip', line) as HTMLSelectElement;
+    pick.dataset.custom = label;
+    const items = options.map((_, i) => { const o = new Option('', String(i)); pick.add(o); return o; });
+    relabel.push(() => { name.textContent = t(label); options.forEach(([text], i) => { items[i].textContent = t(text); }); });
+    pick.onchange = () => { graphics.setCustom(options[Number(pick.value)][1]); telemetry.setting('Custom: ' + label, options[Number(pick.value)][0]); update(); };
+    refresh.push(() => {
+      const now = graphics.custom;
+      const i = now ? options.findIndex(([, set]) => Object.entries(set).every(([k, v]) => now[k as keyof Custom] === v)) : -1;
+      pick.value = String(Math.max(0, i));
+    });
+  }
+  row<Reflections>('Wet streets', [{ id: 'none', label: () => t('No reflections') }, { id: 'lights', label: () => t('Lights reflect') }, { id: 'mirror', label: () => t('Full mirror (demanding)') }], () => graphics.reflections, (id) => graphics.setReflections(id));
+  row('Water', [{ id: 'waves', label: () => t('Waves and reflections') }, { id: 'plain', label: () => t('Plain') }], () => (graphics.water ? 'waves' : 'plain'), (id) => graphics.setWater(id === 'waves'));
+  onOff('Motion blur when driving', motionBlurOn, setMotionBlur);
+  onOff('Minimap', minimapOn, setMinimap);
+  row<TunnelView>('Tunnels', TUNNEL_VIEWS.map((v) => ({ id: v, label: () => t(TUNNEL_LABEL[v]) })), tunnelView, setTunnelView);
+
+  // ---- Controls: the camera, the cars, and the touch screen.
+  rows = panels.controls;
+
+  const viewRow = row<PlayerView>('Camera view', [
+    { id: 'overhead', label: () => t('From above') },
+    { id: 'first', label: () => t('First person') },
+    { id: 'third', label: () => t('Third person') },
+    { id: 'vr', label: () => t('VR') },
+  ], cameraChoice.get, cameraChoice.set);
+  // VR only where the phone can show it (Chrome on Android, in a Cardboard-style headset).
+  const vrChip = viewRow.querySelectorAll('button')[3] as HTMLButtonElement;
+  vrChip.hidden = true;
+  void vrSupported().then((ok) => { vrChip.hidden = !ok && cameraChoice.get() !== 'vr'; });
+  const lookNote = el('p', 'settings-note', viewRow);
+  const updateLookNote = () => {
+    const view = cameraChoice.get();
+    lookNote.hidden = view === 'overhead';
+    lookNote.textContent = view === 'vr'
+      ? t('Put the phone in a VR headset. You walk the way you look: steer with a gamepad, or look straight down for a moment to start or stop walking.')
+      : t('Click the street and move the mouse to look around, swipe on a touchscreen, or use the right stick.');
+  };
+  refresh.push(updateLookNote);
+  const walkSettings = el('details', 'settings-radio', viewRow);
+  const walkSummary = el('summary', '', walkSettings);
+  relabel.push(() => { walkSummary.textContent = t('First-person controls'); });
+  refresh.push(() => { walkSettings.hidden = cameraChoice.get() !== 'first'; });
+  const ranges = [
+    ['fov', 'Field of view', 45, 80, 1, '°'],
+    ['sensitivity', 'Look sensitivity', 25, 200, 5, '%'],
+  ] as const;
+  for (const [key, label, low, high, step, unit] of ranges) {
+    const line = el('label', 'settings-mix', walkSettings);
+    const name = el('span', '', line), slider = el('input', '', line) as HTMLInputElement;
+    slider.type = 'range'; slider.min = String(low); slider.max = String(high); slider.step = String(step);
+    slider.dataset.camera = key;
+    const reading = el('span', 'settings-mix-pct', line);
+    relabel.push(() => { name.textContent = t(label); });
+    const read = () => { slider.value = String(firstPersonOptions[key]); reading.textContent = slider.value + unit; };
+    slider.oninput = () => { setFirstPersonOptions({ [key]: Number(slider.value) }); read(); };
+    refresh.push(read);
+  }
+  const motionLine = el('label', 'settings-radio-station', walkSettings);
+  const motionTitle = el('span', '', motionLine), motion = el('select', 'settings-chip', motionLine) as HTMLSelectElement;
+  motion.dataset.camera = 'motion';
+  const motions = [['device', 'Use device setting'], ['gentle', 'Gentle movement'], ['steady', 'Keep steady']] as const;
+  for (const [id,label] of motions) {
+    const option = new Option('',id); motion.add(option);
+    relabel.push(() => { option.textContent = t(label); });
+  }
+  relabel.push(() => { motionTitle.textContent = t('Walking camera'); });
+  motion.onchange = () => setFirstPersonOptions({ motion: motion.value as FirstPersonOptions['motion'] });
+  refresh.push(() => { motion.value = firstPersonOptions.motion; });
+  const vrDistance = onOff('Shorter view in VR', () => firstPersonOptions.vrShortView, (on) => setFirstPersonOptions({ vrShortView: on }));
+  const vrDistanceNote = el('p', 'settings-note', vrDistance);
+  relabel.push(() => { vrDistanceNote.textContent = t('Limits the view to 120 m and adds haze to help VR run faster. Off keeps the usual 400 m view.'); });
+  refresh.push(() => { vrDistance.hidden = cameraChoice.get() !== 'vr'; });
+  const handlingRow = row<CarHandling>('Car handling', [
+    { id: 'classic', label: () => t('Classic') },
+    { id: 'realistic', label: () => t('Realistic') },
+    { id: 'physical', label: () => t('Physical') },
+  ], () => firstPersonOptions.handling, handling => setFirstPersonOptions({ handling }));
+  const handlingNote = el('p', 'settings-note', handlingRow);
+  relabel.push(() => { handlingNote.textContent = t('Realistic handling gives cars, vans and pickups more gradual acceleration, longer stops and body roll in first and third person.') + ' ' + t('Physical handling drives them as a body on four sprung wheels: they slide, go up on two wheels, jump and roll over as the forces have it.'); });
+  // How the on-screen controls drive a car (src/touch.ts): with the pedals, or one-handed.
+  if (matchMedia('(pointer: coarse)').matches || new URLSearchParams(location.search).has('touch')) {
+    const r = row<TouchDrive>('Driving', [{ id: 'pedals', label: () => t('Stick and pedals') }, { id: 'stick', label: () => t('Stick only') }], touchDrive, setTouchDrive);
+    const note = el('p', 'settings-note', r);
+    relabel.push(() => { note.textContent = t('With the stick only, you drive with one thumb: push further to go faster, point behind the car to brake and turn round, let go to coast.'); });
+  }
+  // Only on a touch screen: a computer can't buzz.
+  if (matchMedia('(pointer: coarse)').matches) onOff('Vibration', hapticsOn, setHaptics);
+
+  // ---- Sound: on or off, the radio, and the mixer.
+  rows = panels.sound;
+
+  onOff('Sound', () => sound.on, (on) => { if (on !== sound.on) sound.toggle(); });
+  const radioRow = onOff('Car radio', () => sound.radioOn, (on) => sound.setRadio(on));
+  const radioDetails = el('details', 'settings-radio', radioRow);
+  const radioSummary = el('summary', '', radioDetails);
+  relabel.push(() => { radioSummary.textContent = t('Radio settings'); });
+  const distributionLabel = el('label', 'settings-radio-station', radioDetails);
+  const distributionName = el('span', '', distributionLabel);
+  const distributionSelect = el('select', 'settings-chip', distributionLabel) as HTMLSelectElement;
+  const equal = new Option('', 'random'), audience = new Option('', 'audience');
+  distributionSelect.add(equal);
+  distributionSelect.add(audience);
+  relabel.push(() => {
+    distributionName.textContent = t('Stations in new cars');
+    equal.textContent = t('Equal chance');
+    audience.textContent = t('By listener numbers');
+  });
+  distributionSelect.addEventListener('change', () => { setStationDistribution(distributionSelect.value === 'audience' ? 'audience' : 'random'); update(); });
+  refresh.push(() => { distributionSelect.value = stationDistribution(); });
+  const distributionNote = el('p', 'settings-note', radioDetails);
+  const distributionText = () => {
+    distributionNote.textContent = stationDistribution() === 'random'
+      ? t('Each selected station has an equal chance. Cars you have already used keep their station.')
+      : t('Stations with more daily listeners appear more often, using audience figures published in May 2026. Stations without comparable figures get the same small chance. Cars you have already used keep their station.');
+  };
+  relabel.push(distributionText);
+  refresh.push(distributionText);
+  const radioNote = el('p', 'settings-note', radioDetails);
+  relabel.push(() => { radioNote.textContent = t('Choose the stations you want to hear. Unchecked stations are skipped in every car.'); });
+  for (const station of STATIONS) {
+    const label = el('label', 'settings-radio-station', radioDetails);
+    const checkbox = el('input', '', label) as HTMLInputElement;
+    checkbox.type = 'checkbox';
+    el('span', '', label, station.name);
+    checkbox.addEventListener('change', () => { setStationAllowed(station.id, checkbox.checked); update(); });
+    refresh.push(() => { checkbox.checked = stationAllowed(station.id); });
+  }
+  const radioEmpty = el('p', 'settings-note', radioDetails);
+  relabel.push(() => { radioEmpty.textContent = t('No stations selected. Select a station to hear the radio again.'); });
+  refresh.push(() => { radioEmpty.hidden = STATIONS.some((station) => stationAllowed(station.id)); });
+  onOff('Noise cancelling', () => sound.anc, (on) => sound.setAnc(on));
+
+  // The mixer: one slider per group of sounds, from silent to twice as loud.
+  const mixer = el('div', 'settings-row', rows);
+  const mixName = el('span', 'settings-label', mixer);
+  relabel.push(() => { mixName.textContent = t('Mixer'); });
+  for (const b of BUSES) {
+    const line = el('label', 'settings-mix', mixer);
+    const name = el('span', '', line);
+    const slider = el('input', '', line) as HTMLInputElement;
+    const pct = el('span', 'settings-mix-pct', line);
+    slider.type = 'range';
+    slider.min = '0'; slider.max = '200'; slider.step = '5';
+    slider.addEventListener('input', () => { sound.setVolume(b, Number(slider.value) / 100); pct.textContent = `${slider.value} %`; });
+    slider.addEventListener('keydown', (e) => e.stopPropagation());
+    relabel.push(() => { name.textContent = t(MIX[b]); });
+    refresh.push(() => { slider.value = String(Math.round(sound.volumes[b] * 100)); pct.textContent = `${slider.value} %`; });
+  }
+
+  // ---- More: the app, statistics, feedback, the newsletter, credits and the version.
+  rows = panels.more;
+
+  // Installing the game as an app (src/install.ts), where the browser can.
+  const appBox = el('div', 'settings-row', rows);
+  const appName = el('span', 'settings-label', appBox);
+  const appChips = el('div', 'settings-chips', appBox);
+  const appGo = el('button', 'settings-chip', appChips) as HTMLButtonElement;
+  appGo.type = 'button';
+  appGo.addEventListener('click', () => { telemetry.did('installed the app'); install(); });
+  const appNote = el('p', 'settings-note', appBox);
+  const appText = () => {
+    const way = installWay();
+    appBox.hidden = !way;
+    appGo.hidden = way !== 'prompt';
+    appName.textContent = t('Play as an app');
+    appGo.textContent = t('Install');
+    appNote.textContent = way === 'share'
+      ? t(apple && !document.fullscreenEnabled
+        ? 'To play full screen on an iPhone, tap the Share button in the browser, then Add to Home Screen, and start the game from its icon.'
+        : 'Tap the Share button in the browser, then Add to Home Screen. Started from its icon, the game opens full screen, without the browser’s bars.')
+      : t('Puts the game on your home screen or desktop. It then opens full screen, without the browser’s bars.');
+  };
+  relabel.push(appText);
+  refresh.push(appText);
+  onInstallChange(() => { appText(); full.hidden = fullHidden(); });
+
+  // Only where the game sends statistics at all (src/telemetry.ts).
+  if (telemetry.available) {
+    const r = onOff(STATISTICS, () => telemetry.enabled(), (on) => telemetry.setEnabled(on));
+    const note = el('p', 'settings-note', r);
+    relabel.push(() => { note.textContent = t('Tells us how well the game runs for you, which errors come up and what gets played. Nothing in it identifies you.'); });
+  }
+
+  const links = el('div', 'settings-links', rows);
+  const feedback = feedbackLink(links, 'settings-news', { before: () => box.close(), extra: () => `Graphics: ${graphics.choice}${graphics.choice === 'auto' ? ` (${graphics.tier} now)` : ''} · ${graphics.api}` });
+  newsletterLink(links, 'settings-news', { before: () => box.close() });
   // While the game is in beta, feedback is also one press away, beside the corner buttons.
   if (feedback) {
     const ask = el('button', 'corner-btn corner-feedback', corner) as HTMLButtonElement;
@@ -379,7 +518,7 @@ export function setupSettings({ sound, graphics, weather, saves, cameraChoice }:
   testVersionButton(corner);
 
   // On a phone the credits live here (their corner has these buttons now).
-  const credits = el('button', 'settings-credits', box) as HTMLButtonElement;
+  const credits = el('button', 'settings-credits', links) as HTMLButtonElement;
   credits.type = 'button';
   relabel.push(() => { credits.textContent = t('Credits, licences and privacy'); });
   credits.addEventListener('click', () => {
@@ -387,12 +526,13 @@ export function setupSettings({ sound, graphics, weather, saves, cameraChoice }:
     document.getElementById('credits')?.click();
   });
 
-  const version = el('p', 'settings-version', box);
+  const version = el('p', 'settings-version', rows);
   // The map's version where it has one (Cloudflare), else the day it was built, which
   // is known once the map has loaded.
   const versionLine = () => { version.textContent = `${t('Version')} ${__APP_VERSION__} · ${__APP_BUILT__} · ${t('map data')} ${__DATA_VERSION__ || mapData.built.slice(0, 10) || 'local'}`; };
   relabel.push(versionLine);
-  updateNotice(box, 'settings-update');
+
+  pickTab(tab);
 
   function update() {
     mute.innerHTML = icon(SPEAKER + (sound.on ? WAVES : CROSS));
@@ -414,8 +554,10 @@ export function setupSettings({ sound, graphics, weather, saves, cameraChoice }:
     sound.toggle();
     update();
   });
-  const show = () => {
+  // Opens on the tab it was left on, or on the one asked for.
+  const show = (on?: Tab) => {
     update();
+    if (on) pickTab(on);
     telemetry.did('opened the settings');
     box.showModal();
   };
@@ -428,7 +570,7 @@ export function setupSettings({ sound, graphics, weather, saves, cameraChoice }:
     if (e.target === box && (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom)) box.close();
   });
   // The game stays paused when settings hand over to another modal panel.
-  const api = { get open() { return box.open || feedbackOpen() || newsletterOpen() || creditsOpen(); }, show };
+  const api = { get open() { return box.open || feedbackOpen() || newsletterOpen() || creditsOpen(); }, show: () => show() };
   // M, G and P change these from the keyboard: look again once the game has.
   window.addEventListener('keydown', (e) => { if (['KeyM', 'KeyG', 'KeyP'].includes(e.code)) setTimeout(update); });
   return api;

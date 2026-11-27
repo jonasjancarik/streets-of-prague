@@ -201,7 +201,7 @@ def _skipped(kinds):
     survey has on level 1 over an underpass the game keeps as a tunnel. The survey's
     ground there is the underpass's own floor, and its carriageway and pavements were
     painted on the street above (Národní over Divadelní)."""
-    places = json.loads(SKIP.read_text()) if SKIP.exists() else []
+    places = json.loads(SKIP.read_text(encoding="utf-8")) if SKIP.exists() else []
     out = dict(kinds)
     for place in places:
         if place["kind"] not in out:

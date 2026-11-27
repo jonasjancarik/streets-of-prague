@@ -40,7 +40,7 @@ def boundaries():
         subprocess.run(["osmium", "tags-filter", "--overwrite", "-o", str(CACHE), str(PBF), "r/boundary=cadastral"],
                        check=True)
     out = subprocess.run(["osmium", "export", "-f", "geojsonseq", "-x", "print_record_separator=false", str(CACHE)],
-                         check=True, capture_output=True, text=True).stdout
+                         check=True, capture_output=True, text=True, encoding="utf-8").stdout
     feats = (json.loads(line) for line in out.splitlines())
     return [f for f in feats if f["geometry"] and f["geometry"]["type"] in ("Polygon", "MultiPolygon")
             and f["properties"].get("boundary") == "cadastral" and f["properties"].get("name")]
@@ -63,7 +63,7 @@ def build(area, feats):
         districts.append({"name": f["properties"]["name"], "box": [round(v, 1) for v in g.bounds], "rings": rings})
     districts.sort(key=lambda d: d["name"])
     dest = OUT / f"{area}_now" / "districts.json"
-    dest.write_text(json.dumps({"districts": districts}, ensure_ascii=False, separators=(",", ":")))
+    dest.write_text(json.dumps({"districts": districts}, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"{area}: {len(districts)} districts → {dest} ({dest.stat().st_size // 1024} kB)")
 
 

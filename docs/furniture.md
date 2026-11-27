@@ -1,5 +1,5 @@
 ---
-read_when: Changing inferred benches, bins or courtyard planters, their tile-worker placement, collision or rendering.
+read_when: Changing inferred benches, bins or courtyard planters, OSM's mapped street furniture, their tile-worker placement, collision or rendering.
 ---
 
 # Park and courtyard furniture
@@ -45,16 +45,42 @@ It is not expected to stay identical across map rebuilds or a different area's o
 
 The overhead benches, bins and planters use 108, 36 and 84 triangles. At pedestrian
 height the bench has chamfered timber slats on cast supports, the litter basket has a
-recessed liner, and individual sprays of leaves rise from the planter. Surveyed hydrants
-have capped outlets. The telephone kiosk has clear panes, a handset and a keypad. Its
-frame and glass use two instanced draws. Each other kind uses one draw per populated
-tile. Switching cameras reuses the instance placements. The street models share a
+recessed liner, and individual sprays of leaves rise from the planter. Each kind uses one
+draw per populated tile. The survey's standing hydrants and phone boxes are left out: the
+standing model looked American, and Prague's hydrants are mostly underground (their
+covers are drawn with the street's ironwork); nearly all its phone boxes were removed in
+the early 2020s. The kinds have names (`KIND` in `src/map/furniture.ts`). Switching cameras reuses the instance placements. The street models share a
 single surface atlas, loaded on first use in the street view.
 
 The worker stamps the solid footprints into the existing collision grid before
 parking. There is no new per-frame placement, physics pass or post-index scan.
 Furniture is static and cannot be knocked over. `&nofurniture` disables generation
 and collision for baseline comparisons; hiding meshes only measures rendering cost.
+
+## Mapped street furniture
+
+Along the streets the furniture is OpenStreetMap's, where it stands on the map:
+litter bins, benches, bike stands, pay-and-display machines, bollards, post boxes,
+recycling containers, street cabinets, advertising columns, poster cases, drinking
+fountains and Stolpersteine (`pipeline/build_street_furniture.py` → `street-furniture.json`,
+about 64,000 items in `praha`; `src/mappedFurniture.ts`). Inferred park benches and bins
+within 12 m of a mapped one of the same kind are left out. Stolpersteine lie flat and
+stop nobody (`FLAT_FURNITURE`). A bike stand of `capacity` n becomes a row of
+n/2 inverted Us; a collection point one container per kind it takes, in Prague's
+colours (green and white glass bells, blue paper, yellow plastic, orange cartons, grey
+metal); a mapped row of bollards one every 1.6 m. The pipeline turns each item square to
+the nearest mapped way, its local +z towards it. The main thread loads the file with the
+lamp survey's three-second deadline and hands each tile the items whose points are in
+it; the land worker leaves out those inside a building or on the game's carriageway
+(`mappedSpots`, `src/map/furniture.ts`). A post box mapped within 1.2 m of a building
+hangs on its wall instead of standing on a post. They share the furniture kinds'
+instancing, collision and overhead blocks; the models are in `src/furnitureModels.ts`.
+Without the file a map has only the inferred furniture.
+
+A surveyed tree standing in paving (no mapped green under it, and a road within 7 m or a
+paved square round it) gets a flat cast-iron grate round its foot (`treeGrates`).
+
+The traffic signs, including the one-way streets', are `docs/traffic-signs.md`.
 
 Run `node scripts/check-furniture.mjs` for deterministic placement, seams, clearance,
 slopes and density. With Vite running, `node scripts/check-furniture-browser.mjs

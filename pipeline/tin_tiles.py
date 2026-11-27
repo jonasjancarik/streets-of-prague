@@ -239,7 +239,7 @@ def read_target(tdir: Path, k: str):
     f = tdir / f"{k}.json"
     if not f.exists():
         return None
-    meta = json.loads(f.read_text())
+    meta = json.loads(f.read_text(encoding="utf-8"))
     nx, ny = meta["nx"], meta["ny"]
     raw = (tdir / f"{k}.grid.bin").read_bytes()
     h = np.frombuffer(raw, np.float32, nx * ny).reshape(ny, nx).astype(float)
@@ -588,7 +588,7 @@ def write_surface(out: Path, t, new, lines, kerb_rows):
     kr = np.concatenate(kerb_rows) if kerb_rows else np.zeros((0, 6))
     (out / f"{k}.kerbs.bin").write_bytes(kr.astype(np.float32).tobytes())
     meta = dict(t["meta"], kerbs=[len(r) for r in kerb_rows])
-    (out / f"{k}.json").write_text(json.dumps(meta))
+    (out / f"{k}.json").write_text(json.dumps(meta), encoding="utf-8")
 
 
 BLOCK = (4, 16)  # tiles a process takes at a time, columns by rows: its neighbours and IPR's sheets read once for it
@@ -631,7 +631,7 @@ class Pass:
     def tile_of(self, key):
         if key not in self.tile_json:
             p = self.tiles_dir / f"{key}.json"
-            self.tile_json[key] = json.loads(p.read_text()) if p.exists() else None
+            self.tile_json[key] = json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
         return self.tile_json[key]
 
     def keep(self, i0, j0, i1, j1):
@@ -707,7 +707,7 @@ def main():
                     "running side by side keep apart)")
     a = ap.parse_args()
     folder = a.data.resolve() / f"{a.map}_now"
-    index = json.loads((folder / "index.json").read_text())
+    index = json.loads((folder / "index.json").read_text(encoding="utf-8"))
     area = index["area"]
     local = local_crs(area)
     work = a.work or (HERE / ".cache" / "tin" / a.map if a.data.resolve() == OUT.resolve() else a.data.resolve() / f"tin-{a.map}")
@@ -785,8 +785,8 @@ def main():
     out_index = folder / "index.json"
     if out_index.is_symlink():
         out_index.unlink()  # (a window's map links the built map's: its own copy, not that one)
-    out_index.write_text(json.dumps(index, separators=(",", ":")))
-    (work / ("report-nolidar.json" if a.no_lidar else "report.json")).write_text(json.dumps(dict(rows=rows, total=total), indent=1))
+    out_index.write_text(json.dumps(index, separators=(",", ":")), encoding="utf-8")
+    (work / ("report-nolidar.json" if a.no_lidar else "report.json")).write_text(json.dumps(dict(rows=rows, total=total), indent=1), encoding="utf-8")
     print(json.dumps(dict(map=a.map, tiles=len(rows), **{f: round(v, 1) for f, v in total.items()})))
 
 

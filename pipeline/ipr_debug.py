@@ -28,5 +28,5 @@ for f in out:
     if not g: continue
     x, y = tf.transform(g["x"], g["y"])
     pts.append([round(x, 1), round(y, 1), a["ctmtp_kod"]]); codes[a["ctmtp_kod"]] = a["ctmtp_popis"]
-json.dump({"marks": pts, "codes": codes}, open(f"../public/data/{area}_now/ipr_debug.json", "w"))
+json.dump({"marks": pts, "codes": codes}, open(f"../public/data/{area}_now/ipr_debug.json", "w", encoding="utf-8"))
 print(len(pts))

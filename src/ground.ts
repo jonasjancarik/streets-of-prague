@@ -20,6 +20,7 @@ import type { StationTracks } from './stationTracks.ts';
 import { KERB_HEIGHT, dropAt, streetDepth, type KerbDrop } from './kerbDrop.ts';
 import { joinArrays, stairGeometry, surveyedStairGeometry, type MappedStair, type SurveyedStair } from './map/stairs.ts';
 import { splitQuietWater } from './map/waterBody.ts';
+import { LAID_PATTERNS, layingAngles } from './laying.ts';
 
 export interface GroundTileData {
   areas: Record<string, Polygons | undefined>;
@@ -78,11 +79,13 @@ const WEAR_SHADE = 0.42, GUTTER_PEAK = 0.9;
 // tone curve, grade.ts: it keeps more of a sunlit colour's strength than the curve before it.)
 export const COLORS = {
   pavement: '#92908c', square: '#d7d3cb', squareSetts: '#9c958a', path: '#d8cbb6', dirt: '#bfa87e', worn: '#b49f72',
-  park: '#6d9647', garden: '#74994c', wood: '#394a2b', orchard: '#7c9c52', pitch: '#629050',
+  // (The grass a mown city lawn's olive, as in the aerial photos, not a lime: about 40 %
+  // saturated. It came out near 60 % in the sun before, and read as felt.)
+  park: '#6e8a4e', garden: '#6c8c4c', wood: '#394a2b', orchard: '#7a8f50', pitch: '#628a50',
   field: '#b9b27a', yard: '#a9a69e', dtmYard: '#85837e', ballast: '#99948a', bare: '#bba888',
   water: '#4d7680', pool: '#62aec2', asphalt: '#626264', sett: '#8a847a', parking: '#6a6968',
   bed: '#6f5b43', shrubBed: '#5d6b3c', iron: '#3f3d3b',
-  bridge: '#6d6c6a', trackbed: '#8a8a85', steel: '#3a3b3d', paint: '#efede4', kerb: '#aba79e', granite: '#9a9893',
+  bridge: '#6d6c6a', steel: '#3a3b3d', paint: '#efede4', kerb: '#aba79e', granite: '#9a9893',
   quay: '#7c776c', funicular: '#6e6a62', slab: '#8e8b84', stairStone: '#aca596', stairNose: '#bdb6a8', tunnel: '#46484c', tunnelWall: '#a59f93',
 };
 // Paint of parking bays by paid-parking zone: [zone, colour, dashes].
@@ -188,7 +191,7 @@ function strips(lines: Point2[][], w: number, dash: Point2 | null = null, hold =
 }
 
 // The across-track coordinate profiles the rail head; distance along a strip
-// places joints across a tram bed or kerb. Both follow bends and the same
+// places joints across a kerb. Both follow bends and the same
 // terrain cuts as the rest of the street.
 function surfaceRibbon(lines: Point2[][], bands: readonly (readonly [number, number])[], across: boolean): GroundGeometry {
   const pos: number[] = [], idx: number[] = [], coord: number[] = [];
@@ -211,8 +214,7 @@ function surfaceRibbon(lines: Point2[][], bands: readonly (readonly [number, num
   const { alpha, ...g } = finish(pos, idx, coord);
   return alpha ? { ...g, trackCoord: alpha } : g;
 }
-const tramRibbon = (lines: Point2[][], rails: boolean) =>
-  surfaceRibbon(lines, rails ? [[-.648, -.792], [.648, .792]] : [[-1.25, 1.25]], rails);
+const tramRails = (lines: Point2[][]) => surfaceRibbon(lines, [[-.648, -.792], [.648, .792]], true);
 const kerbRibbon = (lines: Point2[][], width: number) => surfaceRibbon(lines, [[-width / 2, width / 2]], false);
 
 // A street's kerbs: the row of granite on the pavement's edge, and its face down to the
@@ -670,9 +672,20 @@ function finish(pos: number[], idx: number[], extra: number[] | null = null, ras
 //
 // `steps`: the terrain knows the steps in it (the tile's terraces; its water is in `d`),
 // so the layers are cut along them and the steps get walls (see `sideOf`).
-export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [], parkingZones = [], height = null, levels = null, steps = null, roadProfile, roadSurfaceBoxes, paint = true, rasterRoads = false, fine, flat = 0, kerbs = null }: {
+//
+// Setts, mosaic, slabs and concrete carry which way they are laid (`lay`: laying.ts).
+export function groundLayers(d: GroundTileData, options: Parameters<typeof builtGround>[1]): GroundResult {
+  const result = builtGround(d, options);
+  for (const l of result.layers) {
+    if (l.pattern && LAID_PATTERNS.has(l.pattern)) l.geometry.lay = layingAngles(l.geometry.position, l.geometry.index, options.box);
+  }
+  return result;
+}
+function builtGround(d: GroundTileData, { box, edges = [], buildings = [], parkingZones = [], kerbPaint = [], arrows = [], height = null, levels = null, steps = null, roadProfile, roadSurfaceBoxes, paint = true, rasterRoads = false, fine, flat = 0, kerbs = null }: {
   box: Bounds; edges?: GroundRoadEdge[]; buildings?: { rings: Point2[][] }[];
   parkingZones?: (string | null)[]; height?: HeightAt | null; levels?: GroundLevel[] | null; steps?: Terrace[] | null;
+  kerbPaint?: { cat: string; pts: Point2[] }[]; // the zone lines along kerbside parking rows (parking.ts kerbPaint)
+  arrows?: Polygons; // the lanes' arrows (turnArrows)
   // false: no lane lines (see TILE_LOOK in tiles.ts)
   paint?: boolean;
   roadProfile?: RoadProfile;
@@ -700,7 +713,7 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
     kerbField = height && !rasterRoads ? kerbs : null;
     try { return build(); } finally { kerbField = null; groundHeight = sideOf = null; terraceOutlines = []; terraceOwners = []; stepIndex = null; groundBox = roadBoxes = null; }
   };
-  if (!levels) return { layers: stepped(() => layers(d, { box, edges, buildings, parkingZones, rasterRoads })), masks: [] };
+  if (!levels) return { layers: stepped(() => layers(d, { box, edges, buildings, parkingZones, kerbPaint, arrows, rasterRoads })), masks: [] };
   const T = height || (() => 0);
   // (A street on the ground with a level is on a bridge over an underpass's cutting
   // there, pipeline/structures.py's cuttings: painted on its deck.)
@@ -709,7 +722,7 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
   doorFill = doorAt ? quads() : null;
   let lower: GroundLayer[];
   try {
-    lower = stepped(() => layers(d, { box, edges: edges.filter((e) => !onDeck(e) && !e.tunnel), buildings, parkingZones, bridges: false, rasterRoads }));
+    lower = stepped(() => layers(d, { box, edges: edges.filter((e) => !onDeck(e) && !e.tunnel), buildings, parkingZones, kerbPaint, arrows, bridges: false, rasterRoads }));
     if (doorFill?.idx.length) {
       const order = Math.max(...lower.map((l) => l.order)) + 1;
       lower.push({ order, geometry: joined(polygons([]), doorFill), color: DOOR_DARK, pattern: 'flat', blend: null, aboveOnly: true, oneSided: true });
@@ -1046,8 +1059,7 @@ function deckLayers(polys: Polygons, trams: Point2[][], edges: GroundRoadEdge[],
     add(polygons(surveyed.pavement), COLORS.pavement, 'asphalt');
     add(polygons(surveyed.road), COLORS.asphalt, 'asphalt');
   }
-  add(tramRibbon(trams, false), COLORS.trackbed, 'tramBed');
-  add(tramRibbon(trams, true), COLORS.steel, 'groovedRail');
+  add(tramRails(trams), COLORS.steel, 'groovedRail');
   if (station && railway.length) railwayLayers(railway, (g, color, pattern) => add(g, color, pattern, true));
   else if (railway.length) add(strips(railway.flatMap(pts => [offsetLine(pts, 0.72), offsetLine(pts, -0.72)]), 0.12), COLORS.steel, 'flat', true);
   const { dashed, solid } = roadPaint(edges, trams);
@@ -1165,9 +1177,9 @@ function tunnelLayers(polys: Polygons, box: Bounds, mask: LevelMask, H: HeightAt
   return out;
 }
 
-function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridges: withBridges = true, rasterRoads = false }: {
-  box: Bounds; edges: GroundRoadEdge[]; buildings: { rings: Point2[][] }[];
-  parkingZones: (string | null)[]; bridges?: boolean; rasterRoads?: boolean;
+function layers(d: GroundTileData, { box, edges, buildings, parkingZones, kerbPaint = [], arrows = [], bridges: withBridges = true, rasterRoads = false }: {
+  box: Bounds; edges: GroundRoadEdge[]; buildings: { rings: Point2[][] }[]; arrows?: Polygons;
+  parkingZones: (string | null)[]; kerbPaint?: { cat: string; pts: Point2[] }[]; bridges?: boolean; rasterRoads?: boolean;
 }): GroundLayer[] {
   const out: GroundLayer[] = [];
   const A = d.areas, R = d.roads;
@@ -1370,9 +1382,12 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     add(street(() => polygons(R.trambed || [])), COLORS.ballast, 'gravel');
     // Bay lines as Prague paints them: a solid blue line in residents' zones, white
     // dashes in the mixed (violet) and visitors' (orange) ones, plain white elsewhere.
+    // Kerbside rows with no mapped area under them get the zone's line along their
+    // traffic side (parking.ts kerbPaint), in the zones only.
     for (const [cat, color, dash] of BAY_PAINT) {
       const rings = (A.parking || []).filter((rs, k) => (parkingZones[k] || null) === cat);
-      add(onStreet(() => strips(bayLines(rings.map((rs) => rs[0]), edges, cut), 0.15, dash, true)), color);
+      const rows = kerbPaint.filter((k) => k.cat === cat).map((k) => k.pts);
+      add(onStreet(() => strips([...bayLines(rings.map((rs) => rs[0]), edges, cut), ...rows], 0.15, dash, true)), color);
     }
 
     // Bridges: a soft shadow on the water, then the deck (unless the decks are drawn
@@ -1389,15 +1404,17 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
       add(strips(d.station.platformEdges, 0.23), '#d1c7b2');
     } else order += 5;
 
-    // Tram tracks: concrete bed and two rails at standard gauge.
+    // Tram tracks: two rails at standard gauge, let into whatever the street is paved
+    // with there (the survey's asphalt or setts run on between the rails, as they mostly
+    // do in Prague); on a bed of their own, into the ballast.
     const trams = d.rails.filter((r) => r.kind === 'tram').map((r) => r.pts);
-    add(onStreet(() => tramRibbon(trams, false)), COLORS.trackbed, 'tramBed');
-    add(onStreet(() => tramRibbon(trams, true)), COLORS.steel, 'groovedRail');
+    add(onStreet(() => tramRails(trams)), COLORS.steel, 'groovedRail');
     add(strips(d.rails.filter((r) => r.kind === 'funicular').map((r) => r.pts), 3), COLORS.funicular, 'concrete');
 
     const { dashed, solid } = roadPaint(edges, trams);
     add(onStreet(() => strips(dashed, 0.13, [3, 6], true)), COLORS.paint);
     add(onStreet(() => strips(solid, 0.13, null, true)), COLORS.paint);
+    if (paintRoads && arrows.length) add(onStreet(() => polygons(arrows)), COLORS.paint);
     add(onStreet(() => strips(zebras(d.crossings || [], edges, [...(R.road || []), ...(R.sett || [])], box), 0.5, null, true)), COLORS.paint);
     // Manhole covers and storm drains: all of the tile's in one mesh.
     const street0 = groundHeight;
@@ -1521,6 +1538,70 @@ function roadPaint(edges: GroundRoadEdge[], trams: Point2[][]) {
     if (EDGE_LINES.has(e.hw)) edgeLines(e, W / 2, -W / 2);
   }
   return { dashed, solid };
+}
+
+// The arrows painted in the lanes coming up to a junction (V9a), from OSM's turn:lanes
+// (pipeline/build_traffic_signs.py; `turns` by the junction's node: the heading of each
+// street into it and its lanes' arrows, left to right). In the lanes roadPaint draws,
+// TURN_AT m short of where the junction's widest street begins (its middle less half that
+// street's width), and on a longer street TURN_AT2 m further back; on setts none.
+// Polygons for the paint, the arrows whose tip is in `box`.
+const TURN_AT = 6, TURN_AT2 = 25, ARROW = 5, SHAFT = 0.16, HEAD = 0.62, HEAD_LONG = 1.3;
+type TurnEdge = Pick<GroundRoadEdge, 'u' | 'v' | 'pts' | 'width' | 'oneway' | 'kerb' | 'park' | 'bridge' | 'tunnel'> & { surface?: string | null };
+export function turnArrows(edges: TurnEdge[], turns: Map<string, [number, string][]>, box: Bounds): Polygons {
+  const out: Polygons = [];
+  const mouth = new Map<string, number>();
+  for (const e of edges) for (const node of [e.u, e.v]) mouth.set(node, Math.max(mouth.get(node) ?? 0, e.width / 2));
+  for (const e of edges) {
+    const list = turns.get(e.v), pts = e.pts, n = pts.length;
+    if (!list || n < 2 || COBBLED.has(e.surface ?? '') || e.bridge || e.tunnel) continue;
+    const [ax, ay] = pts[n - 2], [bx, by] = pts[n - 1], heading = Math.atan2(by - ay, bx - ax);
+    const hit = list.find(([h]) => Math.abs(((h - heading) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI) < 0.6);
+    if (!hit) continue;
+    const lanes = hit[1].split('|'), m = lanes.length, W = e.width;
+    // Each lane's middle, left to right, from the centre line (positive to the right).
+    let mids: number[];
+    if (e.oneway) {
+      const right = laneEdge(e, W), left = Math.max(right - W, -(e.kerb?.[1] ?? Infinity)), lw = (right - left) / m;
+      mids = lanes.map((_, i) => left + (i + 0.5) * lw);
+    } else {
+      const lw = W / 2 / m;
+      mids = lanes.map((_, i) => (i + 0.5) * lw);
+    }
+    let length = 0;
+    for (let i = 1; i < n; i++) length += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    const first = TURN_AT + (mouth.get(e.v) ?? 0), second = first + TURN_AT2;
+    for (const back of length >= second + ARROW + 10 ? [first, second] : length >= first + ARROW + 4 ? [first] : []) {
+      // The point `back` m short of the edge's end, and the way the street runs there.
+      let left = back, at: Point2 | null = null, dir: Point2 = [1, 0];
+      for (let i = n - 1; i > 0 && !at; i--) {
+        const [px, py] = pts[i], [qx, qy] = pts[i - 1], seg = Math.hypot(px - qx, py - qy);
+        if (seg >= left && seg > 1e-6) { dir = [(px - qx) / seg, (py - qy) / seg]; at = [px - dir[0] * left, py - dir[1] * left]; }
+        else left -= seg;
+      }
+      if (!at || at[0] < box[0] || at[0] >= box[2] || at[1] < box[1] || at[1] >= box[3]) continue;
+      const [dx, dy] = dir, rx = dy, ry = -dx;
+      lanes.forEach((tokens, i) => {
+        const p = (f: number, r: number): Point2 => [at![0] + dx * (f - ARROW) + rx * (mids[i] + r), at![1] + dy * (f - ARROW) + ry * (mids[i] + r)];
+        const want = new Set(tokens.split(';').map(t => t.trim()));
+        const through = want.has('through'), sides = [...want].flatMap(t => t === 'left' ? [-1] : t === 'right' ? [1] : t === 'slight_left' ? [-.5] : t === 'slight_right' ? [.5] : []);
+        if (!through && !sides.length) return;
+        const fork = ARROW * 0.5, shaft = through ? ARROW - HEAD_LONG : fork + SHAFT;
+        out.push([[p(0, -SHAFT / 2), p(0, SHAFT / 2), p(shaft, SHAFT / 2), p(shaft, -SHAFT / 2)]]);
+        if (through) out.push([[p(shaft, -HEAD / 2), p(shaft, HEAD / 2), p(ARROW, 0)]]);
+        for (const s of sides) {
+          // A branch out of the shaft, bent to the side, its head pointing on that way.
+          const a = Math.abs(s) < 1 ? 0.45 : 1.0, ux = Math.sin(a) * Math.sign(s), uf = Math.cos(a);
+          const f0 = fork, l = 1.1, f1 = f0 + uf * l, r1 = ux * l;
+          const nx = -uf, nf = ux; // across the branch
+          const w = SHAFT / 2, hw = HEAD / 2;
+          out.push([[p(f0 - nf * w, -nx * w), p(f1 - nf * w, r1 - nx * w), p(f1 + nf * w, r1 + nx * w), p(f0 + nf * w, nx * w)]]);
+          out.push([[p(f1 - nf * hw, r1 - nx * hw), p(f1 + uf * 1.0, r1 + ux * 1.0), p(f1 + nf * hw, r1 + nx * hw)]]);
+        }
+      });
+    }
+  }
+  return out;
 }
 
 // Where a one-way street's right-hand lane ends, from its centre line: at the surveyed

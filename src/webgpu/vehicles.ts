@@ -5,7 +5,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Fn, If, float, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, cameraWorldMatrix, diffuseColor, renderGroup, positionLocal, positionWorld, positionViewDirection, normalLocal, positionGeometry, materialColor, materialSpecular, normalize, dot, smoothstep, mix, select, sin, min, cos, max, floor, mod, exp2, reflect, atan, pow, uniform, texture, cubeTexture, length, clamp, step, distance, cross, fract, abs, fwidth, normalGeometry, int, ivec2, Loop, Break } from 'three/tsl';
-import { LAMP_GLOW, CAR_GLOSS, DUSTCART_COAT, CAR_MIRROR, CAR_STREET, WHEEL_LEVEL, CAR_REFLECT as R, CAR_STRIPS as CS, AREA_STEP, DENT_STEP, DENT_SHAPE as DS, BROKEN_GLASS as BG, SCRAPED as SC, BLOWS, DENT_MAP } from '../car.ts';
+import { LAMP_GLOW, CAR_GLOSS, DUSTCART_COAT, CAR_MIRROR, CAR_STREET, WHEEL_LEVEL, WHEEL_SHIFT, CAR_REFLECT as R, CAR_STRIPS as CS, AREA_STEP, DENT_STEP, DENT_SHAPE as DS, BROKEN_GLASS as BG, SCRAPED as SC, BLOWS, DENT_MAP } from '../car.ts';
 import { ROLL_CENTRE } from '../streetHandling.ts';
 import { sedanInstruments, sedanWeave } from '../sedanFinish.ts';
 import { registrationAtlas } from '../registrationPlates.ts';
@@ -17,7 +17,7 @@ import { shareInstances } from './trees.ts';
 import { skyAt } from './dome.ts';
 import { type N, addPort, uSnow, uWet, follow, followColor, followVec } from './common.ts';
 
-const wheelLevel = followVec(WHEEL_LEVEL);
+const wheelLevel = followVec(WHEEL_LEVEL), wheelShift = followVec(WHEEL_SHIFT);
 const levelWheel = (p: N) => p.add(cross(wheelLevel.xyz, cross(wheelLevel.xyz, p).add(p.mul(wheelLevel.w))).mul(2));
 
 const luma = (c: N) => dot(c, vec3(0.3, 0.59, 0.11));
@@ -293,7 +293,7 @@ addPort(/^cars(?:-service|-dustcart|-close|-coachglass|-coachwork)?$/, (node, le
       const wheelPos = spun.add(vec3(0, twist, 0)).toVar(), wheelNormal = rollWheel(nrm).toVar();
       If(wheel.and(attribute('roll', 'vec4').w.lessThan(0)), () => {
         const pivot = vec3(0, ROLL_CENTRE, 0);
-        wheelPos.assign(levelWheel(wheelPos.sub(pivot)).add(pivot));
+        wheelPos.assign(levelWheel(wheelPos.sub(pivot)).add(pivot).add(wheelShift.xyz));
         wheelNormal.assign(levelWheel(wheelNormal));
       });
       pos = select(wheel, wheelPos, pos);

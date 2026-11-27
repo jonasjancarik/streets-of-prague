@@ -2,9 +2,9 @@
 // atlases of the WebGPU street walls. Three's Lambert shader supplies live
 // lighting and shadows. Only the nearby replacement meshes use this program.
 import { streetFacadeMaterial as material } from './streetFacades.ts';
-import { F_SURFACE as S, FACADE_ATLAS, FACADE_GLSL, FACADE_ON, STREET_FACADE } from './facades.ts';
-import { facadeFinishes, shopReady, shopTexture } from './facadeFinishes.ts';
-import { CUTAWAY, NOISE, NOISE_GLSL, SKY_LEAST, SKY_REF, WET, WINDOWS } from './shading.ts';
+import { F_SURFACE as S, FACADE_ATLAS, FACADE_GLSL, FACADE_ON, STREET_FACADE, FLOWERS } from './facades.ts';
+import { facadeFinishes, shopReady, shopTexture, SIGN_WORDS } from './facadeFinishes.ts';
+import { BARE, CUTAWAY, NOISE, NOISE_GLSL, SKY_LEAST, SKY_REF, WET, WINDOWS } from './shading.ts';
 import { KINDS, STRIPS, STRIPS_ON } from './reflections.ts';
 import { lampLit } from './lamps.ts';
 
@@ -15,12 +15,18 @@ varying float vWallSky;`;
 const functions = `
 
 uniform sampler2D uShop, uPlaster, uMasks, uStrip, uShopSigns;
-uniform float uShopReady, uStripOn, uWet, uWindows;
+uniform float uShopReady, uStripOn, uWet, uWindows, uBare;
 uniform vec4 uCut;
 uniform vec3 uSkyRef;
 vec2 maskUV(float layer, vec2 p) {
   return (vec2(mod(layer, 6.), floor(layer / 6.)) + clamp(p, vec2(.016, .009), vec2(.984, .991))) /
          vec2(6., 24.);
+}
+// After dark a shop that has closed (shopRoom's pick 10 below .33) has its roller shutter
+// down three times in four: ribbed grey steel over the window. 1 where it is down.
+float shutter(vec4 f) {
+  float col = floor(f.x / (2. * f.z / max(1., fBays(f)))), seed = floor(fract(f.w) * 32768.);
+  return smoothstep(.01, .09, uWindows) * (1. - step(.33, streetPick(seed, col, 10.))) * step(streetPick(seed, col, 24.), .75);
 }
 vec3 shopRoom(vec4 f, vec3 eye, vec3 n) {
   vec2 size = vec2(2. * f.z / max(1., fBays(f)), fStorey(f).x);
@@ -77,8 +83,11 @@ const paint = `
   if (kind == ${S.metalFrame}.) wall = vec3(.66,.69,.68);
   if (kind == ${S.balconyGlass}.) wall = layer == 125. ? vec3(.16,.21,.24) : vec3(.046,.070,.083);
   if (kind == ${S.shopPaint}. || kind == ${S.canvas}.) wall = diffuseColor.rgb;
+  // A window box's plants (FLOWERS) are gone to bare earth while the trees are bare.
+  if (kind == ${S.shopPaint}. && abs(vDetail.w - ${FLOWERS}.) < .5) wall = mix(wall, vec3(.20, .15, .11), uBare);
   if (kind == ${S.shopSign}.) {
-    vec2 at = vec2(clamp(.5 + (.5 - fract(f.x / bay)) * 1.55, .004, .996), (3. - floor(vDetail.w) + fract(vDetail.w)) * .25);
+    vec2 at = vec2(clamp(.5 + (.5 - fract(f.x / bay)) * 1.55, .004, .996),
+                   (${SIGN_WORDS.length - 1}. - floor(vDetail.w) + fract(vDetail.w)) / ${SIGN_WORDS.length}.);
     wall = mix(diffuseColor.rgb, vec3(.81,.72,.53), texture(uShopSigns, at).r);
   }
   if (kind == ${S.brass}.) wall = vec3(.131, .102, .064);
@@ -115,6 +124,9 @@ const paint = `
     if (kind == ${S.display}. && uShopReady > .5) {
       wall = vec3(.010, .014, .016);
       glow += shopRoom(f, -view, n) * (1. - fresnel) + uSkyRef * smoothstep(.01, .4, r.y) * fresnel * vWallSky;
+      float shut = shutter(f);
+      wall = mix(wall, mix(vec3(.24, .25, .245), vec3(.38, .39, .385), smoothstep(.18, .32, abs(fract(f.y * 14.) - .5))), shut);
+      glow *= 1. - shut;
     } else {
       float floorId = floor((f.y - st.x) / st.y), cell = floor(f.x / bay);
       glow += vec3(.8, .54, .28) * step(fHash(cell + fSeed(f) * 97., floorId), uWindows) * .38;
@@ -141,6 +153,7 @@ export function configureStreetFacadeGL() {
       uShop: shopTexture,
       uShopSigns: { value: facadeFinishes.signs },
       uShopReady: shopReady,
+      uBare: BARE,
     });
     sh.vertexShader = sh.vertexShader.replace(
       '#include <common>',

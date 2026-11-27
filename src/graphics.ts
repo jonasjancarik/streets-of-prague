@@ -18,6 +18,7 @@ import { slowHint } from './graphicswarning.ts';
 import * as telemetry from './telemetry.ts';
 import { startRetry } from './renderer.ts';
 import { STREET_QUALITY, STREET_TIERS } from './streetQuality.ts';
+import { setAnisotropy } from './textureQuality.ts';
 
 // Graphics tiers keep the street surfaces and facade pictures at every level. High,
 // Medium and Low keep the dirt, grime, leaves, tone curve and detailed roofs too.
@@ -77,23 +78,61 @@ import { STREET_QUALITY, STREET_TIERS } from './streetQuality.ts';
 // The choice is remembered; ?graphics=auto|ultra|high|medium|low|lowest overrides it for
 // one visit. ?dpr fixes only the pixel ratio, leaving the other tier settings intact.
 // WebGL keeps its startup MSAA: it cannot change that without a new renderer.
+//
+// Custom puts every one of these switches in the player's hands (the settings' Display
+// tab), starting from the level they were on, and lets some go past Ultra: the screen's
+// full pixel ratio (up to 3), a sun shadow map 8192 texels across and detailed models
+// reaching half as far again (STREET_TIERS.max). It is kept as 'graphicsCustom'. Code
+// elsewhere that asks for `tier` sees Ultra, so nothing else is held back.
 export const REFLECTIONS = ['none', 'lights', 'mirror'] as const;
 export type Reflections = typeof REFLECTIONS[number];
 export type Tier = 'lowest' | 'low' | 'medium' | 'high' | 'ultra';
-export type Choice = Tier | 'auto';
+export type Choice = Tier | 'auto' | 'custom';
 const ORDER: Tier[] = ['lowest', 'low', 'medium', 'high', 'ultra']; // (Auto's)
-export const CHOICES: Choice[] = ['auto', 'ultra', 'high', 'medium', 'low', 'lowest'];
+export const CHOICES: Choice[] = ['auto', 'ultra', 'high', 'medium', 'low', 'lowest', 'custom'];
 // `cars`: what gets in the way of the lamps' light at night: 3 cars, people, trams and
 // posts cast shadows from every lamp and headlight, 2 only the cars do, 1 a soft darkening
 // round each car, 0 nothing. `lights`: the cones and glints.
 // `shadowBlur`: how far the sun shadow's edge is softened, in shadow-map texels.
-const TIERS: Record<Tier, { look: boolean; maxRatio: number; samples: 0 | 4; shadowSize: number; shadowBlur: number; roofs: boolean; clutter: boolean; crowd: number; cars: 0 | 1 | 2 | 3; lights: boolean; lampMap: 1024 | 2048; people: PeopleShadows }> = {
-  ultra: { look: true, maxRatio: 2, samples: 4, shadowSize: 4096, shadowBlur: 2, roofs: true, clutter: true, crowd: 1, cars: 3, lights: true, lampMap: 2048, people: 'full' },
-  high: { look: true, maxRatio: 2, samples: 4, shadowSize: 2048, shadowBlur: 1, roofs: true, clutter: true, crowd: 1, cars: 2, lights: true, lampMap: 2048, people: 'full' },
-  medium: { look: true, maxRatio: 1.5, samples: 4, shadowSize: 2048, shadowBlur: 1, roofs: true, clutter: false, crowd: 1, cars: 1, lights: false, lampMap: 1024, people: 'full' },
-  low: { look: true, maxRatio: 1, samples: 4, shadowSize: 1024, shadowBlur: 1, roofs: true, clutter: false, crowd: 1, cars: 1, lights: false, lampMap: 1024, people: 'simple' },
-  lowest: { look: false, maxRatio: 1, samples: 0, shadowSize: 1024, shadowBlur: 1, roofs: false, clutter: false, crowd: 0.5, cars: 0, lights: false, lampMap: 1024, people: 'simple' },
+// `view`: how far you see along the street in first and third person (m; the haze on
+// the far streets moves with it, and only the tiles that far are drawn). Overhead the
+// screen decides. `aniso`: anisotropic filtering, times what each texture was made with
+// (textureQuality.ts; 0 off). `textures`: the pictures at full size or half
+// (textureQuality.ts, from the next start). Auto keeps the filtering it began with: a
+// change uploads the textures again.
+type Settings = { look: boolean; maxRatio: number; samples: 0 | 4; shadowSize: number; shadowBlur: number; roofs: boolean; clutter: boolean; crowd: number; cars: 0 | 1 | 2 | 3; lights: boolean; lampMap: 1024 | 2048; people: PeopleShadows; view: number; aniso: number; textures: 'full' | 'half' };
+const TIERS: Record<Tier, Settings> = {
+  ultra: { look: true, maxRatio: 2, samples: 4, shadowSize: 4096, shadowBlur: 2, roofs: true, clutter: true, crowd: 1, cars: 3, lights: true, lampMap: 2048, people: 'full', view: 500, aniso: 2, textures: 'full' },
+  high: { look: true, maxRatio: 2, samples: 4, shadowSize: 2048, shadowBlur: 1, roofs: true, clutter: true, crowd: 1, cars: 2, lights: true, lampMap: 2048, people: 'full', view: 400, aniso: 1, textures: 'full' },
+  medium: { look: true, maxRatio: 1.5, samples: 4, shadowSize: 2048, shadowBlur: 1, roofs: true, clutter: false, crowd: 1, cars: 1, lights: false, lampMap: 1024, people: 'full', view: 400, aniso: 1, textures: 'full' },
+  low: { look: true, maxRatio: 1, samples: 4, shadowSize: 1024, shadowBlur: 1, roofs: true, clutter: false, crowd: 1, cars: 1, lights: false, lampMap: 1024, people: 'simple', view: 300, aniso: 0.5, textures: 'full' },
+  lowest: { look: false, maxRatio: 1, samples: 0, shadowSize: 1024, shadowBlur: 1, roofs: false, clutter: false, crowd: 0.5, cars: 0, lights: false, lampMap: 1024, people: 'simple', view: 250, aniso: 0, textures: 'half' },
 };
+
+// The switches a tier sets on its own (apply), which Custom lets the player set one by one.
+type Extras = { post: boolean; probe: boolean; canopy: boolean; streetDetail: boolean; closeRelief: boolean; softShadows: boolean };
+const extras = (t: Tier): Extras => {
+  const top = t === 'ultra', high = top || t === 'high';
+  return { post: high, probe: top, canopy: high, streetDetail: high || t === 'medium', closeRelief: high, softShadows: top };
+};
+// `street`: whose close-up budgets (streetQuality.ts) to use, 'max' going past Ultra's;
+// `ground`: the longest edge of the ground's triangles (m) in tiles built from then on.
+// `above`: Custom only, the street models in the overhead view as well (main.ts), while
+// zoomed in to ABOVE_HEIGHT.
+export type StreetLevel = keyof typeof STREET_TIERS;
+export type Custom = Settings & Extras & { street: StreetLevel; ground: number; above: boolean };
+export const customFrom = (t: Tier): Custom => ({ ...TIERS[t], ...extras(t), street: t, ground: STREET_TIERS[t].groundFine, above: false });
+// How high the overhead camera may be for `above` (m: 100 is the usual zoom on foot), and
+// how far round the middle of the view the street models reach there at most.
+export const ABOVE_HEIGHT = 180, ABOVE_REACH = 140;
+function loadCustom(): Custom | null {
+  try {
+    const saved = JSON.parse(localStorage.getItem('graphicsCustom') ?? 'null');
+    // (Anything missing, or added since it was saved, comes from Ultra.)
+    if (saved && typeof saved === 'object') return { ...customFrom('ultra'), ...saved, street: (saved.street ?? '') in STREET_TIERS ? saved.street : 'ultra' };
+  } catch {}
+  return null;
+}
 
 // three r186 has no public sample setter. Its tone-mapping pass caches a target
 // with the startup samples, so _samples alone changes nothing on screen. Update
@@ -176,7 +215,7 @@ export class AutoTier {
   target(ms: number, now: number) {
     if (ms === this.targetMs) return;
     this.targetMs = ms;
-    for (const tier of CHOICES) if (tier !== 'auto') this.failures[tier] = this.retryAt[tier] = 0;
+    for (const tier of ORDER) this.failures[tier] = this.retryAt[tier] = 0;
     this.hold(now, SETTLE);
   }
 
@@ -250,6 +289,8 @@ export class Graphics {
   private fixedRatio: number | null;
   private applied = false;
   private presenting = false;
+  // The player's own settings (Custom), once they have chosen it.
+  custom: Custom | null = loadCustom();
 
   // (`gpu`: the graphics chip's name, for where Auto starts.)
   constructor(renderer: THREE.WebGLRenderer, sky: Sky, params: URLSearchParams, gpu = '') {
@@ -267,10 +308,11 @@ export class Graphics {
     // After a start the graphics broke, this tab stays on Low at most (renderer.ts, startRetry);
     // a setting chosen above Low is held there too, without changing what is saved.
     const retried = startRetry() !== '';
-    if (retried && this.choice !== 'auto' && CHOICES.indexOf(this.choice) < CHOICES.indexOf('low')) this.choice = 'low';
+    if (retried && this.choice !== 'auto' && (this.choice === 'custom' || CHOICES.indexOf(this.choice) < CHOICES.indexOf('low'))) this.choice = 'low';
     const webgpu = !!(renderer as unknown as GPURenderer).backend?.isWebGPUBackend;
     this.auto = new AutoTier(retried ? 'low' : autoStart(gpu, touch), (a, b) => this.same(a, b), retried ? 'low' : touch || !webgpu ? 'high' : 'ultra');
-    this.tier = this.choice === 'auto' ? this.auto.tier : this.choice;
+    this.tier = this.choice === 'auto' ? this.auto.tier : this.choice === 'custom' ? 'ultra' : this.choice;
+    if (this.choice === 'custom' && !this.custom) this.custom = customFrom('ultra');
     this.apply();
     document.addEventListener('visibilitychange', () => { if (!document.hidden) this.auto.hold(performance.now(), WARMUP); });
   }
@@ -281,10 +323,12 @@ export class Graphics {
   // The game has loaded: start judging frames after a few seconds.
   started(now: number) { this.auto.hold(now, WARMUP); }
 
-  private ratio(t: Tier) { return this.fixedRatio ?? Math.min(devicePixelRatio, TIERS[t].maxRatio); }
+  private ratio(t: Tier) { return this.fixedRatio ?? Math.min(devicePixelRatio, this.settings(t).maxRatio); }
+  // What is drawn: the tier's settings, or the player's own on Custom.
+  private settings(t = this.tier): Custom { return this.choice === 'custom' && this.custom && t === this.tier ? this.custom : customFrom(t); }
   private same(a: Tier, b: Tier) {
     const x = TIERS[a], y = TIERS[b];
-    return x.look === y.look && x.cars === y.cars && x.lights === y.lights && x.lampMap === y.lampMap && x.shadowSize === y.shadowSize && x.shadowBlur === y.shadowBlur
+    return x.look === y.look && x.view === y.view && x.cars === y.cars && x.lights === y.lights && x.lampMap === y.lampMap && x.shadowSize === y.shadowSize && x.shadowBlur === y.shadowBlur
       && x.roofs === y.roofs && x.clutter === y.clutter && x.crowd === y.crowd && x.people === y.people
       && (!(this.renderer as GPURenderer).backend?.isWebGPUBackend || x.samples === y.samples)
       && (this.renderer.xr.isPresenting || this.ratio(a) === this.ratio(b))
@@ -293,11 +337,34 @@ export class Graphics {
   }
 
   // Fewer people on Lowest, with the usual off-screen retirement (no popping).
-  get crowd() { return TIERS[this.tier].crowd; }
+  get crowd() { return this.settings().crowd; }
+  // How far you see from the street (m).
+  get viewDistance() { return this.settings().view; }
+  // Whether the overhead view gets the street models (Custom).
+  get above() { return this.choice === 'custom' && !!this.custom?.above; }
+  // In the overhead view with `above` on, the street models reach `radius` m round the
+  // middle of the view (at least the tier's own reach); null puts the tier's reach back.
+  private reaching: number | null = null;
+  overhead(radius: number | null) {
+    if (radius !== null) radius = Math.min(ABOVE_REACH, Math.round(radius / 5) * 5);
+    if (radius === this.reaching) return;
+    this.reaching = radius;
+    this.street();
+  }
+  private street() {
+    const own = this.settings(), q = STREET_TIERS[own.street], r = this.reaching ?? 0;
+    Object.assign(STREET_QUALITY, q, { groundFine: own.ground,
+      avatarReach: Math.max(q.avatarReach, r), carReach: Math.max(q.carReach, r), wallReach: Math.max(q.wallReach, r), castings: Math.max(q.castings, r) });
+  }
 
   private apply() {
-    Object.assign(STREET_QUALITY, STREET_TIERS[this.tier]);
-    const { look, samples, shadowSize, shadowBlur, roofs, clutter, cars, lights, lampMap, people } = TIERS[this.tier];
+    const own = this.settings();
+    this.street();
+    if (this.choice !== 'auto' || !this.applied) setAnisotropy(own.aniso);
+    const { look, samples, shadowBlur, roofs, clutter, cars, lights, lampMap, people } = own;
+    // (Custom's 8192 only where the graphics chip takes a texture that large.)
+    const gpu = this.renderer as GPURenderer & { backend?: { device?: { limits?: { maxTextureDimension2D?: number } } }; capabilities?: { maxTextureSize?: number } };
+    const shadowSize = Math.min(own.shadowSize, gpu.backend?.device?.limits?.maxTextureDimension2D ?? gpu.capabilities?.maxTextureSize ?? 4096);
     DIRT.value = LEAVES.value = look ? 1 : 0;
     WATER.value = look && this.water ? 1 : 0;
     this.sky.curve = look;
@@ -307,14 +374,14 @@ export class Graphics {
     STREAKS_ON.value = look && this.reflections === 'lights' ? 1 : 0;
     MIRROR_ON.value = look && this.reflections === 'mirror' ? 1 : 0;
     wantStrips(look); // (the cars' mirrored streets)
-    PROBE_ON.value = this.tier === 'ultra' ? 1 : 0;
-    POST.value = this.tier === 'ultra' || this.tier === 'high' ? 1 : 0;
+    PROBE_ON.value = own.probe ? 1 : 0;
+    POST.value = own.post ? 1 : 0;
     CAR_SHADE.value = look ? 1 : 0; // (the soft shade under the cars: car.ts)
     PEOPLE_SHADOWS.tier = people; // (what a person casts in the sun: figures.ts)
-    CANOPY_LEAVES.value = this.tier === 'ultra' || this.tier === 'high';
+    CANOPY_LEAVES.value = own.canopy;
     // The street view's hedge leaves and blades of grass (streetHedges.ts, streetGrass.ts): Medium and up.
-    STREET_DETAIL.value = this.tier === 'ultra' || this.tier === 'high' || this.tier === 'medium';
-    CLOSE_RELIEF.value = this.tier === 'ultra' || this.tier === 'high' ? 1 : 0;
+    STREET_DETAIL.value = own.streetDetail;
+    CLOSE_RELIEF.value = own.closeRelief ? 1 : 0;
     // (The lamps resize their maps at the next frame; the materials are bound afresh below,
     // which freezes the game for half a second even on an M5, so Auto keeps the size the
     // lamps were given when it began.)
@@ -323,7 +390,7 @@ export class Graphics {
     // every material's shader at every tier, and a phone's GPU pays for it even where a
     // switch skips it (a Pixel 5 at Medium: 15 frames a second with it, 32 without).
     // A change of filter is a change of every lit shader: see the rebuild below.
-    SOFT_SHADOWS.tier = this.tier === 'ultra' ? 1 : 0;
+    SOFT_SHADOWS.tier = own.softShadows ? 1 : 0;
     const sunShadow = this.sky.sun.shadow as unknown as { filterNode?: unknown };
     const filter = SOFT_SHADOWS.value > 0 ? SHADOW_FILTER.value ?? null : null;
     const refiltered = (sunShadow.filterNode ?? null) !== filter;
@@ -379,7 +446,19 @@ export class Graphics {
       this.auto.tier = this.tier === 'ultra' && this.auto.top !== 'ultra' ? 'high' : this.tier;
       this.tier = this.auto.tier;
       this.auto.hold(performance.now(), SETTLE);
+    } else if (choice === 'custom') {
+      // The first time, from what was being drawn.
+      if (!this.custom) this.custom = customFrom(this.tier);
+      this.tier = 'ultra';
     } else this.tier = choice;
+    this.apply();
+  }
+
+  // Change some of Custom's settings (and choose Custom, if it wasn't).
+  setCustom(change: Partial<Custom>) {
+    if (this.choice !== 'custom') this.set('custom');
+    this.custom = { ...this.custom!, ...change };
+    try { localStorage.setItem('graphicsCustom', JSON.stringify(this.custom)); } catch {}
     this.apply();
   }
 
@@ -422,7 +501,7 @@ export class Graphics {
   }
 
   label() {
-    const name = (k: Tier) => t(k[0].toUpperCase() + k.slice(1));
+    const name = (k: string) => t(k[0].toUpperCase() + k.slice(1));
     return this.choice === 'auto' ? t('Graphics: Auto ({tier} now)', { tier: name(this.tier).toLowerCase() }) : t('Graphics: {name}', { name: name(this.choice) });
   }
 }

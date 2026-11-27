@@ -9,6 +9,10 @@ import { ducking, rising, turn, RISE, SIT } from './getin.ts';
 // the car (if you were in one), your hands go up, they step behind you and put the
 // handcuffs on, and you're walked to their car and put in the back. The screen goes
 // dark on the way, and you come out of the cell some hours later.
+//
+// Brought down by an officer's dive (src/police.ts) it starts on the ground: you go down
+// on your front with them on your legs, they get up onto one knee beside you and cuff
+// you where you lie, then have you up onto your knees and your feet, and on from there.
 
 const LED = 2.1; // m/s, walked to the car
 const WALK_CLIP = 1.2; // m/s the walk clips cover at their own speed
@@ -18,6 +22,14 @@ const ORBIT = 4.5; // rad/s an officer walks round you, leading you off
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const HAUL = 0.3, HANDS = 0.55, CUFF = 1, LEAD = 3, AWAY = 1.3, DARK = 0.85, BACK = 0.6; // seconds
+// The tackle (figure clips 'tackle', 'tackled', 'pin', 'pinned', 'cuffedup', in
+// assets/figures/build.py; the game draws figures 1.35 times the clips' own size):
+// seconds on the ground before they get up off your legs, kneeling over you with the
+// cuffs, and getting you up; how far you slide on; where they lie (behind your feet,
+// their arms round your legs) and kneel (beside your hips, which are ahead of your feet).
+const FLOORED = 0.7, SCRAMBLE = 0.5, PINNED = 1.3, GET_UP = 1.4;
+const SLIDE = 0.35; // s you slide on for, from the speed you were running at
+const ON_LEGS = 1.3, HIPS = 0.68, KNEEL = 0.85; // m
 
 interface Hooks {
   walker: Walker;
@@ -31,7 +43,7 @@ interface Hooks {
   done(): void;
 }
 
-type Phase = 'door' | 'out' | 'hands' | 'cuff' | 'lead' | 'seat' | 'dark' | 'back';
+type Phase = 'door' | 'out' | 'down' | 'pin' | 'up' | 'hands' | 'cuff' | 'lead' | 'seat' | 'dark' | 'back';
 interface Scene {
   phase: Phase; t: number;
   officer: Officer | null;
@@ -43,6 +55,9 @@ interface Scene {
   ride: { car: Car; door: Door } | null; from: Point2; h0: number; seated: boolean;
   // Since the screen began to go dark.
   dark: number | null;
+  // Tackled: how fast you were going (you slide on a little), and the side of you the
+  // officer kneels (1 left, -1 right).
+  slide: number; side: number;
 }
 
 export class Arrest {
@@ -53,8 +68,9 @@ export class Arrest {
 
   get active() { return !!this.now; }
 
-  // `car`: the one you're sitting in, if any.
-  begin(officer: Officer | null, car: Car | null) {
+  // `car`: the one you're sitting in, if any. `tackled`: brought down on foot by the
+  // officer's dive.
+  begin(officer: Officer | null, car: Car | null, tackled = false) {
     const w = this.o.walker;
     if (officer) officer.led = true;
     this.o.hold(true);
@@ -68,9 +84,74 @@ export class Arrest {
     w.down = 0;
     this.now = {
       phase: car ? 'door' : 'hands', t: 0, officer, car, door, out: false, face: w.h,
-      ride: null, from: [w.x, w.y], h0: w.h, seated: false, dark: null,
+      ride: null, from: [w.x, w.y], h0: w.h, seated: false, dark: null, slide: 0, side: 1,
     };
-    if (!car) this.surrender();
+    if (tackled && officer && !car) this.floor(officer);
+    else if (!car) this.surrender();
+  }
+
+  // Down on your front the way you were running, sliding on a little; the officer kneels
+  // on the side of you they're on already, unless there's a wall there.
+  private floor(o: Officer) {
+    const s = this.now!, w = this.o.walker, sp = Math.hypot(w.vx, w.vy);
+    s.phase = 'down';
+    s.t = 0;
+    s.face = w.h = sp > 1 ? Math.atan2(w.vy, w.vx) : w.h;
+    s.slide = Math.min(sp, 8);
+    const lx = -Math.sin(s.face), ly = Math.cos(s.face);
+    s.side = (o.x - w.x) * lx + (o.y - w.y) * ly >= 0 ? 1 : -1;
+    const [kx, ky] = this.kneel();
+    if (w.blocked(kx, ky)) s.side = -s.side;
+    w.base.makeScale(SCALE, SCALE, SCALE);
+    w.anim.play('tackled', true, 0.06);
+  }
+
+  // Where the officer kneels over you, and which way they face.
+  private kneel(): [number, number, number] {
+    const s = this.now!, w = this.o.walker, fx = Math.cos(s.face), fy = Math.sin(s.face);
+    return [w.x + fx * HIPS - fy * s.side * KNEEL, w.y + fy * HIPS + fx * s.side * KNEEL, s.face - s.side * Math.PI / 2];
+  }
+
+  // Brought down, cuffed where you lie, and got up again.
+  private floored(s: Scene, dt: number) {
+    const w = this.o.walker, o = s.officer, a = w.anim, fx = Math.cos(s.face), fy = Math.sin(s.face);
+    a.step(dt);
+    // (Getting up, they walk: send() steps their clip then.)
+    if (s.phase !== 'up' || s.t <= 0.45) o?.anim.step(dt);
+    if (s.phase === 'down') {
+      const v = s.slide * Math.max(0, 1 - s.t / SLIDE), nx = w.x + fx * v * dt, ny = w.y + fy * v * dt;
+      if (!w.blocked(nx, ny)) [w.x, w.y] = [nx, ny];
+      if (o) {
+        // Flat on your legs, then (as the clip has them up onto their knees) round to your side.
+        const [kx, ky, kh] = this.kneel(), up = s.t > FLOORED;
+        const tx = up ? kx : w.x - fx * ON_LEGS, ty = up ? ky : w.y - fy * ON_LEGS, k = Math.min(1, (up ? 9 : 14) * dt);
+        o.x += (tx - o.x) * k;
+        o.y += (ty - o.y) * k;
+        o.h = turn(o.h, up ? kh : s.face, k);
+      }
+      if (s.t > FLOORED + SCRAMBLE) {
+        s.phase = 'pin';
+        s.t = 0;
+        a.play('pinned', true, 0.45);
+        if (o) {
+          [o.x, o.y, o.h] = this.kneel();
+          o.anim.play('pin', true, 0.15);
+        }
+      }
+    } else if (s.phase === 'pin') {
+      if (s.t > PINNED) {
+        s.phase = 'up';
+        s.t = 0;
+        a.play('cuffedup', true, 0.15);
+        o?.anim.play('idle', true, 0.45);
+      }
+    } else {
+      // Up off their knee beside you, a step back while you're on your knees (your shins
+      // are behind you), then round behind you as you get to your feet.
+      const lx = -fy * s.side, ly = fx * s.side, behind = s.t > GET_UP * 0.7;
+      if (o && s.t > 0.45) this.send(o, behind ? w.x - fx * BEHIND + lx * 0.22 : w.x + lx * 0.95, behind ? w.y - fy * BEHIND + ly * 0.22 : w.y + ly * 0.95, behind ? 2.2 : 1.2, dt);
+      if (s.t > GET_UP) this.leadOff();
+    }
   }
 
   // Hands up, back to the officer (or facing the car you've just been pulled out of).
@@ -103,6 +184,12 @@ export class Arrest {
     s.t += dt;
     w.z = w.speed = w.vx = w.vy = 0;
     if (s.dark !== null) s.dark += dt;
+
+    if (s.phase === 'down' || s.phase === 'pin' || s.phase === 'up') {
+      this.floored(s, dt);
+      w.sync();
+      return;
+    }
 
     if (s.phase === 'door' && s.car && s.door && o) {
       // To your door, a step behind where it opens.
@@ -150,15 +237,7 @@ export class Arrest {
       w.h = s.face;
       a.step(dt);
       o?.anim.step(dt);
-      if (s.t > CUFF) {
-        s.phase = 'lead';
-        s.t = 0;
-        s.ride = this.ride(o);
-        // (The door you got out of shuts as you're led off.)
-        if (s.car && s.door) s.car.open(s.door.n, false);
-        a.play('cuffedwalk', true, 0.25);
-        o?.anim.play('escort', true, 0.25);
-      }
+      if (s.t > CUFF) this.leadOff();
     } else if (s.phase === 'lead') {
       // To the police car's back door; with none to go to, off the way the officer came.
       const [tx, ty] = s.ride ? s.ride.car.beside(s.ride.door) : [w.x - Math.cos(s.face) * 50, w.y - Math.sin(s.face) * 50];
@@ -234,6 +313,18 @@ export class Arrest {
       }
     }
     w.sync();
+  }
+
+  // Off to the police car, cuffed.
+  private leadOff() {
+    const s = this.now!;
+    s.phase = 'lead';
+    s.t = 0;
+    s.ride = this.ride(s.officer);
+    // (The door you got out of shuts as you're led off.)
+    if (s.car && s.door) s.car.open(s.door.n, false);
+    this.o.walker.anim.play('cuffedwalk', true, 0.25);
+    s.officer?.anim.play('escort', true, 0.25);
   }
 
   private darken() {

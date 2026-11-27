@@ -105,7 +105,7 @@ def main():
         raise SystemExit(f"Statues on no pier: {', '.join(missing)}")
     doc = {"source": "OpenStreetMap contributors (ODbL), way 119016167 and the memorial=statue nodes on it",
            "statues": [{"name": name, "at": list(at)} for name, at in on], "piers": piers}
-    OUT.write_text(json.dumps(doc, ensure_ascii=False, indent=1) + "\n")
+    OUT.write_text(json.dumps(doc, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     print(f"{len(on)} statues, {len(piers)} piers ({sum(p['cut'] for p in piers)} cut) -> {OUT}")
 
 

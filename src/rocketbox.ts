@@ -11,6 +11,7 @@ import { LIFE_SIZE } from './figures.ts';
 import { MOST_AVATARS, STREET_QUALITY } from './streetQuality.ts';
 import { cutAway } from './shading.ts';
 import { fireGear } from './responderGear.ts';
+import { DYES, dyeMaterial, dress, type DyeState } from './avatarDyes.ts';
 import type { Anim, Figures, UniformRole } from './figures.ts';
 import { shape as umbrellaShape, material as umbrellaMaterial, colour as umbrellaColour, chance } from './umbrellas.ts';
 
@@ -55,7 +56,7 @@ const TURN = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0),
 
 // The clips by name: the gaits, the ways of standing, 'umbrella' (standing with one) and
 // 'arm' (just its left arm).
-interface Kind { seatedHips: THREE.Vector3; template: THREE.Object3D; clips: Record<string, THREE.AnimationClip>; stride: Record<Move, number>; contactPhase: number; standing: string[]; uniform?: THREE.MeshStandardMaterial; role?: UniformRole }
+interface Kind { name: string; seatedHips: THREE.Vector3; template: THREE.Object3D; clips: Record<string, THREE.AnimationClip>; stride: Record<Move, number>; contactPhase: number; standing: string[]; uniform?: THREE.MeshStandardMaterial; role?: UniformRole }
 interface Person {
   kind: number;
   root: THREE.Object3D;
@@ -83,6 +84,7 @@ interface Person {
   mounted: boolean;
   yieldSlot: boolean;
   nozzle?: THREE.Mesh;
+  dye?: THREE.MeshStandardMaterial; // their own body material, in their colourway (avatarDyes.ts)
 }
 
 // Same two donors as assets/cars/build.py. Keep the identity after the
@@ -135,7 +137,7 @@ export class LifeSize {
       // a full rig uses the door-aware instanced figure drawn by the crowd.
       if (fig.self || anim.driverExit || fig.lifeSize !== true || umbrella >= 0) return false;
       const gid = this.ids.get(fig);
-      return gid !== undefined && this.middle.offer(appearance(fig,anim,gid,id), id, matrix, anim);
+      return gid !== undefined && this.middle.offer(appearance(fig,anim,gid,id), id, matrix, anim, anim.driverDonor === undefined ? fig.colours(id) : undefined);
     };
   }
 
@@ -151,15 +153,62 @@ export class LifeSize {
     return this.playerReady;
   }
 
-  // Compiles the avatars' shaders behind the loading screen, so the first person to step
-  // up close doesn't stall a frame: a copy of your avatar, put in the scene for it.
-  async warm(compile: (o: THREE.Object3D) => Promise<unknown>) {
+  // Compiles each avatar's shaders before anyone else is shown in it life size, so a person
+  // stepping up close doesn't stall a frame: the avatars are warmed one after another as
+  // they load (yours first, behind the loading screen when the game opens in a street view),
+  // and the crowd draws a passer-by meanwhile. The avatars share their shaders (the dye,
+  // avatarDyes.ts, and the shadow, webgpu.ts), so most of this finds them built already; it
+  // catches the few variants that differ between avatars. Each is a copy of the avatar and
+  // a passer-by in it, dyed: compiled out of the scene, then drawn for a couple of frames
+  // shrunk to nothing where you are, for the sun's shadow pass, which compile leaves out.
+  // The passer-by then waits among the spares.
+  compile?: (o: THREE.Object3D) => Promise<unknown>;
+  private warmed: boolean[] = []; // by kind: false while it's warming
+  private compiled = new Map<number, Promise<void>>();
+  private warmQueue: Promise<unknown> = Promise.resolve();
+  private waiting: (() => void)[] = []; // (called at the next frame)
+  private disposed = false;
+  // Settles once your own avatar's shaders are compiled (lifesize.ts, after preload; its
+  // shadow's follow in the first frames).
+  warm() {
     const player = this.playerSeed === undefined ? undefined : this.baseKinds[this.playerSeed % AVATARS.length];
-    const k = player === undefined ? this.kinds[0] : this.kinds[player];
-    if (!k) return;
-    const copy = SkeletonUtils.clone(k.template);
-    this.group.add(copy);
-    try { await compile(copy); } finally { this.group.remove(copy); }
+    return this.warmKind(player ?? 0);
+  }
+  private warmKind(kind: number) {
+    let w = this.compiled.get(kind);
+    if (!w && this.kinds[kind]) {
+      this.warmed[kind] = false;
+      let compiled!: () => void;
+      this.compiled.set(kind, w = new Promise<void>((done) => { compiled = done; }));
+      this.warmQueue = this.warmQueue.then(() => this.warmUp(kind, compiled))
+        .catch((e) => console.warn('Life-size people', e)).finally(() => { compiled(); this.warmed[kind] = true; });
+    }
+    return w;
+  }
+  private async warmUp(kind: number, compiled: () => void) {
+    const k = this.kinds[kind];
+    if (!this.compile || this.disposed) return;
+    const copy = new THREE.Group();
+    copy.add(SkeletonUtils.clone(k.template));
+    const passer = !k.role && DYES[k.name] ? this.take(kind) : undefined;
+    if (passer) copy.add(passer.root);
+    try {
+      await this.compile(copy);
+      compiled();
+      copy.scale.setScalar(1e-4);
+      copy.position.copy(this.cam);
+      this.group.add(copy);
+      await this.frames(2);
+    } finally {
+      copy.removeFromParent();
+      if (passer) { passer.root.visible = false; this.group.add(passer.root); this.spare[kind].push(passer); }
+    }
+  }
+  private frames(n: number) {
+    return new Promise<void>((done) => {
+      const tick = () => { if (--n > 0) this.waiting.push(tick); else done(); };
+      this.waiting.push(tick);
+    });
   }
 
   private async load(crowdAfter: Promise<unknown> = Promise.resolve()) {
@@ -194,7 +243,7 @@ export class LifeSize {
           o.userData.cullRadius = 1.3; // (round the hips, for leaving out those the buildings hide: occlusion.ts)
         });
         const hips = g.scene.getObjectByName('Bip01')?.position.y ?? 0.9;
-        const kind: Kind = { seatedHips:new THREE.Vector3(), template: g.scene, clips: {}, stride: {} as Kind['stride'], contactPhase: sex === 'm' ? .97 : .425, standing: STANDING[sex] };
+        const kind: Kind = { name, seatedHips:new THREE.Vector3(), template: g.scene, clips: {}, stride: {} as Kind['stride'], contactPhase: sex === 'm' ? .97 : .425, standing: STANDING[sex] };
         for (const move of GAITS) [kind.clips[move], kind.stride[move]] = inPlace(byName[`${sex}_${CLIPS[move]}`], hips);
         for (const name of STANDING[sex]) kind.clips[name] = inPlace(byName[`${sex}_${name}`], hips)[0];
         const umbrella = (kind.clips.umbrella = inPlace(byName[`${sex}_${UMBRELLA[sex]}`], hips)[0]);
@@ -217,6 +266,7 @@ export class LifeSize {
         this.baseKinds[avatar] = this.kinds.push(kind) - 1;
         this.spare.push([]);
         if (avatar === player) this.playerIn();
+        void this.warmKind(this.baseKinds[avatar]!);
       });
       if (player < 0) void animations.then(() => this.playerIn(), () => this.playerIn());
       void loads[player]?.catch(() => this.playerIn());
@@ -280,6 +330,7 @@ export class LifeSize {
 
   // Lets go of the avatars, their clips and textures, and stops offering to draw anyone.
   dispose() {
+    this.disposed = true;
     this.middle.dispose();
     if (LIFE_SIZE.claim) LIFE_SIZE.claim = null;
     this.group.removeFromParent();
@@ -303,6 +354,7 @@ export class LifeSize {
     if (this.gear) { free(this.gear.helmet); free(this.gear.nozzle); }
     for (const t of textures) t.dispose();
     for (const p of [...this.live.values(), ...this.spare.flat()]) {
+      p.dye?.dispose();
       p.mixer.uncacheRoot(p.root);
       p.root.traverse((m) => { if (m instanceof THREE.SkinnedMesh) m.skeleton.dispose(); });
     }
@@ -332,7 +384,7 @@ export class LifeSize {
       if (!fig.self && (d > (anim.driverExit ? STREET_QUALITY.avatarReach : this.reach) || d < .30)) return false;
       const role = typeof fig.lifeSize === 'string' ? fig.lifeSize : undefined;
       const kind = role ? this.uniformKind(role, id) : this.baseKinds[appearance(fig,anim,gid,id)];
-      if (kind == null) return false;
+      if (kind == null || (this.warmed[kind] === false && !fig.self)) return false; // (still warming: the crowd draws them)
       const next = key === this.nextCivilian;
       if (next) this.nextSeen = true;
       const hold = fig.self || role || anim.driverExit ? 0 : this.reserved + (this.nextCivilian && !next ? 1 : 0);
@@ -343,6 +395,8 @@ export class LifeSize {
       }
       if (next) this.nextCivilian = undefined;
       p = this.take(kind);
+      // (Drivers keep the outfit their seated figure in the car has.)
+      if (p.dye) dress(p.dye.userData.dye as DyeState, anim.driverDonor === undefined ? fig.colours(id) : undefined);
       p.self = fig.self;
       p.mounted = false;
       p.yieldSlot = false;
@@ -439,6 +493,10 @@ export class LifeSize {
     if (uniform) root.traverse((o) => {
       if (o instanceof THREE.SkinnedMesh && o.material.name === uniform.name) o.material = uniform;
     });
+    let dye: THREE.MeshStandardMaterial | undefined;
+    if (!k.role && DYES[k.name]) root.traverse((o) => {
+      if (o instanceof THREE.SkinnedMesh && o.material instanceof THREE.MeshStandardMaterial && o.material.name.endsWith('_body')) o.material = dye = dyeMaterial(o.material, k.name, o);
+    });
     let nozzle: THREE.Mesh | undefined;
     if (k.role === 'fire') {
       this.gear ??= fireGear();
@@ -471,7 +529,7 @@ export class LifeSize {
     }
     this.group.add(root);
     return {
-      kind, root, mixer, actions, w, want, t, nozzle, phase: 0, strideSign: 1, strideYaw: 0, rest: k.standing[0], umbrella: -1,
+      kind, root, mixer, actions, w, want, t, nozzle, dye, phase: 0, strideSign: 1, strideYaw: 0, rest: k.standing[0], umbrella: -1,
       hand: root.getObjectByName('Bip01_L_Hand') ?? root, phone,
       pos: new THREE.Vector3(), last: new THREE.Vector3(), turn: new THREE.Quaternion(), speed: 0, seen: false, self: false, mounted: false, yieldSlot: false,
     };
@@ -481,6 +539,7 @@ export class LifeSize {
   // view is first person.
   frame(dt: number, eyes: boolean, camera: THREE.Camera, ground?: FootGround) {
     eyes &&= this.enabled;
+    if (this.waiting.length) { const waiting = this.waiting; this.waiting = []; for (const f of waiting) f(); }
     this.middle.frame(dt, eyes, camera);
     if (eyes && this.state === 'idle') void this.load();
     this.on = eyes && this.kinds.length > 0;

@@ -714,6 +714,16 @@ export const F_ELEVATION = [
 // The measured casement only occupies about 40% of its atlas cell. At eye
 // height give it room for a pair of sashes. Display windows and coach gates
 // can fill the bay between piers; house doors retain their domestic scale.
+// The house numbers beside a house door (doorPlates in map/streetFacade.ts, drawn by
+// houseNumbers.ts): how wide the plates are, and the foot of the blue one and the top of
+// the red one above it (m above the pavement).
+export const DOOR_PLATES = [.25, 2.07, 2.45];
+// Half a memorial plaque's width and height (m): plaqueMounts in map/streetFacade.ts,
+// drawn by plaques.ts.
+export const PLAQUE = [.3, .22];
+// A window box's leaves and flowers carry this in their detail's value: the shaders turn
+// them to bare earth while the trees are bare (BARE in shading.ts).
+export const FLOWERS = 7;
 export const SHOPFRONTS = new Set([6, 20, 30, 58, 66, 71, 80, 81, 91, 95, 102, 115, 119, 128, 139]);
 const GATES = new Set([9, 18, 57, 69, 82, 93, 117, 141]);
 export const F_STREET_WIDTH = Array.from({ length: SHEETS * 12 }, (_, layer) => {

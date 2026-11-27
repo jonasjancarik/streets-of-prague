@@ -23,12 +23,24 @@ export const POST = {
   // value below 0 for none), and its half length, width and height with its heading (radians).
   car: [0, 0, 0, -1] as [number, number, number, number],
   box: [0, 0, 0, 0] as [number, number, number, number],
+  // The nearest other vehicles under way (up to OTHERS): each is smeared by how it moves
+  // against the camera, so a police car on your tail at your speed stays as sharp as yours.
+  // Each is its middle, its half length, width and height with its heading, and its
+  // velocity (m/s), in the scene's coordinates as above.
+  others: [] as { mid: [number, number, number]; box: [number, number, number, number]; going: [number, number, number] }[],
   get on() { return asked === 'on' || (asked !== 'off' && this.value > 0); },
 };
 
+export const OTHERS = 4;
+
 type Draw = (scene: THREE.Scene, camera: THREE.Camera) => void;
-let draw: Draw | null = null;
-export const setPost = (d: Draw) => { draw = d; };
+let draw: Draw | null = null, target: () => THREE.RenderTarget | null = () => null;
+export const setPost = (d: Draw, sceneTarget?: () => THREE.RenderTarget | null) => { draw = d; if (sceneTarget) target = sceneTarget; };
+
+// The target the scene is drawn into before the post-processing, while that's on (null
+// where the scene is drawn straight to the screen, or nothing has been drawn through it
+// yet): shaders compiled ahead have to be for it (main.ts, warmStreetView).
+export const postTarget = () => (draw && POST.on ? target() : null);
 
 // Draws the frame through the post-processing where it's on and there is any (WebGPU);
 // false where the caller should draw it plainly.

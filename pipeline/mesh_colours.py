@@ -1000,7 +1000,7 @@ def main():
     done = []
     if a.resume and path.exists() and done_path.exists():
         colours = json.loads(gzip.decompress(path.read_bytes()))
-        done = json.loads(done_path.read_text())
+        done = json.loads(done_path.read_text(encoding="utf-8"))
         tiles = [ij for ij in tiles if f"{ij[0]}_{ij[1]}" not in set(done)]
         print(f"resuming: {len(done)} tiles done, {len(tiles)} to go")
 
@@ -1009,7 +1009,7 @@ def main():
         tmp = path.with_suffix(".tmp")
         tmp.write_bytes(gzip.compress(json.dumps(colours, separators=(",", ":")).encode()))
         tmp.replace(path)
-        done_path.write_text(json.dumps(done))
+        done_path.write_text(json.dumps(done), encoding="utf-8")
 
     for ij, s, took in sample_tiles(meta, {ij: by_tile[ij] for ij in tiles}, trees, a.jobs, a.debug, not (a.no_windows or a.calibrate)):
         if a.calibrate:
@@ -1033,7 +1033,7 @@ def main():
         if a.debug:
             name = f"{ij[0]}_{ij[1]}"
             debug_tile(meta, ij, by_tile[ij], s["top"], s["fid"], measured, OUT_DIR / a.area / f"{name}.png")
-            (OUT_DIR / a.area / f"{name}.tsv").write_text(table(measured))
+            (OUT_DIR / a.area / f"{name}.tsv").write_text(table(measured), encoding="utf-8")
     print(f"{len(tiles)} tiles in {time.perf_counter() - started:.0f} s")
     if a.calibrate:
         calibrate(sampled)
@@ -1059,7 +1059,7 @@ def windows_only(a, meta, by_tile):
     if not path.exists():
         raise SystemExit(f"{path}: no table yet; run without --windows-only first")
     colours = json.loads(gzip.decompress(path.read_bytes()))
-    done = json.loads(done_path.read_text()) if a.resume and done_path.exists() else []
+    done = json.loads(done_path.read_text(encoding="utf-8")) if a.resume and done_path.exists() else []
     tiles = [ij for ij in sorted(by_tile) if f"{ij[0]}_{ij[1]}" not in set(done)]
     before = sum(len(c.get("windows", [])) for c in colours.values())
 
@@ -1067,7 +1067,7 @@ def windows_only(a, meta, by_tile):
         tmp = path.with_suffix(".tmp")
         tmp.write_bytes(gzip.compress(json.dumps(colours, separators=(",", ":")).encode()))
         tmp.replace(path)
-        done_path.write_text(json.dumps(done))
+        done_path.write_text(json.dumps(done), encoding="utf-8")
 
     started = time.perf_counter()
     work = [(meta, ij, by_tile[ij]) for ij in tiles]

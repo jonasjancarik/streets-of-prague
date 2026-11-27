@@ -145,7 +145,7 @@ class IprSourceTests(unittest.TestCase):
                 ipr_terrain.download("TER_test", {"TER_test": "fixture"})
             self.assertFalse((self.root / "TER_test_gml.gml").exists())
             path = ipr_terrain.download("TER_test", {"TER_test": "fixture"})
-            self.assertEqual(path.read_text(), "complete terrain source")
+            self.assertEqual(path.read_text(encoding="utf-8"), "complete terrain source")
             self.assertEqual(ipr_terrain.download("TER_test", {}), path)
             self.assertEqual(fetch.call_count, 2)
 
@@ -153,7 +153,7 @@ class IprSourceTests(unittest.TestCase):
         path = self.root / "sheet.gml"
         path.write_text('''<root xmlns:gml="http://www.opengis.net/gml" xmlns:bldg="http://www.opengis.net/citygml/building/2.0">
 <bldg:Building gml:id="test"><bldg:GroundSurface><gml:Polygon><gml:exterior><gml:LinearRing><gml:posList>1 1 180 9 1 180 9 9 180 1 9 180 1 1 180</gml:posList></gml:LinearRing></gml:exterior></gml:Polygon></bldg:GroundSurface>
-<bldg:RoofSurface><gml:Polygon><gml:exterior><gml:LinearRing><gml:posList>1 1 185 9 1 185 9 9 185 1 9 185 1 1 185</gml:posList></gml:LinearRing></gml:exterior></gml:Polygon></bldg:RoofSurface></bldg:Building></root>''')
+<bldg:RoofSurface><gml:Polygon><gml:exterior><gml:LinearRing><gml:posList>1 1 185 9 1 185 9 9 185 1 9 185 1 1 185</gml:posList></gml:LinearRing></gml:exterior></gml:Polygon></bldg:RoofSurface></bldg:Building></root>''', encoding="utf-8")
         # Wrap parsing without changing the function's source-derived cache version.
         with patch.object(ipr_buildings.etree, "iterparse", wraps=ipr_buildings.etree.iterparse) as parse:
             first = ipr_buildings.read_sheet(("BD3_test", str(path), "first-area", 250, [0, 0]))[1]
@@ -170,7 +170,7 @@ class IprSourceTests(unittest.TestCase):
         path = self.root / "terrain.gml"
         path.write_text('''<root xmlns:gml="http://www.opengis.net/gml"><gml:Triangle>
 <gml:posList>0 0 180 8 0 182 0 8 184 0 0 180</gml:posList>
-</gml:Triangle></root>''')
+</gml:Triangle></root>''', encoding="utf-8")
         with patch.object(ipr_terrain.etree, "iterparse", wraps=ipr_terrain.etree.iterparse) as parse:
             first = ipr_terrain.read_sheet(("TER_test", str(path), "first-area", 0, 0, 4))[1]
             second = ipr_terrain.read_sheet(("TER_test", str(path), "second-area", 0, 0, 4))[1]
@@ -182,23 +182,23 @@ class IprSourceTests(unittest.TestCase):
     def test_building_source_cache_tracks_parser_helpers(self):
         path = self.root / "sheet.gml"
         path.write_text('''<root xmlns:gml="http://www.opengis.net/gml" xmlns:bldg="http://www.opengis.net/citygml/building/2.0">
-<bldg:Building gml:id="test"><bldg:RoofSurface><gml:Polygon><gml:exterior><gml:LinearRing><gml:posList>1 1 185 9 1 185 1 9 185 1 1 185</gml:posList></gml:LinearRing></gml:exterior></gml:Polygon></bldg:RoofSurface></bldg:Building></root>''')
+<bldg:Building gml:id="test"><bldg:RoofSurface><gml:Polygon><gml:exterior><gml:LinearRing><gml:posList>1 1 185 9 1 185 1 9 185 1 1 185</gml:posList></gml:LinearRing></gml:exterior></gml:Polygon></bldg:RoofSurface></bldg:Building></root>''', encoding="utf-8")
         source = self.root / "ipr_buildings.py"
-        original = Path(ipr_buildings.__file__).read_text()
-        source.write_text(original)
+        original = Path(ipr_buildings.__file__).read_text(encoding="utf-8")
+        source.write_text(original, encoding="utf-8")
         with patch.object(ipr_buildings, "__file__", str(source)), \
                 patch.object(ipr_buildings.etree, "iterparse", wraps=ipr_buildings.etree.iterparse) as parse:
             ipr_buildings.read_sheet(("BD3_test", str(path), "first-area", 250, [0, 0]))
-            source.write_text(original.replace("np.allclose(v[0], v[-1])", "np.array_equal(v[0], v[-1])"))
+            source.write_text(original.replace("np.allclose(v[0], v[-1])", "np.array_equal(v[0], v[-1])"), encoding="utf-8")
             ipr_buildings.read_sheet(("BD3_test", str(path), "second-area", 250, [0, 0]))
         self.assertEqual(parse.call_count, 2)
 
     def test_bridge_cache_tracks_shapefile_components(self):
         bridge_dir = self.root / "mosty"
         bridge_dir.mkdir()
-        (bridge_dir / "mosty.shp").write_text("fixture")
+        (bridge_dir / "mosty.shp").write_text("fixture", encoding="utf-8")
         dbf = bridge_dir / "mosty.dbf"
-        dbf.write_text("first")
+        dbf.write_text("first", encoding="utf-8")
         polygon = Polygon([(0, 0, 185), (10, 0, 185), (10, 10, 185), (0, 10, 185)])
         with patch.object(structures, "CACHE", self.root), \
                 patch.object(structures, "krovak_to_local", IdentityTransform), \
@@ -209,7 +209,7 @@ class IprSourceTests(unittest.TestCase):
             self.assertEqual(read.call_count, 1)
             np.testing.assert_array_equal(first[(5, 5)], warm[(5, 5)])
             self.assertIn(str(dbf.resolve()), sources)
-            dbf.write_text("other")
+            dbf.write_text("other", encoding="utf-8")
             structures.ipr_decks("first-area")
             self.assertEqual(read.call_count, 2)
 

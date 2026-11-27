@@ -41,6 +41,26 @@ Screenshots go to `$TMPDIR/scene`. The same scenarios run in the developer panel
 ("Run and watch" plays one in real time), and "Copy this situation" there copies where
 you are, the time, weather, money, stars, car and camera as the start of a new scenario.
 
+#### Scenes in a busy checkout
+
+When several sessions edit the same checkout, every saved file reloads each game open
+from a watched dev server, and a scene command starts over with a 30–70 s load. Run your
+own dev server without live reloading and a scene server on it; a game it opens stays as
+it loaded, and files changed since come in on its next load (a restart of the server):
+
+    SOP_STILL=1 PORT=5291 npx vite --host 127.0.0.1 --strictPort
+    node scripts/scene.mjs serve --url http://127.0.0.1:5291/ --port 5207 --extra "&fps"
+    node scripts/scene.mjs eval "…" --port 5207
+
+The scripts draw the game on the GPU with the platform's own backend
+(`scripts/gpu-flags.mjs`). Until 27 November 2026 they asked for Metal everywhere, and on
+Windows Chrome drew in software: about a second a frame, 50 s to teleport, and pages
+that crashed under the city. On Windows the benchmark check (`scripts/game-lock.mjs`) no
+longer lists processes with `ps`, which isn't the Unix one there and held up the dev
+server for half a second on each page's poll. A page script can import the game's own
+modules from the dev server (`await import('/src/houseNumbers.ts')`) and gets the same
+instances the game uses.
+
 For a varied street survey, run `node scripts/sample-streets.mjs praha 17`.
 It picks separated examples from six street types on the built map and returns
 Street View links with coordinates and headings for `t.go`. Use the same seed
@@ -264,7 +284,25 @@ In VR, Auto aims for the headset's refresh rate (60 FPS when the browser does no
 report one). It reduces street detail while you play. Headset resolution changes
 on the next VR entry; changing the page's pixel ratio cannot resize an active XR
 framebuffer.
-`?graphics=auto|ultra|high|medium|low|lowest` overrides it for one visit; `?dpr=1` fixes
+Custom shows every switch the tiers set (sharpness, MSAA, sun and lamp shadows, light
+effects, roof and street detail, how far the close-up models reach, the crowd) as its own
+setting under the Graphics row. It starts from the level you were on, and some options go
+past Ultra: the screen's full pixel ratio up to 3×, an 8192 sun shadow map (where the GPU
+allows it) and close-up models reaching half as far again. Custom is kept in
+`graphicsCustom`; code that asks for the tier sees Ultra.
+The tiers also set how far you see from the street (250 m on Lowest, 300 on Low, 400 on
+Medium and High, 500 on Ultra; Custom up to 1000), anisotropic filtering (off on Lowest,
+half on Low, as each texture was made on Medium and High, double on Ultra; Custom up to
+16×; `src/textureQuality.ts` scales every texture's own amount, and Auto keeps the amount
+it started with, as a change uploads the textures again), texture resolution (half on
+Lowest, from the next start: the image files are the largest there are) and the ground
+mesh in newly built tiles (4 m triangles on Low and Lowest, 2 m above; Custom down to 1 m).
+Custom's "Street models from above" draws the street-level models (life-size people, close
+car bodies, façade walls, ironwork, boats, lamps) in the overhead view as well while it is
+zoomed in (camera up to 180 m), reaching from the ground in the middle of the view across
+the screen (up to 140 m); the sky, haze, trees to stand under, grass and motion blur stay
+at eye level only.
+`?graphics=auto|ultra|high|medium|low|lowest|custom` overrides it for one visit; `?dpr=1` fixes
 only the pixel ratio. The Water setting turns on waves, sun glitter and lamp reflections on
 the river (`src/webgpu/water.ts`; WebGPU only, not on Lowest; on by default from Low
 through Ultra; `?water=on|off` for one visit). Small ponds and park basins with a
@@ -370,11 +408,44 @@ wall, the plate can sit on the plaster between the first two bays. The curved fa
 border follow the examples in [IPR’s Pražský uličník](https://prazskyulicnik.az.iprpraha.cz/clanky/vyvoj-oznaceni-ulic-v-terenu).
 The map supplies the names, while individual sign positions are approximate.
 
+Beside a house door, at head height, hang the house's two numbers: the red conscription
+number (číslo popisné) above the blue street number (číslo orientační). They are the
+address's own, from RÚIAN through OpenStreetMap (`pipeline/build_addresses.py` →
+`addresses.json` and `addresses/`, 174,066 in `praha`, split into 500 m cells loaded as
+walls come close; `src/houseNumbers.ts`). As with shops, a ray from the address's street
+to its point finds the wall, and the plates go by its nearest house door. A door no
+address reaches has no plates rather than made-up numbers; a map without the files has
+none. The other side of the door has the flats' bell panel: steel, a speaker and a
+column of name strips and buttons (inferred, `cellShape` in `src/map/streetFacade.ts`).
+Under the numbers, where the wall has room, is the steel door of the house's gas main
+(yellow) or its electricity meters (grey), above the plinth (`utilityDoor`). Where
+OpenStreetMap maps a memorial plaque, a stone or bronze tablet hangs on the nearest clear
+plaster at about head height (`plaqueMounts`, `src/plaques.ts`); its engraving is only
+lines, not the real inscription. The brass Stolpersteine lie in the pavement where they
+are mapped (street furniture, `docs/furniture.md`).
+The traffic signs stand on grey posts by the kerb, or hang from a house front where there is
+no pavement, inferred from OSM's rules: one-way streets, give way, crossings (lit boxes
+where IPR's survey has a powered sign), zones, speed and vehicle limits and turn bans; the
+lanes before a junction have their painted arrows. On the main roads, arrow plates at the
+junctions, and boards or gantries over the lanes before them, show where each way leads
+(`docs/traffic-signs.md`).
+Higher up, now and then an air conditioner hangs on brackets under a window, mostly on
+functionalist and panel fronts, and once in a while a satellite dish beside one
+(`airConditioner`, `satelliteDish`).
+On about a fifth of the first-floor windows of older houses stands a box of red and white
+geraniums (`windowBox`); while the trees are bare it holds only earth.
+
 Look up a house front to its roofline. Windows stop where a whole one no longer fits:
 under a gable (a štít), a sloping parapet or a step in the roof the wall is bare plaster,
 and nothing lights up there at night. The game measures the top of every wall bay by
 bay; which bays have windows at all is still inferred, as before
 (`windowRows` and `splitWindowRows` in `src/facades.ts`).
+
+From Advent to Epiphany (day 330 of the year to 6 January) garlands of warm bulbs hang
+across the old town's shopping streets every 14 m, from house front to house front where
+the street is 5–30 m wide: Na Příkopě, Celetná, Karlova, Pařížská, Národní and the rest of
+`FESTIVE` (`src/christmasLights.ts`; `Season.festive`, shared as `SEASON.w`). They glow
+after dark. Václavské náměstí is too wide for them.
 
 Stand under a street tree on a windy day. The boughs and sprays lean with the wind and
 swing back, in gusts that pass from tree to tree, about three times as hard in a storm.
@@ -384,8 +455,21 @@ and the clouds on that side are lit warm, with only a blush on the opposite side
 At street level on WebGPU and WebGL, a glazed shopfront can show bookshelves, a bakery,
 flowers or ceramics. Look through the glass from the side to see the walls
 and floor behind the window frame. Adjacent bays share a display and some
-stay lit after dark. Along Mostecká, mapped shop and café positions guide which
-street-facing bays get a display. The stock and joinery are imagined for the game.
+stay lit after dark. Where OpenStreetMap has a shop, café, restaurant or pub on the
+ground floor, the bay in front of it becomes a shopfront with a Czech word for its
+trade on the fascia (KAVÁRNA, LÉKÁRNA, POTRAVINY …) and, for books, bakeries and
+cafés, flowers and gifts, the matching stock (`pipeline/build_shops.py` → `shops.json`,
+`src/mappedFrontages.ts`; 11,244 in `praha`). Other bays are inferred as before. A
+map without the file has only inferred shops. The words are generic: no shop names
+or brands. The stock and joinery are imagined for the game. Pharmacies, pubs, restaurants,
+cafés, banks and exchange offices, and about half the other mapped shops with a word,
+also hang a sign out from the wall at the edge of their bay, lettered with the same word
+on both faces (`projectingSign` in `src/map/streetFacade.ts`). After dark the shops
+that have closed for the night mostly have their roller shutters down: ribbed grey
+steel over the window (`shutter` in `src/streetFacadeGL.ts`, `shopShutter` in
+`src/webgpu/buildings.ts`). About half the mapped cafés, bakeries, restaurants and pubs put a
+chalkboard with their word out on the pavement (`chalkboard`), and a third of the shops
+have a red alarm box high on the wall (`alarmBox`).
 Arched timber portals sit further back, with a meeting stile, a stone landing
 and enough steps to reach the threshold from the pavement.
 
@@ -483,7 +567,7 @@ The metro ride uses its overhead cutaway camera.
   corner leave dark tyre marks that fade after a minute (`src/skids.ts`); so do the
   police and cars sent skidding by a crash.
 - **Car handling.** In first and third person and in VR, cars drive with **Realistic** handling by
-  default; Settings → Car handling switches to **Classic**. The choice is remembered
+  default; Settings → Car handling switches to **Classic** or **Physical** (below). The choice is remembered
   between games (`carHandling` in the browser's storage) and takes effect on the next driving step. It applies to the car, van
   or pickup you drive, including taxis and patrol cars. Overhead driving, heavy vehicles
   and AI drivers use Classic; two-wheelers have their own handling (below).
@@ -497,6 +581,42 @@ The metro ride uses its overhead cutaway camera.
   The two-axle model and damped springs are in `src/streetHandling.ts`.
   Run `node scripts/check-street-handling.mjs` to compare launches, stops and cornering
   on a flat test road. The `street-handling` scene checks the driving modes in-game.
+- **Physical handling** (Settings → Car handling → **Physical**, `src/physicalHandling.ts`).
+  The same cars as Realistic, in the same views, but as a rigid body with all six degrees
+  of freedom on four sprung wheels, stepped 240 times a second. Gravity, a spring and
+  damper at each corner, an anti-roll bar per axle and each tyre's grip where it touches
+  the road do everything; nothing about a slide, a lean or a rollover is scripted.
+  - *Tyres.* Grip rises with slip to a peak and falls away as the tyre slides (to 0.76
+    of the peak at the front, 0.89 at the back, so cars understeer at the limit and a
+    slide at the back builds gradually). Driving and braking spend grip a tyre needs for
+    turning. The brakes have ABS; the handbrake locks the rear wheels. An open
+    differential splits the drive evenly, so a lifted inside wheel spins. A front-drive
+    car pushes wide under power, a rear-drive one can be steered on the throttle, and
+    lifting off in a fast bend lets the tail come round a little.
+  - *Weight transfer.* The forces act at the road and the mass sits higher, so load
+    moves to the outside tyres in a bend, the rear under power and the front under
+    braking. The body leans 4–5° per g in a saloon and more in a van. In a hard
+    enough swerve the inside wheels lift: a van thrown from lock to lock at 50 km/h goes
+    up on two wheels and comes down, at 75 it goes over. Saloons, SUVs and pickups
+    stay on their wheels on flat dry tarmac.
+  - *Kerbs and the body.* A tyre sliding sideways into a kerb is stopped at the
+    kerb's height, below the centre of mass. On a 14 cm kerb a saloon stays upright at
+    15 km/h across, lands on its side at 40 and rolls right over at 60; a van goes over
+    from about 25. Twenty points on the sills, bumpers, shoulders and roof land on the
+    road and scrape along it, so ramps and crests throw it into the air and a
+    tumble ends wherever it ends. Each hard landing of the body is heard, dents and
+    damages it and knocks you about.
+  - *The flat game.* Walls, posts and other cars still push the car on the map
+    (`Car.move`, `collideBodies`); the physics takes their push as an impulse at bumper
+    height, so a van hitting a wall dives onto its nose. Once a car lies still on its
+    side or roof it is handed to `Rollover` as an ordinary overturned car (`Rollover.lying`).
+    A car you jump out of keeps its physics until it is back on its wheels.
+  - *Drawing.* The body takes its pose straight from the physics. On the street model
+    each wheel moves in its arch with its own suspension travel (`WHEEL_LEVEL`,
+    `WHEEL_SHIFT` and the diagonal twist); the shadow stays on the ground.
+  `node scripts/check-physical-handling.mjs` (`-v` for the numbers) covers launches, stops, understeer, the
+  handbrake, roll, frame rates, hills, kerb trips, swerves, a jump, a wall and the
+  handoffs; the `physical-handling` scene checks it in-game.
 - **Rollovers** (`src/rollover.ts`). A car, van, bus or lorry rolls over when its
   wheels are stopped while it slides sideways: up a kerb at about 32 km/h across (a van
   at about 25; in practice in a fast handbrake slide, since the tyres soon scrub off any
@@ -513,7 +633,8 @@ The metro ride uses its overhead cutaway camera.
   for good: it drops out of the chase or the call, its lights go out, and its crew stays
   belted in rather than climbing out (at street level the windows read as dark, so you
   can't see them). Two-wheelers fall over as before. The `rollover` and
-  `police-rollover` scenes check it.
+  `police-rollover` scenes check it. With Physical handling these thresholds don't apply
+  to your car: the physics trips it over or doesn't (above).
 - In the car, holding Shift is lane assist (`src/assist.ts`): it steers along your
   lane, and A/D then pick the turn at the next junction instead of steering. It also
   keeps you to the street's speed limit (OSM `maxspeed`, else 50 km/h in town, 70 on
@@ -665,7 +786,7 @@ The metro ride uses its overhead cutaway camera.
   assist is a toggle above the stick, showing the speed limit it keeps to while it's
   on; the right thumb has the gas and brake (roll from one to the other without
   lifting), the handbrake and "Get out". To drive with one hand, choose "Stick only"
-  under Driving in the settings: how far you push is the gas, pointing back brakes,
+  under Driving on the settings' Controls tab: how far you push is the gas, pointing back brakes,
   then backs up turning round until the car can drive off the way you point, letting go coasts, and the pedals go away. "Back on road" is top right, under the
   sound and settings buttons. On foot, “Jump” works even at a tram stop; waiting
   has its own button. Long HUD lists scroll within a compact panel. Pinch the map to zoom (`src/touch.ts`).
@@ -761,12 +882,18 @@ The metro ride uses its overhead cutaway camera.
   in and the cars drive off (while you're still wanted they join the chase, as any patrol
   nearby would); out of sight they simply go. When you're on foot they stay
   on the road and stop at the kerb nearest you; then (or when you stop the car) an
-  officer gets out (their door stays open till they're back) and runs after you, to
+  officer gets out (their door stays open till they're back; a car rammed or shot at
+  while it's moving pulls up first, scenario `police-door`) and runs after you, to
   your door if you're in a car. They stop at arm's length, facing you, spread round you
   rather than piling into one spot (two don't make for the same door of your car). Once they have hold of you it takes them a moment
   (about a second and a half on foot, two and a half at the door of a car you've
-  stopped in) and then you're busted (the police keep the car); run, not walk, and you
-  get out of their hands, or drive off before they open the door. The arrest is played out (`src/arrest.ts`): the officer opens
+  stopped in) and then you're busted (the police keep the car). Walking off doesn't
+  shake them (they keep pace beside you), and running gets you out of their hands, but
+  an officer close behind you sprints for a couple of seconds (then is winded for four)
+  and dives at your legs once they'd reach you: you go down, they kneel over you and
+  cuff you where you lie, and get you up onto your knees and your feet (scenario
+  `police-tackle`). With a few strides' start you get away. In a car, drive off before
+  they open the door. The arrest is played out (`src/arrest.ts`): the officer opens
   your door and has you out of the car, your hands go up, they step behind you and
   put the handcuffs on, and you're turned round and walked to their car and put in the
   back (the officer walks round you to your side, not through you), while the
@@ -1020,8 +1147,8 @@ The metro ride uses its overhead cutaway camera.
 - **Driving sliders** (developer panel → Driving, `src/driveTune.ts`): multipliers on the
   handling of whatever vehicle you drive: acceleration, top speed, brakes, grip, grip lost
   at speed, fastest turning, turning circle, steering response, slowing when coasting, and
-  how much rain and snow matter. They work in both the top-down and the realistic
-  handling; 1× is the game as it ships. Each slider runs from 0.1× to 10× on a log scale
+  how much rain and snow matter. They work in the top-down, the realistic and the physical
+  handling (the last ignores grip lost at speed and fastest turning: its tyres decide those); 1× is the game as it ships. Each slider runs from 0.1× to 10× on a log scale
   (rain and snow from 0× to 5×) and says in a line what it does. Your own car's steering
   answers fifteen times as fast as the specs in `car.ts` give, and its turning circle is
   1.65 times as wide (`BASE` in `driveTune.ts`); those are the sliders' 1×. The values stay in this browser until Reset;
@@ -1108,7 +1235,13 @@ record the measurements, merge decisions and pending landmark asset activation.
   The general pavement is asphalt grey; slab squares are lighter, and park paths stay
   warm. Squares use their own OSM `surface` tag where one exists. Otherwise, a clear
   majority of mapped pedestrian and service ways crossing the square can supply its
-  surface; Old Town Square takes the setts mapped on the ways through it. At street level on WebGPU the setts use a 2.5 m scan, including the worn stone faces and recessed joints. Walking
+  surface; Old Town Square takes the setts mapped on the ways through it. At street level on WebGPU the setts use a 2.5 m scan, including the worn stone faces and recessed joints.
+  Setts, mosaic, slabs and concrete are laid along the edges of what they cover, not along
+  the map's north (`src/laying.ts`): each joined piece of the surface takes one direction from
+  its outline (its long sides weigh most; a square grid fits both arms of an L round a block
+  corner), leaving out where the tile's edge cut it. Where pieces meet at an angle their
+  joints meet at a seam. A surface merged across a junction of streets at other than right
+  angles takes a direction between theirs. `node scripts/check-laying.mjs` checks it. Walking
   routes add no ribbon over a square of the same material; cobbled
   footways use setts, and island/link routes leave the pavement clear while keeping
   real path sections through lawns. A named
@@ -1170,7 +1303,7 @@ record the measurements, merge decisions and pending landmark asset activation.
   dado and a door or picture, the floor; a quarter of the windows have a blind half down).
   Along the edge of every carriageway runs a kerb of grey granite with a darker gutter
   inside it (`kerbs` in `src/ground.ts`), wherever what lies beside it is not carriageway.
-  The kerb is raised: the carriageway (asphalt, setts, parking bays and the trams' own bed)
+  The kerb is raised: the carriageway (asphalt, setts, parking bays and the trams' own bed of ballast)
   lies 12 cm below the pavement, with the granite's face between them, so a tree pit or a
   traffic island in the street stands up out of it too. The terrain has one height for a
   street and its pavements, so the step is made in the game (`src/kerbDrop.ts`): each tile
@@ -1944,7 +2077,8 @@ record the measurements, merge decisions and pending landmark asset activation.
   (`assets/figures/build.py` → `public/figures.glb`): a low-poly person with a skeleton
   and clips for standing, walking, jogging, running, jumping, falling, getting up,
   riding, getting into a car, hauling someone out of one, and an arrest (hands up,
-  handcuffed, led away, and the officer's side of it), plus a bike and a motorbike. The walk, jog and run place the feet first (on
+  handcuffed, led away, and the officer's side of it; and a tackle: the dive, being
+  brought down, cuffed on the ground and got up again), plus a bike and a motorbike. The walk, jog and run place the feet first (on
   the ground they stay put, rolling from heel to ball) and reach them with the legs;
   in the game the two gaits either side of someone's speed are blended, in step. At
   load, `src/figures.ts` plays every clip through and bakes the posed vertices into
@@ -1973,6 +2107,30 @@ record the measurements, merge decisions and pending landmark asset activation.
   is twice the tier's close-avatar allowance, up to 64. The overhead view keeps
   its original figures. Rebuild the models and clothing atlas with
   `node assets/rocketbox/crowd.mjs` after building the full avatars.
+  Each civilian outfit also comes in a few hand-picked colourways (`src/avatarDyes.ts`),
+  dyed in the shader at the texture's garment regions, so the fourteen outfits make 125
+  looks. A pedestrian's colourway is picked by chance from the
+  colours their overhead figure wears, mostly the ones nearest its top, so winter's dark
+  coats bring out dark colourways. They wear the same one on the close model and the
+  street model. Skin, shoes, belts, inner layers and white stripes keep their texture.
+  Drivers and uniformed crews keep their outfits. To add a colourway or an outfit, mark
+  the garment's rects in the body texture (512 units, rows from the top) and list its
+  colours there; the shader has a GLSL and a TSL copy (`src/webgpu/avatars.ts`). Every
+  avatar shares one dyed shader up close and one in the street crowd, with the regions as
+  uniforms (on WebGPU read from the mesh being drawn). Each avatar is compiled as it loads,
+  one after another (`Rocketbox.warmKind`; yours behind the loading screen when the game
+  opens in a street view), and nobody is shown life size in an avatar before that: the
+  crowd draws them meanwhile. The avatars share their shaders, their shadow's too on
+  WebGPU (`configureRenderer`), so this mostly finds them built and catches the few
+  variants. Each avatar is also drawn for two frames shrunk to nothing where you are, for
+  the shadow pass, which `compileAsync` leaves out. Without it, stepping into the street
+  mid-game built 5–10 shaders in the first frame with people up close; with it, at most 3
+  a frame. Keep it that way: a shader per avatar was compiled the
+  first time each outfit came into view, mid-walk. The street crowd loads once you're
+  on the street; its shaders are compiled before anyone walks in it (`compileAsync`),
+  then each batch is drawn once, shrunk to nothing, one a frame, for the builds that
+  only a draw makes (on WebGPU each batch has its own, and the shadow pass). Without
+  that, its first frame built 15–18 shaders on WebGPU.
   The player's model starts loading alongside the animation clips. The player gets
   a random avatar each session and keeps it when switching between
   first and third person, including after the detailed models are freed and reloaded.
@@ -2155,8 +2313,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   The 15T and KT8 ride on bogies at the ends and under the two articulations.
   Close models are prepared one section at a time as a tram approaches.
 - Embedded tram rails show a polished running head and a dark flange groove on the
-  inside. Joints cross the concrete bed at right angles to the track, including on
-  curves and bridges. At walking height the asphalt beside it picks up the aggregate
+  inside. They are let into whatever the street is paved with there, as the survey has it
+  (asphalt or setts run on between and beside the rails, as they mostly do in Prague; on a
+  bed of their own, ballast), with no concrete strip of their own: the survey doesn't say
+  where a track lies in concrete panels. At walking height the asphalt picks up the aggregate
   and small surface normals of a four-metre road scan.
 - **Tram tracks** are OSM's `railway=tram` ways, including those mapped on the same way
   as a street or a bus lane (`highway=busway` or `service` with `railway=tram`, as on
@@ -2230,6 +2390,14 @@ record the measurements, merge decisions and pending landmark asset activation.
   centimetres, and from close by the plaster is mottled and grainy (`wallFoot` in
   `src/webgpu/buildings.ts`; the WebGL path has the foot only). All of it is made up from
   the wall's shape; none of it says how dirty a real house is.
+  A raised doorway in a modelled wall has stone steps up from the pavement, and while
+  the wall is modelled they are solid: a car stops against them as against the wall
+  (`stepAt` in `src/streetFacades.ts`, asked by `World.cellAt`). A wall's height above
+  the ground is measured in the tile worker on the ground of its building's tile, which
+  stops at that tile's edge. Before a wall is modelled it is measured again on the ground
+  of the loaded tiles round it, so a building across a tile edge still stands on its
+  pavement (on Vinohradská the foot and the steps were up to 0.9 m above it, with the
+  plain wall below the foot showing as a pale band).
 - **Surveyed walls, fences and railings** (`pipeline/dtm_walls.py`): where the technical
   map's survey covers a tile (30 m of its lines or more), its walls ("Zeď"), fences
   ("Plot") and railings ("Zábradlí", set 3, in `pipeline/.cache/dtm/ZPS_KR/`) stand in
@@ -2344,7 +2512,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   brings back the old flat 20 % / 45 % for comparison. Bay lines are painted as Prague paints them,
   along the street side of the bays with short lines across at each end and none along
   the pavement: solid blue in residents' zones, white dashes in the mixed (violet) and
-  visitors' (orange) ones. Cars stand parallel, angled or
+  visitors' (orange) ones. Most kerbside parking has no mapped area, only the street's
+  row of cars; in a TSK section such a row gets its zone's line along its traffic side,
+  stopping 5 m short of a zebra (`kerbPaint` in `src/parking.ts`). Outside the zones
+  these rows are left unpainted. Cars stand parallel, angled or
   perpendicular as OSM tags each parking area (`orientation`) and each side of the
   street (`parking:<side>:orientation`, or the older `parking:lane:<side>`); where it
   doesn't say, an area under 4.5 m wide is parallel, up to 5.6 m angled and wider
@@ -2567,6 +2738,10 @@ uv run build_footfall.py centrum   # how busy the streets are → footfall.png
 uv run build_lamps.py centrum      # street lamps from IPR's utility map → lamps.bin.gz
 uv run build_bikes.py centrum      # shared bikes' stations from GBFS feeds → bikes.json
 uv run build_terraces.py centrum   # cafés, restaurants and pubs with tables outside (OSM) → terraces.json
+uv run build_shops.py centrum      # ground-floor shops, cafés and pubs (OSM) for the shopfronts → shops.json
+uv run build_addresses.py centrum  # house numbers (RÚIAN via OSM) for the plates by the doors → addresses.json, addresses/
+uv run build_street_furniture.py centrum  # benches, bins, bike stands, bollards, cabinets, plaques … (OSM) → street-furniture.json
+uv run --with osmium build_traffic_signs.py centrum  # traffic signs and lane arrows from OSM's rules → traffic-signs.json
 uv run build_districts.py centrum  # parts of town from OSM's cadastral areas → districts.json
 uv run landmarks.py centrum        # landmarks from IPR's photorealistic mesh → landmarks/
 ```
@@ -2829,6 +3004,12 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   cd pipeline
   uv run --group cover python -B -m unittest discover -s . -p 'test_*.py'   # or npm test from the root
   ```
+
+  They run on Windows too (`npm test` in PowerShell or Command Prompt). Pipeline code
+  reads and writes text with `encoding="utf-8"`; Windows would otherwise use the
+  locale's code page. `npm test` and CI make a missing encoding an error.
+  To save a pipeline script's output to a file on Windows, set
+  `$env:PYTHONIOENCODING = "utf-8"` first, or its Czech names and arrows can't be printed.
 - **OSM.** With `pipeline/.cache/osm/czech-republic-latest.osm.pbf` from
   [Geofabrik](https://download.geofabrik.de/europe/czech-republic.html) (about 950 MB)
   the chunks are cut locally with osmium. The centre builds in under half a minute
@@ -2920,6 +3101,12 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   other share one cycle (a crossing of two dual carriageways is four nodes); the main
   street gets the longer green. Lights for a pedestrian crossing alone are left out.
   It takes a few seconds, even for the whole city.
+- **Traffic signs.** `build_traffic_signs.py` reads the local OSM extract (with pyosmium:
+  `uv run --with osmium`) and IPR's powered traffic signs (downloaded once into
+  `.cache/utility/powered-signs.json`), and infers the signs from the rules OSM records:
+  one-way streets, give way and the main road, crossings, zones, speed and vehicle limits,
+  turn bans, the lanes' arrows, and the direction plates and boards where OSM names where a
+  street leads (`docs/traffic-signs.md`). About 25 seconds for the whole city.
 - **Metro.** `build_metro.py` takes the metro from the same timetables: each line's
   stations in order with the typical minutes between them, how often it runs,
   every station's entrances (PID's feed has them all, 331), and the track from the
@@ -3052,7 +3239,9 @@ After rebuilding map data, configure a bucket-scoped R2 S3 remote named `streets
 in rclone (or set `R2_REMOTE` to another remote and bucket path). Use a temporary
 Object Read & Write key for the `streets-of-prague-data` bucket; keep its access
 key and secret outside this repository. Run `scripts/upload-data.sh <new-version>`
-to upload and checksum-check every file. It refuses a version name that is
+to upload and checksum-check the areas the game ships (`praha`, `centrum`, `ujezd`, their
+parking and `countryside`; lattice builds and previews in `public/data` stay local). The
+bucket locks what it is sent, so nothing can be taken out of a version afterwards. It refuses a version name that is
 already on R2; `--resume` finishes an interrupted upload of the same files, and
 fails if an object in that version has changed. Commit the updated
 `deploy/data-version` and app code, then release (below), which runs

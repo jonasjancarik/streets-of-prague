@@ -4,9 +4,11 @@ import type { Police, Officer } from '../src/police.ts';
 // A player wrote (3 Nov) that being caught was far too quick, and that the police came
 // for them over things no officer had seen ("cameras?"). Now a crime nobody from the
 // police saw is phoned in some seconds later and they go to where it happened, not to
-// you; and an officer has to keep hold of you for a moment, which you can run out of.
+// you; and an officer has to keep hold of you for a moment. You could run out of it;
+// since 26 Nov an officer close behind a runner dives at their legs, so it takes a few
+// strides' start.
 export default {
-  title: 'Police: an unseen crime is phoned in later, to where it was; an arrest takes a moment and you can run from it',
+  title: 'Police: an unseen crime is phoned in later, to where it was; an arrest takes a moment and with a start you can run from it',
   async run(t) {
     await t.go('karlak', { heading: 0 });
     t.time('14:00');
@@ -55,16 +57,18 @@ export default {
     kit.unarrested = false;
     try {
       let o = await grab();
-      if (!t.check('an officer at your back', !!o)) return;
+      if (!t.check('an officer after you', !!o)) return;
       // Facing the way with the most room to run.
       const room = (h: number) => { let d = 0; while (d < 30 && grid.at(w.x + Math.cos(h) * d, w.y + Math.sin(h) * d) === 0) d += 0.5; return d; };
       w.h = Array.from({ length: 16 }, (_, i) => i * Math.PI / 8).sort((a, b) => room(b) - room(a))[0];
-      o!.x = w.x - Math.cos(w.h) * 0.6;
-      o!.y = w.y - Math.sin(w.h) * 0.6;
+      // (A few strides' start: right at your back, running gets you tackled now, see
+      // scenarios/police-tackle.ts.)
+      o!.x = w.x - Math.cos(w.h) * 8;
+      o!.y = w.y - Math.sin(w.h) * 8;
       const start = [w.x, w.y];
       await t.wait(3, { move: 1, run: true });
       const ran = Math.round(Math.hypot(w.x - start[0], w.y - start[1]));
-      t.check('running, you break away', !t.arrested() && ran > 12, { arrested: t.arrested(), ran, gap: Math.round(Math.hypot(o!.x - w.x, o!.y - w.y)) });
+      t.check('running with a few strides’ start, you get away', !t.arrested() && ran > 12, { arrested: t.arrested(), ran, gap: Math.round(Math.hypot(o!.x - w.x, o!.y - w.y)) });
 
       o = await grab();
       if (!t.check('another officer at your back', !!o)) return;

@@ -183,7 +183,7 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
   // How detailed the city looks. Auto adjusts to keep the game smooth, and says which level
   // it's on once the game knows the graphics chip (autoTier).
   let autoNow: Tier | null = null;
-  const tierName = (tier: Tier) => t(tier[0].toUpperCase() + tier.slice(1));
+  const tierName = (tier: string) => t(tier[0].toUpperCase() + tier.slice(1));
   const graphicsRow = opts.graphics ? row<Choice>('Graphics', CHOICES.map((id) => ({
     id, label: () => id === 'auto' ? (autoNow ? t('Auto ({tier})', { tier: tierName(autoNow).toLowerCase() }) : t('Auto')) : tierName(id),
   })), opts.graphics.choice, (id) => { opts.graphics!.pick(id); }) : null;

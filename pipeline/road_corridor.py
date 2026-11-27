@@ -205,7 +205,7 @@ def main():
             1, city.index["area"], city.index["built"]):
         ap.error("screened surfaces do not match this map build")
     if args.baseline_roads:
-        baseline = json.loads(args.baseline_roads.read_text())
+        baseline = json.loads(args.baseline_roads.read_text(encoding="utf-8"))
         digest = hashlib.sha256(raw).hexdigest()
         if baseline.get("built") != current["built"] or baseline.get("patchDigest") != digest:
             ap.error("baseline road report does not match the current sidecar")

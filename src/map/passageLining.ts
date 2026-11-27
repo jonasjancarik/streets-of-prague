@@ -298,21 +298,25 @@ export function passageLining(
               sill = -.08 + bottom * (PASSAGE_HEAD + .08),
               lintel = -.08 + top * (PASSAGE_HEAD + .08);
             const stock = 5 + Math.abs(Math.floor(mx * 1.7 + my * .83) + j) % 4;
+            // How far the glass is set back. At 25 cm it sank into the building's own walls
+            // behind the lining, which cut across it (U Nováků, the Myslbek and Hrzánská
+            // arcades, November 2026; some striping on part of a window remains, plan 039).
+            const VITRINE = .07;
             quad(
-              at(u, sill, -.25),
-              at(v, sill, -.25),
-              at(v, lintel, -.25),
-              at(u, lintel, -.25),
+              at(u, sill, -VITRINE),
+              at(v, sill, -VITRINE),
+              at(v, lintel, -VITRINE),
+              at(u, lintel, -VITRINE),
               stock,
               wall,
               side > 0 ? 0 : 1,
               side > 0 ? 1 : 0,
             );
             for (const edge of [u, v]) {
-              quad(at(edge, sill), at(edge, sill, -.25), at(edge, lintel, -.25), at(edge, lintel), 4, brass);
+              quad(at(edge, sill), at(edge, sill, -VITRINE), at(edge, lintel, -VITRINE), at(edge, lintel), 4, brass);
             }
             for (const y of [sill, lintel]) {
-              quad(at(u, y), at(v, y), at(v, y, -.25), at(u, y, -.25), 4, brass);
+              quad(at(u, y), at(v, y), at(v, y, -VITRINE), at(u, y, -VITRINE), 4, brass);
             }
             for (const f of [.33, .67]) {
               const x = u + (v - u) * f;

@@ -41,7 +41,7 @@ export interface ChaseOptions {
   // (a camera behind a 31 m tram would see only its back).
   tram?: boolean;
   forwardSpeed: number;
-  slide: boolean; // whether the car has the street handling, which lets it slide
+  slide: boolean; // whether the car has the realistic or physical handling, which lets it slide
   yaw: number; pitch: number; // looking round, in radians
   blocked?: (x: number, y: number) => boolean; // a wall between the vehicle and the camera
 }

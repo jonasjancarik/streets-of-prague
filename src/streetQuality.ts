@@ -18,7 +18,9 @@ export const STREET_TIERS = {
   medium: { avatars: 12, avatarReach: 22, carReach: 20, walls: 12, wallReach: 27, castings: 15, fewReach: 1, treeWood: .75, vrScale: .65, groundFine: 2, groundFlat: 8 },
   high: { avatars: 24, avatarReach: 36, carReach: 30, walls: 24, wallReach: 42, castings: 24, fewReach: 1.25, treeWood: 1, vrScale: .75, groundFine: 2, groundFlat: 8 },
   ultra: { avatars: 32, avatarReach: 45, carReach: 40, walls: 36, wallReach: 56, castings: 32, fewReach: 1.6, treeWood: 1, vrScale: .75, groundFine: 2, groundFlat: 8 },
-} satisfies Record<Tier, object>;
+  // Past Ultra, for Custom only (graphics.ts): half as far again, and more people up close.
+  max: { avatars: 48, avatarReach: 65, carReach: 60, walls: 54, wallReach: 84, castings: 48, fewReach: 2.4, treeWood: 1, vrScale: .9, groundFine: 2, groundFlat: 8 },
+} satisfies Record<Tier | 'max', object>;
 export const STREET_QUALITY = { ...STREET_TIERS.high };
 // The most life-size people any tier has at once (rocketbox.ts sizes its umbrellas by it).
 export const MOST_AVATARS = Math.max(...Object.values(STREET_TIERS).map((t) => t.avatars));

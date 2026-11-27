@@ -53,7 +53,11 @@ export function entries() {
 
 // Scripts with a browser open that never checked in (a checkout from before this file):
 // Chrome started by Playwright whose parent is one of the game's scripts.
+// Not on Windows: there `ps` is Git's MSYS one, which has no -o, fails, and takes half
+// a second doing it, while the dev server waits on it for every /__bench poll (each open
+// game asks every 2 s), which stalled the game's loading to a crawl (November 2026).
 export function strangers(known = entries()) {
+  if (process.platform === 'win32') return [];
   let lines;
   try { lines = execFileSync('ps', ['-axo', 'pid=,ppid=,command='], { encoding: 'utf8', maxBuffer: 1 << 26 }).split('\n'); } catch { return []; }
   const procs = new Map(), parents = new Set();
@@ -88,7 +92,10 @@ export async function checkIn(kind, what = basename(process.argv[1] || 'script')
   const write = (status) => {
     me.status = status;
     writeFileSync(`${file(me.pid)}.tmp`, JSON.stringify(me));
-    renameSync(`${file(me.pid)}.tmp`, file(me.pid));
+    // Windows refuses the rename (EPERM) while another process is reading the entry;
+    // a plain write is only briefly half-written, and readers skip what they can't parse.
+    try { renameSync(`${file(me.pid)}.tmp`, file(me.pid)); }
+    catch { writeFileSync(file(me.pid), JSON.stringify(me)); try { unlinkSync(`${file(me.pid)}.tmp`); } catch {} }
   };
   const out = () => { try { unlinkSync(file(me.pid)); } catch {} };
   write('idle');

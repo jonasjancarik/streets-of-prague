@@ -38,15 +38,12 @@ From `DTMP_CUR_TMISZNAK_B`, the layer the lamps come from. A tile's `utility` is
 `[x, y, kind]`: 0 manhole cover, 1 storm drain, 2 hydrant, 3 phone box, 4 the small
 cover of an underground hydrant. `src/ground.ts` draws kinds 0, 1 and 4 as one flat
 mesh per tile (`src/map/utility.ts`, `coverGeometry`): one more ground layer in a tile
-that has any, however many covers. Hydrants and phone boxes are two more kinds of
-the instanced furniture (`src/furniture.ts`, placed by `standingMarks` in the land
-worker). Their bodies are solid like the benches. At street level an extra instanced
-mesh carries the clear panes of all the phone boxes in the tile.
-One the game's carriageway covers is left out (the game's streets are not always as
-wide as the real ones), and so is a surveyed signal pole there. A phone box opens
-onto clear pavement. If a façade blocks its footprint, the worker first turns the
-box, then tries up to a metre towards the pavement. It skips a box that still has
-no accessible site.
+that has any, however many covers. The standing hydrants (2) and phone boxes (3) are
+kept in the data but the game leaves them out (27 November 2026: the standing model was
+an American hydrant). A surveyed signal pole on the game's carriageway is left out too
+(the game's streets are not always as wide as the real ones).
+Phone boxes stay in the tile data but the game leaves them out: nearly all of
+Prague's were removed in the early 2020s, so a kiosk dated the street.
 
 The layer's `signals` are the traffic lights' poles. `build_signals.py`, run after
 this step, gives each junction light the nearest pole within 9 m of where the game

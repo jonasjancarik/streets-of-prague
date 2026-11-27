@@ -63,8 +63,8 @@ def main(area: str = "ujezd") -> None:
         sys.exit(f"build_parking: no TSK counts in {SRC}; run `uv run fetch_sources.py` first")
     sections, months = [], set()
     for dist, (month, f) in sorted(found.items()):
-        day = json.loads(f["D"].read_text())["features"]
-        night = {ft["properties"]["CODE"]: ft["properties"] for n in f["N"] for ft in json.loads(n.read_text())["features"]}
+        day = json.loads(f["D"].read_text(encoding="utf-8"))["features"]
+        night = {ft["properties"]["CODE"]: ft["properties"] for n in f["N"] for ft in json.loads(n.read_text(encoding="utf-8"))["features"]}
         for ft in day:
             g = shape(ft["geometry"])
             if not g.intersects(bbox):
@@ -88,7 +88,7 @@ def main(area: str = "ujezd") -> None:
     out = {"area": area, "source": "TSK Praha, zóny placeného stání", "months": sorted(months), "sections": sections}
     path = OUT / f"{area}_parking.json"
     path.parent.mkdir(parents=True, exist_ok=True)  # (public/data isn't there in a fresh clone)
-    path.write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")))
+    path.write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     spaces = sum(x["spaces"] * x["inside"] for x in sections)
     print(f"{len(sections)} sections, ~{spaces:.0f} spaces inside the area, months {sorted(months)} → {path.name}")
 

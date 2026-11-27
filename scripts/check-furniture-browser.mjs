@@ -13,18 +13,10 @@ try {
   await page.goto(new URL('src/map/furniture.ts', base).href);
   const result = await page.evaluate(async () => {
     const { Geo } = await import('/src/map/geo.ts');
-    const { furnitureInstances, YARD } = await import('/src/map/furniture.ts');
+    const { furnitureInstances, YARD, FURNITURE_KINDS } = await import('/src/map/furniture.ts');
     const { furnitureMeshes, furnitureView, disposeFurniture } = await import('/src/furniture.ts');
-    const { fitPhoneBox } = await import('/src/map/utility.ts');
     const { TileWorkers } = await import('/src/tileWorkers.ts');
     const assert = (v, text) => { if (!v) throw new Error(text); };
-    const surveyed = {x: 0, y: 0, angle: 0};
-    const clear = fitPhoneBox(surveyed, () => true), turned = fitPhoneBox(surveyed, (x, y) => y > -0.6);
-    const shifted = fitPhoneBox(surveyed, (x, y) => y < -0.1);
-    assert(clear.x === 0 && clear.y === 0 && clear.angle === 0, 'unobstructed kiosk stays at the survey point');
-    assert(turned.x === 0 && turned.y === 0 && Math.cos(turned.angle) < 0, 'kiosk front opens onto the pavement');
-    assert(shifted && Math.hypot(shifted.x, shifted.y) <= 1 && shifted.y < -.5, 'cabinet clears the frontage');
-    assert(fitPhoneBox(surveyed, () => false) === null, 'no kiosk through a solid wall');
     const poly = [[[[0, 0], [100, 0], [100, 100], [0, 100]]]];
     const data = { size: [100, 100], origin: [0, 0], areas: { dtm_yard: poly }, roads: {}, buildings: [], sheds: [], furnitureBuildings: [], walls: [], fences: [], trees: [], walk: [], passages: [], structures: [], reserved: new Float32Array(0), levels: false, furnitureEnabled: true };
     const trees = { matrices: new Float32Array(0), colours: new Float32Array(0), yearly: new Float32Array(0), count: 0, shrubs: 0, conifers: 0 };
@@ -65,9 +57,9 @@ try {
       assert(absent.furniture.spots.length === 0, 'no placement without terrain');
       const disabled = await workers.run('land', { data: { ...data, furnitureEnabled: false }, ground, bridges: [], box: [0, 0, 1, 1], structures: [], seeds: new Float64Array([1, 1]) });
       assert(disabled.furniture.spots.length === 0, 'missing lamp survey or explicit baseline disables furniture');
-      const mapped = { ...data, utility: [[50, 50, 3]], furnitureBuildings: [{ rings: poly[0] }] };
-      const arch = await workers.run('land', { data: mapped, ground, bridges: [], box: [0, 0, 1, 1], structures: [], seeds: new Float64Array([1, 1]) });
-      assert(!arch.furniture.spots.some(s => s.kind === 4), 'an open collision cell inside a mapped building cannot house a kiosk');
+      // Survey kinds: 2 standing hydrant, 3 phone box. Neither stands in Prague's streets.
+      const surveyed = await workers.run('land', { data: { ...data, utility: [[50, 50, 3], [60, 60, 2]] }, ground, bridges: [], box: [0, 0, 1, 1], structures: [], seeds: new Float64Array([1, 1]) });
+      assert(surveyed.furniture.spots.every(s => s.kind <= 2), 'no standing hydrant or phone box from the survey');
       const first = furnitureMeshes(land.furniture), second = furnitureMeshes(land.furniture);
       assert(first.length === 1 && second.length === 1, 'one instance draw for populated kind');
       assert(first[0].geometry === second[0].geometry && first[0].material === second[0].material, 'shared models and material');
@@ -79,21 +71,21 @@ try {
       assert(instanceDisposals === 1 && geometryDisposals === 0, 'tile disposal preserves shared geometry');
       assert(second[0].count === land.furniture.spots.length, 'remaining tile retains instances');
       const identity = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
-      const all = furnitureMeshes({ matrices: Array(5).fill(identity), spots: [] });
+      // One of every kind: the park furniture's overhead models as they were, and every street model within budget.
+      const all = furnitureMeshes({ matrices: Array(FURNITURE_KINDS).fill(identity), spots: [] });
       const countTriangles = m => (m.geometry.index?.count ?? m.geometry.attributes.position.count) / 3;
-      assert(JSON.stringify(all.map(countTriangles)) === '[108,36,84,60,120]', 'original overhead models');
+      assert(JSON.stringify(all.slice(0, 3).map(countTriangles)) === '[108,36,84]', 'original overhead models');
+      assert(all.length === FURNITURE_KINDS, 'a draw for every kind');
       assert(all[2].geometry === second[0].geometry, 'reloaded kind reuses its model');
       furnitureView(all, true);
-      const triangles = all.map(countTriangles), panes = all[4].children[0];
-      assert(all.length === 5 && triangles.every((n, i) => n > 0 && n <= [1100, 1350, 300, 1150, 760][i]), 'street triangle budgets: ' + triangles);
+      const triangles = all.map(countTriangles);
+      assert(triangles.every((n, i) => n > 0 && n <= ([1100, 1350, 300][i] ?? 4000)), 'street triangle budgets: ' + triangles);
       assert(all[2].material.alphaTest > 0 && all[2].customDepthMaterial.alphaTest > 0, 'leaf silhouettes and shadows');
-      assert(panes.material.transparent && !panes.material.depthWrite && !panes.castShadow && countTriangles(panes) === 6, 'clear kiosk glass');
-      assert(panes.count === all[4].count, 'frames and panes share placements');
       const close = all[0].geometry;
       furnitureView(all, false);
-      assert(!panes.visible && all[2].geometry === second[0].geometry, 'switch back to the overhead view');
+      assert(all[2].geometry === second[0].geometry, 'switch back to the overhead view');
       furnitureView(all, true);
-      assert(all[0].geometry === close && panes.visible && all[4].children.length === 1, 'close models reused on re-entry');
+      assert(all[0].geometry === close && all.every(m => !m.children.length), 'close models reused on re-entry');
       disposeFurniture(all);
       disposeFurniture(second);
       return { courtyard: land.furniture.spots.length, triangles, modelBytes: all.map(m => Object.values(m.geometry.attributes).reduce((s, a) => s + a.array.byteLength, 0)), matrixBytes: land.furniture.matrices.reduce((s, a) => s + a.byteLength, 0), assertions: 'passed' };

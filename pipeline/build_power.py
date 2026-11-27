@@ -18,7 +18,7 @@ from osm_area import AREAS, OUT
 def read_osm(source):
     # Include the ways' referenced nodes, then keep only mapped tower supports.
     contents = subprocess.check_output(
-        ["osmium", "tags-filter", "-f", "opl", str(source), "n/power=tower", "w/power=line"], text=True)
+        ["osmium", "tags-filter", "-f", "opl", str(source), "n/power=tower", "w/power=line"], text=True, encoding="utf-8")
     towers, lines = {}, []
     for row in contents.splitlines():
         fields = row.split()

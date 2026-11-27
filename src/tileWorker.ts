@@ -19,9 +19,10 @@ import { iprRoofSites } from './map/iprRoofs.ts';
 import { fenceArrays } from './map/fences.ts';
 import { shedArrays, shedCorners } from './map/sheds.ts';
 import { treeInstances } from './map/vegetation.ts';
-import { furnitureInstances, furnitureMatrices, FURNITURE_SIZE } from './map/furniture.ts';
-import { fitPhoneBox, standingMarks } from './map/utility.ts';
+import { furnitureInstances, furnitureMatrices, FURNITURE_SIZE, FLAT_FURNITURE, KIND, mappedSpots, treeGrates } from './map/furniture.ts';
 import { onPolygons } from './map/geo.ts';
+import { signPosts, signGeometry } from './map/signs.ts';
+import { directionGeometry } from './map/directions.ts';
 import { Geo, Grid, fillPolys, strokeLines } from './map/geo.ts';
 import { styleFor, facadeCoords, paintWalls, mansardCoords, finishWalls, splitWindowRows, WALL_CODES, BLANK } from './facades.ts';
 import type { WallLine } from './facades.ts';
@@ -404,25 +405,44 @@ function land({ data, seeds, ground, bridges, box, structures }: WorkerJobs['lan
   const sheds = shedArrays(data.sheds, hAt);
   const grid = tileGrid(geo, data, seeds, edges);
   const furniture = ground && data.furnitureEnabled ? furnitureInstances(new Geo({ ...data, buildings: data.furnitureBuildings }), trees, hAt) : { matrices: furnitureMatrices([]), spots: [] };
-  // The surveyed hydrants and phone boxes stand where the survey has them.
-  if (ground && data.furnitureEnabled && data.utility?.length) {
+  // OSM's bins, bike stands, parking machines, bollards, post boxes and the rest where it
+  // maps them (mappedFurniture.ts), each square to its street, and the tree grates. (The
+  // survey's standing hydrants are left out: Prague's hydrants are underground.)
+  if (ground && data.furnitureEnabled && (data.mapped?.length || data.trees?.length)) {
     // (Not one the game's carriageway covers: its streets are not always as wide as the real ones.)
     const onRoad = onPolygons([...(data.roads.road || []), ...(data.roads.sett || []), ...(data.roads.dirt || [])]);
-    // A walkable archway is cut out of the collision raster, but it still belongs
-    // to the building. Keep the whole cabinet out of its frontage and passage.
-    let inBuilding: ReturnType<typeof onPolygons> | undefined;
-    const clear = (x: number, y: number) => grid.at(x, y) === 0 && !onRoad(x, y)
-      && !(inBuilding ??= onPolygons(data.furnitureBuildings.map(b => b.rings)))(x, y);
-    for (const p of standingMarks(data.utility, data.walk.map((e) => e.pts))) {
-      if (onRoad(p.x, p.y)) continue;
-      const spot = p.kind === 4 ? fitPhoneBox(p, clear) : p;
-      if (spot) furniture.spots.push({ ...spot, kind: p.kind, z: hAt(spot.x, spot.y) });
+    if (data.mapped?.length) {
+      // Where the map has its own benches and bins, the inferred ones near them go.
+      const mapped = mappedSpots(data.mapped, data.buildings, onRoad, hAt);
+      furniture.spots = furniture.spots.filter(p => (p.kind !== KIND.bench && p.kind !== KIND.bin) || !mapped.some(m => m.kind === p.kind && Math.hypot(m.x - p.x, m.y - p.y) < 12));
+      furniture.spots.push(...mapped);
     }
+    furniture.spots.push(...treeGrates(data.trees ?? [], data.areas, onRoad, box, hAt));
     furniture.matrices = furnitureMatrices(furniture.spots);
   }
+  // The traffic signs (map/signs.ts): off the carriageway, a few to a post, or on the wall.
+  // And the direction plates and boards (map/directions.ts).
+  let signs: LandResult['signs'] = null, directions: LandResult['directions'] = null;
+  const posts: { x: number; y: number }[] = [];
+  if (ground && (data.signs?.points.length || data.directions?.length)) {
+    const onRoad = onPolygons([...(data.roads.road || []), ...(data.roads.sett || []), ...(data.roads.dirt || [])]);
+    const inside = onPolygons(data.buildings.map(b => b.rings));
+    if (data.signs?.points.length) {
+      const standing = signPosts(data.signs.points, data.signs.names, onRoad, inside, hAt);
+      signs = signGeometry(standing, data.signs.names, data.signs.cols);
+      for (const p of standing) if (!p.wall) posts.push(p);
+    }
+    if (data.directions?.length) {
+      directions = directionGeometry(data.directions, onRoad, inside, hAt);
+      for (let i = 0; directions && i < directions.posts.length; i += 4) if (!directions.posts[i + 2]) posts.push({ x: directions.posts[i], y: directions.posts[i + 1] });
+    }
+  }
   // The same solid-cell convention as tree trunks, stamped before parking.
-  for (const p of furniture.spots) {
-    const [hx, hy] = FURNITURE_SIZE[p.kind], c = Math.cos(p.angle), s = Math.sin(p.angle);
+  // (A sign post as a 12 cm square.)
+  const solid = [...furniture.spots.filter(p => !FLAT_FURNITURE.has(p.kind)).map(p => ({ x: p.x, y: p.y, angle: p.angle, size: FURNITURE_SIZE[p.kind] })),
+    ...posts.map(p => ({ x: p.x, y: p.y, angle: 0, size: [0.06, 0.06] as const }))];
+  for (const p of solid) {
+    const [hx, hy] = p.size, c = Math.cos(p.angle), s = Math.sin(p.angle);
     const [u, v] = geo.px(p.x, p.y, RES), rad = Math.hypot(hx, hy) + 0.35, R = Math.ceil(rad * RES);
     for (let j = -R; j <= R; j++) for (let i = -R; i <= R; i++) {
       const col = Math.floor(u) + i, row = Math.floor(v) + j;
@@ -431,7 +451,7 @@ function land({ data, seeds, ground, bridges, box, structures }: WorkerJobs['lan
     }
   }
   const trunkCells = stampTrunks(grid, geo, trees);
-  return { trees, walls, fences, sheds, furniture, cells: grid.cells, trunkCells, masks: structures.map((l) => levelMask(box, l.polys, l.level)) };
+  return { trees, walls, fences, sheds, furniture, signs, directions, cells: grid.cells, trunkCells, masks: structures.map((l) => levelMask(box, l.polys, l.level)) };
 }
 
 function isRequest(value: unknown): value is WorkerRequest {
@@ -517,6 +537,8 @@ worker.onmessage = async (event: MessageEvent<unknown>) => {
         const result = land(event.data.data);
         const buffers = [result.trees.matrices.buffer, result.trees.colours.buffer, result.trees.yearly.buffer, result.trees.outlines.buffer, result.walls.position.buffer, result.walls.normal.buffer, ...Object.values(result.fences.fence).map((a) => a.buffer), ...Object.values(result.fences.hedge).map((a) => a.buffer), ...Object.values(result.fences.rail).map((a) => a.buffer), result.fences.sections.buffer, ...Object.values(result.sheds).map((a) => a.buffer), result.cells.buffer, ...result.masks.map((m) => m.cells.buffer)];
         buffers.push(...result.furniture.matrices.map(a => a.buffer));
+        if (result.signs) buffers.push(...Object.values(result.signs).map(a => a.buffer));
+        if (result.directions) buffers.push(...Object.values(result.directions).map(a => a.buffer));
         if (buffers.some((buffer) => !(buffer instanceof ArrayBuffer))) throw new Error('Land transfer requires ArrayBuffer storage');
         worker.postMessage({ id, result } satisfies WorkerResponse, buffers as ArrayBuffer[]);
         break;

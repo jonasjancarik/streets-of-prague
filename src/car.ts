@@ -1,5 +1,6 @@
 import { GLYPHS, letteringGeometry } from './vehicleLettering.ts';
 import { StreetHandling, ROLL_CENTRE } from './streetHandling.ts';
+import { PhysicalHandling, type Axles } from './physicalHandling.ts';
 import { KEEP, STREET_QUALITY } from './streetQuality.ts';
 import { drivingSpec } from './driveTune.ts';
 import { Rollover, SCRAPE, tripSpeed } from './rollover.ts';
@@ -53,6 +54,8 @@ export const VR_GLASS = { at: { value: new THREE.Vector4() }, box: { value: new 
 // Inverse chassis rotation for the one sprung player car. Its instance marks
 // the registration negative so the other cars in the same draw keep their pose.
 export const WHEEL_LEVEL = { value: new THREE.Vector4(0, 0, 0, 1) };
+// With the physical handling, how far the wheels have moved up into the arches together (y, m).
+export const WHEEL_SHIFT = { value: new THREE.Vector4() };
 
 export interface CarSpec {
   headlights?: { forward: number; across: number; height: number; glow: number; streetReach?: number };
@@ -70,6 +73,10 @@ export interface CarSpec {
   brake?: number; radius?: number; response?: number; fade?: number; drag?: number; reverse?: number; tough?: number; weather?: number;
 }
 export interface CarControl { throttle: number; steer: number; handbrake: boolean; cap?: number | null }
+// Which handling the car you drive has (Settings → Car handling); `true` is the realistic one.
+export type Handling = boolean | 'classic' | 'realistic' | 'physical';
+const IDLE: CarControl = { throttle: 0, steer: 0, handbrake: false };
+const FLAT = () => 0;
 export interface CarGrid {
   at(x: number, y: number): number;
   height?: (x: number, y: number) => number;
@@ -359,6 +366,13 @@ interface CloseBody {
   layout?: number[]; formed?: string; fittedLamps?: CarSpec['headlights'];
 }
 const closeBodies = new Map<string, CloseBody>();
+// Where a car's wheels are: its street model's mounts, or where they'd be on its length.
+export function axlesOf(c: { key: string; spec: CarSpec }): Axles {
+  const fit = closeBodies.get(c.key), S = c.spec;
+  if (fit) return { front: fit.front, rear: fit.rear, track: fit.track, radius: fit.radius };
+  const wb = S.wheelbase ?? S.L * .6, middle = S.L * .02;
+  return { front: middle + wb / 2, rear: middle - wb / 2, track: S.W * .85, radius: Math.min(.42, .2 + S.H * .08) };
+}
 function prepareStreetCar(type: string, box?: string) {
   const mounts = bodies?.getObjectByName(type)?.userData.wheelMounts as number[] | undefined;
   if (mounts?.length !== 16) return;
@@ -1683,9 +1697,11 @@ streetWheelMaterial.onBeforeCompile = (sh, renderer) => {
   sh.vertexShader = sh.vertexShader.replace(/#define CRACK_GLASS .*/, '#define CRACK_GLASS false'); // (nor does it break)
   sh.uniforms.uRegistration = { value: registrationAtlas() };
   sh.uniforms.uWheelLevel = WHEEL_LEVEL;
+  sh.uniforms.uWheelShift = WHEEL_SHIFT;
   sh.vertexShader = sh.vertexShader.replace('if (hinge.z < .5) return p;', 'if (hinge.z < .5 || hinge.z > 4.5) return p;').replace('vec2 swing(vec2 p)', `
 attribute vec4 roll;
 uniform vec4 uWheelLevel;
+uniform vec4 uWheelShift;
 vec3 wheelLevel(vec3 p) { return p + 2. * cross(uWheelLevel.xyz, cross(uWheelLevel.xyz, p) + uWheelLevel.w*p); }
 varying float vWheelCoat;
 varying vec2 vPlateUV;
@@ -1712,7 +1728,7 @@ if (hinge.z < 0.) {
   transformed.y += sign(-hinge.x*hinge.y)*.0025*floor((roll.z+1.)*.5);
   if (roll.w < 0.) {
     vec3 pivot = vec3(0., ${ROLL_CENTRE}, 0.);
-    transformed = pivot + wheelLevel(transformed - pivot);
+    transformed = pivot + wheelLevel(transformed - pivot) + uWheelShift.xyz;
   }
   vWheelCoat = mix(.045,.45,smoothstep(.045,.24,dot(color.rgb,vec3(.3,.59,.11))));
 }
@@ -1834,6 +1850,8 @@ export class Car {
   rider: Look | null;
   lean: number;
   suspension?: StreetHandling;
+  // Driven with the physical handling (physicalHandling.ts), or still tumbling from it.
+  physics?: PhysicalHandling;
   // Ridden by you: the bicycle's or motorbike's own handling (twoWheel.ts), and how you
   // last came off it (cleared by main.ts once it has thrown you).
   wheels?: TwoWheel;
@@ -1999,7 +2017,7 @@ export class Car {
   // hold it, and the car spins on for a moment (`spin`, arcadeVelocity). Not a bike or a
   // motorbike, nor a bus or a lorry, nor a car nobody drives (that one turns freely anyway).
   // On its side or its roof: nobody drives it or gets into it.
-  get overturned() { return !!this.roll && (this.roll.moving || this.roll.face !== 'wheels'); }
+  get overturned() { return this.physics ? this.physics.tipped : !!this.roll && (this.roll.moving || this.roll.face !== 'wheels'); }
   // Rollovers are for four wheels: any car, van or bus but one still in the traffic (hit
   // hard enough, it leaves the traffic first). A police car, fire engine or ambulance
   // that rolls is out of action, its crew left belted in (police.ts, brigade.ts,
@@ -2016,7 +2034,8 @@ export class Car {
   // A blow from another vehicle changed its speed by (dvx, dvy): pushed sideways hard
   // enough, the tyres hold the bottom while the body goes on over them.
   jolted(dvx: number, dvy: number) {
-    if (!this.canRoll) return;
+    // (With the physical handling the blow itself tips it over, or doesn't.)
+    if (!this.canRoll || this.physics) return;
     const across = -dvx * Math.sin(this.h) + dvy * Math.cos(this.h), need = tripSpeed(this.spec);
     if (Math.abs(across) > 3 * need || (this.roll && Math.abs(across) > 1.5 * need)) this.tip(Math.sign(across), Math.abs(across) * 0.6);
   }
@@ -2165,10 +2184,11 @@ export class Car {
   // Free-body physics. `ctl` = { throttle -1..1, steer -1..1 (left +), handbrake, cap }.
   // `cap` (m/s, optional) limits the speed: the gas fades as the car gets near it, and
   // above it the car eases down, as if you'd lifted off and touched the brake.
-  update(dt: number, ctl: CarControl | null, grid: CarGrid, realistic = false) {
+  update(dt: number, ctl: CarControl | null, grid: CarGrid, handling: Handling = false) {
     if (grid.view) grid = grid.view(this);
     if (this.roll) return this.rolling(dt, grid);
-    ctl = ctl || { throttle: 0, steer: 0, handbrake: false };
+    ctl = ctl || IDLE;
+    const realistic = handling === true || handling === 'realistic';
     // (Your own car takes the developer panel's handling multipliers, driveTune.ts.)
     const S = this.mode === 'player' ? drivingSpec(this.spec) : this.spec, fx = Math.cos(this.h), fy = Math.sin(this.h);
     let slope = 0;
@@ -2177,6 +2197,15 @@ export class Car {
       slope = (grid.height(this.x + fx * half, this.y + fy * half) - grid.height(this.x - fx * half, this.y - fy * half)) / S.L;
     }
     const weatherLoss = this.driven ? (S.weather ?? 1) * Math.max(.25 * WET.value, .45 * SNOW.value * STREET_SNOW.value, .25 * SNOW.value) : 0;
+    // The physical handling: while you drive with it, and until a car it tipped or threw
+    // into the air is back on all four wheels (or lies still on its side or roof).
+    const physical = handling === 'physical' && this.mode === 'player' && !!S.cabin && !S.two;
+    if (this.physics && !physical && this.physics.planted) this.physics = undefined;
+    if (!this.physics && physical) {
+      this.suspension = this.wheels = undefined;
+      this.physics = new PhysicalHandling(this, S, axlesOf(this), grid.height ?? FLAT);
+    }
+    if (this.physics) return this.physicalStep(dt, this.mode === 'player' ? ctl : IDLE, S, grid, 1 - weatherLoss);
     // Sliding sideways up a kerb (or a step in the ground) fast enough trips it over.
     const tripAt = this.canRoll ? tripSpeed(S) : Infinity;
     const across = -this.vx * fy + this.vy * fx;
@@ -2244,6 +2273,30 @@ export class Car {
     // Heard (src/impacts.ts), whoever's car it is.
     crash(this, null, impact, struck, this.x, this.y, this.spec.mass);
     return impact;
+  }
+
+  // A step of the physical handling, then the walls. A hard landing of the body on the
+  // road is heard and dents and damages it as a rollover's does.
+  private physicalStep(dt: number, ctl: CarControl, S: CarSpec, grid: CarGrid, road: number) {
+    const ph = this.physics!;
+    const landing = ph.advance(this, S, ctl, road, dt, grid.height ?? FLAT);
+    this.lean = 0;
+    this.spin = 0;
+    let hit = 0;
+    if (landing && landing.speed > .8) {
+      hit = landing.speed * 2.2;
+      this.takeImpactDamage(landing.speed * 2);
+      this.knock(landing.x, landing.y, hit);
+      crash(this, null, hit, 'car', landing.x, landing.y, S.mass);
+    }
+    // Lying still on its side or roof: from now on it's any overturned car (rollover.ts).
+    if (ph.tipped && ph.still > .6) {
+      this.roll = Rollover.lying(this.spec, ph.rollAngle);
+      this.physics = undefined;
+      this.vx = this.vy = this.w = 0;
+      this.lean = -this.roll.angle;
+    }
+    return Math.max(this.move(dt, grid), hit);
   }
 
   // Rolling over, or lying on its side or roof: no driving, the body scraping along the
@@ -2827,10 +2880,11 @@ export class CarPool {
       list.forEach((c, i) => {
         const m = pages[Math.floor(i / CarPool.pageCapacity)];
         const slot = i % CarPool.pageCapacity;
-        const keep = height && terrain !== undefined && !c.two && c.mode === 'loose' && !c.roll?.moving;
+        const physical = c.physics;
+        const keep = height && terrain !== undefined && !c.two && c.mode === 'loose' && !c.roll?.moving && !physical;
         const was = keep ? this.placings.get(c) : undefined;
-        const suspension = streetView && c.mode === 'player' ? c.suspension : undefined;
-        const axleFit = (k === STREET_SEDAN || (suspension && k.endsWith('|street-wheels'))) && !c.tipped && !c.roll ? closeBodies.get(c.key) : undefined;
+        const suspension = streetView && c.mode === 'player' && !physical ? c.suspension : undefined;
+        const axleFit = (k === STREET_SEDAN || ((suspension || physical) && k.endsWith('|street-wheels'))) && !c.tipped && !c.roll ? closeBodies.get(c.key) : undefined;
         let twist = 0;
         if (was && (was.wheelTwist !== undefined) === !!axleFit && placed(was, c, height!, terrain!)) {
           d.matrix.fromArray(was.m); twist = was.wheelTwist ?? 0;
@@ -2875,6 +2929,25 @@ export class CarPool {
           pose.setPosition(-e[4] * ROLL_CENTRE, (1 - e[5]) * ROLL_CENTRE, -e[6] * ROLL_CENTRE);
           d.matrix.multiply(pose);
           WHEEL_LEVEL.value.set(-q.x, -q.y, -q.z, q.w);
+          WHEEL_SHIFT.value.set(0, 0, 0, 0);
+        } else if (physical) {
+          // The physical handling's own pose of the body (physicalHandling.ts); the shadow
+          // stays on the ground. Its axes are the world's x east, y north, z up, the
+          // model's x forward, y up, z to the right.
+          this.springGround.copy(d.matrix);
+          const a = physical.axes, o = physical.origin;
+          d.matrix.set(a[0], a[6], -a[3], o[0], a[2], a[8], -a[5], o[2], -a[1], -a[7], a[4], -o[1], 0, 0, 0, 1);
+          if (axleFit) {
+            // Each wheel up or down in its arch: a tilt of the four together about the
+            // shader's pivot, a lift of all four and what's left over on the diagonal.
+            const { front, rear, track } = axleFit;
+            const fl = physical.travel(0), fr = physical.travel(1), rl = physical.travel(2), rr = physical.travel(3);
+            const pitch = (fl + fr - rl - rr) / 2 / (front - rear), right = (fr + rr - fl - rl) / 2 / track;
+            const q = this.springRotation.setFromEuler(this.springEuler.set(-right, 0, pitch));
+            WHEEL_LEVEL.value.set(q.x, q.y, q.z, q.w);
+            WHEEL_SHIFT.value.set(0, (fl + fr + rl + rr) / 4 - pitch * (front + rear) / 2, 0, 0);
+            twist = clamp((fl - fr - rl + rr) / 4, -.12, .12);
+          }
         }
         // A bike or motorbike shrinks with its rider in first person (FIGURE_SIZE).
         m.setMatrixAt(slot, c.two && FIGURE_SIZE.value < SCALE ? this.m.copy(d.matrix).multiply(this.life.makeScale(FIGURE_SIZE.value / SCALE, FIGURE_SIZE.value / SCALE, FIGURE_SIZE.value / SCALE)) : d.matrix);
@@ -2891,12 +2964,12 @@ export class CarPool {
           travel.angle = (travel.angle - distance / fit.radius) % (2 * Math.PI);
           travel.x = c.x; travel.y = c.y;
           const speed = c.forwardSpeed;
-          const steer = suspension?.steer ?? (Math.abs(speed) > 0.25 ? clamp(Math.atan(c.w * fit.wheelbase / speed), -0.55, 0.55) : 0);
+          const steer = (physical ?? suspension)?.steer ?? (Math.abs(speed) > 0.25 ? clamp(Math.atan(c.w * fit.wheelbase / speed), -0.55, 0.55) : 0);
           const occupied = c.mode === 'player' || c.mode === 'traffic' || c.entryDriver || (c.mode === 'police' && c.crew);
           // Direction retains the rotation; its length on the coachwork page
           // carries ignition and speed to the dashboard without a ninth vertex buffer.
           const dial = k === STREET_SEDAN && occupied ? 2 + Math.min(1, Math.abs(speed) * 3.6 / 240) : 1;
-          roll.setXYZW(slot, dial * Math.cos(travel.angle), dial * Math.sin(travel.angle), Math.sin(steer) + 2 * Math.round(twist / .0025), suspension ? -travel.plate : travel.plate);
+          roll.setXYZW(slot, dial * Math.cos(travel.angle), dial * Math.sin(travel.angle), Math.sin(steer) + 2 * Math.round(twist / .0025), suspension || (physical && axleFit) ? -travel.plate : travel.plate);
           // In VR you sit in the driver's seat yourself: no driver there, and your eyes where theirs would be.
           if (c === VR_SEAT.car && fit.layout) {
             const l = fit.layout, pelvis = l[3] + 0.205;
@@ -2914,7 +2987,7 @@ export class CarPool {
           if (c.entryDriver) this.rememberDriver(c,0,seat);
         }
         if (under && !c.two && shaded < UNDER.most) {
-          under.setMatrixAt(shaded++, this.m.copy(suspension ? this.springGround : d.matrix).multiply(this.life.makeScale(c.spec.L, 1, c.spec.W)));
+          under.setMatrixAt(shaded++, this.m.copy(suspension || physical ? this.springGround : d.matrix).multiply(this.life.makeScale(c.spec.L, 1, c.spec.W)));
           sum += c.x * 1.37 + c.y * 0.73 + c.h * 11 + d.matrix.elements[13] * 3.1;
         }
         let paint = this.colours.get(c.paint);

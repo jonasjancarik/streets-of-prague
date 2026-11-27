@@ -7,8 +7,8 @@ from): manhole covers, storm drains, hydrants, phone boxes and traffic lights. C
 
 A tile gets `utility`: [x, y, kind] in local metres for each cover, drain, hydrant and
 phone box in it (layers.assemble). The game draws the covers and drains flat on the
-ground, all of a tile's in one mesh (src/ground.ts), and the hydrants and phone boxes
-with the other street furniture (src/furniture.ts). The traffic lights' poles are kept
+ground, all of a tile's in one mesh (src/ground.ts). The standing hydrants and phone boxes
+are kept in the data but the game leaves them out (src/map/utility.ts). The traffic lights' poles are kept
 for the whole area in the layer's `signals`; build_signals.py stands each junction
 light on the surveyed pole nearest to where it would put one.
 """

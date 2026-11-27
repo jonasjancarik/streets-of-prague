@@ -29,6 +29,7 @@ import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { checkIn } from './game-lock.mjs';
+import { gpuFlags } from './gpu-flags.mjs';
 
 const [cmd = 'help', ...rest] = process.argv.slice(2);
 const args = {}, pos = [];
@@ -71,7 +72,7 @@ async function openGame({ show = false } = {}) {
   if (!pw) throw new Error('Playwright not found; set PLAYWRIGHT_PATH');
   const browser = await pw.chromium.launch({
     headless: !show, channel: args.browser === 'chromium' ? undefined : 'chrome',
-    args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-webgpu'],
+    args: gpuFlags(),
   });
   const [width, height] = String(args.size || '1280x800').split('x').map(Number);
   const ctx = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1 });

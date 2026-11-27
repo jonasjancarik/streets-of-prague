@@ -201,7 +201,7 @@ def convert_file(source: Path, output: Path) -> list[dict]:
 def migrate(area_root: Path, output_root: Path, dry_run: bool = False) -> int:
     if output_root.resolve().is_relative_to(area_root.resolve()):
         raise ValueError("output area root must be separate from the source area")
-    listing = json.loads((area_root / "landmarks.json").read_text())
+    listing = json.loads((area_root / "landmarks.json").read_text(encoding="utf-8"))
     staged, failures = [], []
     for entry in listing:
         source = area_root / entry["file"]
@@ -209,7 +209,7 @@ def migrate(area_root: Path, output_root: Path, dry_run: bool = False) -> int:
             failures.append(f"{entry.get('name')}: unsafe asset path")
             staged.append(entry.copy())
             continue
-        target_file = entry["file"] if entry["file"].endswith(".warm-v1.glb") else str(Path(entry["file"]).with_suffix(".warm-v1.glb"))
+        target_file = entry["file"] if entry["file"].endswith(".warm-v1.glb") else Path(entry["file"]).with_suffix(".warm-v1.glb").as_posix()
         target = output_root / target_file
         if not target.resolve().is_relative_to(output_root.resolve()):
             failures.append(f"{entry.get('name')}: unsafe output path")
@@ -228,7 +228,7 @@ def migrate(area_root: Path, output_root: Path, dry_run: bool = False) -> int:
             staged.append(entry.copy())
     if not dry_run:
         output_root.mkdir(parents=True, exist_ok=True)
-        (output_root / "landmarks.json").write_text(json.dumps(staged, ensure_ascii=False))
+        (output_root / "landmarks.json").write_text(json.dumps(staged, ensure_ascii=False), encoding="utf-8")
     if failures:
         for failure in failures:
             print(f"FAILED {failure}", file=sys.stderr)

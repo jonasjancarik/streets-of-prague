@@ -10,13 +10,13 @@ import {
   materialColor, fract, floor, mod, dot, atan, sin, cos, mix, smoothstep, step, length, abs, max, min, clamp, normalize, dFdx, dFdy, distance, select, cross, sqrt, cameraPosition, reflect, pow, uniform, renderGroup, uv,
 } from 'three/tsl';
 import { passageAtlas } from '../passageMaterial.ts';
-import { facadeFinishes, shopReady } from '../facadeFinishes.ts';
+import { facadeFinishes, shopReady, SIGN_WORDS } from '../facadeFinishes.ts';
 import { STRIPS, STRIPS_ON, onStrips, KINDS } from '../reflections.ts';
-import { FACADE_ATLAS, FACADE_ON, STREET_FACADE, F_SURFACE as S, BLANK, F_BAY as BAY_WIDTH, F_UP as UP, F_DOOR as DOOR, F_WALL as WALL, F_MOD as MOD, F_ELEVATION, INTERWAR_BAY, F_PANEL, F_STREET_WIDTH, F_GROUND as GROUND, F_STOREY as STOREY, STOREY_FIT, ROWS_STEP } from '../facades.ts';
-import { WINDOWS, ROOF_DETAIL, ROOF_CLUTTER, LANDMARK_ROOF as R, SUN_DIR, SUN_LIGHT } from '../shading.ts';
+import { FACADE_ATLAS, FACADE_ON, STREET_FACADE, F_SURFACE as S, BLANK, F_BAY as BAY_WIDTH, F_UP as UP, F_DOOR as DOOR, F_WALL as WALL, F_MOD as MOD, F_ELEVATION, INTERWAR_BAY, F_PANEL, F_STREET_WIDTH, F_GROUND as GROUND, F_STOREY as STOREY, STOREY_FIT, ROWS_STEP, FLOWERS } from '../facades.ts';
+import { WINDOWS, ROOF_DETAIL, ROOF_CLUTTER, LANDMARK_ROOF as R, SUN_DIR, SUN_LIGHT, BARE } from '../shading.ts';
 import { lampLit } from './lamps.ts';
 import { EDGE, EDGE_STEP } from '../map/roofEdges.ts';
-import { type N, follow, followColor, addPort, uCut, uDirt, uWet, uSnow, vnoise, fbm, fbm2, blocks, hash12, skyAmbient } from './common.ts';
+import { type N, follow, followColor, addPort, uCut, uDirt, uWet, uSnow, vnoise, fbm, fbm2, blocks, hash12, colourSeed, skyAmbient } from './common.ts';
 import { DOME } from '../sky.ts';
 import { CLOSE_RELIEF } from '../streetSurface.ts';
 
@@ -42,10 +42,50 @@ const rowRelief = (n: N, down: N, along: N, lip: number): N => {
   const reach: N = clamp(facing.negate().div(onto).mul(lip), 0, 0.6);
   const shadow: N = float(1).sub(smoothstep(reach.mul(0.6), reach.add(0.02), along)).mul(step(0.01, reach));
   const lit: N = smoothstep(0.82, 0.97, along).mul(max(facing, 0));
-  return float(1).sub(shadow.mul(RELIEF.shade)).add(lit.mul(RELIEF.light));
+  // Tucked under the row above, the top of a row gets less of the sky whatever the sun
+  // does: a dark line that keeps the rows on a slope facing the sun.
+  const tucked: N = float(1).sub(smoothstep(0, 0.12, along)).mul(RELIEF.tucked);
+  return float(1).sub(shadow.mul(RELIEF.shade)).add(lit.mul(RELIEF.light)).sub(tucked);
 };
-// How dark a tile's edge shadow is and how bright its lit edge, at most.
-const RELIEF = { shade: 0.42, light: 0.3 };
+// rowRelief averaged down a row, for when the rows are too fine to draw: a slope with the
+// sun behind it stays darker by its rows' shadows, and one facing it a little lighter, so
+// zooming out doesn't bleach the roofs flat. (The shadow covers about reach × 0.8 + 0.01 of
+// a row, the lit edge 0.105, the tucked line 0.06.)
+const rowReliefMean = (n: N, down: N, lip: number): N => {
+  const flat: N = vec3(down.x, 0, down.y.negate());
+  const d3: N = normalize(flat.sub(n.mul(dot(flat, n))));
+  const facing: N = dot(uSunDir, d3), onto: N = max(dot(uSunDir, n), 0.12);
+  const reach: N = clamp(facing.negate().div(onto).mul(lip), 0, 0.6);
+  const shadow: N = reach.mul(0.8).add(0.01).mul(step(0.01, reach));
+  return float(1).sub(shadow.mul(RELIEF.shade)).add(max(facing, 0).mul(0.105 * RELIEF.light)).sub(0.06 * RELIEF.tucked);
+};
+// How dark a tile's edge shadow is and how bright its lit edge, at most, and the top of a
+// row tucked under the one above.
+const RELIEF = { shade: 0.42, light: 0.3, tucked: 0.2 };
+// A line `width` m wide, `dist` m from the pixel, as a pixel `wpWidth` across sees it:
+// one too thin to draw is drawn wider and fainter, keeping its share of the pixel, instead
+// of dropped, so a roof's seams and laps stay as you zoom out. It fades out only when lines
+// `period` m apart come too close to draw apart (they'd shimmer).
+const thinLine = (dist: N, width: number, wpWidth: N, period: number): N => {
+  const w: N = max(wpWidth.mul(0.75), width);
+  return float(1).sub(smoothstep(w.mul(0.35), w, dist)).mul(float(width).div(w)).mul(float(1).sub(smoothstep(period * 0.3, period * 0.6, wpWidth)));
+};
+// Tiles of a roof aren't all alike: some patches newer, some more weathered, in streaks
+// along the rows. Fixed to the roof (q: across and down the slope, m), and broad enough to
+// stay when the tiles and rows are too fine to draw. The finer part fades by `rowMap`, a
+// row's depth on the map.
+const tileMottle = (q: N, wpWidth: N, rowMap: N): N => {
+  const fine: N = vnoise(vec2(q.x.div(1.4), q.y.div(0.6)).add(3.7)).sub(0.5).mul(0.2);
+  const broad: N = vnoise(vec2(q.x.div(4.5), q.y.div(1.8)).add(11.3)).sub(0.5).mul(0.16);
+  const fineFade: N = float(1).sub(smoothstep(rowMap.mul(1.2), rowMap.mul(2.6), wpWidth));
+  return float(1).add(fine.mul(fineFade)).add(broad);
+};
+// How much of a row of beaver tails, at `fy` down it, is the gap between the round ends
+// above (beaverEnd), where the layer underneath shows, darker.
+const beaverGap = (fy: N): N => {
+  const a: N = clamp(float(1).sub(fy).div(0.32), 0, 1).oneMinus();
+  return float(1).sub(sqrt(max(0, float(1).sub(a.mul(a)))));
+};
 const uSunLight: N = followColor(SUN_LIGHT);
 const uStreetFacade = follow(STREET_FACADE);
 const uFacadeOn = follow(FACADE_ON), uWindows = follow(WINDOWS), uRoofDetail = follow(ROOF_DETAIL), uRoofClutter = follow(ROOF_CLUTTER);
@@ -117,14 +157,26 @@ function beaverTiles(c0: N, wp: N, n: N, wpWidth: N) {
   const patch = vnoise(vec2(col, row).mul(0.23));
   // (Single tiles differ more than patches of them do: a roof of one colour in broad
   // blotches read as camouflage from above.)
+  // (A row of tiles laid together a shade of its own, from a repair or a batch.)
+  const rowTone = hash12(vec2(row, 4.7)).mul(0.08).add(0.96);
   const t = c0.mul(h.mul(0.36).add(0.78)).mul(float(1.05).sub(smoothstep(0.55, 0.85, patch).mul(0.13))).toVar();
   t.mulAssign(mix(vec3(1.06, 0.97, 0.9), vec3(0.9, 0.94, 1), fract(h.mul(7.3))));
   t.mulAssign(smoothstep(0, 0.6, fy).mul(0.1).add(0.92));
   t.mulAssign(mix(float(1), mix(0.45, 0.72, under), top.oneMinus()));
   t.mulAssign(mix(0.7, 1, smoothstep(0, 0.05, min(fx, fx.oneMinus()))));
   // Each row stands proud of the one below it: lit and shaded by where the sun is.
-  t.mulAssign(rowRelief(n, down, fy, 0.16));
-  const c = mix(c0.mul(0.95), t, fade(wpWidth, 0.18)).toVar();
+  const relief = rowRelief(n, down, fy, 0.16);
+  t.mulAssign(relief.mul(rowTone));
+  // Further off, the tiles across a row are too fine to draw but the rows, deeper, aren't
+  // yet: the row as its tiles average out (their colour, joints, and the gaps between the
+  // round ends), with its shadow. Further still, all of that averaged.
+  const mean = c0.mul(vec3(0.95, 0.925, 0.92));
+  const rows = mean.mul(smoothstep(0, 0.6, fy).mul(0.1).add(0.92)).mul(float(1).sub(beaverGap(fy).mul(0.42))).mul(relief).mul(rowTone);
+  const far = mean.mul(0.99 * 0.971).mul(rowReliefMean(n, down, 0.16));
+  const rowMap = max(n.y, 0.3).mul(0.3);
+  const tilesSeen = float(1).sub(smoothstep(0.045, 0.126, wpWidth));
+  const rowsSeen = float(1).sub(smoothstep(rowMap.mul(0.3), rowMap.mul(0.7), wpWidth));
+  const c = mix(far, mix(rows, t, tilesSeen), rowsSeen).mul(tileMottle(q.mul(vec2(0.18, 0.3)), wpWidth, rowMap)).toVar();
   c.mulAssign(fbm(wp.mul(0.22)).mul(0.14).add(0.93));
   return mix(c, c.mul(vec3(0.86, 0.9, 0.8)), smoothstep(0.62, 0.75, fbm(wp.mul(0.09).add(4))).mul(0.45));
 }
@@ -137,13 +189,21 @@ function roofTiles(c0: N, wp: N, n: N, wpWidth: N, slateGiven?: N) {
   const q = vec2(dot(wp, across), dot(wp, down).div(max(n.y, 0.3)));
   const b = blocks(q, size.x, size.y);
   const row = fract(q.y.div(size.y));
-  const d = float(1).sub(smoothstep(size.y.mul(0.2), size.y.mul(0.7), wpWidth));
+  const rowTone = hash12(vec2(floor(q.y.div(size.y)), 4.7)).mul(0.08).add(0.96);
   const t = c0.mul(b.y.mul(0.2).add(0.9)).toVar();
   t.mulAssign(mix(vec3(1.07, 0.95, 0.86), vec3(0.95, 1, 1.05), fract(b.y.mul(7.3))));
   t.mulAssign(smoothstep(0, 0.4, row).mul(0.16).add(0.86));
   t.assign(mix(t.mul(0.76), t, smoothstep(0, 0.012, b.x)));
-  t.mulAssign(rowRelief(n, down, row, 0.14));
-  const c = mix(c0.mul(0.95), t, d).toVar();
+  const relief = rowRelief(n, down, row, 0.14);
+  t.mulAssign(relief.mul(rowTone));
+  // Further off, the rows without their tiles, then all of it averaged (as beaverTiles).
+  const mean = c0.mul(vec3(1.0, 0.965, 0.945)).mul(0.98);
+  const rows = mean.mul(smoothstep(0, 0.4, row).mul(0.16).add(0.86)).mul(relief).mul(rowTone);
+  const far = mean.mul(0.988).mul(rowReliefMean(n, down, 0.14));
+  const rowMap = max(n.y, 0.3).mul(size.y);
+  const tilesSeen = float(1).sub(smoothstep(size.x.mul(0.25), size.x.mul(0.7), wpWidth));
+  const rowsSeen = float(1).sub(smoothstep(rowMap.mul(0.3), rowMap.mul(0.7), wpWidth));
+  const c = mix(far, mix(rows, t, tilesSeen), rowsSeen).mul(tileMottle(q, wpWidth, rowMap)).toVar();
   c.mulAssign(fbm(wp.mul(0.22)).mul(0.16).add(0.92));
   return mix(c, c.mul(vec3(0.86, 0.9, 0.8)), smoothstep(0.62, 0.75, fbm(wp.mul(0.09).add(4))).mul(0.45));
 }
@@ -171,7 +231,10 @@ function sheetRoof(c0: N, wp: N, n: N, wpWidth: N, copper: N) {
   t.mulAssign(float(1).add(smoothstep(0.93, 0.98, seam).mul(max(rib.negate(), 0)).mul(0.3)).sub(float(1).sub(smoothstep(0.03, 0.16, seam)).mul(max(rib.negate(), 0)).mul(0.28)));
   t.assign(mix(t, t.mul(vec3(0.82, 1.1, 1.02)).add(vec3(0.02, 0.06, 0.05)), copper.mul(smoothstep(0.45, 0.8, fbm(wp.mul(0.25)))).mul(0.7)));
   const sheen = fbm(wp.mul(0.04)).mul(0.1).add(0.95);
-  return mix(mix(c0, tone, fade(wpWidth, 0.6)), t, fade(wpWidth, 0.3)).mul(sheen);
+  // Further off, each seam a thin dark line between the pans (their lit and shaded sides
+  // run together), until the seams are too close to draw apart.
+  const lines = mix(c0, tone, fade(wpWidth, 0.6)).mul(float(1).sub(thinLine(min(seam, seam.oneMinus()).mul(0.6), 0.03, wpWidth, 0.6).mul(0.25)));
+  return mix(lines, t, fade(wpWidth, 0.3)).mul(sheen);
 }
 // A mansard's steep lower slope (mansardWindows in shading.ts): a window in every bay of
 // about 3.2 m in a light frame.
@@ -215,16 +278,22 @@ function flatAge(c: N, wp: N, q: N, wpWidth: N, seed: N) {
 function flatRoof(c: N, wp: N, q: N, wpWidth: N, seed: N) {
   const t = c.mul(fbm(wp.mul(0.5)).mul(0.22).add(0.86)).toVar();
   t.mulAssign(float(1).add(vnoise(wp.mul(7)).sub(0.5).mul(0.22).mul(fade(wpWidth, 0.15))).add(vnoise(wp.mul(23).add(5)).sub(0.5).mul(0.2).mul(fade(wpWidth, 0.05))));
+  // (Gravel raked and trodden unevenly: a grain between the stones and the broad patches
+  // that's still there when the stones are too small to draw.)
+  t.mulAssign(float(1).add(vnoise(wp.mul(2.2).add(9.1)).sub(0.5).mul(0.12).mul(fade(wpWidth, 0.45))));
   return flatAge(t, wp, q, wpWidth, seed);
 }
 // Bitumen rolls with their laps, and patches over old repairs (bitumenRoof in shading.ts).
 function bitumenRoof(c: N, wp: N, q: N, wpWidth: N, seed: N) {
   const row = floor(q.y), along = q.x.div(8).add(hash12(vec2(row, seed.mul(91))));
-  const t = c.mul(hash12(vec2(row, floor(along)).add(seed.mul(13))).mul(0.18).add(0.91)).toVar();
+  const rollTone = hash12(vec2(row, floor(along)).add(seed.mul(13))).mul(0.18).add(0.91);
+  const t = c.mul(rollTone).toVar();
   const s = fract(q.y), e = fract(along).mul(8);
   t.mulAssign(float(1).sub(float(1).sub(smoothstep(0.02, 0.08, s)).mul(0.3)).add(smoothstep(0.08, 0.14, s).mul(float(1).sub(smoothstep(0.14, 0.3, s))).mul(0.06)));
   t.mulAssign(float(1).sub(float(1).sub(smoothstep(0, 0.05, min(e, float(8).sub(e)))).mul(0.12)));
-  t.assign(mix(c, t, fade(wpWidth, 0.4)));
+  // Further off, the rolls a shade each and their laps thin dark lines, a metre apart.
+  const rolls = mix(c, c.mul(rollTone), fade(wpWidth, 1)).mul(float(1).sub(thinLine(min(s, s.oneMinus()), 0.05, wpWidth, 1).mul(0.3)));
+  t.assign(mix(rolls, t, fade(wpWidth, 0.4)));
   const cq: N = q.div(vec2(5, 4)).add(seed.mul(3.7)), id: N = floor(cq), f: N = fract(cq);
   const hx = hash12(id), hy = hash12(id.add(7.3)), hz = hash12(id.add(19.1));
   const lo = vec2(hx, hy).mul(0.3).add(0.1), hi = min(lo.add(0.25).add(vec2(hy, hz).mul(0.3)), 0.95);
@@ -239,11 +308,13 @@ function bitumenRoof(c: N, wp: N, q: N, wpWidth: N, seed: N) {
 function membraneRoof(c: N, wp: N, q: N, wpWidth: N, seed: N) {
   const row = floor(q.y.div(2)), s = fract(q.y.div(2)).mul(2), along = q.x.div(18).add(hash12(vec2(row, seed.mul(37))));
   const e = fract(along).mul(18);
-  const t = c.mul(hash12(vec2(row, floor(along)).add(seed.mul(11))).mul(0.08).add(0.96)).toVar();
+  const sheetTone = hash12(vec2(row, floor(along)).add(seed.mul(11))).mul(0.08).add(0.96);
+  const t = c.mul(sheetTone).toVar();
   // The weld, the sheet's edge over it, and dirt caught along it.
   const weld = float(1).sub(smoothstep(0.015, 0.045, s)), edge = float(1).sub(smoothstep(0, 0.015, s));
   t.mulAssign(float(1).add(weld.mul(0.12)).sub(edge.mul(0.22)));
-  t.assign(mix(c, t, fade(wpWidth, 0.25)));
+  // (Further off the sheets keep their shades; a weld and its edge even out.)
+  t.assign(mix(mix(c, c.mul(sheetTone), fade(wpWidth, 2)), t, fade(wpWidth, 0.25)));
   t.mulAssign(float(1).sub(vnoise(wp.mul(2)).mul(0.06).add(0.12).mul(float(1).sub(smoothstep(0.04, 0.16, s))).mul(fade(wpWidth, 0.6))));
   t.mulAssign(float(1).sub(float(1).sub(smoothstep(0, 0.06, min(e, float(18).sub(e)))).mul(0.14).mul(fade(wpWidth, 0.4))));
   t.mulAssign(vnoise(wp.mul(1.3)).mul(0.06).add(0.97).add(vnoise(wp.mul(6).add(2)).sub(0.5).mul(0.05).mul(fade(wpWidth, 0.1))));
@@ -308,7 +379,7 @@ function pavingRoof(c: N, wp: N, wpWidth: N) {
 // number comes from its colour. Flat roofs get only a little.
 // more: 0-1, thicker moss (ROOF_CLUTTER, on clay tiles).
 function roofWeather(c: N, c0: N, wp: N, n: N, wpWidth: N, more: N = float(0)) {
-  const seed = fract(sin(dot(c0, vec3(127.1, 311.7, 74.7))).mul(43758.5453));
+  const seed = colourSeed(c0);
   const age = smoothstep(0.2, 0.9, fract(seed.mul(7.3).add(vnoise(wp.mul(0.02)).mul(0.35)))).mul(0.75).add(0.25);
   const flat = smoothstep(0.85, 0.97, n.y);
   const down = normalize(vec2(n.x, n.z.negate()));
@@ -510,7 +581,7 @@ const buildingColor = Fn(() => {
   If(roofWin, () => { c.assign(roofWindow(f)); }).ElseIf(bn.y.greaterThan(0.97).and(f.w.lessThan(0.5).or(f.w.greaterThan(4.5))), () => {
     If(uRoofDetail.greaterThan(0.5), () => {
       const m = floor(f.w.add(0.001)).toVar();
-      const seed = fract(sin(dot(base, vec3(127.1, 311.7, 74.7))).mul(43758.5453));
+      const seed = colourSeed(base);
       const q = roofAxes(bwp, f.w);
       const r = vec3(0).toVar();
       If(m.greaterThan(4.5).and(m.lessThan(5.5)), () => {
@@ -641,7 +712,9 @@ const windowGlow = Fn(() => {
   }).ElseIf(uWindows.greaterThan(0.005).and(bn.y.greaterThan(0.15)).and(bn.y.lessThan(0.5)).and(f.z.greaterThan(0.1)), () => {
     // A mansard's windows (mansardGlass).
     const cell = floor(f.x.div(f.z).mul(max(1, floor(f.z.div(3.2).add(0.5)))));
-    const lit = step(fHash(cell.add(f.z.mul(0.37)), float(7)), uWindows);
+    // (The face's length rounded first, as in shading.ts, so windows don't switch on and off
+    // as the camera moves.)
+    const lit = step(fHash(cell.add(floor(f.z.mul(8).add(0.5)).mul(0.04625)), float(7)), uWindows);
     g.assign(mix(vec3(1, 0.62, 0.3), vec3(1, 0.8, 0.55), fHash(float(7), cell)).mul(lit).mul(mansardGlass(f, 0)).mul(0.55));
   });
   // Glints: a roof window's glass and a metal roof's pans flash the sun at you where they
@@ -732,6 +805,12 @@ const shopAtlas = texture(shopStandIn).onRenderUpdate(() => { shopAtlas.value = 
 
 // A shallow display bay behind the real mullions. Trace to the first surface
 // inside it. All panes in a bay look into the same room as the player walks by.
+// After dark a shop that has closed (shopInterior's pick 10 below .33) has its roller
+// shutter down three times in four: ribbed grey steel over the window. 1 where it is down.
+function shopShutter(f: N): N {
+  const column = floor(f.x.div(f.z.div(fBays(f)).mul(2))), seed = floor(fract(f.w).mul(32768));
+  return smoothstep(.01, .09, uWindows).mul(float(1).sub(step(.33, streetPick(seed, column, 10)))).mul(step(streetPick(seed, column, 24), .75));
+}
 function shopInterior(f: N, eye: N, normal: N) {
   // Two neighbouring bays share one stockroom: the next window reveals the
   // other half of the shelves. The wall between them stays opaque.
@@ -760,6 +839,7 @@ function shopInterior(f: N, eye: N, normal: N) {
   const night = smoothstep(.01, .09, uWindows);
   return mix(lining, stock, rear).mul(mix(.68, mix(.07, .6, open), night));
 }
+const uBareBox = follow(BARE);
 const streetWallColor = Fn(() => {
   const f: N = facadeAttr().toVar(), info: N = attribute('detail', 'vec4');
   const kind = floor(info.z.add(.5)), layer = floor(info.x.add(.5));
@@ -803,14 +883,19 @@ const streetWallColor = Fn(() => {
   If(kind.equal(S.metalFrame), () => { wall.assign(vec3(.66,.69,.68)); });
   If(kind.equal(S.balconyGlass), () => { wall.assign(select(layer.equal(125), vec3(.16,.21,.24), vec3(.046,.070,.083))); });
   If(kind.equal(S.shopPaint).or(kind.equal(S.canvas)), () => { wall.assign(base); });
+  // A window box's plants (FLOWERS) are gone to bare earth while the trees are bare.
+  If(kind.equal(S.shopPaint).and(abs(info.w.sub(FLOWERS)).lessThan(.5)), () => { wall.assign(mix(wall, vec3(.20, .15, .11), uBareBox)); });
   If(kind.equal(S.shopSign), () => {
     const u = clamp(float(.5).sub(fract(f.x.div(bay))).mul(1.55).add(.5), .004, .996);
-    const v = float(3).sub(floor(info.w)).add(fract(info.w)).mul(.25);
+    const v = float(SIGN_WORDS.length - 1).sub(floor(info.w)).add(fract(info.w)).div(SIGN_WORDS.length);
     const ink = texture(facadeFinishes.signs!, vec2(u, v)).r;
     wall.assign(mix(base, vec3(.81, .72, .53), ink));
   });
   If(kind.equal(S.brass), () => { wall.assign(vec3(.131, .102, .064)); });
-  If(kind.equal(S.display).and(uShopReady.greaterThan(.5)), () => { wall.assign(vec3(.010, .014, .016)); });
+  If(kind.equal(S.display).and(uShopReady.greaterThan(.5)), () => {
+    const steel = mix(vec3(.24, .25, .245), vec3(.38, .39, .385), smoothstep(.18, .32, abs(fract(f.y.mul(14)).sub(.5))));
+    wall.assign(mix(vec3(.010, .014, .016), steel, shopShutter(f)));
+  });
   If(kind.equal(S.grilleGlass), () => { wall.assign(vec3(.022, .032, .040)); });
   If(kind.equal(S.iron), () => { wall.assign(vec3(.031, .034, .033)); });
   If(kind.greaterThanEqual(S.reveal).and(kind.lessThanEqual(S.plinth)), () => {
@@ -863,7 +948,7 @@ const streetGlassLight = Fn(() => {
       const stock = shopInterior(facadeAttr(), view.negate(), n);
       const sky = mix(uHorizon, uZenith, smoothstep(0, 1, ray.y))
         .mul(smoothstep(.01, .40, ray.y)).mul(fresnel).mul(attribute('sky', 'float'));
-      result.assign(stock.mul(float(1).sub(fresnel)).add(reflection).add(sky));
+      result.assign(stock.mul(float(1).sub(fresnel)).add(reflection).add(sky).mul(float(1).sub(shopShutter(facadeAttr()))));
     }).Else(() => { result.assign(buildingGraph.glow.mul(.72).add(reflection)); });
   });
   return result;

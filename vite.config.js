@@ -99,6 +99,11 @@ export default defineConfig({
   server: {
     allowedHosts,
     port: Number(process.env.PORT || 5191),
+    // SOP_STILL=1: no live reloading. A game open from this server stays as it loaded
+    // while files change (it gets them as they are on its next load). For scene runs in
+    // a checkout other sessions are editing: every edit reloads a watched page, and the
+    // run starts over with a 30–70 s load (docs/handbook.md, "Scenes in a busy checkout").
+    hmr: process.env.SOP_STILL ? false : undefined,
     // Match each folder itself as well as its contents, with either path separator.
     watch: { ignored: (file) => {
       const path = file.replaceAll('\\', '/');

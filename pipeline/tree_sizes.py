@@ -88,7 +88,7 @@ def processing():
 
 def placed_tile(area, i, j):
     p = gc.OUT / f"{area}_now" / "tiles" / f"{i}_{j}.json"
-    return json.loads(p.read_text()) if p.exists() else {}
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
 
 
 def canopy(area, meta, t):

@@ -118,7 +118,7 @@ def footprints(area: str, ids: list[str]):
         if i in MONUMENTS and all(w <= lon <= e and s_ <= lat <= n for lon, lat in MONUMENTS[i]):
             polys[i] = Polygon([local.transform(lon, lat) for lon, lat in MONUMENTS[i]])
     for f in (OUT / f"{area}_now" / "tiles").glob("*.json"):
-        for b in json.loads(f.read_text())["buildings"]:
+        for b in json.loads(f.read_text(encoding="utf-8"))["buildings"]:
             if b["id"] in ids and b["id"] not in polys:
                 rings = b["rings"]
                 polys[b["id"]] = Polygon(rings[0], rings[1:])
@@ -165,7 +165,7 @@ def bake(area: str, name: str, parts, clean: np.ndarray, out: Path, crs: str):
     write_glb(keep / f"{name}.mesh.glb", parts)
     v = clean.reshape(-1, 3)
     (keep / f"{name}.lod3.obj").write_text("".join(f"v {a:.3f} {b:.3f} {c:.3f}\n" for a, b, c in v)
-                                           + "".join(f"f {i} {i + 1} {i + 2}\n" for i in range(1, len(v), 3)))
+                                           + "".join(f"f {i} {i + 1} {i + 2}\n" for i in range(1, len(v), 3)), encoding="utf-8")
     run_blender(area, name, out, crs)
 
 
@@ -176,7 +176,7 @@ def run_blender(area: str, name: str, out: Path, crs: str):
     here = Transformer.from_crs("EPSG:4326", crs, always_xy=True)
     spots = ";".join("{:.2f},{:.2f},{}".format(*here.transform(lon, lat), r) for lon, lat, r in PAINT_OVER.get(name, []))
     r = subprocess.run([BLENDER, "-b", "--factory-startup", "-P", str(Path(__file__).with_name("landmark_bake.py")),
-                        "--", str(low), str(high), str(out), "5", str(sources), spots or "-"], capture_output=True, text=True)
+                        "--", str(low), str(high), str(out), "5", str(sources), spots or "-"], capture_output=True, text=True, encoding="utf-8")
     said = [l for l in r.stdout.splitlines() if l.startswith("clean model:") or "texels of walls" in l or "Error" in l]
     if r.returncode or not out.exists():
         raise SystemExit(f"{name}: Blender failed\n{r.stdout[-2000:]}\n{r.stderr[-2000:]}")
@@ -329,10 +329,10 @@ def main():
     ap.add_argument("--rebake", action="store_true", help="bake again from the inputs kept in pipeline/.cache/landmarks, "
                     "for a change in the bake; the footprints in landmarks.json stay as they are")
     a = ap.parse_args()
-    meta = json.loads((LAYERS / a.area / "meta.json").read_text())
-    index = json.loads((OUT / f"{a.area}_now" / "index.json").read_text())
+    meta = json.loads((LAYERS / a.area / "meta.json").read_text(encoding="utf-8"))
+    index = json.loads((OUT / f"{a.area}_now" / "index.json").read_text(encoding="utf-8"))
     listing = OUT / f"{a.area}_now" / "landmarks.json"
-    done = {l["name"]: l for l in json.loads(listing.read_text())} if listing.exists() else {}
+    done = {l["name"]: l for l in json.loads(listing.read_text(encoding="utf-8"))} if listing.exists() else {}
     for name in a.names or LANDMARKS:
         if a.rebake:
             if name in done:
@@ -346,7 +346,7 @@ def main():
             if a.names:
                 raise SystemExit(e)
             print(f"{name}: skipped, {e}")
-    listing.write_text(json.dumps(list(done.values())))
+    listing.write_text(json.dumps(list(done.values())), encoding="utf-8")
 
 
 if __name__ == "__main__":

@@ -74,6 +74,8 @@ export class Season {
   // Fruit trees in flower: the second half of April and early May.
   get blossom() { return ramp(this.day, 103, 113) * (1 - ramp(this.day, 124, 136)); }
   // The light green of new leaves and spring grass: gone by July.
+  // Advent to Epiphany: the Christmas lights are up (christmasLights.ts). 1 or 0.
+  get festive() { return this.day >= 330 || this.day <= 6 ? 1 : 0; }
   get fresh() { return ramp(this.day, 80, 100) * (1 - ramp(this.day, 140, 190)); }
   // Parched grass: through July and August, gone by October.
   get dry() { return ramp(this.day, 182, 235) * (1 - ramp(this.day, 245, 275)); }

@@ -2123,3 +2123,77 @@ Square at Medium (`--dpr tier`), third person on foot, effects 12 m ahead of the
 - The phone switched between two states during the session (JavaScript ~42 ms or ~62 ms a
   frame; 1.5 GB in swap, many tabs from other projects). Windows taken in the slow state
   hide GPU costs; the flames-only run landed there and was inconclusive.
+
+## 27 November 2026 — the life-size people's shader builds
+
+Counted on this Windows machine in headless Chrome (WebGPU through `?gl2`, software
+rendering, so the counts, not the frame times, are the evidence), High, Old Town Square.
+
+- **The colourways' dye** had a shader per avatar, up close and in the street crowd (up to
+  28, each the first time an outfit came near). One shader each now, the regions uniforms
+  read from the mesh being drawn (`src/webgpu/avatars.ts`): builder states 412 → 383 after
+  half a minute and a lineup of all fourteen avatars.
+- **The street crowd** loads once you're on the street. Its first frame built 15–18 shaders
+  on WebGPU. Its batches are now compiled out of the scene and then each drawn once, shrunk
+  to nothing, one a frame, before anyone walks in it (`src/streetCrowd.ts`): 0–2 builds in
+  its first frame, 1–4 a frame over the warm-up. `compileAsync` alone didn't cover it: each
+  batch has builds of its own, and the shadow pass isn't compiled.
+- **Stepping into the street mid-game**, nearly all the avatars' builds were the sun's shadow:
+  three.js gives each material with a map a shadow colour of its own (`_getShadowNodes`,
+  the map's alpha for an alpha test), about six builds for each avatar as it first comes
+  near. The opaque avatar materials (body, head, dyed body) now share the plain shadow
+  (`configureRenderer`); the hair, alpha-tested, keeps its own. Over 45 s after stepping
+  out, avatar and crowd builds 101–109 → 45, shadow builds 93–101 → 37, the most in one
+  frame 18–21 → 7–12. A paused frame with and without differs less than two shots of the
+  same mode do.
+- **The hair's shadow** then shares it too, casting its whole cards instead of the
+  alpha-tested strands. Estimated beforehand at 15–20 builds saved; measured 45–46 → 27
+  (hair shadow builds 19 → 3). The 14 left are the street crowd's shadows; the most in
+  one frame stayed 7–10. A close paused frame of four people in low sun differed less
+  than two shots of the same build (4167 against 5106 pixels).
+- **What made the busiest frames** then: not the crowd, whose 15 builds come one a frame
+  over its warm-up, but the first frame with people up close (5–10 builds, all theirs)
+  and another 2–3 s later when an avatar with a variant not yet built came near.
+- **Warming every avatar as it loads** (compiled, then drawn shrunk to nothing for the
+  shadow pass) before anyone is shown in it life size. Tried first with shadows of their
+  own, it only moved the same builds a couple of seconds sooner (9–10 against 11 a frame).
+  With the shared ones: 27 → 21 builds, the most in one frame 5–10 → 3.
+- **A trap in measuring frame times:** `t.wait(s)` fast-forwards, 60 simulation steps to
+  each drawn frame, so every frame it draws is a second of the street simulated at once
+  (150–400 ms). Frame times read while it runs say nothing about the game; wait in real
+  time instead (`setTimeout`). The counts above were taken under it: the totals hold,
+  but with one drawn frame a simulated second the most in one frame may read high.
+- **Stepping into the street, in real time** (this machine's RTX 5060 Ti, native WebGPU;
+  scene.mjs has drawn on the GPU since `gpu-flags.mjs`; 16.7 ms a frame standing still).
+  About 3.3 s before it holds 60 fps:
+  - first frame 267 ms: 17 shader builds (48 ms of JavaScript), 15 render pipelines and
+    22 shader modules, nearly all for things already in the scene but not drawn from
+    above (ground layers, traffic signs, advertising columns, post boxes, garden fences,
+    their shadows), and the background sphere;
+  - second frame 300 ms with the main thread idle: the GPU process compiling those;
+  - third frame 250 ms: textures decoded on the main thread as they were uploaded
+    (`copyExternalImageToTexture` with an `<img>`): `cloud-bank.webp` 87 ms, the street
+    surfaces, fences, ironwork, shop displays and passage finishes 15–30 ms each, 210 ms
+    in the one frame;
+  - then about 2.5 s of 50–100 ms frames as the street level streams in: more shader
+    builds and shadows, tile meshes (`tiles.ts` make), the street crowd's and avatars'
+    models and compiles, occlusion, garbage collection. No one of them dominates.
+- **Textures as ImageBitmaps on WebGPU** (`configureRenderer` replaces TextureLoader's
+  `load`): decoded off the main thread as they load, `cloud-bank.webp` then uploads in
+  1.3 ms (from 87) and the asphalt in 0.3 (from 26); `img.decode()` beforehand didn't
+  help (82 ms). Slow frames on stepping out 3.0 s → 1.8 s in all, the 250 ms texture
+  frame gone. A paused frame of the setts matched to within 1 level. Not on the WebGL
+  backend (`?gl2`), which doesn't flip an ImageBitmap.
+- **The Christmas garlands** called `toNonIndexed()` on each bulb, already non-indexed:
+  745 three.js warnings on stepping out on the Old Town Square, about 21 ms. Dropped.
+- **The street level compiled ahead, from above** (`warmStreetView` in main.ts, once, 3 s
+  after the map is in): what's drawn only from the street switched on
+  (`world.furnitureCamera`), culling off, and `compileAsync` aimed at the target the scene
+  is drawn into (`postTarget`, post.ts). Aimed at the screen instead, its pipelines didn't
+  match the game's (the target's colour space is part of the key), and only the shader
+  builds counted. The first two frames on stepping out 334+184 / 334+200 ms → 234+67 /
+  267+50, slow frames in all 1.49–1.59 s → 1.32–1.33 s; it costs one frame of 50 ms from
+  above. Left on the step: 18 pipelines for what a compile from above doesn't reach (the
+  street trees, the shadow pass, the sky seen from the street, the covered passage and
+  ironwork made on arrival, your avatar). Those would need a street frame rehearsed
+  offscreen.

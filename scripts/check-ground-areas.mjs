@@ -72,21 +72,22 @@ for (const height of [null, (x, y) => .002 * x * x + .01 * y]) {
     assert.ok(g.hold.every(Number.isFinite));
     for (let i = 2; i < g.hold.length; i += 3) assert.ok(g.hold[i] > 0);
   }
+  // A kerbside row's zone line (parking.ts kerbPaint) joins the bay lines of its zone.
+  const blueOf = (r) => r.layers.find(l => l.color === '#3d7be0')?.geometry.position.length ?? 0;
+  const withRow = groundLayers(paintData, { ...opts, height, kerbPaint: [{ cat: 'RES', pts: [[15, 44], [45, 44]] }] });
+  assert.ok(blueOf(withRow) > blueOf(result), 'a kerbside row in a residents\' zone gets a blue line');
   const rail = result.layers.find(l => l.color === COLORS.steel);
   assert.ok(rail && !rail.geometry.hold, 'rails keep their physical width');
   // The straight lane dividers really are 13 cm wide before the shader widens them.
   const lane = held.find(l => Math.abs(l.geometry.hold[2] - .13) < 1e-6);
   for (let i = 0; i < lane.geometry.hold.length; i += 3) assert.ok(Math.hypot(lane.geometry.hold[i], lane.geometry.hold[i + 1]) <= .06501);
-  const bed = result.layers.find(l => l.pattern === 'tramBed');
-  for (const strip of [bed, rail]) {
-    assert.equal(strip.geometry.trackCoord.length, strip.geometry.position.length / 3, 'track coordinates survive terrain refinement');
-    assert.ok(strip.geometry.trackCoord.every(Number.isFinite));
-  }
+  assert.ok(!result.layers.some(l => l.pattern === 'tramBed'), 'tracks in the street lie in its own surface');
+  assert.equal(rail.geometry.trackCoord.length, rail.geometry.position.length / 3, 'track coordinates survive terrain refinement');
+  assert.ok(rail.geometry.trackCoord.every(Number.isFinite));
   assert.equal(Math.min(...rail.geometry.trackCoord), 0);
   assert.equal(Math.max(...rail.geometry.trackCoord), 1);
-  assert.ok(Math.max(...bed.geometry.trackCoord) - Math.min(...bed.geometry.trackCoord) >= 75, 'panel joints follow metres along the track');
   const buffers = layerBuffers(result);
-  assert.ok([rail, bed].every(l => buffers.includes(l.geometry.trackCoord.buffer)), 'worker transfers the rail profile and joint coordinates');
+  assert.ok(buffers.includes(rail.geometry.trackCoord.buffer), 'worker transfers the rail profile');
   assert.ok(held.every(l => buffers.includes(l.geometry.hold.buffer)), 'worker transfers include paint attributes');
   const moved = structuredClone(result, { transfer: buffers });
   assert.ok(buffers.every(b => b.byteLength === 0), 'no copied or retained worker buffers');

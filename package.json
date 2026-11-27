@@ -7,7 +7,7 @@
     "build": "npm run typecheck && vite build",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview --host 0.0.0.0",
-    "test": "cd pipeline && uv run --group cover python -B -m unittest discover -s . -p 'test_*.py'"
+    "test": "cd pipeline && uv run --group cover python -X warn_default_encoding -W error::EncodingWarning -W ignore::EncodingWarning:lazy_loader -B -m unittest discover -s . -p \"test_*.py\""
   },
   "dependencies": {
     "@kninnug/constrainautor": "^4.1.0",

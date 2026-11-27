@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -15,6 +16,7 @@ import build_cache
 import build_tiles
 import building_age
 import chunk_cache
+import di_tracks
 import dmr5g
 import dtm
 import dtm_heights
@@ -53,33 +55,34 @@ class CacheTests(unittest.TestCase):
     def test_same_size_preserved_mtime_still_changes_identity(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = Path(tmp) / "source"
-            p.write_text("abc")
+            p.write_text("abc", encoding="utf-8")
             before = build_cache.identity(p)
-            p.write_text("xyz")
+            time.sleep(0.05)  # (an edit comes later; NTFS stamps files on a clock of about 1 ms)
+            p.write_text("xyz", encoding="utf-8")
             os.utime(p, ns=(p.stat().st_atime_ns, before[2]))
             self.assertNotEqual(build_cache.identity(p), before)
 
     def test_source_cache_reused_and_invalidated(self):
         with tempfile.TemporaryDirectory() as tmp:
             p, cache = Path(tmp) / "source", Path(tmp) / "parsed.pkl"
-            p.write_text("first")
+            p.write_text("first", encoding="utf-8")
             calls = []
 
             def load(path):
                 calls.append(path)
-                return Path(path).read_text()
+                return Path(path).read_text(encoding="utf-8")
 
             self.assertEqual(build_cache.source_data(p, cache, 1, load), "first")
             self.assertEqual(build_cache.source_data(p, cache, 1, load), "first")
             self.assertEqual(len(calls), 1)
-            p.write_text("other")
+            p.write_text("other", encoding="utf-8")
             self.assertEqual(build_cache.source_data(p, cache, 1, load), "other")
             self.assertEqual(len(calls), 2)
 
     def test_streamed_source_is_not_published_until_complete(self):
         with tempfile.TemporaryDirectory() as tmp:
             p, cache = Path(tmp) / "source", Path(tmp) / "parsed.pkl"
-            p.write_text("source")
+            p.write_text("source", encoding="utf-8")
             loader = lambda path: iter([("a", [1, 2]), ("b", [3, 4])])
             stream = build_cache.source_records(p, cache, 1, loader)
             self.assertEqual(next(stream)[0], "a")
@@ -92,7 +95,7 @@ class CacheTests(unittest.TestCase):
     def test_cut_tracks_parent_bbox_and_output(self):
         with tempfile.TemporaryDirectory() as tmp:
             source, out = Path(tmp) / "source.pbf", Path(tmp) / "cut.osm"
-            source.write_text(OSM)
+            source.write_text(OSM, encoding="utf-8")
             calls = []
 
             def osmium(cmd, check):
@@ -103,22 +106,22 @@ class CacheTests(unittest.TestCase):
                 build_tiles.cut((1, 2, 3, 4), out, source)
                 build_tiles.cut((1, 2, 3, 4), out, source)
                 self.assertEqual(len(calls), 1)
-                source.write_text(OSM + "\n")
+                source.write_text(OSM + "\n", encoding="utf-8")
                 build_tiles.cut((1, 2, 3, 4), out, source)
                 build_tiles.cut((1, 2, 4, 4), out, source)
-                out.write_text("damaged")
+                out.write_text("damaged", encoding="utf-8")
                 build_tiles.cut((1, 2, 4, 4), out, source)
                 self.assertEqual(len(calls), 4)
 
     def test_failed_cut_keeps_previous_output(self):
         with tempfile.TemporaryDirectory() as tmp:
             source, out = Path(tmp) / "source.pbf", Path(tmp) / "cut.osm"
-            source.write_text(OSM)
-            out.write_text("previous")
+            source.write_text(OSM, encoding="utf-8")
+            out.write_text("previous", encoding="utf-8")
             with patch.object(build_tiles.subprocess, "run", side_effect=RuntimeError("failed")):
                 with self.assertRaises(RuntimeError):
                     build_tiles.cut((1, 2, 3, 4), out, source)
-            self.assertEqual(out.read_text(), "previous")
+            self.assertEqual(out.read_text(encoding="utf-8"), "previous")
 
 
 class ChunkBuildTests(unittest.TestCase):
@@ -130,19 +133,25 @@ class ChunkBuildTests(unittest.TestCase):
         self.out.mkdir()
         self.pbf = self.root / "osm" / "country.pbf"
         self.pbf.parent.mkdir()
-        self.pbf.write_text(OSM)
+        self.pbf.write_text(OSM, encoding="utf-8")
         self.trees = self.root / "trees.json"
-        self.trees.write_text("[]")
+        self.trees.write_text("[]", encoding="utf-8")
         for obj, attr, value in [(layers, "CACHE", self.root / "layers"), (layers, "OUT", self.out),
                                  (build_tiles, "OUT", self.out), (chunk_cache, "OUT", self.out),
                                  (build_tiles, "PBF", self.pbf), (ipr_trees, "CACHE", self.trees),
                                  (ipr_trees, "_table", None), (dtm, "PACKAGES", self.root / "dtm"),
                                  (dtm_walls, "LINES", self.root / "dtm_lines"),
+                                 # The DI track zips are a chunk input too: an empty cache here,
+                                 # so a download between builds can't change the keys.
+                                 (di_tracks, "CACHE", self.root / "di"),
+                                 (di_tracks, "AXES", self.root / "di" / "axes.pkl"),
+                                 (di_tracks, "MOVES", self.root / "di" / "moves.pkl"),
                                  (build_tiles, "_sections", None),
                                  (build_tiles, "AREAS", {"ujezd": (14.4, 50.08, 14.4005, 50.0805)})]:
             self.stack.enter_context(patch.object(obj, attr, value))
         self.stack.enter_context(patch.object(build_tiles, "setup", return_value=None))
         self.stack.enter_context(patch.object(dtm, "download", return_value=None))
+        self.stack.enter_context(patch.object(di_tracks, "download", return_value=None))
         self.stack.enter_context(patch.object(dtm, "surfaces", return_value={}))
         self.stack.enter_context(patch.object(dtm, "streets", return_value=Polygon()))
         self.stack.enter_context(patch.object(dtm, "land", return_value={}))
@@ -151,13 +160,14 @@ class ChunkBuildTests(unittest.TestCase):
         self.stack.enter_context(patch.object(dtm_walls, "survey", return_value=[]))
 
         # The subprocess module is shared: assembly also asks Git for provenance.
-        def osmium(cmd, check, *, cwd=None, capture_output=False, text=False):
+        def osmium(cmd, check, *, cwd=None, capture_output=False, text=False, encoding=None):
             self.assertTrue(check)
             if cmd[0] == "git":
                 self.assertEqual(cmd, ["git", "describe", "--always", "--dirty", "--abbrev=10", "--exclude", "*"])
                 self.assertEqual(cwd, Path(__file__).resolve().parent)
                 self.assertTrue(capture_output)
                 self.assertTrue(text)
+                self.assertEqual(encoding, "utf-8")
                 return build_tiles.subprocess.CompletedProcess(cmd, 0, stdout="test-pipeline\n")
             self.assertEqual(cmd[:2], ["osmium", "extract"])
             self.assertIsNone(cwd)
@@ -181,7 +191,7 @@ class ChunkBuildTests(unittest.TestCase):
         with patch.object(build_tiles, "build_chunk", wraps=build_tiles.build_chunk) as build:
             self.run_build("--resume")
             build.assert_not_called()
-        layers.chunk_path("ujezd", "buildings", 0, 0).write_text("damaged")
+        layers.chunk_path("ujezd", "buildings", 0, 0).write_text("damaged", encoding="utf-8")
         with patch.object(build_tiles, "build_chunk", wraps=build_tiles.build_chunk) as build:
             self.run_build("--resume")
             self.assertEqual(build.call_args.args[0][4], {"buildings"})
@@ -209,7 +219,7 @@ class ChunkBuildTests(unittest.TestCase):
 
     def test_source_change_and_grid_origin_invalidate_completion(self):
         self.run_build()
-        self.pbf.write_text(OSM + "\n")
+        self.pbf.write_text(OSM + "\n", encoding="utf-8")
         with self.assertRaises(SystemExit):
             chunk_cache.check_complete("ujezd", layers.read_meta("ujezd"))
         with patch.object(build_tiles, "build_chunk", wraps=build_tiles.build_chunk) as build:
@@ -242,7 +252,7 @@ class ChunkBuildTests(unittest.TestCase):
         self.run_build()
         data = self.out / "ujezd_now"
         data.mkdir()
-        (data / "footfall.json").write_text('{"box":[0,0,1,1],"cell":1}')
+        (data / "footfall.json").write_text('{"box":[0,0,1,1],"cell":1}', encoding="utf-8")
         with patch.object(build_tiles, "build_chunk", wraps=build_tiles.build_chunk) as build:
             self.run_build("--resume")
             self.assertEqual(build.call_args.args[0][4], {"ground"})
@@ -340,11 +350,11 @@ class ChunkBuildTests(unittest.TestCase):
         buildings = cache / "BD3_test.gml"
         buildings.write_text('''<root xmlns:gml="http://www.opengis.net/gml" xmlns:bldg="http://www.opengis.net/citygml/building/2.0">
 <bldg:Building gml:id="test"><bldg:GroundSurface><gml:Polygon><gml:exterior><gml:LinearRing><gml:posList>1 1 180 9 1 180 9 9 180 1 9 180 1 1 180</gml:posList></gml:LinearRing></gml:exterior></gml:Polygon></bldg:GroundSurface>
-<bldg:RoofSurface><gml:Polygon><gml:exterior><gml:LinearRing><gml:posList>1 1 185 9 1 185 9 9 185 1 9 185 1 1 185</gml:posList></gml:LinearRing></gml:exterior></gml:Polygon></bldg:RoofSurface></bldg:Building></root>''')
+<bldg:RoofSurface><gml:Polygon><gml:exterior><gml:LinearRing><gml:posList>1 1 185 9 1 185 9 9 185 1 9 185 1 1 185</gml:posList></gml:LinearRing></gml:exterior></gml:Polygon></bldg:RoofSurface></bldg:Building></root>''', encoding="utf-8")
         terrain = cache / "TER_test_gml.gml"
         terrain.write_text('''<root xmlns:gml="http://www.opengis.net/gml"><gml:Triangle>
 <gml:posList>-100 -100 180 400 -100 182 -100 400 184 -100 -100 180</gml:posList>
-</gml:Triangle></root>''')
+</gml:Triangle></root>''', encoding="utf-8")
 
         for obj, attr, value in [(building_age, "CACHE", ages),
                                  (ipr_buildings, "OUT", self.out), (ipr_buildings, "CACHE", cache),
@@ -484,12 +494,14 @@ class ProcessingKeyTests(unittest.TestCase):
                      {"ipr", "terrain"})):
                 with self.subTest(file=name):
                     path = Path(tmp) / name
-                    original = path.read_text()
-                    self.assertIn(old, original)
-                    path.write_text(original.replace(old, new, 1) if old else original + new)
+                    # (As bytes: text mode on Windows would write the file back with CRLF,
+                    # leaving it changed for the next case.)
+                    original = path.read_bytes()
+                    self.assertIn(old.encode(), original)
+                    path.write_bytes(original.replace(old.encode(), new.encode(), 1) if old else original + new.encode())
                     changed = {layer for layer in self.LAYERS if build_cache.processing(layer) != before[layer]}
                     self.assertEqual(changed, expected)
-                    path.write_text(original)
+                    path.write_bytes(original)
 
     def test_library_change_invalidates_the_layers_that_use_it(self):
         before = {layer: build_cache.processing(layer) for layer in self.LAYERS}
@@ -522,7 +534,7 @@ def report(x):
     def key(self, source):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "module.py"
-            path.write_text(source)
+            path.write_text(source, encoding="utf-8")
             return build_cache.reach_key(path, ["made"])
 
     def test_only_what_the_function_leads_to_changes_the_key(self):
@@ -533,11 +545,11 @@ def report(x):
         self.assertNotEqual(self.key(self.SOURCE.replace("+ 1", "+ 2")), key)
 
     def test_the_cover_key_reaches_the_classifier_but_not_the_prototype(self):
-        source = Path(build_cache.__file__).with_name("ground_cover.py").read_text()
+        source = Path(build_cache.__file__).with_name("ground_cover.py").read_text(encoding="utf-8")
         with tempfile.TemporaryDirectory() as tmp:
             def of(text):
                 path = Path(tmp) / "ground_cover.py"
-                path.write_text(text)
+                path.write_text(text, encoding="utf-8")
                 return build_cache.reach_key(path, ["tile_cover"])
             key = of(source)
             self.assertEqual(of(source.replace("def kuwahara(img, radius=5", "def kuwahara(img, radius=6")), key)

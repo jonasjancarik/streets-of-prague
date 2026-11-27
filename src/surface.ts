@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { bridgeStoneMap } from './bridgeStone.ts';
+import { LAID_PATTERNS } from './laying.ts';
 import { RIVER_MIRROR, RIVER_MODEL_LAYER } from './mirror.ts';
 import { tunnelFinish, isTunnelFinish } from './tunnelFinish.ts';
 import { PATTERN, patterned, held, DIG, roadRasterEnabled, cutAway } from './shading.ts';
@@ -12,7 +13,8 @@ import type { RoadRaster } from './roadRaster.ts';
 export interface GroundLayer {
   order: number;
   // `hold`: thin paint that keeps a width in pixels from high up (see held in shading.ts).
-  geometry: { position: Float32Array; normal: Float32Array; index: Uint32Array; uv?: Float32Array; alpha?: Float32Array; hold?: Float32Array; trackCoord?: Float32Array };
+  // `lay`: which way setts, mosaic, slabs and concrete are laid there (laying.ts).
+  geometry: { position: Float32Array; normal: Float32Array; index: Uint32Array; uv?: Float32Array; alpha?: Float32Array; hold?: Float32Array; trackCoord?: Float32Array; lay?: Float32Array };
   color?: string;
   pattern?: string;
   blend?: number | null;
@@ -143,6 +145,8 @@ export class Surfaces {
       if (l.geometry.uv) g.setAttribute('uv', new THREE.BufferAttribute(l.geometry.uv, 2));
       if (l.geometry.trackCoord) g.setAttribute('trackCoord', new THREE.BufferAttribute(l.geometry.trackCoord, 1));
       if (l.geometry.alpha) g.setAttribute('alpha', new THREE.BufferAttribute(l.geometry.alpha, 1));
+      // (Laid the map's way where nothing said otherwise: the shader reads it either way.)
+      if (l.geometry.lay || l.charlesSetts || LAID_PATTERNS.has(l.pattern ?? '')) g.setAttribute('lay', new THREE.BufferAttribute(l.geometry.lay ?? new Float32Array(l.geometry.position.length / 3), 1));
       g.setIndex(new THREE.BufferAttribute(l.geometry.index, 1));
       tunnelRange(g, l.outsideTunnel);
       const raster = l.raster ? this.coverageTexture(l.raster) : null;
@@ -307,8 +311,8 @@ function surfaceMaterial(l: GroundLayer, time: { value: number }, relief: Surfac
 export function groundSamples(time: { value: number }) {
   const plane = (pattern?: string) => {
     const position = new Float32Array([0, 0, 0, 1, 0, 0, 0, 0, -1]);
-    return { position, ...(['groovedRail', 'tramBed', 'graniteKerb', 'stairStone'].includes(pattern ?? '') ? { trackCoord: new Float32Array(3) } : {}),
-      normal: new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0]), alpha: new Float32Array(3), index: new Uint32Array([0, 1, 2]) };
+    return { position, ...(['groovedRail', 'graniteKerb', 'stairStone'].includes(pattern ?? '') ? { trackCoord: new Float32Array(3) } : {}),
+      normal: new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0]), alpha: new Float32Array(3), ...(LAID_PATTERNS.has(pattern ?? '') ? { lay: new Float32Array(3) } : {}), index: new Uint32Array([0, 1, 2]) };
   };
   const texture = new THREE.DataTexture(new Uint16Array([THREE.DataUtils.toHalfFloat(1)]), 1, 1, THREE.RedFormat, THREE.HalfFloatType);
   const relief = { texture, box: [0, 0, 1, 1] };

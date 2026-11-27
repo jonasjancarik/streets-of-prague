@@ -39,6 +39,7 @@ import { createRequire } from 'node:module';
 import { writeFileSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { checkIn } from './game-lock.mjs';
+import { ANGLE, gpuFlags } from './gpu-flags.mjs';
 
 const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) => {
   if (a.startsWith('--')) acc.push([a.slice(2), all[i + 1] && !all[i + 1].startsWith('--') ? all[i + 1] : true]);
@@ -427,7 +428,7 @@ function topSelf(profile, n = 25) {
 // MSAA costs several times more than Chrome's on a Mac).
 const launchBrowser = () => (ANDROID ? pw.chromium.connectOverCDP(`http://localhost:${ANDROID.devtools}`) : pw.chromium.launch({
   headless: true, channel: args.browser === 'chromium' ? undefined : 'chrome',
-  args: [`--use-angle=${args.angle || 'metal'}`, '--enable-gpu', '--ignore-gpu-blocklist', ...args.paced ? [] : ['--disable-gpu-vsync', '--disable-frame-rate-limit'], '--enable-unsafe-webgpu'],
+  args: [...gpuFlags(args.angle || ANGLE).filter(f => f !== '--enable-unsafe-webgpu'), ...args.paced ? [] : ['--disable-gpu-vsync', '--disable-frame-rate-limit'], '--enable-unsafe-webgpu'],
 }));
 // The machine to itself (game-lock.mjs): waits for other sessions' scenes and benchmarks
 // to finish, and games open from a dev server stand still until this ends. A phone's

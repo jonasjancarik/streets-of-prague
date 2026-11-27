@@ -195,7 +195,7 @@ def osm_tracks(pbf):
         subprocess.run(["osmium", "tags-filter", "--overwrite", "-o", str(SOURCE), str(pbf),
                         "w/railway=" + ",".join(TAGS)], check=True)
     opl = subprocess.run(["osmium", "cat", "-f", "opl,add_metadata=false", str(SOURCE)],
-                         check=True, capture_output=True, text=True).stdout
+                         check=True, capture_output=True, text=True, encoding="utf-8").stdout
     nodes, ways = {}, {}
     for line in opl.splitlines():
         head, *fields = line.split(" ")

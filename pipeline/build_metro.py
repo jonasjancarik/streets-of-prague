@@ -103,7 +103,7 @@ def main(area: str = "centrum") -> None:
         print(f"line {ref}: {stations[route[0]]['name']} – {stations[route[-1]]['name']}, "
               f"{len(route)} stations, {times[-1] / 60:.0f} min and {ds[-1] / 1000:.1f} km end to end, {len(path)} track points")
     out = OUT / f"{area}_now" / "metro.json"
-    out.write_text(json.dumps({"lines": lines}, ensure_ascii=False, separators=(",", ":")))
+    out.write_text(json.dumps({"lines": lines}, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"{out.stat().st_size / 1e3:.0f} kB → {out.relative_to(OUT.parent)}")
 
 
