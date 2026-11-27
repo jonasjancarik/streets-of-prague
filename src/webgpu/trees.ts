@@ -199,7 +199,9 @@ const leafState = Fn(() => {
     const B = normalize(inView(attribute('along', 'vec3')).toVarying('leafAlong'));
     const N0 = normalize(cross(T, B));
     const N = select(dot(N0, normal).lessThan(0), N0.negate(), N0);
-    const rnd = fract(sin(leaf.mul(12.9).add(s.mul(7))).mul(43758.5));
+    // (The tuft's number rounded first, as in vegetation.ts, so leaves don't shimmer as the
+    // camera moves.)
+    const rnd = fract(sin(leaf.mul(12.9).add(floor(tuft.z.mul(4096)).mul(0.01074))).mul(43758.5));
     const tilt = mix(0.95, 0.45, top).mul(rnd.mul(0.8).add(0.6)).mul(smoothstep(0.08, 0.22, r));
     const ln = normalize(N.add(T.mul(cos(mid.add(rnd).sub(0.5))).add(B.mul(sin(mid.add(rnd).sub(0.5)))).mul(tilt)));
     normal.assign(normalize(mix(normal, ln, 0.6)));

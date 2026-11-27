@@ -822,7 +822,9 @@ function leafy(material: THREE.MeshLambertMaterial) {
     float mid = leaf * k - s - top * k * .5;                        // the leaf's middle
     vec3 T = normalize(vAcross), B = normalize(vAlong), N = normalize(cross(T, B));
     if (dot(N, normal) < 0.) N = -N;
-    float rnd = fract(sin(leaf * 12.9 + s * 7.) * 43758.5);
+    // (The tuft's number rounded first: as it reaches each pixel it can be a hair off, and
+    // the hash would turn that into leaves shimmering as the camera moves.)
+    float rnd = fract(sin(leaf * 12.9 + floor(vTuft.z * 4096.) * .01074) * 43758.5);
     float tilt = mix(.95, .45, top) * (.6 + .8 * rnd) * smoothstep(.08, .22, r);
     vec3 ln = normalize(N + (T * cos(mid + rnd - .5) + B * sin(mid + rnd - .5)) * tilt);
     normal = normalize(mix(normal, ln, .6));

@@ -839,7 +839,9 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
     windowGlow = mix(vec3(1., .62, .3), vec3(1., .8, .55), fHash(floor(vWorld.z), 3.)) * lit * roofGlass(vFacade) * .45;
   } else if (uWindows > .005 && bn.y > .15 && bn.y < .5 && vFacade.z > .1) {
     float cell = floor(vFacade.x / vFacade.z * max(1., floor(vFacade.z / 3.2 + .5)));
-    float lit = step(fHash(cell + vFacade.z * .37, 7.), uWindows);
+    // (The face's length rounded first: as it reaches each pixel it can be a hair off, and
+    // the hash would turn that into windows switching on and off as the camera moves.)
+    float lit = step(fHash(cell + floor(vFacade.z * 8. + .5) * .04625, 7.), uWindows);
     windowGlow = mix(vec3(1., .62, .3), vec3(1., .8, .55), fHash(7., cell)) * lit * mansardGlass(vFacade, 0.) * .55;
   }
   // Rain darkens the walls and the roofs; snow lies on the roofs, less on steep ones.

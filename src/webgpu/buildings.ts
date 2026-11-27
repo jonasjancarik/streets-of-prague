@@ -641,7 +641,9 @@ const windowGlow = Fn(() => {
   }).ElseIf(uWindows.greaterThan(0.005).and(bn.y.greaterThan(0.15)).and(bn.y.lessThan(0.5)).and(f.z.greaterThan(0.1)), () => {
     // A mansard's windows (mansardGlass).
     const cell = floor(f.x.div(f.z).mul(max(1, floor(f.z.div(3.2).add(0.5)))));
-    const lit = step(fHash(cell.add(f.z.mul(0.37)), float(7)), uWindows);
+    // (The face's length rounded first, as in shading.ts, so windows don't switch on and off
+    // as the camera moves.)
+    const lit = step(fHash(cell.add(floor(f.z.mul(8).add(0.5)).mul(0.04625)), float(7)), uWindows);
     g.assign(mix(vec3(1, 0.62, 0.3), vec3(1, 0.8, 0.55), fHash(float(7), cell)).mul(lit).mul(mansardGlass(f, 0)).mul(0.55));
   });
   // Glints: a roof window's glass and a metal roof's pans flash the sun at you where they
