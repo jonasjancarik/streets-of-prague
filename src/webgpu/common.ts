@@ -27,6 +27,12 @@ export const hash12 = (p: N) => {
   p3.addAssign(dot(p3, p3.yzx.add(33.33)));
   return fract(p3.x.add(p3.y).mul(p3.z));
 };
+// A building's own number from its colour (colourSeed in shading.ts), rounded to 8-bit
+// steps so interpolation noise can't change it as the camera moves.
+export const colourSeed = (c: N) => {
+  const k: N = floor(c.mul(255).add(0.5));
+  return hash12(k.xy.add(k.z.mul(vec2(0.37, 1.71))));
+};
 export const vnoise = (p: N) => {
   const i = floor(p), f = p.sub(i);
   return noise.sample(i.mod(256).add(f.mul(f).mul(f.mul(-2).add(3))).add(0.5).div(256)).level(float(0)).r;

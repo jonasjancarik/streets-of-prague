@@ -110,6 +110,10 @@ export const GRIT = {
 export const NOISE_GLSL = /* glsl */ `
 uniform sampler2D uNoise;
 float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+// A building's own number from its colour. The colour is rounded to 8-bit steps first:
+// interpolation leaves it a hair different from pixel to pixel and as the camera moves,
+// and a hash of the raw value turned that into a different number, so stains jumped.
+float colourSeed(vec3 c) { vec3 k = floor(c * 255. + .5); return hash12(k.xy + k.z * vec2(.37, 1.71)); }
 float vnoise(vec2 p) {
   vec2 i = floor(p), f = p - i;
   return textureLod(uNoise, (mod(i, ${NOISE_SIZE}.) + f * f * (3. - 2. * f) + .5) * (1. / ${NOISE_SIZE}.), 0.).r;
@@ -580,7 +584,7 @@ float darkRoofAs(vec3 c) {
 // number taken from its colour. Flat roofs get only a little. c0: the colour before shading.
 // more: 0-1, thicker moss (ROOF_CLUTTER, on clay tiles).
 vec3 roofWeatherMore(vec3 c, vec3 c0, vec2 wp, vec3 n, float more) {
-  float seed = fract(sin(dot(c0, vec3(127.1, 311.7, 74.7))) * 43758.5453);
+  float seed = colourSeed(c0);
   float age = .25 + .75 * smoothstep(.2, .9, fract(seed * 7.3 + vnoise(wp * .02) * .35));
   float flat_ = smoothstep(.85, .97, n.y);
   vec2 down = normalize(vec2(n.x, -n.z));
@@ -781,7 +785,7 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
   bool roofWin = abs(vFacade.w - 10.) < .5 && bn.y > .15;
   if (roofWin) diffuseColor.rgb = roofWindow(vFacade);
   else if (uRoofDetail > .5 && bn.y > .97 && (vFacade.w < .5 || vFacade.w > 4.5)) {
-    float m = floor(vFacade.w + .001), seed = fract(sin(dot(roofBase, vec3(127.1, 311.7, 74.7))) * 43758.5453);
+    float m = floor(vFacade.w + .001), seed = colourSeed(roofBase);
     vec2 q = roofAxes(bwp, vFacade.w);
     vec3 r;
     if (m > 4.5 && m < 5.5) { float as = darkRoofAs(roofBase); m = as > 1.5 ? 10. : as > .5 ? 8. : m; }

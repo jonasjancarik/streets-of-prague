@@ -16,7 +16,7 @@ import { FACADE_ATLAS, FACADE_ON, STREET_FACADE, F_SURFACE as S, BLANK, F_BAY as
 import { WINDOWS, ROOF_DETAIL, ROOF_CLUTTER, LANDMARK_ROOF as R, SUN_DIR, SUN_LIGHT, BARE } from '../shading.ts';
 import { lampLit } from './lamps.ts';
 import { EDGE, EDGE_STEP } from '../map/roofEdges.ts';
-import { type N, follow, followColor, addPort, uCut, uDirt, uWet, uSnow, vnoise, fbm, fbm2, blocks, hash12, skyAmbient } from './common.ts';
+import { type N, follow, followColor, addPort, uCut, uDirt, uWet, uSnow, vnoise, fbm, fbm2, blocks, hash12, colourSeed, skyAmbient } from './common.ts';
 import { DOME } from '../sky.ts';
 import { CLOSE_RELIEF } from '../streetSurface.ts';
 
@@ -308,7 +308,7 @@ function pavingRoof(c: N, wp: N, wpWidth: N) {
 // number comes from its colour. Flat roofs get only a little.
 // more: 0-1, thicker moss (ROOF_CLUTTER, on clay tiles).
 function roofWeather(c: N, c0: N, wp: N, n: N, wpWidth: N, more: N = float(0)) {
-  const seed = fract(sin(dot(c0, vec3(127.1, 311.7, 74.7))).mul(43758.5453));
+  const seed = colourSeed(c0);
   const age = smoothstep(0.2, 0.9, fract(seed.mul(7.3).add(vnoise(wp.mul(0.02)).mul(0.35)))).mul(0.75).add(0.25);
   const flat = smoothstep(0.85, 0.97, n.y);
   const down = normalize(vec2(n.x, n.z.negate()));
@@ -510,7 +510,7 @@ const buildingColor = Fn(() => {
   If(roofWin, () => { c.assign(roofWindow(f)); }).ElseIf(bn.y.greaterThan(0.97).and(f.w.lessThan(0.5).or(f.w.greaterThan(4.5))), () => {
     If(uRoofDetail.greaterThan(0.5), () => {
       const m = floor(f.w.add(0.001)).toVar();
-      const seed = fract(sin(dot(base, vec3(127.1, 311.7, 74.7))).mul(43758.5453));
+      const seed = colourSeed(base);
       const q = roofAxes(bwp, f.w);
       const r = vec3(0).toVar();
       If(m.greaterThan(4.5).and(m.lessThan(5.5)), () => {
