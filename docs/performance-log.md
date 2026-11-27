@@ -2219,3 +2219,13 @@ frame 30.7–31.7 ms, about 460 draws (some 200 in the sun's shadow pass), 3.6 M
 - **Tried and dropped:** posing avatars beyond 12 m every other frame: 1% (13.3 → 13.2 ms).
 - **Street grass** spends its 1 ms slice each frame until the lawns within 24 m are filled
   (about 15 ms of work a 6 m cell, three `onPolygons` tests a blade), then nothing.
+- **The sun's shadow box in the street view** is `fitShadow`'s box from above (main.ts):
+  236 × 84 m round you, sized by the overhead camera's height, as much behind as ahead,
+  and reaching 28–116 m ahead by which way you face. Fitted instead to the camera's view
+  out to 60, 100 or 150 m (a prototype, the frustum's slice as the sun sees it): 180, 190,
+  205 shadow draws against the game's 200–203, the same in three directions. The draws
+  are tile-sized meshes and the people near you, which any box round you takes in, so it
+  isn't a way to a quicker frame (it could still give the street view an even reach).
+- **The life-size people's shadows** (69 of the shadow pass's draws, three meshes each):
+  all of them off is 13.0 → 12.4 ms (A/B), so one merged shadow mesh a person would save
+  about 0.4 ms. Not done.
