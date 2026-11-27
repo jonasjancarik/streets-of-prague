@@ -2,7 +2,7 @@ import type { CarSpec } from './car.ts';
 
 // Handling multipliers for the car you drive, set from the developer panel (dev.ts):
 // each scales that value of whatever vehicle you're in (TYPES and VARIANTS in car.ts),
-// in both the top-down handling and the realistic one. 1 everywhere is the game as it ships
+// in the top-down handling, the realistic one and the physical one. 1 everywhere is the game as it ships
 // (with BASE below).
 export const DRIVE_TUNE = {
   accel: 1, vmax: 1, brake: 1, grip: 1, fade: 1, radius: 1, turn: 1, response: 1, drag: 1, weather: 1,

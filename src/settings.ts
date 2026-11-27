@@ -395,9 +395,10 @@ export function setupSettings({ sound, graphics, weather, saves, cameraChoice }:
   const handlingRow = row<CarHandling>('Car handling', [
     { id: 'classic', label: () => t('Classic') },
     { id: 'realistic', label: () => t('Realistic') },
+    { id: 'physical', label: () => t('Physical') },
   ], () => firstPersonOptions.handling, handling => setFirstPersonOptions({ handling }));
   const handlingNote = el('p', 'settings-note', handlingRow);
-  relabel.push(() => { handlingNote.textContent = t('Realistic handling gives cars, vans and pickups more gradual acceleration, longer stops and body roll in first and third person.'); });
+  relabel.push(() => { handlingNote.textContent = t('Realistic handling gives cars, vans and pickups more gradual acceleration, longer stops and body roll in first and third person.') + ' ' + t('Physical handling drives them as a body on four sprung wheels: they slide, go up on two wheels, jump and roll over as the forces have it.'); });
   // How the on-screen controls drive a car (src/touch.ts): with the pedals, or one-handed.
   if (matchMedia('(pointer: coarse)').matches || new URLSearchParams(location.search).has('touch')) {
     const r = row<TouchDrive>('Driving', [{ id: 'pedals', label: () => t('Stick and pedals') }, { id: 'stick', label: () => t('Stick only') }], touchDrive, setTouchDrive);

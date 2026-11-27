@@ -2357,7 +2357,7 @@ async function main() {
   const apart = (a: { gz?: number }, b: { gz?: number }) => a.gz !== undefined && b.gz !== undefined && Math.abs(a.gz - b.gz) > 3;
   // A car on the road above a tunnel you walk in (or under your bridge) is out of reach.
   const apartOnFoot = (c: Car) => { world.track(c); world.track(walker); return apart(c, walker); };
-  const moving = (c: Car) => c.mode === 'player' || c.vx * c.vx + c.vy * c.vy > 0.0025 || Math.abs(c.w) > 0.01; // over 5 cm/s
+  const moving = (c: Car) => c.mode === 'player' || !!c.physics || c.vx * c.vx + c.vy * c.vy > 0.0025 || Math.abs(c.w) > 0.01; // over 5 cm/s (or still tumbling: physicalHandling.ts)
   let restingCount = -1;
   const syncResting = () => {
     if (incremental) { restingByCar.sync(loose, moving); return; }
@@ -2409,24 +2409,26 @@ async function main() {
     if (!footView && gaitActive) gait.reset();
     gaitActive = footView;
     if (inCar) {
-      const realistic = firstPersonOptions.handling === 'realistic' && !!testkit?.eyes && !testkit.cam;
+      // (Overhead, every car drives with the classic handling.)
+      const handling = !!testkit?.eyes && !testkit.cam ? firstPersonOptions.handling : 'classic';
       let steer = ctl.aim ? steerToward(inCar, ctl.aim.h, ctl.move) : ctl.turn;
       if (ctl.run) {
-        const a = assist.steer(inCar, steer, realistic ? inCar.suspension : undefined);
+        const a = assist.steer(inCar, steer, handling !== 'classic' ? inCar.physics ?? inCar.suspension : undefined);
         if (a !== null) { steer = a; assisted = true; }
       } else assist.reset();
       held = ctl.aim && !assisted ? { h: ctl.aim.h, throttle: ctl.move, handbrake: ctl.brake } : null;
       // Keeping to the lane, you keep to the speed limit too.
       const cap = assisted ? (assist.limit ?? 50) / 3.6 : null;
       inCar.touchDriving = touch.active;
-      const upright = !inCar.roll;
+      const upright = !inCar.roll && !inCar.physics?.tipped;
       // (A bus stands still while its doors are open, and until they've shut.)
       const doorsOpen = stopWaiting.doorsOpen(inCar) || (isBus(inCar) && !!inCar.door && inCar.door[2] + inCar.door[3] > 0.02);
-      const hit = inCar.update(dt, { throttle: doorsOpen ? 0 : ctl.move, steer, handbrake: doorsOpen || ctl.brake, cap }, grid, realistic);
-      // Rolling over (rollover.ts): each landing on a new corner knocks you about.
-      if (inCar.roll) {
+      const hit = inCar.update(dt, { throttle: doorsOpen ? 0 : ctl.move, steer, handbrake: doorsOpen || ctl.brake, cap }, grid, handling);
+      // Rolling over (rollover.ts, or physicalHandling.ts): each landing on a new corner
+      // knocks you about.
+      if (inCar.roll || inCar.physics?.tipped) {
         if (upright) telemetry.did('rolled a car over');
-        if (inCar.roll.moving && hit > 4) hurt(hit * 0.6);
+        if ((inCar.roll?.moving || inCar.physics?.tumbling) && hit > 4) hurt(hit * 0.6);
       }
       if (hit > 6) { shake = Math.min(1.2, shake + hit * 0.04); hapticCrash(hit); }
       jolt = hit;
@@ -3439,7 +3441,7 @@ async function main() {
         const big = inCar ?? busOn;
         follow.chase(dt, carried, {
           ground: floor, len: big ? big.spec.L : tramOn ? 10.2 : 14, tall: big ? big.spec.H : tramOn ? 3.6 : 4, car: !inHeli, tram: !!tramOn,
-          forwardSpeed: inCar ? inCar.forwardSpeed : 0, slide: !!inCar?.suspension, yaw, pitch,
+          forwardSpeed: inCar ? inCar.forwardSpeed : 0, slide: !!(inCar?.suspension || inCar?.physics), yaw, pitch,
           blocked: open ? (x, y) => !!grid.at(x, y) : undefined,
         }, camera);
         followed = true;
@@ -3447,7 +3449,7 @@ async function main() {
         // (A new vehicle, or after a teleport, starts straight behind it.)
         if (chased !== vehicle) { chased = vehicle; chaseH = vehicle.h; }
         let followHeading = vehicle.h;
-        if (inCar?.suspension && inCar.forwardSpeed > 3) {
+        if ((inCar?.suspension || inCar?.physics) && inCar.forwardSpeed > 3) {
           // Let the car turn across the view in a slide, with the road ahead still in sight.
           const slip = turnOf(inCar.h, Math.atan2(inCar.vy, inCar.vx));
           followHeading += .55 * clamp(slip, -.85, .85);
@@ -3707,7 +3709,7 @@ async function main() {
     } else if (walker.flight && !walker.flight.open) {
       hint = touch.active ? t('Tap Jump to open your parachute') : t('Press <b>Space</b> to open your parachute');
     } else if (inCar?.overturned) {
-      hint = inCar.roll?.moving ? '' : touch.active ? t('Overturned') : t('Overturned · <b>E</b> get out');
+      hint = inCar.roll?.moving || inCar.physics?.tumbling ? '' : touch.active ? t('Overturned') : t('Overturned · <b>E</b> get out');
     } else if (inCar) {
       if (busAtStop(inCar)) hint = touch.active ? '' : stopWaiting.doorsOpen(inCar) ? t('<b>X</b> close the doors') : t('<b>X</b> open the doors · <b>E</b> get out');
       else if (!assisted) hint = touch.active ? '' : inCar.type === 'fire' ? t('<b>E</b> get out · <b>F</b> water cannon · <b>X</b> blue lights · <b>Shift</b> lane assist') : inCar.type === 'ambulance' || inCar.type === 'police' ? t('<b>E</b> get out · <b>X</b> blue lights · <b>Shift</b> lane assist') : t(inCar.two ? '<b>E</b> get off · <b>Shift</b> lane assist' : '<b>E</b> get out · <b>Shift</b> lane assist');

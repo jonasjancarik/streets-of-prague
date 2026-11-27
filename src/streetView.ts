@@ -14,12 +14,12 @@ export const shoulderFraming = {
 // a page load can switch to (renderer.ts), so choosing it, or leaving it for good, reloads.
 export type PlayerView = 'overhead' | 'first' | 'third' | 'vr';
 
-export type CarHandling = 'classic' | 'realistic';
+export type CarHandling = 'classic' | 'realistic' | 'physical';
 export interface FirstPersonOptions { handling: CarHandling; fov: number; sensitivity: number; motion: 'device' | 'steady' | 'gentle'; vrShortView: boolean }
 export const firstPersonOptions: FirstPersonOptions = { fov: 55, sensitivity: 100, motion: 'device', handling: 'realistic', vrShortView: false };
 export function setFirstPersonOptions(pick: Partial<FirstPersonOptions>, save = true) {
   if (typeof pick.vrShortView === 'boolean') firstPersonOptions.vrShortView = pick.vrShortView;
-  if (pick.handling === 'classic' || pick.handling === 'realistic') {
+  if (pick.handling === 'classic' || pick.handling === 'realistic' || pick.handling === 'physical') {
     firstPersonOptions.handling = pick.handling;
     if (save) try { localStorage.setItem(HANDLING_KEY, pick.handling); } catch { /* optional */ }
   }

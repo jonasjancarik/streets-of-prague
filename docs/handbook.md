@@ -561,7 +561,7 @@ The metro ride uses its overhead cutaway camera.
   corner leave dark tyre marks that fade after a minute (`src/skids.ts`); so do the
   police and cars sent skidding by a crash.
 - **Car handling.** In first and third person and in VR, cars drive with **Realistic** handling by
-  default; Settings → Car handling switches to **Classic**. The choice is remembered
+  default; Settings → Car handling switches to **Classic** or **Physical** (below). The choice is remembered
   between games (`carHandling` in the browser's storage) and takes effect on the next driving step. It applies to the car, van
   or pickup you drive, including taxis and patrol cars. Overhead driving, heavy vehicles
   and AI drivers use Classic; two-wheelers have their own handling (below).
@@ -575,6 +575,42 @@ The metro ride uses its overhead cutaway camera.
   The two-axle model and damped springs are in `src/streetHandling.ts`.
   Run `node scripts/check-street-handling.mjs` to compare launches, stops and cornering
   on a flat test road. The `street-handling` scene checks the driving modes in-game.
+- **Physical handling** (Settings → Car handling → **Physical**, `src/physicalHandling.ts`).
+  The same cars as Realistic, in the same views, but as a rigid body with all six degrees
+  of freedom on four sprung wheels, stepped 240 times a second. Gravity, a spring and
+  damper at each corner, an anti-roll bar per axle and each tyre's grip where it touches
+  the road do everything; nothing about a slide, a lean or a rollover is scripted.
+  - *Tyres.* Grip rises with slip to a peak and falls away as the tyre slides (to 0.76
+    of the peak at the front, 0.89 at the back, so cars understeer at the limit and a
+    slide at the back builds gradually). Driving and braking spend grip a tyre needs for
+    turning. The brakes have ABS; the handbrake locks the rear wheels. An open
+    differential splits the drive evenly, so a lifted inside wheel spins. A front-drive
+    car pushes wide under power, a rear-drive one can be steered on the throttle, and
+    lifting off in a fast bend lets the tail come round a little.
+  - *Weight transfer.* The forces act at the road and the mass sits higher, so load
+    moves to the outside tyres in a bend, the rear under power and the front under
+    braking. The body leans 4–5° per g in a saloon and more in a van. In a hard
+    enough swerve the inside wheels lift: a van thrown from lock to lock at 50 km/h goes
+    up on two wheels and comes down, at 75 it goes over. Saloons, SUVs and pickups
+    stay on their wheels on flat dry tarmac.
+  - *Kerbs and the body.* A tyre sliding sideways into a kerb is stopped at the
+    kerb's height, below the centre of mass. On a 14 cm kerb a saloon stays upright at
+    15 km/h across, lands on its side at 40 and rolls right over at 60; a van goes over
+    from about 25. Twenty points on the sills, bumpers, shoulders and roof land on the
+    road and scrape along it, so ramps and crests throw it into the air and a
+    tumble ends wherever it ends. Each hard landing of the body is heard, dents and
+    damages it and knocks you about.
+  - *The flat game.* Walls, posts and other cars still push the car on the map
+    (`Car.move`, `collideBodies`); the physics takes their push as an impulse at bumper
+    height, so a van hitting a wall dives onto its nose. Once a car lies still on its
+    side or roof it is handed to `Rollover` as an ordinary overturned car (`Rollover.lying`).
+    A car you jump out of keeps its physics until it is back on its wheels.
+  - *Drawing.* The body takes its pose straight from the physics. On the street model
+    each wheel moves in its arch with its own suspension travel (`WHEEL_LEVEL`,
+    `WHEEL_SHIFT` and the diagonal twist); the shadow stays on the ground.
+  `node scripts/check-physical-handling.mjs` (`-v` for the numbers) covers launches, stops, understeer, the
+  handbrake, roll, frame rates, hills, kerb trips, swerves, a jump, a wall and the
+  handoffs; the `physical-handling` scene checks it in-game.
 - **Rollovers** (`src/rollover.ts`). A car, van, bus or lorry rolls over when its
   wheels are stopped while it slides sideways: up a kerb at about 32 km/h across (a van
   at about 25; in practice in a fast handbrake slide, since the tyres soon scrub off any
@@ -591,7 +627,8 @@ The metro ride uses its overhead cutaway camera.
   for good: it drops out of the chase or the call, its lights go out, and its crew stays
   belted in rather than climbing out (at street level the windows read as dark, so you
   can't see them). Two-wheelers fall over as before. The `rollover` and
-  `police-rollover` scenes check it.
+  `police-rollover` scenes check it. With Physical handling these thresholds don't apply
+  to your car: the physics trips it over or doesn't (above).
 - In the car, holding Shift is lane assist (`src/assist.ts`): it steers along your
   lane, and A/D then pick the turn at the next junction instead of steering. It also
   keeps you to the street's speed limit (OSM `maxspeed`, else 50 km/h in town, 70 on
@@ -1086,8 +1123,8 @@ The metro ride uses its overhead cutaway camera.
 - **Driving sliders** (developer panel → Driving, `src/driveTune.ts`): multipliers on the
   handling of whatever vehicle you drive: acceleration, top speed, brakes, grip, grip lost
   at speed, fastest turning, turning circle, steering response, slowing when coasting, and
-  how much rain and snow matter. They work in both the top-down and the realistic
-  handling; 1× is the game as it ships. Each slider runs from 0.1× to 10× on a log scale
+  how much rain and snow matter. They work in the top-down, the realistic and the physical
+  handling (the last ignores grip lost at speed and fastest turning: its tyres decide those); 1× is the game as it ships. Each slider runs from 0.1× to 10× on a log scale
   (rain and snow from 0× to 5×) and says in a line what it does. Your own car's steering
   answers fifteen times as fast as the specs in `car.ts` give, and its turning circle is
   1.65 times as wide (`BASE` in `driveTune.ts`); those are the sliders' 1×. The values stay in this browser until Reset;
@@ -2046,6 +2083,15 @@ record the measurements, merge decisions and pending landmark asset activation.
   is twice the tier's close-avatar allowance, up to 64. The overhead view keeps
   its original figures. Rebuild the models and clothing atlas with
   `node assets/rocketbox/crowd.mjs` after building the full avatars.
+  Each civilian outfit also comes in a few hand-picked colourways (`src/avatarDyes.ts`),
+  dyed in the shader at the texture's garment regions, so the fourteen outfits make 125
+  looks. A pedestrian's colourway is picked by chance from the
+  colours their overhead figure wears, mostly the ones nearest its top, so winter's dark
+  coats bring out dark colourways. They wear the same one on the close model and the
+  street model. Skin, shoes, belts, inner layers and white stripes keep their texture.
+  Drivers and uniformed crews keep their outfits. To add a colourway or an outfit, mark
+  the garment's rects in the body texture (512 units, rows from the top) and list its
+  colours there; the shader has a GLSL and a TSL copy (`src/webgpu/avatars.ts`).
   The player's model starts loading alongside the animation clips. The player gets
   a random avatar each session and keeps it when switching between
   first and third person, including after the detailed models are freed and reloaded.
@@ -2113,15 +2159,6 @@ record the measurements, merge decisions and pending landmark asset activation.
   gardens) have tables under square parasols outside: 1,212 places in `praha`
   (`pipeline/build_terraces.py` → `terraces.json`; a map without the file has none). OSM
   doesn't say where the tables stand or how many, so each place gets a row of two to
-  Each civilian outfit also comes in a few hand-picked colourways (`src/avatarDyes.ts`),
-  dyed in the shader at the texture's garment regions, so the fourteen outfits make 125
-  looks. A pedestrian's colourway is picked by chance from the
-  colours their overhead figure wears, mostly the ones nearest its top, so winter's dark
-  coats bring out dark colourways. They wear the same one on the close model and the
-  street model. Skin, shoes, belts, inner layers and white stripes keep their texture.
-  Drivers and uniformed crews keep their outfits. To add a colourway or an outfit, mark
-  the garment's rects in the body texture (512 units, rows from the top) and list its
-  colours there; the shader has a GLSL and a TSL copy (`src/webgpu/avatars.ts`).
   six on the open ground nearest its point on the map, along the house, wherever a
   table fits clear of walls, roads and water; on a narrow pavement that may be one, or
   none. In first and third person the nearest tables have folding chairs on crossed

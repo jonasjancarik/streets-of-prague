@@ -1,6 +1,7 @@
 // A car or van rolling over (car.ts): what's left of the driving physics while it rolls.
 //
-// The driving model is flat: a car has a place, a heading and a speed on the map, and
+// The classic and realistic driving models are flat (the physical one, physicalHandling.ts,
+// tips cars over itself): a car has a place, a heading and a speed on the map, and
 // nothing ever tips it. A rollover starts from a trip: the wheels stopped dead while the
 // car slides sideways (into a raised kerb, a post or a wall), or a hard enough blow in the
 // side from another vehicle. Then the car's cross-section (a box with the glasshouse
@@ -63,6 +64,17 @@ export class Rollover {
     this.sh = shape(spec);
     const { h, k2 } = this.sh, w = spec.W / 2;
     this.rate = -side * speed * h / (k2 + w * w + h * h);
+  }
+
+  // Lying still, turned by `angle` (as `angle` below): where the physical handling
+  // (physicalHandling.ts) left a car on its side or roof.
+  static lying(spec: CarSpec, angle: number) {
+    const r = new Rollover(spec, 1, 0), c = Math.cos(angle), s = Math.sin(angle);
+    r.angle = angle;
+    r.rate = 0;
+    r.moving = false;
+    r.lift = -Math.min(...r.sh.pts.map(([x, y]) => x * s + y * c));
+    return r;
   }
 
   // A further blow while it rolls or lies there.

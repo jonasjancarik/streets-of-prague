@@ -1,6 +1,7 @@
 import { clamp } from './network.ts';
 import type { DriveEdge, DriveGraph, Polyline, RawStreetEdge } from './network.ts';
-import type { StreetHandling } from './streetHandling.ts';
+// (The realistic and the physical handling both steer along a curvature.)
+type Handling = { steerForCurvature(curvature: number, speed: number, radius: number): number };
 import { drivingSpec } from './driveTune.ts';
 
 interface AssistedCar {
@@ -98,7 +99,7 @@ export class LaneAssist {
 
   // The steering (-1..1, left positive) that keeps the car in lane, or null if there's
   // no lane to follow here.
-  steer(car: AssistedCar, playerSteer: number, handling?: StreetHandling): number | null {
+  steer(car: AssistedCar, playerSteer: number, handling?: Handling): number | null {
     if (!this.edge && !this.acquire(car)) return null;
     if (!this.edge) return null;
     let p = project(this.edge.path, car.x, car.y, this.s - 15, this.s + 40);
