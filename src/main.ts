@@ -71,7 +71,7 @@ import { Spray } from './spray.ts';
 import { Water } from './water.ts';
 import { Beacons, ownBeacon } from './beacons.ts';
 import { Cannon, TANK, HOSE } from './cannon.ts';
-import { Graphics, savedChoice, ABOVE_HEIGHT, type Choice } from './graphics.ts';
+import { Graphics, savedChoice, ABOVE_HEIGHT, type Choice, MOST_FACTOR } from './graphics.ts';
 import { createGameRenderer, retryStart } from './renderer.ts';
 import { setupVR } from './vr.ts';
 import { StopBoard } from './board.ts';
@@ -223,7 +223,6 @@ window.addEventListener('vite:preloadError', () => {
 
 const BUSES = 3; // of the traffic, on the main roads
 const PEOPLE = 1200; // at most, round the Old Town Square; fewer where it's quieter (src/footfall.ts)
-const MOST_CROWD = 2; // the most graphics.crowd goes to (Custom): the crowd's buffers are sized for it
 const CROWD_FLOOR = 150; // people round you that graphics.crowd leaves as they are (peopleWanted)
 const FEW_PEOPLE = 40; // on the quietest edge of town
 const VILLAGE_BUILT = 0.08; // the share of a village's ground that buildings stand on
@@ -598,7 +597,10 @@ async function main() {
   });
   const footfall = await footfallLoad;
   Object.assign(WARDROBE, { cold: season.cold, warm: season.shares().summer });
-  crowd = new Crowd(walk, grid, scene, seeded, PEOPLE * MOST_CROWD, kit);
+  // The crowd's buffers have room for at least double the usual crowd, or the saved Custom
+  // crowd where that's more (up to MOST_FACTOR); past that the settings ask for a reload.
+  graphics.crowdRoom = Math.max(2, Math.min(MOST_FACTOR, Math.ceil(graphics.custom?.crowd ?? 1)));
+  crowd = new Crowd(walk, grid, scene, seeded, PEOPLE * graphics.crowdRoom, kit);
   crowd.footfall = footfall;
   // The carriageways, parking bays and the trams' own bed: walkers keep to the pavement
   // beside a street they walk along.
@@ -914,7 +916,7 @@ async function main() {
       few *= clamp(tiles.reduce((sum, k) => sum + (world.builtUp.get(k) ?? 0), 0) / (tiles.length || 1) / VILLAGE_BUILT, 0.1, 1);
     }
     const usual = Math.min(PEOPLE, few + CROWD * draw);
-    return Math.round(Math.min(usual, CROWD_FLOOR) + Math.max(0, usual - CROWD_FLOOR) * Math.min(graphics.crowd, MOST_CROWD));
+    return Math.round(Math.min(usual, CROWD_FLOOR) + Math.max(0, usual - CROWD_FLOOR) * Math.min(graphics.crowd, graphics.crowdRoom));
   };
   const spawnWork = { peoplePasses: 0, peopleWeights: 0, peoplePicks: 0, peoplePrepareMs: 0 };
   // People who wander too far are moved to just outside the view, so they walk into it.

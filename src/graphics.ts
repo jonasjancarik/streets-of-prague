@@ -135,6 +135,8 @@ export const customFrom = (t: Tier): Custom => ({ ...TIERS[t], ...extras(t), str
 // How high the overhead camera may be for `above` (m: 100 is the usual zoom on foot), and
 // how far round the middle of the view the street models reach there at most.
 export const ABOVE_HEIGHT = 180, ABOVE_REACH = 140;
+// The most Custom's crowd and traffic factors may be, typed in (settings.ts).
+export const MOST_FACTOR = 10;
 function loadCustom(): Custom | null {
   try {
     const saved = JSON.parse(localStorage.getItem('graphicsCustom') ?? 'null');
@@ -301,6 +303,9 @@ export class Graphics {
   private presenting = false;
   // The player's own settings (Custom), once they have chosen it.
   custom: Custom | null = loadCustom();
+  // How many times the usual crowd the page has room for (main.ts sizes the crowd's buffers
+  // at load, for the saved Custom crowd and at least double): more takes a reload.
+  crowdRoom = 2;
 
   // (`gpu`: the graphics chip's name, for where Auto starts.)
   constructor(renderer: THREE.WebGLRenderer, sky: Sky, params: URLSearchParams, gpu = '') {

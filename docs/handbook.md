@@ -291,7 +291,10 @@ setting under the Graphics row. It starts from the level you were on, and some o
 past Ultra: the screen's full pixel ratio up to 3×, an 8192 sun shadow map (where the GPU
 allows it) and close-up models reaching half as far again. Custom is kept in
 `graphicsCustom`; code that asks for the tier sees Ultra. Custom's "People in the streets"
-and "Moving cars" go from a quarter to double the usual numbers. The crowd scales only
+and "Moving cars" go from a quarter to double the usual numbers, or any factor up to 10×
+typed in under Other. The crowd's buffers are made at the start, for double or the saved
+factor if that's more; more people than that take a reload, and the settings say so (cars
+change at once). The crowd scales only
 the people beyond the first 150 round you, so a quiet street keeps its few and the busy
 places thin out or fill up (where the cost is); cars count only those driving about (not buses, parked
 cars or the police). Their cost is mostly simulation, from above as much as from the

@@ -2,6 +2,7 @@ import { firstPersonOptions, setFirstPersonOptions, vrSupported, type CarHandlin
 import { LANGS, getLang, onLang, setLang, t } from './i18n.ts';
 import type { Lang } from './i18n.ts';
 import type { Graphics, Choice, Reflections, Custom } from './graphics.ts';
+import { MOST_FACTOR } from './graphics.ts';
 import type { Bus } from './audio.ts';
 import { BUSES } from './audio.ts';
 import type { Kind } from './weather.ts';
@@ -56,8 +57,11 @@ const GRAPHICS: { id: Choice; label: string }[] = [
 // Custom's settings, one list each: what the player sees, and what it sets (graphics.ts).
 // Some go past Ultra: the full pixel ratio, an 8192 shadow map and the furthest detail.
 type Option = [string, Partial<Custom>];
+// (A row with a key of its own also takes any factor up to MOST_FACTOR: "Other" shows a
+// number field.)
+type Free = 'crowd' | 'traffic';
 const on = (yes: Partial<Custom>, no: Partial<Custom>): Option[] => [['On', yes], ['Off', no]];
-const CUSTOM: [string, Option[]][] = [
+const CUSTOM: [string, Option[], Free?][] = [
   ['Sharpness', [['Up to 1×', { maxRatio: 1 }], ['Up to 1.5×', { maxRatio: 1.5 }], ['Up to 2×', { maxRatio: 2 }], ['The screen’s own, up to 3× (demanding)', { maxRatio: 3 }]]],
   ['View distance from the street', [['250 m', { view: 250 }], ['300 m', { view: 300 }], ['400 m', { view: 400 }], ['500 m', { view: 500 }], ['700 m (demanding)', { view: 700 }], ['1000 m (demanding)', { view: 1000 }]]],
   ['Texture filtering', [['Off', { aniso: 0 }], ['Half', { aniso: 0.5 }], ['As made', { aniso: 1 }], ['Double', { aniso: 2 }], ['Most (16×)', { aniso: 16 }]]],
@@ -81,8 +85,8 @@ const CUSTOM: [string, Option[]][] = [
   ['Hedges and grass up close', on({ streetDetail: true }, { streetDetail: false })],
   ['Relief on kerbs, steps and rails', on({ closeRelief: true }, { closeRelief: false })],
   ['Detailed models up close', [['Lowest', { street: 'lowest' }], ['Low', { street: 'low' }], ['Medium', { street: 'medium' }], ['High', { street: 'high' }], ['Ultra', { street: 'ultra' }], ['Furthest (demanding)', { street: 'max' }]]],
-  ['People in the streets', [['A quarter', { crowd: 0.25 }], ['Half', { crowd: 0.5 }], ['Three quarters', { crowd: 0.75 }], ['As usual', { crowd: 1 }], ['1.5× (demanding)', { crowd: 1.5 }], ['Double (demanding)', { crowd: 2 }]]],
-  ['Moving cars', [['A quarter', { traffic: 0.25 }], ['Half', { traffic: 0.5 }], ['Three quarters', { traffic: 0.75 }], ['As usual', { traffic: 1 }], ['1.5× (demanding)', { traffic: 1.5 }], ['Double (demanding)', { traffic: 2 }]]],
+  ['People in the streets', [['A quarter', { crowd: 0.25 }], ['Half', { crowd: 0.5 }], ['Three quarters', { crowd: 0.75 }], ['As usual', { crowd: 1 }], ['1.5× (demanding)', { crowd: 1.5 }], ['Double (demanding)', { crowd: 2 }]], 'crowd'],
+  ['Moving cars', [['A quarter', { traffic: 0.25 }], ['Half', { traffic: 0.5 }], ['Three quarters', { traffic: 0.75 }], ['As usual', { traffic: 1 }], ['1.5× (demanding)', { traffic: 1.5 }], ['Double (demanding)', { traffic: 2 }]], 'traffic'],
 ];
 const WEATHER: Record<Kind, string> = { clear: 'Clear', cloudy: 'Cloudy', rain: 'Rain', storm: 'Thunderstorm', mist: 'Mist', snow: 'Snow' };
 
@@ -319,17 +323,39 @@ export function setupSettings({ sound, graphics, weather, saves, cameraChoice }:
   const customNote = el('p', 'settings-note', customBox);
   relabel.push(() => { customNote.textContent = t('Starts from the level you were on. Settings marked demanding go past Ultra and need a fast graphics card.'); });
   refresh.push(() => { customBox.hidden = graphics.choice !== 'custom'; });
-  for (const [label, options] of CUSTOM) {
+  for (const [label, options, free] of CUSTOM) {
     const line = el('label', 'settings-radio-station', customBox);
     const name = el('span', '', line), pick = el('select', 'settings-chip', line) as HTMLSelectElement;
     pick.dataset.custom = label;
     const items = options.map((_, i) => { const o = new Option('', String(i)); pick.add(o); return o; });
-    relabel.push(() => { name.textContent = t(label); options.forEach(([text], i) => { items[i].textContent = t(text); }); });
-    pick.onchange = () => { graphics.setCustom(options[Number(pick.value)][1]); telemetry.setting('Custom: ' + label, options[Number(pick.value)][0]); update(); };
+    // "Other": any factor, typed in (0 to MOST_FACTOR, in tenths).
+    const other = free ? new Option('', 'other') : null;
+    if (other) pick.add(other);
+    const factor = free ? el('input', 'settings-chip settings-factor', line) as HTMLInputElement : null;
+    if (factor) Object.assign(factor, { type: 'number', min: '0', max: String(MOST_FACTOR), step: '0.1', inputMode: 'decimal' });
+    // (The crowd past what the page made room for at load.)
+    const reload = free === 'crowd' ? el('p', 'settings-note', customBox) : null;
+    relabel.push(() => {
+      name.textContent = t(label); options.forEach(([text], i) => { items[i].textContent = t(text); });
+      if (other) other.textContent = t('Other…');
+      if (factor) factor.title = factor.ariaLabel = t('Times the usual');
+      if (reload) reload.textContent = t('Reload the page for more people than this: the game made room for {n}× at the start.', { n: String(graphics.crowdRoom) });
+    });
+    pick.onchange = () => {
+      if (pick.value === 'other') { update(); factor?.focus(); return; }
+      graphics.setCustom(options[Number(pick.value)][1]); telemetry.setting('Custom: ' + label, options[Number(pick.value)][0]); update();
+    };
+    if (factor && free) factor.onchange = () => {
+      const v = Math.round(Math.min(MOST_FACTOR, Math.max(0, Number(factor.value) || 0)) * 10) / 10;
+      graphics.setCustom({ [free]: v }); telemetry.setting('Custom: ' + label, `${v}×`); update();
+    };
     refresh.push(() => {
       const now = graphics.custom;
       const i = now ? options.findIndex(([, set]) => Object.entries(set).every(([k, v]) => now[k as keyof Custom] === v)) : -1;
-      pick.value = String(Math.max(0, i));
+      // (A typed factor that isn't one of the choices shows as Other, with its number.)
+      if (other && (i < 0 || pick.value === 'other')) pick.value = 'other'; else pick.value = String(Math.max(0, i));
+      if (factor && free) { factor.hidden = pick.value !== 'other'; if (document.activeElement !== factor) factor.value = String(now?.[free] ?? 1); }
+      if (reload && free) reload.hidden = !((now?.[free] ?? 1) > graphics.crowdRoom);
     });
   }
   row<Reflections>('Wet streets', [{ id: 'none', label: () => t('No reflections') }, { id: 'lights', label: () => t('Lights reflect') }, { id: 'mirror', label: () => t('Full mirror (demanding)') }], () => graphics.reflections, (id) => graphics.setReflections(id));
