@@ -44,8 +44,36 @@ const rowRelief = (n: N, down: N, along: N, lip: number): N => {
   const lit: N = smoothstep(0.82, 0.97, along).mul(max(facing, 0));
   return float(1).sub(shadow.mul(RELIEF.shade)).add(lit.mul(RELIEF.light));
 };
+// rowRelief averaged down a row, for when the rows are too fine to draw: a slope with the
+// sun behind it stays darker by its rows' shadows, and one facing it a little lighter, so
+// zooming out doesn't bleach the roofs flat. (The shadow covers about reach × 0.8 + 0.01 of
+// a row, the lit edge 0.105.)
+const rowReliefMean = (n: N, down: N, lip: number): N => {
+  const flat: N = vec3(down.x, 0, down.y.negate());
+  const d3: N = normalize(flat.sub(n.mul(dot(flat, n))));
+  const facing: N = dot(uSunDir, d3), onto: N = max(dot(uSunDir, n), 0.12);
+  const reach: N = clamp(facing.negate().div(onto).mul(lip), 0, 0.6);
+  const shadow: N = reach.mul(0.8).add(0.01).mul(step(0.01, reach));
+  return float(1).sub(shadow.mul(RELIEF.shade)).add(max(facing, 0).mul(0.105 * RELIEF.light));
+};
 // How dark a tile's edge shadow is and how bright its lit edge, at most.
 const RELIEF = { shade: 0.42, light: 0.3 };
+// Tiles of a roof aren't all alike: some patches newer, some more weathered, in streaks
+// along the rows. Fixed to the roof (q: across and down the slope, m), and broad enough to
+// stay when the tiles and rows are too fine to draw. The finer part fades by `rowMap`, a
+// row's depth on the map.
+const tileMottle = (q: N, wpWidth: N, rowMap: N): N => {
+  const fine: N = vnoise(vec2(q.x.div(1.4), q.y.div(0.6)).add(3.7)).sub(0.5).mul(0.2);
+  const broad: N = vnoise(vec2(q.x.div(4.5), q.y.div(1.8)).add(11.3)).sub(0.5).mul(0.16);
+  const fineFade: N = float(1).sub(smoothstep(rowMap.mul(1.2), rowMap.mul(2.6), wpWidth));
+  return float(1).add(fine.mul(fineFade)).add(broad);
+};
+// How much of a row of beaver tails, at `fy` down it, is the gap between the round ends
+// above (beaverEnd), where the layer underneath shows, darker.
+const beaverGap = (fy: N): N => {
+  const a: N = clamp(float(1).sub(fy).div(0.32), 0, 1).oneMinus();
+  return float(1).sub(sqrt(max(0, float(1).sub(a.mul(a)))));
+};
 const uSunLight: N = followColor(SUN_LIGHT);
 const uStreetFacade = follow(STREET_FACADE);
 const uFacadeOn = follow(FACADE_ON), uWindows = follow(WINDOWS), uRoofDetail = follow(ROOF_DETAIL), uRoofClutter = follow(ROOF_CLUTTER);
@@ -117,14 +145,26 @@ function beaverTiles(c0: N, wp: N, n: N, wpWidth: N) {
   const patch = vnoise(vec2(col, row).mul(0.23));
   // (Single tiles differ more than patches of them do: a roof of one colour in broad
   // blotches read as camouflage from above.)
+  // (A row of tiles laid together a shade of its own, from a repair or a batch.)
+  const rowTone = hash12(vec2(row, 4.7)).mul(0.08).add(0.96);
   const t = c0.mul(h.mul(0.36).add(0.78)).mul(float(1.05).sub(smoothstep(0.55, 0.85, patch).mul(0.13))).toVar();
   t.mulAssign(mix(vec3(1.06, 0.97, 0.9), vec3(0.9, 0.94, 1), fract(h.mul(7.3))));
   t.mulAssign(smoothstep(0, 0.6, fy).mul(0.1).add(0.92));
   t.mulAssign(mix(float(1), mix(0.45, 0.72, under), top.oneMinus()));
   t.mulAssign(mix(0.7, 1, smoothstep(0, 0.05, min(fx, fx.oneMinus()))));
   // Each row stands proud of the one below it: lit and shaded by where the sun is.
-  t.mulAssign(rowRelief(n, down, fy, 0.16));
-  const c = mix(c0.mul(0.95), t, fade(wpWidth, 0.18)).toVar();
+  const relief = rowRelief(n, down, fy, 0.16);
+  t.mulAssign(relief.mul(rowTone));
+  // Further off, the tiles across a row are too fine to draw but the rows, deeper, aren't
+  // yet: the row as its tiles average out (their colour, joints, and the gaps between the
+  // round ends), with its shadow. Further still, all of that averaged.
+  const mean = c0.mul(vec3(0.95, 0.925, 0.92));
+  const rows = mean.mul(smoothstep(0, 0.6, fy).mul(0.1).add(0.92)).mul(float(1).sub(beaverGap(fy).mul(0.42))).mul(relief).mul(rowTone);
+  const far = mean.mul(0.99 * 0.971).mul(rowReliefMean(n, down, 0.16));
+  const rowMap = max(n.y, 0.3).mul(0.3);
+  const tilesSeen = float(1).sub(smoothstep(0.045, 0.126, wpWidth));
+  const rowsSeen = float(1).sub(smoothstep(rowMap.mul(0.3), rowMap.mul(0.7), wpWidth));
+  const c = mix(far, mix(rows, t, tilesSeen), rowsSeen).mul(tileMottle(q.mul(vec2(0.18, 0.3)), wpWidth, rowMap)).toVar();
   c.mulAssign(fbm(wp.mul(0.22)).mul(0.14).add(0.93));
   return mix(c, c.mul(vec3(0.86, 0.9, 0.8)), smoothstep(0.62, 0.75, fbm(wp.mul(0.09).add(4))).mul(0.45));
 }
@@ -137,13 +177,21 @@ function roofTiles(c0: N, wp: N, n: N, wpWidth: N, slateGiven?: N) {
   const q = vec2(dot(wp, across), dot(wp, down).div(max(n.y, 0.3)));
   const b = blocks(q, size.x, size.y);
   const row = fract(q.y.div(size.y));
-  const d = float(1).sub(smoothstep(size.y.mul(0.2), size.y.mul(0.7), wpWidth));
+  const rowTone = hash12(vec2(floor(q.y.div(size.y)), 4.7)).mul(0.08).add(0.96);
   const t = c0.mul(b.y.mul(0.2).add(0.9)).toVar();
   t.mulAssign(mix(vec3(1.07, 0.95, 0.86), vec3(0.95, 1, 1.05), fract(b.y.mul(7.3))));
   t.mulAssign(smoothstep(0, 0.4, row).mul(0.16).add(0.86));
   t.assign(mix(t.mul(0.76), t, smoothstep(0, 0.012, b.x)));
-  t.mulAssign(rowRelief(n, down, row, 0.14));
-  const c = mix(c0.mul(0.95), t, d).toVar();
+  const relief = rowRelief(n, down, row, 0.14);
+  t.mulAssign(relief.mul(rowTone));
+  // Further off, the rows without their tiles, then all of it averaged (as beaverTiles).
+  const mean = c0.mul(vec3(1.0, 0.965, 0.945)).mul(0.98);
+  const rows = mean.mul(smoothstep(0, 0.4, row).mul(0.16).add(0.86)).mul(relief).mul(rowTone);
+  const far = mean.mul(0.988).mul(rowReliefMean(n, down, 0.14));
+  const rowMap = max(n.y, 0.3).mul(size.y);
+  const tilesSeen = float(1).sub(smoothstep(size.x.mul(0.25), size.x.mul(0.7), wpWidth));
+  const rowsSeen = float(1).sub(smoothstep(rowMap.mul(0.3), rowMap.mul(0.7), wpWidth));
+  const c = mix(far, mix(rows, t, tilesSeen), rowsSeen).mul(tileMottle(q, wpWidth, rowMap)).toVar();
   c.mulAssign(fbm(wp.mul(0.22)).mul(0.16).add(0.92));
   return mix(c, c.mul(vec3(0.86, 0.9, 0.8)), smoothstep(0.62, 0.75, fbm(wp.mul(0.09).add(4))).mul(0.45));
 }

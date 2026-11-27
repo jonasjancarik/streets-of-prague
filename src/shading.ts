@@ -372,6 +372,15 @@ export const PATTERN: Record<string, number> = { flat: 0, asphalt: 1, setts: 2, 
 // from the face normal), slate in smaller rows, gravel on flat roofs, and a grid of
 // windows on the walls, one row per storey (fStorey) with shopfronts at street level.
 const BUILDING_GLSL = /* glsl */ `
+// Tiles of a roof aren't all alike: some patches newer, some more weathered, in streaks
+// along the rows. Fixed to the roof (q: across and down the slope, m), and broad enough to
+// stay when the tiles and rows are too fine to draw. The finer part fades by rowMap, a
+// row's depth on the map; w: the pixel's footprint.
+float tileMottle(vec2 q, float w, float rowMap) {
+  float fine = (vnoise(vec2(q.x / 1.4, q.y / .6) + 3.7) - .5) * .2;
+  float broad = (vnoise(vec2(q.x / 4.5, q.y / 1.8) + 11.3) - .5) * .16;
+  return 1. + fine * (1. - smoothstep(rowMap * 1.2, rowMap * 2.6, w)) + broad;
+}
 vec3 roofTilesAs(vec3 c, vec2 wp, vec3 n, float slate) {
   vec2 down = normalize(vec2(n.x, -n.z) + vec2(0., .0001));   // the nudge keeps a flat face from being 0/0
   vec2 across = vec2(-down.y, down.x);
@@ -379,12 +388,17 @@ vec3 roofTilesAs(vec3 c, vec2 wp, vec3 n, float slate) {
   vec2 q = vec2(dot(wp, across), dot(wp, down) / max(n.y, .3));
   vec2 b = blocks(q, size);
   float row = fract(q.y / size.y);
-  float d = detail(wp, size.y);
+  float rowTone = .96 + .08 * hash12(vec2(floor(q.y / size.y), 4.7));
   vec3 t = c * (.9 + .2 * b.y);
   t *= mix(vec3(1.07, .95, .86), vec3(.95, 1., 1.05), fract(b.y * 7.3));           // fired-clay variation, tile by tile
-  t *= .8 + .25 * smoothstep(0., .4, row);                                     // overlap shadow
+  t *= (.8 + .25 * smoothstep(0., .4, row)) * rowTone;                         // overlap shadow
   t = mix(t * .72, t, smoothstep(0., .012, b.x));
-  c = mix(c * .95, t, d);
+  // Further off, the rows without their tiles, then all of it averaged (beaverTiles).
+  vec3 mean = c * vec3(.98, .945, .925);
+  vec3 rows = mean * (.8 + .25 * smoothstep(0., .4, row)) * rowTone;
+  float rowMap = max(n.y, .3) * size.y, w = length(fwidth(wp));
+  float tilesSeen = 1. - smoothstep(size.x * .25, size.x * .7, w), rowsSeen = 1. - smoothstep(rowMap * .3, rowMap * .7, w);
+  c = mix(mean * .99, mix(rows, t, tilesSeen), rowsSeen) * tileMottle(q, w, rowMap);
   c *= .88 + .24 * fbm(wp * .22);                                              // weathering
   return mix(c, c * vec3(.86, .9, .8), smoothstep(.62, .75, fbm(wp * .09 + 4.)) * .7);
 }
@@ -403,12 +417,21 @@ vec3 beaverTiles(vec3 c, vec2 wp, vec3 n) {
   float col = floor(x), fx = fract(x);
   float h = hash12(vec2(col, row * 2. + 1. - top));
   float patch_ = vnoise(vec2(col, row) * .23);
+  float rowTone = .96 + .08 * hash12(vec2(row, 4.7));   // a row laid together, a shade of its own
   vec3 t = c * (.8 + .28 * h) * (1.08 - .28 * smoothstep(.55, .85, patch_));
   t *= mix(vec3(1.06, .97, .9), vec3(.9, .94, 1.), fract(h * 7.3));
-  t *= .9 + .14 * smoothstep(0., .6, fy);
+  t *= (.9 + .14 * smoothstep(0., .6, fy)) * rowTone;
   t *= mix(1., mix(.45, .72, under), 1. - top);  // under the top layer, in its shadow
   t *= mix(.62, 1., smoothstep(0., .05, min(fx, 1. - fx)));
-  c = mix(c * .95, t, detail(wp, .18));
+  // Further off, the tiles across a row are too fine to draw but the rows, deeper, aren't
+  // yet: the row as its tiles average out (colour, joints, the gaps between the round
+  // ends). Further still, all of that averaged, and a mottle fixed to the roof that stays.
+  vec3 mean = c * vec3(.93, .905, .9);
+  float a = 1. - clamp((1. - fy) / .32, 0., 1.), gap = 1. - sqrt(max(0., 1. - a * a));
+  vec3 rows = mean * (.9 + .14 * smoothstep(0., .6, fy)) * (1. - .42 * gap) * rowTone;
+  float rowMap = max(n.y, .3) * .3, w = length(fwidth(wp));
+  float tilesSeen = 1. - smoothstep(.045, .126, w), rowsSeen = 1. - smoothstep(rowMap * .3, rowMap * .7, w);
+  c = mix(mean * .99 * .971, mix(rows, t, tilesSeen), rowsSeen) * tileMottle(q * vec2(.18, .3), w, rowMap);
   c *= .9 + .2 * fbm(wp * .22);
   return mix(c, c * vec3(.86, .9, .8), smoothstep(.62, .75, fbm(wp * .09 + 4.)) * .7);
 }
