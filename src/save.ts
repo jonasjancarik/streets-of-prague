@@ -57,7 +57,7 @@ function carData(value: unknown) {
     && optionalNumber(value.radio) && optionalNumber(value.broken)
     && (value.crush === undefined || (Array.isArray(value.crush) && value.crush.length === 6 && value.crush.every(num)))
     && (value.blows === undefined || (Array.isArray(value.blows) && value.blows.every((b) => object(b)
-      && ['x', 'z', 'dx', 'dz', 'depth', 'r', 'seed'].every((k) => num(b[k])))))
+      && ['x', 'z', 'dx', 'dz', 'depth', 'r'].every((k) => num(b[k])) && optionalNumber(b.y) && optionalNumber(b.dy))))
     && (value.ram === undefined || typeof value.ram === 'boolean'));
 }
 

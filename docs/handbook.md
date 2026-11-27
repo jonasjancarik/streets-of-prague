@@ -848,7 +848,11 @@ The metro ride uses its overhead cutaway camera.
   parts at one spot come in together and close up on each other only inside the crumple
   zone, so panels don't pass through the trim behind them, and the push eases off above
   the doors so the roof stays clear of the people inside (the seated driver moves in
-  with a crushed door). Where the metal went in deepest the paint is duller and
+  with a crushed door). A rolling car is dented where each landing meets the ground: a
+  hard landing on the side caves the side and the edge of the roof in, one on the roof
+  (which gives twice as easily) flattens the glasshouse, at most 35 cm at a corner, and an
+  overturned car sits lower on the crushed roof or side it lies on (`ROLL_DENT`,
+  `Car.landed`). Where the metal went in deepest the paint is duller and
   scratched to bare metal in streaks. The blows go to the shaders in a small texture, a
   row a dented car (`Car.dent`, `DENT_SHAPE`, `SCRAPED` and `DENT_GLSL` in `src/car.ts`,
   `crumple` in `src/webgpu/vehicles.ts`); a car with no dents pays only for a branch, and

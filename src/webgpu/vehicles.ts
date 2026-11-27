@@ -63,14 +63,20 @@ const shine: N = packed.sub(area.mul(4));
 // its normal once they have.
 const dentRow: N = int(floor(paint.w.div(DENT_STEP))).sub(1);
 const dentMap = texture(DENT_MAP);
+// Where p is from blow a, b: how far in along its way (x), across it (y, z) and whether
+// it's a landing (w).
+const blowFrame = (p: N, a: N, b: N): N => {
+  const rel: N = p.sub(a.xyz), e1: N = select(dot(b.xz, b.xz).greaterThan(0.1), normalize(vec3(b.z.negate(), 0, b.x)), vec3(1, 0, 0));
+  return vec4(max(dot(rel, b.xyz), 0), dot(rel, e1), dot(rel, cross(b.xyz, e1)), step(a.w, 0));
+};
 const blowAt = (p: N, a: N, b: N): N => {
-  const rel: N = p.xz.sub(a.xy);
-  const s: N = max(dot(rel, a.zw), 0), lat: N = rel.y.mul(a.z).sub(rel.x.mul(a.w));
-  const w: N = smoothstep(b.y.mul(DS.flat), b.y, abs(lat)).oneMinus();
-  const fold: N = abs(fract(lat.mul(2.4).add(p.y.mul(0.6)).add(b.z)).sub(0.5)).mul(1.2).add(abs(fract(p.y.mul(3.3).sub(lat.mul(0.5)).add(b.z.mul(1.7))).sub(0.5)).mul(0.8));
-  const push: N = b.x.mul(w).mul(fold.sub(0.5).mul(DS.fold).add(1)).mul(clamp(float(1).sub(s.div(b.x.mul(DS.give).add(DS.zone))), 0, 1))
-    .mul(float(1).sub(smoothstep(0.85, 1.35, p.y).mul(DS.roof)));
-  return vec3(a.z.mul(push), push.mul(DS.buckle).mul(fold.sub(0.5)).mul(smoothstep(0.6, 0.85, p.y)).mul(abs(a.z)), a.w.mul(push));
+  const f: N = blowFrame(p, a, b), r: N = abs(a.w);
+  const seed: N = fract(sin(a.x.mul(12.9898).add(a.z.mul(78.233))).mul(43758.5453)).mul(7);
+  const w: N = smoothstep(r.mul(DS.flat), r, length(vec2(f.y, f.z.mul(f.w)))).oneMinus();
+  const fold: N = abs(fract(f.y.mul(2.4).add(f.z.mul(0.6)).add(seed)).sub(0.5)).mul(1.2).add(abs(fract(f.z.mul(3.3).sub(f.y.mul(0.5)).add(seed.mul(1.7))).sub(0.5)).mul(0.8));
+  const push: N = b.w.mul(w).mul(fold.sub(0.5).mul(DS.fold).add(1)).mul(clamp(float(1).sub(f.x.div(b.w.mul(DS.give).add(DS.zone))), 0, 1))
+    .mul(float(1).sub(smoothstep(0.85, 1.35, p.y).mul(DS.roof).mul(f.w.oneMinus())));
+  return b.xyz.mul(push).add(vec3(0, push.mul(DS.buckle).mul(fold.sub(0.5)).mul(smoothstep(0.6, 0.85, p.y)).mul(abs(b.x)), 0));
 };
 const crumple = (p: N, n: N) => {
   const move = vec3(0).toVar(), m1 = vec3(0).toVar(), m2 = vec3(0).toVar();
@@ -78,7 +84,7 @@ const crumple = (p: N, n: N) => {
   If(dentRow.greaterThanEqual(0), () => {
     Loop(BLOWS, ({ i }: { i: N }) => {
       const a: N = dentMap.load(ivec2(i.mul(2), dentRow)).toVar(), b: N = dentMap.load(ivec2(i.mul(2).add(1), dentRow)).toVar();
-      If(b.x.lessThanEqual(0), () => { Break(); });
+      If(b.w.lessThanEqual(0), () => { Break(); });
       move.addAssign(blowAt(p, a, b));
       m1.addAssign(blowAt(p.add(t1.mul(0.03)), a, b));
       m2.addAssign(blowAt(p.add(t2.mul(0.03)), a, b));
@@ -92,9 +98,9 @@ const crackLevel = (p: N): N => {
   If(dentRow.greaterThanEqual(0), () => {
     Loop(BLOWS, ({ i }: { i: N }) => {
       const a: N = dentMap.load(ivec2(i.mul(2), dentRow)).toVar(), b: N = dentMap.load(ivec2(i.mul(2).add(1), dentRow)).toVar();
-      If(b.x.lessThanEqual(0), () => { Break(); });
-      const rel: N = p.xz.sub(a.xy), s: N = max(dot(rel, a.zw), 0), lat: N = rel.y.mul(a.z).sub(rel.x.mul(a.w));
-      hit.addAssign(b.x.mul(smoothstep(b.y.mul(0.6), b.y.mul(1.8), abs(lat)).oneMinus()).mul(smoothstep(DS.reach[0], DS.reach[1], s).oneMinus()));
+      If(b.w.lessThanEqual(0), () => { Break(); });
+      const f: N = blowFrame(p, a, b), r: N = abs(a.w);
+      hit.addAssign(b.w.mul(smoothstep(r.mul(0.6), r.mul(1.8), length(vec2(f.y, f.z.mul(f.w)))).oneMinus()).mul(smoothstep(DS.reach[0], DS.reach[1], f.x).oneMinus()));
     });
   });
   return min(3, hit.mul(2 / DS.glass));

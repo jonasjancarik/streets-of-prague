@@ -256,11 +256,19 @@ const BREAKS = 4.5; // m/s: a knock this hard breaks a lamp it lands on
 // is in `paint.w` above the lamps and the kind of area (DENT_STEP).
 export const DENT = { from: 3, per: 5 };
 export const BLOWS = 8;
-// A blow (Car.blows): where it landed on the car's outline (`x` along it, `z` across,
-// left negative, metres from its middle), the way it pushed (`dx`, `dz`: a unit vector,
-// into the car), how far in (`depth`, m), how wide (`r`: metres from where it landed to
-// where the metal is untouched) and `seed`, which sets where the folds fall.
-export type Blow = { x: number; z: number; dx: number; dz: number; depth: number; r: number; seed: number };
+// A blow (Car.blows): where it landed on the car's outline (`x` along it, `y` up from
+// the ground, `z` across, left negative, metres from its middle), the way it pushed
+// (`dx`, `dy`, `dz`: a unit vector, into the car), how far in (`depth`, m) and how wide
+// (`r`: metres from where it landed to where the metal is untouched). A knock comes from
+// the side and pushes in at every height; a `landed` one is the ground meeting a corner
+// of a rolling car (ROLL_DENT), and it fades up and down from where it landed as well.
+export type Blow = { x: number; y: number; z: number; dx: number; dy: number; dz: number; depth: number; r: number; landed?: boolean };
+// A rolling car landing on a corner (Rollover) faster than `from` m/s is pushed in there
+// `per` metres for every m/s more (twice that onto the roof, whose pillars give more
+// easily than the sills), `most` in all at a corner, over `wide` metres either
+// way along the car and across the corner; once it lies on its roof or side, it sits
+// `sink` of the push lower.
+export const ROLL_DENT = { from: 1.5, per: 0.14, most: 0.35, wide: 1.2, sink: 0.8 };
 // A blow to a driven car's tail that turns it faster than `from` rad/s sets it spinning
 // (Car.upset): the turn grows by `carry` times the blow's own (the back tyres let go), to
 // no more than `fastest`, for `per` seconds per rad/s of it, `most` at most, the last
@@ -1311,14 +1319,16 @@ if (KINDS.length * AREA_STEP > DENT_STEP) throw new Error('Too many kinds of are
 // The dents in the vertex stage (DENT_GLSL; the same in TSL: crumple in
 // webgpu/vehicles.ts, and blowMove here for the drivers). Around each blow the metal is
 // pushed in the blow's way: fully within `flat` of its width of where it landed, less
-// further out, to nothing at its edge. Folds across it (creases running up the panels,
+// further out, to nothing at its edge (a knock along the car and the same at every
+// height, a landing every way across its push). Folds across it (creases running up the panels,
 // and fainter ones along them) make it push in `fold` more or less in places, and where an end is
 // crushed the bonnet or boot lid buckles up and down by `buckle` of the push. Everything
 // at one spot comes in together whatever its depth in the car, until the crumple zone
 // (`zone` plus `give` times the depth, m, in from where the blow landed) ends: beyond it
 // nothing moves, and in it the parts close up on each other, so the panels can't pass
-// through the trim behind them. The push eases off by `roof` from the doors up, so the
-// roof doesn't come down on the people inside. A blow pushes in `deep` metres a level
+// through the trim behind them. A knock's push eases off by `roof` from the doors up, so
+// the roof doesn't come down on the people inside (a landing's doesn't: that's the roof
+// coming down). A blow pushes in `deep` metres a level
 // (DENT), `most` at most, and reaches `wide` plus `spread` times its depth, up to `beam`
 // more on the nose or tail (the bumper spreads it), `widest` at most; a blow within `merge` of an earlier one's width of it, pushing much the same
 // way, deepens that one instead. Windows within `reach` metres in from a blow and less
@@ -1332,13 +1342,19 @@ const DS = DENT_SHAPE;
 const ease = (a: number, b: number, v: number) => { const t = clamp((v - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 const fract = (v: number) => v - Math.floor(v);
 // How far a blow pushes the point (x, y, z) of its car (DENT_GLSL's blowAt), into `out`.
+// (`u` runs across the blow's way, along the car where it can; `v` square to that.)
 function blowMove(b: Blow, x: number, y: number, z: number, out: [number, number, number]) {
-  const rx = x - b.x, rz = z - b.z, s = Math.max(rx * b.dx + rz * b.dz, 0), lat = rz * b.dx - rx * b.dz;
-  const w = 1 - ease(DS.flat * b.r, b.r, Math.abs(lat));
-  const fold = 1.2 * Math.abs(fract(lat * 2.4 + y * 0.6 + b.seed) - 0.5) + 0.8 * Math.abs(fract(y * 3.3 - lat * 0.5 + b.seed * 1.7) - 0.5);
-  const push = b.depth * w * (1 + DS.fold * (fold - 0.5)) * clamp(1 - s / (DS.zone + DS.give * b.depth), 0, 1) * (1 - DS.roof * ease(0.85, 1.35, y));
+  const rx = x - b.x, ry = y - b.y, rz = z - b.z, s = Math.max(rx * b.dx + ry * b.dy + rz * b.dz, 0);
+  const flat = b.dx * b.dx + b.dz * b.dz > 0.1, h = flat ? Math.hypot(b.dx, b.dz) : 1;
+  const e1 = flat ? [-b.dz / h, 0, b.dx / h] : [1, 0, 0];
+  const e2 = [b.dy * e1[2] - b.dz * e1[1], b.dz * e1[0] - b.dx * e1[2], b.dx * e1[1] - b.dy * e1[0]];
+  const u = rx * e1[0] + ry * e1[1] + rz * e1[2], v = rx * e2[0] + ry * e2[1] + rz * e2[2], landed = b.landed ? 1 : 0;
+  const seed = fract(Math.sin(b.x * 12.9898 + b.z * 78.233) * 43758.5453) * 7;
+  const w = 1 - ease(DS.flat * b.r, b.r, Math.hypot(u, v * landed));
+  const fold = 1.2 * Math.abs(fract(u * 2.4 + v * 0.6 + seed) - 0.5) + 0.8 * Math.abs(fract(v * 3.3 - u * 0.5 + seed * 1.7) - 0.5);
+  const push = b.depth * w * (1 + DS.fold * (fold - 0.5)) * clamp(1 - s / (DS.zone + DS.give * b.depth), 0, 1) * (1 - DS.roof * ease(0.85, 1.35, y) * (1 - landed));
   out[0] += b.dx * push;
-  out[1] += push * DS.buckle * (fold - 0.5) * ease(0.6, 0.85, y) * Math.abs(b.dx);
+  out[1] += b.dy * push + push * DS.buckle * (fold - 0.5) * ease(0.6, 0.85, y) * Math.abs(b.dx);
   out[2] += b.dz * push;
 }
 // What the dents do to a seated driver, whose figure isn't part of the car's model: how
@@ -1358,7 +1374,7 @@ export function seatDent(blows: readonly Blow[], x: number, pelvis: number, z: n
   return [inward, 1 + Math.min(0, m[1]) / roof];
 }
 // The blows of the cars being drawn, for the shaders: a row a dented car, two texels a
-// blow (x, z, dx, dz; depth, r, seed), given out as the cars are drawn and taken back
+// blow (x, y, z, r, negative for a landing; dx, dy, dz, depth), given out as the cars are drawn and taken back
 // from those drawn longest ago when they run out.
 const DENT_ROWS = 1024;
 export const DENT_MAP = new THREE.DataTexture(new Float32Array(BLOWS * 8 * DENT_ROWS), BLOWS * 2, DENT_ROWS, THREE.RGBAFormat, THREE.FloatType);
@@ -1384,7 +1400,7 @@ function dentRow(c: Car) {
   if (e.version !== c.dentVersion) {
     const data = DENT_MAP.image.data as Float32Array, at = e.row * BLOWS * 8;
     data.fill(0, at, at + BLOWS * 8);
-    c.blows.forEach((b, i) => data.set([b.x, b.z, b.dx, b.dz, b.depth, b.r, b.seed, 0], at + i * 8));
+    c.blows.forEach((b, i) => data.set([b.x, b.y, b.z, b.landed ? -b.r : b.r, b.dx, b.dy, b.dz, b.depth], at + i * 8));
     e.version = c.dentVersion;
     DENT_MAP.needsUpdate = true;
   }
@@ -1403,13 +1419,19 @@ export const BROKEN_GLASS = { white: [0.72, 0.75, 0.77], frost: 0.55, crush: 0.4
 const DENT_GLSL = /* glsl */ `
 uniform sampler2D uDents;
 int dentRow() { return int(floor(paint.w / ${DENT_STEP}.)) - 1; }
+// Where p is from blow a, b: how far in along its way (x), across it (y, z: u and v in
+// blowMove) and whether it's a landing (w).
+vec4 blowFrame(vec3 p, vec4 a, vec4 b) {
+  vec3 rel = p - a.xyz, e1 = dot(b.xz, b.xz) > .1 ? normalize(vec3(-b.z, 0., b.x)) : vec3(1., 0., 0.);
+  return vec4(max(dot(rel, b.xyz), 0.), dot(rel, e1), dot(rel, cross(b.xyz, e1)), step(a.w, 0.));
+}
 vec3 blowAt(vec3 p, vec4 a, vec4 b) {
-  vec2 rel = p.xz - a.xy;
-  float s = max(dot(rel, a.zw), 0.), lat = rel.y * a.z - rel.x * a.w;
-  float w = 1. - smoothstep(${DS.flat} * b.y, b.y, abs(lat));
-  float fold = 1.2 * abs(fract(lat * 2.4 + p.y * .6 + b.z) - .5) + .8 * abs(fract(p.y * 3.3 - lat * .5 + b.z * 1.7) - .5);
-  float push = b.x * w * (1. + ${DS.fold} * (fold - .5)) * clamp(1. - s / (${DS.zone} + ${DS.give} * b.x), 0., 1.) * (1. - ${DS.roof} * smoothstep(.85, 1.35, p.y));
-  return vec3(a.z * push, push * ${DS.buckle} * (fold - .5) * smoothstep(.6, .85, p.y) * abs(a.z), a.w * push);
+  vec4 f = blowFrame(p, a, b);
+  float seed = fract(sin(a.x * 12.9898 + a.z * 78.233) * 43758.5453) * 7.;
+  float w = 1. - smoothstep(${DS.flat} * abs(a.w), abs(a.w), length(vec2(f.y, f.z * f.w)));
+  float fold = 1.2 * abs(fract(f.y * 2.4 + f.z * .6 + seed) - .5) + .8 * abs(fract(f.z * 3.3 - f.y * .5 + seed * 1.7) - .5);
+  float push = b.w * w * (1. + ${DS.fold} * (fold - .5)) * clamp(1. - f.x / (${DS.zone} + ${DS.give} * b.w), 0., 1.) * (1. - ${DS.roof} * smoothstep(.85, 1.35, p.y) * (1. - f.w));
+  return b.xyz * push + vec3(0., push * ${DS.buckle} * (fold - .5) * smoothstep(.6, .85, p.y) * abs(b.x), 0.);
 }
 // How far the blows push the vertex at p in (\`move\`), and its normal n once they have.
 vec3 crumple(vec3 p, vec3 n, out vec3 move) {
@@ -1419,7 +1441,7 @@ vec3 crumple(vec3 p, vec3 n, out vec3 move) {
   vec3 t1 = normalize(cross(n, abs(n.y) < .9 ? vec3(0., 1., 0.) : vec3(1., 0., 0.))), t2 = cross(n, t1), m1 = vec3(0.), m2 = vec3(0.);
   for (int i = 0; i < ${BLOWS}; i++) {
     vec4 a = texelFetch(uDents, ivec2(2 * i, row), 0), b = texelFetch(uDents, ivec2(2 * i + 1, row), 0);
-    if (b.x <= 0.) break;
+    if (b.w <= 0.) break;
     move += blowAt(p, a, b);
     m1 += blowAt(p + t1 * .03, a, b);
     m2 += blowAt(p + t2 * .03, a, b);
@@ -1433,10 +1455,9 @@ float crackLevel(vec3 p) {
   float hit = 0.;
   for (int i = 0; i < ${BLOWS}; i++) {
     vec4 a = texelFetch(uDents, ivec2(2 * i, row), 0), b = texelFetch(uDents, ivec2(2 * i + 1, row), 0);
-    if (b.x <= 0.) break;
-    vec2 rel = p.xz - a.xy;
-    float s = max(dot(rel, a.zw), 0.), lat = rel.y * a.z - rel.x * a.w;
-    hit += b.x * (1. - smoothstep(b.y * .6, b.y * 1.8, abs(lat))) * (1. - smoothstep(${DS.reach[0]}, ${DS.reach[1]}, s));
+    if (b.w <= 0.) break;
+    vec4 f = blowFrame(p, a, b);
+    hit += b.w * (1. - smoothstep(abs(a.w) * .6, abs(a.w) * 1.8, length(vec2(f.y, f.z * f.w)))) * (1. - smoothstep(${DS.reach[0]}, ${DS.reach[1]}, f.x));
   }
   return min(3., 2. * hit / ${DS.glass});
 }`;
@@ -2052,17 +2073,42 @@ export class Car {
     // Back along that way to the outline.
     const t = Math.min(dx ? (dx < 0 ? L - x : x + L) / Math.abs(dx) : Infinity, dz ? (dz < 0 ? W - z : z + W) / Math.abs(dz) : Infinity);
     if (Number.isFinite(t)) { x -= dx * t; z -= dz * t; }
-    const reach = (d: number) => Math.min(DS.widest, (DS.wide + DS.spread * d) * (1 + DS.beam * Math.abs(dx)));
-    const r = reach(depth);
-    let b = this.blows.find((o) => Math.hypot(o.x - x, o.z - z) < DS.merge * Math.max(o.r, r) && o.dx * dx + o.dz * dz > 0.7);
-    if (!b && this.blows.length >= BLOWS) b = this.blows.reduce((a, o) => Math.hypot(o.x - x, o.z - z) < Math.hypot(a.x - x, a.z - z) ? o : a);
+    this.blow({ x, y: 0.5, z, dx, dy: 0, dz, depth, r: 0 }, (d) => Math.min(DS.widest, (DS.wide + DS.spread * d) * (1 + DS.beam * Math.abs(dx))));
+  }
+  // A rolling car landing on the corner `across` (+ its left) and `up` from its middle and
+  // the ground, `angle` turned about its long axis (Rollover), at `speed` m/s.
+  landed(across: number, up: number, angle: number, speed: number) {
+    const depth = Math.min(ROLL_DENT.most, (speed - ROLL_DENT.from) * ROLL_DENT.per * (1 + Math.max(0, -Math.cos(angle))));
+    if (!(depth > 0.005) || this.two) return;
+    // The ground pushes straight up, which is (sin, cos) across and up the turned car.
+    this.blow({ x: 0, y: up, z: -across, dx: 0, dy: Math.cos(angle), dz: -Math.sin(angle), depth, r: 0, landed: true },
+      (d) => Math.min(DS.widest, ROLL_DENT.wide + DS.spread * d * 0.5), ROLL_DENT.most);
+  }
+  // Adds blow `n` (`reach`: its width for a depth), or deepens one near it pushed much the
+  // same way (DENT_SHAPE.merge), or the nearest once there are BLOWS.
+  private blow(n: Blow, reach: (depth: number) => number, most: number = DS.most) {
+    n.r = reach(n.depth);
+    const far = (o: Blow) => Math.hypot(o.x - n.x, o.y - n.y, o.z - n.z);
+    let b = this.blows.find((o) => !o.landed === !n.landed && far(o) < DS.merge * Math.max(o.r, n.r) && o.dx * n.dx + o.dy * n.dy + o.dz * n.dz > 0.7);
+    if (!b && this.blows.length >= BLOWS) b = this.blows.reduce((a, o) => far(o) < far(a) ? o : a);
     if (b) {
-      const k = depth / (b.depth + depth), ex = b.dx + (dx - b.dx) * k, ez = b.dz + (dz - b.dz) * k, e = Math.hypot(ex, ez) || 1;
-      b.x += (x - b.x) * k; b.z += (z - b.z) * k; b.dx = ex / e; b.dz = ez / e;
-      b.depth = Math.min(DS.most, b.depth + depth);
-      b.r = Math.max(b.r, r, reach(b.depth));
-    } else this.blows.push({ x, z, dx, dz, depth, r, seed: fract(Math.sin(x * 12.9898 + z * 78.233) * 43758.5453) * 7 });
+      const k = n.depth / (b.depth + n.depth);
+      const ex = b.dx + (n.dx - b.dx) * k, ey = b.dy + (n.dy - b.dy) * k, ez = b.dz + (n.dz - b.dz) * k, e = Math.hypot(ex, ey, ez) || 1;
+      b.x += (n.x - b.x) * k; b.y += (n.y - b.y) * k; b.z += (n.z - b.z) * k;
+      b.dx = ex / e; b.dy = ey / e; b.dz = ez / e;
+      b.depth = Math.min(most, b.depth + n.depth);
+      b.r = Math.max(b.r, n.r, reach(b.depth));
+    } else this.blows.push(n);
     this.dentVersion++;
+  }
+  // How much lower the crushed roof or side it lies on lets an overturned car sit (m).
+  get sunk() {
+    const r = this.roll;
+    if (!r || r.moving) return 0;
+    const c = Math.cos(r.angle), s = Math.sin(r.angle);
+    let most = 0;
+    for (const b of this.blows) if (b.landed && b.dy * c - b.dz * s > 0.8) most = Math.max(most, b.depth);
+    return most * ROLL_DENT.sink;
   }
   // The dents of a game saved before blows (`crush`: how crumpled, 0 to 3, its front
   // left and right corners, its rear ones and the middle of its sides were), as blows.
@@ -2211,7 +2257,8 @@ export class Car {
     this.h += this.w * dt;
     this.braking = false;
     this.skidBack = this.skidFront = 0;
-    const { across, landing } = r.step(dt);
+    const { across, landing, corner } = r.step(dt);
+    if (corner) this.landed(corner[0], corner[1], corner[2], landing);
     this.x += -Math.sin(this.h) * across;
     this.y += Math.cos(this.h) * across;
     this.lean = -r.angle;
@@ -2813,7 +2860,7 @@ export class CarPool {
             d.rotation.set(-c.lean, c.h, 0, 'YZX');
           }
           if (c.tipped) d.position.y += Math.abs(Math.sin(c.lean)) * c.spec.W / 2;
-          else if (c.roll) d.position.y += c.roll.lift;
+          else if (c.roll) d.position.y += c.roll.lift - c.sunk;
           d.updateMatrix();
           // Noted after the ground was sampled, which tracks the car (level, gz, …).
           if (keep) {

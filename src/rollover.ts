@@ -78,10 +78,12 @@ export class Rollover {
     return a < 0.6 ? 'wheels' : a > 2.4 ? 'roof' : 'side';
   }
 
-  // Moves it on by dt. Returns how far it moved sideways (m, + to the car's left) and the
-  // speed of the hardest landing (m/s), for the sound and the shake.
-  step(dt: number): { across: number; landing: number } {
-    let across = 0, landing = 0;
+  // Moves it on by dt. Returns how far it moved sideways (m, + to the car's left), the
+  // speed of the hardest landing (m/s), for the sound and the shake, and the corner it
+  // landed on then: across and up from the car's middle and the ground, and how far the
+  // car was turned (for the dents, Car.landed).
+  step(dt: number): { across: number; landing: number; corner?: [number, number, number] } {
+    let across = 0, landing = 0, corner: [number, number, number] | undefined;
     if (!this.moving) return { across, landing };
     const { pts, h, k2 } = this.sh;
     const n = Math.max(1, Math.ceil(dt / 0.004));
@@ -97,8 +99,8 @@ export class Rollover {
       const originX = this.pivot < 0 ? 0 : this.pivotX - this.rotX(this.pivot, c, s);
       if (q !== this.pivot) {
         if (this.pivot >= 0) {
-          const [x, y] = pts[q];
-          landing = Math.max(landing, Math.abs(this.rate) * Math.hypot(x, y - h));
+          const [x, y] = pts[q], hit = Math.abs(this.rate) * Math.hypot(x, y - h);
+          if (hit > landing) { landing = hit; corner = [x, y, this.angle]; }
           this.rate *= LANDING;
           if (Math.abs(this.rate) < REST) { this.rate = 0; this.moving = false; }
         }
@@ -116,7 +118,7 @@ export class Rollover {
       across += newX - originX;
       this.lift = -(px * s2 + py * c2);
     }
-    return { across, landing };
+    return { across, landing, corner };
   }
 
   private rotX(j: number, c: number, s: number) {
