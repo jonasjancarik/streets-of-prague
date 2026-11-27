@@ -3965,9 +3965,18 @@ async function main() {
       const riverLevel = RIVER_MIRROR.waterDrawn && riverBanks.strength.value > .05 && graphics.tier !== 'low' && graphics.reflections !== 'none'
         ? THREE.MathUtils.lerp(riverBanks.a.value.y,riverBanks.b.value.y,riverBanks.mix.value)-.35 : null;
       RIVER_MIRROR.waterDrawn = false;
+      // The sun's shadow map is due for the view's own render, not for the mirrors' and the
+      // probe's before it: three.js draws the map in the first render of the frame that finds
+      // needsUpdate, with that camera's layers (the river mirror's sees only boats and bridge
+      // fixtures), and then clears it, so the view used a map with no trees in it. (That flashed
+      // the shade under the trees on and off: feedback of 27 November.) They use the last one.
+      const shadowDue = sun.shadow.needsUpdate;
+      sun.shadow.needsUpdate = false;
       const riverMirrorDrawn = renderRiverMirror(renderer,scene,camera,riverLevel,graphics.tier === 'medium');
       const probed = renderProbe(renderer, scene, camPos.x, camGround, camPos.z, carPool.allMeshes());
-      if (renderMirror(renderer, scene, camera, camGround, weather.now.wet) || riverMirrorDrawn || probed) {
+      const mirrorDrawn = renderMirror(renderer, scene, camera, camGround, weather.now.wet);
+      sun.shadow.needsUpdate = shadowDue;
+      if (mirrorDrawn || riverMirrorDrawn || probed) {
         scene.matrixWorldAutoUpdate = false;
         if (!drawPost(scene, camera)) renderer.render(scene, camera);
         scene.matrixWorldAutoUpdate = true;
