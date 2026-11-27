@@ -217,6 +217,12 @@ vec3 pGrass(vec3 c, vec2 p, vec4 season) {
 #endif
   c = mix(c, c * vec3(1.12, 1.05, .78), dry);  // same dry patches, changing through the year
   c = mix(c, c * vec3(1.05, .9, .7), smoothstep(.6, .8, fbm2(p * .15 + 3.)) * .6);  // worn to earth
+  // Lusher patches a metre or so across (darker, bluer) and thinner ones (paler, yellower),
+  // and a finer mottle of tufts, each until it's too small for the pixel (pGrass in webgpu.ts).
+  float clump = vnoise(p * .85 + 41.), seen1 = detail(p, 1.2);
+  c = mix(c, c * vec3(.84, .92, .96), smoothstep(.55, .8, clump) * seen1 * .7);
+  c = mix(c, c * vec3(1.1, 1.04, .86), smoothstep(.45, .2, clump) * seen1 * .45);
+  c *= 1. + (vnoise(p * 2.3 + 17.) - .5) * .2 * detail(p, .45);
   float d = detail(p, .2);
   if (d > 0.) c += (vnoise(p * 5.) - .5) * .07 * d;
   return c;

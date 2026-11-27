@@ -286,9 +286,16 @@ function pGrass(c0: N, p: N, seasonal: boolean, season: typeof uGroundSeason = u
   c.assign(mix(c, c.mul(vec3(1.12, 1.05, 0.78)), dry));
   c.assign(mix(c, c.mul(vec3(1.05, 0.9, 0.7)), smoothstep(0.6, 0.8, fbm2(p.mul(0.15).add(3))).mul(0.6)));
   const d = detail(p, 0.2), near = detail(p, 0.035);
+  // Lusher patches a metre or so across (darker and bluer: clover, longer grass) and thinner
+  // ones (paler and yellower, the soil showing), and a finer mottle of tufts and weeds, which
+  // a lawn always has. Each stays until it's too small for the pixel, so a lawn seen from the
+  // usual height isn't a green felt.
+  const clump = vnoise(p.mul(0.85).add(41)), tufts = vnoise(p.mul(2.3).add(17)).sub(0.5);
+  const seen1 = detail(p, 1.2), seen2 = detail(p, 0.45);
+  c.assign(mix(c, c.mul(vec3(0.84, 0.92, 0.96)), smoothstep(0.55, 0.8, clump).mul(seen1).mul(0.7)));
+  c.assign(mix(c, c.mul(vec3(1.1, 1.04, 0.86)), smoothstep(0.45, 0.2, clump).mul(seen1).mul(0.45)));
+  c.mulAssign(float(1).add(tufts.mul(0.2).mul(seen2)));
   If(d.greaterThan(0), () => {
-    // Lusher and thinner clumps a metre or two across, which a lawn always has (close up only).
-    c.mulAssign(float(1).add(vnoise(p.mul(0.85).add(41)).sub(0.5).mul(0.2).mul(d)));
     // The blades themselves, close up: fine streaks that all lean one way over a few metres.
     const lean = vnoise(p.mul(0.11).add(5)).mul(6.2832);
     const q = vec2(dot(p, vec2(cos(lean), sin(lean))), dot(p, vec2(sin(lean).negate(), cos(lean))));

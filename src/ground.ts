@@ -79,7 +79,9 @@ const WEAR_SHADE = 0.42, GUTTER_PEAK = 0.9;
 // tone curve, grade.ts: it keeps more of a sunlit colour's strength than the curve before it.)
 export const COLORS = {
   pavement: '#92908c', square: '#d7d3cb', squareSetts: '#9c958a', path: '#d8cbb6', dirt: '#bfa87e', worn: '#b49f72',
-  park: '#6d9647', garden: '#74994c', wood: '#394a2b', orchard: '#7c9c52', pitch: '#629050',
+  // (The grass a mown city lawn's olive, as in the aerial photos, not a lime: about 40 %
+  // saturated. It came out near 60 % in the sun before, and read as felt.)
+  park: '#6e8a4e', garden: '#6c8c4c', wood: '#394a2b', orchard: '#7a8f50', pitch: '#628a50',
   field: '#b9b27a', yard: '#a9a69e', dtmYard: '#85837e', ballast: '#99948a', bare: '#bba888',
   water: '#4d7680', pool: '#62aec2', asphalt: '#626264', sett: '#8a847a', parking: '#6a6968',
   bed: '#6f5b43', shrubBed: '#5d6b3c', iron: '#3f3d3b',
