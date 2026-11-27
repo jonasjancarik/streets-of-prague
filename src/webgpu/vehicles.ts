@@ -4,7 +4,7 @@
 // the 'cars', 'trams', 'funicular' and 'boats' materials (see addPort).
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Fn, If, float, sqrt, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, cameraWorldMatrix, diffuseColor, renderGroup, positionLocal, positionWorld, positionViewDirection, normalLocal, positionGeometry, materialColor, materialSpecular, normalize, dot, smoothstep, mix, select, sin, min, cos, max, floor, mod, exp2, reflect, atan, pow, uniform, texture, cubeTexture, length, clamp, step, distance, cross, fract, abs, fwidth, normalGeometry, int, ivec2, Loop, Break } from 'three/tsl';
+import { Fn, If, float, sqrt, inverseSqrt, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, cameraWorldMatrix, diffuseColor, renderGroup, positionLocal, positionWorld, positionViewDirection, normalLocal, positionGeometry, materialColor, materialSpecular, normalize, dot, smoothstep, mix, select, sin, min, cos, max, floor, mod, exp2, reflect, atan, pow, uniform, texture, cubeTexture, length, clamp, step, distance, cross, fract, abs, fwidth, normalGeometry, int, ivec2, Loop, Break } from 'three/tsl';
 import { LAMP_GLOW, CAR_GLOSS, DUSTCART_COAT, CAR_MIRROR, CAR_STREET, WHEEL_LEVEL, WHEEL_SHIFT, CAR_REFLECT as R, CAR_STRIPS as CS, AREA_STEP, DENT_STEP, DENT_SHAPE as DS, BROKEN_GLASS as BG, SCRAPED as SC, BLOWS, DENT_MAP } from '../car.ts';
 import { WHEEL_BEND as WB } from '../physicalHandling.ts';
 import { ROLL_CENTRE } from '../streetHandling.ts';
@@ -73,17 +73,20 @@ const blowFrame = (p: N, a: N, b: N): N => {
 const blowAt = (p: N, a: N, b: N): N => {
   const f: N = blowFrame(p, a, b), r: N = abs(a.w);
   const seed: N = fract(sin(a.x.mul(12.9898).add(a.z.mul(78.233))).mul(43758.5453)).mul(7);
-  const w: N = smoothstep(r.mul(DS.flat), r, length(vec2(f.y, f.z.mul(f.w)))).oneMinus();
+  const end: N = abs(b.x);
+  const w: N = smoothstep(r.mul(DS.flat).mul(end.mul(DS.bend).oneMinus()), r, length(vec2(f.y, f.z.mul(f.w)))).oneMinus();
   const fold: N = abs(fract(f.y.mul(2.4).add(f.z.mul(0.6)).add(seed)).sub(0.5)).mul(1.2).add(abs(fract(f.z.mul(3.3).sub(f.y.mul(0.5)).add(seed.mul(1.7))).sub(0.5)).mul(0.8));
-  const push: N = b.w.mul(w).mul(fold.sub(0.5).mul(DS.fold).add(1)).mul(clamp(float(1).sub(f.x.div(b.w.mul(DS.give).add(DS.zone))), 0, 1))
-    .mul(float(1).sub(smoothstep(0.85, 1.35, p.y).mul(DS.roof).mul(f.w.oneMinus())));
-  return b.xyz.mul(push).add(vec3(0, push.mul(DS.buckle).mul(fold.sub(0.5)).mul(smoothstep(0.6, 0.85, p.y)).mul(abs(b.x)), 0));
+  const zone: N = b.w.mul(DS.give).add(DS.zone), t: N = min(f.x.div(zone), 1);
+  const keep: N = float(1).sub(smoothstep(0.85, 1.35, p.y).mul(DS.roof).mul(f.w.oneMinus()));
+  const push: N = b.w.mul(w).mul(fold.sub(0.5).mul(DS.fold).add(1)).mul(t.oneMinus()).mul(keep);
+  const crest: N = fract(seed).mul(0.15).add(0.3), ridge: N = select(t.lessThan(crest), t.div(crest), t.oneMinus().div(crest.oneMinus()));
+  const tent: N = sqrt(b.w.mul(zone)).mul(DS.tent).mul(w).mul(ridge).mul(fold.mul(0.3).add(0.85)).mul(smoothstep(0.6, 0.85, p.y)).mul(end).mul(keep).mul(f.w.oneMinus());
+  return b.xyz.mul(push).add(vec3(0, tent, 0));
 };
-// The blows' summed push m, cut back as blowsMove in car.ts does (DENT_SHAPE.pile).
+// The blows' summed push m, eased back as blowsMove in car.ts does (DENT_SHAPE.pile).
 const dentCap = (m: N): N => {
-  const l2: N = max(dot(m, m), 1e-12);
-  const cap: N = float(DS.most).sub(m.z.mul(m.z).div(l2).mul(DS.most - DS.side)).mul(DS.pile);
-  return m.mul(min(cap.div(sqrt(l2)), 1));
+  const l2: N = dot(m, m), c: N = float(DS.most).sub(m.z.mul(m.z).div(max(l2, 1e-12)).mul(DS.most - DS.side)).mul(DS.pile), q: N = l2.div(c.mul(c));
+  return m.mul(inverseSqrt(sqrt(q.mul(q).add(1))));
 };
 const crumple = (p: N, n: N) => {
   const move = vec3(0).toVar(), m1 = vec3(0).toVar(), m2 = vec3(0).toVar();

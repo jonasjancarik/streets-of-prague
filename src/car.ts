@@ -1338,9 +1338,12 @@ if (KINDS.length * AREA_STEP > DENT_STEP) throw new Error('Too many kinds of are
 // webgpu/vehicles.ts, and blowMove here for the drivers). Around each blow the metal is
 // pushed in the blow's way: fully within `flat` of its width of where it landed, less
 // further out, to nothing at its edge (a knock along the car and the same at every
-// height, a landing every way across its push). Folds across it (creases running up the panels,
+// height, a landing every way across its push). On the nose or tail that flat middle goes
+// by `bend` (to nothing at 1), so the bumper bends round where it was hit instead of
+// coming back whole. Folds across it (creases running up the panels,
 // and fainter ones along them) make it push in `fold` more or less in places, and where an end is
-// crushed the bonnet or boot lid buckles up and down by `buckle` of the push. Everything
+// crushed the bonnet or boot lid, shortened, tents up into a crease across it: `tent` times
+// the root of the push and the crumple zone's length high, somewhere near the zone's middle. Everything
 // at one spot comes in together whatever its depth in the car, until the crumple zone
 // (`zone` plus `give` times the depth, m, in from where the blow landed) ends: beyond it
 // nothing moves, and in it the parts close up on each other, so the panels can't pass
@@ -1352,10 +1355,10 @@ if (KINDS.length * AREA_STEP > DENT_STEP) throw new Error('Too many kinds of are
 // way, deepens that one instead. Windows within `reach` metres in from a blow and less
 // than twice its width to either side break once it's pushed in `glass` metres (less
 // further from it; BROKEN_GLASS), and lose pieces at 1.5 times that. Blows side by side
-// don't add up past `pile` times the most one blow goes in that way (blowsMove).
+// add up less and less towards `pile` times the most one blow goes in that way (blowsMove).
 export const DENT_SHAPE = {
-  deep: 0.16, most: 0.4, side: 0.3, wide: 0.3, spread: 1.6, beam: 0.5, widest: 1.4, flat: 0.3, merge: 0.4,
-  zone: 0.35, give: 1.1, fold: 0.45, buckle: 0.35, roof: 0.65, reach: [1.6, 2.6], glass: 0.24, pile: 1.15,
+  deep: 0.16, most: 0.4, side: 0.3, wide: 0.3, spread: 1.6, beam: 0.5, widest: 1.4, flat: 0.3, bend: 1, merge: 0.4,
+  zone: 0.35, give: 1.1, fold: 0.45, tent: 0.18, roof: 0.65, reach: [1.6, 2.6], glass: 0.24, pile: 1.25,
 };
 const DS = DENT_SHAPE;
 const ease = (a: number, b: number, v: number) => { const t = clamp((v - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
@@ -1369,23 +1372,28 @@ function blowMove(b: Blow, x: number, y: number, z: number, out: [number, number
   const e2 = [b.dy * e1[2] - b.dz * e1[1], b.dz * e1[0] - b.dx * e1[2], b.dx * e1[1] - b.dy * e1[0]];
   const u = rx * e1[0] + ry * e1[1] + rz * e1[2], v = rx * e2[0] + ry * e2[1] + rz * e2[2], landed = b.landed ? 1 : 0;
   const seed = fract(Math.sin(b.x * 12.9898 + b.z * 78.233) * 43758.5453) * 7;
-  const w = 1 - ease(DS.flat * b.r, b.r, Math.hypot(u, v * landed));
+  const end = Math.abs(b.dx), w = 1 - ease(DS.flat * (1 - DS.bend * end) * b.r, b.r, Math.hypot(u, v * landed));
   const fold = 1.2 * Math.abs(fract(u * 2.4 + v * 0.6 + seed) - 0.5) + 0.8 * Math.abs(fract(v * 3.3 - u * 0.5 + seed * 1.7) - 0.5);
-  const push = b.depth * w * (1 + DS.fold * (fold - 0.5)) * clamp(1 - s / (DS.zone + DS.give * b.depth), 0, 1) * (1 - DS.roof * ease(0.85, 1.35, y) * (1 - landed));
+  const zone = DS.zone + DS.give * b.depth, t = Math.min(s / zone, 1), keep = 1 - DS.roof * ease(0.85, 1.35, y) * (1 - landed);
+  const push = b.depth * w * (1 + DS.fold * (fold - 0.5)) * (1 - t) * keep;
+  // The tent: a ridge across the lid, its crease somewhere from 0.3 to 0.45 of the zone in.
+  const crest = 0.3 + 0.15 * fract(seed), ridge = t < crest ? t / crest : (1 - t) / (1 - crest);
+  const tent = DS.tent * Math.sqrt(b.depth * zone) * w * ridge * (0.85 + 0.3 * fold) * ease(0.6, 0.85, y) * end * keep * (1 - landed);
   out[0] += b.dx * push;
-  out[1] += b.dy * push + push * DS.buckle * (fold - 0.5) * ease(0.6, 0.85, y) * Math.abs(b.dx);
+  out[1] += b.dy * push + tent;
   out[2] += b.dz * push;
 }
-// How far all the blows push the point (x, y, z) of their car, into `m`: summed, then cut
-// back to DENT_SHAPE.pile times the most one blow goes in that way, `side` across the car
-// and `most` along or down it (dentCap in DENT_GLSL and webgpu/vehicles.ts).
+// How far all the blows push the point (x, y, z) of their car, into `m`: summed, then eased
+// back towards DENT_SHAPE.pile times the most one blow goes in that way, `side` across the
+// car and `most` along or down it (l / (1 + (l / cap)⁴)^¼, so a sum well under it stays
+// much as it is and one over it stops short of it; dentCap in DENT_GLSL and webgpu/vehicles.ts).
 function blowsMove(blows: readonly Blow[], x: number, y: number, z: number, m: [number, number, number]) {
   m.fill(0);
   for (const b of blows) blowMove(b, x, y, z, m);
   const l2 = m[0] * m[0] + m[1] * m[1] + m[2] * m[2];
   if (!l2) return m;
-  const l = Math.sqrt(l2), cap = (DS.most - (DS.most - DS.side) * m[2] * m[2] / l2) * DS.pile;
-  if (l > cap) for (let i = 0; i < 3; i++) m[i] *= cap / l;
+  const q = l2 / ((DS.most - (DS.most - DS.side) * m[2] * m[2] / l2) * DS.pile) ** 2, k = 1 / Math.sqrt(Math.sqrt(1 + q * q));
+  for (let i = 0; i < 3; i++) m[i] *= k;
   return m;
 }
 // How far the blows bend the wheel whose hub is at (x, y, z) on its car (as blowsMove;
@@ -1464,17 +1472,18 @@ vec4 blowFrame(vec3 p, vec4 a, vec4 b) {
 vec3 blowAt(vec3 p, vec4 a, vec4 b) {
   vec4 f = blowFrame(p, a, b);
   float seed = fract(sin(a.x * 12.9898 + a.z * 78.233) * 43758.5453) * 7.;
-  float w = 1. - smoothstep(${DS.flat} * abs(a.w), abs(a.w), length(vec2(f.y, f.z * f.w)));
+  float end = abs(b.x), w = 1. - smoothstep(${DS.flat} * (1. - ${DS.bend.toFixed(3)} * end) * abs(a.w), abs(a.w), length(vec2(f.y, f.z * f.w)));
   float fold = 1.2 * abs(fract(f.y * 2.4 + f.z * .6 + seed) - .5) + .8 * abs(fract(f.z * 3.3 - f.y * .5 + seed * 1.7) - .5);
-  float push = b.w * w * (1. + ${DS.fold} * (fold - .5)) * clamp(1. - f.x / (${DS.zone} + ${DS.give} * b.w), 0., 1.) * (1. - ${DS.roof} * smoothstep(.85, 1.35, p.y) * (1. - f.w));
-  return b.xyz * push + vec3(0., push * ${DS.buckle} * (fold - .5) * smoothstep(.6, .85, p.y) * abs(b.x), 0.);
+  float zone = ${DS.zone} + ${DS.give} * b.w, t = min(f.x / zone, 1.), keep = 1. - ${DS.roof} * smoothstep(.85, 1.35, p.y) * (1. - f.w);
+  float push = b.w * w * (1. + ${DS.fold} * (fold - .5)) * (1. - t) * keep;
+  float crest = .3 + .15 * fract(seed), ridge = t < crest ? t / crest : (1. - t) / (1. - crest);
+  float tent = ${DS.tent} * sqrt(b.w * zone) * w * ridge * (.85 + .3 * fold) * smoothstep(.6, .85, p.y) * end * keep * (1. - f.w);
+  return b.xyz * push + vec3(0., tent, 0.);
 }
-// The blows' summed push m, cut back as blowsMove does.
+// The blows' summed push m, eased back as blowsMove does.
 vec3 dentCap(vec3 m) {
-  float l2 = dot(m, m);
-  if (l2 <= 0.) return m;
-  float l = sqrt(l2), cap = (${DS.most} - ${DS.most - DS.side} * m.z * m.z / l2) * ${DS.pile};
-  return l > cap ? m * (cap / l) : m;
+  float l2 = dot(m, m), c = (${DS.most} - ${(DS.most - DS.side).toFixed(4)} * m.z * m.z / max(l2, 1e-12)) * ${DS.pile}, q = l2 / (c * c);
+  return m * inversesqrt(sqrt(1. + q * q));
 }
 // How far the blows push the vertex at p in (\`move\`), and its normal n once they have.
 vec3 crumple(vec3 p, vec3 n, out vec3 move) {
