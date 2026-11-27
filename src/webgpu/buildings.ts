@@ -42,22 +42,34 @@ const rowRelief = (n: N, down: N, along: N, lip: number): N => {
   const reach: N = clamp(facing.negate().div(onto).mul(lip), 0, 0.6);
   const shadow: N = float(1).sub(smoothstep(reach.mul(0.6), reach.add(0.02), along)).mul(step(0.01, reach));
   const lit: N = smoothstep(0.82, 0.97, along).mul(max(facing, 0));
-  return float(1).sub(shadow.mul(RELIEF.shade)).add(lit.mul(RELIEF.light));
+  // Tucked under the row above, the top of a row gets less of the sky whatever the sun
+  // does: a dark line that keeps the rows on a slope facing the sun.
+  const tucked: N = float(1).sub(smoothstep(0, 0.12, along)).mul(RELIEF.tucked);
+  return float(1).sub(shadow.mul(RELIEF.shade)).add(lit.mul(RELIEF.light)).sub(tucked);
 };
 // rowRelief averaged down a row, for when the rows are too fine to draw: a slope with the
 // sun behind it stays darker by its rows' shadows, and one facing it a little lighter, so
 // zooming out doesn't bleach the roofs flat. (The shadow covers about reach × 0.8 + 0.01 of
-// a row, the lit edge 0.105.)
+// a row, the lit edge 0.105, the tucked line 0.06.)
 const rowReliefMean = (n: N, down: N, lip: number): N => {
   const flat: N = vec3(down.x, 0, down.y.negate());
   const d3: N = normalize(flat.sub(n.mul(dot(flat, n))));
   const facing: N = dot(uSunDir, d3), onto: N = max(dot(uSunDir, n), 0.12);
   const reach: N = clamp(facing.negate().div(onto).mul(lip), 0, 0.6);
   const shadow: N = reach.mul(0.8).add(0.01).mul(step(0.01, reach));
-  return float(1).sub(shadow.mul(RELIEF.shade)).add(max(facing, 0).mul(0.105 * RELIEF.light));
+  return float(1).sub(shadow.mul(RELIEF.shade)).add(max(facing, 0).mul(0.105 * RELIEF.light)).sub(0.06 * RELIEF.tucked);
 };
-// How dark a tile's edge shadow is and how bright its lit edge, at most.
-const RELIEF = { shade: 0.42, light: 0.3 };
+// How dark a tile's edge shadow is and how bright its lit edge, at most, and the top of a
+// row tucked under the one above.
+const RELIEF = { shade: 0.42, light: 0.3, tucked: 0.2 };
+// A line `width` m wide, `dist` m from the pixel, as a pixel `wpWidth` across sees it:
+// one too thin to draw is drawn wider and fainter, keeping its share of the pixel, instead
+// of dropped, so a roof's seams and laps stay as you zoom out. It fades out only when lines
+// `period` m apart come too close to draw apart (they'd shimmer).
+const thinLine = (dist: N, width: number, wpWidth: N, period: number): N => {
+  const w: N = max(wpWidth.mul(0.75), width);
+  return float(1).sub(smoothstep(w.mul(0.35), w, dist)).mul(float(width).div(w)).mul(float(1).sub(smoothstep(period * 0.3, period * 0.6, wpWidth)));
+};
 // Tiles of a roof aren't all alike: some patches newer, some more weathered, in streaks
 // along the rows. Fixed to the roof (q: across and down the slope, m), and broad enough to
 // stay when the tiles and rows are too fine to draw. The finer part fades by `rowMap`, a
@@ -219,7 +231,10 @@ function sheetRoof(c0: N, wp: N, n: N, wpWidth: N, copper: N) {
   t.mulAssign(float(1).add(smoothstep(0.93, 0.98, seam).mul(max(rib.negate(), 0)).mul(0.3)).sub(float(1).sub(smoothstep(0.03, 0.16, seam)).mul(max(rib.negate(), 0)).mul(0.28)));
   t.assign(mix(t, t.mul(vec3(0.82, 1.1, 1.02)).add(vec3(0.02, 0.06, 0.05)), copper.mul(smoothstep(0.45, 0.8, fbm(wp.mul(0.25)))).mul(0.7)));
   const sheen = fbm(wp.mul(0.04)).mul(0.1).add(0.95);
-  return mix(mix(c0, tone, fade(wpWidth, 0.6)), t, fade(wpWidth, 0.3)).mul(sheen);
+  // Further off, each seam a thin dark line between the pans (their lit and shaded sides
+  // run together), until the seams are too close to draw apart.
+  const lines = mix(c0, tone, fade(wpWidth, 0.6)).mul(float(1).sub(thinLine(min(seam, seam.oneMinus()).mul(0.6), 0.03, wpWidth, 0.6).mul(0.25)));
+  return mix(lines, t, fade(wpWidth, 0.3)).mul(sheen);
 }
 // A mansard's steep lower slope (mansardWindows in shading.ts): a window in every bay of
 // about 3.2 m in a light frame.
@@ -263,16 +278,22 @@ function flatAge(c: N, wp: N, q: N, wpWidth: N, seed: N) {
 function flatRoof(c: N, wp: N, q: N, wpWidth: N, seed: N) {
   const t = c.mul(fbm(wp.mul(0.5)).mul(0.22).add(0.86)).toVar();
   t.mulAssign(float(1).add(vnoise(wp.mul(7)).sub(0.5).mul(0.22).mul(fade(wpWidth, 0.15))).add(vnoise(wp.mul(23).add(5)).sub(0.5).mul(0.2).mul(fade(wpWidth, 0.05))));
+  // (Gravel raked and trodden unevenly: a grain between the stones and the broad patches
+  // that's still there when the stones are too small to draw.)
+  t.mulAssign(float(1).add(vnoise(wp.mul(2.2).add(9.1)).sub(0.5).mul(0.12).mul(fade(wpWidth, 0.45))));
   return flatAge(t, wp, q, wpWidth, seed);
 }
 // Bitumen rolls with their laps, and patches over old repairs (bitumenRoof in shading.ts).
 function bitumenRoof(c: N, wp: N, q: N, wpWidth: N, seed: N) {
   const row = floor(q.y), along = q.x.div(8).add(hash12(vec2(row, seed.mul(91))));
-  const t = c.mul(hash12(vec2(row, floor(along)).add(seed.mul(13))).mul(0.18).add(0.91)).toVar();
+  const rollTone = hash12(vec2(row, floor(along)).add(seed.mul(13))).mul(0.18).add(0.91);
+  const t = c.mul(rollTone).toVar();
   const s = fract(q.y), e = fract(along).mul(8);
   t.mulAssign(float(1).sub(float(1).sub(smoothstep(0.02, 0.08, s)).mul(0.3)).add(smoothstep(0.08, 0.14, s).mul(float(1).sub(smoothstep(0.14, 0.3, s))).mul(0.06)));
   t.mulAssign(float(1).sub(float(1).sub(smoothstep(0, 0.05, min(e, float(8).sub(e)))).mul(0.12)));
-  t.assign(mix(c, t, fade(wpWidth, 0.4)));
+  // Further off, the rolls a shade each and their laps thin dark lines, a metre apart.
+  const rolls = mix(c, c.mul(rollTone), fade(wpWidth, 1)).mul(float(1).sub(thinLine(min(s, s.oneMinus()), 0.05, wpWidth, 1).mul(0.3)));
+  t.assign(mix(rolls, t, fade(wpWidth, 0.4)));
   const cq: N = q.div(vec2(5, 4)).add(seed.mul(3.7)), id: N = floor(cq), f: N = fract(cq);
   const hx = hash12(id), hy = hash12(id.add(7.3)), hz = hash12(id.add(19.1));
   const lo = vec2(hx, hy).mul(0.3).add(0.1), hi = min(lo.add(0.25).add(vec2(hy, hz).mul(0.3)), 0.95);
@@ -287,11 +308,13 @@ function bitumenRoof(c: N, wp: N, q: N, wpWidth: N, seed: N) {
 function membraneRoof(c: N, wp: N, q: N, wpWidth: N, seed: N) {
   const row = floor(q.y.div(2)), s = fract(q.y.div(2)).mul(2), along = q.x.div(18).add(hash12(vec2(row, seed.mul(37))));
   const e = fract(along).mul(18);
-  const t = c.mul(hash12(vec2(row, floor(along)).add(seed.mul(11))).mul(0.08).add(0.96)).toVar();
+  const sheetTone = hash12(vec2(row, floor(along)).add(seed.mul(11))).mul(0.08).add(0.96);
+  const t = c.mul(sheetTone).toVar();
   // The weld, the sheet's edge over it, and dirt caught along it.
   const weld = float(1).sub(smoothstep(0.015, 0.045, s)), edge = float(1).sub(smoothstep(0, 0.015, s));
   t.mulAssign(float(1).add(weld.mul(0.12)).sub(edge.mul(0.22)));
-  t.assign(mix(c, t, fade(wpWidth, 0.25)));
+  // (Further off the sheets keep their shades; a weld and its edge even out.)
+  t.assign(mix(mix(c, c.mul(sheetTone), fade(wpWidth, 2)), t, fade(wpWidth, 0.25)));
   t.mulAssign(float(1).sub(vnoise(wp.mul(2)).mul(0.06).add(0.12).mul(float(1).sub(smoothstep(0.04, 0.16, s))).mul(fade(wpWidth, 0.6))));
   t.mulAssign(float(1).sub(float(1).sub(smoothstep(0, 0.06, min(e, float(18).sub(e)))).mul(0.14).mul(fade(wpWidth, 0.4))));
   t.mulAssign(vnoise(wp.mul(1.3)).mul(0.06).add(0.97).add(vnoise(wp.mul(6).add(2)).sub(0.5).mul(0.05).mul(fade(wpWidth, 0.1))));

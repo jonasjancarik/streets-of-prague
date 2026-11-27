@@ -372,6 +372,13 @@ export const PATTERN: Record<string, number> = { flat: 0, asphalt: 1, setts: 2, 
 // from the face normal), slate in smaller rows, gravel on flat roofs, and a grid of
 // windows on the walls, one row per storey (fStorey) with shopfronts at street level.
 const BUILDING_GLSL = /* glsl */ `
+// A line width m wide, dist m from the pixel, as a pixel w across sees it: one too thin
+// to draw is drawn wider and fainter, keeping its share of the pixel, instead of dropped.
+// It fades out when lines period m apart come too close to draw apart (they'd shimmer).
+float thinLine(float dist, float width, float w, float period) {
+  float ww = max(w * .75, width);
+  return (1. - smoothstep(ww * .35, ww, dist)) * width / ww * (1. - smoothstep(period * .3, period * .6, w));
+}
 // Tiles of a roof aren't all alike: some patches newer, some more weathered, in streaks
 // along the rows. Fixed to the roof (q: across and down the slope, m), and broad enough to
 // stay when the tiles and rows are too fine to draw. The finer part fades by rowMap, a
@@ -455,7 +462,10 @@ vec3 sheetRoof(vec3 c, vec2 wp, vec3 n, float copper) {
   tone = mix(tone, tone * vec3(1.02, .8, .62), step(.97, sheet) * (1. - copper));
   vec3 t = tone * (1. + .07 * (1. - smoothstep(0., .035, seam)) - .06 * smoothstep(.94, 1., seam));
   t = mix(t, t * vec3(.82, 1.1, 1.02) + vec3(.02, .06, .05), copper * smoothstep(.45, .8, fbm(wp * .25)) * .7);
-  return mix(mix(c, tone, detail(wp, .6)), t, detail(wp, .3)) * (.95 + .1 * fbm(wp * .04));
+  // Further off, each seam a thin dark line between the pans.
+  float w = length(fwidth(wp));
+  vec3 lines = mix(c, tone, detail(wp, .6)) * (1. - .25 * thinLine(min(seam, 1. - seam) * .6, .03, w, .6));
+  return mix(lines, t, detail(wp, .3)) * (.95 + .1 * fbm(wp * .04));
 }
 // A mansard's steep lower slope (facades.ts, mansardCoords): a window in every bay of
 // about 3.2 m, 1.3 m high from 0.6 m up the slope, in a light frame. mansardGlass is 1 on
@@ -502,6 +512,7 @@ vec3 flatAge(vec3 c, vec2 wp, vec2 q, float seed) {
 vec3 flatRoof(vec3 c, vec2 wp, vec2 q, float seed) {
   c *= .86 + .22 * fbm(wp * .5);
   c *= 1. + (vnoise(wp * 7.) - .5) * .22 * detail(wp, .15) + (vnoise(wp * 23. + 5.) - .5) * .2 * detail(wp, .05);
+  c *= 1. + (vnoise(wp * 2.2 + 9.1) - .5) * .12 * detail(wp, .45);   // raked and trodden unevenly
   return flatAge(c, wp, q, seed);
 }
 // Bitumen in rolls a metre wide and about eight long, each a shade of its own, the next
@@ -509,11 +520,14 @@ vec3 flatRoof(vec3 c, vec2 wp, vec2 q, float seed) {
 // q: the roof's own axes.
 vec3 bitumenRoof(vec3 c, vec2 wp, vec2 q, float seed) {
   float row = floor(q.y), along = q.x / 8. + hash12(vec2(row, seed * 91.));
-  vec3 t = c * (.91 + .18 * hash12(vec2(row, floor(along)) + seed * 13.));
+  float rollTone = .91 + .18 * hash12(vec2(row, floor(along)) + seed * 13.);
+  vec3 t = c * rollTone;
   float s = fract(q.y), e = fract(along) * 8.;
   t *= 1. - .3 * (1. - smoothstep(.02, .08, s)) + .06 * smoothstep(.08, .14, s) * (1. - smoothstep(.14, .3, s));
   t *= 1. - .12 * (1. - smoothstep(0., .05, min(e, 8. - e)));
-  t = mix(c, t, detail(wp, .4));
+  // Further off, the rolls a shade each and their laps thin dark lines, a metre apart.
+  vec3 rolls = mix(c, c * rollTone, detail(wp, 1.)) * (1. - .3 * thinLine(min(s, 1. - s), .05, length(fwidth(wp)), 1.));
+  t = mix(rolls, t, detail(wp, .4));
   // Patches: one in a few cells of 5 by 4 m, square to the walls.
   vec2 cs = vec2(5., 4.), cq = q / cs + seed * 3.7, id = floor(cq), f = fract(cq);
   vec3 h = vec3(hash12(id), hash12(id + 7.3), hash12(id + 19.1));
@@ -530,12 +544,13 @@ vec3 bitumenRoof(vec3 c, vec2 wp, vec2 q, float seed) {
 vec3 membraneRoof(vec3 c, vec2 wp, vec2 q, float seed) {
   float row = floor(q.y / 2.), s = fract(q.y / 2.) * 2., along = q.x / 18. + hash12(vec2(row, seed * 37.));
   float e = fract(along) * 18.;
-  vec3 t = c * (.96 + .08 * hash12(vec2(row, floor(along)) + seed * 11.));
+  float sheetTone = .96 + .08 * hash12(vec2(row, floor(along)) + seed * 11.);
+  vec3 t = c * sheetTone;
   // The weld: a paler strip 4 cm wide, the edge of the sheet over it a fine dark line,
   // and dirt caught along it.
   float weld = 1. - smoothstep(.015, .045, s), edge = 1. - smoothstep(.0, .015, s);
   t *= 1. + .12 * weld - .22 * edge;
-  t = mix(c, t, detail(wp, .25));
+  t = mix(mix(c, c * sheetTone, detail(wp, 2.)), t, detail(wp, .25));   // (further off the sheets keep their shades)
   t *= 1. - (.12 + .06 * vnoise(wp * 2.)) * (1. - smoothstep(.04, .16, s)) * detail(wp, .6);
   t *= 1. - .14 * (1. - smoothstep(.0, .06, min(e, 18. - e))) * detail(wp, .4);
   t *= .97 + .06 * vnoise(wp * 1.3) + (vnoise(wp * 6. + 2.) - .5) * .05 * detail(wp, .1);
