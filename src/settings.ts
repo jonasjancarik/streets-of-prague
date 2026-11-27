@@ -81,7 +81,8 @@ const CUSTOM: [string, Option[]][] = [
   ['Hedges and grass up close', on({ streetDetail: true }, { streetDetail: false })],
   ['Relief on kerbs, steps and rails', on({ closeRelief: true }, { closeRelief: false })],
   ['Detailed models up close', [['Lowest', { street: 'lowest' }], ['Low', { street: 'low' }], ['Medium', { street: 'medium' }], ['High', { street: 'high' }], ['Ultra', { street: 'ultra' }], ['Furthest (demanding)', { street: 'max' }]]],
-  ['People in the streets', [['Half', { crowd: 0.5 }], ['All', { crowd: 1 }]]],
+  ['People in the streets', [['A quarter', { crowd: 0.25 }], ['Half', { crowd: 0.5 }], ['Three quarters', { crowd: 0.75 }], ['As usual', { crowd: 1 }], ['1.5× (demanding)', { crowd: 1.5 }], ['Double (demanding)', { crowd: 2 }]]],
+  ['Moving cars', [['A quarter', { traffic: 0.25 }], ['Half', { traffic: 0.5 }], ['Three quarters', { traffic: 0.75 }], ['As usual', { traffic: 1 }], ['1.5× (demanding)', { traffic: 1.5 }], ['Double (demanding)', { traffic: 2 }]]],
 ];
 const WEATHER: Record<Kind, string> = { clear: 'Clear', cloudy: 'Cloudy', rain: 'Rain', storm: 'Thunderstorm', mist: 'Mist', snow: 'Snow' };
 

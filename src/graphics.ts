@@ -35,7 +35,8 @@ import { setAnisotropy } from './textureQuality.ts';
 // second's freeze each way, so a computer that can't hold it doesn't go back and forth.
 // On Low and Lowest a person's shadow from the sun is a plain shape, not their own
 // (PEOPLE_SHADOWS in figures.ts: about 1 ms of 25 a frame on a Pixel 5 on a full square).
-// Lowest drops MSAA on WebGPU, roof detail and those looks, and halves the crowd cap;
+// Lowest drops MSAA on WebGPU, roof detail and those looks, and halves the crowd and the
+// cars driving about (Low has three quarters of the cars);
 // it also leaves out the drifting mist, the mist over the river and the raindrops' rings
 // in the puddles (the thin haze over the view, the rain and the wet ground stay).
 // The water's waves and reflections (webgpu/water.ts) are a setting of their own: on with
@@ -94,6 +95,12 @@ export const CHOICES: Choice[] = ['auto', 'ultra', 'high', 'medium', 'low', 'low
 // posts cast shadows from every lamp and headlight, 2 only the cars do, 1 a soft darkening
 // round each car, 0 nothing. `lights`: the cones and glints.
 // `shadowBlur`: how far the sun shadow's edge is softened, in shadow-map texels.
+// `crowd`: how many people are about, times the usual (half on Lowest; Custom from a
+// quarter to double). `traffic`: how many cars drive about, times the usual (three quarters
+// on Low, half on Lowest; Custom from a quarter to double). Buses, parked cars and the
+// police aren't counted. Standing in third person on the Old Town Square, each car cost
+// about 45 µs of the main thread a frame and each person about 3.5 µs, nearly all of it
+// their simulation.
 // `sunEveryFrame`: the sun's shadow map drawn every frame. Off on every tier: it's drawn
 // once SHADOW_MS have passed since the last (main.ts), every other frame at 60 fps, which
 // saved 7–9% of the main thread in the street view. Custom can draw it every frame.
@@ -103,13 +110,13 @@ export const CHOICES: Choice[] = ['auto', 'ultra', 'high', 'medium', 'low', 'low
 // (textureQuality.ts; 0 off). `textures`: the pictures at full size or half
 // (textureQuality.ts, from the next start). Auto keeps the filtering it began with: a
 // change uploads the textures again.
-type Settings = { look: boolean; maxRatio: number; samples: 0 | 4; shadowSize: number; shadowBlur: number; sunEveryFrame: boolean; roofs: boolean; clutter: boolean; crowd: number; cars: 0 | 1 | 2 | 3; lights: boolean; lampMap: 1024 | 2048; people: PeopleShadows; view: number; aniso: number; textures: 'full' | 'half' };
+type Settings = { look: boolean; maxRatio: number; samples: 0 | 4; shadowSize: number; shadowBlur: number; sunEveryFrame: boolean; roofs: boolean; clutter: boolean; crowd: number; traffic: number; cars: 0 | 1 | 2 | 3; lights: boolean; lampMap: 1024 | 2048; people: PeopleShadows; view: number; aniso: number; textures: 'full' | 'half' };
 const TIERS: Record<Tier, Settings> = {
-  ultra: { look: true, maxRatio: 2, samples: 4, shadowSize: 4096, shadowBlur: 2, sunEveryFrame: false, roofs: true, clutter: true, crowd: 1, cars: 3, lights: true, lampMap: 2048, people: 'full', view: 500, aniso: 2, textures: 'full' },
-  high: { look: true, maxRatio: 2, samples: 4, shadowSize: 2048, shadowBlur: 1, sunEveryFrame: false, roofs: true, clutter: true, crowd: 1, cars: 2, lights: true, lampMap: 2048, people: 'full', view: 400, aniso: 1, textures: 'full' },
-  medium: { look: true, maxRatio: 1.5, samples: 4, shadowSize: 2048, shadowBlur: 1, sunEveryFrame: false, roofs: true, clutter: false, crowd: 1, cars: 1, lights: false, lampMap: 1024, people: 'full', view: 400, aniso: 1, textures: 'full' },
-  low: { look: true, maxRatio: 1, samples: 4, shadowSize: 1024, shadowBlur: 1, sunEveryFrame: false, roofs: true, clutter: false, crowd: 1, cars: 1, lights: false, lampMap: 1024, people: 'simple', view: 300, aniso: 0.5, textures: 'full' },
-  lowest: { look: false, maxRatio: 1, samples: 0, shadowSize: 1024, shadowBlur: 1, sunEveryFrame: false, roofs: false, clutter: false, crowd: 0.5, cars: 0, lights: false, lampMap: 1024, people: 'simple', view: 250, aniso: 0, textures: 'half' },
+  ultra: { look: true, maxRatio: 2, samples: 4, shadowSize: 4096, shadowBlur: 2, sunEveryFrame: false, roofs: true, clutter: true, crowd: 1, traffic: 1, cars: 3, lights: true, lampMap: 2048, people: 'full', view: 500, aniso: 2, textures: 'full' },
+  high: { look: true, maxRatio: 2, samples: 4, shadowSize: 2048, shadowBlur: 1, sunEveryFrame: false, roofs: true, clutter: true, crowd: 1, traffic: 1, cars: 2, lights: true, lampMap: 2048, people: 'full', view: 400, aniso: 1, textures: 'full' },
+  medium: { look: true, maxRatio: 1.5, samples: 4, shadowSize: 2048, shadowBlur: 1, sunEveryFrame: false, roofs: true, clutter: false, crowd: 1, traffic: 1, cars: 1, lights: false, lampMap: 1024, people: 'full', view: 400, aniso: 1, textures: 'full' },
+  low: { look: true, maxRatio: 1, samples: 4, shadowSize: 1024, shadowBlur: 1, sunEveryFrame: false, roofs: true, clutter: false, crowd: 1, traffic: 0.75, cars: 1, lights: false, lampMap: 1024, people: 'simple', view: 300, aniso: 0.5, textures: 'full' },
+  lowest: { look: false, maxRatio: 1, samples: 0, shadowSize: 1024, shadowBlur: 1, sunEveryFrame: false, roofs: false, clutter: false, crowd: 0.5, traffic: 0.5, cars: 0, lights: false, lampMap: 1024, people: 'simple', view: 250, aniso: 0, textures: 'half' },
 };
 
 // The switches a tier sets on its own (apply), which Custom lets the player set one by one.
@@ -332,7 +339,7 @@ export class Graphics {
   private same(a: Tier, b: Tier) {
     const x = TIERS[a], y = TIERS[b];
     return x.look === y.look && x.view === y.view && x.cars === y.cars && x.lights === y.lights && x.lampMap === y.lampMap && x.shadowSize === y.shadowSize && x.shadowBlur === y.shadowBlur
-      && x.roofs === y.roofs && x.clutter === y.clutter && x.crowd === y.crowd && x.people === y.people
+      && x.roofs === y.roofs && x.clutter === y.clutter && x.crowd === y.crowd && x.traffic === y.traffic && x.people === y.people
       && (!(this.renderer as GPURenderer).backend?.isWebGPUBackend || x.samples === y.samples)
       && (this.renderer.xr.isPresenting || this.ratio(a) === this.ratio(b))
       && STREET_TIERS[a].avatars === STREET_TIERS[b].avatars && STREET_TIERS[a].treeWood === STREET_TIERS[b].treeWood
@@ -341,6 +348,8 @@ export class Graphics {
 
   // Fewer people on Lowest, with the usual off-screen retirement (no popping).
   get crowd() { return this.settings().crowd; }
+  // How many cars drive about, times the usual (Custom).
+  get traffic() { return this.settings().traffic; }
   // Whether the sun's shadow map is drawn every frame (main.ts).
   get sunEveryFrame() { return this.settings().sunEveryFrame; }
   // How far you see from the street (m).

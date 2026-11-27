@@ -2296,3 +2296,13 @@ frame 30.7–31.7 ms, about 460 draws (some 200 in the sun's shadow pass), 3.6 M
   frames differed in 4115 pixels by more than 8 levels and couldn't be told apart by eye.
   Not measured: the GPU's saving where the GPU sets the frame (the pass draws about 200
   objects into the shadow map), and how it looks on a phone.
+- **Crowd and traffic as settings** (Custom's "People in the streets" and "Moving cars",
+  a quarter to double; the crowd's buffers now hold 2400). Standing on the Old Town Square
+  after 45 s to fill, on Ultra-based Custom:
+  - both doubled, from above: JavaScript 5.9 → 9.1 ms (`renderer.render` 2.4 → 2.6),
+    158 → 105 fps; in third person 13.5 → 19.4 ms (render 7.4 → 8.9), the 95th
+    percentile frame 19 → 41 ms. Nearly all of it is their simulation, in either view.
+  - cars alone in third person: 21 cars 12.7 ms, 40 cars 13.5, 80 cars 15.3 (about
+    45 µs a car); so the people are about 4 ms a 1200 (about 3.5 µs each).
+  - In the tiers now: Low has three quarters of the cars, Lowest half the cars and half
+    the people (on every street now, not only half the cap round the Old Town Square).

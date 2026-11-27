@@ -223,6 +223,7 @@ window.addEventListener('vite:preloadError', () => {
 
 const BUSES = 3; // of the traffic, on the main roads
 const PEOPLE = 1200; // at most, round the Old Town Square; fewer where it's quieter (src/footfall.ts)
+const MOST_CROWD = 2; // the most graphics.crowd goes to (Custom): the crowd's buffers are sized for it
 const FEW_PEOPLE = 40; // on the quietest edge of town
 const VILLAGE_BUILT = 0.08; // the share of a village's ground that buildings stand on
 const CROWD = 1; // people a metre of footpath that draws people fully (Footfall.pull)
@@ -596,7 +597,7 @@ async function main() {
   });
   const footfall = await footfallLoad;
   Object.assign(WARDROBE, { cold: season.cold, warm: season.shares().summer });
-  crowd = new Crowd(walk, grid, scene, seeded, PEOPLE, kit);
+  crowd = new Crowd(walk, grid, scene, seeded, PEOPLE * MOST_CROWD, kit);
   crowd.footfall = footfall;
   // The carriageways, parking bays and the trams' own bed: walkers keep to the pavement
   // beside a street they walk along.
@@ -774,7 +775,7 @@ async function main() {
   // hour, by how much street there is round you (streetShare; worked out twice a second).
   const pastMap = (x: number, y: number) => x < -index.origin[0] || y < -index.origin[1] || x > index.size[0] - index.origin[0] || y > index.size[1] - index.origin[1];
   let country = 1;
-  const carsWanted = () => Math.round(trafficWanted(clock.t) * country);
+  const carsWanted = () => Math.round(trafficWanted(clock.t) * country * graphics.traffic);
   const edgesNear = (x: number, y: number, rMax: number) => world.around(x, y, rMax).flatMap((k) => world.driveBy.get(k) || []);
   const walkNear = (x: number, y: number, rMax: number) => world.around(x, y, rMax).flatMap((k) => world.walkBy.get(k) || []);
 
@@ -891,10 +892,11 @@ async function main() {
   };
   const firstTrafficEdges = edgesNear(walker.x, walker.y, LIFE_RADIUS);
   const firstTrafficSampler = traffic.prepareSpawn(firstTrafficEdges);
-  for (let i = trafficWanted(clock.t); i > 0; i--) traffic.spawn(lifeSpots(walker.x, walker.y, 25), firstTrafficEdges, null, firstTrafficSampler);
+  for (let i = Math.round(trafficWanted(clock.t) * graphics.traffic); i > 0; i--) traffic.spawn(lifeSpots(walker.x, walker.y, 25), firstTrafficEdges, null, firstTrafficSampler);
   // How many people are about: CROWD a metre along each footpath around you, times
   // how strongly it draws people, so a busy street adds its own crowd (Karlův most,
-  // Anděl) rather than sharing out a fixed number. At most PEOPLE, half on Lowest.
+  // Anděl) rather than sharing out a fixed number. At most PEOPLE; all of it times the
+  // graphics' crowd (half on Lowest, up to double on Custom).
   const peopleWanted = () => {
     let draw = 0;
     for (const e of walkNear(px(), py(), LIFE_RADIUS)) {
@@ -908,7 +910,7 @@ async function main() {
       const tiles = world.around(px(), py(), LIFE_RADIUS);
       few *= clamp(tiles.reduce((sum, k) => sum + (world.builtUp.get(k) ?? 0), 0) / (tiles.length || 1) / VILLAGE_BUILT, 0.1, 1);
     }
-    return Math.min(Math.round(PEOPLE * graphics.crowd), Math.round(few + CROWD * draw));
+    return Math.round(Math.min(PEOPLE, few + CROWD * draw) * Math.min(graphics.crowd, MOST_CROWD));
   };
   const spawnWork = { peoplePasses: 0, peopleWeights: 0, peoplePicks: 0, peoplePrepareMs: 0 };
   // People who wander too far are moved to just outside the view, so they walk into it.
