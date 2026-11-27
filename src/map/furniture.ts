@@ -6,21 +6,26 @@ import type { Geo, Point2, Bounds, Polygons } from './geo.ts';
 import type { TreeTileData, TreeInstances } from './vegetation.ts';
 import type { RawStreetEdge } from '../network.ts';
 
-// Inferred: 0 bench, 1 bin, 2 courtyard planter; surveyed: 3 hydrant (map/utility.ts);
-// mapped in OSM (MAPPED): 1 bin, 4 bike stand, 5 parking machine, 6 bollard, 7 post box,
-// the recycling containers 8 glass, 9 clear glass, 10 paper, 11 plastic, 12 cartons, 13 metal,
-// 14 a post box on a wall (mappedSpots), 15 a Stolperstein, a brass cobble in the pavement,
-// 16 a street cabinet, 17 an advertising column, 18 a poster case, 19 a drinking fountain;
-// mapped benches are 0; inferred: 20 the iron grate round a street tree's foot (treeGrates),
-// and from the one-way streets 21 a no-entry sign and 22 a one-way sign (oneWaySigns).
-export type FurnitureKind = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22;
+// The furniture's kinds, the index of each one's model, size and draw. Inferred from land
+// use: bench, bin, courtyard planter; mapped in OSM (MAPPED, build_street_furniture.py): the
+// rest down to the drinking fountain, and benches and bins too; a post box mapped by a
+// building hangs on its wall (mappedSpots); inferred: the grate round a street tree in
+// paving (treeGrates) and the signs of the one-way streets (oneWaySigns). (No standing
+// hydrants: Prague's are underground, their covers drawn with the street's ironwork.)
+export const KIND = {
+  bench: 0, bin: 1, planter: 2, bikeStand: 3, parkingMachine: 4, bollard: 5, postBox: 6,
+  glass: 7, clearGlass: 8, paper: 9, plastic: 10, cartons: 11, metal: 12, wallPostBox: 13, stolperstein: 14,
+  cabinet: 15, advertisingColumn: 16, posterCase: 17, drinkingFountain: 18, treeGrate: 19, noEntry: 20, oneWay: 21,
+} as const;
+export type FurnitureKind = (typeof KIND)[keyof typeof KIND];
 // Kinds that lie flat in the ground and stop nobody.
-export const FLAT_FURNITURE = new Set<number>([15, 20]);
+export const FLAT_FURNITURE = new Set<number>([KIND.stolperstein, KIND.treeGrate]);
 // pipeline/build_street_furniture.py's kinds, by name.
 export const MAPPED: Record<string, FurnitureKind> = {
-  bin: 1, 'bike stand': 4, 'parking machine': 5, bollard: 6, 'post box': 7,
-  glass: 8, 'clear glass': 9, paper: 10, plastic: 11, cartons: 12, metal: 13, stolperstein: 15,
-  bench: 0, cabinet: 16, 'advertising column': 17, 'poster case': 18, 'drinking fountain': 19,
+  bin: KIND.bin, 'bike stand': KIND.bikeStand, 'parking machine': KIND.parkingMachine, bollard: KIND.bollard, 'post box': KIND.postBox,
+  glass: KIND.glass, 'clear glass': KIND.clearGlass, paper: KIND.paper, plastic: KIND.plastic, cartons: KIND.cartons, metal: KIND.metal,
+  stolperstein: KIND.stolperstein, bench: KIND.bench, cabinet: KIND.cabinet, 'advertising column': KIND.advertisingColumn,
+  'poster case': KIND.posterCase, 'drinking fountain': KIND.drinkingFountain,
 };
 export interface FurnitureSpot { kind: FurnitureKind; x: number; y: number; z: number; angle: number }
 export interface FurnitureInstances { matrices: Float32Array[]; spots: FurnitureSpot[] }
@@ -32,7 +37,7 @@ export interface FurnitureData extends TreeTileData {
   structures: Polygons;
 }
 // The mapped items of a tile (mappedFurniture.ts: kind, x, y, angle) as spots. A post box
-// mapped within WALL_BOX of a building hangs on its wall, facing out (kind 14); anything
+// mapped within WALL_BOX of a building hangs on its wall, facing out (KIND.wallPostBox); anything
 // else whose point is inside a building, or on the game's carriageway, is left out.
 const WALL_BOX = 1.2;
 export function mappedSpots(m: Float32Array, buildings: { rings: Point2[][] }[], onRoad: (x: number, y: number) => boolean,
@@ -51,15 +56,15 @@ export function mappedSpots(m: Float32Array, buildings: { rings: Point2[][] }[],
   const out: FurnitureSpot[] = [];
   for (let i = 0; i + 3 < m.length; i += 4) {
     let kind = m[i] as FurnitureKind, x = m[i + 1], y = m[i + 2], angle = m[i + 3];
-    const hung = kind === 7 ? wall(x, y) : null;
+    const hung = kind === KIND.postBox ? wall(x, y) : null;
     if (hung) {
       // Local +z is (sin a, -cos a): turn it away from the building, and stand just off the wall.
       const backwards = inside(hung.x + Math.sin(hung.angle) * .3, hung.y - Math.cos(hung.angle) * .3);
       angle = hung.angle + (backwards ? Math.PI : 0);
       x = hung.x + Math.sin(angle) * .13; y = hung.y - Math.cos(angle) * .13;
       // (Its front, the slot, faces local -z on the freestanding box; on the wall it faces out.)
-      kind = 14 as FurnitureKind;
-    } else if (kind === 21 || kind === 22) {
+      kind = KIND.wallPostBox;
+    } else if (kind === KIND.noEntry || kind === KIND.oneWay) {
       // A sign is put by OSM's width of the street, and the game's carriageway can be wider
       // (its parking lanes): out to the right, its local x, till it stands off the road.
       for (let out = 0; out < 8 && onRoad(x, y); out += .5) { x += Math.cos(angle) * .5; y += Math.sin(angle) * .5; }
@@ -90,7 +95,7 @@ export function treeGrates(trees: readonly (readonly (number | undefined)[])[], 
       if (onRoad(x + Math.cos(a) * r, y + Math.sin(a) * r)) { angle = a; break; }
     }
     if (Number.isNaN(angle) && !square(x, y)) continue;
-    out.push({ kind: 20, x, y, z: height(x, y), angle: Number.isNaN(angle) ? 0 : angle });
+    out.push({ kind: KIND.treeGrate, x, y, z: height(x, y), angle: Number.isNaN(angle) ? 0 : angle });
   }
   return out;
 }
@@ -122,15 +127,15 @@ export function oneWaySigns(drive: readonly { u: string; v: string; hw: string; 
     const first = unit(e.pts[0], e.pts[1]), n = e.pts.length, last = unit(e.pts[n - 2], e.pts[n - 1]);
     const side = e.width / 2 + 1;
     // Its end: those coming from the junction would drive back along -last; the sign faces them (+last).
-    if ((ends.get(e.v)?.size ?? 0) >= 3) sign(21, e.pts[n - 1], [-last[0], -last[1]], side, last);
+    if ((ends.get(e.v)?.size ?? 0) >= 3) sign(KIND.noEntry, e.pts[n - 1], [-last[0], -last[1]], side, last);
     // Its start: those turning in drive along +first; the sign faces them (-first).
-    if ((ends.get(e.u)?.size ?? 0) >= 3) sign(22, e.pts[0], first, side, [-first[0], -first[1]]);
+    if ((ends.get(e.u)?.size ?? 0) >= 3) sign(KIND.oneWay, e.pts[0], first, side, [-first[0], -first[1]]);
   }
   return out;
 }
 
 // Half its footprint along its local x and z (m), for collision.
-export const FURNITURE_SIZE = [[0.95, 0.42], [0.32, 0.32], [0.65, 0.65], [0.16, 0.16],
+export const FURNITURE_SIZE = [[0.95, 0.42], [0.32, 0.32], [0.65, 0.65],
   [0.05, 0.40], [0.24, 0.18], [0.12, 0.12], [0.2, 0.16],
   [0.66, 0.66], [0.66, 0.66], [0.70, 0.56], [0.70, 0.56], [0.70, 0.56], [0.70, 0.56], [0.18, 0.12], [0.05, 0.05],
   [0.42, 0.2], [0.62, 0.62], [0.62, 0.1], [0.2, 0.2], [0.6, 0.6], [0.06, 0.06], [0.06, 0.06]] as const;

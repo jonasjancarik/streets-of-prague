@@ -32,6 +32,11 @@ grille over a cellar window, blue parking lines on the setts.
   DONE (26 November): `standingMarks` keeps only hydrants, and the kiosk models, glass
   draw and furniture kind are gone. The marks stay in the tile data, so no map rebuild.
 
+- **Standing hydrants.** The red American-style hydrant model. DONE (27 November):
+  `standingMarks` is gone; the survey's underground hydrants keep their small covers in
+  the pavement. IPR does survey some above-ground ones (`hydrant nadzemní`); a Czech
+  column could stand there later.
+
 ## Feasibility
 
 Counted in the local OSM extract of the centre (`centrum_0_0.osm`: Hradčany and Malá

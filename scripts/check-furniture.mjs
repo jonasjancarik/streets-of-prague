@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Pure placement regressions; no browser, map rebuild or new dependency.
 import assert from 'node:assert/strict';
-import { furnitureSpots, PARK, GARDEN, YARD, FURNITURE_SIZE } from '../src/map/furniture.ts';
+import { furnitureSpots, PARK, GARDEN, YARD, FURNITURE_SIZE, KIND } from '../src/map/furniture.ts';
 import { furnitureSurvey } from '../src/furnitureSurvey.ts';
 const box = [-100, -100, 100, 100];
 const context = { zone: () => PARK, clear: () => true, height: () => 0, path: (x, y) => ({ x, y: y + 4, distance: 4, halfWidth: 1 }) };
@@ -63,16 +63,16 @@ console.log('Survey parsing, deadline, abort and immutable unavailable outcome p
   const { mappedFurniture } = await import('../src/mappedFurniture.ts');
   const house = [{ rings: [[[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]]] }];
   const road = (x, y) => y < -6;
-  const m = Float32Array.of(7, 5, -0.5, 0, 7, 5, -3, 0, 1, 5, 5, 0, 6, 2, -8, 0, 4, 2, -2, 0.3);
+  const m = Float32Array.of(KIND.postBox, 5, -0.5, 0, KIND.postBox, 5, -3, 0, KIND.bin, 5, 5, 0, KIND.bollard, 2, -8, 0, KIND.bikeStand, 2, -2, 0.3);
   const spots = mappedSpots(m, house, road, () => 0);
-  assert.deepEqual(spots.map(s => s.kind), [14, 7, 4], 'wall box, box on its post, bike stand; nothing in the house or on the road');
+  assert.deepEqual(spots.map(s => s.kind), [KIND.wallPostBox, KIND.postBox, KIND.bikeStand], 'wall box, box on its post, bike stand; nothing in the house or on the road');
   const wall = spots[0];
   assert(Math.abs(wall.y + 0.13) < 1e-6 && Math.abs(Math.sin(wall.angle) * 0 - Math.cos(wall.angle) - -1) < 1e-6,
     `the wall box stands just off the wall with its front (+z) facing out of the house: ${wall.y}, ${wall.angle}`);
-  assert.equal(FURNITURE_SIZE.length, 23, 'every kind has a footprint');
+  assert.equal(FURNITURE_SIZE.length, Object.keys(KIND).length, 'every kind has a footprint');
   const file = { kinds: ['bin', 'bollard', 'nonsense'], points: [[1, 2, 0, 90], [3, 4, 1, 0], [5, 6, 2, 0]] };
   const read = await mappedFurniture('x', 1000, async () => new Response(JSON.stringify(file)));
-  assert.deepEqual([...read].map(v => Math.round(v * 100) / 100), [1, 1, 2, 1.57, 6, 3, 4, 0], 'kinds by name, unknown ones left out, degrees to radians');
+  assert.deepEqual([...read].map(v => Math.round(v * 100) / 100), [KIND.bin, 1, 2, 1.57, KIND.bollard, 3, 4, 0], 'kinds by name, unknown ones left out, degrees to radians');
   assert.equal(await mappedFurniture('x', 1000, async () => new Response('', { status: 404 })), null, 'no file, no mapped furniture');
   console.log('Mapped street furniture: wall post boxes, buildings and roads, the file passed');
 }
@@ -83,7 +83,7 @@ console.log('Survey parsing, deadline, abort and immutable unavailable outcome p
   const lawn = [[[[20, -5], [40, -5], [40, 5], [20, 5], [20, -5]]]];
   const road = (x, y) => y < -3;
   const g = treeGrates([[0, 0], [30, 0], [0, 40], [-200, 0]], { lawn }, road, [-100, -100, 100, 100], () => 0);
-  assert.deepEqual(g.map(s => [s.x, s.y, s.kind]), [[0, 0, 20]], 'only the tree in the paving by the road: ' + JSON.stringify(g));
+  assert.deepEqual(g.map(s => [s.x, s.y, s.kind]), [[0, 0, KIND.treeGrate]], 'only the tree in the paving by the road: ' + JSON.stringify(g));
   assert(Math.sin(g[0].angle) < 0, 'turned towards the road it found');
   console.log('Tree grates: paving by a road, not lawns, not far from roads, not outside the tile');
 }
@@ -99,7 +99,7 @@ console.log('Survey parsing, deadline, abort and immutable unavailable outcome p
     e('B', 'E', [[100, 0], [100, 50]]), e('E', 'B', [[100, 50], [100, 0]]), e('B', 'F', [[100, 0], [100, -50]]), e('F', 'B', [[100, -50], [100, 0]])];
   const s = oneWaySigns(drive), signs = [];
   for (let i = 0; i < s.length; i += 4) signs.push({ kind: s[i], x: s[i + 1], y: s[i + 2], a: s[i + 3] });
-  const one = signs.find(q => q.kind === 22), stop = signs.find(q => q.kind === 21);
+  const one = signs.find(q => q.kind === KIND.oneWay), stop = signs.find(q => q.kind === KIND.noEntry);
   assert(one && stop && signs.length === 2, 'a sign at each end: ' + JSON.stringify(signs));
   // Traffic runs east: turning in at A it drives east, its right is south; the sign faces west.
   assert(one.x === 3 && one.y === -4 && Math.abs(Math.sin(one.a) + 1) < 1e-9, 'one-way sign at the start: ' + JSON.stringify(one));

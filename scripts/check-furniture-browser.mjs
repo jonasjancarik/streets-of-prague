@@ -13,14 +13,10 @@ try {
   await page.goto(new URL('src/map/furniture.ts', base).href);
   const result = await page.evaluate(async () => {
     const { Geo } = await import('/src/map/geo.ts');
-    const { furnitureInstances, YARD } = await import('/src/map/furniture.ts');
+    const { furnitureInstances, YARD, FURNITURE_KINDS } = await import('/src/map/furniture.ts');
     const { furnitureMeshes, furnitureView, disposeFurniture } = await import('/src/furniture.ts');
-    const { standingMarks } = await import('/src/map/utility.ts');
     const { TileWorkers } = await import('/src/tileWorkers.ts');
     const assert = (v, text) => { if (!v) throw new Error(text); };
-    // Survey kinds: 2 hydrant, 3 phone box, 0 manhole.
-    const marks = standingMarks([[1, 2, 2], [3, 4, 3], [5, 6, 0]]);
-    assert(marks.length === 1 && marks[0].kind === 3 && marks[0].x === 1, 'hydrants stand; surveyed phone boxes are left out');
     const poly = [[[[0, 0], [100, 0], [100, 100], [0, 100]]]];
     const data = { size: [100, 100], origin: [0, 0], areas: { dtm_yard: poly }, roads: {}, buildings: [], sheds: [], furnitureBuildings: [], walls: [], fences: [], trees: [], walk: [], passages: [], structures: [], reserved: new Float32Array(0), levels: false, furnitureEnabled: true };
     const trees = { matrices: new Float32Array(0), colours: new Float32Array(0), yearly: new Float32Array(0), count: 0, shrubs: 0, conifers: 0 };
@@ -61,9 +57,9 @@ try {
       assert(absent.furniture.spots.length === 0, 'no placement without terrain');
       const disabled = await workers.run('land', { data: { ...data, furnitureEnabled: false }, ground, bridges: [], box: [0, 0, 1, 1], structures: [], seeds: new Float64Array([1, 1]) });
       assert(disabled.furniture.spots.length === 0, 'missing lamp survey or explicit baseline disables furniture');
+      // Survey kinds: 2 standing hydrant, 3 phone box. Neither stands in Prague's streets.
       const surveyed = await workers.run('land', { data: { ...data, utility: [[50, 50, 3], [60, 60, 2]] }, ground, bridges: [], box: [0, 0, 1, 1], structures: [], seeds: new Float64Array([1, 1]) });
-      const standing = surveyed.furniture.spots.filter(s => s.kind >= 3);
-      assert(standing.length === 1 && standing[0].kind === 3 && standing[0].x === 60, 'the worker stands the hydrant, not the phone box');
+      assert(surveyed.furniture.spots.every(s => s.kind <= 2), 'no standing hydrant or phone box from the survey');
       const first = furnitureMeshes(land.furniture), second = furnitureMeshes(land.furniture);
       assert(first.length === 1 && second.length === 1, 'one instance draw for populated kind');
       assert(first[0].geometry === second[0].geometry && first[0].material === second[0].material, 'shared models and material');
@@ -75,13 +71,15 @@ try {
       assert(instanceDisposals === 1 && geometryDisposals === 0, 'tile disposal preserves shared geometry');
       assert(second[0].count === land.furniture.spots.length, 'remaining tile retains instances');
       const identity = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
-      const all = furnitureMeshes({ matrices: Array(4).fill(identity), spots: [] });
+      // One of every kind: the park furniture's overhead models as they were, and every street model within budget.
+      const all = furnitureMeshes({ matrices: Array(FURNITURE_KINDS).fill(identity), spots: [] });
       const countTriangles = m => (m.geometry.index?.count ?? m.geometry.attributes.position.count) / 3;
-      assert(JSON.stringify(all.map(countTriangles)) === '[108,36,84,60]', 'original overhead models');
+      assert(JSON.stringify(all.slice(0, 3).map(countTriangles)) === '[108,36,84]', 'original overhead models');
+      assert(all.length === FURNITURE_KINDS, 'a draw for every kind');
       assert(all[2].geometry === second[0].geometry, 'reloaded kind reuses its model');
       furnitureView(all, true);
       const triangles = all.map(countTriangles);
-      assert(all.length === 4 && triangles.every((n, i) => n > 0 && n <= [1100, 1350, 300, 1150][i]), 'street triangle budgets: ' + triangles);
+      assert(triangles.every((n, i) => n > 0 && n <= ([1100, 1350, 300][i] ?? 4000)), 'street triangle budgets: ' + triangles);
       assert(all[2].material.alphaTest > 0 && all[2].customDepthMaterial.alphaTest > 0, 'leaf silhouettes and shadows');
       const close = all[0].geometry;
       furnitureView(all, false);

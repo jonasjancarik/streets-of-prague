@@ -1,7 +1,8 @@
 // What lies in and stands on the streets, surveyed (pipeline/ipr_utility.py, a tile's
 // `utility`): manhole covers, storm drains and the small covers of underground hydrants,
-// flat on the ground; hydrants, standing. (The survey's phone boxes are in the data but not
-// in the game; see standingMarks.) Worked out in the tile workers.
+// flat on the ground. The survey's standing hydrants and phone boxes are in the data but not
+// in the game: Prague's hydrants are underground, and nearly all of its phone boxes were taken
+// away in the early 2020s. Worked out in the tile workers.
 import type { Point2 } from './geo.ts';
 
 export type UtilityMark = [number, number, number]; // x, y (m), kind
@@ -69,13 +70,4 @@ export function coverGeometry(marks: UtilityMark[], lines: Point2[][], height: (
   const normal = new Float32Array(pos.length);
   for (let i = 1; i < normal.length; i += 3) normal[i] = 1;
   return { position: new Float32Array(pos), normal, index: new Uint32Array(idx) };
-}
-
-// Where the surveyed hydrants stand: { kind (the furniture's 3), x, y, angle }. The
-// survey's phone boxes are left out: nearly all of Prague's were taken away in the
-// early 2020s, and a kiosk dates the street.
-export function standingMarks(marks: UtilityMark[]) {
-  const out: { kind: 3; x: number; y: number; angle: number }[] = [];
-  for (const [x, y, kind] of marks) if (kind === HYDRANT) out.push({ kind: 3, x, y, angle: 0 });
-  return out;
 }

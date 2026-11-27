@@ -17,7 +17,7 @@ function prepareStreet() {
   const leafDepth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map, alphaTest: 0.42, side: THREE.DoubleSide });
   return { models, solid, shrub, leafDepth };
 }
-const names = ['park benches', 'park bins', 'courtyard planters', 'hydrants', 'bike stands', 'parking machines', 'bollards', 'post boxes',
+const names = ['benches', 'bins', 'courtyard planters', 'bike stands', 'parking machines', 'bollards', 'post boxes',
   'glass bells', 'clear glass bells', 'paper containers', 'plastic containers', 'carton containers', 'metal containers', 'post boxes on walls', 'Stolpersteine',
   'street cabinets', 'advertising columns', 'poster cases', 'drinking fountains', 'tree grates', 'no-entry signs', 'one-way signs'];
 

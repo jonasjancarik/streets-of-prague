@@ -131,23 +131,6 @@ function planter() {
   return join(parts);
 }
 
-function hydrant() {
-  const red = '#a13c2b', joint = '#56443c';
-  const parts = [spun([[.001, .02], [.151, .02], [.151, .055], [.14, .068], [.114, .08], [.113, .16], [.095, .22], [.09, .53], [.102, .60], [.119, .62], [.119, .65], [.108, .66], [.108, .71], [.095, .747], [.053, .77], [.001, .773]], 16, red)];
-  parts.push(spun([[.117, .146], [.128, .152], [.128, .173], [.112, .181]], 16, joint), rod([0, .759, 0], [0, .808, 0], .037, 6, '#7b6050'));
-  for (const s of [-1, 1]) {
-    parts.push(rod([s * .077, .525, 0], [s * .145, .549, 0], .073, 12, red),
-      rod([s * .145, .549, 0], [s * .169, .556, 0], .08, 12, '#7d7768'), rod([s * .168, .556, 0], [s * .18, .558, 0], .056, 8, '#aaa391'));
-    const p: Point[] = [[s * .169, .529, .035], [s * .163, .47, .052], [s * .127, .431, .065], [s * .095, .455, .071], [s * .086, .519, .062]];
-    for (let i = 1; i < p.length; i++) parts.push(rod(p[i - 1], p[i], .005, 5, joint));
-  }
-  for (let i = 0; i < 4; i++) {
-    const x = Math.cos(i * Math.PI / 2 + .78) * .125, z = Math.sin(i * Math.PI / 2 + .78) * .125;
-    parts.push(rod([x, .054, z], [x, .069, z], .013, 6, joint));
-  }
-  return join(parts);
-}
-
 // The mapped street furniture (MAPPED in map/furniture.ts). Each model's local x runs
 // along its street and its +z faces the street.
 
@@ -267,8 +250,9 @@ function treeGrate() {
 }
 
 // Traffic signs on a grey post, their face towards local +z and a grey back.
-function signPost(face: THREE.BufferGeometry[], y: number) {
-  const back = new THREE.CircleGeometry(.3, 20).rotateY(Math.PI).translate(0, y, .02);
+function signPost(face: THREE.BufferGeometry[], y: number, square = false) {
+  // A grey back the face's own shape, a little behind it.
+  const back = (square ? new THREE.PlaneGeometry(.5, .5) : new THREE.CircleGeometry(.315, 24)).rotateY(Math.PI).translate(0, y, .015);
   return join([rod([0, 0, 0], [0, y + .35, 0], .03, 8, '#8e9394'), finish(back, '#9a9d9c'), ...face]);
 }
 // No entry (B2 in the Czech rules): a red disc with a white bar.
@@ -281,7 +265,7 @@ function noEntrySign() {
 function oneWaySign() {
   const y = 2.2, arrow = new THREE.Shape([new THREE.Vector2(-.13, -.02), new THREE.Vector2(0, .17), new THREE.Vector2(.13, -.02)]);
   return signPost([box(.5, .5, .02, 0, y, .03, '#1f4fa0'), box(.07, .26, .01, 0, y - .1, .045, '#f4f2ec'),
-    finish(new THREE.ShapeGeometry(arrow).translate(0, y, .046), '#f4f2ec')], y);
+    finish(new THREE.ShapeGeometry(arrow).translate(0, y, .046), '#f4f2ec')], y, true);
 }
 
 // A drinking fountain (pítko): a dark steel post with a basin and a push tap.
@@ -325,7 +309,7 @@ function container(color: string) {
 export const CONTAINER_COLOURS = ['#2f6b3a', '#e6e6dc', '#2a5aa8', '#e8c22a', '#e27a24', '#7b8180'];
 
 export function furnitureModels() {
-  return [bench(), bin(), planter(), hydrant(), bikeStand(), parkingMachine(), bollard(), postBox(),
+  return [bench(), bin(), planter(), bikeStand(), parkingMachine(), bollard(), postBox(),
     glassBell(CONTAINER_COLOURS[0]), glassBell(CONTAINER_COLOURS[1]), ...CONTAINER_COLOURS.slice(2).map(container), wallPostBox(), stolperstein(),
     cabinet(), advertisingColumn(), posterCase(), drinkingFountain(), treeGrate(), noEntrySign(), oneWaySign()];
 }
