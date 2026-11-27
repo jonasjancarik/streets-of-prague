@@ -6,6 +6,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Fn, If, float, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, cameraWorldMatrix, diffuseColor, renderGroup, positionLocal, positionWorld, positionViewDirection, normalLocal, positionGeometry, materialColor, materialSpecular, normalize, dot, smoothstep, mix, select, sin, min, cos, max, floor, mod, exp2, reflect, atan, pow, uniform, texture, cubeTexture, length, clamp, step, distance, cross, fract, abs, fwidth, normalGeometry, int, ivec2, Loop, Break } from 'three/tsl';
 import { LAMP_GLOW, CAR_GLOSS, DUSTCART_COAT, CAR_MIRROR, CAR_STREET, WHEEL_LEVEL, WHEEL_SHIFT, CAR_REFLECT as R, CAR_STRIPS as CS, AREA_STEP, DENT_STEP, DENT_SHAPE as DS, BROKEN_GLASS as BG, SCRAPED as SC, BLOWS, DENT_MAP } from '../car.ts';
+import { WHEEL_BEND as WB } from '../physicalHandling.ts';
 import { ROLL_CENTRE } from '../streetHandling.ts';
 import { sedanInstruments, sedanWeave } from '../sedanFinish.ts';
 import { registrationAtlas } from '../registrationPlates.ts';
@@ -91,6 +92,11 @@ const crumple = (p: N, n: N) => {
     });
   });
   return { move, normal: normalize(cross(t1.mul(0.03).add(m1).sub(move), t2.mul(0.03).add(m2).sub(move))) };
+};
+// How far a wheel goes for the dents' push m at its hub (WHEEL_BEND).
+const wheelBend = (m: N): N => {
+  const l: N = length(m);
+  return select(l.greaterThan(WB.hold), m.mul(l.sub(WB.hold).mul(WB.give).div(max(l, 1e-6))), vec3(0));
 };
 // How hard a window was hit where p is (0 to 3): from 2 it's broken.
 const crackLevel = (p: N): N => {
@@ -280,9 +286,12 @@ addPort(/^cars(?:-service|-dustcart|-close|-coachglass|-coachwork)?$/, (node, le
   // (Before the instance's own transform goes on, in setupPosition.)
   node.setupPosition = function (builder: N) {
     shareInstances(builder);
-    let pos: N = positionLocal, nrm: N = normalLocal;
+    let pos: N = positionLocal, nrm: N = normalLocal, dentAt: N = positionGeometry, wheel: N | null = null;
     if (closeCar) {
-      const axle = vec3(hinge.x, hinge.z.negate().sub(select(hinge.z.lessThan(-1), 2, 0)), hinge.y), wheel = hinge.z.lessThan(0);
+      const axle = vec3(hinge.x, hinge.z.negate().sub(select(hinge.z.lessThan(-1), 2, 0)), hinge.y);
+      wheel = hinge.z.lessThan(0);
+      // (A wheel goes as a whole, as the dents bend it at its hub: wheelBend.)
+      dentAt = select(wheel, axle, positionGeometry);
       let spun: N = axle.add(rollWheel(pos.sub(axle)));
       const twist: N = floor(attribute('roll','vec4').z.add(1).mul(.5)).mul(.0025).mul(hinge.x.mul(hinge.y).negate().sign());
       if (hero) {
@@ -299,8 +308,9 @@ addPort(/^cars(?:-service|-dustcart|-close|-coachglass|-coachwork)?$/, (node, le
       pos = select(wheel, wheelPos, pos);
       nrm = select(wheel, wheelNormal, nrm);
     }
-    const dent = crumple(positionGeometry, nrm), bent: N = pos.add(dent.move), normal: N = dent.normal;
-    dentPush = length(dent.move);
+    const dent = crumple(dentAt, nrm), move: N = wheel ? select(wheel, wheelBend(dent.move), dent.move) : dent.move;
+    const bent: N = pos.add(move), normal: N = wheel ? select(wheel, nrm, dent.normal) : dent.normal;
+    dentPush = length(move);
     if (!closeCar) dentGlass = crackLevel(positionGeometry);
     const p = swing(bent.xz.sub(hinge.xy), closeCar).add(hinge.xy), n = swing(normal.xz, closeCar);
     positionLocal.assign(vec3(p.x, bent.y, p.y));

@@ -1,6 +1,6 @@
 import { GLYPHS, letteringGeometry } from './vehicleLettering.ts';
 import { StreetHandling, ROLL_CENTRE } from './streetHandling.ts';
-import { PhysicalHandling, type Axles } from './physicalHandling.ts';
+import { PhysicalHandling, WHEEL_BEND, type Axles } from './physicalHandling.ts';
 import { KEEP, STREET_QUALITY } from './streetQuality.ts';
 import { drivingSpec } from './driveTune.ts';
 import { Rollover, SCRAPE, tripSpeed } from './rollover.ts';
@@ -1371,6 +1371,14 @@ function blowMove(b: Blow, x: number, y: number, z: number, out: [number, number
   out[1] += b.dy * push + push * DS.buckle * (fold - 0.5) * ease(0.6, 0.85, y) * Math.abs(b.dx);
   out[2] += b.dz * push;
 }
+// How far the blows bend the wheel whose hub is at (x, y, z) on its car (as blowMove;
+// WHEEL_BEND, and wheelBend in DENT_GLSL and webgpu/vehicles.ts).
+export function wheelBend(blows: readonly Blow[], x: number, y: number, z: number): [number, number, number] {
+  const m: [number, number, number] = [0, 0, 0];
+  for (const b of blows) blowMove(b, x, y, z, m);
+  const l = Math.hypot(m[0], m[1], m[2]), k = l > WHEEL_BEND.hold ? (l - WHEEL_BEND.hold) * WHEEL_BEND.give / l : 0;
+  return [m[0] * k, m[1] * k, m[2] * k];
+}
 // What the dents do to a seated driver, whose figure isn't part of the car's model: how
 // far in from their door (m) the blows push them, so the door doesn't pass through them,
 // and the share of its height the car keeps over them. The seat is at `x` along the car
@@ -1461,6 +1469,11 @@ vec3 crumple(vec3 p, vec3 n, out vec3 move) {
     m2 += blowAt(p + t2 * .03, a, b);
   }
   return normalize(cross(t1 * .03 + m1 - move, t2 * .03 + m2 - move));
+}
+// How far a wheel goes for the dents' push \`m\` at its hub (WHEEL_BEND).
+vec3 wheelBend(vec3 m) {
+  float l = length(m);
+  return l > ${WHEEL_BEND.hold} ? m * ((l - ${WHEEL_BEND.hold}) * ${WHEEL_BEND.give} / l) : vec3(0.);
 }
 // How hard a window was hit where p is (0 to 3): from 2 it's broken.
 float crackLevel(vec3 p) {
@@ -1712,7 +1725,8 @@ vec3 rollWheel(vec3 p) {
   return hinge.x > 0. ? vec3(c*spun.x+steer*p.z, spun.y, -steer*spun.x+c*p.z) : vec3(spun,p.z);
 }
 vec2 swing(vec2 p)`)
-    .replace('objectNormal = crumple(position, objectNormal, dentMove);', 'objectNormal = crumple(position, objectNormal, dentMove); if (hinge.z < 0.) { objectNormal = rollWheel(objectNormal); if (roll.w < 0.) objectNormal = wheelLevel(objectNormal); }')
+    // (A wheel goes as a whole, as the dents bend it at its hub: wheelBend.)
+    .replace('objectNormal = crumple(position, objectNormal, dentMove);', 'if (hinge.z < 0.) { crumple(vec3(hinge.x, -hinge.z - (hinge.z < -1. ? 2. : 0.), hinge.y), objectNormal, dentMove); dentMove = wheelBend(dentMove); objectNormal = rollWheel(objectNormal); if (roll.w < 0.) objectNormal = wheelLevel(objectNormal); } else objectNormal = crumple(position, objectNormal, dentMove);')
     .replace('transformed += dentMove;', `float brightness = dot(color.rgb,vec3(.3,.59,.11));
 bool glazed = brightness < .04 && color.b > color.r*1.25;
 vWheelCoat = (mod(floor(painted),16.) == 0. && !glazed) ? mix(.08,1.,smoothstep(.035,.17,brightness)) : 1.;
@@ -2281,6 +2295,11 @@ export class Car {
   // road is heard and dents and damages it as a rollover's does.
   private physicalStep(dt: number, ctl: CarControl, S: CarSpec, grid: CarGrid, road: number) {
     const ph = this.physics!;
+    if (ph.bentBy !== this.dentVersion) {
+      // The bent wheels (WHEEL_BEND), in the body's frame: forward, left, up.
+      const { radius } = ph.axles;
+      ph.bend(ph.wheels.map((w) => { const b = wheelBend(this.blows, w.ax, radius, -w.ay); return [b[0], -b[2], b[1]]; }), this.dentVersion);
+    }
     const landing = ph.advance(this, S, ctl, road, dt, grid.height ?? FLAT);
     this.lean = 0;
     this.spin = 0;

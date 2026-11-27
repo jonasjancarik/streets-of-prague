@@ -24,6 +24,14 @@
 // game did to them since (a wall's bounce, a blow from another car) as an impulse.
 import type { CarControl, CarSpec } from './car.ts';
 
+// A wheel is bent by a crash's dents as a whole, by how far they push in its hub: the
+// suspension takes the first `hold` metres, and the wheel goes `give` of the rest
+// (wheelBend in car.ts, and its shaders). Bent, a wheel pushed back or forward is toed
+// `toe` times the turn of its axle (`most` rad at most), and it loses `grip` of its grip
+// and adds `scrub` of its load to its rolling drag for every metre it was bent (keeping
+// `least` of its grip; `scrubMost` at most). (PhysicalHandling.bend)
+export const WHEEL_BEND = { hold: 0.1, give: 0.6, toe: 1.5, most: 0.12, grip: 2.5, least: 0.5, scrub: 1.5, scrubMost: 0.35 };
+
 const G = 9.81;
 const clamp = (x: number, min: number, max: number) => Math.min(max, Math.max(min, x));
 
@@ -69,6 +77,9 @@ interface Wheel {
   cx: number; cy: number; cz: number; ground: number;
   // How much it slides (0–1), for tyre marks and squeal.
   slide: number;
+  // Bent by a crash (bend): turned off straight (rad, + left), the share of its grip it
+  // keeps and the share of its load it drags.
+  toe: number; grip: number; scrub: number;
 }
 
 // Tall vehicles (vans, pickups, SUVs) sit higher and roll more.
@@ -84,6 +95,8 @@ export class PhysicalHandling {
   readonly wheels: Wheel[];
   // How long it has lain still off its wheels (s), for handing it to Rollover.
   still = 0;
+  // The car's dents the wheels were last bent for (Car.dentVersion).
+  bentBy = -1;
   // Brake lights.
   private lit = false;
 
@@ -134,7 +147,7 @@ export class PhysicalHandling {
     });
     const half = track / 2;
     this.wheels = [[front, half], [front, -half], [rear, half], [rear, -half]].map(([ax, ay], i) => ({
-      ax, ay, front: i < 2, x: 0, rate: 0, contact: true, load: this.statics[i], cx: 0, cy: 0, cz: 0, ground: 0, slide: 0,
+      ax, ay, front: i < 2, x: 0, rate: 0, contact: true, load: this.statics[i], cx: 0, cy: 0, cz: 0, ground: 0, slide: 0, toe: 0, grip: 1, scrub: 0,
     }));
     this.hull = hullOf(s);
     this.gearDirection = car.vx * Math.cos(car.h) + car.vy * Math.sin(car.h) < -.25 ? -1 : 1;
@@ -161,6 +174,20 @@ export class PhysicalHandling {
     this.omega[0] = this.omega[1] = 0; this.omega[2] = car.w;
     for (const w of this.wheels) { w.x = w.rate = 0; w.contact = true; }
     this.publish(car, 0);
+  }
+
+  // Bends the wheels by how far a crash moved each one (m: forward, left, up in the body;
+  // WHEEL_BEND). One pushed back or forward turns its end of the axle, and the wheel with
+  // it; any bend costs it grip and makes it drag.
+  bend(shifts: readonly (readonly number[])[], version: number) {
+    const B = WHEEL_BEND, track = this.axles.track;
+    this.wheels.forEach((w, i) => {
+      const [sx, sy, sz] = shifts[i], l = Math.hypot(sx, sy, sz);
+      w.toe = clamp(B.toe * Math.atan2(-sx * Math.sign(w.ay), track), -B.most, B.most);
+      w.grip = Math.max(B.least, 1 - B.grip * l);
+      w.scrub = Math.min(B.scrubMost, B.scrub * l);
+    });
+    this.bentBy = version;
   }
 
   get up() { return this.axes[8]; }
@@ -419,7 +446,10 @@ export class PhysicalHandling {
       const rx = w.cx - p[0], ry = w.cy - p[1], rz = w.cz - p[2];
       // The wheel's heading, then flat on the road.
       let hx = R[0], hy = R[3], hz = R[6];
-      if (w.front) { hx = R[0] * ca + R[1] * sa; hy = R[3] * ca + R[4] * sa; hz = R[6] * ca + R[7] * sa; }
+      if (w.front || w.toe) {
+        const turn = (w.front ? this.steer : 0) + w.toe, c = w.toe ? Math.cos(turn) : ca, sn = w.toe ? Math.sin(turn) : sa;
+        hx = R[0] * c + R[1] * sn; hy = R[3] * c + R[4] * sn; hz = R[6] * c + R[7] * sn;
+      }
       const hn = hx * nx + hy * ny + hz * nz;
       hx -= hn * nx; hy -= hn * ny; hz -= hn * nz;
       const hl = Math.hypot(hx, hy, hz) || 1; hx /= hl; hy /= hl; hz /= hl;
@@ -427,13 +457,13 @@ export class PhysicalHandling {
       const vx = v[0] + o[1] * rz - o[2] * ry, vy = v[1] + o[2] * rx - o[0] * rz, vz = v[2] + o[0] * ry - o[1] * rx;
       const along = vx * hx + vy * hy + vz * hz, across = vx * lx + vy * ly + vz * lz;
       const load = Math.min(w.load, this.statics[i] * 3.5);
-      const mu = this.grip * road * clamp(1 - .05 * (load / this.statics[i] - 1), .88, 1.04);
+      const mu = this.grip * w.grip * road * clamp(1 - .05 * (load / this.statics[i] - 1), .88, 1.04);
       const most = mu * load;
       // Pedals: drive, then the brakes and the drag of the engine and the tyres rolling,
       // which never do more than stop the wheel.
       const drive = pull * (w.front ? driveFront : 1 - driveFront) * share(i);
       const resist = braking * (w.front ? .67 : .33) * share(i) * (1 - (w.front ? 0 : this.rearLock))
-        + .016 * load + engine * (w.front ? driveFront : 1 - driveFront) * share(i);
+        + (.016 + w.scrub) * load + engine * (w.front ? driveFront : 1 - driveFront) * share(i);
       // (ABS: the brakes alone never lock a wheel.)
       const stop = Math.min(resist, .97 * most, Math.abs(along) * each);
       const demand = drive - Math.sign(along) * stop;
