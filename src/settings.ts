@@ -67,6 +67,7 @@ const CUSTOM: [string, Option[]][] = [
   ['Smooth edges (MSAA)', [['Off', { samples: 0 }], ['4×', { samples: 4 }]]],
   ['Sun shadows', [['Coarse (1024)', { shadowSize: 1024 }], ['Normal (2048)', { shadowSize: 2048 }], ['Sharp (4096)', { shadowSize: 4096 }], ['Sharpest (8192, demanding)', { shadowSize: 8192 }]]],
   ['Shadow edges', [['Crisp', { shadowBlur: 1, softShadows: false }], ['Soft', { shadowBlur: 2, softShadows: false }], ['Softer further off', { shadowBlur: 2, softShadows: true }]]],
+  ['Sun shadow updates', [['About 40 times a second', { sunEveryFrame: false }], ['Every frame (demanding)', { sunEveryFrame: true }]]],
   ['People’s shadows', [['Their own shape', { people: 'full' }], ['Simple', { people: 'simple' }]]],
   ['Shadows in lamplight', [['None', { cars: 0 }], ['Soft under cars', { cars: 1 }], ['Cars', { cars: 2 }], ['Cars, people, trams and posts', { cars: 3 }]]],
   ['Lamp shadow detail', [['Normal (1024)', { lampMap: 1024 }], ['Sharp (2048)', { lampMap: 2048 }]]],

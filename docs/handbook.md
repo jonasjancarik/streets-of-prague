@@ -290,6 +290,12 @@ setting under the Graphics row. It starts from the level you were on, and some o
 past Ultra: the screen's full pixel ratio up to 3×, an 8192 sun shadow map (where the GPU
 allows it) and close-up models reaching half as far again. Custom is kept in
 `graphicsCustom`; code that asks for the tier sees Ultra.
+Every tier draws the sun's shadow map once 24 ms have passed since the last time and
+keeps it between (`src/main.ts`): every other frame at 60 fps, every third at 120 Hz,
+every frame at 40 fps and below, so a moving shadow trails its caster by at most one frame
+where that doesn't show and never steps at low frame rates. It saved 7–9% of the main
+thread in the street view. Custom's "Sun shadow updates" can draw it every frame instead;
+a jump of the camera (a teleport, a new view) always draws it at once.
 The tiers also set how far you see from the street (250 m on Lowest, 300 on Low, 400 on
 Medium and High, 500 on Ultra; Custom up to 1000), anisotropic filtering (off on Lowest,
 half on Low, as each texture was made on Medium and High, double on Ultra; Custom up to

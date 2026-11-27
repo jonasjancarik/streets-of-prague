@@ -2283,3 +2283,16 @@ frame 30.7–31.7 ms, about 460 draws (some 200 in the sun's shadow pass), 3.6 M
     (3%), 73.1 → 69.5 ms slowed (5%). So caching the static casters' shadow would save
     at most a fifth of the pass; most of it is the moving casters and the pass itself
     (going through the scene for the sun's camera). Not worth a custom shadow cache.
+- **The sun's shadow map is now drawn once 24 ms have passed since the last time**
+  (`main.ts`; Custom's "Sun shadow updates" can draw it every frame). That is every other
+  frame at 60 fps and every frame at 40 fps and below, where a map kept for a frame would
+  trail a car at 50 km/h by half a metre and update only 15 times a second. Every other
+  frame first, A/B against every frame: standing 12.1 → 11.2 ms (6.6%), slowed 4× 73.6 →
+  68.1 (7.1%), driving slowed 86.8 → 78.7 (8.7%; driving at full speed too noisy to read).
+  The timed rule, A/B against every frame: 12.7 → 11.7 ms unpaced (7.7%); paced at 60 fps
+  the frame stays 16.7 ms and JavaScript 12.9 → 11.8 ms. At under 30 fps (a busy page)
+  it drew every frame, as meant. In a worst-case still (paused, a car at 50 km/h moved one
+  step with the map left as it was, from a camera 10 m off in low sun) the stale and fresh
+  frames differed in 4115 pixels by more than 8 levels and couldn't be told apart by eye.
+  Not measured: the GPU's saving where the GPU sets the frame (the pass draws about 200
+  objects into the shadow map), and how it looks on a phone.

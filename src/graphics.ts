@@ -94,19 +94,22 @@ export const CHOICES: Choice[] = ['auto', 'ultra', 'high', 'medium', 'low', 'low
 // posts cast shadows from every lamp and headlight, 2 only the cars do, 1 a soft darkening
 // round each car, 0 nothing. `lights`: the cones and glints.
 // `shadowBlur`: how far the sun shadow's edge is softened, in shadow-map texels.
+// `sunEveryFrame`: the sun's shadow map drawn every frame. Off on every tier: it's drawn
+// once SHADOW_MS have passed since the last (main.ts), every other frame at 60 fps, which
+// saved 7–9% of the main thread in the street view. Custom can draw it every frame.
 // `view`: how far you see along the street in first and third person (m; the haze on
 // the far streets moves with it, and only the tiles that far are drawn). Overhead the
 // screen decides. `aniso`: anisotropic filtering, times what each texture was made with
 // (textureQuality.ts; 0 off). `textures`: the pictures at full size or half
 // (textureQuality.ts, from the next start). Auto keeps the filtering it began with: a
 // change uploads the textures again.
-type Settings = { look: boolean; maxRatio: number; samples: 0 | 4; shadowSize: number; shadowBlur: number; roofs: boolean; clutter: boolean; crowd: number; cars: 0 | 1 | 2 | 3; lights: boolean; lampMap: 1024 | 2048; people: PeopleShadows; view: number; aniso: number; textures: 'full' | 'half' };
+type Settings = { look: boolean; maxRatio: number; samples: 0 | 4; shadowSize: number; shadowBlur: number; sunEveryFrame: boolean; roofs: boolean; clutter: boolean; crowd: number; cars: 0 | 1 | 2 | 3; lights: boolean; lampMap: 1024 | 2048; people: PeopleShadows; view: number; aniso: number; textures: 'full' | 'half' };
 const TIERS: Record<Tier, Settings> = {
-  ultra: { look: true, maxRatio: 2, samples: 4, shadowSize: 4096, shadowBlur: 2, roofs: true, clutter: true, crowd: 1, cars: 3, lights: true, lampMap: 2048, people: 'full', view: 500, aniso: 2, textures: 'full' },
-  high: { look: true, maxRatio: 2, samples: 4, shadowSize: 2048, shadowBlur: 1, roofs: true, clutter: true, crowd: 1, cars: 2, lights: true, lampMap: 2048, people: 'full', view: 400, aniso: 1, textures: 'full' },
-  medium: { look: true, maxRatio: 1.5, samples: 4, shadowSize: 2048, shadowBlur: 1, roofs: true, clutter: false, crowd: 1, cars: 1, lights: false, lampMap: 1024, people: 'full', view: 400, aniso: 1, textures: 'full' },
-  low: { look: true, maxRatio: 1, samples: 4, shadowSize: 1024, shadowBlur: 1, roofs: true, clutter: false, crowd: 1, cars: 1, lights: false, lampMap: 1024, people: 'simple', view: 300, aniso: 0.5, textures: 'full' },
-  lowest: { look: false, maxRatio: 1, samples: 0, shadowSize: 1024, shadowBlur: 1, roofs: false, clutter: false, crowd: 0.5, cars: 0, lights: false, lampMap: 1024, people: 'simple', view: 250, aniso: 0, textures: 'half' },
+  ultra: { look: true, maxRatio: 2, samples: 4, shadowSize: 4096, shadowBlur: 2, sunEveryFrame: false, roofs: true, clutter: true, crowd: 1, cars: 3, lights: true, lampMap: 2048, people: 'full', view: 500, aniso: 2, textures: 'full' },
+  high: { look: true, maxRatio: 2, samples: 4, shadowSize: 2048, shadowBlur: 1, sunEveryFrame: false, roofs: true, clutter: true, crowd: 1, cars: 2, lights: true, lampMap: 2048, people: 'full', view: 400, aniso: 1, textures: 'full' },
+  medium: { look: true, maxRatio: 1.5, samples: 4, shadowSize: 2048, shadowBlur: 1, sunEveryFrame: false, roofs: true, clutter: false, crowd: 1, cars: 1, lights: false, lampMap: 1024, people: 'full', view: 400, aniso: 1, textures: 'full' },
+  low: { look: true, maxRatio: 1, samples: 4, shadowSize: 1024, shadowBlur: 1, sunEveryFrame: false, roofs: true, clutter: false, crowd: 1, cars: 1, lights: false, lampMap: 1024, people: 'simple', view: 300, aniso: 0.5, textures: 'full' },
+  lowest: { look: false, maxRatio: 1, samples: 0, shadowSize: 1024, shadowBlur: 1, sunEveryFrame: false, roofs: false, clutter: false, crowd: 0.5, cars: 0, lights: false, lampMap: 1024, people: 'simple', view: 250, aniso: 0, textures: 'half' },
 };
 
 // The switches a tier sets on its own (apply), which Custom lets the player set one by one.
@@ -338,6 +341,8 @@ export class Graphics {
 
   // Fewer people on Lowest, with the usual off-screen retirement (no popping).
   get crowd() { return this.settings().crowd; }
+  // Whether the sun's shadow map is drawn every frame (main.ts).
+  get sunEveryFrame() { return this.settings().sunEveryFrame; }
   // How far you see from the street (m).
   get viewDistance() { return this.settings().view; }
   // Whether the overhead view gets the street models (Custom).

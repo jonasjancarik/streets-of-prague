@@ -422,6 +422,19 @@ async function main() {
   sun.castShadow = true;
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.4;
+  // The sun's shadow map is drawn once SHADOW_MS have passed since the last time, the
+  // frames between keeping it: every other frame at 60 fps, every third at 120 Hz, and
+  // every frame at 40 fps and below, where a map kept for a frame would trail a car at
+  // 50 km/h by half a metre and step. (Custom can draw it every frame: graphics.ts,
+  // sunEveryFrame.) The pass was about 15% of the main thread standing on the Old Town
+  // Square, on a fast machine and with the CPU slowed 4× alike, the static casters only a
+  // fifth of it; every other frame saved 7–9%. A jump of the camera (a teleport, a new
+  // view) draws it at once. (`__drive.shadowMs` overrides the wait, for tests: 0 for
+  // every frame, Infinity for never.)
+  sun.shadow.autoUpdate = false;
+  const SHADOW_MS = 24;
+  let shadowMsTest: number | null = null, shadowAt = -Infinity;
+  const shadowFrom = new THREE.Vector3();
   // The people's stand-ins in the shadow map (PEOPLE_SHADOWS, figures.ts) are on a layer of
   // their own that only the sun's shadow camera sees, and only for the game's own view: for
   // any other (the cars' probe, the mirror) three.js gives it that camera's layers, as before.
@@ -3639,6 +3652,12 @@ async function main() {
     world.trees.canopy(true, eyeStreet);
     sun.position.copy(sun.target.position).add(sky.offset);
     fitShadow();
+    const shadowNow = performance.now(), shadowWait = shadowMsTest ?? (graphics.sunEveryFrame ? 0 : SHADOW_MS);
+    if (shadowNow - shadowAt >= shadowWait || camera.position.distanceToSquared(shadowFrom) > 25) {
+      sun.shadow.needsUpdate = true;
+      shadowAt = shadowNow;
+      shadowFrom.copy(camera.position);
+    }
     // Street lamps and headlights, and the rain, snow and mist round the view.
     {
       // Looking straight down, the light map covers what's in view; the free camera sees further.
@@ -3956,6 +3975,8 @@ async function main() {
   window.__drive = {
     culler, hitches, tilePrograms, birds, birdsView, lifeSize, scene, camera, traffic, crowd, stopWaiting, tours, loose, restingByCar, restingIndex, get resting() { return resting; }, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, refuse, health, fires, trams, ride, taxi, clock, board, busStops, busRide, metro, funicular, ferries, graphics, sound, weather, lamps, sky, skids, bikeShare, carPool, spawnWork, bags,
     get car() { return inCar; },
+    // (The least time between drawings of the sun's shadow map, ms: 0 for every frame.)
+    get shadowMs() { return shadowMsTest ?? (graphics.sunEveryFrame ? 0 : SHADOW_MS); }, set shadowMs(ms: number | null) { shadowMsTest = ms; },
     get heli() { return inHeli; },
     choppers, addChopper,
     teleport: (x: number, y: number) => { (inCar || inHeli || walker).x = x; (inCar || inHeli || walker).y = y; camPos.set(x, 0, -y); },
