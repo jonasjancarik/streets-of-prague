@@ -31,9 +31,9 @@ lamp post over". They drive the real game through the test API in `src/testkit.t
 latitude/longitude), set the time, weather, money, stars and health, get into a new
 car, aim it at the nearest post, push it to a speed, run the world for a few seconds
 with given controls, read back the numbers (`t.probe()`), look from anywhere with
-`t.camera()`, and take screenshots. `t.look(car)` takes a car, a person or a spot from
-above and from several sides at eye height in one labelled sheet (`src/lookSheet.ts`),
-with `rows` for before and after side by side.
+`t.camera()`, and take screenshots. `t.look(car)` takes a car, a person, a post or a spot
+from above, in third person, close up and from several sides at eye height in one
+labelled sheet (`src/lookSheet.ts`), with `rows` for before and after side by side.
 
 `node scripts/scene.mjs run <name…|all>`, `eval "<js with t>"` (or `eval --stdin`) and
 `shot` go through a scene server, headless Chrome with the game loaded: the first

@@ -3467,7 +3467,8 @@ async function main() {
       camGround = free.targetY ?? world.terrainAt(free.x, free.y);
       const hd = ((90 - free.heading) * Math.PI) / 180, back = free.height * Math.tan((free.tilt * Math.PI) / 180);
       camera.position.set(free.x - Math.cos(hd) * back, camGround + free.height, -(free.y - Math.sin(hd) * back));
-      if (free.level) camera.up.set(Math.cos(hd), 0, -Math.sin(hd));
+      // (Level: well tilted, the world's up; nearly straight down, the way it faces.)
+      if (free.level) { if (free.tilt > 45) camera.up.set(0, 1, 0); else camera.up.set(Math.cos(hd), 0, -Math.sin(hd)); }
       camera.lookAt(free.x, camGround, -free.y);
       camera.up.set(0, 0, -1);
     } else if (eyes && !underway) {

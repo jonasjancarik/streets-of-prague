@@ -40,8 +40,10 @@ dents) in each command rather than counting on the last one's. When other sessio
 saving files all the time ("Execution context was destroyed", or a command that waits
 for a load it didn't cause), run your own dev server without live reloading and point
 the scene server at it (see "Scenes in a busy checkout" in docs/handbook.md):
-`SOP_STILL=1 npx vite --host 127.0.0.1 --strictPort --port 5295` in the background, then
-`--url http://127.0.0.1:5295/` on the first command. It shows your edits once you
+`SOP_STILL=1 npx vite --host 127.0.0.1 --strictPort --port <port>` in the background, on
+a port nobody uses (other sessions follow this recipe too: check with
+`curl -s localhost:<port>` first, and avoid 5191–5199), then
+`--url http://127.0.0.1:<port>/` on the first command. It shows your edits once you
 `stop` the scene server and the next command starts it again. Stop that dev server when
 you're done: on Windows, stopping the background task can leave `vite` itself listening,
 so check the port and end that `node … vite.js` process too.
@@ -49,29 +51,37 @@ so check the port and end that `node … vite.js` process too.
 ### Looking at a change: `t.look`
 
 `await t.look(subject, opt)` takes the subject from several sides at once and saves one
-labelled sheet (`$TMPDIR/scene/<name>.jpg`, its path in `.sheet`). The default views are
-the two checks CLAUDE.md asks for and the corners: `top` (straight down from the game's
-normal 100 m: does it read from above?), `high` (a three-quarter view from above), and
-`front-left`, `front-right`, `rear-left`, `rear-right` at standing eye height (1.6 m:
-does it look real from the street?). The eye-height views are drawn as first person
-draws (life-size people, a 55° lens, the sky). The camera is placed from the subject's
-position, heading and size, so there's no heading arithmetic, and a camera that would
-stand in a building comes in to just short of its wall (its label says "nearer: a wall").
+labelled sheet (`$TMPDIR/scene/<name>.jpg`, its path in `.sheet`). The eight default
+views, in four columns, are the two checks CLAUDE.md asks for and the angles that come up
+most: `top` (straight down from the game's normal 100 m: does it read from above?),
+`high` (a three-quarter view from above), `third` (third person as the game frames it:
+the chase camera at rest behind a car, over the right shoulder on foot), `close` (a
+close-up of the near part, a dented corner say), and `front-left`, `front-right`,
+`rear-left`, `rear-right` at standing eye height (1.6 m: does it look real from the
+street?). All but `top` are drawn as first person draws (life-size people, a 55° lens,
+the sky). The camera is placed from the subject's position, heading and size, so there's
+no heading arithmetic; it looks up at what stands above the eye (a lamp's head); and a
+camera that would stand in a building comes in to just short of its wall (its label
+says "nearer: a wall").
 
-- Subject: a car (`t.car(…)`, `t.drive(…)`), anything with `x, y` (and `h`, `spec`),
-  a place name or `[lat, lon]` (with `heading` and `size` in the options), or nothing /
-  `'me'` for you or your car.
-- `views`: names (`top`, `high`, `front`, `left`, `rear`, `right` and the four corners)
-  or `{ from, dist, eye, elev, top, label }`: `from` in degrees round the subject from its
-  front (90 = its left side), `dist` metres from its middle, `eye` height above the
-  ground, `elev` degrees to look down from instead, `top` a height to look straight down from.
+- Subject: a car (`t.car(…)`, `t.drive(…)`), a lamp post or pole (`t.post(r)`; taken as
+  6 m tall, `size: { H: 9 }` for the tall ones on the squares), anything with `x, y` (and
+  `h`, `spec`), a place name or `[lat, lon]` (with `heading` and `size` in the options),
+  or nothing / `'me'` for you or your car.
+- `views`: names (`top`, `high`, `third`, `close`, `front`, `left`, `rear`, `right` and the
+  four corners) or `{ from, dist, eye, elev, top, at, chase, close, label }`: `from` in
+  degrees round the subject from its front (90 = its left side), `dist` metres from the
+  point looked at, `eye` height above the ground, `elev` degrees to look down from
+  instead, `top` a height to look straight down from, `at: [forward, left, up]` the point
+  looked at in metres from the subject's middle (`{ from: 20, dist: 1.8, at: [c.spec.L / 2, 0.5, 0] }`
+  for a closer look at a front corner).
 - `rows: { 'before': () => …, 'after': () => … }` shoots the same views after each setup,
   one row each: try a value in the page (`c.blows[0].depth = 0.6; c.dentVersion++`, a
   uniform, a constant exported as an object such as `DENT_SHAPE` via
   `await import('/src/car.ts')`) next to the current one, and edit the source once, with
   the value that won.
-- `name`, `width` (each picture, 640 px), `columns`, `settle` (frames before each
-  picture, 5), `keep` (leave the camera on the last view).
+- `name`, `width` (each picture: 560 px in four columns, 640 in three), `columns`,
+  `settle` (frames before each picture, 5), `keep` (leave the camera on the last view).
 - It returns each view's camera too: `t.cam = r.views[2].cam` looks from it again,
   and `t.shot(name)` takes that one large.
 - The world is paused while it shoots, so every picture shows the same moment.

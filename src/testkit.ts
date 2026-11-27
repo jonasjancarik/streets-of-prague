@@ -1193,10 +1193,11 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       cam.heading = ((heading % 360) + 360) % 360;
       cam.level = true;
     },
-    // One picture of a car, a person or a spot (you, or your car, by default) from several
-    // sides at once: from above at the normal height, a high three-quarter view and the four
-    // corners at eye height, labelled, as $TMPDIR/scene/<name>.jpg (scripts/scene.mjs only).
-    // `views` picks others ('front', 'left', … or { from, dist, eye, elev, top }); `rows`
+    // One picture of a car, a person, a post or a spot (you, or your car, by default) from
+    // several sides at once: from above at the normal height, a high three-quarter view,
+    // third person, a close-up and the four corners at eye height, labelled, as
+    // $TMPDIR/scene/<name>.jpg (scripts/scene.mjs only). `views` picks others ('front',
+    // 'left', … or { from, dist, eye, elev, top, at }); `rows`
     // shoots them again after each setup, for before and after side by side. It returns
     // the sheet's path and each view's camera (`t.cam = views[i].cam`). src/lookSheet.ts.
     async look(subject?: LookSubject, opt: LookOptions = {}) {
