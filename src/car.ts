@@ -1818,7 +1818,7 @@ coachPaint.onBeforeCompile = (sh, renderer) => {
   sh.uniforms.uInstruments = { value: sedanInstruments() };
   sh.uniforms.uWeave = { value: sedanWeave() };
   sh.vertexShader = sh.vertexShader
-    .replace('varying float vWheelCoat;', 'varying float vWheelCoat; varying float vFinish; varying vec3 vDial; varying float vEngine;')
+    .replace('varying float vWheelCoat;', 'varying float vWheelCoat; flat varying float vFinish; varying vec3 vDial; varying float vEngine;')
     .replace('vec2 spun = hinge.z < -1. ? p.xy : vec2(roll.x*p.x-roll.y*p.y, roll.y*p.x+roll.x*p.y);',
       'vec2 phase = normalize(roll.xy); vec2 spun = hinge.z < -1. ? p.xy : vec2(phase.x*p.x-phase.y*p.y,phase.y*p.x+phase.x*p.y);')
     .replace('transformed = axle + rollWheel(transformed - axle);', `transformed= axle + rollWheel(transformed - axle);
@@ -1828,7 +1828,7 @@ coachPaint.onBeforeCompile = (sh, renderer) => {
       if (hinge.z<0.) vFinish=brightness>.068?2.:4.;
       vDial=vec3(hinge.xy,hinge.z); vEngine=length(roll.xy);`);
   sh.fragmentShader = sh.fragmentShader
-    .replace('#include <common>', '#include <common>\nvarying float vFinish; varying vec3 vDial; varying float vEngine; uniform sampler2D uInstruments; uniform sampler2D uWeave;')
+    .replace('#include <common>', '#include <common>\nflat varying float vFinish; varying vec3 vDial; varying float vEngine; uniform sampler2D uInstruments; uniform sampler2D uWeave;')
     .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
       roughnessFactor=vFinish==1.?mix(.34,.23,uWet):vFinish==2.?.28:vFinish==3.?.91:vFinish==5.?.20:.68;`)
     .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>

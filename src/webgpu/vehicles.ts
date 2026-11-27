@@ -274,7 +274,9 @@ addPort(/^cars(?:-service|-dustcart|-close|-coachglass|-coachwork)?$/, (node, le
   const trimFinish = select(own.equal(0).and(glazed.not()), mix(.08,1,smoothstep(.035,.17,brightness)), float(1));
   const wheelFinish = closeCar ? select(hinge.z.lessThan(0),
     mix(.045,.45,smoothstep(.045,.24,brightness)), select(hinge.z.greaterThan(11.5),float(.065),trimFinish)).toVarying('vWheelCoat') : undefined;
-  const code = hero ? select(hinge.z.lessThan(0), select(brightness.greaterThan(.068), 2, 4), painted.fract().mul(16).round()).toVarying('vFinish') : undefined;
+  // (Rounded again after the varying: interpolation can turn a whole number into 0.9999999
+  // on scattered pixels, on NVIDIA at least, and `equal` would then miss it: speckled paint.)
+  const code = hero ? select(hinge.z.lessThan(0), select(brightness.greaterThan(.068), 2, 4), painted.fract().mul(16).round()).toVarying('vFinish').round() : undefined;
   if (code) {
     const enamel = code.equal(1), metal = code.equal(2), fabric = code.equal(3), optic = code.equal(5);
     node.roughnessNode = select(enamel, mix(.34, .23, uWet), select(metal, .28, select(fabric, .91, select(optic, .20, .68))));
@@ -379,7 +381,7 @@ addPort(/^cars(?:-service|-dustcart|-close|-coachglass|-coachwork)?$/, (node, le
     diffuseColor.rgb.mulAssign(mix(1, CAR_GLOSS.darker, uWet.mul(carTop())));
     if (key === 'cars-coachglass') {
       const grazing = float(1).sub(dot(normalView, positionViewDirection).abs()).pow(3);
-      const tint = painted.fract().mul(16).round().toVarying('vGlassFinish');
+      const tint = painted.fract().mul(16).round().toVarying('vGlassFinish').round();
       const cover = step(7.5, tint), rear = tint.equal(7);
       const base = float(.39).add(smoothstep(1.22, 1.41, positionGeometry.y).mul(.15)).add(select(rear, .18, 0));
       diffuseColor.a.assign(mix(base, .085, cover).add(grazing.mul(mix(.32, .26, cover))));
