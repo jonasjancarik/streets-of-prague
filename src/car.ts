@@ -1351,10 +1351,11 @@ if (KINDS.length * AREA_STEP > DENT_STEP) throw new Error('Too many kinds of are
 // more on the nose or tail (the bumper spreads it), `widest` at most; a blow within `merge` of an earlier one's width of it, pushing much the same
 // way, deepens that one instead. Windows within `reach` metres in from a blow and less
 // than twice its width to either side break once it's pushed in `glass` metres (less
-// further from it; BROKEN_GLASS), and lose pieces at 1.5 times that.
+// further from it; BROKEN_GLASS), and lose pieces at 1.5 times that. Blows side by side
+// don't add up past `pile` times the most one blow goes in that way (blowsMove).
 export const DENT_SHAPE = {
-  deep: 0.16, most: 0.6, side: 0.3, wide: 0.3, spread: 1.6, beam: 0.5, widest: 1.4, flat: 0.3, merge: 0.4,
-  zone: 0.35, give: 1.6, fold: 0.45, buckle: 0.35, roof: 0.65, reach: [1.6, 2.6], glass: 0.24,
+  deep: 0.16, most: 0.4, side: 0.3, wide: 0.3, spread: 1.6, beam: 0.5, widest: 1.4, flat: 0.3, merge: 0.4,
+  zone: 0.35, give: 1.1, fold: 0.45, buckle: 0.35, roof: 0.65, reach: [1.6, 2.6], glass: 0.24, pile: 1.15,
 };
 const DS = DENT_SHAPE;
 const ease = (a: number, b: number, v: number) => { const t = clamp((v - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
@@ -1375,12 +1376,23 @@ function blowMove(b: Blow, x: number, y: number, z: number, out: [number, number
   out[1] += b.dy * push + push * DS.buckle * (fold - 0.5) * ease(0.6, 0.85, y) * Math.abs(b.dx);
   out[2] += b.dz * push;
 }
-// How far the blows bend the wheel whose hub is at (x, y, z) on its car (as blowMove;
+// How far all the blows push the point (x, y, z) of their car, into `m`: summed, then cut
+// back to DENT_SHAPE.pile times the most one blow goes in that way, `side` across the car
+// and `most` along or down it (dentCap in DENT_GLSL and webgpu/vehicles.ts).
+function blowsMove(blows: readonly Blow[], x: number, y: number, z: number, m: [number, number, number]) {
+  m.fill(0);
+  for (const b of blows) blowMove(b, x, y, z, m);
+  const l2 = m[0] * m[0] + m[1] * m[1] + m[2] * m[2];
+  if (!l2) return m;
+  const l = Math.sqrt(l2), cap = (DS.most - (DS.most - DS.side) * m[2] * m[2] / l2) * DS.pile;
+  if (l > cap) for (let i = 0; i < 3; i++) m[i] *= cap / l;
+  return m;
+}
+// How far the blows bend the wheel whose hub is at (x, y, z) on its car (as blowsMove;
 // WHEEL_BEND, and wheelBend in DENT_GLSL and webgpu/vehicles.ts).
 export function wheelBend(blows: readonly Blow[], x: number, y: number, z: number): [number, number, number] {
-  const m: [number, number, number] = [0, 0, 0];
-  for (const b of blows) blowMove(b, x, y, z, m);
-  const l = Math.hypot(m[0], m[1], m[2]), k = l > WHEEL_BEND.hold ? (l - WHEEL_BEND.hold) * WHEEL_BEND.give / l : 0;
+  const m = blowsMove(blows, x, y, z, [0, 0, 0]);
+  const l = Math.hypot(m[0], m[1], m[2]), k = l > WHEEL_BEND.hold ? Math.min((l - WHEEL_BEND.hold) * WHEEL_BEND.give, WHEEL_BEND.far) / l : 0;
   return [m[0] * k, m[1] * k, m[2] * k];
 }
 // What the dents do to a seated driver, whose figure isn't part of the car's model: how
@@ -1391,12 +1403,10 @@ export function seatDent(blows: readonly Blow[], x: number, pelvis: number, z: n
   const m: [number, number, number] = [0, 0, 0], side = Math.sign(z) || -1;
   let inward = 0;
   for (let y = pelvis; y <= pelvis + 0.6; y += 0.15) {
-    m.fill(0);
-    for (const b of blows) blowMove(b, x + 0.3, y, z + side * 0.25, m);
+    blowsMove(blows, x + 0.3, y, z + side * 0.25, m);
     inward = Math.max(inward, -side * m[2]);
   }
-  m.fill(0);
-  for (const b of blows) blowMove(b, x, roof, z, m);
+  blowsMove(blows, x, roof, z, m);
   return [inward, 1 + Math.min(0, m[1]) / roof];
 }
 // The blows of the cars being drawn, for the shaders: a row a dented car, two texels a
@@ -1459,6 +1469,13 @@ vec3 blowAt(vec3 p, vec4 a, vec4 b) {
   float push = b.w * w * (1. + ${DS.fold} * (fold - .5)) * clamp(1. - f.x / (${DS.zone} + ${DS.give} * b.w), 0., 1.) * (1. - ${DS.roof} * smoothstep(.85, 1.35, p.y) * (1. - f.w));
   return b.xyz * push + vec3(0., push * ${DS.buckle} * (fold - .5) * smoothstep(.6, .85, p.y) * abs(b.x), 0.);
 }
+// The blows' summed push m, cut back as blowsMove does.
+vec3 dentCap(vec3 m) {
+  float l2 = dot(m, m);
+  if (l2 <= 0.) return m;
+  float l = sqrt(l2), cap = (${DS.most} - ${DS.most - DS.side} * m.z * m.z / l2) * ${DS.pile};
+  return l > cap ? m * (cap / l) : m;
+}
 // How far the blows push the vertex at p in (\`move\`), and its normal n once they have.
 vec3 crumple(vec3 p, vec3 n, out vec3 move) {
   move = vec3(0.);
@@ -1472,12 +1489,13 @@ vec3 crumple(vec3 p, vec3 n, out vec3 move) {
     m1 += blowAt(p + t1 * .03, a, b);
     m2 += blowAt(p + t2 * .03, a, b);
   }
+  move = dentCap(move); m1 = dentCap(m1); m2 = dentCap(m2);
   return normalize(cross(t1 * .03 + m1 - move, t2 * .03 + m2 - move));
 }
 // How far a wheel goes for the dents' push \`m\` at its hub (WHEEL_BEND).
 vec3 wheelBend(vec3 m) {
   float l = length(m);
-  return l > ${WHEEL_BEND.hold} ? m * ((l - ${WHEEL_BEND.hold}) * ${WHEEL_BEND.give} / l) : vec3(0.);
+  return l > ${WHEEL_BEND.hold} ? m * (min((l - ${WHEEL_BEND.hold}) * ${WHEEL_BEND.give}, ${WHEEL_BEND.far}) / l) : vec3(0.);
 }
 // How hard a window was hit where p is (0 to 3): from 2 it's broken.
 float crackLevel(vec3 p) {

@@ -25,12 +25,12 @@
 import type { CarControl, CarSpec } from './car.ts';
 
 // A wheel is bent by a crash's dents as a whole, by how far they push in its hub: the
-// suspension takes the first `hold` metres, and the wheel goes `give` of the rest
+// suspension takes the first `hold` metres, and the wheel goes `give` of the rest (`far` at most)
 // (wheelBend in car.ts, and its shaders). Bent, a wheel pushed back or forward is toed
 // `toe` times the turn of its axle (`most` rad at most), and it loses `grip` of its grip
 // and adds `scrub` of its load to its rolling drag for every metre it was bent (keeping
 // `least` of its grip; `scrubMost` at most). (PhysicalHandling.bend)
-export const WHEEL_BEND = { hold: 0.1, give: 0.6, toe: 1.5, most: 0.12, grip: 2.5, least: 0.5, scrub: 1.5, scrubMost: 0.35 };
+export const WHEEL_BEND = { hold: 0.1, give: 0.6, far: 0.12, toe: 1.5, most: 0.12, grip: 2.5, least: 0.5, scrub: 1.5, scrubMost: 0.35 };
 
 const G = 9.81;
 const clamp = (x: number, min: number, max: number) => Math.min(max, Math.max(min, x));

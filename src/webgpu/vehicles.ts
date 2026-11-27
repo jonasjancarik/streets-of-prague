@@ -4,7 +4,7 @@
 // the 'cars', 'trams', 'funicular' and 'boats' materials (see addPort).
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Fn, If, float, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, cameraWorldMatrix, diffuseColor, renderGroup, positionLocal, positionWorld, positionViewDirection, normalLocal, positionGeometry, materialColor, materialSpecular, normalize, dot, smoothstep, mix, select, sin, min, cos, max, floor, mod, exp2, reflect, atan, pow, uniform, texture, cubeTexture, length, clamp, step, distance, cross, fract, abs, fwidth, normalGeometry, int, ivec2, Loop, Break } from 'three/tsl';
+import { Fn, If, float, sqrt, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, cameraWorldMatrix, diffuseColor, renderGroup, positionLocal, positionWorld, positionViewDirection, normalLocal, positionGeometry, materialColor, materialSpecular, normalize, dot, smoothstep, mix, select, sin, min, cos, max, floor, mod, exp2, reflect, atan, pow, uniform, texture, cubeTexture, length, clamp, step, distance, cross, fract, abs, fwidth, normalGeometry, int, ivec2, Loop, Break } from 'three/tsl';
 import { LAMP_GLOW, CAR_GLOSS, DUSTCART_COAT, CAR_MIRROR, CAR_STREET, WHEEL_LEVEL, WHEEL_SHIFT, CAR_REFLECT as R, CAR_STRIPS as CS, AREA_STEP, DENT_STEP, DENT_SHAPE as DS, BROKEN_GLASS as BG, SCRAPED as SC, BLOWS, DENT_MAP } from '../car.ts';
 import { WHEEL_BEND as WB } from '../physicalHandling.ts';
 import { ROLL_CENTRE } from '../streetHandling.ts';
@@ -79,6 +79,12 @@ const blowAt = (p: N, a: N, b: N): N => {
     .mul(float(1).sub(smoothstep(0.85, 1.35, p.y).mul(DS.roof).mul(f.w.oneMinus())));
   return b.xyz.mul(push).add(vec3(0, push.mul(DS.buckle).mul(fold.sub(0.5)).mul(smoothstep(0.6, 0.85, p.y)).mul(abs(b.x)), 0));
 };
+// The blows' summed push m, cut back as blowsMove in car.ts does (DENT_SHAPE.pile).
+const dentCap = (m: N): N => {
+  const l2: N = max(dot(m, m), 1e-12);
+  const cap: N = float(DS.most).sub(m.z.mul(m.z).div(l2).mul(DS.most - DS.side)).mul(DS.pile);
+  return m.mul(min(cap.div(sqrt(l2)), 1));
+};
 const crumple = (p: N, n: N) => {
   const move = vec3(0).toVar(), m1 = vec3(0).toVar(), m2 = vec3(0).toVar();
   const t1: N = normalize(cross(n, select(abs(n.y).lessThan(0.9), vec3(0, 1, 0), vec3(1, 0, 0)))).toVar(), t2: N = cross(n, t1).toVar();
@@ -91,12 +97,13 @@ const crumple = (p: N, n: N) => {
       m2.addAssign(blowAt(p.add(t2.mul(0.03)), a, b));
     });
   });
-  return { move, normal: normalize(cross(t1.mul(0.03).add(m1).sub(move), t2.mul(0.03).add(m2).sub(move))) };
+  const c: N = dentCap(move), c1: N = dentCap(m1), c2: N = dentCap(m2);
+  return { move: c, normal: normalize(cross(t1.mul(0.03).add(c1).sub(c), t2.mul(0.03).add(c2).sub(c))) };
 };
 // How far a wheel goes for the dents' push m at its hub (WHEEL_BEND).
 const wheelBend = (m: N): N => {
   const l: N = length(m);
-  return select(l.greaterThan(WB.hold), m.mul(l.sub(WB.hold).mul(WB.give).div(max(l, 1e-6))), vec3(0));
+  return select(l.greaterThan(WB.hold), m.mul(min(l.sub(WB.hold).mul(WB.give), WB.far).div(max(l, 1e-6))), vec3(0));
 };
 // How hard a window was hit where p is (0 to 3): from 2 it's broken.
 const crackLevel = (p: N): N => {
