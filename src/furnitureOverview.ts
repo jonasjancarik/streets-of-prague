@@ -31,5 +31,19 @@ export function furnitureOverview() {
   const red = '#a5362b';
   const hydrant = [box(0.26, 0.08, 0.26, 0, 0.04, 0, '#5b2a25'), box(0.17, 0.62, 0.17, 0, 0.39, 0, red), box(0.22, 0.07, 0.22, 0, 0.735, 0, red),
     box(0.11, 0.1, 0.11, 0, 0.82, 0, '#7d2a22'), box(0.4, 0.09, 0.09, 0, 0.52, 0, '#7d2a22')];
-  return [merge(bench), merge(bin), merge(planter), merge(hydrant)];
+  // The mapped street furniture, as blocks of its colour (CONTAINER_COLOURS in
+  // furnitureModels.ts for the containers).
+  const stand = [box(0.05, 0.74, 0.05, 0, 0.37, -0.36, '#a7aca9'), box(0.05, 0.74, 0.05, 0, 0.37, 0.36, '#a7aca9'), box(0.05, 0.05, 0.77, 0, 0.74, 0, '#a7aca9')];
+  const machine = [box(0.42, 1.24, 0.3, 0, 0.62, 0, '#8b9194'), box(0.34, 0.34, 0.04, 0, 1.58, 0, '#1f4f9c')];
+  const post = [box(0.17, 0.86, 0.17, 0, 0.43, 0, '#2d3130')];
+  const box2 = [box(0.06, 0.92, 0.06, 0, 0.46, 0, '#6b6f6e'), box(0.34, 0.46, 0.22, 0, 1.13, 0, '#e7862a')];
+  const colours = ['#2f6b3a', '#e6e6dc', '#2a5aa8', '#e8c22a', '#e27a24', '#7b8180'];
+  const bells = colours.slice(0, 2).map(c => [box(1.3, 1.1, 1.3, 0, 0.6, 0, c), box(0.8, 0.35, 0.8, 0, 1.33, 0, c)]);
+  const bins = colours.slice(2).map(c => [box(1.3, 1.12, 1.0, 0, 0.6, 0, c), box(1.36, 0.14, 1.06, 0, 1.2, 0, c)]);
+  return [merge(bench), merge(bin), merge(planter), merge(hydrant), merge(stand), merge(machine), merge(post), merge(box2),
+    ...bells.map(merge), ...bins.map(merge), merge([box(0.34, 0.46, 0.22, 0, 1.13, 0, '#e7862a')]), merge([box(0.1, 0.05, 0.1, 0, 0.03, 0, '#b8933f')]),
+    merge([box(0.8, 1.2, 0.36, 0, 0.6, 0, '#9a9b94')]), merge([box(1.15, 2.7, 1.15, 0, 1.35, 0, '#a9785a'), box(1.25, 0.4, 1.25, 0, 2.9, 0, '#2f4a3c')]),
+    merge([box(1.2, 1.9, 0.14, 0, 1.15, 0, '#565c5e')]), merge([box(0.35, 1.0, 0.35, 0, 0.5, 0, '#3a3f3f')]), merge([box(1.2, 0.05, 1.2, 0, 0.03, 0, '#2c2e2c')]),
+    merge([box(0.06, 2.5, 0.06, 0, 1.25, 0, '#8e9394'), box(0.6, 0.6, 0.04, 0, 2.25, 0, '#c4271f')]),
+    merge([box(0.06, 2.5, 0.06, 0, 1.25, 0, '#8e9394'), box(0.5, 0.5, 0.04, 0, 2.2, 0, '#1f4fa0')])];
 }

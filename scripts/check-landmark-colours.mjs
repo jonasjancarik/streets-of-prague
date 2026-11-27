@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import { checkIn } from './game-lock.mjs';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { gpuFlags } from './gpu-flags.mjs';
 
 const args = Object.fromEntries(process.argv.slice(2).reduce((all, item, index, list) => {
   if (item.startsWith('--')) all.push([item.slice(2), list[index + 1] && !list[index + 1].startsWith('--') ? list[index + 1] : true]);
@@ -58,7 +59,7 @@ const pw = tryReq(process.env.PLAYWRIGHT_PATH || 'playwright') || tryReq(`${proc
 if (!pw) throw new Error('Playwright not found; set PLAYWRIGHT_PATH');
 await (await checkIn('game')).take(); // not while another session benchmarks
 const browser = await pw.chromium.launch({ headless: true, channel: 'chrome',
-  args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-webgpu'] });
+  args: gpuFlags() });
 const results = [];
 try {
   for (const renderer of ['webgpu', 'webgl']) {

@@ -658,7 +658,8 @@ export const WEATHER_DETAIL = { value: 1 };
 // (vegetation.ts).
 export const BARE = { value: 0 };
 // The time of year for the trees (season.ts, set by weather.ts): how far the leaves have
-// turned, how much the fruit trees are in flower, and how fresh the new leaves are.
+// turned, how much the fruit trees are in flower, and how fresh the new leaves are; and
+// whether the Christmas lights are up (w, christmasLights.ts).
 export const SEASON = { value: new THREE.Vector4(0, 0, 0, 0) };
 // The wind in the trees seen from the street (webgpu/streetTrees.ts): the clock in seconds,
 // how hard it blows (about 0.3 on a calm day, 1 in a storm) and which way (x, z).

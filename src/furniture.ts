@@ -17,7 +17,9 @@ function prepareStreet() {
   const leafDepth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map, alphaTest: 0.42, side: THREE.DoubleSide });
   return { models, solid, shrub, leafDepth };
 }
-const names = ['park benches', 'park bins', 'courtyard planters', 'hydrants'];
+const names = ['park benches', 'park bins', 'courtyard planters', 'hydrants', 'bike stands', 'parking machines', 'bollards', 'post boxes',
+  'glass bells', 'clear glass bells', 'paper containers', 'plastic containers', 'carton containers', 'metal containers', 'post boxes on walls', 'Stolpersteine',
+  'street cabinets', 'advertising columns', 'poster cases', 'drinking fountains', 'tree grates', 'no-entry signs', 'one-way signs'];
 
 function changeModel(body: THREE.InstancedMesh, fromStreet: boolean) {
   const kind: number = body.userData.kind;
@@ -37,16 +39,30 @@ export function furnitureView(meshes: THREE.InstancedMesh[], fromStreet: boolean
 export function furnitureMeshes(instances: FurnitureInstances, fromStreet = false) {
   const meshes: THREE.InstancedMesh[] = [];
   for (let kind = 0; kind < names.length; kind++) {
-    const matrices = instances.matrices[kind], count = matrices.length / 16;
+    const matrices = instances.matrices[kind], count = (matrices?.length ?? 0) / 16;
     if (!count) continue;
     const body = new THREE.InstancedMesh((overview ??= furnitureOverview())[kind], mapMaterial, count);
     body.name = names[kind]; body.userData.furniture = true; body.userData.kind = kind;
     body.instanceMatrix.array.set(matrices); sendInstances(body);
-    body.castShadow = body.receiveShadow = true; changeModel(body, fromStreet); meshes.push(body);
+    body.castShadow = body.receiveShadow = true; changeModel(body, fromStreet); meshes.push(body); made.add(body);
   }
   return meshes;
 }
 
 export function disposeFurniture(meshes: THREE.InstancedMesh[]) {
-  for (const mesh of meshes) mesh.dispose();
+  for (const mesh of meshes) { mesh.dispose(); made.delete(mesh); }
+}
+
+// For tests (scene.mjs, importing this module in the page): every furniture mesh made so
+// far that is still in the scene, by name, with its instances' positions.
+const made = new Set<THREE.InstancedMesh>();
+export function furnitureCounts() {
+  const out: Record<string, number[][]> = {};
+  const m = new THREE.Matrix4(), v = new THREE.Vector3();
+  for (const mesh of made) {
+    if (!mesh.parent) continue;
+    const list = out[mesh.name] ??= [];
+    for (let i = 0; i < mesh.count; i++) { mesh.getMatrixAt(i, m); v.setFromMatrixPosition(m); list.push([Math.round(v.x * 10) / 10, Math.round(-v.z * 10) / 10]); }
+  }
+  return out;
 }

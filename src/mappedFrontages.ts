@@ -1,6 +1,6 @@
 import { SIGN_WORDS } from './facadeFinishes.ts';
+import { RayGrid, type WallBox } from './rayGrid.ts';
 
-interface WallBox { x0: number; x1: number; z0: number; z1: number; nx: number; nz: number }
 
 // What a trade from pipeline/build_shops.py looks like in its window: `stock`, the picture
 // in shop-displays.webp (0 books, 1 bakery, 2 flowers, 3 ceramics; none: the shopfront's
@@ -18,25 +18,29 @@ const TRADES: Record<string, { stock?: number; word?: string }> = {
   jewelry: { word: 'ŠPERKY' }, wine: { word: 'VINOTÉKA' }, optician: { word: 'OPTIKA' }, tobacco: { word: 'TRAFIKA' },
   toys: { word: 'HRAČKY' }, electronics: { word: 'ELEKTRO' }, massage: { word: 'MASÁŽE' },
 };
-const CELL = 64;
 // Street façades wait this long at most for the file before building without it.
 const PATIENCE = 4000;
-
-interface Ray { x: number; z: number; dx: number; dz: number; length: number; stock: number; word: number }
 
 // OpenStreetMap's shops, cafés, restaurants and pubs, as rays from the street to the shop
 // (data/<area>_now/shops.json, pipeline/build_shops.py). A ray avoids decorating the back
 // of the building or another shop across the street. Without the file there are none.
+// Memorial plaques come the same way, from street-furniture.json's "plaques"
+// (pipeline/build_street_furniture.py).
 export class MappedFrontages {
-  private cells = new Map<string, Ray[]>();
+  private rays = new RayGrid<{ stock: number; word: number }>();
+  private plaques = new RayGrid<true>(12);
   // Resolves when the file has been read, has failed, or PATIENCE has passed.
   readonly ready: Promise<void>;
   settled = false;
-  // `url`: the area's shops.json (dataUrl(area, 'shops.json')).
-  constructor(url?: string) {
+  // `url`: the area's shops.json (dataUrl(area, 'shops.json')); `furniture`: its
+  // street-furniture.json, for the plaques.
+  constructor(url?: string, furniture?: string) {
     if (!url) { this.settled = true; this.ready = Promise.resolve(); return; }
-    const load = fetch(url).then(r => (r.ok ? r.json() as Promise<unknown> : null))
-      .then(d => this.read(d)).catch(() => {});
+    const get = (u?: string) => u ? fetch(u).then(r => (r.ok ? r.json() as Promise<unknown> : null)).catch(() => null) : Promise.resolve(null);
+    const load = Promise.all([get(url).then(d => this.read(d)), get(furniture).then(d => {
+      const rows = (d as { plaques?: unknown } | null)?.plaques;
+      if (Array.isArray(rows)) for (const r of rows) if (Array.isArray(r)) this.plaques.add(r[0], r[1], r[2], r[3], true);
+    })]).catch(() => {});
     this.ready = Promise.race([load, new Promise<void>(done => setTimeout(done, PATIENCE))]).then(() => { this.settled = true; });
   }
 
@@ -51,46 +55,30 @@ export class MappedFrontages {
       if (!Array.isArray(row)) continue;
       const [sx, sy, px, py, trade] = row as number[];
       const look = looks[trade];
-      if (!look || ![sx, sy, px, py].every(Number.isFinite)) continue;
-      // The game's z runs south.
-      const dx = px - sx, dz = sy - py, length = Math.hypot(dx, dz);
-      if (!(length > 0)) continue;
-      const ray: Ray = { x: sx, z: -sy, dx: dx / length, dz: dz / length, length, ...look };
-      const xs = [sx, px], zs = [-sy, -py];
-      for (let cx = Math.floor(Math.min(...xs) / CELL); cx <= Math.floor(Math.max(...xs) / CELL); cx++)
-        for (let cz = Math.floor(Math.min(...zs) / CELL); cz <= Math.floor(Math.max(...zs) / CELL); cz++) {
-          const key = cx + ',' + cz, list = this.cells.get(key);
-          if (list) list.push(ray); else this.cells.set(key, [ray]);
-        }
+      if (look) this.rays.add(sx, sy, px, py, look);
     }
   }
 
+  // Where (x, z) on the wall is along its facade u, following the source triangle's
+  // along-wall axis, including reversed bays.
+  private along(x: number, z: number, pos: Float32Array, facade: Float32Array) {
+    for (let i = 1; i < pos.length / 3; i++) {
+      const dx = pos[i * 3] - pos[0], dz = pos[i * 3 + 2] - pos[2], d2 = dx * dx + dz * dz;
+      if (d2 >= .25) return facade[0] + (facade[i * 4] - facade[0]) * ((x - pos[0]) * dx + (z - pos[2]) * dz) / d2;
+    }
+    return NaN;
+  }
   // [along the wall's facade u, stock, word] for each mapped shop whose ray meets this wall.
   onWall(w: WallBox, pos: Float32Array, facade: Float32Array) {
     const hits: number[] = [];
-    const mx = (w.x0 + w.x1) / 2, mz = (w.z0 + w.z1) / 2;
-    const seen = new Set<Ray>();
-    for (let cx = Math.floor((w.x0 - 20) / CELL); cx <= Math.floor((w.x1 + 20) / CELL); cx++)
-      for (let cz = Math.floor((w.z0 - 20) / CELL); cz <= Math.floor((w.z1 + 20) / CELL); cz++) {
-        for (const r of this.cells.get(cx + ',' + cz) ?? []) {
-          if (seen.has(r)) continue;
-          seen.add(r);
-          if (r.x < w.x0 - 20 || r.x > w.x1 + 20 || r.z < w.z0 - 20 || r.z > w.z1 + 20) continue;
-          const facing = r.dx * w.nx + r.dz * w.nz;
-          if (facing > -.65) continue;
-          const reach = ((mx - r.x) * w.nx + (mz - r.z) * w.nz) / facing;
-          if (reach < 2 || reach > r.length + 3 || r.length - reach > 10) continue;
-          const x = r.x + r.dx * reach, z = r.z + r.dz * reach;
-          if (x < w.x0 - .15 || x > w.x1 + .15 || z < w.z0 - .15 || z > w.z1 + .15) continue;
-          // Follow the source triangle's along-wall axis, including reversed bays.
-          for (let i = 1; i < pos.length / 3; i++) {
-            const dx = pos[i * 3] - pos[0], dz = pos[i * 3 + 2] - pos[2], d2 = dx * dx + dz * dz;
-            if (d2 < .25) continue;
-            hits.push(facade[0] + (facade[i * 4] - facade[0]) * ((x - pos[0]) * dx + (z - pos[2]) * dz) / d2, r.stock, r.word);
-            break;
-          }
-        }
-      }
+    for (const { x, z, data } of this.rays.hits(w)) {
+      const u = this.along(x, z, pos, facade);
+      if (Number.isFinite(u)) hits.push(u, data.stock, data.word);
+    }
     return new Float32Array(hits);
+  }
+  // Along the wall's facade u, each memorial plaque mapped on it.
+  plaquesOnWall(w: WallBox, pos: Float32Array, facade: Float32Array) {
+    return Float32Array.from(this.plaques.hits(w).map(({ x, z }) => this.along(x, z, pos, facade)).filter(Number.isFinite));
   }
 }

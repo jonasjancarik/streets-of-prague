@@ -19,7 +19,7 @@ import { iprRoofSites } from './map/iprRoofs.ts';
 import { fenceArrays } from './map/fences.ts';
 import { shedArrays, shedCorners } from './map/sheds.ts';
 import { treeInstances } from './map/vegetation.ts';
-import { furnitureInstances, furnitureMatrices, FURNITURE_SIZE } from './map/furniture.ts';
+import { furnitureInstances, furnitureMatrices, FURNITURE_SIZE, FLAT_FURNITURE, mappedSpots, treeGrates } from './map/furniture.ts';
 import { standingMarks } from './map/utility.ts';
 import { onPolygons } from './map/geo.ts';
 import { Geo, Grid, fillPolys, strokeLines } from './map/geo.ts';
@@ -404,17 +404,27 @@ function land({ data, seeds, ground, bridges, box, structures }: WorkerJobs['lan
   const sheds = shedArrays(data.sheds, hAt);
   const grid = tileGrid(geo, data, seeds, edges);
   const furniture = ground && data.furnitureEnabled ? furnitureInstances(new Geo({ ...data, buildings: data.furnitureBuildings }), trees, hAt) : { matrices: furnitureMatrices([]), spots: [] };
-  // The surveyed hydrants stand where the survey has them.
-  if (ground && data.furnitureEnabled && data.utility?.length) {
+  // The surveyed hydrants stand where the survey has them, and OSM's bins, bike stands,
+  // parking machines, bollards, post boxes and recycling containers where it maps them
+  // (mappedFurniture.ts), each square to its street.
+  if (ground && data.furnitureEnabled && (data.utility?.length || data.mapped?.length || data.trees?.length)) {
     // (Not one the game's carriageway covers: its streets are not always as wide as the real ones.)
     const onRoad = onPolygons([...(data.roads.road || []), ...(data.roads.sett || []), ...(data.roads.dirt || [])]);
-    for (const p of standingMarks(data.utility)) {
+    for (const p of standingMarks(data.utility ?? [])) {
       if (!onRoad(p.x, p.y)) furniture.spots.push({ ...p, z: hAt(p.x, p.y) });
     }
+    if (data.mapped?.length) {
+      // Where the map has its own benches and bins, the inferred ones near them go.
+      const mapped = mappedSpots(data.mapped, data.buildings, onRoad, hAt);
+      furniture.spots = furniture.spots.filter(p => p.kind > 1 || !mapped.some(m => m.kind === p.kind && Math.hypot(m.x - p.x, m.y - p.y) < 12));
+      furniture.spots.push(...mapped);
+    }
+    furniture.spots.push(...treeGrates(data.trees ?? [], data.areas, onRoad, box, hAt));
     furniture.matrices = furnitureMatrices(furniture.spots);
   }
   // The same solid-cell convention as tree trunks, stamped before parking.
   for (const p of furniture.spots) {
+    if (FLAT_FURNITURE.has(p.kind)) continue;
     const [hx, hy] = FURNITURE_SIZE[p.kind], c = Math.cos(p.angle), s = Math.sin(p.angle);
     const [u, v] = geo.px(p.x, p.y, RES), rad = Math.hypot(hx, hy) + 0.35, R = Math.ceil(rad * RES);
     for (let j = -R; j <= R; j++) for (let i = -R; i <= R; i++) {

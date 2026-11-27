@@ -99,19 +99,19 @@ terraces and bikes pattern (pipeline layer → tile → instanced street model).
 
 | Item | Prague look | Source for placement | Tier | Overhead |
 |---|---|---|---|---|
-| **Traffic signs** | Round/triangle signs on grey 60 mm poles, often 2–3 per pole; the blue **zone parking** sign (*zóna placeného stání*), one-way, no entry, *obytná zóna* | OSM `traffic_sign` nodes are sparse; infer the common ones from the road graph: one-way ends, no-entry, give-way at minor-road joins, pedestrian zones, the start of paid-parking streets | Low+ (pole and disc), Med+ (backs, brackets, stickers) | Pole dot only |
-| **Bollards** | Old Town's cast-iron *pražský sloupek* (dark, ribbed, rounded cap), plain steel tubes and concrete blocks elsewhere | OSM `barrier=bollard`; infer rows along pavement edges in Prague 1 where cars could mount the kerb, at the ends of pedestrian streets and round squares | Low+ | Yes, as dots: they explain where cars can't go |
-| **Parking machines** | Grey TSK pay-and-display post with a small screen and blue P | OSM `vending=parking_tickets`; else one per paid-parking block | Low+ | No |
-| **Litter bins** | Prague's dark grey/green city bin, often on a lamp post, some with an ashtray top | OSM `amenity=waste_basket`; else one at each crossing and stop | Low+ | No |
-| **Recycling container nests** | Row of 4–6 bell or wheelie containers: yellow (plastic), blue (paper), green and white (glass), orange (cartons), grey (metal), on a marked bay | OSM `amenity=recycling` (well mapped in Prague; the city also publishes the *sběrná hnízda* list) | Low+ | Yes, a colourful row is very Prague from above |
-| **Bike stands** | Prague's inverted-U stands in rows, often with a bike locked to them | OSM `amenity=bicycle_parking` | Low+ stands, Med+ parked bikes (reuse bike models) | No |
+| **Traffic signs** | Round/triangle signs on grey 60 mm poles, often 2–3 per pole; the blue **zone parking** sign (*zóna placeného stání*), one-way, no entry, *obytná zóna* | DONE in part (27 November): no-entry and one-way signs at the ends of one-way town streets, inferred from the driving graph (`oneWaySigns`). No zone, give-way or parking signs yet | Low+ (pole and disc), Med+ (backs, brackets, stickers) | Pole dot only |
+| **Bollards** | Old Town's cast-iron *pražský sloupek* (dark, ribbed, rounded cap), plain steel tubes and concrete blocks elsewhere | DONE (27 November): the 10,895 mapped ones (`build_street_furniture.py`); none inferred yet | Low+ | Yes, as dots: they explain where cars can't go |
+| **Parking machines** | Grey TSK pay-and-display post with a small screen and blue P | DONE (27 November): the 1,195 mapped ones | Low+ | No |
+| **Litter bins** | Prague's dark grey/green city bin, often on a lamp post, some with an ashtray top | DONE (27 November): the 5,957 mapped ones, as the park bin | Low+ | No |
+| **Recycling container nests** | Row of 4–6 bell or wheelie containers: yellow (plastic), blue (paper), green and white (glass), orange (cartons), grey (metal), on a marked bay | DONE (27 November): a container per kind each mapped point takes, in its colour | Low+ | Yes, a colourful row is very Prague from above |
+| **Bike stands** | Prague's inverted-U stands in rows, often with a bike locked to them | DONE (27 November): one U per two bikes of `capacity`; no parked bikes yet | Low+ stands, Med+ parked bikes (reuse bike models) | No |
 | **Shared e-scooters** | Lying or standing in twos and threes at corners, fictional operator colours like the shared bikes | Near shared-bike stations and stops, made up | Med+ | No |
-| **Electricity and signal cabinets** | Grey or beige steel boxes (PRE, ČEZ, TSK signal controllers), tagged and stickered, at junctions and against walls | Infer one per signalled junction (`build_signals.py` already has them); a few per block against walls | Low+ | No |
-| **Advertising columns and panels** | Round *reklamní sloup* with posters; lit glass panels (citylight) on pavements | OSM `advertising=column` / `board` / `poster_box` | Low+ column, Med+ lit panel at night | Column yes |
+| **Electricity and signal cabinets** | Grey or beige steel boxes (PRE, ČEZ, TSK signal controllers), tagged and stickered, at junctions and against walls | DONE (27 November) for the 1,050 mapped (`man_made=street_cabinet`); none inferred at signals yet | Low+ | No |
+| **Advertising columns and panels** | Round *reklamní sloup* with posters; lit glass panels (citylight) on pavements | DONE (27 November): 79 mapped columns and 116 poster cases, totems and boards; not lit at night yet | Low+ column, Med+ lit panel at night | Column yes |
 | **Pedestrian guard rails** | Grey tubular rails at crossings, tram islands and school gates | Along kerbs within a few metres of mapped crossings on primary roads and tram islands | Low+ | Yes, thin line |
-| **Post boxes** | Orange Česká pošta box on a wall or post | OSM `amenity=post_box` | Low+ | No |
-| **A-frame boards and shop clutter** | Chalk boards, menus, flower buckets, fruit crates in front of shops by day, taken in at night | Beside the game's own shopfront bays that have a display, during opening hours | High+ | No |
-| **Tree grates and guards** | Cast-iron grate round a street tree's foot, sometimes a steel cage or posts | Every surveyed street tree in a paved pavement (IPR trees already loaded) | Med+ | No |
+| **Post boxes** | Orange Česká pošta box on a wall or post | DONE (27 November): on the wall when mapped by one, else on a post | Low+ | No |
+| **A-frame boards and shop clutter** | Chalk boards, menus, flower buckets, fruit crates in front of shops by day, taken in at night | DONE in part (27 November): a chalkboard with the trade word outside about half the mapped cafés, bakeries, restaurants and pubs, day and night (`chalkboard`); no flower buckets or crates | High+ | No |
+| **Tree grates and guards** | Cast-iron grate round a street tree's foot, sometimes a steel cage or posts | DONE in part (27 November): a cast-iron grate round surveyed trees standing in paving by a road or on a paved square, where no green is mapped under them (`treeGrates`); no guards | Med+ | No |
 | **Grit bins** | Yellow or green *posypový materiál* box on hilly streets | Streets above a gradient, winter only | Med+ | No |
 
 ## 2. On the walls at eye level
@@ -121,20 +121,20 @@ placement data: they hang off bays the game already chooses.
 
 | Item | Prague look | Where it goes | Tier | Overhead |
 |---|---|---|---|---|
-| **House numbers** | Red enamel *číslo popisné* above blue *číslo orientační* beside every house door | Next to each house entrance; RÚIAN has both numbers per address point, so they could even be right | Low+ | No |
-| **Intercom and bell panels** | Steel panel with name slots beside the house door, sometimes a camera | Every house entrance bay | Med+ | No |
-| **Utility doors** | Yellow gas box (*HUP*), grey electricity meter door, small steel hatches low on the plinth | One or two per house front on the plinth | Low+ (decal) | No |
-| **Cellar grilles and coal hatches** | Bars or mesh over low cellar windows, steel hatches in the pavement against the wall | Plinth bays without a door; the facade already has low cellar lights | Med+ | No |
-| **Projecting shop signs** | Signs and lightboxes sticking out at right angles above shop doors (pharmacy cross, pub sign, bank) | Shop bays; lit after dark | Med+ | No |
-| **Roller shutters** | Steel shutters pulled down over shops at night and on Sundays; often tagged | Shop bays, by time of day | Med+ | No |
+| **House numbers** | Red enamel *číslo popisné* above blue *číslo orientační* beside every house door | DONE (27 November): the address's own numbers (RÚIAN via OSM, `pipeline/build_addresses.py`, 174,066 in `praha` in 500 m cells), by the house door nearest the ray from its street (`src/houseNumbers.ts`, `doorPlates` in `src/map/streetFacade.ts`). A door no address reaches has none | Low+ | No |
+| **Intercom and bell panels** | Steel panel with name slots beside the house door, sometimes a camera | DONE (27 November): every house door, on the side away from the numbers (`cellShape`) | Med+ | No |
+| **Utility doors** | Yellow gas box (*HUP*), grey electricity meter door, small steel hatches low on the plinth | DONE (27 November): a gas or meter door under the house numbers where there is room (`utilityDoor`) | Low+ (decal) | No |
+| **Cellar grilles and coal hatches** | Bars or mesh over low cellar windows, steel hatches in the pavement against the wall | Cellar lights with grilles were already in the façade modules; no coal hatches yet | Med+ | No |
+| **Projecting shop signs** | Signs and lightboxes sticking out at right angles above shop doors (pharmacy cross, pub sign, bank) | DONE (27 November): mapped shops' trade word on a board at the bay edge, always for pharmacies, pubs, restaurants, cafés, banks and exchanges (`projectingSign`). Not lit yet | Med+ | No |
+| **Roller shutters** | Steel shutters pulled down over shops at night and on Sundays; often tagged | DONE (27 November): after dark, most closed shops; not by `opening_hours` yet, no tags | Med+ | No |
 | **Graffiti and tags** | Tags on plinths, doors, cabinets and shutters; heavy in Žižkov and Vinohrady, rare on the Royal Route | Decals on the lowest 2.5 m, density by district | High+ | No |
 | **Posters and stickers** | Layers of torn gig posters on drainpipes, cabinets and boarded windows; stickers on sign poles | Decals on rainpipes, cabinets, poles | High+ | No |
-| **Window boxes, flags, laundry** | Geraniums on sills, a flag over an embassy or hotel door | Some first-floor windows, by building age | Med+ | Window boxes yes, faintly |
-| **Air conditioners and satellite dishes** | White AC boxes on courtyard and modern façades, dishes on balconies | Upper floors, mostly on non-historic façades | Med+ | Yes on roofs; roof clutter already exists |
-| **Security cameras and alarm boxes** | Small dome cameras by doors and banks, a red or blue alarm box high on the wall | Shops and banks | High+ | No |
+| **Window boxes, flags, laundry** | Geraniums on sills, a flag over an embassy or hotel door | DONE in part (27 November): geranium boxes on about a fifth of the first-floor windows of tenements and baroque houses, bare earth while the trees are bare (`windowBox`); no flags or laundry | Med+ | Window boxes yes, faintly |
+| **Air conditioners and satellite dishes** | White AC boxes on courtyard and modern façades, dishes on balconies | DONE (27 November): under some upper windows, about one bay-storey in eleven on functionalist and panel fronts and one in forty on older ones; dishes rarer (`airConditioner`, `satelliteDish`) | Med+ | Yes on roofs; roof clutter already exists |
+| **Security cameras and alarm boxes** | Small dome cameras by doors and banks, a red or blue alarm box high on the wall | DONE in part (27 November): a red alarm box high by about a third of the shops (`alarmBox`); no cameras | High+ | No |
 | **Shops where the map has them** | On Seifertova the photo has a kebab shop, florist and pharmacy in a row; the game gives the same houses barred flat windows | OSM `shop=*` / `amenity=*` points already guide displays on Mostecká; use them on every street, with the shop's kind picking the display and sign | Med+ | Signs no; the lit window at night yes |
 | **Blank walls at the pavement** | A wall with no openings beside you is plain brown plaster to the cornice (Resslova, `fpv-karlak2`); the photos show a stone plinth, rustication, cabinets, posters and tags | Give windowless stretches a plinth course and some of the items in this table | Med+ | No |
-| **Memorial plaques** | Bronze or stone plaques; *Stolpersteine* brass cobbles in the pavement | OSM `memorial=plaque` / `stolperstein` (well mapped) | Med+ | No |
+| **Memorial plaques** | Bronze or stone plaques; *Stolpersteine* brass cobbles in the pavement | DONE (27 November): the 1,198 mapped plaques on clear plaster (`src/plaques.ts`, inscriptions only suggested) and 739 Stolpersteine in the pavement | Med+ | No |
 
 ## 3. The ground
 
@@ -161,7 +161,8 @@ placement data: they hang off bays the game already chooses.
 ## 5. Seasonal and occasional
 
 - **Christmas**: light strings across the main shopping streets and the markets on
-  Old Town and Wenceslas Squares in December.
+  Old Town and Wenceslas Squares in December. DONE in part (27 November): the light strings, Advent to
+  Epiphany (`src/christmasLights.ts`); no markets, nothing on the wide squares.
 - **Election and event posters** on the advertising columns, changed by game date.
 - **Snow** pushed into heaps along kerbs and against parked cars, grit on the pavements.
 
@@ -175,8 +176,17 @@ placement data: they hang off bays the game already chooses.
 - Three identical arched portals in a row (Seminářská, Malostranské náměstí): vary
   the door leaf, colour and steps per bay.
 - The bookshop display inside U Nováků shows vertical streaks across the right-hand
-  case (`fpv-vodickova-se`).
-- On Old Town Square (`t.go('staromak', { heading: 200 })`) the trees stand as plain
+  case (`fpv-vodickova-se`). 27 November: the same streaks at Vodičkova turned out to be
+  the dither fade of a surface right in front of the camera (the view stood in the
+  window). The arcade shop windows really do streak (Celetná's Hrzánská arcade, Myslbek):
+  the glass was set 25 cm back, into the building's own walls behind the lining. At 7 cm
+  most of the window is clean; vertical stripes of stock and oak surround remain on part
+  of some, likely the lining fighting itself where two edges of the room overlap
+  (`src/map/passageLining.ts`). A polygon offset on the lining didn't change them.
+- A manhole lid lies on top of a house's doorstep on Národní (27 November, `grate-d`):
+  the surveyed cover is drawn at the ground's height under the steps.
+- RESOLVED 27 November: the scripts drew in software (`--use-angle=metal` on Windows); on
+  the GPU the trees here have their bark and leaves. Was: on Old Town Square (`t.go('staromak', { heading: 200 })`) the trees stand as plain
   grey prisms on a carpet of large flat leaf clumps, the overhead models rather than
   the barked street trees and individual fallen leaves. It looked the same after 16
   and after 60 frames, so the close trees and leaves aren't reaching that spot. The
@@ -184,12 +194,25 @@ placement data: they hang off bays the game already chooses.
 
 ## Suggested order
 
-1. Remove phone boxes.
-2. House numbers and intercoms (cheap, on every door, instantly Prague).
-3. Traffic signs and parking zone signs (the zone lines are done).
+1. Remove phone boxes. DONE 26 November.
+2. House numbers and intercoms (cheap, on every door, instantly Prague). DONE 27 November,
+   with gas and meter doors.
+3. Traffic signs and parking zone signs (the zone lines are done). No-entry and one-way
+   signs DONE 27 November; the rest not yet.
 4. Bollards, bins, parking machines, bike stands (one instanced-props layer from OSM).
-5. Recycling nests and cabinets.
-6. Utility doors, cellar grilles, projecting shop signs, shutters by time of day.
-7. Paving mosaics and tactile strips.
+   DONE 27 November for everything mapped, with post boxes, benches, drinking fountains,
+   advertising columns and poster cases (`docs/furniture.md`).
+5. Recycling nests and cabinets. DONE 27 November for the mapped ones; cabinets at signals
+   are not inferred yet.
+6. Utility doors, cellar grilles, projecting shop signs, shutters by time of day. DONE 27
+   November, with memorial plaques, Stolpersteine, chalkboards, alarm boxes, air
+   conditioners and dishes, and tree grates. Shutters follow the night, not `opening_hours`.
+7. Paving mosaics and tactile strips. (Ground work: another session has the kerbs and
+   paving in hand; not started here.)
 8. Graffiti, posters and stickers (High+), litter and weeds.
-9. Roadworks, dogs, seasonal sets.
+9. Roadworks, dogs, seasonal sets. Christmas lights DONE 27 November.
+
+Left for later, roughly by value: lit projecting signs and poster cases after dark;
+display pictures for cafés, clothes, groceries and pharmacies (shop step 3); inferred
+cabinets and bollards; flags and laundry; the arcade windows' remaining stripes;
+the other traffic signs (give way, zones, parking); decals (graffiti, posters, stickers); dogs; roadworks.

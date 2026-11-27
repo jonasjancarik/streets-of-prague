@@ -55,3 +55,55 @@ assert(signal.aborted, 'timeout aborts fetch');
 release(new Response(bytes));
 assert.equal(await pending, null, 'late evidence cannot change outcome for later tiles');
 console.log('Survey parsing, deadline, abort and immutable unavailable outcome passed');
+
+// OSM's street furniture (mappedSpots): a post box mapped by a wall hangs on it facing out,
+// one out on the pavement stands on its post; nothing stands inside a building or on the road.
+{
+  const { mappedSpots } = await import('../src/map/furniture.ts');
+  const { mappedFurniture } = await import('../src/mappedFurniture.ts');
+  const house = [{ rings: [[[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]]] }];
+  const road = (x, y) => y < -6;
+  const m = Float32Array.of(7, 5, -0.5, 0, 7, 5, -3, 0, 1, 5, 5, 0, 6, 2, -8, 0, 4, 2, -2, 0.3);
+  const spots = mappedSpots(m, house, road, () => 0);
+  assert.deepEqual(spots.map(s => s.kind), [14, 7, 4], 'wall box, box on its post, bike stand; nothing in the house or on the road');
+  const wall = spots[0];
+  assert(Math.abs(wall.y + 0.13) < 1e-6 && Math.abs(Math.sin(wall.angle) * 0 - Math.cos(wall.angle) - -1) < 1e-6,
+    `the wall box stands just off the wall with its front (+z) facing out of the house: ${wall.y}, ${wall.angle}`);
+  assert.equal(FURNITURE_SIZE.length, 23, 'every kind has a footprint');
+  const file = { kinds: ['bin', 'bollard', 'nonsense'], points: [[1, 2, 0, 90], [3, 4, 1, 0], [5, 6, 2, 0]] };
+  const read = await mappedFurniture('x', 1000, async () => new Response(JSON.stringify(file)));
+  assert.deepEqual([...read].map(v => Math.round(v * 100) / 100), [1, 1, 2, 1.57, 6, 3, 4, 0], 'kinds by name, unknown ones left out, degrees to radians');
+  assert.equal(await mappedFurniture('x', 1000, async () => new Response('', { status: 404 })), null, 'no file, no mapped furniture');
+  console.log('Mapped street furniture: wall post boxes, buildings and roads, the file passed');
+}
+
+// A street tree in paving gets a grate round its foot; one on a lawn or out in the open doesn't.
+{
+  const { treeGrates } = await import('../src/map/furniture.ts');
+  const lawn = [[[[20, -5], [40, -5], [40, 5], [20, 5], [20, -5]]]];
+  const road = (x, y) => y < -3;
+  const g = treeGrates([[0, 0], [30, 0], [0, 40], [-200, 0]], { lawn }, road, [-100, -100, 100, 100], () => 0);
+  assert.deepEqual(g.map(s => [s.x, s.y, s.kind]), [[0, 0, 20]], 'only the tree in the paving by the road: ' + JSON.stringify(g));
+  assert(Math.sin(g[0].angle) < 0, 'turned towards the road it found');
+  console.log('Tree grates: paving by a road, not lawns, not far from roads, not outside the tile');
+}
+
+// A one-way street that runs from one junction to another: a one-way sign where it starts,
+// facing the traffic turning in, and a no-entry sign where it ends, facing those who would
+// turn in against it, each on the right of whoever comes up to it.
+{
+  const { oneWaySigns } = await import('../src/map/furniture.ts');
+  const e = (u, v, pts, oneway = false) => ({ u, v, hw: 'residential', oneway, pts, width: 6 });
+  const drive = [e('A', 'B', [[0, 0], [100, 0]], true),
+    e('A', 'C', [[0, 0], [0, 50]]), e('C', 'A', [[0, 50], [0, 0]]), e('A', 'D', [[0, 0], [0, -50]]), e('D', 'A', [[0, -50], [0, 0]]),
+    e('B', 'E', [[100, 0], [100, 50]]), e('E', 'B', [[100, 50], [100, 0]]), e('B', 'F', [[100, 0], [100, -50]]), e('F', 'B', [[100, -50], [100, 0]])];
+  const s = oneWaySigns(drive), signs = [];
+  for (let i = 0; i < s.length; i += 4) signs.push({ kind: s[i], x: s[i + 1], y: s[i + 2], a: s[i + 3] });
+  const one = signs.find(q => q.kind === 22), stop = signs.find(q => q.kind === 21);
+  assert(one && stop && signs.length === 2, 'a sign at each end: ' + JSON.stringify(signs));
+  // Traffic runs east: turning in at A it drives east, its right is south; the sign faces west.
+  assert(one.x === 3 && one.y === -4 && Math.abs(Math.sin(one.a) + 1) < 1e-9, 'one-way sign at the start: ' + JSON.stringify(one));
+  // Against it at B one would drive west, the right is north; the sign faces east.
+  assert(stop.x === 97 && stop.y === 4 && Math.abs(Math.sin(stop.a) - 1) < 1e-9, 'no-entry sign at the end: ' + JSON.stringify(stop));
+  console.log('One-way signs: at each end, facing the right way, on the right');
+}

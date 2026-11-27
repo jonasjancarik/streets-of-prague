@@ -1,16 +1,31 @@
 // Cut architectural profiles into existing wall triangles in the wall's own
 // metre coordinates. Clipping retains gables, sloping pavements and passages.
 import * as THREE from 'three';
-import { baysOf, wallLength, BLANK, F_SURFACE as S, F_GROUND, F_STOREY, STOREY_FIT, F_UP, F_DOOR, F_WALL, F_MOD, F_ELEVATION, F_PANEL, F_STREET_WIDTH, SHOPFRONTS, LOOK, STYLE } from '../facades.ts';
+import { baysOf, wallLength, BLANK, F_SURFACE as S, F_GROUND, F_STOREY, STOREY_FIT, F_UP, F_DOOR, F_WALL, F_MOD, F_ELEVATION, F_PANEL, F_STREET_WIDTH, SHOPFRONTS, LOOK, STYLE, DOOR_PLATES, PLAQUE, FLOWERS } from '../facades.ts';
 import openings from './facadeOpenings.json' with {type: 'json'};
 import caps from './facadeCaps.json' with {type: 'json'};
 import { rainpipe } from './rainpipe.ts';
+import { SIGN_WORDS } from '../facadeFinishes.ts';
 import type { BuildingArrays } from '../contracts.ts';
 
-type Point = [number, number, number, number?]; // along, above foot, outward from wall, and how much light reaches it (1 when left out)
+// Along, above foot, outward from wall, how much light reaches it (1 when left out), and on
+// lettering that doesn't lie along the wall (a projecting sign) where in its word it is (0–1).
+type Point = [number, number, number, number?, number?];
 type Triangle = [Point, Point, Point, number, number]; // ambient shading and surface code
 type V2 = [number, number];
 const FURNISHED_PANE = -1; // replaced by glass and a furnishing seed when emitting this bay
+const NAME_STRIP = -2; // a bell panel's name strip: painted shop surface in NAME_PAINT
+const NAME_PAINT = new THREE.Color('#ddd8c8');
+// A gas main's door and a meter door (painted shop surface in their colours).
+const GAS_DOOR = -3, METER_DOOR = -4;
+const UTILITY_PAINT = { [GAS_DOOR]: new THREE.Color('#d6ad2b'), [METER_DOOR]: new THREE.Color('#8d918d') } as Record<number, THREE.Color>;
+// The utility door: width, height and how high its foot is above the pavement (m).
+const UTILITY_DOOR = [.40, .48, .64];
+// A house's own entrance (not a shop door or an open passage), which has a bell panel and
+// the house numbers beside it.
+const houseDoor = (layer: number) => F_DOOR.includes(layer) && !SHOPFRONTS.has(layer) && layer !== 19;
+// The bell panel: width, height and how high its foot is above the pavement (m).
+const INTERCOM = [.13, .34, 1.17];
 const isLoggia = (layer: number) => layer === 28 || layer === 122 || layer === 123 || layer === 125;
 // Exact integer arithmetic within float32's precision, also used by the street
 // shader on distant shells. A portal stays in the same bay throughout approach.
@@ -89,6 +104,140 @@ function doorSteps(layer: number, bay: number, storey: number, moduleWidth: numb
     if (pad < .002) continue;
     out.push({ lo: l - pad, hi: r + pad, b, front: stairFront(b) });
   }
+  return out;
+}
+
+// A projecting shop sign: a lettered board SIGN_SIZE (along its arm, tall) hung from an
+// iron arm at x along the wall, its foot `low` above the pavement, both faces lettered so
+// the word reads from either way along the street; an edge of the shop's paint. Faces
+// come in both windings: the board is seen from all round.
+const SIGN_SIZE = [1.05, .25];
+const CHALKBOARD = new Set(['KAVÁRNA', 'PEKAŘSTVÍ', 'CUKRÁRNA', 'RESTAURACE', 'PIVNICE', 'BISTRO', 'ZMRZLINA'].map(w => SIGN_WORDS.indexOf(w)));
+// A chalkboard's slate.
+const CHALK = new THREE.Color('#262b28');
+const PROJECTING = new Set(['LÉKÁRNA', 'PIVNICE', 'BANKA', 'SMĚNÁRNA', 'RESTAURACE', 'KAVÁRNA'].map(w => SIGN_WORDS.indexOf(w)));
+function projectingSign(x: number, low: number): [Point[], number, number][] {
+  const out: [Point[], number, number][] = [], [reach, tall] = SIGN_SIZE, near = .22, far = near + reach, top = low + tall, half = .022;
+  const quad = (a: Point, b: Point, c: Point, d: Point, kind: number, ao: number) => {
+    out.push([[a, b, c], kind, ao], [[a, c, d], kind, ao], [[a, c, b], kind, ao], [[a, d, c], kind, ao]);
+  };
+  // The lettered faces: v (light) up the board, u along it; on the +x face the word runs
+  // out from the wall, on the -x face back towards it.
+  for (const side of [1, -1]) {
+    const sx = x + side * half, u = (z: number) => side > 0 ? .08 + .84 * (z - near) / reach : .92 - .84 * (z - near) / reach;
+    quad([sx, low, near, 0, u(near)], [sx, low, far, 0, u(far)], [sx, top, far, 1, u(far)], [sx, top, near, 1, u(near)], S.shopSign, 1);
+  }
+  quad([x - half, top, near], [x + half, top, near], [x + half, top, far], [x - half, top, far], S.shopPaint, 1);
+  quad([x - half, low, near], [x + half, low, near], [x + half, low, far], [x - half, low, far], S.shopPaint, .7);
+  quad([x - half, low, far], [x + half, low, far], [x + half, top, far], [x - half, top, far], S.shopPaint, .9);
+  quad([x - half, low, near], [x + half, low, near], [x + half, top, near], [x - half, top, near], S.shopPaint, .9);
+  // The arm along the top from the wall plate, two hangers and a stay below.
+  const bar = (y0: number, z0: number, y1: number, z1: number, r: number) => {
+    // A square iron bar: its section is ±r across the wall and ±r square to its run.
+    const len = Math.hypot(y1 - y0, z1 - z0), ny = -(z1 - z0) / len * r, nz = (y1 - y0) / len * r;
+    const corner = (end: 0 | 1, i: number): Point => {
+      const [sx, sn] = [[-1, -1], [1, -1], [1, 1], [-1, 1]][i];
+      return [x + sx * r, (end ? y1 : y0) + sn * ny, (end ? z1 : z0) + sn * nz];
+    };
+    for (let i = 0; i < 4; i++) quad(corner(0, i), corner(0, (i + 1) % 4), corner(1, (i + 1) % 4), corner(1, i), S.iron, .9);
+  };
+  bar(top + .06, .002, top + .06, far + .04, .014);
+  for (const z of [near + .1, far - .1]) bar(top + .06, z, top, z, .006);
+  bar(low - .02, .002, top + .05, near + reach * .55, .009);
+  quad([x - .07, low - .08, .004], [x + .07, low - .08, .004], [x + .07, top + .12, .004], [x - .07, top + .12, .004], S.iron, .9);
+  return out;
+}
+
+// A utility door in the wall from lo to hi (UTILITY_DOOR): a steel frame standing a few
+// centimetres proud, the painted leaf (shopPaint, its colour given when emitting) and a lock.
+function utilityDoor(lo: number, hi: number): [Point[], number, number][] {
+  const out: [Point[], number, number][] = [], [, high, foot] = UTILITY_DOOR, top = foot + high, e = .025;
+  const quad = (a: Point, b: Point, c: Point, d: Point, kind: number, ao: number) =>
+    out.push([[a, b, c], kind, ao], [[a, c, d], kind, ao], [[a, c, b], kind, ao], [[a, d, c], kind, ao]);
+  const slab = (x0: number, y0: number, x1: number, y1: number, z: number, kind: number) => {
+    quad([x0, y0, z], [x1, y0, z], [x1, y1, z], [x0, y1, z], kind, 1);
+    quad([x0, y0, .001], [x1, y0, .001], [x1, y0, z], [x0, y0, z], kind, .75);
+    quad([x0, y1, .001], [x1, y1, .001], [x1, y1, z], [x0, y1, z], kind, .95);
+    quad([x0, y0, .001], [x0, y1, .001], [x0, y1, z], [x0, y0, z], kind, .85);
+    quad([x1, y0, .001], [x1, y1, .001], [x1, y1, z], [x1, y0, z], kind, .85);
+  };
+  slab(lo, foot, hi, foot + e, .034, S.metalFrame); slab(lo, top - e, hi, top, .034, S.metalFrame);
+  slab(lo, foot + e, lo + e, top - e, .034, S.metalFrame); slab(hi - e, foot + e, hi, top - e, .034, S.metalFrame);
+  slab(lo + e, foot + e, hi - e, top - e, .026, S.shopPaint);
+  slab(hi - .075, foot + high / 2 - .02, hi - .055, foot + high / 2 + .02, .036, S.iron);
+  return out;
+}
+
+// Things hung on an upper storey's wall (wallKit): an air conditioner under a window on
+// brackets, or a satellite dish beside it. Painted shop surface in WALL_KIT_PAINT.
+const WALL_KIT_PAINT = [new THREE.Color('#e6e6e0'), new THREE.Color('#3b3e3d'), new THREE.Color('#d9d9d2'), new THREE.Color('#b3271e'),
+  new THREE.Color('#6e4a33'), new THREE.Color('#3f6a2c'), new THREE.Color('#c8283a'), new THREE.Color('#e9e3da')];
+function boxFaces(out: [Point[], number, number][], x0: number, y0: number, x1: number, y1: number, z0: number, z1: number, kind: number) {
+  const q = (a: Point, b: Point, c: Point, d: Point, ao: number) => out.push([[a, b, c], kind, ao], [[a, c, d], kind, ao], [[a, c, b], kind, ao], [[a, d, c], kind, ao]);
+  q([x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1], 1);
+  q([x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1], .97);
+  q([x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1], .7);
+  q([x0, y0, z0], [x0, y1, z0], [x0, y1, z1], [x0, y0, z1], .85);
+  q([x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1], .85);
+}
+// Kind -10 - i paints WALL_KIT_PAINT[i] (see the emission).
+// A planter on a sill with geraniums (kinds -14 box, -15 leaves, -16 and -17 flowers): at
+// `x` to `x1` along the wall, standing on the sill at `y`.
+function windowBox(x0: number, x1: number, y: number, seed: number): [Point[], number, number][] {
+  const out: [Point[], number, number][] = [];
+  boxFaces(out, x0, y, x1, y + .17, .03, .22, -14);
+  const n = Math.max(3, Math.round((x1 - x0) / .12));
+  for (let i = 0; i < n; i++) {
+    const x = x0 + (i + .5) * (x1 - x0) / n, h = .1 + .07 * ((seed * 7 + i * 13) % 5) / 4, z = .09 + .06 * ((i * 5 + seed) % 3) / 2;
+    boxFaces(out, x - .07, y + .14, x + .07, y + .14 + h, z - .06, z + .06, -15);
+    if ((i + seed) % 3 !== 2) boxFaces(out, x - .035, y + .14 + h, x + .035, y + .2 + h, z - .035, z + .035, (seed + i) % 4 ? -16 : -17);
+  }
+  return out;
+}
+function airConditioner(x: number, top: number): [Point[], number, number][] {
+  const out: [Point[], number, number][] = [], w = .78, h = .52;
+  boxFaces(out, x - w / 2, top - h, x + w / 2, top, .07, .33, -10);
+  boxFaces(out, x - w / 2 + .06, top - h + .07, x + .08, top - .07, .33, .336, -11);
+  for (const bx of [x - w / 2 + .1, x + w / 2 - .1]) boxFaces(out, bx - .015, top - h - .05, bx + .015, top - h, .002, .36, S.iron);
+  boxFaces(out, x + w / 2 - .07, top - h - .9, x + w / 2 - .045, top - h, .02, .045, -12);
+  return out;
+}
+function satelliteDish(x: number, y: number): [Point[], number, number][] {
+  const out: [Point[], number, number][] = [], r = .3, n = 10;
+  // The reflector faces south-ish and up a little: a disc tilted out from the wall.
+  const at = (a: number): Point => [x + Math.cos(a) * r, y + Math.sin(a) * r * .9, .42 + Math.sin(a) * .1];
+  for (let i = 0; i < n; i++) {
+    const c: Point = [x, y, .47], a = at(i * 2 * Math.PI / n), b = at((i + 1) * 2 * Math.PI / n);
+    out.push([[c, a, b], -12, 1], [[c, b, a], -12, .85]);
+  }
+  boxFaces(out, x - .02, y - .02, x + .02, y + .02, .002, .42, S.iron);
+  boxFaces(out, x - .012, y - .012, x + .012, y + .012, .47, .72, S.iron);
+  return out;
+}
+
+// A café's or bakery's chalkboard on the pavement in front of it: two boards leaning
+// together, the shop's word chalked on both (lettering u along the board, light up it), in
+// a timber frame. At x along the wall, `out` from it.
+const A_FRAME = [.56, .86, .26]; // width, height, how far apart its feet stand
+function chalkboard(x: number, out: number): [Point[], number, number][] {
+  const res: [Point[], number, number][] = [], [w, h, spread] = A_FRAME, l = x - w / 2, r = x + w / 2;
+  for (const side of [-1, 1]) {
+    // Each board from its foot to the ridge; the lettered face looks away from the other.
+    const foot = out + side * spread / 2, ridge = out, u = (xx: number) => side > 0 ? .1 + .8 * (r - xx) / w : .1 + .8 * (xx - l) / w;
+    const a: Point = [l, .02, foot, 0, u(l)], b: Point = [r, .02, foot, 0, u(r)], c: Point = [r, h, ridge, 1, u(r)], d: Point = [l, h, ridge, 1, u(l)];
+    res.push([[a, b, c], S.shopSign, 1], [[a, c, d], S.shopSign, 1], [[a, c, b], S.shopSign, 1], [[a, d, c], S.shopSign, 1]);
+    for (const xx of [l - .02, r + .02]) {
+      const e: Point = [xx, 0, foot], f2: Point = [xx, h + .03, ridge];
+      res.push([[e, f2, [xx, h + .03, ridge + .03 * side]], S.shopPaint, .9], [[e, [xx, h + .03, ridge + .03 * side], f2], S.shopPaint, .9]);
+    }
+  }
+  return res;
+}
+// A burglar alarm's box high on the wall by a shop: a small red or blue steel case.
+function alarmBox(x: number, y: number): [Point[], number, number][] {
+  const out: [Point[], number, number][] = [];
+  boxFaces(out, x - .13, y - .17, x + .13, y + .17, .004, .09, -13);
+  boxFaces(out, x - .09, y + .06, x + .09, y + .13, .09, .1, -12);
   return out;
 }
 
@@ -353,6 +502,26 @@ function cellShape(layer: number, bay: number, storey: number, moduleWidth: numb
       const spindle = rectangle(hx - .011, hy + .014, hx + .014, hy + .043);
       ring(spindle, spindle, -inset + .009, -inset + .039, 1, S.brass);
     }
+    if (doorway && houseDoor(layer)) {
+      // The bell panel of the flats: a steel plate beside the door with a speaker at the
+      // top and a column of name strips, each with its button. The wall's own house
+      // numbers hang on the other side (doorPlates in buildStreetWall).
+      const reach = rise > .12 && style <= 1 ? .19 : pad, x0 = r + reach + .05;
+      if (x0 + INTERCOM[0] + .02 < bay) {
+        const [wide, high, foot] = INTERCOM, x1 = x0 + wide, top = foot + high;
+        const plate = rectangle(x0, foot, x1, top);
+        ring(plate, plate, .001, .016, .9, S.metalFrame); fill(plate, [], .016, 1, S.metalFrame);
+        fill(rectangle(x0 + .022, top - .062, x1 - .022, top - .022), [], .0165, 1, S.iron);
+        const rows = Math.max(3, Math.min(8, Math.round(storey * 1.6)));
+        const step = (high - .10) / rows;
+        for (let i = 0; i < rows; i++) {
+          const y = foot + .026 + i * step;
+          fill(rectangle(x0 + .014, y, x1 - .040, y + step * .62), [], .0165, 1, NAME_STRIP);
+          const button = rectangle(x1 - .032, y + step * .08, x1 - .014, y + step * .56);
+          ring(button, button, .016, .022, .85, S.iron); fill(button, [], .022, 1, S.iron);
+        }
+      }
+    }
   }
   fill(rectangle(0, 0, bay, storey), holes, 0, 1);
   const cap = caps[layer];
@@ -439,6 +608,8 @@ export interface FacadeGeometry {
   // its foot along the wall (x z, x z), how far out it reaches (x z), the pavement and its top.
   steps: Float32Array;
   plateMounts: Float32Array; // a clear patch of plaster near either end, in world coordinates
+  plaqueMounts: Float32Array; // the middle of each mapped memorial plaque (PLAQUE), in world coordinates
+  doorPlates: Float32Array; // the middle of each house door's number plates (DOOR_PLATES), in world coordinates
 }
 const cross = (ax: number, ay: number, bx: number, by: number) => ax * by - ay * bx;
 // The shade under sills and the ground floor's cornice: how far down it reaches (m) and
@@ -454,14 +625,18 @@ function clip(poly: Point[], a: V2, b: V2, sign: number) {
   let last = poly[poly.length - 1], d0 = sign * cross(dx, dy, last[0] - a[0], last[1] - a[1]);
   for (const cur of poly) {
     const d = sign * cross(dx, dy, cur[0] - a[0], cur[1] - a[1]);
-    if ((d >= 0) !== (d0 >= 0)) { const t = d0 / (d0 - d), l3 = last[3] ?? 1; result.push([last[0] + (cur[0] - last[0]) * t, last[1] + (cur[1] - last[1]) * t, last[2] + (cur[2] - last[2]) * t, l3 + ((cur[3] ?? 1) - l3) * t]); }
+    if ((d >= 0) !== (d0 >= 0)) {
+      const t = d0 / (d0 - d), l3 = last[3] ?? 1, at: Point = [last[0] + (cur[0] - last[0]) * t, last[1] + (cur[1] - last[1]) * t, last[2] + (cur[2] - last[2]) * t, l3 + ((cur[3] ?? 1) - l3) * t];
+      if (last[4] !== undefined && cur[4] !== undefined) at.push(last[4] + (cur[4] - last[4]) * t);
+      result.push(at);
+    }
     if (d >= 0) result.push(cur);
     last = cur; d0 = d;
   }
   return result;
 }
 
-export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color' | 'facade'> & { shops?: Float32Array }, sky: Float32Array, triangles: Uint32Array): FacadeGeometry | null {
+export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color' | 'facade'> & { shops?: Float32Array; plaques?: Float32Array }, sky: Float32Array, triangles: Uint32Array): FacadeGeometry | null {
   const { position: p, color: c, facade: f } = arrays, first = triangles[0] * 12, w = f[first + 3], width = wallLength(f[first + 2]), style = Math.floor(w), bays = baysOf(w, width);
   if (!bays || style >= BLANK || width < 2) return null;
   const seed = Math.floor((w - style) * 32768) % 997, bay = width / bays;
@@ -481,6 +656,9 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
       displays.set(k,{ stock: shops[i+1], word: shops[i+2] }); break;
     }
   }
+  // Where in a bay the shaders find lettering u (0–1) of a projecting sign: the inverse of
+  // the fascia's u = .5 + (.5 - fract(x / bay)) * 1.55.
+  const signX = (x: number, u: number) => Math.floor(x / bay) * bay + bay * (.5 - (u - .5) / 1.55);
   const moduleAt = (j:number,row:number) => !row && displays.has(j)
     ? (pick(seed,j,19)<.5 ? 58 : 66) : streetModule(w,j,row,bays);
   const shapes = new Map<number, Triangle[]>();
@@ -539,6 +717,40 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
     zinc: PIPE_ZINC[Math.floor(pick(seed,3,37)*PIPE_ZINC.length)],
     cast: PIPE_CAST, strap: PIPE_STRAP, inside: PIPE_INSIDE,
   };
+  // Each house door's number plates (DOOR_PLATES): beside the door on the side away from
+  // its bell panel, or above the panel where that side has no room.
+  const doors: number[] = [], plated: [number, number][] = [], utilities: [number, number, number][] = [];
+  const [plateWide, plateLow, plateHigh] = DOOR_PLATES;
+  for (let j = 0; j < bays; j++) {
+    const layer = moduleAt(j, 0);
+    if (!houseDoor(layer) || !fits(layer, j, 0, 0, ground)) continue;
+    const mw = Math.min(bay, F_STREET_WIDTH[layer]), start = j * bay + (bay - mw) / 2;
+    const portal = openings[layer].find(([, y0, , y1, ]) => {
+      const b = (1 - y1 / 512) * ground, t = (1 - y0 / 512) * ground;
+      return (t - b) > ground * .49 && b < ground * .22;
+    });
+    if (!portal) continue;
+    const [x0, , x1, , arch] = portal, l = start + x0 / 256 * mw, r = start + x1 / 256 * mw;
+    const reach = arch > 0 && style <= 1 ? .19 : style <= 1 ? .086 : .052;
+    const clear = (lo: number, hi: number, low = plateLow, high = plateHigh) => lo >= 0 && hi <= width && (pipeU < 0 || pipeU < lo - .08 || pipeU > hi + .08) &&
+      [lo, hi].every(x => onWall(x, low) && onWall(x, high)) &&
+      [Math.floor(lo / bay), Math.floor(hi / bay)].every(k => k === j || k < 0 || k >= bays || !openings[moduleAt(k, 0)].some(([a, y0, c, y1]) => {
+        const kw = Math.min(bay, F_STREET_WIDTH[moduleAt(k, 0)]), ks = k * bay + (bay - kw) / 2;
+        return hi > ks + a / 256 * kw - .12 && lo < ks + c / 256 * kw + .12 &&
+          high > (1 - y1 / 512) * ground - .1 && low < (1 - y0 / 512) * ground + .1;
+      }));
+    const beside = l - reach - .04, above = r + reach + .05 + INTERCOM[0] / 2;
+    const u = clear(beside - plateWide, beside) ? beside - plateWide / 2
+      : clear(above - plateWide / 2, above + plateWide / 2) ? above : -1;
+    const at = u < 0 ? null : worldAt(u, (plateLow + plateHigh) / 2);
+    if (!at) continue;
+    doors.push(...at);
+    // Under the numbers beside the door, the steel door of the house's gas main (yellow) or
+    // its electricity meters (grey), above the plinth (utilityDoor).
+    const [wide, high, foot] = UTILITY_DOOR;
+    if (u < l && clear(beside - wide, beside, foot, foot + high)) utilities.push([beside - wide, beside, layer % 2 ? GAS_DOOR : METER_DOOR]);
+    plated.push([u - plateWide / 2, u + plateWide / 2]);
+  }
   let modeled = false;
   for (const id of triangles) {
     const o = id * 9, k = id * 12, vertex = id * 3;
@@ -588,9 +800,9 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
       if (poly.length < 3) return;
       // The source triangle's two affine coordinates place even the back of
       // an arched door on the correct side of a sloping street.
-      const placed = poly.map(([x, y, z, light = 1]) => {
+      const placed = poly.map(([x, y, z, light = 1, word]) => {
         const u = cross(x - a[0], y - a[1], vx, vy) / det, v = cross(ux, uy, x - a[0], y - a[1]) / det;
-        return { x, y, u, v, light, depth: z, world: X.clone().addScaledVector(U, u).addScaledVector(V, v).addScaledVector(N, z) };
+        return { x, y, u, v, light, word, depth: z, world: X.clone().addScaledVector(U, u).addScaledVector(V, v).addScaledVector(N, z) };
       });
       for (let i = 1; i < placed.length - 1; i++) {
         const q = [placed[0], placed[i], placed[i + 1]];
@@ -601,7 +813,8 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
           pos.push(t.world.x, t.world.y, t.world.z); norm.push(normal.x, normal.y, normal.z);
           if (paint) col.push(paint.r, paint.g, paint.b);
           else for (let j = 0; j < 3; j++)col.push(c[o + j] + t.u * (c[o + 3 + j] - c[o + j]) + t.v * (c[o + 6 + j] - c[o + j]));
-          fac.push(t.x, t.y, f[k + 2], w); shade.push(sky[vertex] + t.u * (sky[vertex + 1] - sky[vertex]) + t.v * (sky[vertex + 2] - sky[vertex]));
+          // (The shaders letter a sign by its facade x within the bay: SIGN_U.)
+          fac.push(t.word === undefined ? t.x : signX(t.x, t.word), t.y, f[k + 2], w); shade.push(sky[vertex] + t.u * (sky[vertex + 1] - sky[vertex]) + t.v * (sky[vertex + 2] - sky[vertex]));
           // For a glazed light the spare depth channel identifies the curtains
           // or blind shared by its sashes. Reveal faces still carry real depth.
           const fascia = kind === S.shopSign;
@@ -610,6 +823,10 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
         }
       }
     };
+    for (const [lo, hi, paint] of utilities) {
+      if (hi < minX || lo > maxX || UTILITY_DOOR[2] > maxY || UTILITY_DOOR[2] + UTILITY_DOOR[1] < minY) continue;
+      for (const [poly, kind, ao] of utilityDoor(lo, hi)) emit(poly, 0, ao, kind === S.shopPaint ? S.shopPaint : kind, kind === S.shopPaint ? UTILITY_PAINT[paint] : undefined);
+    }
     if (pipeFaces.length && pipeU+.10>=minX && pipeU-.10<=maxX) {
       for (const face of pipeFaces) {
         if (face.points.every(q=>q[1]<minY) || face.points.every(q=>q[1]>maxY)) continue;
@@ -662,32 +879,60 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
           const dx = j * bay;
           if (dx + Math.min(l[0], m[0], r[0]) > maxX || dx + Math.max(l[0], m[0], r[0]) < minX ||
             bottom + Math.min(l[1], m[1], r[1]) > maxY || bottom + Math.max(l[1], m[1], r[1]) < minY) continue;
-          const paint = kind === S.shopPaint || kind === S.shopSign ? finish?.[0] : kind === S.canvas ? finish?.[1] : undefined;
+          const paint = kind === NAME_STRIP ? NAME_PAINT : kind in UTILITY_PAINT ? UTILITY_PAINT[kind] : kind === S.shopPaint || kind === S.shopSign ? finish?.[0] : kind === S.canvas ? finish?.[1] : undefined;
           const pane = kind === FURNISHED_PANE;
-          const surface = pane ? S.glass : kind === S.shopSign && !sign ? S.shopPaint : kind;
+          const surface = pane ? S.glass : (kind === S.shopSign && !sign) || kind === NAME_STRIP || kind in UTILITY_PAINT ? S.shopPaint : kind;
           const finishValue = pane ? furnishing : surface === S.shopSign ? trade
             : surface===S.display && mapped && mapped.stock >= 0 ? mapped.stock+1 : undefined;
           emit([l, m, r].map(([x, y, z, light]) => [dx + x, bottom + y, z, light]), layer === 113 ? 41 : layer, ao, surface, paint, finishValue);
+        }
+        // A window box of geraniums on some first-floor sills of older houses, spring to autumn.
+        if (row === 1 && style <= STYLE.baroque && !isLoggia(layer) && openings[layer]?.length && layer !== 113 && pick(seed, j + 7, 33) < .22) {
+          const [x0, , x1, y1] = openings[layer][0], mw = Math.min(bay, F_STREET_WIDTH[layer]), start = j * bay + (bay - mw) / 2;
+          const sill = (1 - y1 / 512) * h, lo = start + x0 / 256 * mw + .04, hi = start + x1 / 256 * mw - .04;
+          if (hi - lo > .5 && sill > .4) for (const [poly, kind, ao] of windowBox(lo, hi, sill - .005, seed + j)) {
+            emit(poly.map(([x, y, z]) => [x, bottom + y, z]), layer, ao, S.shopPaint, WALL_KIT_PAINT[-10 - kind], kind <= -15 ? FLOWERS : undefined);
+          }
+        }
+        // Now and then an air conditioner under a window, mostly on modern and panel fronts,
+        // or a satellite dish beside one.
+        if (row && !isLoggia(layer) && openings[layer]?.length && layer !== 113) {
+          const chance = pick(seed, j + row * 41, 31), modern = style >= STYLE.functionalist;
+          const [x0, , x1, y1] = openings[layer][0], mw = Math.min(bay, F_STREET_WIDTH[layer]), start = j * bay + (bay - mw) / 2;
+          const sill = (1 - y1 / 512) * h, middle = start + (x0 + x1) / 512 * mw, side = start + x1 / 256 * mw + .45;
+          const kit = chance < (modern ? .09 : .025) && sill > .75 ? airConditioner(middle, sill - .16)
+            : chance > (modern ? .96 : .995) && side + .35 < (j + 1) * bay ? satelliteDish(side, sill + .9) : [];
+          for (const [poly, kind, ao] of kit) {
+            emit(poly.map(([x, y, z]) => [x, bottom + y, z]), layer, ao, kind <= -10 ? S.shopPaint : kind, kind <= -10 ? WALL_KIT_PAINT[-10 - kind] : undefined);
+          }
+        }
+        // In front of a café, bakery, restaurant or pub the map names, now and then a chalkboard
+        // with its word; above some shops an alarm box.
+        if (!row && shop && sign) {
+          const board = mapped && CHALKBOARD.has(mapped.word) && pick(seed, j, 25) < .55;
+          if (board) for (const [poly, kind, ao] of chalkboard(j * bay + bay * (pick(seed, j, 26) < .5 ? .3 : .7), .95)) {
+            emit(poly.map(([x, y, z, light, u]) => [x, bottom + y, z, light, u]), layer, ao, kind, kind === S.shopSign ? CHALK : finish?.[0], kind === S.shopSign ? mapped!.word : undefined);
+          }
+          if (pick(seed, j, 27) < .3 && h > 3.3) for (const [poly, kind, ao] of alarmBox(j * bay + bay - .35, h - .45)) {
+            emit(poly.map(([x, y, z]) => [x, bottom + y, z]), layer, ao, S.shopPaint, WALL_KIT_PAINT[kind === -13 ? 3 : 2]);
+          }
+        }
+        // A mapped shop's sign standing out from the wall at the bay's edge, level with the
+        // top of the fascia, lettered with its trade on both faces (projectingSign).
+        if (sign && mapped && mapped.word >= 0 && (PROJECTING.has(mapped.word) || pick(seed, j, 23) < .5)) {
+          // As high as the ground storey allows, under the first floor's sills.
+          const low = h - .5;
+          if (low > 2.5) for (const [poly, kind, ao] of projectingSign(j * bay + .14, low)) {
+            emit(poly.map(([x, y, z, light, u]) => [x, bottom + y, z, light, u]), layer, ao, kind, kind === S.iron ? undefined : finish?.[0], kind === S.shopSign ? trade : undefined);
+          }
         }
         if (openings[layer]?.length) modeled = true;
       }
     }
   }
   if (!modeled || !pos.length) return null;
-  // Find room for an 80 × 40 cm enamel plate. Keep the whole tablet clear of
-  // door surrounds, sills, the storey cornice and holes in the source wall.
-  const mounts: number[] = [];
-  function mount(u: number, h: number) {
-    if (pipeU >= 0 && Math.abs(u-pipeU)<.52) return false;
-    const left = u - .44, right = u + .44, low = h - .24, high = h + .24;
-    if (left < 0 || right > width || high > ground - .30) return false;
-    for (let j = Math.floor(left / bay); j <= Math.min(bays - 1, Math.floor(right / bay)); j++) {
-      const layer = moduleAt(j,0), mw = Math.min(bay, F_STREET_WIDTH[layer]), start = j * bay + (bay - mw) / 2;
-      if (openings[layer].some(([x0, y0, x1, y1]) =>
-        right > start + x0 / 256 * mw - .23 && left < start + x1 / 256 * mw + .23 &&
-        high > (1 - y1 / 512) * ground - .15 && low < (1 - y0 / 512) * ground + (SHOPFRONTS.has(layer) ? .36 : .24))) return false;
-    }
-    if (![left, right].every(x => onWall(x, low) && onWall(x, high))) return false;
+  // The point (u, h) of the wall in the world, through the source triangle it lies on.
+  function worldAt(u: number, h: number) {
     for (const tri of triangles) {
       const k = tri * 12, x = f[k], y = f[k + 1];
       const ux = f[k + 4] - x, uy = f[k + 5] - y, vx = f[k + 8] - x, vy = f[k + 9] - y;
@@ -696,10 +941,30 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
       const a = cross(u - x, h - y, vx, vy) / det, b = cross(ux, uy, u - x, h - y) / det;
       if (a < -1e-5 || b < -1e-5 || a + b > 1.00001) continue;
       const i = tri * 9;
-      for (let j = i; j < i + 3; j++) mounts.push(p[j] + a * (p[j + 3] - p[j]) + b * (p[j + 6] - p[j]));
-      return true;
+      return [0, 1, 2].map(j => p[i + j] + a * (p[i + 3 + j] - p[i + j]) + b * (p[i + 6 + j] - p[i + j]));
     }
-    return false;
+    return null;
+  }
+  // Find room for an 80 × 40 cm enamel plate. Keep the whole tablet clear of
+  // door surrounds, sills, the storey cornice and holes in the source wall.
+  const mounts: number[] = [], taken: [number, number, number, number][] = [];
+  // `hw`, `hh`: half the tablet's width and height; the middle goes into `into`.
+  function mount(u: number, h: number, hw = .44, hh = .24, into = mounts) {
+    if (pipeU >= 0 && Math.abs(u-pipeU) < hw + .08) return false;
+    const left = u - hw, right = u + hw, low = h - hh, high = h + hh;
+    if (taken.some(([l, r, b, t]) => right > l - .1 && left < r + .1 && high > b - .1 && low < t + .1)) return false;
+    if (left < 0 || right > width || high > ground - .30) return false;
+    if (low < plateHigh + .05 && plated.some(([lo, hi]) => right > lo - .05 && left < hi + .05)) return false;
+    for (let j = Math.floor(left / bay); j <= Math.min(bays - 1, Math.floor(right / bay)); j++) {
+      const layer = moduleAt(j,0), mw = Math.min(bay, F_STREET_WIDTH[layer]), start = j * bay + (bay - mw) / 2;
+      if (openings[layer].some(([x0, y0, x1, y1]) =>
+        right > start + x0 / 256 * mw - .23 && left < start + x1 / 256 * mw + .23 &&
+        high > (1 - y1 / 512) * ground - .15 && low < (1 - y0 / 512) * ground + (SHOPFRONTS.has(layer) ? .36 : .24))) return false;
+    }
+    if (![left, right].every(x => onWall(x, low) && onWall(x, high))) return false;
+    const at = worldAt(u, h);
+    if (at) { into.push(...at); taken.push([left, right, low, high]); }
+    return !!at;
   }
   if (width >= 4) for (const end of [0, 1]) {
     // On a wide bay the first doorway or window can occupy every position
@@ -709,5 +974,12 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
       if ([2.75, 3.1, 2.4, 3.55].some(h => mount(end ? width - inset : inset, h))) break;
     }
   }
-  return { plateMounts: Float32Array.from(mounts), footShade: Float32Array.from(foot), steps: Float32Array.from(steps), position: new Float32Array(pos), normal: new Float32Array(norm), color: new Float32Array(col), facade: new Float32Array(fac), sky: new Float32Array(shade), detail: new Float32Array(detail) };
+  // A mapped memorial plaque goes on the nearest clear plaster to where its ray meets the
+  // wall, at about the height people put them (PLAQUE).
+  const plaques: number[] = [];
+  for (const u of arrays.plaques ?? []) {
+    const [hw, hh] = PLAQUE;
+    [0, .5, -.5, 1, -1, 1.6, -1.6, 2.3, -2.3].some(du => [2.7, 3.0, 2.4].some(h => mount(u + du, h, hw, hh, plaques)));
+  }
+  return { plateMounts: Float32Array.from(mounts), plaqueMounts: Float32Array.from(plaques), doorPlates: Float32Array.from(doors), footShade: Float32Array.from(foot), steps: Float32Array.from(steps), position: new Float32Array(pos), normal: new Float32Array(norm), color: new Float32Array(col), facade: new Float32Array(fac), sky: new Float32Array(shade), detail: new Float32Array(detail) };
 }

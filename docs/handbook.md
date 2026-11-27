@@ -41,6 +41,26 @@ Screenshots go to `$TMPDIR/scene`. The same scenarios run in the developer panel
 ("Run and watch" plays one in real time), and "Copy this situation" there copies where
 you are, the time, weather, money, stars, car and camera as the start of a new scenario.
 
+#### Scenes in a busy checkout
+
+When several sessions edit the same checkout, every saved file reloads each game open
+from a watched dev server, and a scene command starts over with a 30–70 s load. Run your
+own dev server without live reloading and a scene server on it; a game it opens stays as
+it loaded, and files changed since come in on its next load (a restart of the server):
+
+    SOP_STILL=1 PORT=5291 npx vite --host 127.0.0.1 --strictPort
+    node scripts/scene.mjs serve --url http://127.0.0.1:5291/ --port 5207 --extra "&fps"
+    node scripts/scene.mjs eval "…" --port 5207
+
+The scripts draw the game on the GPU with the platform's own backend
+(`scripts/gpu-flags.mjs`). Until 27 November 2026 they asked for Metal everywhere, and on
+Windows Chrome drew in software: about a second a frame, 50 s to teleport, and pages
+that crashed under the city. On Windows the benchmark check (`scripts/game-lock.mjs`) no
+longer lists processes with `ps`, which isn't the Unix one there and held up the dev
+server for half a second on each page's poll. A page script can import the game's own
+modules from the dev server (`await import('/src/houseNumbers.ts')`) and gets the same
+instances the game uses.
+
 For a varied street survey, run `node scripts/sample-streets.mjs praha 17`.
 It picks separated examples from six street types on the built map and returns
 Street View links with coordinates and headings for `t.go`. Use the same seed
@@ -388,11 +408,38 @@ wall, the plate can sit on the plaster between the first two bays. The curved fa
 border follow the examples in [IPR’s Pražský uličník](https://prazskyulicnik.az.iprpraha.cz/clanky/vyvoj-oznaceni-ulic-v-terenu).
 The map supplies the names, while individual sign positions are approximate.
 
+Beside a house door, at head height, hang the house's two numbers: the red conscription
+number (číslo popisné) above the blue street number (číslo orientační). They are the
+address's own, from RÚIAN through OpenStreetMap (`pipeline/build_addresses.py` →
+`addresses.json` and `addresses/`, 174,066 in `praha`, split into 500 m cells loaded as
+walls come close; `src/houseNumbers.ts`). As with shops, a ray from the address's street
+to its point finds the wall, and the plates go by its nearest house door. A door no
+address reaches has no plates rather than made-up numbers; a map without the files has
+none. The other side of the door has the flats' bell panel: steel, a speaker and a
+column of name strips and buttons (inferred, `cellShape` in `src/map/streetFacade.ts`).
+Under the numbers, where the wall has room, is the steel door of the house's gas main
+(yellow) or its electricity meters (grey), above the plinth (`utilityDoor`). Where
+OpenStreetMap maps a memorial plaque, a stone or bronze tablet hangs on the nearest clear
+plaster at about head height (`plaqueMounts`, `src/plaques.ts`); its engraving is only
+lines, not the real inscription. The brass Stolpersteine lie in the pavement where they
+are mapped (street furniture, `docs/furniture.md`).
+Higher up, now and then an air conditioner hangs on brackets under a window, mostly on
+functionalist and panel fronts, and once in a while a satellite dish beside one
+(`airConditioner`, `satelliteDish`).
+On about a fifth of the first-floor windows of older houses stands a box of red and white
+geraniums (`windowBox`); while the trees are bare it holds only earth.
+
 Look up a house front to its roofline. Windows stop where a whole one no longer fits:
 under a gable (a štít), a sloping parapet or a step in the roof the wall is bare plaster,
 and nothing lights up there at night. The game measures the top of every wall bay by
 bay; which bays have windows at all is still inferred, as before
 (`windowRows` and `splitWindowRows` in `src/facades.ts`).
+
+From Advent to Epiphany (day 330 of the year to 6 January) garlands of warm bulbs hang
+across the old town's shopping streets every 14 m, from house front to house front where
+the street is 5–30 m wide: Na Příkopě, Celetná, Karlova, Pařížská, Národní and the rest of
+`FESTIVE` (`src/christmasLights.ts`; `Season.festive`, shared as `SEASON.w`). They glow
+after dark. Václavské náměstí is too wide for them.
 
 Stand under a street tree on a windy day. The boughs and sprays lean with the wind and
 swing back, in gusts that pass from tree to tree, about three times as hard in a storm.
@@ -408,7 +455,15 @@ trade on the fascia (KAVÁRNA, LÉKÁRNA, POTRAVINY …) and, for books, bakerie
 cafés, flowers and gifts, the matching stock (`pipeline/build_shops.py` → `shops.json`,
 `src/mappedFrontages.ts`; 11,244 in `praha`). Other bays are inferred as before. A
 map without the file has only inferred shops. The words are generic: no shop names
-or brands. The stock and joinery are imagined for the game.
+or brands. The stock and joinery are imagined for the game. Pharmacies, pubs, restaurants,
+cafés, banks and exchange offices, and about half the other mapped shops with a word,
+also hang a sign out from the wall at the edge of their bay, lettered with the same word
+on both faces (`projectingSign` in `src/map/streetFacade.ts`). After dark the shops
+that have closed for the night mostly have their roller shutters down: ribbed grey
+steel over the window (`shutter` in `src/streetFacadeGL.ts`, `shopShutter` in
+`src/webgpu/buildings.ts`). About half the mapped cafés, bakeries, restaurants and pubs put a
+chalkboard with their word out on the pavement (`chalkboard`), and a third of the shops
+have a red alarm box high on the wall (`alarmBox`).
 Arched timber portals sit further back, with a meeting stile, a stone landing
 and enough steps to reach the threshold from the pavement.
 
@@ -2607,6 +2662,9 @@ uv run build_footfall.py centrum   # how busy the streets are → footfall.png
 uv run build_lamps.py centrum      # street lamps from IPR's utility map → lamps.bin.gz
 uv run build_bikes.py centrum      # shared bikes' stations from GBFS feeds → bikes.json
 uv run build_terraces.py centrum   # cafés, restaurants and pubs with tables outside (OSM) → terraces.json
+uv run build_shops.py centrum      # ground-floor shops, cafés and pubs (OSM) for the shopfronts → shops.json
+uv run build_addresses.py centrum  # house numbers (RÚIAN via OSM) for the plates by the doors → addresses.json, addresses/
+uv run build_street_furniture.py centrum  # benches, bins, bike stands, bollards, cabinets, plaques … (OSM) → street-furniture.json
 uv run build_districts.py centrum  # parts of town from OSM's cadastral areas → districts.json
 uv run landmarks.py centrum        # landmarks from IPR's photorealistic mesh → landmarks/
 ```
@@ -2644,7 +2702,6 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   `pipeline/.cache/layers/`.
 - **Staged rebuilds and resume.** For a complete rebuild, work in an isolated copy
   with its own writable caches and output; keep the active map in place until the
-uv run build_shops.py centrum      # ground-floor shops, cafés and pubs (OSM) for the shopfronts → shops.json
   new generation has passed validation. No other pipeline job should write to that
   copy. Run these commands from its `pipeline/` directory to prepare the base
   layers. [Rebuilding the map](rebuilding-the-map.md) lists the full sequence.

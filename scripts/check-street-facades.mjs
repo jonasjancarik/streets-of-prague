@@ -180,6 +180,26 @@ const residential = Array.from({ length: 8 }, (_, bay) => streetModule(packed(1,
 assert.equal(residential.filter(layer => layer === 18).length, 1, 'a single residential entrance');
 assert.ok(residential.includes(21) && residential.includes(23) && residential.every(layer => [18, 21, 23].includes(layer)),
   'an Old Town residential front has a barred window and sheltered plaster beside its portal');
+// The house door gets a bell panel beside it and a place for its number plates on the
+// other side (houseNumbers.ts), clear of the portal; a shop door gets neither.
+const frontOf = (w, width) => {
+  const at = [[0, 0], [width, 0], [width, 13], [0, 0], [width, 13], [0, 13]];
+  return buildStreetWall({ position: Float32Array.from(at.flatMap(([x, y]) => [x, y, 0])), color: new Float32Array(18).fill(.5),
+    facade: Float32Array.from(at.flatMap(([x, y]) => [x, y, width, w])) }, new Float32Array(6).fill(.8), Uint32Array.of(0, 1));
+};
+const house = frontOf(packed(1, 6), 16);
+assert.equal(house.doorPlates.length, 3, 'one house door, one set of number plates: ' + house.doorPlates.length / 3);
+const [plateX, plateY] = house.doorPlates;
+assert.ok(plateY > 2.1 && plateY < 2.4 && plateX > .2 && plateX < 15.8, `the plates hang at head height on the wall: ${plateX}, ${plateY}`);
+let panel = 0, overlap = 0;
+for (let i = 0; i < house.detail.length; i += 4) {
+  const [x, y, z] = [house.position[i / 4 * 3], house.position[i / 4 * 3 + 1], house.position[i / 4 * 3 + 2]];
+  if (house.detail[i + 2] === F_SURFACE.metalFrame && y > 1.1 && y < 1.6 && z > .001) panel++;
+  if (Math.abs(x - plateX) < .12 && y > 2.08 && y < 2.44 && z > .03) overlap++;
+}
+assert.ok(panel >= 6, 'a steel bell panel stands proud of the plaster beside the door: ' + panel);
+assert.equal(overlap, 0, 'nothing of the portal stands where the plates hang');
+console.log('Verified house doors: a bell panel and a clear place for the number plates.');
 
 const awningWall = buildStreetWall({ ...buffers, facade: Float32Array.from(shopFacade, (v, i) =>
   i % 4 === 3 ? (101 + .25) / 32768 : v) }, sky, tris);
@@ -255,3 +275,24 @@ for (const floor of [1,2,4]) assert.deepEqual(upper(pitched,floor,countFlats),[1
 const [l,t,r,b] = apertures[25][0];
 assert.ok((r-l)/256 > .9 && (b-t)/512 > .49, 'ribbon lights fill the bay and reach about half a storey');
 assert.deepEqual(apertures[41], apertures[113], 'the pictured balcony and its physical door coincide');
+// Upper storeys now and then carry an air conditioner under a window or a dish beside one,
+// more on modern fronts than old ones; they are painted kit (shopPaint) off the plaster.
+{
+  const count = (look, style) => {
+    let kit = 0;
+    for (let wall = 0; wall < 24; wall++) {
+      const front = frontOf(style + packed(look, wall % 8, wall), 24);
+      if (!front) continue;
+      for (let i = 0; i < front.detail.length; i += 4) {
+        const y = front.position[i / 4 * 3 + 1], z = front.position[i / 4 * 3 + 2];
+        // The conditioner's face, off the wall at 33 cm (airConditioner), not a window box's.
+        if (front.detail[i + 2] === F_SURFACE.shopPaint && y > 4.5 && Math.abs(z - .33) < .001) kit++;
+      }
+    }
+    return kit;
+  };
+  const modern = count(LOOK.functionalist, 2), old = count(LOOK.neoRenaissance, 0);
+  assert.ok(modern > 0, 'some modern upper storeys have air conditioners: ' + modern);
+  assert.ok(modern > old, `more on modern fronts than old ones: ${modern} against ${old}`);
+  console.log('Verified air conditioners and dishes on upper storeys.');
+}

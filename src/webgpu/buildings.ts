@@ -12,8 +12,8 @@ import {
 import { passageAtlas } from '../passageMaterial.ts';
 import { facadeFinishes, shopReady, SIGN_WORDS } from '../facadeFinishes.ts';
 import { STRIPS, STRIPS_ON, onStrips, KINDS } from '../reflections.ts';
-import { FACADE_ATLAS, FACADE_ON, STREET_FACADE, F_SURFACE as S, BLANK, F_BAY as BAY_WIDTH, F_UP as UP, F_DOOR as DOOR, F_WALL as WALL, F_MOD as MOD, F_ELEVATION, INTERWAR_BAY, F_PANEL, F_STREET_WIDTH, F_GROUND as GROUND, F_STOREY as STOREY, STOREY_FIT, ROWS_STEP } from '../facades.ts';
-import { WINDOWS, ROOF_DETAIL, ROOF_CLUTTER, LANDMARK_ROOF as R, SUN_DIR, SUN_LIGHT } from '../shading.ts';
+import { FACADE_ATLAS, FACADE_ON, STREET_FACADE, F_SURFACE as S, BLANK, F_BAY as BAY_WIDTH, F_UP as UP, F_DOOR as DOOR, F_WALL as WALL, F_MOD as MOD, F_ELEVATION, INTERWAR_BAY, F_PANEL, F_STREET_WIDTH, F_GROUND as GROUND, F_STOREY as STOREY, STOREY_FIT, ROWS_STEP, FLOWERS } from '../facades.ts';
+import { WINDOWS, ROOF_DETAIL, ROOF_CLUTTER, LANDMARK_ROOF as R, SUN_DIR, SUN_LIGHT, BARE } from '../shading.ts';
 import { lampLit } from './lamps.ts';
 import { EDGE, EDGE_STEP } from '../map/roofEdges.ts';
 import { type N, follow, followColor, addPort, uCut, uDirt, uWet, uSnow, vnoise, fbm, fbm2, blocks, hash12, skyAmbient } from './common.ts';
@@ -732,6 +732,12 @@ const shopAtlas = texture(shopStandIn).onRenderUpdate(() => { shopAtlas.value = 
 
 // A shallow display bay behind the real mullions. Trace to the first surface
 // inside it. All panes in a bay look into the same room as the player walks by.
+// After dark a shop that has closed (shopInterior's pick 10 below .33) has its roller
+// shutter down three times in four: ribbed grey steel over the window. 1 where it is down.
+function shopShutter(f: N): N {
+  const column = floor(f.x.div(f.z.div(fBays(f)).mul(2))), seed = floor(fract(f.w).mul(32768));
+  return smoothstep(.01, .09, uWindows).mul(float(1).sub(step(.33, streetPick(seed, column, 10)))).mul(step(streetPick(seed, column, 24), .75));
+}
 function shopInterior(f: N, eye: N, normal: N) {
   // Two neighbouring bays share one stockroom: the next window reveals the
   // other half of the shelves. The wall between them stays opaque.
@@ -760,6 +766,7 @@ function shopInterior(f: N, eye: N, normal: N) {
   const night = smoothstep(.01, .09, uWindows);
   return mix(lining, stock, rear).mul(mix(.68, mix(.07, .6, open), night));
 }
+const uBareBox = follow(BARE);
 const streetWallColor = Fn(() => {
   const f: N = facadeAttr().toVar(), info: N = attribute('detail', 'vec4');
   const kind = floor(info.z.add(.5)), layer = floor(info.x.add(.5));
@@ -803,6 +810,8 @@ const streetWallColor = Fn(() => {
   If(kind.equal(S.metalFrame), () => { wall.assign(vec3(.66,.69,.68)); });
   If(kind.equal(S.balconyGlass), () => { wall.assign(select(layer.equal(125), vec3(.16,.21,.24), vec3(.046,.070,.083))); });
   If(kind.equal(S.shopPaint).or(kind.equal(S.canvas)), () => { wall.assign(base); });
+  // A window box's plants (FLOWERS) are gone to bare earth while the trees are bare.
+  If(kind.equal(S.shopPaint).and(abs(info.w.sub(FLOWERS)).lessThan(.5)), () => { wall.assign(mix(wall, vec3(.20, .15, .11), uBareBox)); });
   If(kind.equal(S.shopSign), () => {
     const u = clamp(float(.5).sub(fract(f.x.div(bay))).mul(1.55).add(.5), .004, .996);
     const v = float(SIGN_WORDS.length - 1).sub(floor(info.w)).add(fract(info.w)).div(SIGN_WORDS.length);
@@ -810,7 +819,10 @@ const streetWallColor = Fn(() => {
     wall.assign(mix(base, vec3(.81, .72, .53), ink));
   });
   If(kind.equal(S.brass), () => { wall.assign(vec3(.131, .102, .064)); });
-  If(kind.equal(S.display).and(uShopReady.greaterThan(.5)), () => { wall.assign(vec3(.010, .014, .016)); });
+  If(kind.equal(S.display).and(uShopReady.greaterThan(.5)), () => {
+    const steel = mix(vec3(.24, .25, .245), vec3(.38, .39, .385), smoothstep(.18, .32, abs(fract(f.y.mul(14)).sub(.5))));
+    wall.assign(mix(vec3(.010, .014, .016), steel, shopShutter(f)));
+  });
   If(kind.equal(S.grilleGlass), () => { wall.assign(vec3(.022, .032, .040)); });
   If(kind.equal(S.iron), () => { wall.assign(vec3(.031, .034, .033)); });
   If(kind.greaterThanEqual(S.reveal).and(kind.lessThanEqual(S.plinth)), () => {
@@ -863,7 +875,7 @@ const streetGlassLight = Fn(() => {
       const stock = shopInterior(facadeAttr(), view.negate(), n);
       const sky = mix(uHorizon, uZenith, smoothstep(0, 1, ray.y))
         .mul(smoothstep(.01, .40, ray.y)).mul(fresnel).mul(attribute('sky', 'float'));
-      result.assign(stock.mul(float(1).sub(fresnel)).add(reflection).add(sky));
+      result.assign(stock.mul(float(1).sub(fresnel)).add(reflection).add(sky).mul(float(1).sub(shopShutter(facadeAttr()))));
     }).Else(() => { result.assign(buildingGraph.glow.mul(.72).add(reflection)); });
   });
   return result;

@@ -6,6 +6,8 @@ import type { StreetPlates } from './streetPlates.ts';
 import { mirrored } from './mirror.ts';
 import { STREET_QUALITY } from './streetQuality.ts';
 import { MappedFrontages } from './mappedFrontages.ts';
+import { HouseNumbers } from './houseNumbers.ts';
+import { plaqueMesh } from './plaques.ts';
 
 // How far off walls get their depth, and how many of the nearest do, are the tier's
 // (STREET_QUALITY.wallReach and walls); one that has it keeps it 8 m further.
@@ -81,12 +83,15 @@ export class StreetFacades {
   private scene: THREE.Scene;
   private workers: TileWorkers;
   private frontages: MappedFrontages;
+  private numbers?: HouseNumbers;
   private groundAt: GroundAt;
   private flights = new Map<number, Flight[]>();
-  // `shops`: the area's shops.json, which says which bays are shops (none without it).
-  constructor(scene: THREE.Scene, workers: TileWorkers, shops?: string, groundAt: GroundAt = () => NaN) {
+  // `data`: the URL of a file of the area's data (dataUrl(area, file)). Its shops.json says
+  // which bays are shops, addresses.json the house numbers; none of either without it.
+  constructor(scene: THREE.Scene, workers: TileWorkers, data?: (file: string) => string, groundAt: GroundAt = () => NaN) {
     this.scene = scene; this.workers = workers; this.groundAt = groundAt;
-    this.frontages = new MappedFrontages(shops);
+    this.frontages = new MappedFrontages(data?.('shops.json'), data?.('street-furniture.json'));
+    if (data) this.numbers = new HouseNumbers(data);
     // Walls queued while the shops were still on their way go out once they're here.
     void this.frontages.ready.then(() => this.pump());
   }
@@ -157,6 +162,7 @@ export class StreetFacades {
   private remove(w: Wall) {
     if (!w.mesh) return;
     this.plates?.remove(w.mesh);
+    this.numbers?.remove(w.mesh);
     this.dropFlights(w);
     mask(w, false); this.scene.remove(w.mesh); w.mesh.dispose(); w.mesh.geometry.dispose(); for (const child of w.mesh.children) (child as THREE.Mesh).geometry?.dispose(); w.mesh = undefined; this.live.delete(w);
   }
@@ -197,7 +203,7 @@ export class StreetFacades {
       w.pending = true; this.running++;
       this.refoot(w);
       const wall = copyWall(w);
-      const data = { ...wall, shops:this.frontages.onWall(w,wall.position,wall.facade) };
+      const data = { ...wall, shops: this.frontages.onWall(w, wall.position, wall.facade), plaques: this.frontages.plaquesOnWall(w, wall.position, wall.facade) };
       const job = this.workers.submit('streetFacade', data, Object.values(data).map(a => a.buffer), 'optional');
       let cancelled = false;
       w.cancel = () => { cancelled = true; job.cancel(); };
@@ -228,6 +234,9 @@ export class StreetFacades {
     this.scene.add(mesh);
     this.addFlights(w, data.steps);
     this.plates?.add(mesh, data.plateMounts, w.nx, w.nz);
+    this.numbers?.add(mesh, w, data.doorPlates);
+    const plaques = plaqueMesh(data.plaqueMounts, w.nx, w.nz, Math.round(Math.abs(w.x0 * 7 + w.z0 * 13)));
+    if (plaques) { mesh.add(plaques); plaques.updateMatrixWorld(true); }
     mask(w, true); w.mesh = mesh; this.live.add(w);
   }
 }

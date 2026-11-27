@@ -146,6 +146,21 @@ from the local Prague OpenStreetMap extract. The display contents reuse the stre
 window atlas; the fascia words are generic Czech trade names drawn in code
 (`SIGN_WORDS` in `src/facadeFinishes.ts`). [OpenStreetMap contributors, ODbL](https://www.openstreetmap.org/copyright).
 
+## House numbers
+
+`pipeline/build_addresses.py` takes each address's conscription and street numbers
+from the local OpenStreetMap extract, where they were imported from ČÚZK's RÚIAN
+register (`source:addr=cuzk:ruian`). The red and blue plates are painted in code after
+Prague's enamel plates (`src/houseNumbers.ts`); the bell panel is modelled in code.
+[OpenStreetMap contributors, ODbL](https://www.openstreetmap.org/copyright).
+
+## Street furniture
+
+`pipeline/build_street_furniture.py` takes the positions of litter bins, bike stands,
+parking machines, bollards, post boxes and recycling containers from the local
+OpenStreetMap extract. The models are made in code (`src/furnitureModels.ts`).
+[OpenStreetMap contributors, ODbL](https://www.openstreetmap.org/copyright).
+
 ## Made from code
 
 - The street pigeon is an original Blender mesh with vertex-coloured plumage.

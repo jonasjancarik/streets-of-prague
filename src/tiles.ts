@@ -22,7 +22,8 @@ import { bridgeStairRails, groundStairs, notSurveyed, stairLandings } from './ma
 import { powerMesh, readPowerGrid, type PowerGrid } from './map/powerGrid.ts';
 import { Surfaces, tunnelDepthMesh, disposeTileMaterial } from './surface.ts';
 import { buildTin, decodeTin, tinGrid, tinNearSteps, tinSampler, TIN_FORMAT, type TinFile, type TinMesh } from './tin.ts';
-import { shadeBuildings, shadeLandmark, cutAway, broad, ROOF_CLUTTER, roadRasterEnabled } from './shading.ts';
+import { shadeBuildings, shadeLandmark, cutAway, broad, ROOF_CLUTTER, roadRasterEnabled, SEASON, WINDOWS } from './shading.ts';
+import { christmasLights, showChristmasLights } from './christmasLights.ts';
 import { loadFacadeAtlas } from './facades.ts';
 import type { Footprint } from './facades.ts';
 import { Zones, parkCarsSteps, inRing, inPoly, kerbPaint } from './parking.ts';
@@ -64,6 +65,8 @@ import { BridgeArches } from './bridgeArches.ts';
 import { riverBanks } from './riverReflection.ts';
 import { chimneySmoke, dropChimneySmoke } from './chimneySmoke.ts';
 import { furnitureSurvey } from './furnitureSurvey.ts';
+import { mappedFurniture } from './mappedFurniture.ts';
+import { oneWaySigns } from './map/furniture.ts';
 import { CountrysideTiles } from './countrysideTiles.ts';
 import { blendHeights, edgeGrid } from './countrysideJoin.ts';
 
@@ -714,6 +717,8 @@ export class TileWorld {
   skyTotals: { coalesced: number; cancelled: number };
   landmarks: Promise<Landmark[]>; landmarkModels: Map<string, Promise<THREE.Group | null>>;
   furnitureReserved: Promise<Float32Array | null>;
+  // OSM's street furniture (mappedFurniture.ts): [kind, x, y, angle] per item, or none.
+  furnitureMapped: Promise<Float32Array | null>;
   private roadSurfaces: Promise<ReturnType<typeof readRoadSurfaces>> | null;
   private roadProfiles: Promise<ReturnType<typeof readRoadProfile>> | null;
   private stationTracks: Promise<ReturnType<typeof readStationTracks>> | null;
@@ -830,7 +835,7 @@ export class TileWorld {
     this.drawTimes = [];
     this.retry = new Map(); // key → when to try a tile that failed again
     this.workers = new TileWorkers();
-    this.facades = new StreetFacades(this.scene, this.workers, dataUrl(area, 'shops.json'), (x, y) => this.tileAt(x, y)?.sample?.(x, y) ?? NaN);
+    this.facades = new StreetFacades(this.scene, this.workers, file => dataUrl(area, file), (x, y) => this.tileAt(x, y)?.sample?.(x, y) ?? NaN);
     this.buildTimes = [];
     this.skyTotals = { coalesced: 0, cancelled: 0 };
     // Landmarks from IPR's photorealistic mesh, where the area has any (?osm: none).
@@ -839,6 +844,7 @@ export class TileWorld {
     this.landmarkModels = new Map();
     // A stable survey source, independent of the live post index and load order.
     this.furnitureReserved = furnitureSurvey(dataUrl(area, 'lamps.bin.gz'));
+    this.furnitureMapped = mappedFurniture(dataUrl(area, 'street-furniture.json'));
     // Collision lookups across tiles; anywhere not loaded counts as solid.
     // Game y = 0 is this height above sea level (IPR buildings are stored against it).
     this.ref = index.iprRef ?? 180;
@@ -1451,6 +1457,7 @@ export class TileWorld {
     const now = performance.now();
     this.turns.shift()?.();
     this.street = !!view;
+    showChristmasLights(SEASON.value.w > .5, WINDOWS.value);
     for (let n = 0; n < 6 && this.reveal.length; n++) this.reveal.shift()!.visible = true;
     const far = view ? FAR_GROUND.value : 0;
     for (const tile of this.loaded.values()) {
@@ -1715,6 +1722,18 @@ export class TileWorld {
       const x = reservedAll[n], y = reservedAll[n + 1];
       if (x > x0 - 4 && x < x1 + 4 && y > y0 - 4 && y < y1 + 4) reserved.push(x, y);
     }
+    // Each item belongs to the one tile its point is in. With them the signs the one-way
+    // streets have (oneWaySigns), from the streets traffic drives here.
+    const mappedAll = await this.furnitureMapped, mapped: number[] = [];
+    const signs = oneWaySigns(t.drive ?? []);
+    for (let n = 0; n < signs.length; n += 4) {
+      const x = signs[n + 1], y = signs[n + 2];
+      if (x >= x0 && x < x1 && y >= y0 && y < y1) mapped.push(signs[n], x, y, signs[n + 3]);
+    }
+    for (let n = 0; mappedAll && n < mappedAll.length; n += 4) {
+      const x = mappedAll[n + 1], y = mappedAll[n + 2];
+      if (x >= x0 && x < x1 && y >= y0 && y < y1) mapped.push(mappedAll[n], x, y, mappedAll[n + 3]);
+    }
     const shapes: Shadower[] = t.buildings.filter(b => grounded(b) && !isStationStairwell(b)).map((b) => ({ rings: b.rings, h: b.h }));
     const bounds: Bounds = [geo.minX, geo.minY, geo.maxX, geo.maxY];
     const source: TileSource = {
@@ -1727,7 +1746,7 @@ export class TileWorld {
     const early = this.shown.has(k) ? this.meshJobs(k, source) : null;
     early?.catch(() => {});
     const landJob = this.workers.run('land', {
-      data: { size: data.size, origin: data.origin, areas: withPatches(t), roads: t.roads, buildings: outlines, walls: t.walls, fences: t.fences, sheds: t.sheds ?? [], trees: t.trees, shrubs: t.shrubs, canopy: t.canopy, utility: t.utility, passages: t.passages || [], levels: !!tileLevels, crossers, stepEdges: !location.search.includes('nostepedges'),
+      data: { size: data.size, origin: data.origin, areas: withPatches(t), roads: t.roads, buildings: outlines, walls: t.walls, fences: t.fences, sheds: t.sheds ?? [], trees: t.trees, shrubs: t.shrubs, canopy: t.canopy, utility: t.utility, mapped: new Float32Array(mapped), passages: t.passages || [], levels: !!tileLevels, crossers, stepEdges: !location.search.includes('nostepedges'),
         walk: t.walk ?? [], reserved: new Float32Array(reserved), structures: structures.flatMap(s => s.polys), furnitureBuildings: [...t.buildings.map(b => ({ rings: b.rings })), ...hide.map(rings => ({ rings }))], furnitureEnabled: reservedAll !== null && !location.search.includes('nofurniture') },
       seeds: seedArray, ground, bridges: (tileLevels || []).filter((l) => l.kind === 'bridge').map((l) => l.heights),
       box: bounds, structures: tileLevels ? structures : [],
@@ -1770,6 +1789,9 @@ export class TileWorld {
     const roads = [...(t.roads.road || []), ...(t.roads.sett || []), ...(t.roads.dirt || [])];
     const { meshes: wires, posts: poles } = overheadWires(t.rails.filter((r) => r.kind === 'tram').map((r) => r.pts), outlines.map((b) => b.rings[0]), trackAt, hAt, (x, y) => roads.some((rings) => inPoly(x, y, rings)),
       (x, y) => x >= x0 && x < x1 && y >= y0 && y < y1);
+    // Garlands across the shopping streets in Advent (christmasLights.ts).
+    const lights = christmasLights([...(t.drive ?? []), ...(t.walk ?? [])], outlines.map((b) => b.rings[0]), hAt,
+      (x, y) => x >= x0 && x < x1 && y >= y0 && y < y1);
     const grid = new Grid(geo, RES, null, land.cells);
     lap('meshes');
 
@@ -1799,7 +1821,7 @@ export class TileWorld {
     const stairwells = stationStairwells(own, shade?.sample, this.ref);
     const tile: Tile = {
       k, i: t.i, j: t.j, box: t.box, passages: t.passages || [], raised: t.buildings.filter((b) => !grounded(b)).map((b) => b.rings), grid, trunkCells: land.trunkCells, levels: onLevels, cars, ms,
-      source, shown: false, dressing: null, drawn: null, drawMs: {}, drawAfter: 0, fixtures: [walls, ...(handrails ? [handrails] : []), fenceRows.fence, fenceRows.hedge, fenceRows.rail, ...(sheds ? [sheds] : []), ...wires, ...statues, ...stairwells],
+      source, shown: false, dressing: null, drawn: null, drawMs: {}, drawAfter: 0, fixtures: [walls, ...(handrails ? [handrails] : []), fenceRows.fence, fenceRows.hedge, fenceRows.rail, ...(sheds ? [sheds] : []), ...wires, ...lights, ...statues, ...stairwells],
       roads, crossers, poles, fences: fenceSections, furniture, relief: shade, sample: shade?.sample,
       water: (t.areas.water || []).map((rings) => {
         const xs = rings[0].map((p) => p[0]), ys = rings[0].map((p) => p[1]);
