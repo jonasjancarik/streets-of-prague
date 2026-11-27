@@ -1336,6 +1336,28 @@ if (KINDS.length * AREA_STEP > DENT_STEP) throw new Error('Too many kinds of are
 // move together instead of the panels passing through the trim (or the bumper through
 // the grille). It eases off above the doors, so the roof doesn't come down on the people inside.
 export const DENT_SHAPE = { nose: 0.13, side: 0.11, sag: 0.03, tilt: 0.12 };
+// What the dents (DENT_GLSL) do to a seated driver, whose figure isn't part of the car's
+// model: how far in from their door (m) a crumpled side pushes them, so the door doesn't
+// pass through them, and the share of its height the car keeps over them (the sag). The
+// seat is at `x` along the car and `z` across it (left negative), the pelvis and the roof
+// at `pelvis` and `roof` metres up; `halfL` and `halfW` are half the car's size.
+export function seatDent(crush: readonly number[], halfL: number, halfW: number, x: number, pelvis: number, z: number, roof: number): [number, number] {
+  const level = (i: number) => Math.min(3, Math.floor(crush[i]));
+  const ease = (a: number, b: number, v: number) => { const t = clamp((v - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+  const bumpy = (a: number, b: number, c: number) => 0.5 + 0.25 * (Math.sin(a * 11 + c * 7) + Math.sin(c * 13 - b * 9 + 2));
+  const ax = clamp(x / halfL, -1, 1), mid = 1 - ax * ax;
+  // The door beside the seat (at.y ±1), from the pelvis to the shoulders, where it comes in most.
+  const door = level(z < 0 ? 4 : 5) * mid;
+  let inward = 0;
+  for (let y = pelvis; y <= pelvis + 0.6; y += 0.15) {
+    inward = Math.max(inward, door * DENT_SHAPE.side * (0.5 + bumpy(x, y, 0)) * (1 - 0.65 * ease(0.85, 1.35, y)));
+  }
+  // The roof over the seat.
+  const ay = clamp(-z / halfW, -1, 1), l = ease(-0.9, 0.7, ay), r = ease(-0.9, 0.7, -ay);
+  const sum = ease(0.45, 1, ax) * (level(0) * l + level(1) * r) + ease(0.45, 1, -ax) * (level(2) * l + level(3) * r)
+    + (ease(0.15, 0.7, ay) * level(4) + ease(0.15, 0.7, -ay) * level(5)) * mid;
+  return [inward, 1 - sum * DENT_SHAPE.sag * bumpy(z, roof, x)];
+}
 // Broken glass (BROKEN_GLASS_GLSL; brokenGlass in webgpu/vehicles.ts): the cracks and
 // crushed glass are `white`, a crazed toughened pane is frosted up to `frost` of the way
 // to it, a windscreen's crushed spot `crush` of the way, and where pieces of a pane are
@@ -2750,12 +2772,14 @@ export class CarPool {
             VR_SEAT.eye.set(l[9] - 0.06, Math.min(pelvis + 0.74, l[5] - 0.1), -l[10]).applyMatrix4(d.matrix);
             VR_SEAT.frame = VR_SEAT.frames;
           } else if (occupied && fit.layout) {
-            const seat=this.drivers?.put(fit.layout,travel.plate,c.type==='police' && c.mode!=='player',d.matrix);
+            const l = fit.layout, dent = c.dents ? seatDent(c.crush, c.spec.L / 2, c.spec.W / 2, l[9] - .14, l[3] + .205, -l[10], l[5]) : undefined;
+            const seat=this.drivers?.put(fit.layout,travel.plate,c.type==='police' && c.mode!=='player',d.matrix,dent);
             if (c.entryDriver) this.rememberDriver(c,travel.plate%2,seat);
           }
         }
         if (driverSeat && (c.mode !== 'loose' || c.entryDriver) && c !== VR_SEAT.car) {
-          const seat=this.drivers?.putAt(driverSeat[0],driverSeat[1],driverSeat[2],driverSeat[3],0,false,d.matrix);
+          const dent = c.dents ? seatDent(c.crush, c.spec.L / 2, c.spec.W / 2, driverSeat[0], driverSeat[1], driverSeat[2], driverSeat[3]) : undefined;
+          const seat=this.drivers?.putAt(driverSeat[0],driverSeat[1],driverSeat[2],driverSeat[3],0,false,d.matrix,dent);
           if (c.entryDriver) this.rememberDriver(c,0,seat);
         }
         if (under && !c.two && shaded < UNDER.most) {

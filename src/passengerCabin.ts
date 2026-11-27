@@ -164,18 +164,21 @@ export class SeatedDrivers {
   }
   *meshes() { for (const k of this.kinds) yield* k.pages; }
   begin() { for (const k of this.kinds) k.count = 0; }
-  put(layout: readonly number[], plate: number, officer: boolean, matrix: THREE.Matrix4) {
-    return this.putAt(layout[9] - .14, layout[3] + .205, -layout[10], layout[5], plate, officer, matrix);
+  put(layout: readonly number[], plate: number, officer: boolean, matrix: THREE.Matrix4, dent?: [number, number]) {
+    return this.putAt(layout[9] - .14, layout[3] + .205, -layout[10], layout[5], plate, officer, matrix, dent);
   }
-  putAt(x: number, pelvis: number, z: number, roof: number, variant: number, officer: boolean, matrix: THREE.Matrix4) {
+  // `dent`: how far in a crumpled door has pushed the driver and the share of the
+  // height the car keeps over them (seatDent in car.ts).
+  putAt(x: number, pelvis: number, z: number, roof: number, variant: number, officer: boolean, matrix: THREE.Matrix4, dent?: [number, number]) {
     if (!this.kinds.length) {
       if (!this.loading && performance.now() >= this.retryAt) void this.load();
       return;
     }
     const k = this.kinds[officer && this.kinds[2] ? 2 : variant % 2];
     if (!k) return;
-    const size = Math.min(1.01, (roof - 0.115 - pelvis) / k.height);
-    this.local.makeTranslation(x, pelvis, z).scale(this.scale.setScalar(size));
+    const [inward, keep] = dent ?? [0, 1];
+    const size = Math.min(1.01, (roof - 0.115 - pelvis) / k.height) * keep;
+    this.local.makeTranslation(x, pelvis * keep, z - Math.sign(z) * Math.min(inward, Math.abs(z))).scale(this.scale.setScalar(size));
     const i = k.count++, batch = Math.floor(i / 64);
     if (!k.pages[batch]) this.page(k);
     k.pages[batch].setMatrixAt(i % 64, this.world.multiplyMatrices(matrix, this.local));
