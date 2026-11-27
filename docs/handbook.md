@@ -2170,8 +2170,11 @@ record the measurements, merge decisions and pending landmark asset activation.
 - **Bus stops and riding a bus** (`src/busstops.ts`, `scenarios/bus-ride.ts`). Every stop of
   the bus lines has a sign on the pavement beside where the bus pulls up: a blue plate with
   a black bus, lying flat so it reads from above, and the stop's name on the pole. It goes
-  past the surveyed kerb (a parking lane can lie between) and up only once the ground there
-  has loaded. Standing at one, the board lists the buses coming to it and to the stop of the
+  past the surveyed kerb and off the whole carriageway (its parking bays and the trams' bed
+  count as road), never back into it from a wall, and up only once the ground there has
+  loaded. A tram stop's pole does the same, out from the track on its right to the first
+  ground off the carriageway, the pavement or the platform between the track and the cars
+  (on its left where the right has none: an island between the tracks). Standing at one, the board lists the buses coming to it and to the stop of the
   same name across the street, counted down from where they are. Few buses are about at a
   time, so when none of your side's lines has one on its way, one is sent: it joins the
   line 220–400 m back, out of sight, and comes along it. Hold Space to wait, as at a tram

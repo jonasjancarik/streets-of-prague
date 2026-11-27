@@ -575,7 +575,10 @@ async function main() {
   const trams = new Trams(tramLines, scene, { clock, rng: seeded });
   const ride = new TramRide(trams, world, $('ride'), new TrackNet(tramLines));
   const board = new StopBoard(trams, $('board'));
-  const tramStops = new TramStops(trams, scene);
+  // (On the pavement or the platform beside the track, once that tile has loaded.)
+  const tramStops = new TramStops(trams, scene, {
+    loaded: (x, y) => world.loaded.has(world.keyAt(x, y)), onRoad: (x, y) => !!crowd?.road?.(x, y), solid: (x, y) => grid.at(x, y) === 255,
+  });
   // Down into the metro and up again at the station you picked (the police lose you).
   const metro = new Metro(await metroData, scene, $('metro'), {
     clock,
@@ -795,7 +798,7 @@ async function main() {
   const busStops = new BusStops(traffic.busLines, {
     scene, traffic, edgesNear, offscreen, rng: seeded,
     solid: (x, y) => grid.at(x, y) === 255,
-    loaded: (x, y) => world.loaded.has(world.keyAt(x, y)), onRoad: (x, y) => world.onRoad(x, y),
+    loaded: (x, y) => world.loaded.has(world.keyAt(x, y)), onRoad: (x, y) => !!crowd!.road?.(x, y),
     send: (line, along) => {
       if (traffic.scheduled227 && line.ref === '227') return false;
       const p = line.path.at(along);
