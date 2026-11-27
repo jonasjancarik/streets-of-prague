@@ -13,8 +13,8 @@ export class LifeSize {
   enabled = true;
   playerSeed?: number;
   freeAfter = 120; // seconds out of first person (shorter in tests)
-  // Compiles an object's shaders (renderer.compileAsync): the street crowd's batches are
-  // compiled with it before anyone is drawn in them, however the game was opened.
+  // Compiles an object's shaders (renderer.compileAsync): the avatars' and the street
+  // crowd's are compiled with it before anyone is drawn in them, however the game was opened.
   compile?: (o: THREE.Object3D) => Promise<unknown>;
   private avatars: Avatars | null = null;
   private importing = false;
@@ -29,7 +29,7 @@ export class LifeSize {
     return this.preloading ??= import('./rocketbox.ts').then(
       (m) => {
         this.avatars = new m.LifeSize(this.scene, this.renderer, this.playerSeed);
-        this.avatars.middle.compile = this.compile;
+        this.avatars.compile = this.avatars.middle.compile = this.compile;
         return this.avatars;
       },
       (e) => { console.warn('Life-size people could not load', e); return null; },
@@ -46,9 +46,10 @@ export class LifeSize {
     await avatars?.preload(crowdAfter);
   }
 
-  // The avatars' shaders, compiled before they're first seen (after preload).
-  warm(compile: (o: THREE.Object3D) => Promise<unknown>) {
-    return this.avatars?.warm(compile).catch((e) => console.warn('Life-size people', e));
+  // Settles once your avatar's shaders are compiled (after preload). Each avatar starts
+  // on its own as soon as it's in (rocketbox.ts, warmKind).
+  warm() {
+    return this.avatars?.warm();
   }
 
   frame(dt: number, eyes: boolean, camera: THREE.Camera) {

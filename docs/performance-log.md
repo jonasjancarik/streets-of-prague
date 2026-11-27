@@ -2148,10 +2148,24 @@ rendering, so the counts, not the frame times, are the evidence), High, Old Town
   same mode do.
 - **The hair's shadow** then shares it too, casting its whole cards instead of the
   alpha-tested strands. Estimated beforehand at 15–20 builds saved; measured 45–46 → 27
-  (hair shadow builds 19 → 3). The 14 left are the street crowd's shadows, which are
-  what bunch up: the most in one frame stayed 7–10. A close paused frame of four people
-  in low sun differed less than two shots of the same build (4167 against 5106 pixels).
-- **Tried and dropped:** warming every avatar as it loads (compiled, then drawn shrunk to
-  nothing for the shadow pass) before showing anyone in it. The same builds landed a couple
-  of seconds sooner, with the same peaks (9–10 against 11 a frame).
-- Not measured: native WebGPU, and frame times on real hardware.
+  (hair shadow builds 19 → 3). The 14 left are the street crowd's shadows; the most in
+  one frame stayed 7–10. A close paused frame of four people in low sun differed less
+  than two shots of the same build (4167 against 5106 pixels).
+- **What made the busiest frames** then: not the crowd, whose 15 builds come one a frame
+  over its warm-up, but the first frame with people up close (5–10 builds, all theirs)
+  and another 2–3 s later when an avatar with a variant not yet built came near.
+- **Warming every avatar as it loads** (compiled, then drawn shrunk to nothing for the
+  shadow pass) before anyone is shown in it life size. Tried first with shadows of their
+  own, it only moved the same builds a couple of seconds sooner (9–10 against 11 a frame).
+  With the shared ones: 27 → 21 builds, the most in one frame 5–10 → 3.
+- **Frame times, on this machine's RTX 5060 Ti** (scene.mjs has drawn on the GPU since
+  `gpu-flags.mjs`; standing still, 16.7 ms a frame): the warm-up made no difference I
+  could measure. Native WebGPU and WebGL2 both had about 46 frames over 50 ms after
+  stepping out, the worst 300–1300 ms, with it and without.
+- **What stepping into the street costs instead** (CPU profile of the 10 s after
+  `onFoot`, native WebGPU, no avatars in yet): about 2.5 s of stall. First two frames of
+  540 and 170 ms with the main thread idle (outside JavaScript, likely the GPU process
+  with the street-level view). Then 150–400 ms frames with the main thread busy: about
+  half the street simulation (`people.ts` avoid/follow/spot, traffic, `network.near`,
+  fences), texture uploads (`copyExternalImageToTexture`, 250 ms in all, one frame 145 ms),
+  shader builds (about 160 ms in all, 45 ms at most in a frame), and garbage collection.

@@ -2099,8 +2099,15 @@ record the measurements, merge decisions and pending landmark asset activation.
   the garment's rects in the body texture (512 units, rows from the top) and list its
   colours there; the shader has a GLSL and a TSL copy (`src/webgpu/avatars.ts`). Every
   avatar shares one dyed shader up close and one in the street crowd, with the regions as
-  uniforms (on WebGPU read from the mesh being drawn), and the close one is compiled
-  behind the loading screen. Keep it that way: a shader per avatar was compiled the
+  uniforms (on WebGPU read from the mesh being drawn). Each avatar is compiled as it loads,
+  one after another (`Rocketbox.warmKind`; yours behind the loading screen when the game
+  opens in a street view), and nobody is shown life size in an avatar before that: the
+  crowd draws them meanwhile. The avatars share their shaders, their shadow's too on
+  WebGPU (`configureRenderer`), so this mostly finds them built and catches the few
+  variants. Each avatar is also drawn for two frames shrunk to nothing where you are, for
+  the shadow pass, which `compileAsync` leaves out. Without it, stepping into the street
+  mid-game built 5–10 shaders in the first frame with people up close; with it, at most 3
+  a frame. Keep it that way: a shader per avatar was compiled the
   first time each outfit came into view, mid-walk. The street crowd loads once you're
   on the street; its shaders are compiled before anyone walks in it (`compileAsync`),
   then each batch is drawn once, shrunk to nothing, one a frame, for the builds that

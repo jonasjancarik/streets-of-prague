@@ -374,7 +374,7 @@ async function main() {
   // connection doesn't keep the game shut for long: the crowd's stand-ins fill in meanwhile.
   const streetPeopleReady = async () => {
     status('Bringing in the people…');
-    const ready = lifeSize.preload(mapIn).then(() => lifeSize.warm(lifeSize.compile!));
+    const ready = lifeSize.preload(mapIn).then(() => lifeSize.warm());
     await Promise.race([ready, new Promise((done) => setTimeout(done, 15_000))]);
     status('');
   };
