@@ -201,14 +201,17 @@ export function canopyGeometry(seed: number, rings: number[], skirt: number[] = 
     }
   });
   skirt.forEach((count, ring) => {
-    const y = 0.1 - (ring / Math.max(1, skirt.length - 1)) * 0.66, turn = r() * Math.PI * 2;
+    const f = ring / Math.max(1, skirt.length - 1), y = 0.28 - f * 0.74, turn = r() * Math.PI * 2;
     for (let i = 0; i < count; i++) {
-      // (Alternate sprays start deeper in, so the bush has a body and not only a shell.)
-      const a = turn + (i / count) * Math.PI * 2 + (r() - 0.5) * 0.5, d = (i % 2 ? 0.2 : 0.5) + r() * 0.22;
-      const size = 0.5 + r() * 0.18;
+      // Shoots standing up and out from inside the bush, as a bush's do (lying near flat, the
+      // cards were edge-on from the street and the bush a see-through heap of fronds), a third
+      // from near the middle, a third half way out, a third near the rim, all within the
+      // crown's outline. The inner ones, darker, are its body.
+      const a = turn + (i / count) * Math.PI * 2 + (r() - 0.5) * 0.5, d = [0.08, 0.3, 0.5][i % 3] + r() * 0.14;
+      const size = 0.48 + r() * 0.18;
       out.set(Math.cos(a), 0, Math.sin(a));
-      grown.copy(out).applyAxisAngle(new THREE.Vector3(0, 1, 0), (r() - 0.5) * 1.1).setY(0.15 + r() * 0.6).normalize();
-      across.set(-grown.z, (r() - 0.5) * 0.5, grown.x).normalize();
+      grown.copy(out).applyAxisAngle(new THREE.Vector3(0, 1, 0), (r() - 0.5) * 1.0).setY((0.6 + r() * 0.75) * (1 - 0.15 * f)).normalize();
+      across.set(-grown.z, (r() - 0.5) * 0.4, grown.x).normalize();
       at.copy(out).multiplyScalar(d).setY(y + (r() - 0.5) * 0.1);
       const own = r(), flip = r() < 0.5, first = pos.length / 3;
       for (const [cx, cy] of [[-1, 0], [1, 0], [1, 1], [-1, 1]]) {
@@ -217,7 +220,7 @@ export function canopyGeometry(seed: number, rings: number[], skirt: number[] = 
         n.copy(round).addScaledVector(across, cx * 0.18).addScaledVector(grown, (cy - 0.5) * 0.18).normalize();
         pos.push(corner.x, corner.y, corner.z); nor.push(n.x, n.y, n.z); uv.push((cx > 0) !== flip ? 1 : 0, cy);
         // (Darker towards the ground, under the bush's own overhang.)
-        part.push(0, CANOPY, own, 0.55 + 0.4 * (1 - ring / Math.max(1, skirt.length - 1)) + (r() - 0.5) * 0.15);
+        part.push(0, CANOPY, own, (0.5 + 0.5 * Math.min(1, d / 0.6)) * (1 - 0.3 * f) + (r() - 0.5) * 0.12);
       }
       idx.push(first, first + 2, first + 1, first, first + 3, first + 2);
     }

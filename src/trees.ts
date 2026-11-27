@@ -349,7 +349,7 @@ export class TreePool {
     if (!shrubs && !this.canopyOn) { CANOPY_SHOWN.value = 0; return; }
     this.canopyOn = shrubs;
     if (shrubs && !this.streetMade && streetMaterial) this.streetMade = streetMaterial();
-    if (shrubs && !this.canopyShapes) this.canopyShapes = [canopyGeometry(21, [1, 6, 11, 15]), canopyGeometry(23, [2, 8, 14, 20, 24]), canopyGeometry(27, [1, 5, 9], [12, 12, 12, 10]), coniferGeometry(31)];
+    if (shrubs && !this.canopyShapes) this.canopyShapes = [canopyGeometry(21, [1, 6, 11, 15]), canopyGeometry(23, [2, 8, 14, 20, 24]), canopyGeometry(27, [2, 6, 11], [15, 18, 18, 18, 15]), coniferGeometry(31)];
     const ready = !!this.streetMade && streetReady.value;
     CANOPY_SHOWN.value = ready && on && !street ? 1 : 0;
     for (const page of this.pages) {
