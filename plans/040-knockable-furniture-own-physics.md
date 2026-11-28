@@ -1,6 +1,10 @@
 # 040: Knockable street furniture, our own physics (option A)
 
-Status: PHASES 1 TO 3 BUILT (28 November 2026) on branch `knockable-furniture`, unmerged.
+Status: BUILT, merged into main on 28 November 2026 (phases 1 to 3; swinging lids not done).
+Later on the same branch: traffic signs, stop signs, direction boards and café chalkboards
+knock over; young and small trees snap and shrubs flatten; bollards, post boxes and planters
+come loose; stop shelters' glass shatters; and lamp posts, signs and chalkboards fall as
+loose bodies rather than scripted falls. See [furniture.md](../docs/furniture.md).
 Option B, the same thing with Rapier, is [041](041-knockable-furniture-rapier.md).
 We're trying this one first because it's smaller and adds no dependency.
 
