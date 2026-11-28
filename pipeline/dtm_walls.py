@@ -209,7 +209,8 @@ def replace(tile, box, surveyed, tree, open_ground):
             taken += LineString(f["pts"]).length
     coords = lambda ln: [[round(x, 2), round(y, 2)] for x, y in ln.coords]  # noqa: E731
     tile["walls"] = kept_walls + [{"kind": "wall", "name": None, "h": h, "s": 1, "pts": coords(ln)} for h, ln in walls]
-    tile["fences"] = kept_fences + [{"kind": "fence", "h": h, "s": 1, "pts": coords(ln)} for h, ln in fences]
+    # (A railing is the one 1 m high; the game tells street railings from chains, src/map/railingPlaces.ts.)
+    tile["fences"] = kept_fences + [{"kind": "railing" if h == RAILING_H else "fence", "h": h, "s": 1, "pts": coords(ln)} for h, ln in fences]
     return sum(ln.length for _, ln in walls), sum(ln.length for _, ln in fences), taken
 
 
@@ -235,6 +236,7 @@ def main():
         for key in ("walls", "fences"):
             for item in t.get(key, []):
                 kind = "wall" if key == "walls" else item.get("kind", "fence")
+                kind = "fence" if kind == "railing" else kind
                 pts = np.array(item["pts"])
                 out.setdefault(kind, [0.0, 0.0])[1 if item.get("s") else 0] += float(np.hypot(*(pts[1:] - pts[:-1]).T).sum())
         return out

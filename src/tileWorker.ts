@@ -17,6 +17,7 @@ import { planDetails, partArrays } from './map/roofDetails.ts';
 import type { DetailArrays, RoofSite } from './map/roofDetails.ts';
 import { iprRoofSites } from './map/iprRoofs.ts';
 import { fenceArrays } from './map/fences.ts';
+import { streetRailings } from './map/railingPlaces.ts';
 import { shedArrays, shedCorners } from './map/sheds.ts';
 import { treeInstances } from './map/vegetation.ts';
 import { furnitureInstances, furnitureMatrices, FURNITURE_SIZE, FLAT_FURNITURE, KIND, mappedSpots, treeGrates } from './map/furniture.ts';
@@ -401,7 +402,8 @@ function land({ data, seeds, ground, bridges, box, structures }: WorkerJobs['lan
   const trees = treeInstances(geo, hAt, room);
   const edges = ground && data.stepEdges ? stepEdges(ground.terraces, data.areas.water ?? [], hAt, ground.box, data.crossers) : [];
   const walls = joinWalls(wallArrays(data, hAt), parapetArrays(edges));
-  const fences = fenceArrays(data, hAt);
+  // Prague's railings and chains among the fences, and railings beside the zebras (map/railingPlaces.ts).
+  const fences = fenceArrays({ fences: streetRailings({ ...data, fences: data.fences ?? [], box }) }, hAt);
   const sheds = shedArrays(data.sheds, hAt);
   const grid = tileGrid(geo, data, seeds, edges);
   const furniture = ground && data.furnitureEnabled ? furnitureInstances(new Geo({ ...data, buildings: data.furnitureBuildings }), trees, hAt) : { matrices: furnitureMatrices([]), spots: [] };

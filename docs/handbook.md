@@ -2581,6 +2581,20 @@ record the measurements, merge decisions and pending landmark asset activation.
   tile, and with `--crossings` the graph's edges and the gates that a wall or a fence
   closes. Rebuild the `ground` layer to get them, then `ipr_buildings.py` and
   `ipr_terrain.py`, which depend on it.
+- **Street railings and chains** (`src/map/railingPlaces.ts`, `src/map/railings.ts`): the
+  survey's railings (`kind: "railing"`; on maps built before it, a surveyed fence 1 m
+  high) are modelled, not painted on a card: steel tube posts at most 2 m apart, a top
+  rail and a second one a little under half way up. In the historic core (Staré Město,
+  Malá Strana, Hradčany) they are anthracite; elsewhere about two in three are Prague's
+  old red and white (bands a metre long, the posts red and white by turns), the rest anthracite, the same along a 40 m stretch. Where the
+  survey breaks a group of railings at every bollard (most of it in spans of 1 to 2.8 m,
+  and any group within 4 m of such a one that is short too), it is a chain hung between
+  cast-iron bollards 0.76 m tall, as round the Hus memorial. On most zebras over a trunk
+  to tertiary road a railing stands 0.45 m behind each kerb on both sides, from 2.1 m off
+  the zebra's middle for up to 7 m, as far as the pavement goes. The colours, and that
+  those railings stand there, are made up. Fences in the core are iron bars. Done in the
+  tile worker from the tile's data, so older maps get them without a rebuild. A car
+  knocks a section over like a fence.
 - **Crash barriers** are a third kind of the same sections (`kind: "guard_rail"` in a
   tile's `fences`): a steel beam 0.75 m high on a post every 2 m. They come from OSM's
   `barrier=guard_rail` where it is mapped (not those on a bridge or with a `layer` above

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { Car } from './car.ts';
 import { bump, hit } from './posts.ts';
-import { SECTION_STRIDE, VERTS } from './map/fences.ts';
+import { KIND_NAMES, SECTION_STRIDE, VERTS } from './map/fences.ts';
 
 // The fences and hedges along the streets and round the gardens, and the crash barriers
 // along the big roads. A car goes through a fence (the section it hits lies down), a
@@ -18,6 +18,7 @@ export interface FenceSection {
   h: number;
   hedge: boolean;
   rail: boolean; // a crash barrier
+  kind: typeof KIND_NAMES[number]; // also a street railing or a chain between bollards (map/railings.ts)
   broken: boolean;
   mesh: THREE.Mesh;
   first: number; // its first vertex in the mesh
@@ -35,7 +36,7 @@ const FEET = 0.6; // m: how far below your feet's height a jump clears a fence
 // Lay a section down: a fence falls over the way the car was going, a hedge is squashed.
 function lay(s: FenceSection, side: number) {
   const pos = s.mesh.geometry.getAttribute('position') as THREE.BufferAttribute;
-  const n = s.hedge ? VERTS.hedge : s.rail ? VERTS.rail : VERTS.fence;
+  const n = VERTS[s.kind];
   const dx = s.x2 - s.x1, dy = s.y2 - s.y1, len = Math.hypot(dx, dy) || 1;
   // (Three's x, z = -y.) Pushed out sideways by up to the fence's height.
   const nx = dy / len * side, nz = dx / len * side;
@@ -59,13 +60,13 @@ class Fences {
   private cell(s: FenceSection) { return this.key(Math.floor((s.x1 + s.x2) / 2 / CELL), Math.floor((s.y1 + s.y2) / 2 / CELL)); }
 
   // A tile's sections, from its buffers, and the mesh of each kind.
-  sections(tile: string, table: Float32Array, meshes: { fence: THREE.Mesh; hedge: THREE.Mesh; rail: THREE.Mesh }) {
+  sections(tile: string, table: Float32Array, meshes: Record<typeof KIND_NAMES[number], THREE.Mesh>) {
     const out: FenceSection[] = [];
     for (let i = 0; i < table.length; i += SECTION_STRIDE) {
-      const hedge = table[i + 6] === 1, rail = table[i + 6] === 2;
+      const kind = KIND_NAMES[table[i + 6]] ?? 'fence', hedge = kind === 'hedge', rail = kind === 'rail';
       const s: FenceSection = {
         id: `${tile}/${i / SECTION_STRIDE}`, x1: table[i], y1: table[i + 1], x2: table[i + 2], y2: table[i + 3],
-        z: table[i + 4], h: table[i + 5], hedge, rail, broken: false, mesh: hedge ? meshes.hedge : rail ? meshes.rail : meshes.fence, first: table[i + 7],
+        z: table[i + 4], h: table[i + 5], hedge, rail, kind, broken: false, mesh: meshes[kind], first: table[i + 7],
       };
       if (this.down.has(s.id)) { s.broken = true; lay(s, 1); }
       out.push(s);

@@ -173,7 +173,7 @@ export interface WorkerJobs {
   // The tile's raised kerbs (kerbDrop.ts): its carriageway, and its bridges and tunnels.
   kerbs: { box: Bounds; low: Point2[][][]; joins: Point2[][][] };
   land: {
-    data: FurnitureData & { levels: boolean; utility?: UtilityMark[]; mapped?: Float32Array; signs?: { names: string[]; cols: number; points: Float32Array }; directions?: import('./map/directions.ts').DirectionSign[]; crossers: Crosser[]; stepEdges: boolean; fences: FenceTile['fences']; sheds: Shed[]; furnitureBuildings: { rings: Point2[][] }[]; furnitureEnabled: boolean };
+    data: FurnitureData & { levels: boolean; utility?: UtilityMark[]; mapped?: Float32Array; signs?: { names: string[]; cols: number; points: Float32Array }; directions?: import('./map/directions.ts').DirectionSign[]; crossers: Crosser[]; stepEdges: boolean; fences: FenceTile['fences']; crossings: Point2[][]; roadEdges: GroundRoadEdge[]; bbox: Bounds; sheds: Shed[]; furnitureBuildings: { rings: Point2[][] }[]; furnitureEnabled: boolean };
     seeds: Float64Array; ground: HeightGrid | null; bridges: HeightGrid[];
     // The bridges and tunnels to rasterise, each a level to get about on (ground.ts).
     box: Bounds; structures: TileStructure[];
