@@ -19,7 +19,7 @@ import { iprRoofSites } from './map/iprRoofs.ts';
 import { fenceArrays } from './map/fences.ts';
 import { shedArrays, shedCorners } from './map/sheds.ts';
 import { treeInstances } from './map/vegetation.ts';
-import { furnitureInstances, furnitureMatrices, FURNITURE_SIZE, FLAT_FURNITURE, KIND, mappedSpots, treeGrates } from './map/furniture.ts';
+import { furnitureInstances, furnitureMatrices, FURNITURE_SIZE, FLAT_FURNITURE, KNOCKABLE, KIND, mappedSpots, treeGrates } from './map/furniture.ts';
 import { onPolygons } from './map/geo.ts';
 import { signPosts, signGeometry } from './map/signs.ts';
 import { directionGeometry } from './map/directions.ts';
@@ -354,7 +354,7 @@ function tileGrid(geo: Geo<LandData>, t: LandData, seeds: Float64Array, edges: S
 }
 
 // Keep the owner of cells that would be free without one particular trunk.
-function stampTrunks(grid: Grid, geo: Geo<LandData>, { matrices, count }: LandResult['trees']) {
+function stampTrunks(grid: Grid, geo: Geo<LandData>, { matrices, count }: LandResult['trees'], looseCells: Map<number, number[]>) {
   const owners = new Map<number, TreeTrunk>();
   for (let i = 0; i < count; i++) {
     const e = matrices.subarray(i * 16, i * 16 + 16);
@@ -373,6 +373,7 @@ function stampTrunks(grid: Grid, geo: Geo<LandData>, { matrices, count }: LandRe
         const cell = cv * grid.w + cu;
         if (grid.cells[cell] === 0) owners.set(cell, trunk);
         else owners.delete(cell); // Another trunk, wall, or fixture also blocks it.
+        looseCells.delete(cell);
         grid.cells[cell] = 255;
       }
     }
@@ -439,19 +440,27 @@ function land({ data, seeds, ground, bridges, box, structures }: WorkerJobs['lan
   }
   // The same solid-cell convention as tree trunks, stamped before parking.
   // (A sign post as a 12 cm square.)
-  const solid = [...furniture.spots.filter(p => !FLAT_FURNITURE.has(p.kind)).map(p => ({ x: p.x, y: p.y, angle: p.angle, size: FURNITURE_SIZE[p.kind] })),
-    ...posts.map(p => ({ x: p.x, y: p.y, angle: 0, size: [0.06, 0.06] as const }))];
+  // (`spot`: the index in furniture.spots of a piece a car can knock loose, else -1.)
+  const solid = [...furniture.spots.flatMap((p, spot) => FLAT_FURNITURE.has(p.kind) ? [] : [{ x: p.x, y: p.y, angle: p.angle, size: FURNITURE_SIZE[p.kind], spot: KNOCKABLE.has(p.kind) ? spot : -1 }]),
+    ...posts.map(p => ({ x: p.x, y: p.y, angle: 0, size: [0.06, 0.06] as const, spot: -1 }))];
+  // The cells only knockable pieces made solid: cell → [what the cell was, the spots…].
+  const looseCells = new Map<number, number[]>(), fixed = new Set<number>();
   for (const p of solid) {
     const [hx, hy] = p.size, c = Math.cos(p.angle), s = Math.sin(p.angle);
     const [u, v] = geo.px(p.x, p.y, RES), rad = Math.hypot(hx, hy) + 0.35, R = Math.ceil(rad * RES);
     for (let j = -R; j <= R; j++) for (let i = -R; i <= R; i++) {
       const col = Math.floor(u) + i, row = Math.floor(v) + j;
       const x = (col + 0.5) / RES - geo.ox - p.x, y = geo.H - (row + 0.5) / RES - geo.oy - p.y;
-      if (Math.abs(c * x + s * y) <= hx + 0.15 && Math.abs(-s * x + c * y) <= hy + 0.15 && col >= 0 && row >= 0 && col < grid.w && row < grid.h) grid.cells[row * grid.w + col] = 255;
+      if (Math.abs(c * x + s * y) <= hx + 0.15 && Math.abs(-s * x + c * y) <= hy + 0.15 && col >= 0 && row >= 0 && col < grid.w && row < grid.h) {
+        const cell = row * grid.w + col, was = grid.cells[cell], owners = looseCells.get(cell);
+        if (p.spot < 0 || (was === 255 && !owners) || fixed.has(cell)) { looseCells.delete(cell); fixed.add(cell); } // a wall or a post blocks it too
+        else if (owners) { if (!owners.includes(p.spot)) owners.push(p.spot); } else looseCells.set(cell, [was, p.spot]);
+        grid.cells[cell] = 255;
+      }
     }
   }
-  const trunkCells = stampTrunks(grid, geo, trees);
-  return { trees, walls, fences, sheds, furniture, signs, directions, cells: grid.cells, trunkCells, masks: structures.map((l) => levelMask(box, l.polys, l.level)) };
+  const trunkCells = stampTrunks(grid, geo, trees, looseCells);
+  return { trees, walls, fences, sheds, furniture, signs, directions, cells: grid.cells, trunkCells, looseCells, masks: structures.map((l) => levelMask(box, l.polys, l.level)) };
 }
 
 function isRequest(value: unknown): value is WorkerRequest {

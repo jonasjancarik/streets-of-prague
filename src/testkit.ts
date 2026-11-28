@@ -3,6 +3,8 @@ import { lookAround, type Eyes } from './streetView.ts';
 import { Car, COURIER_BOXES } from './car.ts';
 import { courierLook } from './figures.ts';
 import { posts } from './posts.ts';
+import { looseFurniture } from './looseFurniture.ts';
+import { FURNITURE_SIZE } from './map/furniture.ts';
 import { fences } from './fences.ts';
 import type { Post } from './posts.ts';
 import type { Point2 } from './map/geo.ts';
@@ -983,6 +985,41 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       }
       throw new Error('No clear run up to that post');
     },
+
+    // The nearest standing piece of furniture a car can knock loose (looseFurniture.ts) of
+    // `kind` (map/furniture.ts's KIND) within r m with a clear run of `back` m up to it and
+    // `beyond` m past it, the car put at the start of the run facing it. Null: none.
+    piece(kind: number, r = 300, back = 16, beyond = 10) {
+      const c = g.car();
+      if (!c) throw new Error('Not in a car');
+      const m = g.me(), W = c.spec.W / 2 + 0.6, cells = g.grid.view?.(c) ?? g.grid; // (with the doorsteps the car meets)
+      const list = looseFurniture.standingNear(m.x, m.y, r).filter((s) => s.kind === kind)
+        .sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y));
+      for (const p of list) for (let a = 0; a < 16; a++) {
+        const h = (a * Math.PI) / 8, cos = Math.cos(h), sin = Math.sin(h);
+        const others = g.carsNear(p.x, p.y, back + beyond + 6).filter((o) => o !== c);
+        const trams = g.tramsNear(p.x, p.y, back + beyond + 30);
+        let ok = true;
+        for (let s = -beyond; s <= back + c.spec.L / 2 && ok; s += 0.25) {
+          for (let off = -W; off <= W + 0.01; off += 0.25) {
+            const x = p.x - cos * s - sin * off, y = p.y - sin * s + cos * off;
+            // (Not the piece itself.)
+            const dx = x - p.x, dy = y - p.y, [hx, hy] = FURNITURE_SIZE[p.kind];
+            if (Math.abs(dx * Math.cos(p.angle) + dy * Math.sin(p.angle)) < hx + 0.5 && Math.abs(-dx * Math.sin(p.angle) + dy * Math.cos(p.angle)) < hy + 0.5) continue;
+            ok &&= cells.at(x, y) === 0 && Math.abs(g.ground(x, y) - p.z) < 0.6 && !fences.blocks(x, y, 0.4, -10) && !posts.near(x, y, 0.4).length;
+          }
+          const x = p.x - cos * s, y = p.y - sin * s;
+          ok &&= others.every((o) => o.gap(x, y) > W + 0.3);
+          ok &&= trams.every((body) => body.circles.every(([tx, ty]) => Math.hypot(x - tx, y - ty) >= W + 1.25 + 4));
+        }
+        if (!ok) continue;
+        Object.assign(c, { x: p.x - cos * back, y: p.y - sin * back, h, vx: 0, vy: 0, w: 0 });
+        return p;
+      }
+      return null;
+    },
+    // The furniture knocked loose so far: where each piece is and which way up (1 upright).
+    pieces() { return looseFurniture.pieces(); },
 
     // The nearest top edge of a step in the ground (a quay wall, a retaining wall) within
     // r m that drops `drop` m or more, with a clear, level run of `back` m up to it:

@@ -25,6 +25,7 @@ import { Figures, Anim, SCALE, FIGURE_SIZE, LAMP_CAST_LAYER } from './figures.ts
 import type { FigureKit, Look } from './figures.ts';
 import type { Point2 } from './map/geo.ts';
 import { posts } from './posts.ts';
+import { looseFurniture } from './looseFurniture.ts';
 import { fences } from './fences.ts';
 import { crash } from './impacts.ts';
 import type { ImpactKind } from './impacts.ts';
@@ -2323,6 +2324,8 @@ export class Car {
       this.x += (this.vx * dt) / steps;
       this.y += (this.vy * dt) / steps;
       // (Falling from a bridge, it's above the posts and fences by the street below.)
+      // (Before the grid: a piece of furniture hit hard enough comes loose and frees its cells.)
+      if (!this.overboard) looseFurniture.collide(this);
       const post = this.overboard ? 0 : posts.collide(this), fence = this.overboard ? 0 : fences.collide(this), wall = this.collideGrid(grid);
       if (post > impact) { impact = post; struck = 'post'; }
       if (fence > impact) { impact = fence; struck = fences.struck; }

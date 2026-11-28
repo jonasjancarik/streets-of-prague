@@ -20,6 +20,9 @@ export const KIND = {
 export type FurnitureKind = (typeof KIND)[keyof typeof KIND];
 // Kinds that lie flat in the ground and stop nobody.
 export const FLAT_FURNITURE = new Set<number>([KIND.stolperstein, KIND.treeGrate]);
+// Kinds a car can knock loose (src/looseFurniture.ts): the tile worker notes which grid
+// cells each of these alone made solid, so they can be freed when it comes loose.
+export const KNOCKABLE = new Set<number>([KIND.bench, KIND.bin, KIND.paper, KIND.plastic, KIND.cartons, KIND.metal, KIND.posterCase]);
 // pipeline/build_street_furniture.py's kinds, by name.
 export const MAPPED: Record<string, FurnitureKind> = {
   bin: KIND.bin, 'bike stand': KIND.bikeStand, 'parking machine': KIND.parkingMachine, bollard: KIND.bollard, 'post box': KIND.postBox,

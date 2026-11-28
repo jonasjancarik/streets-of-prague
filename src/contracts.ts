@@ -150,6 +150,9 @@ export interface LandResult {
   sheds: ShedBuffers;
   cells: Uint8Array;
   trunkCells: Map<number, TreeTrunk>;
+  // Cells only knockable pieces of furniture made solid: cell → [the cell's value without
+  // them, their spot indices…] (src/looseFurniture.ts frees one once they've all come loose).
+  looseCells: Map<number, number[]>;
   masks: LevelMask[];
 }
 

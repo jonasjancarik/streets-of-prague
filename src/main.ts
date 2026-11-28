@@ -88,6 +88,7 @@ import { groundSamples, groundDepthView, tunnelEarthView, retainTilePrograms } f
 import { CUTAWAY, DIG, WEATHER_DETAIL, TREE_SWAY } from './shading.ts';
 import { streetHedges } from './streetHedges.ts';
 import { fences } from './fences.ts';
+import { looseFurniture } from './looseFurniture.ts';
 import { streetGrass, type GrassGround } from './streetGrass.ts';
 import type { LitterGround } from './streetLitter.ts';
 import { setupDev, watchTransitWhileWaiting } from './dev.ts';
@@ -472,6 +473,12 @@ async function main() {
   // Leaving out what the buildings hide in the street views (docs/occlusion-culling.md);
   // ?cull=0 draws everything.
   const culler = params.get('cull') !== '0' ? new Culler(scene, world) : null;
+  // The furniture a car knocks loose falls on the ground of the level it was hit on, and
+  // bounces off the walls in the collision grid (looseFurniture.ts).
+  looseFurniture.world = {
+    ground: (x, y, level) => world.surfaceAt(x, y, level),
+    grid: (x, y) => world.tileAt(x, y)?.grid,
+  };
   // Where the street view's blades of grass stand (streetGrass.ts): on what sounds like
   // grass underfoot, in the open, and not inside a hedge.
   const grassGround: GrassGround = {
@@ -2952,6 +2959,8 @@ async function main() {
       walker.sync();
     } else onCar = null;
 
+    // Furniture knocked loose, tumbling and coming to rest.
+    looseFurniture.update(dt);
     // Cars smoking, burning and blowing up (the ones that could have been hurt this step).
     fires.update(dt, active, { x: camPos.x, y: -camPos.z, r: viewRadius() + 40 });
 
@@ -4043,7 +4052,7 @@ async function main() {
   });
 
   window.__drive = {
-    culler, hitches, tilePrograms, birds, birdsView, lifeSize, scene, camera, traffic, crowd, stopWaiting, tours, loose, restingByCar, restingIndex, get resting() { return resting; }, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, refuse, health, fires, trams, ride, taxi, clock, board, busStops, busRide, metro, funicular, ferries, graphics, sound, weather, lamps, sky, skids, bikeShare, carPool, spawnWork, bags,
+    culler, hitches, tilePrograms, birds, birdsView, lifeSize, scene, camera, traffic, crowd, stopWaiting, tours, loose, looseFurniture, restingByCar, restingIndex, get resting() { return resting; }, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, refuse, health, fires, trams, ride, taxi, clock, board, busStops, busRide, metro, funicular, ferries, graphics, sound, weather, lamps, sky, skids, bikeShare, carPool, spawnWork, bags,
     get car() { return inCar; },
     // (The least time between drawings of the sun's shadow map, ms: 0 for every frame.)
     get shadowMs() { return shadowMsTest ?? (graphics.sunEveryFrame ? 0 : SHADOW_MS); }, set shadowMs(ms: number | null) { shadowMsTest = ms; },

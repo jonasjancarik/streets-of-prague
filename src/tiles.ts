@@ -54,6 +54,7 @@ import { validateTileBinary, type TileBinaryKind } from './tileBinary.ts';
 import { overheadWires } from './wires.ts';
 import { stopLines } from './map/stopShelters.ts';
 import { posts, type Post } from './posts.ts';
+import { looseFurniture } from './looseFurniture.ts';
 import { fences, type FenceSection } from './fences.ts';
 import { stepEdges, shortenInto, INTO_TUNNEL, type Crosser, type StepEdge } from './stepEdges.ts';
 import { byLevel, bridgeApproaches } from './roadLevels.ts';
@@ -1915,6 +1916,8 @@ export class TileWorld {
     // The wires' poles stand among the lamp posts from now on: cars hit them, and park clear of them.
     for (const p of poles) posts.add(p);
     fences.add(fenceSections);
+    // The bins, benches and the rest a car can knock loose (looseFurniture.ts).
+    looseFurniture.addTile(k, land.furniture.spots, furniture, land.looseCells, grid);
     const inside = (x: number, y: number) => x >= x0 && x < x1 && y >= y0 && y < y1;
     const parking = parkCarsSteps({
       data, edges, clearanceEdges, zones, buildings: location.search.includes('oldparking') ? null : nearBuildings, r: rng(Math.floor(hash(`${this.area}/${k}`) * 1e9)), night: this.night,
@@ -1960,6 +1963,7 @@ export class TileWorld {
       this.terrainRevision++;
       this.onCars(cars, tile);
     } catch (error) {
+      looseFurniture.removeTile(k);
       disposeFurniture(furniture);
       signs?.geometry.dispose();
       if (directions) disposeDirections(directions);
@@ -2249,6 +2253,7 @@ export class TileWorld {
       else disposeTileMaterial(m.material);
     }
     for (const p of t.poles) posts.remove(p);
+    looseFurniture.removeTile(k);
     fences.remove(t.fences);
     streetHedges.remove(k);
     this.loaded.delete(k);
