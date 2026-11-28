@@ -963,8 +963,10 @@ The metro ride uses its overhead cutaway camera.
   (`src/looseFurniture.ts`, `docs/furniture.md`).
 - **Signs.** Like the lamp posts, the traffic signs' posts and the direction plates and
   boards go over when a car hits them hard enough (about 13 km/h for a sign, 16 for a
-  board); slower, they stop it. The sign turns down about its foot and lies on the
-  pavement, its grid cells freed so the car carries on. A tram or bus stop's sign goes
+  board); slower, they stop it. Knocked over, a sign (like a lamp post, a stop's sign
+  and a chalkboard) comes loose: it's thrown, tumbles and comes to rest however it
+  lands, as the loose furniture does, and can be shoved on; its grid cells are freed so
+  the car carries on. A tram or bus stop's sign goes
   over at about 15 km/h. A café's or bakery's chalkboard (drawn close up only) goes over
   at a walking pace, or when you run into it on foot. Gantries over the road stay up.
   The signs stand again when their tile is made again, a stop's sign once it's out of
@@ -980,6 +982,10 @@ The metro ride uses its overhead cutaway camera.
   (not drawn, but there): heard breaking, its crumbs thrown, and the car goes on in
   under the roof; the posts and the light box stay solid. Slower, the glass stops it
   (`src/shelterGlass.ts`).
+- **Lamp posts** go over when a car hits one at about 18 km/h, and come loose: the pole
+  is thrown on, tumbles and lies where it lands, its light out (`src/lamps.ts`,
+  `looseFurniture.launch`). The tram wires' poles still fall as before, scripted, with
+  their span wire.
 - **Lamps.** A hard knock (from about 16 km/h) smashes the headlamp or tail lamp it lands
   on, which then stays dark and lights nothing at night; the headlamps behind a police
   ram frame never break. The tail lamps light up when a car brakes, by day as well

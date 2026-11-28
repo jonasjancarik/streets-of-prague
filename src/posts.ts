@@ -17,6 +17,9 @@ export interface Post {
   // cells stop a car well short of its thin tube, so it's hit there.
   reach?: number;
   shades?: boolean; // whether it shades the lamps' light like a lamp post (lamps.ts; yes when not given)
+  // Knocked over and loose (looseFurniture.launch): how it has moved from where it stood,
+  // as a world matrix, for whoever draws it.
+  moved?: import('three').Matrix4;
 }
 
 const CELL = 8;

@@ -79,10 +79,13 @@ Sign posts go over like the lamp posts (`src/signFalls.ts`). The worker writes a
 sign's or direction plate's post into the grid under its own owner number in `looseCells`
 (`POST_OWNER` and its index in the tile's `signPosts`), and gives each part of the merged
 sign mesh its range of vertices (`mergedArrays`: `ranges`, `postParts`). Each post is a
-`Post` in `src/posts.ts` with a `reach` of 0.42 m, where the grid stops a car. Knocked
-over, it frees its cells (`looseFurniture.release`) and its part of the mesh turns down
-about its foot, vertex by vertex, as it falls. A gantry's posts stay fixed. A stop's sign
-(`src/stopSign.ts`) is a post while it's shown, and the whole sign tips over. A café's
+`Post` in `src/posts.ts` with a `reach` of 0.5 m, where the grid stops a car. Knocked
+over, it frees its cells (`looseFurniture.release`) and its part of the mesh becomes a
+loose body (`looseFurniture.launch`: a box round its vertices, thrown by the blow), whose
+pose moves those vertices in the mesh each frame it moves. A gantry's posts stay fixed. A
+stop's sign (`src/stopSign.ts`) is a post while it's shown, and knocked over, a body
+that moves the whole sign (its matrix). A lamp post (`src/lamps.ts`) is a body the
+height of its pole, and the lamp is drawn where it has moved it (`Post.moved`). A café's
 chalkboard is drawn in its wall's close-up mesh (`map/streetFacade.ts`, `boards`: its
 foot and its runs of vertices), and is a light post only while that mesh is shown.
 `scenarios/sign-knock.ts` checks all three.

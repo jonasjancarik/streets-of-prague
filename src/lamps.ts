@@ -7,7 +7,8 @@ import { CloseLanterns } from './closeLanterns.ts';
 import { mirrored, mirroredGlow, RIVER_MODEL_LAYER } from './mirror.ts';
 import { fetchBinary } from './terrain.ts';
 import { CLOUD, CLOUD_MAP, CLOUD_GLSL } from './clouds.ts';
-import { posts, fall, type Post } from './posts.ts';
+import { posts, type Post } from './posts.ts';
+import { looseFurniture } from './looseFurniture.ts';
 import { armLamp, gasPair, gasSingle, wallLantern, globeLamp, hungLamp, parapetLantern } from './lampmodels.ts';
 import { PARAPET } from './ground.ts';
 import { send, sendInstances } from './gpu.ts';
@@ -217,6 +218,7 @@ const KINDS = [
   { head: PARAPET + 3.1, pole: false, r: 10, i: 0.8, raise: 0, glow: 0.45 }, // a gas lantern on a bridge's parapet (place)
 ];
 const HUNG = 7, ON_BRIDGE = 3, ON_PARAPET = 8;
+const LAMP_MASS = 150; // kg, a steel or cast-iron pole with its lantern, knocked loose
 const PAIRED_CABLE = 9; // two adjacent survey records, both rendered as ordinary hung heads
 // The models (lampmodels.ts) and where their lights are (x along the arm, y, z across it).
 // A kind's lamps take one by hash: the Old Town has big two-lantern gas posts and small
@@ -759,7 +761,16 @@ export class Lamps {
     let list = this.grid.get(k);
     if (!list) this.grid.set(k, list = []);
     if (KINDS[kind].pole) {
-      const post: Post = { x, y, z, r: 0.15, tough: 5, give: 0.2, down: null, knocked: () => { this.falling = performance.now() + 1300; this.nearAt.x = Infinity; } };
+      // Knocked over, a loose body (looseFurniture.launch): a pole of its height, thrown,
+      // tumbling and coming to rest however it lands; its light goes out.
+      const post: Post = { x, y, z, r: 0.15, tough: 5, give: 0.2, down: null, knocked: (p, speed) => {
+        const ground = Number.isNaN(p.z) ? this.height(x, y) : p.z, tall = KINDS[kind].head;
+        looseFurniture.launch({
+          tile: 'lamp:' + i, from: [x, y], middle: new THREE.Vector3(x, ground + tall / 2, -y), half: new THREE.Vector3(0.18, tall / 2, 0.18),
+          mass: LAMP_MASS, sound: 'post', ground, ang: p.down!.ang, speed, keep: 0.5,
+          put: (moved) => { (p.moved ??= new THREE.Matrix4()).copy(moved); this.falling = performance.now() + 300; this.nearAt.x = Infinity; },
+        });
+      } };
       this.posts[i] = post;
       posts.add(post);
     }
@@ -820,7 +831,7 @@ export class Lamps {
         list.splice(list.indexOf(i), 1);
         if (!list.length) this.grid.delete(key);
         const post = this.posts[i];
-        if (post) posts.remove(post);
+        if (post) { posts.remove(post); looseFurniture.dropBodies('lamp:' + i); }
         this.posts[i] = undefined;
         this.hung.delete(i);
         this.kind[i] = -1;
@@ -1096,13 +1107,10 @@ export class Lamps {
         d.position.set(lx, z, -ly);
         d.rotation.set(0, ang, 0);
         d.scale.set(1, 1, 1);
-        // Knocked over: tipped the way it was hit, about its foot.
-        const post = this.posts[i], over = post ? fall(post, performance.now()) : 0;
-        if (post?.down) {
-          const fa = post.down.ang;
-          d.quaternion.premultiply(this.tilt.setFromAxisAngle(this.axis.set(-Math.sin(fa), 0, -Math.cos(fa)), over));
-        }
+        // Knocked over: where its body has taken it (looseFurniture.launch).
+        const post = this.posts[i];
         d.updateMatrix();
+        if (post?.down && post.moved) d.matrix.premultiply(post.moved);
         const close = !post?.down && this.closeLanterns.add(m,MODELS[m].detailed,d.matrix,this.models[m],(lx-x)**2+(ly-y)**2);
         if (!close) this.models[m].setMatrixAt(used[m]++, d.matrix);
         // A main road's arm lamp may fly a banner (lampBanners.ts), not one knocked over.

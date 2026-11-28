@@ -36,6 +36,8 @@ export default {
       if (c.over) {
         t.check('a sign post hit at 30 km/h went over', !standing, hits.join(', '));
         t.check('the car went on past where it stood', passed, `${Math.round(speed)} km/h then, ${hits.join(', ')}`);
+        const body = t.pieces().find((b) => Math.hypot(b.from[0] - post!.x, b.from[1] - post!.y) < 0.01), away = body ? Math.hypot(body.x - post.x, body.y - post.y) : NaN;
+        t.check('the sign lies on the ground near where it stood', !!body && away < 15 && body.up < 0.5, body ? `${away.toFixed(1)} m on, its top ${body.up.toFixed(2)}` : 'no body');
         await t.look({ x: post.x, y: post.y, h: 0 }, { name: 'sign-knock', views: ['top', 'third', 'front-left'] });
       } else {
         t.check('a sign post hit at 8 km/h still stands', standing, hits.join(', '));
@@ -70,7 +72,8 @@ export default {
     await new Promise((r) => setTimeout(r, 1500));
     await t.frames(2);
     // (How far over: the angle it has turned through, 90° flat.)
-    const over = 2 * Math.acos(Math.min(1, Math.abs(stopSign.sign.quaternion.w))) * 180 / Math.PI;
+    // (Its up, as its matrix now has it: loose, its body moves it.)
+    const e = stopSign.sign.matrix.elements, over = Math.acos(Math.min(1, e[5] / Math.hypot(e[4], e[5], e[6]))) * 180 / Math.PI;
     const post = (sign.sign as unknown as { post?: { down: unknown } }).post;
     t.check('a bus stop sign hit at 30 km/h went over', over > 70, `${over.toFixed(0)}°; passed ${closest.toFixed(1)} m from it, ${side.toFixed(1)} m aside; heard there: ${near.join(', ') || 'nothing'}; ${post ? (post.down ? 'its post down' : 'its post standing') : 'no post'}`);
     t.check('the car went on past it', passed);

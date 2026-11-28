@@ -71,7 +71,11 @@ interface Standing {
 interface Shared { cell: number; was: number; standing: Set<number> }
 
 interface Body {
-  tile: string; make: Make; mesh: THREE.InstancedMesh; index: number;
+  // Drawn by its own instance in a tile's furniture mesh, or (`put`, for what launch()
+  // throws: a sign, a lamp post) told each frame how it has moved from where it stood:
+  // the world matrix that takes it there.
+  tile: string; make: Make; mesh?: THREE.InstancedMesh; index: number;
+  put?: (moved: THREE.Matrix4) => void;
   level: number;
   p: THREE.Vector3; v: THREE.Vector3; q: THREE.Quaternion; w: THREE.Vector3;
   half: THREE.Vector3; offset: THREE.Vector3; // the box's half size, and its middle in the model
@@ -186,6 +190,10 @@ class LooseFurniture {
     this.byTile.delete(tile);
     this.bodies = this.bodies.filter((b) => b.tile !== tile);
   }
+
+  // The bodies that go with `tile` dropped (launch's: their meshes go with it), the
+  // standing pieces left as they are.
+  dropBodies(tile: string) { this.bodies = this.bodies.filter((b) => b.tile !== tile); }
 
   private unhash(s: Standing) {
     const k = this.key(Math.floor(s.x / CELL), Math.floor(s.y / CELL)), at = this.cells.get(k);
@@ -569,7 +577,11 @@ class LooseFurniture {
       if (b.still > 0.5) { this.sleep(b); this.draw(b); }
     } else b.still = 0;
     // Fallen out of the world (into the river, off the map): gone.
-    if (b.p.y < g0 - 20) { this.sleep(b); b.mesh.setMatrixAt(b.index, m4.makeScale(0, 0, 0)); this.dirty.add(b.mesh); }
+    if (b.p.y < g0 - 20) {
+      this.sleep(b);
+      if (b.put) b.put(m4.makeScale(0, 0, 0));
+      else { b.mesh!.setMatrixAt(b.index, m4.makeScale(0, 0, 0)); this.dirty.add(b.mesh!); }
+    }
   }
 
   // A moving body against a car (parked, in traffic, yours): out of its box, and the blow
@@ -657,8 +669,41 @@ class LooseFurniture {
 
   private draw(b: Body) {
     m4.compose(b.p, b.q, ONE).multiply(m5.makeTranslation(-b.offset.x, -b.offset.y, -b.offset.z));
-    b.mesh.setMatrixAt(b.index, m4);
-    this.dirty.add(b.mesh);
+    if (b.put) { b.put(m4); return; }
+    b.mesh!.setMatrixAt(b.index, m4);
+    this.dirty.add(b.mesh!);
+  }
+
+  // Something knocked over by a car that falls as a body from now on, rather than as a
+  // scripted fall (signFalls.ts, stopSign.ts, lamps.ts): a box `half` its size round
+  // `middle` (three.js world, upright as it stood), `mass` kg, heard as `sound`, on ground
+  // at `ground`. Hit going `ang` (radians, the game's frame) at `speed` m/s, `at` m up,
+  // by a car of `by` kg; the share `keep` of that goes into it (a post bends before it
+  // breaks). `put` draws it. `tile`: what it goes with (removeTile drops it).
+  launch(o: { tile: string; from: [number, number]; middle: THREE.Vector3; half: THREE.Vector3; mass: number; sound: ImpactKind; ground: number;
+    ang: number; speed: number; at?: number; by?: number; keep?: number; level?: number; put: (moved: THREE.Matrix4) => void }) {
+    const m = o.mass, [a, b, c] = [o.half.x * 2, o.half.y * 2, o.half.z * 2];
+    const make: Make = { mass: m, tough: 0, give: 0, sound: o.sound };
+    const body: Body = {
+      tile: o.tile, make, index: -1, put: o.put, level: o.level ?? 0,
+      p: o.middle.clone(), v: new THREE.Vector3(), q: new THREE.Quaternion(), w: new THREE.Vector3(),
+      // (Its rest pose is the identity about its middle: `offset` takes the middle off.)
+      half: o.half.clone(), offset: o.middle.clone(),
+      invMass: 1 / m, invI: new THREE.Vector3(12 / (m * (b * b + c * c)), 12 / (m * (a * a + c * c)), 12 / (m * (a * a + b * b))),
+      radius: Math.max(0.3, Math.min(o.half.x, o.half.z) * 0.6 + Math.max(o.half.x, o.half.z) * 0.4),
+      awake: true, still: 0, heard: this.clock, spilled: 0, from: o.from, cars: [],
+    };
+    this.bodies.push(body);
+    this.knocks++;
+    const n = [Math.cos(o.ang), Math.sin(o.ang)], M = o.by ?? 1300, vn = o.speed * (o.keep ?? 0.7);
+    const j = 1.15 * vn / (1 / M + 1 / m);
+    rr.set(-n[0] * o.half.x * 0.5, o.ground + (o.at ?? 0.5) - o.middle.y, n[1] * o.half.z * 0.5);
+    v1.set(n[0] * j, j * 0.04, -n[1] * j);
+    push(body, v1, rr);
+    body.w.y += (Math.random() - 0.5) * vn * 0.3;
+    this.cap();
+    this.draw(body);
+    return body;
   }
 
   // Whether furniture a car could knock loose still stands at (x, y) (a test's run up may go through it).

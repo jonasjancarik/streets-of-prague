@@ -89,7 +89,6 @@ import { CUTAWAY, DIG, WEATHER_DETAIL, TREE_SWAY } from './shading.ts';
 import { streetHedges } from './streetHedges.ts';
 import { fences } from './fences.ts';
 import { looseFurniture } from './looseFurniture.ts';
-import { signFalls } from './signFalls.ts';
 import { treeFalls } from './treeFalls.ts';
 import { shelterGlass } from './shelterGlass.ts';
 import { posts } from './posts.ts';
@@ -3001,8 +3000,6 @@ async function main() {
 
     // Furniture knocked loose, tumbling and coming to rest.
     looseFurniture.update(dt);
-    // Sign posts knocked over, coming down (signFalls.ts).
-    signFalls.update();
     // Young trees snapped by a car, coming down (treeFalls.ts).
     treeFalls.update();
     // Cars smoking, burning and blowing up (the ones that could have been hurt this step).

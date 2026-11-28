@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { posts, fall, type Post } from './posts.ts';
+import { posts, type Post } from './posts.ts';
 import { looseFurniture } from './looseFurniture.ts';
 import { POST_OWNER } from './map/furniture.ts';
 import { crash } from './impacts.ts';
@@ -9,25 +9,23 @@ import type { Grid } from './map/geo.ts';
 // car like a lamp post (posts.ts): each is a post among the others, and hit harder than
 // its `tough` it goes over the way the car was going. The grid cells it alone made solid
 // are freed (looseFurniture.release), and its part of the tile's sign mesh (the post with
-// its signs, or a board on two posts) is turned down about its foot in the mesh itself, so
-// nothing more is drawn. A gantry over the road stays up. All of them stand again when
-// their tile is made again.
+// its signs, or a board on two posts) becomes a loose body (looseFurniture.launch): it's
+// thrown, tumbles and comes to rest however it lands, and can be shoved on, and its
+// vertices in the mesh itself are moved with it, so nothing more is drawn. A gantry over
+// the road stays up. All of them stand again when their tile is made again.
 
 // tough: m/s into it that knocks it over; give: the share of the car's speed it takes.
 // A sign's thin steel tube goes at about 13 km/h; a direction board, with its plates, at 16.
-const MAKES = [{ tough: 3.5, give: 0.06 }, { tough: 4.5, give: 0.12 }];
+// mass: kg, once it's loose (a steel tube with its plates; a board on two posts).
+const MAKES = [{ tough: 3.5, give: 0.06, mass: 25 }, { tough: 4.5, give: 0.12, mass: 60 }];
+const BOARD_MASS = 8; // kg, a café's chalkboard
 const REACH = 0.5; // m: the grid's cells round a post stop a car as far as this from it
-const FALL_S = 1.2; // s it takes to come down (posts.ts's fall, with a little to spare)
 
-// Coming down: which runs of the mesh's vertices (first, count, …), turned about `pivot`
-// (three.js world), and those vertices as they stood.
-interface Falling { tile: string; mesh: THREE.Mesh; runs: number[]; pivot: THREE.Vector3; post: Post; pos: Float32Array; nor: Float32Array; done: boolean }
-
-const q = new THREE.Quaternion(), axis = new THREE.Vector3(), v = new THREE.Vector3();
+const v = new THREE.Vector3(), turn = new THREE.Matrix3();
+const grown = new WeakSet<THREE.Mesh>();
 
 class SignFalls {
   private byTile = new Map<string, Post[]>();
-  private falling: Falling[] = [];
 
   // A tile's sign posts (the worker's signPosts: x, y, ground, mesh, part per post), its sign
   // and direction meshes, and its collision grid.
@@ -43,7 +41,7 @@ class SignFalls {
       if (part < 0 || !mesh || !ranges) continue;
       const key = m * 1e6 + part, owner = POST_OWNER + k;
       const post: Post = {
-        x, y, z, r: 0.06, reach: REACH, shades: false, ...MAKES[m], down: null,
+        x, y, z, r: 0.06, reach: REACH, shades: false, tough: MAKES[m].tough, give: MAKES[m].give, down: null,
         knocked: (p, speed) => {
           // Heard as a post bent over (src/soundmix.ts), softer than a lamp post.
           crash(p, null, speed * 0.6, 'post', p.x, p.y, 30);
@@ -52,7 +50,7 @@ class SignFalls {
             if (g.post !== p && !g.post.down) g.post.down = p.down;
             looseFurniture.release(grid, g.owner);
           }
-          this.start(tile, mesh, [ranges[part * 2], ranges[part * 2 + 1]], new THREE.Vector3(p.x, p.z, -p.y), p);
+          this.start(tile, mesh, [ranges[part * 2], ranges[part * 2 + 1]], p, speed, MAKES[m].mass, 'post');
         },
       };
       const g = groups.get(key);
@@ -66,7 +64,7 @@ class SignFalls {
   removeTile(tile: string) {
     for (const p of this.byTile.get(tile) ?? []) posts.remove(p);
     this.byTile.delete(tile);
-    this.falling = this.falling.filter((f) => f.tile !== tile);
+    looseFurniture.dropBodies(tile); // (what of them lies loose: drawn in meshes that go with it)
   }
 
   // A café's or bakery's chalkboard on the pavement (map/streetFacade.ts, drawn as part of its
@@ -81,7 +79,7 @@ class SignFalls {
       const post: Post = { x: pivot.x, y: -pivot.z, z: pivot.y, r: 0.32, tough: 1.2, give: 0.02, shades: false, down: null,
         knocked: (p, speed) => {
           crash(p, null, speed * 0.5, 'timber', p.x, p.y, 12);
-          this.start(key, mesh, runs, pivot, p);
+          this.start(key, mesh, runs, p, speed, BOARD_MASS, 'timber');
         } };
       posts.add(post);
       own.push(post);
@@ -91,8 +89,11 @@ class SignFalls {
   // A wall's chalkboards gone with its close-up mesh.
   dropBoards(mesh: THREE.Mesh) { this.removeTile('boards:' + mesh.uuid); }
 
-  private start(tile: string, mesh: THREE.Mesh, runs: number[], pivot: THREE.Vector3, post: Post) {
-    const g = mesh.geometry, pos = g.attributes.position.array as Float32Array, nor = g.attributes.normal.array as Float32Array;
+  // Its vertices (`runs` of the mesh's: first, count, …) as they stood, a box round them,
+  // and a body thrown from there by the blow, that moves them as it goes.
+  private start(tile: string, mesh: THREE.Mesh, runs: number[], post: Post, speed: number, mass: number, sound: 'post' | 'timber') {
+    const g = mesh.geometry, position = g.attributes.position as THREE.BufferAttribute, normal = g.attributes.normal as THREE.BufferAttribute;
+    const pos = position.array as Float32Array, nor = normal.array as Float32Array;
     let n = 0;
     for (let r = 0; r < runs.length; r += 2) n += runs[r + 1];
     const was = new Float32Array(n * 3), wasN = new Float32Array(n * 3);
@@ -100,32 +101,27 @@ class SignFalls {
       was.set(pos.subarray(runs[r] * 3, (runs[r] + runs[r + 1]) * 3), o);
       wasN.set(nor.subarray(runs[r] * 3, (runs[r] + runs[r + 1]) * 3), o);
     }
-    this.falling.push({ tile, mesh, runs, pivot, post, pos: was, nor: wasN, done: false });
-  }
-
-  // Each falling one turned on down about the foot of the post that was hit.
-  update(now = performance.now()) {
-    if (!this.falling.length) return;
-    for (const f of this.falling) {
-      const p = f.post, down = p.down!, a = fall(p, now);
-      // (The way it falls, in three.js's frame, and the level line across it it turns about.)
-      axis.set(-Math.sin(down.ang), 0, -Math.cos(down.ang));
-      q.setFromAxisAngle(axis, a);
-      const g = f.mesh.geometry, position = g.attributes.position as THREE.BufferAttribute, normal = g.attributes.normal as THREE.BufferAttribute;
-      const pos = position.array as Float32Array, nor = normal.array as Float32Array, px = f.pivot.x, py = f.pivot.y, pz = f.pivot.z;
-      for (let r = 0, i = 0; r < f.runs.length; r += 2) {
-        for (let o = f.runs[r] * 3, end = (f.runs[r] + f.runs[r + 1]) * 3; o < end; i += 3, o += 3) {
-          v.set(f.pos[i] - px, f.pos[i + 1] - py, f.pos[i + 2] - pz).applyQuaternion(q);
-          pos[o] = v.x + px; pos[o + 1] = v.y + py; pos[o + 2] = v.z + pz;
-          v.set(f.nor[i], f.nor[i + 1], f.nor[i + 2]).applyQuaternion(q);
-          nor[o] = v.x; nor[o + 1] = v.y; nor[o + 2] = v.z;
+    const box = new THREE.Box3();
+    for (let i = 0; i < n * 3; i += 3) box.expandByPoint(v.set(was[i], was[i + 1], was[i + 2]));
+    const middle = box.getCenter(new THREE.Vector3()), half = box.getSize(new THREE.Vector3()).multiplyScalar(0.5).max(v.set(0.05, 0.05, 0.05));
+    // (A piece thrown off its spot mustn't be culled with the mesh's old bounds.)
+    if (!grown.has(mesh)) { grown.add(mesh); if (!g.boundingSphere) g.computeBoundingSphere(); g.boundingSphere!.radius += 30; }
+    looseFurniture.launch({
+      tile, from: [post.x, post.y], middle, half, mass, sound, ground: Number.isFinite(post.z) ? post.z : box.min.y, ang: post.down!.ang, speed,
+      put: (moved) => {
+        turn.setFromMatrix4(moved);
+        for (let r = 0, i = 0; r < runs.length; r += 2) {
+          for (let o = runs[r] * 3, end = (runs[r] + runs[r + 1]) * 3; o < end; i += 3, o += 3) {
+            v.set(was[i], was[i + 1], was[i + 2]).applyMatrix4(moved);
+            pos[o] = v.x; pos[o + 1] = v.y; pos[o + 2] = v.z;
+            v.set(wasN[i], wasN[i + 1], wasN[i + 2]).applyMatrix3(turn);
+            nor[o] = v.x; nor[o + 1] = v.y; nor[o + 2] = v.z;
+          }
+          position.addUpdateRange(runs[r] * 3, runs[r + 1] * 3); normal.addUpdateRange(runs[r] * 3, runs[r + 1] * 3);
         }
-        for (const attr of [position, normal]) attr.addUpdateRange(f.runs[r] * 3, f.runs[r + 1] * 3);
-      }
-      position.needsUpdate = normal.needsUpdate = true;
-      f.done = now - down.t > FALL_S * 1000;
-    }
-    this.falling = this.falling.filter((f) => !f.done);
+        position.needsUpdate = normal.needsUpdate = true;
+      },
+    });
   }
 
   // (For tests: the chalkboards drawn near (x, y), standing or not.)
