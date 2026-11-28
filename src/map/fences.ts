@@ -91,7 +91,7 @@ export function fenceArrays(data: FenceTile, height: (x: number, y: number) => n
           const z1 = height(x1, y1), z2 = height(x2, y2);
           sections.push(x1, y1, x2, y2, (z1 + z2) / 2, h, chain ? 4 : 3, m.pos.length / 3);
           if (chain) chainSection(m, x1, y1, z1, x2, y2, z2, along + len * s / n);
-          else railingSection(m, x1, y1, z1, x2, y2, z2, h, along + len * s / n, line.look ?? 0);
+          else railingSection(m, x1, y1, z1, x2, y2, z2, h, line.look ?? 0);
         }
         along += len;
       }

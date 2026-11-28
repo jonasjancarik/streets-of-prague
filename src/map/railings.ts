@@ -14,7 +14,6 @@ export const RAILING_SECTION = 2; // m: the longest section, and so the post spa
 export const CHAIN_H = 0.76; // m: a bollard's height
 export const CHAIN_SPAN = 2.8; // m: the longest span between two bollards
 export const RAILING_LOOKS = 2;
-const STRIPE = 2; // m: one red and one white band, a metre each
 const ROWS = 4; // texture rows, see ironwork()
 const TUBE = 6; // sides of a tube
 const BOLLARD = 8; // sides of a bollard
@@ -74,15 +73,14 @@ function cone(o: Out, a: V3, r: number, apex: number, sides: number, v: number, 
 const row = (r: number) => (r + 0.5) / ROWS;
 
 export const RAILING_VERTS = 4 * TUBE * 6 + 2 * TUBE * 3;
-// A railing section from (x1, y1) on ground z1 to (x2, y2) on z2, `h` tall; `along`: m
-// of the railing before it, so the bands run on from one section to the next.
-export function railingSection(o: Out, x1: number, y1: number, z1: number, x2: number, y2: number, z2: number, h: number, along: number, look: number) {
-  const v = row(look === 1 ? 1 : 0), len = Math.hypot(x2 - x1, y2 - y1);
-  const u1 = along / STRIPE, u2 = (along + len) / STRIPE;
-  for (const [x, y, z, at] of [[x1, y1, z1, along], [x2, y2, z2, along + len]]) {
-    // A post is one colour, red and white by turns.
-    const u = Math.round(at / RAILING_SECTION) % 2 ? 0.75 : 0.25;
-    tube(o, [x, y, z - 0.05], [x, y, z + h + 0.02], 0.03, 0.03, TUBE, u, u, v);
+// A railing section from (x1, y1) on ground z1 to (x2, y2) on z2, `h` tall. The posts
+// are white, and the rails white for a quarter of the section either side of each post
+// (so a white band is centred on every post), red in the middle half.
+export function railingSection(o: Out, x1: number, y1: number, z1: number, x2: number, y2: number, z2: number, h: number, look: number) {
+  const v = row(look === 1 ? 1 : 0);
+  const u1 = 0.75, u2 = 1.75; // the texture's white band is u 0.5-1, red 0-0.5
+  for (const [x, y, z] of [[x1, y1, z1], [x2, y2, z2]]) {
+    tube(o, [x, y, z - 0.05], [x, y, z + h + 0.02], 0.03, 0.03, TUBE, u1, u1, v);
     cone(o, [x, y, z + h + 0.02], 0.03, z + h + 0.025, TUBE, v, true);
   }
   tube(o, [x1, y1, z1 + h - 0.01], [x2, y2, z2 + h - 0.01], 0.03, 0.03, TUBE, u1, u2, v);
@@ -126,7 +124,7 @@ let railMap: THREE.CanvasTexture | null = null;
 let chainMap: THREE.CanvasTexture | null = null;
 
 // The paint, one row each from the bottom: red and white bands (a band of each across
-// the width, so STRIPE m of railing), anthracite, the bollards' dark green-black cast
+// the width: a section of railing), anthracite, the bollards' dark green-black cast
 // iron, and the chain's links (one face on with the light through it, one edge on).
 function ironwork(chain: boolean) {
   const W = 128, R = 16, c = document.createElement('canvas');
