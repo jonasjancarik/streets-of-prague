@@ -59,7 +59,7 @@ export interface Pedestrian extends WalkSpot {
 }
 interface WalkSegment extends WalkSpot { a: Point2; b: Point2; s0: number; len: number }
 // Something standing in the way: a circle of a parked car or bike (see pushCar in main.ts).
-interface Obstruction { x: number; y: number; z?: number; r: number; kind: string; car?: { vx: number; vy: number } }
+interface Obstruction { x: number; y: number; z?: number; r: number; vx: number; vy: number; kind: string; car?: { vx: number; vy: number } }
 type Obstructions = (x: number, y: number, r: number) => Iterable<Obstruction>;
 
 // Pedestrians wander the footpath network, jump out of the way of fast cars,
@@ -587,7 +587,8 @@ export class Crowd {
     this.spanN = 0;
     p.cap = Infinity;
     if (near) for (const o of near(p.x, p.y, 5)) {
-      if (o.kind !== 'car' || !o.car || Math.abs(o.car.vx) + Math.abs(o.car.vy) > 0.5) continue;
+      // (Furniture lying knocked loose is stepped round like a parked car.)
+      if (o.kind === 'piece' ? Math.abs(o.vx) + Math.abs(o.vy) > 0.5 : o.kind !== 'car' || !o.car || Math.abs(o.car.vx) + Math.abs(o.car.vy) > 0.5) continue;
       if (o.z !== undefined && p.gz !== undefined && Math.abs(o.z - p.gz) > 3) continue;
       const ax = o.x - base.x, ay = o.y - base.y, along = ax * ux + ay * uy;
       if (along < -o.r - 0.5 || along > 4.5) continue;

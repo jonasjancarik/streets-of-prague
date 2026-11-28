@@ -23,14 +23,15 @@ import type { Grid } from './map/geo.ts';
 // mass kg; tough: m/s into it that knocks it loose; give: the share of the car's closing
 // speed the fixings take when it does; sound: what it sounds like (src/soundmix.ts);
 // castors: rolls on them while it stands upright; spill: what comes out of it, and
-// `spills` how many times at most (a knock, a hard landing, tipping over).
-interface Make { mass: number; tough: number; give: number; sound: ImpactKind; castors?: boolean; spill?: Spill; spills?: number }
+// `spills` how many times at most (a knock, a hard landing, tipping over); kick: m/s on
+// foot into it that knocks it loose (none: it stays put for someone on foot).
+interface Make { mass: number; tough: number; give: number; sound: ImpactKind; castors?: boolean; spill?: Spill; spills?: number; kick?: number }
 export type Spill = 'rubbish' | 'bottles';
-const CONTAINER: Make = { mass: 70, tough: 2, give: 0, sound: 'container', castors: true, spill: 'rubbish', spills: 1 };
+const CONTAINER: Make = { mass: 70, tough: 2, give: 0, sound: 'container', castors: true, spill: 'rubbish', spills: 1, kick: 3 };
 // A glass bell full of bottles: heavy, sitting loose on the pavement.
 const BELL: Make = { mass: 250, tough: 2.5, give: 0, sound: 'bottles', spill: 'bottles', spills: 3 };
 const MAKES: Record<number, Make> = {
-  [KIND.bin]: { mass: 25, tough: 2.5, give: 0.05, sound: 'bin', spill: 'rubbish', spills: 2 },
+  [KIND.bin]: { mass: 25, tough: 2.5, give: 0.05, sound: 'bin', spill: 'rubbish', spills: 2, kick: 5 },
   [KIND.paper]: CONTAINER, [KIND.plastic]: CONTAINER, [KIND.cartons]: CONTAINER, [KIND.metal]: CONTAINER,
   [KIND.bench]: { mass: 90, tough: 5, give: 0.15, sound: 'timber' },
   [KIND.posterCase]: { mass: 45, tough: 4, give: 0.1, sound: 'panel' },
@@ -52,6 +53,8 @@ const AWAKE = 48; // bodies simulated at once at most
 const G = 9.81;
 const FRICTION = 0.7, BOUNCE = 0.25;
 const ROLL = 0.45; // the grip of castors rolling (rolling resistance and a little sideways drag)
+const PERSON = 80; // kg, someone on foot
+const REACH = 0.35; // m, round someone on foot
 
 interface Standing {
   tile: string; x: number; y: number; angle: number; hx: number; hy: number;
@@ -69,6 +72,7 @@ interface Body {
   invMass: number; invI: THREE.Vector3; // the inverse inertia about the box's own axes
   radius: number; // m, round it on the ground, for cars
   awake: boolean; still: number; heard: number;
+  cars: Car[]; // the cars near it, found once a frame while it's awake
   spilled: number; // times it has spilled
   from: [number, number]; // where it stood (game metres)
 }
@@ -76,7 +80,14 @@ interface Body {
 export interface LooseWorld {
   ground: (x: number, y: number, level: number) => number; // game (x, y)
   grid: (x: number, y: number) => Grid | undefined; // the collision grid of the tile there
+  cars?: (x: number, y: number, r: number, out: Car[]) => Car[]; // the cars near a point, moving or parked
 }
+
+// What knocks a standing piece loose: a car, or someone on foot. `lift`: the share of the
+// blow that goes up; `at`: how high it lands (m over the ground).
+interface Hitter { vx: number; vy: number; mass: number; level: number; who: object; car?: Car; lift: number; at: number }
+const hitter: Hitter = { vx: 0, vy: 0, mass: 0, level: 0, who: {}, lift: 0.08, at: 0.45 };
+const hit = { nx: 0, ny: 0, pen: 0 };
 
 // The street models' boxes, per kind: [half size, middle], in the model's frame.
 let boxes: Map<number, [THREE.Vector3, THREE.Vector3]> | undefined;
@@ -202,7 +213,11 @@ class LooseFurniture {
         const n = this.touchBox(car, c, s, L, W, p);
         if (!n) continue;
         const vn = car.vx * n[0] + car.vy * n[1];
-        if (vn > p.make.tough) impact = Math.max(impact, this.loosen(car, p, n, vn));
+        if (vn > p.make.tough) {
+          Object.assign(hitter, { vx: car.vx, vy: car.vy, mass: car.spec.mass, level: car.level ?? 0, who: car, car, lift: 0.08, at: 0.45 });
+          this.loosen(hitter, p, n, vn);
+          car.vx = hitter.vx; car.vy = hitter.vy;
+        }
       }
     }
     for (const b of this.bodies) {
@@ -215,7 +230,7 @@ class LooseFurniture {
 
   // Whether a car's box (heading c, s; half L, W) overlaps a standing piece's box grown
   // by PAD; if so the way out of the car towards it (game frame), else null.
-  private touchBox(car: Car, c: number, s: number, L: number, W: number, p: Standing): [number, number] | null {
+  private touchBox(car: { x: number; y: number }, c: number, s: number, L: number, W: number, p: Standing): [number, number] | null {
     const pc = Math.cos(p.angle), ps = Math.sin(p.angle), hx = p.hx + PAD, hy = p.hy + PAD;
     const dx = p.x - car.x, dy = p.y - car.y;
     // Separating axes: the car's two and the piece's two.
@@ -237,8 +252,9 @@ class LooseFurniture {
     return [ex * c - ey * s, ex * s + ey * c];
   }
 
-  // A standing piece hit `vn` m/s along `n`: its cells freed, made a body, thrown.
-  private loosen(car: Car, p: Standing, n: [number, number], vn: number) {
+  // A standing piece hit `vn` m/s along `n`: its cells freed, made a body, thrown. What
+  // the blow takes off the hitter's speed comes off `by`.
+  private loosen(by: Hitter, p: Standing, n: [number, number], vn: number) {
     this.unhash(p);
     const own = this.byTile.get(p.tile);
     if (own) own.splice(own.indexOf(p), 1);
@@ -251,53 +267,152 @@ class LooseFurniture {
     const pos = new THREE.Vector3(p.x, p.spot.z - 0.04, -p.y).add(mid.clone().applyQuaternion(q));
     const [a, b, cc] = [half.x * 2, half.y * 2, half.z * 2];
     const body: Body = {
-      tile: p.tile, make, mesh: p.mesh, index: p.index, level: car.level ?? 0,
+      tile: p.tile, make, mesh: p.mesh, index: p.index, level: by.level,
       p: pos, v: new THREE.Vector3(), q, w: new THREE.Vector3(),
       half: half.clone(), offset: mid.clone(),
       invMass: 1 / m, invI: new THREE.Vector3(12 / (m * (b * b + cc * cc)), 12 / (m * (a * a + cc * cc)), 12 / (m * (a * a + b * b))),
       radius: Math.max(0.3, Math.min(half.x, half.z) * 0.6 + Math.max(half.x, half.z) * 0.4),
-      awake: true, still: 0, heard: this.clock, spilled: 0, from: [p.x, p.y],
+      awake: true, still: 0, heard: this.clock, spilled: 0, from: [p.x, p.y], cars: [],
     };
     this.bodies.push(body);
     this.knocks++;
-    // The car's share: the fixings' give, and the blow by momentum.
-    const M = car.spec.mass, j = (1 + 0.15) * vn / (1 / M + 1 / m);
+    // The hitter's share: the fixings' give, and the blow by momentum.
+    const M = by.mass, j = (1 + 0.15) * vn / (1 / M + 1 / m);
     const groundZ = p.spot.z;
-    // Struck at bumper height on the side facing the car, so a tall piece goes over.
-    rr.set(-n[0] * half.x * 0.8, groundZ + 0.45 - pos.y, n[1] * half.z * 0.8);
-    const tangent = (-car.vx * n[1] + car.vy * n[0]) * 0.25; // a glancing blow drags it along
-    v1.set(n[0] * j + -n[1] * tangent * m, j * 0.08, -(n[1] * j + n[0] * tangent * m));
+    // Struck at bumper height (a car's) on the side facing it, so a tall piece goes over.
+    rr.set(-n[0] * half.x * 0.8, groundZ + by.at - pos.y, n[1] * half.z * 0.8);
+    const tangent = (-by.vx * n[1] + by.vy * n[0]) * 0.25; // a glancing blow drags it along
+    v1.set(n[0] * j + -n[1] * tangent * m, j * by.lift, -(n[1] * j + n[0] * tangent * m));
     push(body, v1, rr);
     // (A bit of a spin, never the same twice.)
-    body.w.y += (Math.random() - 0.5) * vn * 0.6;
+    body.w.y += (Math.random() - 0.5) * vn * (by.car ? 0.6 : 0.2);
     const loss = j / M + make.give * vn;
-    car.vx -= n[0] * loss;
-    car.vy -= n[1] * loss;
-    if (make.give) { car.takeImpactDamage(make.give * vn * 0.5); car.knock(p.x, p.y, vn * make.give); }
+    by.vx -= n[0] * loss;
+    by.vy -= n[1] * loss;
+    if (make.give && by.car) { by.car.takeImpactDamage(make.give * vn * 0.5); by.car.knock(p.x, p.y, vn * make.give); }
     this.grow(p.mesh);
     this.cap();
     const heard = vn * Math.min(1, Math.max(0.3, Math.sqrt(m / 300)));
-    crash(car, null, heard, make.sound, p.x, p.y, M);
+    crash(by.who, null, heard, make.sound, p.x, p.y, M);
     // A bin hit hard enough empties, a glass bell breaks.
     // (A bin's rubbish mostly comes out where it lands: a little here.)
     if (make.spill && vn > 4) this.spill(body, make.spill === 'bottles' ? 30 + vn * 5 : 4 + vn * 0.5);
     return 0;
   }
 
+  // Whether a body overlaps a car's box (at x, y, heading c, s, half L, W) on the ground:
+  // if so `hit` holds the way out of the car towards it and how far in it is.
+  private overlap(b: Body, x: number, y: number, c: number, s: number, L: number, W: number) {
+    const dx = b.p.x - x, dy = -b.p.z - y, lx = dx * c + dy * s, ly = -dx * s + dy * c;
+    let ex = lx - Math.max(-L, Math.min(L, lx)), ey = ly - Math.max(-W, Math.min(W, ly));
+    const d = Math.hypot(ex, ey);
+    if (d >= b.radius) return false;
+    if (d > 1e-6) { ex /= d; ey /= d; hit.pen = b.radius - d; } else {
+      const px = L - Math.abs(lx), py = W - Math.abs(ly);
+      if (px < py) { ex = Math.sign(lx) || 1; ey = 0; hit.pen = px + b.radius; } else { ex = 0; ey = Math.sign(ly) || 1; hit.pen = py + b.radius; }
+    }
+    hit.nx = ex * c - ey * s; hit.ny = ex * s + ey * c;
+    return true;
+  }
+
+  // Whether `f` moved the body (put it out of the way, or gave it a push).
+  private awakeAfter(b: Body, f: () => void) {
+    const x = b.p.x, z = b.p.z, vx = b.v.x, vz = b.v.z;
+    f();
+    return b.p.x !== x || b.p.z !== z || b.v.x !== vx || b.v.z !== vz;
+  }
+
+  // Whether a body is down where a car of height `h` standing on `gz` could touch it.
+  private within(b: Body, gz: number | undefined, h: number) {
+    const ground = this.world!.ground(b.p.x, -b.p.z, b.level);
+    return !(b.p.y - b.half.y * 0.5 > ground + h || (gz !== undefined && Math.abs(gz - ground) > 2.5));
+  }
+
+  // The loose pieces near a traffic car shoved out of its way. (Its lane moves it, so
+  // nothing slows it; it seldom gets this close, as it waits or goes round them.)
+  brush(car: Car) {
+    if (!this.bodies.length) return;
+    const L = car.spec.L / 2, W = car.spec.W / 2, c = Math.cos(car.h), s = Math.sin(car.h), reach = Math.hypot(L, W) + 2;
+    for (const b of this.bodies) {
+      if (Math.abs(b.p.x - car.x) > reach || Math.abs(-b.p.z - car.y) > reach) continue;
+      const vx = car.vx, vy = car.vy, touched = this.awakeAfter(b, () => this.shove(car, b, c, s, L, W));
+      car.vx = vx; car.vy = vy;
+      // Edged past at a crawl, it's nudged aside, not pushed along the street ahead of it.
+      if (touched) {
+        const dx = b.p.x - car.x, dy = -b.p.z - car.y, ahead = dx * c + dy * s, left = -dx * s + dy * c;
+        if (ahead > L * 0.5) { const k = left >= 0 ? 1 : -1; b.v.x += -s * k * 0.8; b.v.z -= c * k * 0.8; }
+      }
+    }
+  }
+
+  // Something round, `r` across, at (x, y) going (vx, vy) through the loose pieces: a tram
+  // (mass Infinity) or someone on foot. Each is pushed out of it and given its share of
+  // the blow; the share of the way back it pushes the pusher is returned (out, game m).
+  sweep(who: object, x: number, y: number, gz: number | undefined, r: number, vx: number, vy: number, mass: number, out: [number, number] = [0, 0]) {
+    out[0] = out[1] = 0;
+    for (const b of this.bodies) {
+      const dx = b.p.x - x, dy = -b.p.z - y, reach = r + b.radius;
+      if (Math.abs(dx) > reach || Math.abs(dy) > reach) continue;
+      if (!this.within(b, gz, mass === Infinity ? 4 : 1)) continue;
+      const d = Math.hypot(dx, dy);
+      if (d >= reach) continue;
+      const nx = d > 1e-6 ? dx / d : 1, ny = d > 1e-6 ? dy / d : 0, pen = reach - d;
+      const m = b.make.mass, share = mass === Infinity ? 1 : mass / (mass + m);
+      b.p.x += nx * pen * share; b.p.z -= ny * pen * share;
+      out[0] -= nx * pen * (1 - share); out[1] -= ny * pen * (1 - share);
+      const rel = (vx - b.v.x) * nx + (vy + b.v.z) * ny;
+      if (rel <= 0) { this.wake(b); continue; }
+      const j = (1 + 0.1) * rel / (1 / mass + 1 / m);
+      // (Low down: a foot, or a tram's lifeguard.)
+      rr.set(-nx * b.radius, Math.min(0.2, this.world!.ground(b.p.x, -b.p.z, b.level) + 0.3 - b.p.y), ny * b.radius);
+      v1.set(nx * j, j * 0.03, -ny * j);
+      push(b, v1, rr);
+      this.wake(b);
+      if (rel > 2 && this.clock - b.heard > 0.3) {
+        b.heard = this.clock;
+        crash(who, null, rel * Math.min(1, Math.max(0.3, Math.sqrt(m / 300))), b.make.sound, b.p.x, -b.p.z, Math.min(mass, 30000));
+      }
+    }
+    return out;
+  }
+
+  // Someone on foot (`r` round, going vx, vy) against the furniture: a standing bin run
+  // into knocks over and a container walked into rolls away (`kick`); a loose piece is
+  // shoved, and a heavy one holds them back. Returns how far they're pushed back (game m).
+  kick(who: { x: number; y: number; gz?: number; vx: number; vy: number }, level = 0, out: [number, number] = [0, 0]) {
+    if (!this.world) { out[0] = out[1] = 0; return out; }
+    if (this.cells.size) {
+      for (const p of this.near(who.x, who.y, 2)) {
+        if (!p.make.kick || (who.gz !== undefined && Math.abs(who.gz - p.spot.z) > 1.5)) continue;
+        // (A box REACH round them, square with the piece's.)
+        const n = this.touchBox(who, Math.cos(p.angle), Math.sin(p.angle), REACH, REACH, p);
+        if (!n) continue;
+        const vn = who.vx * n[0] + who.vy * n[1];
+        if (vn <= p.make.kick) continue;
+        Object.assign(hitter, { vx: who.vx, vy: who.vy, mass: PERSON, level, who, car: undefined, lift: 0, at: 0.6 });
+        this.loosen(hitter, p, n, vn);
+      }
+    }
+    return this.sweep(who, who.x, who.y, who.gz, REACH, who.vx, who.vy, PERSON, out);
+  }
+
+  // Whether any piece lies loose.
+  get any() { return this.bodies.length > 0; }
+
+  // Each loose piece, as a circle on the ground: what traffic waits for or goes round and
+  // people step round (main.ts puts them in with the cars).
+  each(f: (x: number, y: number, z: number, r: number, vx: number, vy: number, key: object) => void) {
+    // (With a margin: a car pulling out round it swings its corners out past the circles it's
+    // measured with.)
+    for (const b of this.bodies) f(b.p.x, -b.p.z, b.p.y, b.radius + 0.25, b.v.x, -b.v.z, b);
+  }
+
   // A car against a loose piece: the piece pushed out of it and given its share of the blow.
   private shove(car: Car, b: Body, c: number, s: number, L: number, W: number) {
+    if (!this.within(b, car.gz, car.spec.H)) return 0;
     const ground = this.world!.ground(b.p.x, -b.p.z, b.level);
-    if (b.p.y - b.half.y * 0.5 > ground + car.spec.H || (car.gz !== undefined && Math.abs(car.gz - ground) > 2.5)) return 0;
-    const dx = b.p.x - car.x, dy = -b.p.z - car.y, lx = dx * c + dy * s, ly = -dx * s + dy * c;
-    let ex = lx - Math.max(-L, Math.min(L, lx)), ey = ly - Math.max(-W, Math.min(W, ly));
-    let d = Math.hypot(ex, ey), pen: number;
-    if (d >= b.radius) return 0;
-    if (d > 1e-6) { ex /= d; ey /= d; pen = b.radius - d; } else {
-      const px = L - Math.abs(lx), py = W - Math.abs(ly);
-      if (px < py) { ex = Math.sign(lx) || 1; ey = 0; pen = px + b.radius; } else { ex = 0; ey = Math.sign(ly) || 1; pen = py + b.radius; }
-      d = 0;
-    }
-    const nx = ex * c - ey * s, ny = ex * s + ey * c;
+    if (!this.overlap(b, car.x, car.y, c, s, L, W)) return 0;
+    const { nx, ny, pen } = hit;
     // Out of the car's way, never the car out of it.
     b.p.x += nx * pen; b.p.z -= ny * pen;
     const rel = (car.vx - b.v.x) * nx + (car.vy + b.v.z) * ny;
@@ -356,11 +471,19 @@ class LooseFurniture {
   update(dt: number) {
     if (!this.world || !this.bodies.some((b) => b.awake)) { this.left = 0; return; }
     this.left = Math.min(this.left + dt, 0.1);
+    // The cars each could run into this frame.
+    const cars = this.world.cars;
+    for (const b of this.bodies) {
+      if (!b.awake) continue;
+      if (cars && b.v.lengthSq() > 0.09) cars(b.p.x, -b.p.z, 6 + b.v.length() * this.left, b.cars);
+      else b.cars.length = 0;
+    }
     while (this.left >= STEP) {
       this.left -= STEP;
       this.clock += STEP;
       for (const b of this.bodies) if (b.awake) this.step(b);
     }
+    this.apart();
     for (const b of this.bodies) if (b.awake) this.draw(b);
     for (const mesh of this.dirty) sendInstances(mesh);
     this.dirty.clear();
@@ -424,6 +547,7 @@ class LooseFurniture {
     b.p.addScaledVector(b.v, h);
     if (this.solid(b.p.x, -oz)) { b.p.x = ox; b.v.x *= -0.3; b.w.multiplyScalar(0.8); }
     if (this.solid(b.p.x, -b.p.z)) { b.p.z = oz; b.v.z *= -0.3; b.w.multiplyScalar(0.8); }
+    for (let i = 0; i < b.cars.length; i++) this.against(b, b.cars[i]);
     qa.set(b.w.x, b.w.y, b.w.z, 0).multiply(b.q);
     b.q.set(b.q.x + qa.x * h * 0.5, b.q.y + qa.y * h * 0.5, b.q.z + qa.z * h * 0.5, b.q.w + qa.w * h * 0.5).normalize();
     // Heard landing hard.
@@ -440,6 +564,66 @@ class LooseFurniture {
     } else b.still = 0;
     // Fallen out of the world (into the river, off the map): gone.
     if (b.p.y < g0 - 20) { this.sleep(b); b.mesh.setMatrixAt(b.index, m4.makeScale(0, 0, 0)); this.dirty.add(b.mesh); }
+  }
+
+  // A moving body against a car (parked, in traffic, yours): out of its box, and the blow
+  // shared by mass. A traffic car keeps to its lane whatever hits it; a parked one is
+  // nudged and dented.
+  private against(b: Body, car: Car) {
+    if (car.overboard || !this.within(b, car.gz, car.spec.H)) return;
+    const L = car.spec.L / 2, W = car.spec.W / 2;
+    if (!this.overlap(b, car.x, car.y, Math.cos(car.h), Math.sin(car.h), L, W)) return;
+    const { nx, ny, pen } = hit;
+    b.p.x += nx * pen; b.p.z -= ny * pen;
+    // (How fast it closes on the car: n runs from the car to it.)
+    const rel = -((b.v.x - car.vx) * nx + (-b.v.z - car.vy) * ny);
+    if (rel <= 0) return;
+    const m = b.make.mass, M = car.spec.mass, fixed = car.mode === 'traffic';
+    const j = (1 + BOUNCE) * rel / (1 / m + (fixed ? 0 : 1 / M));
+    rr.set(-nx * b.radius, 0, ny * b.radius);
+    v1.set(nx * j, 0, -ny * j);
+    push(b, v1, rr);
+    if (!fixed) { car.vx -= nx * j / M; car.vy -= ny * j / M; }
+    // (A bin at 30 km/h leaves a small dent in a door; a glass bell a deep one.)
+    const heard = rel * Math.min(1, Math.max(0.3, Math.sqrt(m / 300)));
+    if (rel > 3) car.knock(b.p.x, -b.p.z, rel * Math.min(1, Math.max(0.3, Math.sqrt(m / 150))), -nx, -ny);
+    if (rel > 1.5 && this.clock - b.heard > 0.25) {
+      b.heard = this.clock;
+      crash(b, car, heard, b.make.sound, b.p.x, -b.p.z, m);
+    }
+  }
+
+  // The awake pieces against each other (once a frame): pushed apart, the blow shared by
+  // mass, and one lying still woken.
+  private apart() {
+    const list = this.bodies;
+    for (let i = 0; i < list.length; i++) {
+      const a = list[i];
+      if (!a.awake) continue;
+      for (let k = 0; k < list.length; k++) {
+        const b = list[k];
+        if (b === a || (b.awake && k < i)) continue;
+        const dx = b.p.x - a.p.x, dy = -b.p.z + a.p.z, reach = a.radius + b.radius;
+        if (Math.abs(dx) > reach || Math.abs(dy) > reach || Math.abs(a.p.y - b.p.y) > 1) continue;
+        const d = Math.hypot(dx, dy);
+        if (d >= reach) continue;
+        const nx = d > 1e-6 ? dx / d : 1, ny = d > 1e-6 ? dy / d : 0, pen = reach - d;
+        const ia = a.invMass, ib = b.invMass, sa = ia / (ia + ib), sb = ib / (ia + ib);
+        a.p.x -= nx * pen * sa; a.p.z += ny * pen * sa;
+        b.p.x += nx * pen * sb; b.p.z -= ny * pen * sb;
+        // (a closing on b along n.)
+        const rel = (a.v.x - b.v.x) * nx + (-a.v.z + b.v.z) * ny;
+        this.wake(b);
+        if (rel <= 0) continue;
+        const j = (1 + BOUNCE) * rel / (ia + ib);
+        a.v.x -= nx * j * ia; a.v.z += ny * j * ia;
+        b.v.x += nx * j * ib; b.v.z -= ny * j * ib;
+        if (rel > 2 && this.clock - b.heard > 0.25) {
+          b.heard = this.clock;
+          crash(a, b, rel * Math.min(1, Math.max(0.3, Math.sqrt(b.make.mass / 300))), b.make.sound, b.p.x, -b.p.z, a.make.mass);
+        }
+      }
+    }
   }
 
   // Whether a loose piece is stopped at (x, y): by a wall, a tree or a post, but not by
@@ -469,6 +653,31 @@ class LooseFurniture {
   }
   pieces() {
     return this.bodies.map((b) => ({ from: b.from, x: b.p.x, y: -b.p.z, z: b.p.y, vx: b.v.x, vy: -b.v.z, vz: b.v.y, spin: b.w.length(), awake: b.awake, up: new THREE.Vector3(0, 1, 0).applyQuaternion(b.q).y }));
+  }
+  // (For tests: the standing piece nearest (x, y) within r m set loose where it stands, of
+  // `kind` if given; its index in pieces(), or -1.)
+  free(x: number, y: number, r: number, kind?: number) {
+    let best: Standing | null = null, d = r;
+    for (const s of this.near(x, y, r)) {
+      const e = Math.hypot(s.x - x, s.y - y);
+      if (e < d && (kind === undefined || s.kind === kind)) { d = e; best = s; }
+    }
+    if (!best) return -1;
+    Object.assign(hitter, { vx: 0, vy: 0, mass: PERSON, level: 0, who: this, car: undefined, lift: 0, at: 0.3 });
+    this.loosen(hitter, best, [1, 0], 0);
+    const b = this.bodies[this.bodies.length - 1];
+    b.v.set(0, 0, 0); b.w.set(0, 0, 0);
+    return this.bodies.length - 1;
+  }
+  // (For tests: loose piece `i` put at (x, y) on the ground, upright, going vx, vy.)
+  place(i: number, x: number, y: number, vx = 0, vy = 0) {
+    const b = this.bodies[i];
+    if (!b || !this.world) return;
+    b.q.identity();
+    b.p.set(x, this.world.ground(x, y, b.level) + b.half.y + 0.02, -y);
+    b.v.set(vx, 0, -vy); b.w.set(0, 0, 0);
+    this.wake(b);
+    this.draw(b);
   }
   standingNear(x: number, y: number, r: number) {
     return this.near(x, y, r).filter((s) => Math.hypot(s.x - x, s.y - y) < r).map((s) => ({ x: s.x, y: s.y, angle: s.angle, kind: s.kind, z: s.spot.z }));

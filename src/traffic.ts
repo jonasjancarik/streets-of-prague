@@ -148,6 +148,7 @@ export function lorryRoad(e: DriveEdge): boolean {
 interface Obstacle {
   x: number; y: number; z?: number; r: number; vx: number; vy: number;
   kind: string; car?: Car;
+  key?: object; // (a piece of furniture lying loose, kind 'piece': passed like a parked car)
 }
 
 // How far a car's lane runs on ahead of it (m, plus 2) before it turns at a junction:
@@ -402,6 +403,9 @@ export class Traffic {
       // across from its lane (lo to hi) to get past them all, the nearest of them in
       // its way, and whether a car is coming the other way.
       let lo = -Infinity, hi = Infinity, stillGap = Infinity, still = null, oncoming = false, passingYou = false;
+      // How far ahead the nearest piece of furniture lying in its way is (m): squeezing past
+      // one after a wait (`ignore`), it edges by at a crawl and nudges it aside.
+      let nudge = Infinity;
       // How far it may pull out of its lane, left and right: never far, and within the
       // street (on a street it knows).
       const left = Math.min(SWERVE, edge ? edge.laneOffset + edge.width / 2 - W / 2 : SWERVE);
@@ -425,7 +429,8 @@ export class Traffic {
         // (So are you, standing in its way once it's had enough of waiting: see `around`.)
         const you = o.kind === 'player' && ov < 0.3 && (a.around ?? 0) > 0;
         const along1 = you ? alongYou : along0;
-        if ((o.kind === 'car' && (o.car?.mode !== 'traffic' || o.car.working) && ov < 0.3) || you) {
+        // (And a piece of furniture lying in the street, knocked loose.)
+        if ((o.kind === 'car' && (o.car?.mode !== 'traffic' || o.car.working) && ov < 0.3) || you || (o.kind === 'piece' && ov < 0.3)) {
           // Standing: how far along the lane it is and how far to its side, round the bends.
           if (pieces < 0) {
             pieces = a.route.ahead(L / 2 + 3, reach + 4, lane);
@@ -468,7 +473,7 @@ export class Traffic {
             if (along > -(L / 2 + o.r + 0.5) && along < reach + o.r && Math.abs(lat) < need + SWERVE) {
               // One side for the whole car, kept while it's being passed: its circles
               // lie either side of the middle of the lane, and the choice mustn't flip.
-              const key = o.car ?? (you ? YOU : undefined);
+              const key = o.car ?? o.key ?? (you ? YOU : undefined);
               let leftOf = key ? sides.get(key) : undefined;
               if (leftOf === undefined) {
                 leftOf = lat >= keepLeft;
@@ -485,6 +490,7 @@ export class Traffic {
           // In the way only if this car, where it is across its lane, would touch it.
           const d = along - L / 2 - o.r - (o.car?.binRound && Math.cos(o.car.h - c.h) > 0.5 ? BIN_ROOM : 0);
           if (along < 0 || along > reach + o.r || Math.abs(lat - a.off) >= W / 2 + o.r + TOUCH) continue;
+          if (o.kind === 'piece' && d < nudge) nudge = d;
           if (along < along1) { if (d < stillGap) { stillGap = d; still = o; } }
           // Jam escape can squeeze past an unrelated obstacle, but a working dustcart
           // on the shared exit lane is still the head of this queue.
@@ -610,6 +616,7 @@ export class Traffic {
       if (hearing && crossing < Infinity) target = Math.min(target, Math.sqrt(2 * 4 * Math.max(0, crossing - L / 2 - 4)));
       if (!room && still && stillGap < gap) { gap = stillGap; blocker = still; }
       if (blocker) target = Math.min(target, Math.max(0, a.reckless ? (gap - 0.8) * 1.3 : (gap - 1.5) * 0.9));
+      if (a.ignore > 0 && nudge < 4) target = Math.min(target, 1.2);
       // Round a car in the way it slows down, and edges up to it while it pulls out.
       if (room && still) target = Math.min(target, 2.5, Math.max(0, (stillGap - 0.4) * 1.5));
       if (Math.abs(want) > 0.3 || Math.abs(a.off) > 0.3) target = Math.min(target, 6);

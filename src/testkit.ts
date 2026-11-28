@@ -1021,6 +1021,10 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     },
     // The furniture knocked loose so far: where each piece is and which way up (1 upright).
     pieces() { return looseFurniture.pieces(); },
+    // The standing piece nearest (x, y) within r m (of a kind) set loose where it stands:
+    // its index in pieces(), or -1. And a loose one put upright at (x, y), thrown (vx, vy).
+    freePiece(x: number, y: number, r = 3, kind?: number) { return looseFurniture.free(x, y, r, kind); },
+    placePiece(i: number, x: number, y: number, vx = 0, vy = 0) { looseFurniture.place(i, x, y, vx, vy); },
     // The furniture still standing within r m of (x, y) that a car could knock loose.
     standingNear(x: number, y: number, r: number) { return looseFurniture.standingNear(x, y, r); },
 

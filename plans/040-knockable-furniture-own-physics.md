@@ -1,6 +1,6 @@
 # 040: Knockable street furniture, our own physics (option A)
 
-Status: PHASES 1 AND 2 BUILT (28 November 2026) on branch `knockable-furniture`, unmerged.
+Status: PHASES 1 TO 3 BUILT (28 November 2026) on branch `knockable-furniture`, unmerged.
 Option B, the same thing with Rapier, is [041](041-knockable-furniture-rapier.md).
 We're trying this one first because it's smaller and adds no dependency.
 
@@ -125,8 +125,42 @@ Bollards, planters, advertising columns, fountains and wall post boxes stay fixe
    about 120 bits and the bell about 240.
    Not done: lids that swing open. The models are one merged geometry per kind, so a
    lid would need its own instanced part; left for later.
-3. **People and other cars.** Kicking things on foot, people walking round fallen
+3. **People and other cars.** DONE. Kicking things on foot, people walking round fallen
    pieces, bodies hitting parked cars and each other, police and traffic going round them.
+   Design (as built):
+   - **Fallen pieces as obstacles.** Each step main.ts adds every loose piece to the
+     obstacle hash (kind `piece`, a circle of the body's radius), next to the cars. Traffic
+     treats one like a car standing still: it pulls out round it where there's room and
+     otherwise waits (the same code as for a parked car, `Traffic.update`). Walkers step
+     round it like a parked car (`Crowd.avoid`). Police and other cars that run `Car.move`
+     already shove it.
+   - **Bodies against cars.** A moving body tests the cars near it (`LooseWorld.cars`). It's
+     pushed out of a car's box, and the blow is shared by mass: a parked car is nudged and
+     dented (`Car.knock`), and a traffic car is moved by its lane, so it counts as
+     immovable.
+   - **Bodies against each other.** Once a frame, each awake body is tested against the
+     others, as circles on the ground a metre or less apart in height. They're pushed apart
+     and share the blow by mass, and a sleeping one is woken.
+   - **On foot.** You shove a loose piece with your 80 kg and your speed, and a heavy one
+     holds you back by the same share. Running at a standing bin (over 5 m/s) knocks it
+     over, and walking into a container sets it rolling (`kick` in `MAKES`). Nothing
+     else comes loose on foot.
+   - **Trams and waiting traffic.** A tram doesn't stop for a piece on its track: it shoves it
+     aside (`sweep`, as an immovable circle). Traffic that has waited behind one it can't
+     get round (`ignore`, the jam escape) edges past at no more than 1.2 m/s, and nudges
+     the piece sideways rather than pushing it along ahead of it (`brush`).
+   - Fallen pieces are a quarter of a metre wider as obstacles than as bodies, because a car
+     pulling out round one swings its corners out past the circles it is measured with.
+   - Not done: a loose piece passes through furniture still standing rather than knocking it
+     on. Police officers go round pieces, but police cars have no avoidance of their own
+     and shove through them.
+
+   `scenarios/furniture-aftermath.ts` checks it. Results on 28 November: a bin run into on
+   foot goes over and lies about 3.5 m on; a container walked into rolls about 5 m while
+   you keep pushing; a bin thrown at 50 km/h at a parked car's side bounces off and
+   leaves a dent; one thrown at another knocks it 0.6 m on; and a traffic car meeting
+   one in its lane went round it at 17 km/h without touching it. `furniture-knock`
+   still passes for all eight kinds.
 
 ## Risks
 

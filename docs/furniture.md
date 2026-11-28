@@ -65,8 +65,15 @@ rigid box: it tumbles on its eight corners against the ground, bounces off walls
 sleeps once it's still. It's drawn by rewriting its own instance matrix in the tile's
 mesh, so both cameras show it, and it's back in place when its tile loads again. Each
 kind has its mass, how hard it's fixed down, its crash sound by material, whether it
-rolls on castors and what it spills (`MAKES`); the spill is thrown by `Debris.spill`. The
-rest of the furniture is static. `scenarios/furniture-knock.ts` checks it.
+rolls on castors and what it spills (`MAKES`); the spill is thrown by `Debris.spill`.
+Once loose, a moving piece is tested against the cars near it (`LooseWorld.cars`; a
+traffic car counts as immovable) and once a frame against the other pieces. main.ts
+puts every loose piece in the obstacle hash as kind `piece` (`looseFurniture.each`):
+traffic passes it like a parked car, walkers and officers step round it, and trams
+ignore it and shove it aside (`sweep`). Traffic cars shove what they touch (`brush`).
+Someone on foot shoves loose pieces and knocks over the kinds with a `kick` speed
+(`kick`). The rest of the furniture is static. `scenarios/furniture-knock.ts` and
+`scenarios/furniture-aftermath.ts` check it.
 
 ## Mapped street furniture
 

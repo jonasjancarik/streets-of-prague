@@ -666,7 +666,8 @@ export class Trams {
       }
       if (near) {
         for (const o of near(p.x, p.y, 3)) {
-          if (o.kind === 'tram') continue;
+          // (Furniture lying on the track is shoved aside: main.ts, looseFurniture.sweep.)
+          if (o.kind === 'tram' || o.kind === 'piece') continue;
           if (Math.hypot(o.x - p.x, o.y - p.y) >= 1.3 + o.r) continue;
           if (o.car && shove.includes(o.car)) { if (!v.shove.includes(o.car)) v.shove.push(o.car); continue; } // being pushed aside
           // The player: only once the driver has had a moment to react.

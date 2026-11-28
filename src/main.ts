@@ -169,7 +169,8 @@ import { Hitches } from './hitches.ts';
 import { benchPause } from './benchpause.ts';
 import type { Testkit } from './testkit.ts';
 
-interface Obstacle { x: number; y: number; z?: number; r: number; vx: number; vy: number; kind: string; car?: Car }
+// (`key`: what it is part of, when it's not a car: a piece of furniture lying loose.)
+interface Obstacle { x: number; y: number; z?: number; r: number; vx: number; vy: number; kind: string; car?: Car; key?: object }
 type InputKey = 'up' | 'down' | 'left' | 'right' | 'run' | 'brake' | 'jump';
 interface Controls { move: number; turn: number; run: boolean; brake: boolean; jump: boolean; aim: { h: number; mag: number } | null }
 
@@ -478,6 +479,7 @@ async function main() {
   looseFurniture.world = {
     ground: (x, y, level) => world.surfaceAt(x, y, level),
     grid: (x, y) => world.tileAt(x, y)?.grid,
+    cars: (x, y, r, out) => carsNear(x, y, r, out),
   };
   // Where the street view's blades of grass stand (streetGrass.ts): on what sounds like
   // grass underfoot, in the open, and not inside a hedge.
@@ -1133,7 +1135,7 @@ async function main() {
     // Officers on foot go round cars and trams (see obstacles below).
     bodyAt: (x, y, r, skip) => {
       for (const o of obstacles(x, y, r + 3)) {
-        if (o.kind !== 'tram' && (!o.car || o.car === skip)) continue;
+        if (o.kind !== 'tram' && o.kind !== 'piece' && (!o.car || o.car === skip)) continue;
         if (Math.hypot(o.x - x, o.y - y) < o.r + r) return true;
       }
       return false;
@@ -2417,9 +2419,17 @@ async function main() {
   const obstacle = (x: number, y: number, z: number | undefined, r: number, vx: number, vy: number, kind: string, car?: Car) => {
     const o = pool[pooled++];
     if (!o) { const n: Obstacle = { x, y, z, r, vx, vy, kind, car }; pool.push(n); return n; }
-    o.x = x; o.y = y; o.z = z; o.r = r; o.vx = vx; o.vy = vy; o.kind = kind; o.car = car;
+    o.x = x; o.y = y; o.z = z; o.r = r; o.vx = vx; o.vy = vy; o.kind = kind; o.car = car; o.key = undefined;
     return o;
   };
+  // A piece of furniture lying loose: in the way of the traffic and the people on foot.
+  const pieceObstacle = (x: number, y: number, z: number, r: number, vx: number, vy: number, key: object) => {
+    const o = obstacle(x, y, z, r, vx, vy, 'piece');
+    o.key = key;
+    hash.add(o);
+    carHash.add(o);
+  };
+  const kickBack: [number, number] = [0, 0];
   const person = (p: { x: number; y: number; gz?: number; vx: number; vy: number }) => hash.add(obstacle(p.x, p.y, p.gz, 0.4, p.vx, p.vy, 'person'));
   // (The car's circles as `circles()` places them, without making the list.)
   const pushCar = (h: SpatialHash<Obstacle>, c: Car) => {
@@ -2530,6 +2540,13 @@ async function main() {
       if (vr?.active && walker.down <= 0) walker.h = vr.headH;
       const x = walker.x, y = walker.y;
       walker.update(dt, eyes ? { ...ctl, strafe: true } : ctl);
+      // Into a bin at a run, a container walking, a piece lying loose: kicked along, and a
+      // heavy one holds you back.
+      if (walker.down <= 0 && !walker.flight && walker.z < 0.5) {
+        const [bx, by] = looseFurniture.kick(walker, walker.level ?? 0, kickBack);
+        if (bx && !walker.blocked(walker.x + bx, walker.y)) walker.x += bx;
+        if (by && !walker.blocked(walker.x, walker.y + by)) walker.y += by;
+      }
       if (footView) {
         const contact = gait.advance(dt, Math.hypot(walker.x - x, walker.y - y), walker.jumping || !!walker.flight);
         if (contact && sound.on) {
@@ -2631,11 +2648,17 @@ async function main() {
     for (const t of tramBodies) for (const [x, y] of t.circles) hash.add(obstacle(x, y, undefined, 1.25, t.vx, t.vy, 'tram'));
     const funiBodies = funicular.bodies(px(), py(), LIFE_RADIUS + 100);
     for (const f of funiBodies) for (const [x, y] of f.circles) hash.add(obstacle(x, y, f.gz, f.line.spec.w / 2, f.vx, f.vy, 'tram'));
+    looseFurniture.each(pieceObstacle);
 
     traffic.emergency = [...police.chasing, ...brigade.engines.filter((e) => e.phase === 'go' && !e.wrecked), ...ambulances.rigs.filter((r) => r.phase === 'go' && !r.wrecked)].map((e) => e.car);
     // Yours too, with the siren on.
     if (ownBeacon(inCar) === 'siren') traffic.emergency.push(inCar!);
     traffic.update(dt, obstacles, clock.t);
+    // (What lies loose where a car does drive is shoved aside, a tram's too.)
+    if (looseFurniture.any) {
+      for (const a of traffic.agents) looseFurniture.brush(a.car);
+      for (const t of tramBodies) for (const [x, y] of t.circles) looseFurniture.sweep(t, x, y, undefined, 1.25, t.vx, t.vy, Infinity, kickBack);
+    }
     // In view or not, each car keeps track of whether it's on a bridge or under it.
     for (const a of traffic.agents) world.track(a.car);
 

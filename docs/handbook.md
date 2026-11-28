@@ -953,7 +953,12 @@ The metro ride uses its overhead cutaway camera.
   speed to a bin and much more to a parking machine. A bin hit hard spills its rubbish,
   a container that goes over spills some, and a glass bell spills broken bottles. Each
   sounds like what it's made of: steel, timber or glass. Slower, they stop the car like
-  anything else. They stand again once their tile has been out of range and comes back
+  anything else. One thrown at a parked car dents it and bounces off, and one thrown at
+  another knocks it on. Traffic waits for a piece lying in the road or goes round it,
+  and only after a wait edges past at a crawl, nudging it aside. People walk round it,
+  and a tram shoves it off the track. On foot you can run a bin over, walk a container
+  away on its castors and kick a loose piece along; a heavy one hardly moves. They
+  stand again once their tile has been out of range and comes back
   (`src/looseFurniture.ts`, `docs/furniture.md`).
 - **Lamps.** A hard knock (from about 16 km/h) smashes the headlamp or tail lamp it lands
   on, which then stays dark and lights nothing at night; the headlamps behind a police
