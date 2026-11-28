@@ -1321,7 +1321,7 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, kerbPa
     add(polygons([...(A.ipr_lawn || []), ...(A.ipr_grove || [])]), COLORS.park, 'lawn');
     add(polygons(A.ipr_meadow || []), COLORS.park, 'meadow');
     add(polygons(A.ipr_shrubs || []), COLORS.shrubBed, 'garden');
-    add(polygons(A.ipr_bed || []), COLORS.bed, 'dirt');
+    add(polygons(A.ipr_bed || []), COLORS.bed, 'flowerbed');
     // Each family plot's lawn kept its own way (tiles.ts, withPatches): over some a
     // pale, dry wash, over others a deeper green; from above the plots read apart.
     add(polygons(A.plot_dry || []), '#b8a868', 'flat', 0.2);

@@ -16,7 +16,7 @@ import {
   attribute, positionLocal, modelViewMatrix, cameraProjectionMatrix, screenSize, uniform, renderGroup, uv, cameraPosition, normalize,
   dFdx, dFdy, cross, sign, atan,
 } from 'three/tsl';
-import { GRASS_SEASON, WOOD_SEASON, FIELD_SEASON, HEDGE_SEASON } from './groundSeason.ts';
+import { GRASS_SEASON, WOOD_SEASON, FIELD_SEASON, HEDGE_SEASON, BED_SEASON } from './groundSeason.ts';
 import { setPatterned, setHeld, HOLD_PX, SKY_REF, GRIT, GRIT_M, LAMP_MIRROR, SEASON } from './shading.ts';
 import type { RasterGroundInput } from './shading.ts';
 import {
@@ -428,6 +428,28 @@ function pPaint(c0: N, p: N) {
   c.mulAssign(float(1).sub(specks.mul(.35)));
   return grit(grit(c, p), p.add(41));
 }
+// A planted flower bed (pFlowerbed in shading.ts): bedding plants grown into a cover over the
+// earth, flowering in one colour a bed, the season's; from afar the bed's green and colour mixed.
+const uBedSeason: N = followVec(BED_SEASON);
+const BLOOMS = [[.62, .05, .05], [.82, .3, .45], [.86, .85, .8], [.36, .12, .5], [.88, .4, .04], [.88, .72, .08]];
+function flowerbed(c0: N, p: N) {
+  const soil = pDirt(c0, p).toVar(), out = vec3(soil).toVar();
+  If(uBedSeason.x.greaterThan(.01), () => {
+    const pick = hash12(floor(p.div(40).add(vec2(vnoise(p.mul(.2)), vnoise(p.mul(.2).add(9))).mul(.5))).add(uBedSeason.z.mul(17)));
+    const bloom = vec3(BLOOMS[5][0], BLOOMS[5][1], BLOOMS[5][2]).toVar();
+    for (const [k, edge] of [[4, .86], [3, .72], [2, .58], [1, .42], [0, .25]] as const) {
+      If(pick.lessThan(edge), () => { bloom.assign(vec3(BLOOMS[k][0], BLOOMS[k][1], BLOOMS[k][2])); });
+    }
+    const cover = smoothstep(.3, .55, fbm(p.mul(3.1)).mul(.55).add(vnoise(p.mul(9)).mul(.45)));
+    const d = detail(p, .15);
+    const leaf = vec3(.09, .18, .055).mul(vnoise(p.mul(5.3).add(3)).mul(.5).add(.75));
+    const fl = smoothstep(.55, .72, vnoise(p.mul(31)).mul(.7).add(vnoise(p.mul(67).add(4)).mul(.3))).mul(cover).mul(d);
+    const near = mix(soil, mix(leaf, bloom.mul(vnoise(p.mul(13)).mul(.4).add(.8)), fl.mul(uBedSeason.y)), cover);
+    const far = mix(soil, mix(leaf.mul(1.1), bloom, uBedSeason.y.mul(.45)), .85);
+    out.assign(mix(soil, mix(far, near, d), uBedSeason.x));
+  });
+  return out;
+}
 // Tactile paving (pTactile in shading.ts): 40 cm tiles, studs 6 cm apart or ribs along the strip.
 function tactile(c0: N, p: N, studs: boolean) {
   const q = laid(p), d = detail(p, .06), tile = blocks(q, .4, .4).x;
@@ -446,6 +468,7 @@ function tactile(c0: N, p: N, studs: boolean) {
 function pattern(id: number, c: N, p: N, time: N, seasonal: boolean): N {
   switch (id) {
     case 22: return pPaint(c, p);
+    case 25: return flowerbed(c, p);
     case 23: return tactile(c, p, true);
     case 24: return tactile(c, p, false);
     case 1: {

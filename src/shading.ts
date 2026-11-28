@@ -3,7 +3,7 @@ import { FACADE_ATLAS, FACADE_ON, STREET_FACADE, FACADE_GLSL } from './facades.t
 import { LAMP_ON, lampLit } from './lamps.ts';
 import { MIRROR, MIRROR_BRIGHT, MIRROR_K, MIRROR_MAP, MIRROR_MATRIX } from './mirror.ts';
 import { ROOF_TILES } from './map/roofPalette.ts';
-import { GRASS_SEASON, WOOD_SEASON, FIELD_SEASON } from './groundSeason.ts';
+import { GRASS_SEASON, WOOD_SEASON, FIELD_SEASON, BED_SEASON } from './groundSeason.ts';
 
 // Procedural surface patterns in world space, shared by the ground and the buildings.
 // Everything is computed per pixel from the position in metres, so it stays sharp at
@@ -160,6 +160,7 @@ uniform vec4 uGroundSeason;
 uniform vec4 uMeadowSeason;
 uniform vec4 uLawnSeason;
 uniform vec4 uGardenSeason;
+uniform vec4 uBedSeason;
 uniform vec4 uPitchSeason;
 uniform vec3 uWoodSeason;
 uniform vec3 uFieldSeason;
@@ -324,8 +325,28 @@ vec3 pTactile(vec3 c, vec2 p, bool studs) {
   }
   return c;
 }
+// A planted flower bed (as flowerbed() in webgpu.ts): bedding plants grown into a cover over
+// the earth, flowering in one colour a bed (over some 40 m), the season's
+// (uBedSeason); from afar, the bed's green and colour mixed.
+vec3 pFlowerbed(vec3 c, vec2 p) {
+  vec3 soil = pDirt(c, p);
+  if (uBedSeason.x < .01) return soil;
+  // (One colour over some 40 m, so a bed is mostly one: the shader doesn't know its outline.)
+  float pick = hash12(floor(p / 40. + vec2(vnoise(p * .2), vnoise(p * .2 + 9.)) * .5) + uBedSeason.z * 17.);
+  vec3 bloom = pick < .25 ? vec3(.62, .05, .05) : pick < .42 ? vec3(.82, .3, .45) : pick < .58 ? vec3(.86, .85, .8) : pick < .72 ? vec3(.36, .12, .5) : pick < .86 ? vec3(.88, .4, .04) : vec3(.88, .72, .08);
+  // Plants grown together into a cover, a little earth showing between: leaves from two
+  // scales of noise (no grid), flowers in specks over them.
+  float cover = smoothstep(.3, .55, fbm(p * 3.1) * .55 + vnoise(p * 9.) * .45);
+  float d = detail(p, .15);
+  vec3 leaf = vec3(.09, .18, .055) * (.75 + .5 * vnoise(p * 5.3 + 3.));
+  float fl = d > 0. ? smoothstep(.55, .72, vnoise(p * 31.) * .7 + vnoise(p * 67. + 4.) * .3) * cover : 0.;
+  vec3 near = mix(soil, mix(leaf, bloom * (.8 + .4 * vnoise(p * 13.)), fl * uBedSeason.y), cover);
+  vec3 far = mix(soil, mix(leaf * 1.1, bloom, .45 * uBedSeason.y), .85);
+  return mix(soil, mix(far, near, d), uBedSeason.x);
+}
 vec3 pattern(int id, vec3 c, vec2 p) {
   if (id == 1) return grit(pAsphalt(c, p), p);
+  if (id == 25) return pFlowerbed(c, p);
   if (id == 22) return pPaint(c, p);
   if (id == 23 || id == 24) return grit(pTactile(c, p, id == 23), p);
   if (id == 2) return grit(pSetts(c, p, vec2(.17, .14)), p);
@@ -410,7 +431,7 @@ vec3 mirrorOf(vec3 w, vec2 p) {
 }
 `;
 
-export const PATTERN: Record<string, number> = { flat: 0, asphalt: 1, setts: 2, mosaic: 3, slabs: 4, grass: 5, wood: 6, pitch: 7, dirt: 8, concrete: 9, water: 10, gravel: 11, field: 12, meadow: 13, lawn: 14, garden: 15, pavement: 16, quietWater: 17, groovedRail: 18, graniteKerb: 20, stairStone: 21, paint: 22, tactileStuds: 23, tactileRibs: 24 };
+export const PATTERN: Record<string, number> = { flat: 0, asphalt: 1, setts: 2, mosaic: 3, slabs: 4, grass: 5, wood: 6, pitch: 7, dirt: 8, concrete: 9, water: 10, gravel: 11, field: 12, meadow: 13, lawn: 14, garden: 15, pavement: 16, quietWater: 17, groovedRail: 18, graniteKerb: 20, stairStone: 21, paint: 22, tactileStuds: 23, tactileRibs: 24, flowerbed: 25 };
 
 // Buildings: tiles laid in rows down the slope of every roof face (the slope comes
 // from the face normal), slate in smaller rows, gravel on flat roofs, and a grid of
@@ -1021,6 +1042,7 @@ export function patterned(
     sh.uniforms.uMeadowSeason = GRASS_SEASON.meadow;
     sh.uniforms.uLawnSeason = GRASS_SEASON.lawn;
     sh.uniforms.uGardenSeason = GRASS_SEASON.garden;
+    sh.uniforms.uBedSeason = BED_SEASON;
     sh.uniforms.uPitchSeason = GRASS_SEASON.pitch;
     sh.uniforms.uWoodSeason = WOOD_SEASON;
     sh.uniforms.uFieldSeason = FIELD_SEASON;

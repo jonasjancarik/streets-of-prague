@@ -1362,6 +1362,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   strip 0.8 m wide from it back across the pavement to the house front or 4 m. The kerb is
   where the road's surface stops past the zebra's end, beyond a parking lane mapped across
   it; none where a house, another road or water is behind it.
+  IPR's flower beds are planted through the season (the `flowerbed` pattern, `BED_SEASON`
+  in `src/groundSeason.ts`): bare earth from late October to mid-April, tulips and pansies
+  into May, the summer's bedding from June to September, each bed in one colour (red,
+  pink, white, violet, orange or yellow, picked over some 40 m), plants grown into a cover
+  with flowers specked over them up close and the bed's mixed colour from afar.
   The general pavement is asphalt grey; slab squares are lighter, and park paths stay
   warm. Squares use their own OSM `surface` tag where one exists. Otherwise, a clear
   majority of mapped pedestrian and service ways crossing the square can supply its
