@@ -157,6 +157,9 @@ export interface LandResult {
   // signs, 1 the direction plates) and the part of it the post holds up (-1: a gantry's,
   // fixed). The k-th's cells are in looseCells as POST_OWNER + k.
   signPosts: Float32Array;
+  // The trees a car can snap (src/treeFalls.ts): [index in trees, ground, tough, give,
+  // reach] each. Their trunks' cells are in looseCells as TREE_OWNER + index.
+  breakableTrees: Float32Array;
   masks: LevelMask[];
 }
 

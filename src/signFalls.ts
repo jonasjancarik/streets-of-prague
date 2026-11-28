@@ -16,7 +16,7 @@ import type { Grid } from './map/geo.ts';
 // tough: m/s into it that knocks it over; give: the share of the car's speed it takes.
 // A sign's thin steel tube goes at about 13 km/h; a direction board, with its plates, at 16.
 const MAKES = [{ tough: 3.5, give: 0.06 }, { tough: 4.5, give: 0.12 }];
-const REACH = 0.42; // m: the grid's cells round a post stop a car about this far from it
+const REACH = 0.5; // m: the grid's cells round a post stop a car as far as this from it
 const FALL_S = 1.2; // s it takes to come down (posts.ts's fall, with a little to spare)
 
 // Coming down: which runs of the mesh's vertices (first, count, …), turned about `pivot`

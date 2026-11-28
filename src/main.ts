@@ -90,6 +90,7 @@ import { streetHedges } from './streetHedges.ts';
 import { fences } from './fences.ts';
 import { looseFurniture } from './looseFurniture.ts';
 import { signFalls } from './signFalls.ts';
+import { treeFalls } from './treeFalls.ts';
 import { posts } from './posts.ts';
 import { streetGrass, type GrassGround } from './streetGrass.ts';
 import type { LitterGround } from './streetLitter.ts';
@@ -2997,6 +2998,8 @@ async function main() {
     looseFurniture.update(dt);
     // Sign posts knocked over, coming down (signFalls.ts).
     signFalls.update();
+    // Young trees snapped by a car, coming down (treeFalls.ts).
+    treeFalls.update();
     // Cars smoking, burning and blowing up (the ones that could have been hurt this step).
     fires.update(dt, active, { x: camPos.x, y: -camPos.z, r: viewRadius() + 40 });
 

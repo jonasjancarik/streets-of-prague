@@ -969,6 +969,12 @@ The metro ride uses its overhead cutaway camera.
   The signs stand again when their tile is made again, a stop's sign once it's out of
   view, a chalkboard once its wall is drawn again (`src/signFalls.ts`,
   `src/stopSign.ts`).
+- **Trees.** A young street tree (a crown under about 2.2 m across its radius, a thin
+  stem) snaps at its foot when a car hits it at about 20 km/h, and a small one (up to
+  3.2 m) at about 32 km/h; small conifers at about 22. It falls the way the car was going,
+  trunk and crown, and lies across the street until its tile is made again. The car
+  loses a quarter to a half of its speed. Bigger and old trees, and shrubs, stand
+  whatever hits them (`src/treeFalls.ts`).
 - **Lamps.** A hard knock (from about 16 km/h) smashes the headlamp or tail lamp it lands
   on, which then stays dark and lights nothing at night; the headlamps behind a police
   ram frame never break. The tail lamps light up when a car brakes, by day as well

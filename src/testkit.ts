@@ -39,6 +39,7 @@ import { gunOn, setGun } from './pistol.ts';
 import { upgrade } from './save.ts';
 import { onCrash } from './impacts.ts';
 import { signFalls } from './signFalls.ts';
+import { treeFalls } from './treeFalls.ts';
 import type { StopSign } from './stopSign.ts';
 
 // Test API for scenarios (scenarios/*.ts), the developer panel and scripts/scene.mjs,
@@ -1052,6 +1053,15 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     },
     // The cafés' chalkboards drawn within r m of (x, y) (close up only): where, and whether down.
     boardsNear(x: number, y: number, r: number) { return signFalls.boardsNear(x, y, r).map((p) => ({ x: p.x, y: p.y, down: !!p.down })); },
+    // The nearest tree a car can snap (treeFalls.ts) no harder to snap than `tough` m/s, with a
+    // clear run up to it, the car aimed at it. And whether one is down.
+    snappable(r = 300, back = 16, beyond = 10, tough = Infinity) {
+      const m = g.me();
+      const list = treeFalls.standingNear(m.x, m.y, r).filter((p) => p.tough <= tough).sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y));
+      for (const p of list) if (aimRun(p, back, beyond, false, (dx, dy) => Math.hypot(dx, dy) < p.reach + 0.45)) return p;
+      return null;
+    },
+    treeDown(x: number, y: number) { return treeFalls.downAt(x, y); },
     // The sign posts still standing within r m of (x, y) that a car could knock over.
     signPostsNear(x: number, y: number, r: number) { return signFalls.standingNear(x, y, r); },
     // The furniture knocked loose so far: where each piece is and which way up (1 upright).

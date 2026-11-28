@@ -87,6 +87,14 @@ chalkboard is drawn in its wall's close-up mesh (`map/streetFacade.ts`, `boards`
 foot and its runs of vertices), and is a light post only while that mesh is shown.
 `scenarios/sign-knock.ts` checks all three.
 
+Young and small trees snap the same way (`src/treeFalls.ts`). The worker's `stampTrunks`
+picks them (`SNAPS`, `YOUNG`, `SMALL_CONIFER`), notes their trunk cells in `looseCells` as
+`TREE_OWNER` and the tree's index, and lists them in `breakableTrees` with the ground,
+how hard they are to snap and the reach of their cells. Snapped, a tree's cells are
+freed and its instance matrix in the tile's trees is turned about its foot as it falls;
+`TreePool.refresh` copies the tile's trees into their pages again (from above, or sorted
+again into street trees and far crowns close up). `scenarios/tree-snap.ts` checks it.
+
 ## Mapped street furniture
 
 Along the streets the furniture is OpenStreetMap's, where it stands on the map:

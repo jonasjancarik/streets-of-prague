@@ -56,6 +56,7 @@ import { stopLines } from './map/stopShelters.ts';
 import { posts, type Post } from './posts.ts';
 import { looseFurniture } from './looseFurniture.ts';
 import { signFalls } from './signFalls.ts';
+import { treeFalls } from './treeFalls.ts';
 import { fences, type FenceSection } from './fences.ts';
 import { stepEdges, shortenInto, INTO_TUNNEL, type Crosser, type StepEdge } from './stepEdges.ts';
 import { byLevel, bridgeApproaches } from './roadLevels.ts';
@@ -816,6 +817,7 @@ export class TileWorld {
     loadFacadeAtlas();
     this.scene = scene;
     this.trees = new TreePool(scene);
+    treeFalls.pool = this.trees;
     this.time = time;
     this.night = night;
     this.T = index.tile;
@@ -1956,6 +1958,8 @@ export class TileWorld {
       looseFurniture.addTile(k, land.furniture.spots, furniture, land.looseCells, grid);
       // The sign posts a car can knock over (signFalls.ts).
       signFalls.addTile(k, land.signPosts, [signs, directions], grid);
+      // The young and small trees a car can snap (treeFalls.ts).
+      treeFalls.addTile(k, land.breakableTrees, land.trees, grid);
       // The tile's buildings as shadow casters, for its own sky view and its neighbours':
       // their ground next to these buildings is worked out again.
       this.sky.set(key, { shapes, texture: null, tileBox: t.box, ground, refresh: null });
@@ -1968,6 +1972,7 @@ export class TileWorld {
     } catch (error) {
       looseFurniture.removeTile(k);
       signFalls.removeTile(k);
+      treeFalls.removeTile(k);
       disposeFurniture(furniture);
       signs?.geometry.dispose();
       if (directions) disposeDirections(directions);
@@ -2259,6 +2264,7 @@ export class TileWorld {
     for (const p of t.poles) posts.remove(p);
     looseFurniture.removeTile(k);
     signFalls.removeTile(k);
+    treeFalls.removeTile(k);
     fences.remove(t.fences);
     streetHedges.remove(k);
     this.loaded.delete(k);

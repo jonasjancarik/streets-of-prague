@@ -16,7 +16,7 @@ type Selection = { mask: Uint8Array; x: number; z: number; individual: boolean; 
 type Page = {
   mesh: THREE.InstancedMesh; kind: TreeKind; owner: string | null;
   street?: THREE.InstancedMesh; canopy?: THREE.InstancedMesh;
-  source?: Source; selection?: Selection; packed?: boolean;
+  source?: Source; selection?: Selection; packed?: boolean; grown?: boolean;
 };
 
 // The ground uses ranks 1–200. Draw crowns after the other solid meshes so only
@@ -181,11 +181,31 @@ export class TreePool {
     }
   }
 
+  // A tile's tree matrices changed in its instances (a tree snapped and falling,
+  // treeFalls.ts): copied into its pages again, and the pages' bounds grown once to take a
+  // tree lying where it fell.
+  refresh(tileKey: string) {
+    for (const page of this.leases.get(tileKey) ?? []) {
+      const source = page.source;
+      if (!source) continue;
+      if (!page.grown) {
+        page.grown = true;
+        const s = page.mesh.boundingSphere;
+        if (s) { s.radius += 16; if (page.street) page.street.boundingSphere = s; }
+      }
+      // (Close up, the street trees and the far crowns are sorted again next frame.)
+      if (page.packed && page.selection) { page.selection.x = Infinity; continue; }
+      copyTrees(page.mesh, 0, source.trees, source.from, source.count);
+      uploadTrees(page.mesh, source.count);
+    }
+  }
+
   private release(page: Page) {
     page.owner = null;
     distantTreeCrown(page.mesh, false);
     page.source = undefined;
     page.packed = false;
+    page.grown = false;
     if (page.selection) page.selection.x = Infinity;
     page.mesh.count = 0;
     page.mesh.visible = false;

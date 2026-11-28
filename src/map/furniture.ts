@@ -27,6 +27,8 @@ export const KNOCKABLE = new Set<number>([KIND.bench, KIND.bin, KIND.paper, KIND
 // A sign post's owner number in the worker's looseCells: this plus its index in the tile's
 // signPosts (furniture's are its spot indices, far below).
 export const POST_OWNER = 1 << 20;
+// And a tree's a car can snap (src/treeFalls.ts): this plus its index in the tile's trees.
+export const TREE_OWNER = 1 << 21;
 // pipeline/build_street_furniture.py's kinds, by name.
 export const MAPPED: Record<string, FurnitureKind> = {
   bin: KIND.bin, 'bike stand': KIND.bikeStand, 'parking machine': KIND.parkingMachine, bollard: KIND.bollard, 'post box': KIND.postBox,
