@@ -760,6 +760,11 @@ export const STREET_REF = { value: new THREE.Color(0, 0, 0) };
 export const WATER = { value: 1 };
 export const SUN_DIR = { value: new THREE.Vector3(0, 1, 0) };
 export const SUN_LIGHT = { value: new THREE.Color(0, 0, 0) };
+// How strong the sunlight through the street trees' leaves is (webgpu/streetTrees.ts), 1;
+// here to be tried in the page.
+export const LEAF_LIGHT = { value: 1 };
+// How much the street trees' sprays vary in their green, one from the next (1.3).
+export const LEAF_VARY = { value: 1.3 };
 // Lit windows at night: the share of them (0 by day).
 export const WINDOWS = { value: 0 };
 
