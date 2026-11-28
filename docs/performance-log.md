@@ -2317,3 +2317,37 @@ frame 30.7–31.7 ms, about 460 draws (some 200 in the sun's shadow pass), 3.6 M
   the rest (`CROWD_FLOOR`, main.ts): a quiet street halved to near-empty saved little,
   as each person costs about 3.5 µs. After 35 s: the Old Town Square 1200 as usual, 675 at
   half, 2075 and filling at double; Slezská in Vinohrady 241, 195, 332.
+
+## 28 November 2026 — rain on the Pixel 5: the mist sheets
+
+Pixel 5 over ADB, Chrome WebGPU, Medium at its own pixel ratio (1.5×), standing on the
+Old Town Square at 22:00, 4 s windows after 20 s of settling; battery 35–37 °C. Main itself
+can't be timed there today (see the next section), so these ran on main with the nearest
+lamps' shadows left out of the shaders, which doesn't touch the weather.
+
+- **Rain against clear** in one page (`weather.begin`): about 55 → 64 ms a frame, some
+  10 ms. On the M5 (High, 2×) the same was 5% and no part stood out: its GPU barely pays
+  for see-through layers, and the main thread hid the rest.
+- **What of it is the mist sheets** that come with rain (mist 0.12, so seven sheets over
+  the whole view, each at most 2% opaque): about 9 ms (hiding them, 66.7 → 57.8 ms). The
+  wet ground (puddles, ripples, the wet shine) about 1 ms. The falling streaks and the
+  lights' reflections measured nothing on the M5 and weren't run on the phone.
+- **Thin mist is now drawn in fewer, thicker sheets** (`WeatherFx.update`, below
+  `THIN_MIST` = 0.4): rain 3, snow 3, a storm 4; mist itself keeps its 7. Three sheets
+  at 7/3 the opacity against seven, in one page: 65.1 → 59.2 ms (9%), quicker in every
+  window. Two sheets saved about as much (66.2 → 61.7) but kept only 80% of the veil from
+  above and were patchier; three keep 92% (measured as the ground's brightness through the
+  mist: none 87, seven 105.5, three 104.2, two 102.0) with about the same evenness.
+- Not measured: the drive (the bench couldn't get into the car twice), Low and Ultra, and the
+  look of a storm at eye height (the old screenshot caught a lightning flash).
+
+## 28 November 2026 — the Pixel 5 stuck on "Preparing the view…"
+
+Since `ca59e433` (the nearest lamps' shadows, `CLOSE` in `lamps.ts`) the game no longer
+starts on the Pixel 5 at Medium: after loading it shows "Preparing the view…" for minutes,
+at 7 frames in 5 s (196 shader builds, the worst frame 3.5 s), and the bench records no
+frames at all. Found by bisecting on the phone (`e723da7f` runs, `ca59e433` doesn't); the
+main thread is mostly idle while Chrome's GPU process works. `closeShade` in
+`webgpu/lamps.ts` is unrolled into `lampLight`, so every lit material's shader carries three
+lamps × sixteen depth reads and their matrix arithmetic, behind a uniform that only Ultra
+turns on. Main with `closeShade` returning nothing at once: 10.4 fps there again.
