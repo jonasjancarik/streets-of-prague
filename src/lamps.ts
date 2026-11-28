@@ -1,6 +1,7 @@
 import type { CarSpec } from './car.ts';
 import { dataUrl } from './data.ts';
 import * as THREE from 'three';
+import { bannerMeshes, bannerAt } from './lampBanners.ts';
 import { nearestRailFoot, type RailSegment } from './bridgeStone.ts';
 import { CloseLanterns } from './closeLanterns.ts';
 import { mirrored, mirroredGlow, RIVER_MODEL_LAYER } from './mirror.ts';
@@ -484,6 +485,7 @@ export class Lamps {
   private kept:THREE.InstancedBufferGeometry | null = null;
   private keptScene = new THREE.Scene();
   private models: THREE.InstancedMesh[] = [];
+  private banners: THREE.InstancedMesh[] = []; // (lampBanners.ts: one a design)
   private closeLanterns = new CloseLanterns();
   street(on: boolean) {
     if (this.closeLanterns.street === on) return;
@@ -707,7 +709,8 @@ export class Lamps {
     cableGeometry.setDrawRange(0, 0);
     this.cables = new THREE.LineSegments(cableGeometry, new THREE.LineBasicMaterial({ color: '#1d1f20', transparent: true, opacity: 0.85 }));
     this.cables.frustumCulled = false;
-    scene.add(...this.models, this.glows, this.cables);
+    this.banners = bannerMeshes(MAX_POLES, lampLit);
+    scene.add(...this.models, ...this.banners, this.glows, this.cables);
 
     const lamps = fetchBinary(dataUrl(area, 'lamps.bin.gz'), true).then((buf) => {
       if (!buf) return;
@@ -1051,7 +1054,7 @@ export class Lamps {
     if (this.near.length > MAX_LIGHTS - 400) this.near.length = MAX_LIGHTS - 400;
     // Poles and heads: they stay put until the next gathering.
     const d = this.dummy;
-    const used = this.models.map(() => 0), shown = this.models.map(() => 0);
+    const used = this.models.map(() => 0), shown = this.models.map(() => 0), flown = this.banners.map(() => 0);
     this.closeLanterns.begin();
     let g = 0, c = 0;
     const cable = this.cables.geometry.getAttribute('position') as THREE.BufferAttribute;
@@ -1102,6 +1105,9 @@ export class Lamps {
         d.updateMatrix();
         const close = !post?.down && this.closeLanterns.add(m,MODELS[m].detailed,d.matrix,this.models[m],(lx-x)**2+(ly-y)**2);
         if (!close) this.models[m].setMatrixAt(used[m]++, d.matrix);
+        // A main road's arm lamp may fly a banner (lampBanners.ts), not one knocked over.
+        const design = m === 0 && !post?.down ? bannerAt(lx, ly) : -1;
+        if (design >= 0) this.banners[design].setMatrixAt(flown[design]++, d.matrix);
         d.rotation.set(0, 0, 0);
         if (post?.down) continue; // (and its light is out)
         for (const [gx, gy, gz] of MODELS[m].glows) {
@@ -1125,6 +1131,7 @@ export class Lamps {
       }
     }
     this.models.forEach((mesh, m) => { mesh.count = used[m]; sendInstances(mesh); });
+    this.banners.forEach((mesh, k) => { mesh.count = flown[k]; sendInstances(mesh); });
     this.closeLanterns.finish();
     send(cable, c * 2);
     this.cables.geometry.setDrawRange(0, c * 2);

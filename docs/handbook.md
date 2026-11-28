@@ -525,6 +525,11 @@ the street is 5–30 m wide: Na Příkopě, Celetná, Karlova, Pařížská, Ná
 `FESTIVE` (`src/christmasLights.ts`; `Season.festive`, shared as `SEASON.w`). They glow
 after dark. Václavské náměstí is too wide for them.
 
+All year, about a third of the main roads' arm lamp posts fly a banner (`src/lampBanners.ts`):
+a 0.75 × 2.2 m cloth on two rods, standing out from the pole towards the road so that it
+faces whoever comes along the street, in one made-up design a 120 m stretch (the city's
+colours, an exhibition, a summer music festival, a museum), drawn with the poles near you.
+
 Stand under a street tree on a windy day. The boughs and sprays lean with the wind and
 swing back, in gusts that pass from tree to tree, about three times as hard in a storm.
 Towards sunset or dawn, look along the river at the sun: the horizon there is orange
