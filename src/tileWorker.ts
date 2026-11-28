@@ -355,15 +355,17 @@ function tileGrid(geo: Geo<LandData>, t: LandData, seeds: Float64Array, edges: S
 
 // Keep the owner of cells that would be free without one particular trunk.
 // The trees a car can snap (src/treeFalls.ts): broadleaf ones with a crown no wider than
-// this (radius, m), the young ones (under YOUNG) more easily, and small conifers. The big
-// and old ones, and the shrubs, stand whatever hits them.
+// this (radius, m), the young ones (under YOUNG) more easily, and small conifers; and the
+// shrubs, which a car ploughs through, flattening them. The big and old trees stand
+// whatever hits them.
 const SNAPS = 3.2, YOUNG = 2.2, SMALL_CONIFER = 2;
-// m/s into it that snaps it, and the share of the car's speed it takes.
-const SNAP = { young: [5.5, 0.25], small: [9, 0.45], conifer: [6, 0.3] } as const;
+// m/s into it that snaps it, the share of the car's speed it takes, and how it goes down
+// (0 falls over, 1 is flattened).
+const SNAP = { young: [5.5, 0.25, 0], small: [9, 0.45, 0], conifer: [6, 0.3, 0], shrub: [2.5, 0.15, 1] } as const;
 
 // The trunks into the grid. Those of trees a car can snap are noted in looseCells as
-// TREE_OWNER and their index, and listed in `breakable`: [index, ground, tough, give, reach]
-// each.
+// TREE_OWNER and their index, and listed in `breakable`: [index, ground, tough, give, reach,
+// how it goes down] each.
 function stampTrunks(grid: Grid, geo: Geo<LandData>, { matrices, count, big, shrubs, conifers }: LandResult['trees'], looseCells: Map<number, number[]>,
   ground: (x: number, y: number) => number, breakable: number[]) {
   const owners = new Map<number, TreeTrunk>(), broadleaf = count - big - shrubs - conifers;
@@ -373,10 +375,11 @@ function stampTrunks(grid: Grid, geo: Geo<LandData>, { matrices, count, big, shr
     const crown = Math.hypot(e[0], e[1], e[2]);
     const rad = 0.35 + crown * 0.06;
     const snap = crown < 0.5 ? null : i < broadleaf && crown <= SNAPS ? (crown < YOUNG ? SNAP.young : SNAP.small)
-      : i >= count - conifers && crown <= SMALL_CONIFER ? SNAP.conifer : null;
+      : i >= count - conifers ? (crown <= SMALL_CONIFER ? SNAP.conifer : null)
+      : i >= broadleaf + big ? SNAP.shrub : null;
     const owner = snap ? TREE_OWNER + i : -1;
     // (Its reach: as far out as its cells go, a cell's half diagonal past its radius.)
-    if (snap) breakable.push(i, ground(x, y), snap[0], snap[1], rad + 0.4);
+    if (snap) breakable.push(i, ground(x, y), snap[0], snap[1], rad + 0.4, snap[2]);
     const [u, v] = geo.px(x, y, RES);
     const col = Math.floor(u), row = Math.floor(v);
     // Include the corners of the raster cells in the clearance test.

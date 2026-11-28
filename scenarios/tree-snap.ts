@@ -4,19 +4,20 @@ import { onCrash } from '../src/impacts.ts';
 // A young or small tree hit hard enough snaps at its foot and falls the way the car was
 // going, the car carrying on slowed; hit slowly, it stops the car like any tree.
 export default {
-  title: 'A car at 40 km/h snaps a young tree and carries on; at 10 km/h the tree stops it',
+  title: 'A car at 40 km/h snaps a young tree and carries on, at 10 km/h the tree stops it; at 25 km/h it flattens a shrub',
   async run(t) {
     t.time('14:00');
     t.weather('clear');
-    for (const c of [{ kmh: 40, snaps: true }, { kmh: 10, snaps: false }]) {
+    for (const c of [{ kmh: 40, snaps: true, shrub: false }, { kmh: 10, snaps: false, shrub: false }, { kmh: 25, snaps: true, shrub: true }]) {
       let tree = null, car = null;
       for (const place of ['vodickova', 'karlak', 'ujezd', 'letna', 'petrin', 'malostranske']) {
         await t.go(place, { heading: 315 });
         car = await t.drive('hatch');
         // (The young ones: they snap at 20 km/h.)
-        if ((tree = t.snappable(300, c.snaps ? 16 : 5, 10, 6))) break;
+        if ((tree = c.shrub ? t.snappable(300, 16, 10, 3) : t.snappable(300, c.snaps ? 16 : 5, 10, 6, 5))) break;
       }
-      if (!tree || !car) { t.check('a young tree with a clear run up to it', true, 'none found: skipped'); continue; }
+      const what = c.shrub ? 'shrub' : 'young tree';
+      if (!tree || !car) { t.check(`a ${what} with a clear run up to it`, true, 'none found: skipped'); continue; }
       await t.wait(0.3, { brake: true });
       const hits: string[] = [];
       const stop = onCrash((e) => { if (e.a === car || Math.hypot(e.x - tree!.x, e.y - tree!.y) < 1) hits.push(`${e.kind} ${(e.speed * 3.6).toFixed(0)} km/h`); });
@@ -35,9 +36,9 @@ export default {
       await t.frames(3);
       const down = t.treeDown(tree.x, tree.y);
       if (c.snaps) {
-        t.check('a young tree hit at 40 km/h snapped', down, hits.join(', '));
-        t.check('the car carried on past it', passed, `${Math.round(speed)} km/h then`);
-        await t.look({ x: tree.x, y: tree.y, h }, { name: 'tree-snap', views: ['top', 'third', 'front-left', 'front-right'] });
+        t.check(`a ${what} hit at ${c.kmh} km/h went down`, down, hits.join(', '));
+        t.check(`the car carried on past the ${what}`, passed, `${Math.round(speed)} km/h then`);
+        await t.look({ x: tree.x, y: tree.y, h }, { name: c.shrub ? 'tree-snap-shrub' : 'tree-snap', views: ['top', 'third', 'front-left', 'front-right'] });
       } else {
         t.check('a young tree hit at 10 km/h still stands', !down, hits.join(', '));
         const d = Math.hypot(car.x - tree.x, car.y - tree.y);

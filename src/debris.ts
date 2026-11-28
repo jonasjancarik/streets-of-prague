@@ -18,6 +18,8 @@ const SOFT = new Set(['hedge', 'person', 'timber', 'bottles']);
 // crushed plastic and a dark bag or two; green, clear and brown bottle glass.
 const RUBBISH: [number, number, number][] = [[0.86, 0.85, 0.8], [0.75, 0.72, 0.62], [0.6, 0.62, 0.64], [0.7, 0.18, 0.14], [0.2, 0.36, 0.62], [0.9, 0.8, 0.3]];
 const BOTTLES: [number, number, number][] = [[0.22, 0.42, 0.2], [0.3, 0.52, 0.26], [0.8, 0.86, 0.85], [0.45, 0.28, 0.12]];
+// A shelter's toughened glass: crumbs, clear with a little green at the edges.
+const PANE: [number, number, number][] = [[0.86, 0.92, 0.92], [0.74, 0.84, 0.84], [0.93, 0.96, 0.95]];
 
 const hex = new Map<string, [number, number, number]>();
 function paintOf(c: unknown): [number, number, number] {
@@ -121,8 +123,9 @@ export class Debris {
   // A knocked bin's rubbish or a glass bell's broken bottles at (x, y), `z` the ground
   // (`under`: round it), thrown on at (vx, vy) m/s; `n` pieces. Rubbish lies where it
   // falls for a minute or so, as glass does.
-  spill(what: 'rubbish' | 'bottles', x: number, y: number, z: number, vx: number, vy: number, n: number, under?: (x: number, y: number) => number) {
-    const r = this.r, glass = what === 'bottles', palette = glass ? BOTTLES : RUBBISH;
+  // ('glass': a shelter's pane, gone to crumbs.)
+  spill(what: 'rubbish' | 'bottles' | 'glass', x: number, y: number, z: number, vx: number, vy: number, n: number, under?: (x: number, y: number) => number) {
+    const r = this.r, glass = what !== 'rubbish', palette = what === 'glass' ? PANE : glass ? BOTTLES : RUBBISH;
     for (let i = 0; i < n; i++) {
       const t = r() * Math.PI * 2, v = 0.3 + r() * (glass ? 2.5 : 1.5), keep = glass ? 0.2 + r() * 0.4 : 0.08 + r() * 0.25; // (paper drops near; glass skids on)
       const rgb = palette[Math.floor(r() * palette.length)], tone = 0.8 + r() * 0.35;

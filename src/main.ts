@@ -91,6 +91,7 @@ import { fences } from './fences.ts';
 import { looseFurniture } from './looseFurniture.ts';
 import { signFalls } from './signFalls.ts';
 import { treeFalls } from './treeFalls.ts';
+import { shelterGlass } from './shelterGlass.ts';
 import { posts } from './posts.ts';
 import { streetGrass, type GrassGround } from './streetGrass.ts';
 import type { LitterGround } from './streetLitter.ts';
@@ -2258,6 +2259,10 @@ async function main() {
   // A knocked bin's rubbish and a glass bell's bottles, near the camera (looseFurniture.ts).
   looseFurniture.onSpill = (e) => {
     if (Math.hypot(e.x - camPos.x, e.y + camPos.z) < Debris.NEAR) fires.debris.spill(e.what, e.x, e.y, e.z, e.vx, e.vy, e.n, (x, y) => ground(x, y, null));
+  };
+  // A stop shelter's glass, shattered: its crumbs (shelterGlass.ts).
+  shelterGlass.onShatter = (e) => {
+    if (Math.hypot(e.x - camPos.x, e.y + camPos.z) < Debris.NEAR) fires.debris.spill('glass', e.x, e.y, ground(e.x, e.y, null), e.vx, e.vy, e.n, (x, y) => ground(x, y, null));
   };
   const brigade: Brigade = new Brigade({
     scene, police, grid, fires, kit, height: ground, rng: seeded, edgesNear, offscreen, viewRadius,

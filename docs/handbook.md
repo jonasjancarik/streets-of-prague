@@ -944,10 +944,11 @@ The metro ride uses its overhead cutaway camera.
   still rolling faster than a walk is left at once, without the door, and vehicles
   built from boxes (buses, lorries, the fire engine, the ambulance, the dustcart) have no door to
   swing: you step up to the cab and in.
-- **Street furniture.** Bins, recycling containers, glass bells, benches and poster
-  cases come loose when a car hits them hard enough: a bin, a container or a glass bell
-  at about 8 km/h, a poster case at 15, a bench at 18. Bike stands, parking machines and
-  street cabinets are bolted down and need about 22–25 km/h. They're thrown on ahead of
+- **Street furniture.** Bins, recycling containers, glass bells, benches, poster cases
+  and concrete planters come loose when a car hits them hard enough: a bin, a container
+  or a glass bell at about 8 km/h, a planter at 11 (it's heavy: it costs the car a lot of
+  speed and slides), a poster case at 15, a bench at 18. Bike stands, parking machines,
+  street cabinets, bollards and post boxes are bolted down and need about 22–25 km/h. They're thrown on ahead of
   the car, tumble and come to rest however they land, and a car that runs into one
   again shoves it along. A container standing on its castors rolls. The car loses little
   speed to a bin and much more to a parking machine. A bin hit hard spills its rubbish,
@@ -973,8 +974,12 @@ The metro ride uses its overhead cutaway camera.
   stem) snaps at its foot when a car hits it at about 20 km/h, and a small one (up to
   3.2 m) at about 32 km/h; small conifers at about 22. It falls the way the car was going,
   trunk and crown, and lies across the street until its tile is made again. The car
-  loses a quarter to a half of its speed. Bigger and old trees, and shrubs, stand
-  whatever hits them (`src/treeFalls.ts`).
+  loses a quarter to a half of its speed. A car ploughs through a shrub from about 9 km/h,
+  pressing it flat. Bigger and old trees stand whatever hits them (`src/treeFalls.ts`).
+- **Stop shelters.** A car into a shelter at more than about 11 km/h shatters its glass
+  (not drawn, but there): heard breaking, its crumbs thrown, and the car goes on in
+  under the roof; the posts and the light box stay solid. Slower, the glass stops it
+  (`src/shelterGlass.ts`).
 - **Lamps.** A hard knock (from about 16 km/h) smashes the headlamp or tail lamp it lands
   on, which then stays dark and lights nothing at night; the headlamps behind a police
   ram frame never break. The tail lamps light up when a car brakes, by day as well

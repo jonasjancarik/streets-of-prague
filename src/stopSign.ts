@@ -182,10 +182,13 @@ export class StopSign extends THREE.Group {
   stand(x: number, y: number, z: number) {
     let p = this.post;
     if (!p) {
-      p = this.post = { x, y, z, ...STOP_POST, shades: false, down: null,
+      // (No height: the sync's ground can be the terrain's, off the street's by more than
+      // posts.collide's 2.5 m, and a stop's sign stands by its street, never on a bridge
+      // over another.)
+      p = this.post = { x, y, z: NaN, ...STOP_POST, shades: false, down: null,
         knocked: (q, speed) => crash(q, null, speed * 0.6, 'post', q.x, q.y, 40) };
       posts.add(p);
-    } else if (p.x !== x || p.y !== y) { posts.remove(p); Object.assign(p, { x, y, z }); posts.add(p); }
+    } else if (p.x !== x || p.y !== y) { posts.remove(p); Object.assign(p, { x, y }); posts.add(p); }
     if (p.down) {
       tilt.set(-Math.sin(p.down.ang), 0, -Math.cos(p.down.ang));
       this.quaternion.setFromAxisAngle(tilt, fall(p, performance.now()));

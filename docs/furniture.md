@@ -93,7 +93,14 @@ picks them (`SNAPS`, `YOUNG`, `SMALL_CONIFER`), notes their trunk cells in `loos
 how hard they are to snap and the reach of their cells. Snapped, a tree's cells are
 freed and its instance matrix in the tile's trees is turned about its foot as it falls;
 `TreePool.refresh` copies the tile's trees into their pages again (from above, or sorted
-again into street trees and far crowns close up). `scenarios/tree-snap.ts` checks it.
+again into street trees and far crowns close up). Shrubs are flattened rather than felled
+(the last number in `breakableTrees`). `scenarios/tree-snap.ts` checks it.
+
+A stop shelter's glass (`src/shelterGlass.ts`) is the shelter's outline in the grid. The
+main thread finds each tile's shelters as the roofs job does (`shelterOf`), and a car
+closing on one faster than 3 m/s frees the outline's cells, except round the posts and
+the light box, and throws its crumbs (`Debris.spill('glass')`).
+`scenarios/shelter-glass.ts` checks it.
 
 ## Mapped street furniture
 

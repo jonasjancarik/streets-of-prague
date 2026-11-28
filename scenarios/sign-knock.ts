@@ -54,19 +54,25 @@ export default {
     }
     if (!stopSign || !car) { t.check('a bus stop sign with a clear run up to it', true, 'none found: skipped'); return; }
     const h = Math.atan2(stopSign.y - car.y, stopSign.x - car.x);
+    const near: string[] = [], sign = stopSign;
+    const listen = onCrash((e) => { if (Math.hypot(e.x - sign.x, e.y - sign.y) < 3) near.push(`${e.kind} ${(e.speed * 3.6).toFixed(0)}`); });
     t.push(30);
-    let passed = false;
+    let passed = false, closest = Infinity, side = 0;
     for (let i = 0; i < 60 && !passed; i++) {
       await t.wait(0.05, { move: 0.4 });
+      const d = Math.hypot(car.x - sign.x, car.y - sign.y);
+      if (d < closest) { closest = d; side = -(car.x - sign.x) * Math.sin(h) + (car.y - sign.y) * Math.cos(h); }
       passed = (car.x - stopSign.x) * Math.cos(h) + (car.y - stopSign.y) * Math.sin(h) > 2;
     }
+    listen();
     await t.wait(2, { brake: true });
     // (It falls in real time, as a lamp post does: a moment of that, and a frame to show it.)
     await new Promise((r) => setTimeout(r, 1500));
     await t.frames(2);
     // (How far over: the angle it has turned through, 90° flat.)
     const over = 2 * Math.acos(Math.min(1, Math.abs(stopSign.sign.quaternion.w))) * 180 / Math.PI;
-    t.check('a bus stop sign hit at 30 km/h went over', over > 70, `${over.toFixed(0)}°`);
+    const post = (sign.sign as unknown as { post?: { down: unknown } }).post;
+    t.check('a bus stop sign hit at 30 km/h went over', over > 70, `${over.toFixed(0)}°; passed ${closest.toFixed(1)} m from it, ${side.toFixed(1)} m aside; heard there: ${near.join(', ') || 'nothing'}; ${post ? (post.down ? 'its post down' : 'its post standing') : 'no post'}`);
     t.check('the car went on past it', passed);
     await t.look({ x: stopSign.x, y: stopSign.y, h: 0 }, { name: 'sign-knock-stop', views: ['top', 'third', 'front-left'] });
 

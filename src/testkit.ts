@@ -40,6 +40,7 @@ import { upgrade } from './save.ts';
 import { onCrash } from './impacts.ts';
 import { signFalls } from './signFalls.ts';
 import { treeFalls } from './treeFalls.ts';
+import { shelterGlass } from './shelterGlass.ts';
 import type { StopSign } from './stopSign.ts';
 
 // Test API for scenarios (scenarios/*.ts), the developer panel and scripts/scene.mjs,
@@ -177,6 +178,9 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     const W = c.spec.W / 2 + 0.6, cells = g.grid.view?.(c) ?? g.grid; // (with the doorsteps the car meets)
     const others = g.carsNear(p.x, p.y, back + beyond + 6).filter((o) => o !== c);
     const trams = g.tramsNear(p.x, p.y, back + beyond + 30);
+    // (And the furniture lying loose there, knocked over by an earlier run: hitting it
+    // would turn the car off its line.)
+    const lying = looseFurniture.pieces().filter((b) => Math.hypot(b.x - p.x, b.y - p.y) < back + beyond + 6);
     for (let a = 0; a < 16; a++) {
       const h = (a * Math.PI) / 8, cos = Math.cos(h), sin = Math.sin(h);
       let ok = true;
@@ -189,6 +193,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
         const x = p.x - cos * s, y = p.y - sin * s;
         ok &&= others.every((o) => o.gap(x, y) > W + 0.3);
         ok &&= trams.every((body) => body.circles.every(([tx, ty]) => Math.hypot(x - tx, y - ty) >= W + 1.25 + 4));
+        ok &&= lying.every((b) => Math.hypot(x - b.x, y - b.y) > W + 0.8);
       }
       if (!ok) continue;
       Object.assign(c, { x: p.x - cos * back, y: p.y - sin * back, h, vx: 0, vy: 0, w: 0 });
@@ -981,7 +986,8 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     // aimAt, which this leaves the car set for, `beyond` too): a lamp between parked cars has none.
     post(r = 60, runUp = 0, beyond = 0): Post | null {
       const m = g.me();
-      const near = posts.near(m.x, m.y, r).filter((p) => !p.down).sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y));
+      // (Lamp posts and the tram wires' poles: not the signs, trees and the rest, which are posts too.)
+      const near = posts.near(m.x, m.y, r).filter((p) => !p.down && p.shades !== false).sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y));
       if (!runUp) return near[0] ?? null;
       for (const p of near) { try { return kit.aimAt(p, runUp, beyond); } catch { /* the next one */ } }
       return null;
@@ -1055,13 +1061,26 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     boardsNear(x: number, y: number, r: number) { return signFalls.boardsNear(x, y, r).map((p) => ({ x: p.x, y: p.y, down: !!p.down })); },
     // The nearest tree a car can snap (treeFalls.ts) no harder to snap than `tough` m/s, with a
     // clear run up to it, the car aimed at it. And whether one is down.
-    snappable(r = 300, back = 16, beyond = 10, tough = Infinity) {
+    // (`least`: no easier than that: a young tree, not a shrub.)
+    snappable(r = 300, back = 16, beyond = 10, tough = Infinity, least = 0) {
       const m = g.me();
-      const list = treeFalls.standingNear(m.x, m.y, r).filter((p) => p.tough <= tough).sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y));
+      const list = treeFalls.standingNear(m.x, m.y, r).filter((p) => p.tough <= tough && p.tough >= least).sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y));
       for (const p of list) if (aimRun(p, back, beyond, false, (dx, dy) => Math.hypot(dx, dy) < p.reach + 0.45)) return p;
       return null;
     },
     treeDown(x: number, y: number) { return treeFalls.downAt(x, y); },
+    // The nearest stop shelter with a clear run up to its glass, the car aimed at its middle;
+    // and whether a shelter's glass is broken.
+    shelter(r = 300, back = 14, beyond = 6) {
+      const m = g.me();
+      const list = shelterGlass.near(m.x, m.y, r).filter((s) => !s.broken).sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y));
+      for (const s of list) {
+        const own = (dx: number, dy: number) => Math.abs(dx * s.c + dy * s.s) < s.length / 2 + 0.9 && Math.abs(-dx * s.s + dy * s.c) < s.depth / 2 + 0.9;
+        if (aimRun({ x: s.x, y: s.y, z: g.ground(s.x, s.y) }, back, beyond, false, own)) return s;
+      }
+      return null;
+    },
+    shelterBroken(x: number, y: number) { return !!shelterGlass.near(x, y, 0.1)[0]?.broken; },
     // The sign posts still standing within r m of (x, y) that a car could knock over.
     signPostsNear(x: number, y: number, r: number) { return signFalls.standingNear(x, y, r); },
     // The furniture knocked loose so far: where each piece is and which way up (1 upright).

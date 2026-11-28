@@ -23,7 +23,7 @@ export const FLAT_FURNITURE = new Set<number>([KIND.stolperstein, KIND.treeGrate
 // Kinds a car can knock loose (src/looseFurniture.ts): the tile worker notes which grid
 // cells only these made solid, so they can be freed when they come loose.
 export const KNOCKABLE = new Set<number>([KIND.bench, KIND.bin, KIND.paper, KIND.plastic, KIND.cartons, KIND.metal, KIND.posterCase,
-  KIND.glass, KIND.clearGlass, KIND.bikeStand, KIND.parkingMachine, KIND.cabinet]);
+  KIND.glass, KIND.clearGlass, KIND.bikeStand, KIND.parkingMachine, KIND.cabinet, KIND.bollard, KIND.postBox, KIND.planter]);
 // A sign post's owner number in the worker's looseCells: this plus its index in the tile's
 // signPosts (furniture's are its spot indices, far below).
 export const POST_OWNER = 1 << 20;

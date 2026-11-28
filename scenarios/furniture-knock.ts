@@ -15,6 +15,9 @@ const CASES = [
   { name: 'bike stand', kinds: [KIND.bikeStand], kmh: 50, keep: 0.5, far: [2, 30] }, // (in a row: two or three go)
   { name: 'parking machine', kinds: [KIND.parkingMachine], kmh: 50, keep: 0.45, far: [1.5, 25] },
   { name: 'cabinet', kinds: [KIND.cabinet], kmh: 60, keep: 0.35, far: [1.5, 25] }, // (often two, one behind the other)
+  { name: 'bollard', kinds: [KIND.bollard], kmh: 50, keep: 0.45, far: [1.5, 30] }, // (often in a row)
+  { name: 'post box', kinds: [KIND.postBox], kmh: 50, keep: 0.4, far: [1.5, 25] },
+  { name: 'planter', kinds: [KIND.planter], kmh: 50, keep: 0.15, far: [1, 20] }, // (700 kg of concrete and earth: the car keeps 12–15 km/h)
 ];
 // Where to look for each, in turn.
 const PLACES = ['vodickova', 'karlak', 'mustek', 'staromak', 'ujezd', 'malostranske'];

@@ -7,8 +7,8 @@ import { FURNITURE_SIZE, KIND, KNOCKABLE, POST_OWNER, type FurnitureSpot } from 
 import type { Grid } from './map/geo.ts';
 
 // Street furniture a car can knock loose (plan 040): bins, the 1100 l containers, benches,
-// poster cases and glass bells, and, bolted down and needing a harder blow, bike stands,
-// parking machines and street cabinets. Standing, each is solid cells in its tile's
+// poster cases, glass bells and concrete planters, and, bolted down and needing a harder
+// blow, bike stands, parking machines, street cabinets, bollards and post boxes. Standing, each is solid cells in its tile's
 // collision grid like any other furniture, and a rotated box here. A car closing on one faster than its `tough`
 // frees its cells (the ones the tile worker noted it alone made solid, `looseCells`) and
 // throws it: from then on it's a rigid box that tumbles, skids and comes to rest on the
@@ -40,6 +40,12 @@ const MAKES: Record<number, Make> = {
   [KIND.bikeStand]: { mass: 25, tough: 7, give: 0.25, sound: 'post' },
   [KIND.parkingMachine]: { mass: 140, tough: 7, give: 0.35, sound: 'rail' },
   [KIND.cabinet]: { mass: 90, tough: 6, give: 0.3, sound: 'container' },
+  // A cast-iron bollard set in the paving, and a post box on its foot: they snap off.
+  [KIND.bollard]: { mass: 60, tough: 6, give: 0.3, sound: 'post' },
+  [KIND.postBox]: { mass: 110, tough: 7, give: 0.35, sound: 'container' },
+  // A concrete planter full of earth, standing loose: it takes a lot of the car's speed and
+  // slides, heavily.
+  [KIND.planter]: { mass: 700, tough: 3, give: 0.15, sound: 'wall' },
 };
 // What a piece spilling gives anyone listening (src/debris.ts throws it): what, how many
 // pieces, where (game metres, z the ground) and how fast it was going.
