@@ -67,6 +67,11 @@ export const NEAR = { half: 20, ahead: 12, on: true };
 // head that is up to 150° across, and a car 10 m off the lamp stood on texels 15 cm wide.
 // Then 1024 texels over a 12 m circle: 6 cm, and a person's legs ran into one column.)
 export const CLOSE = { count: 3, size: 2048, reach: 30, roi: 8, fade: 0.5, on: true };
+// Whether the lit materials' shaders are built with these shadows in them (Graphics sets it,
+// for LAMP_SHADOWS 3, and rebuilds the materials when it changes). Three lamps' sixteen depth
+// reads each are a lot of shader: in every lit material at every tier, a Pixel 5 took minutes
+// to build them all at Medium, where a switch skips them anyway.
+export const CLOSE_BUILT = { value: false };
 const CLOSE_EVERY = 24; // ms between drawings of their maps (SHADOW_MS in main.ts, the sun's)
 // Each slot's lamp: its pool (x, z of the middle in three.js's axes, length, width), which
 // way the pool's length runs (x, z), its fall-off (vU in the pools' shader) and how far it

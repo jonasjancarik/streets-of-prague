@@ -309,6 +309,8 @@ export const MIST = {
 export type Mist = typeof MIST;
 export const MIST_DEFAULT: Mist = { ...MIST };
 export const MOST_SHEETS = 14;
+// Below this much mist (Conditions.mist) the banks are drawn in fewer sheets (WeatherFx.update).
+const THIN_MIST = 0.4;
 
 // The sheets as one mesh, a unit square each, the lowest drawn first; `layer` counts
 // them from 0, and the lowest `MIST.sheets` are drawn.
@@ -494,7 +496,6 @@ export class WeatherFx {
     this.rainOn.value = w.rain;
     s.uWind.value.set(1.5 + 5 * w.storm, 0.6 + 2 * w.storm);
     this.snowOn.value = w.snow;
-    this.mistOn.value = Math.min(1, w.mist) * MIST.most;
     const exposed = !eye || this.cover.box.value.w > 0;
     this.rain.visible = exposed && w.rain > 0.01;
     this.snow.visible = exposed && w.snow > 0.01;
@@ -503,7 +504,13 @@ export class WeatherFx {
     this.mist.visible = banks > 0.01 && (MIST_MODE.value === 'sheets' || !this.localMist.mesh);
     this.localMist.update(banks, t, x, -y, r, mistGround, mistWater);
     this.snowScale.value = innerHeight * dpr * 1.4;
-    const m = MIST, sheets = Math.max(2, Math.min(MOST_SHEETS, Math.round(m.sheets)));
+    const m = MIST, full = Math.max(2, Math.min(MOST_SHEETS, Math.round(m.sheets)));
+    // Thin mist (the haze that comes with rain, a storm or snow) in fewer sheets, each as much
+    // thicker: nearly the same veil over the street, but every sheet is another layer over the
+    // whole view for the GPU to shade. On a Pixel 5 the rain's seven cost about 9 ms a frame.
+    // (Two were patchier from above and kept only 80% of the veil; three keep 92%.)
+    const sheets = Math.min(full, Math.max(3, Math.round(full * Math.min(1, banks / THIN_MIST))));
+    this.mistOn.value = Math.min(1, w.mist) * m.most * full / sheets;
     this.mistA.value.set(1 / m.bankSize, 1 / m.wispSize, 1 / m.fineSize, m.thin);
     this.mistB.value.set(m.bankShare, m.wispShare, m.from, m.from + Math.max(0.01, m.soft));
     this.mistC.value.set(m.speed, 1 / (sheets - 1), 0, 0);
