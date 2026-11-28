@@ -120,10 +120,10 @@ const TIERS: Record<Tier, Settings> = {
 };
 
 // The switches a tier sets on its own (apply), which Custom lets the player set one by one.
-type Extras = { post: boolean; probe: boolean; canopy: boolean; streetDetail: boolean; closeRelief: boolean; softShadows: boolean };
+type Extras = { post: boolean; ao: boolean; probe: boolean; canopy: boolean; streetDetail: boolean; closeRelief: boolean; softShadows: boolean };
 const extras = (t: Tier): Extras => {
   const top = t === 'ultra', high = top || t === 'high';
-  return { post: high, probe: top, canopy: high, streetDetail: high || t === 'medium', closeRelief: high, softShadows: top };
+  return { post: high, ao: top, probe: top, canopy: high, streetDetail: high || t === 'medium', closeRelief: high, softShadows: top };
 };
 // `street`: whose close-up budgets (streetQuality.ts) to use, 'max' going past Ultra's;
 // `ground`: the longest edge of the ground's triangles (m) in tiles built from then on.
@@ -395,6 +395,7 @@ export class Graphics {
     wantStrips(look); // (the cars' mirrored streets)
     PROBE_ON.value = own.probe ? 1 : 0;
     POST.value = own.post ? 1 : 0;
+    POST.aoValue = own.ao; // (ambient shading from depth: Ultra, about half a millisecond)
     CAR_SHADE.value = look ? 1 : 0; // (the soft shade under the cars: car.ts)
     PEOPLE_SHADOWS.tier = people; // (what a person casts in the sun: figures.ts)
     CANOPY_LEAVES.value = own.canopy;

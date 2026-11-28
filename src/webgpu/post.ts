@@ -39,7 +39,7 @@ const SHUTTER = 0.016, REACH = 0.045, TAPS = 8;
 const LIFT = 0.25;
 
 export function makePost(renderer: WebGPURenderer) {
-  let pipeline: RenderPipeline | null = null, of: THREE.Scene | null = null, by: THREE.Camera | null = null;
+  let pipeline: RenderPipeline | null = null, of: THREE.Scene | null = null, by: THREE.Camera | null = null, shaded = false;
   let glow: N = null;
   let sceneTarget: THREE.RenderTarget | null = null; // (what the scene is drawn into: post.ts, postTarget)
   // The camera's travel while the shutter is open, as the camera sees it; the player's vehicle
@@ -53,25 +53,11 @@ export function makePost(renderer: WebGPURenderer) {
   const speed = new Vector3(), turn = new Matrix3();
   const build = (scene: THREE.Scene, camera: THREE.Camera) => {
     pipeline?.dispose();
-    of = scene; by = camera;
+    of = scene; by = camera; shaded = POST.ao;
     // (The ground's layers are drawn once a pixel with the stencil: surface.ts.)
     const scenePass: N = pass(scene, camera, { stencilBuffer: true } as any);
     sceneTarget = scenePass.renderTarget;
     let colour: N = scenePass.getTextureNode('output');
-    // A trial, off unless asked for (?ao): ambient shading worked out from the picture's
-    // depth (three.js's GTAO at half resolution, the ground's depth drawn for it as in first
-    // person). From above it darkens the ground round cars and along walls and the roofs'
-    // valleys a little, next to the shadows and the soft shading already there, and costs
-    // about 3 ms a frame at 2× on an M5 (7.6 → 10.9 ms standing, 11.4 → 14.2 driving).
-    if (POST.ao) {
-      const shade: N = ao(scenePass.getTextureNode('depth'), null as any, camera);
-      shade.resolutionScale = 0.5;
-      shade.radius.value = 4;
-      shade.scale.value = 1.6;
-      shade.thickness.value = 3;
-      shade.samples.value = 12;
-      colour = colour.mul(vec4(vec3(shade.getTextureNode().r.mul(AO).add(1 - AO)), 1));
-    }
     {
       const depth: N = scenePass.getTextureNode('depth'), sharp: N = colour;
       const proj: N = uniform((camera as THREE.PerspectiveCamera).projectionMatrix), back: N = uniform((camera as THREE.PerspectiveCamera).projectionMatrixInverse);
@@ -117,6 +103,22 @@ export function makePost(renderer: WebGPURenderer) {
         return out;
       })();
     }
+    // On Ultra (graphics.ts; ?ao=on|off for one visit): ambient shading worked out from the picture's
+    // depth (three.js's GTAO at half resolution, the ground's depth drawn for it as in first
+    // person). From above it darkens the ground round cars and along walls and the roofs'
+    // valleys a little, next to the shadows and the soft shading already there, and costs
+    // about 3 ms a frame at 2× on an M5 (7.6 → 10.9 ms standing, 11.4 → 14.2 driving).
+    // (After the motion blur, which reads the picture as a texture: shading it before then
+    // left the blur a sum to sample, not a picture, and the whole frame came out black.)
+    if (POST.ao) {
+      const shade: N = ao(scenePass.getTextureNode('depth'), null as any, camera);
+      shade.resolutionScale = 0.5;
+      shade.radius.value = 4;
+      shade.scale.value = 1.6;
+      shade.thickness.value = 3;
+      shade.samples.value = 12;
+      colour = colour.mul(vec4(vec3(shade.getTextureNode().r.mul(AO).add(1 - AO)), 1));
+    }
     glow = bloom(colour, DAY[0], DAY[1], DAY[2]);
     glow.setResolutionScale(BLOOM_SCALE);
     const lit: N = renderOutput(colour.add(glow));
@@ -126,7 +128,7 @@ export function makePost(renderer: WebGPURenderer) {
     pipeline.outputColorTransform = false;
   };
   setPost((scene, camera) => {
-    if (!pipeline || of !== scene || by !== camera) build(scene, camera);
+    if (!pipeline || of !== scene || by !== camera || shaded !== POST.ao) build(scene, camera);
     const k = POST.night, mixed = (i: number) => DAY[i] + (NIGHT[i] - DAY[i]) * k;
     const exposure = Math.max(Math.abs(renderer.toneMappingExposure), 0.01);
     glow.strength.value = mixed(0) * (1 + 0.25 * POST.wet * k);

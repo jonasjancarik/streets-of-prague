@@ -4,7 +4,10 @@ import type * as THREE from 'three';
 // what is brighter than the screen can show (lamps, headlights, lit windows, the sun's
 // glints), and the corners of the picture a little darker. It needs the scene drawn to a
 // target of its own first. ?post=on|off overrides the tier for one visit.
-const asked = new URLSearchParams(globalThis.location?.search ?? '').get('post');
+const query = new URLSearchParams(globalThis.location?.search ?? '');
+const asked = query.get('post');
+// ?ao (or ?ao=on) and ?ao=off override the tier's ambient shading for one visit.
+const aoAsked = query.has('ao') ? (query.get('ao') === 'off' ? 'off' : 'on') : null;
 export const POST = {
   // Whether the tier wants it (graphics.ts).
   value: 0,
@@ -12,8 +15,10 @@ export const POST = {
   night: 0,
   // Wet ground glints more.
   wet: 0,
-  // A trial (?ao): ambient shading from the picture's depth (webgpu/post.ts).
-  ao: new URLSearchParams(globalThis.location?.search ?? '').has('ao'),
+  // Whether the tier wants ambient shading from the picture's depth (graphics.ts: Ultra).
+  aoValue: false,
+  // Ambient shading from the picture's depth (webgpu/post.ts), with the post-processing.
+  get ao() { return aoAsked === 'on' || (aoAsked !== 'off' && this.aoValue); },
   // Motion blur while driving, seen from the street: how much of it (0 below about 20 km/h, 1 from
   // about 60).
   blur: 0,

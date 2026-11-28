@@ -1210,6 +1210,13 @@ About 3 ms a frame for a darkening round cars, along walls and in roof valleys t
 to find in the picture from above, where the shadows and the ground's soft shading already
 do that work. It stays behind `?ao`.
 
+**Ambient shading from depth, on Ultra** (2026-11-28): the trial had gone black since the
+motion blur came in (it samples the picture as a texture, and the shading made that a sum),
+so the shading now comes after the blur. In third person it reads as a gentle darkening at
+the foot of walls and under parked cars, so Ultra turns it on (Custom: "Shade in corners
+and under cars"; `?ao=on|off` for one visit). Third person at 2× on Ultra, Windows: standing
+14.3 → 14.6 ms, driving 11.7 → 12.2 ms (the CPU's frame time; the GPU's cost isn't measured here).
+
 Checks: `check-graphics` (WebGPU and WebGL), `check-material-sharing --case all`,
 `check-tree-pool --case all`, `check-tree-shadows` and `check-renderer` pass (run
 `check-graphics` against a freshly started dev server: on one that has served edited modules
