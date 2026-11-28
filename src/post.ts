@@ -15,7 +15,7 @@ export const POST = {
   night: 0,
   // Wet ground glints more.
   wet: 0,
-  // Whether the tier wants ambient shading from the picture's depth (graphics.ts: Ultra).
+  // Whether ambient shading from the picture's depth is wanted (graphics.ts: Custom only).
   aoValue: false,
   // Ambient shading from the picture's depth (webgpu/post.ts), with or without the glow.
   get ao() { return aoAsked === 'on' || (aoAsked !== 'off' && this.aoValue); },

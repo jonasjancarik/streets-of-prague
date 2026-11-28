@@ -1216,6 +1216,9 @@ so the shading now comes after the blur. In third person it reads as a gentle da
 the foot of walls and under parked cars, so Ultra turns it on (Custom: "Shade in corners
 and under cars"; `?ao=on|off` for one visit). Third person at 2× on Ultra, Windows: standing
 14.3 → 14.6 ms, driving 11.7 → 12.2 ms (the CPU's frame time; the GPU's cost isn't measured here).
+Taken back off the same day: in play it was grainy (GTAO's samples undenoised) and the 4 m radius
+darkened a fixed-looking patch of ground round the player. Denoised and at 1.5 m it is clean
+but hardly shows, so no tier turns it on; Custom can.
 
 Checks: `check-graphics` (WebGPU and WebGL), `check-material-sharing --case all`,
 `check-tree-pool --case all`, `check-tree-shadows` and `check-renderer` pass (run
