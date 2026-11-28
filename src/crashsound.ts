@@ -28,6 +28,11 @@ const PICK: Record<CrashKind, [number, string[]][]> = {
   fence: [[0.12, ['crash-plastic']], [0, ['bump-1', 'bump-2']]],
   hedge: [[0, ['body-2']]],
   person: [[0.3, ['body-1']], [0, ['body-2']]],
+  bin: [[0.3, ['crash-metal']], [0, ['bump-door', 'bump-2']]],
+  container: [[0.3, ['crash-metal', 'crash-plastic']], [0, ['bump-door']]],
+  timber: [[0.3, ['crash-plastic']], [0, ['bump-1', 'bump-3']]],
+  bottles: [[0.2, ['crash-plastic']], [0, ['bump-door']]],
+  panel: [[0.3, ['crash-plastic', 'crash-metal']], [0, ['bump-2']]],
 };
 
 // Play `m` into `out` at time `t`, `loud` times its level right by it, its highs above

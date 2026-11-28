@@ -989,7 +989,8 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     // The nearest standing piece of furniture a car can knock loose (looseFurniture.ts) of
     // `kind` (map/furniture.ts's KIND) within r m with a clear run of `back` m up to it and
     // `beyond` m past it, the car put at the start of the run facing it. Null: none.
-    piece(kind: number, r = 300, back = 16, beyond = 10) {
+    // `through`: the run may go through other furniture the car would knock loose too.
+    piece(kind: number, r = 300, back = 16, beyond = 10, through = false) {
       const c = g.car();
       if (!c) throw new Error('Not in a car');
       const m = g.me(), W = c.spec.W / 2 + 0.6, cells = g.grid.view?.(c) ?? g.grid; // (with the doorsteps the car meets)
@@ -1006,7 +1007,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
             // (Not the piece itself.)
             const dx = x - p.x, dy = y - p.y, [hx, hy] = FURNITURE_SIZE[p.kind];
             if (Math.abs(dx * Math.cos(p.angle) + dy * Math.sin(p.angle)) < hx + 0.5 && Math.abs(-dx * Math.sin(p.angle) + dy * Math.cos(p.angle)) < hy + 0.5) continue;
-            ok &&= cells.at(x, y) === 0 && Math.abs(g.ground(x, y) - p.z) < 0.6 && !fences.blocks(x, y, 0.4, -10) && !posts.near(x, y, 0.4).length;
+            ok &&= (cells.at(x, y) === 0 || (through && looseFurniture.standsAt(x, y))) && Math.abs(g.ground(x, y) - p.z) < 0.6 && !fences.blocks(x, y, 0.4, -10) && !posts.near(x, y, 0.4).length;
           }
           const x = p.x - cos * s, y = p.y - sin * s;
           ok &&= others.every((o) => o.gap(x, y) > W + 0.3);
@@ -1020,6 +1021,8 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     },
     // The furniture knocked loose so far: where each piece is and which way up (1 upright).
     pieces() { return looseFurniture.pieces(); },
+    // The furniture still standing within r m of (x, y) that a car could knock loose.
+    standingNear(x: number, y: number, r: number) { return looseFurniture.standingNear(x, y, r); },
 
     // The nearest top edge of a step in the ground (a quay wall, a retaining wall) within
     // r m that drops `drop` m or more, with a clear, level run of `back` m up to it:

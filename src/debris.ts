@@ -12,6 +12,12 @@ const NEAR = 160; // m from the camera within which anything is thrown
 const GLASS: [number, number, number] = [0.78, 0.86, 0.9];
 const PLASTIC: [number, number, number] = [0.13, 0.13, 0.14];
 const LEAF: [number, number, number] = [0.2, 0.32, 0.12];
+// What's hit that throws no sparks: leaves, people, timber and glass.
+const SOFT = new Set(['hedge', 'person', 'timber', 'bottles']);
+// What a knocked bin or a broken glass bell spills (`spill`): paper and wrappers, cans,
+// crushed plastic and a dark bag or two; green, clear and brown bottle glass.
+const RUBBISH: [number, number, number][] = [[0.86, 0.85, 0.8], [0.75, 0.72, 0.62], [0.6, 0.62, 0.64], [0.7, 0.18, 0.14], [0.2, 0.36, 0.62], [0.9, 0.8, 0.3]];
+const BOTTLES: [number, number, number][] = [[0.22, 0.42, 0.2], [0.3, 0.52, 0.26], [0.8, 0.86, 0.85], [0.45, 0.28, 0.12]];
 
 const hex = new Map<string, [number, number, number]>();
 function paintOf(c: unknown): [number, number, number] {
@@ -46,7 +52,7 @@ export class Debris {
   hit(e: Impact, z: number, under: (x: number, y: number) => number) {
     if (e.kind === 'person') return;
     const r = this.r, s = e.speed;
-    const metal = e.kind !== 'hedge';
+    const metal = !SOFT.has(e.kind);
     let x = e.x, y = e.y;
     const a = e.a instanceof Car ? e.a : null;
     let bx = 0, by = 0; // which way the bits tend to fly
@@ -108,6 +114,27 @@ export class Debris {
         vx: (r() - 0.5) * 2 + bx * 3, vy: (r() - 0.5) * 2 + by * 3, vz: 0.4 + r() * 0.8,
         r0: 0.4, r1: 1.4 + hard * 1.6 + r(), life: 1.2 + r() * 1.2, rgb: [grey, grey * 0.96, grey * 0.9], a: 0.22 + hard * 0.25,
         spin: (r() - 0.5) * 0.8, drag: 1.5,
+      });
+    }
+  }
+
+  // A knocked bin's rubbish or a glass bell's broken bottles at (x, y), `z` the ground
+  // (`under`: round it), thrown on at (vx, vy) m/s; `n` pieces. Rubbish lies where it
+  // falls for a minute or so, as glass does.
+  spill(what: 'rubbish' | 'bottles', x: number, y: number, z: number, vx: number, vy: number, n: number, under?: (x: number, y: number) => number) {
+    const r = this.r, glass = what === 'bottles', palette = glass ? BOTTLES : RUBBISH;
+    for (let i = 0; i < n; i++) {
+      const t = r() * Math.PI * 2, v = 0.3 + r() * (glass ? 2.5 : 1.5), keep = glass ? 0.2 + r() * 0.4 : 0.08 + r() * 0.25; // (paper drops near; glass skids on)
+      const rgb = palette[Math.floor(r() * palette.length)], tone = 0.8 + r() * 0.35;
+      // (Now and then a black bin bag, much bigger than the rest.)
+      const bag = !glass && r() < 0.05, lift = 0.004 + r() * 0.01;
+      this.chips.add({
+        x: x + (r() - 0.5) * 0.6, y: y + (r() - 0.5) * 0.6, z: z + 0.2 + r() * 0.6,
+        vx: vx * keep + Math.cos(t) * v, vy: vy * keep + Math.sin(t) * v, vz: 0.5 + r() * 2.5,
+        r0: bag ? 0.14 + r() * 0.06 : glass ? 0.008 + r() * 0.02 : 0.02 + r() * 0.035,
+        life: 50 + r() * 30, glass,
+        rgb: bag ? [0.07, 0.07, 0.08] : [rgb[0] * tone, rgb[1] * tone, rgb[2] * tone], a: 1,
+        spin: (r() - 0.5) * 20, fall: 9.8, drag: glass ? 0.15 : 1.2, floor: z + lift, under, lift, bounce: glass ? 0.25 : 0.1,
       });
     }
   }

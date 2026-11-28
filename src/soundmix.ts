@@ -177,6 +177,15 @@ export const CRASH_KINDS = {
   car: { thud: 1, crunch: 1.1, ring: 0.7, hz: 640, decay: 0.35, glass: 1, rustle: 0, dull: false },
   tram: { thud: 1.3, crunch: 1, ring: 1.1, hz: 330, decay: 0.7, glass: 0.9, rustle: 0, dull: false },
   person: { thud: 0.65, crunch: 0.1, ring: 0, hz: 0, decay: 0, glass: 0, rustle: 0.25, dull: true },
+  // Street furniture knocked loose (src/looseFurniture.ts): a steel bin with its rubbish,
+  // a big hollow steel container, a timber bench on cast legs, a glass bell full of
+  // bottles (breaking from a walking pace, `glassFrom` m/s), a poster case's glass and
+  // aluminium.
+  bin: { thud: 0.5, crunch: 0.5, ring: 0.9, hz: 480, decay: 0.5, glass: 0, rustle: 0.3, dull: false },
+  container: { thud: 0.9, crunch: 0.6, ring: 0.7, hz: 170, decay: 0.6, glass: 0, rustle: 0.2, dull: false },
+  timber: { thud: 0.55, crunch: 0.45, ring: 0.15, hz: 300, decay: 0.3, glass: 0, rustle: 0, dull: true },
+  bottles: { thud: 0.6, crunch: 0.3, ring: 0.2, hz: 320, decay: 0.3, glass: 2.4, glassFrom: 2, rustle: 0, dull: false },
+  panel: { thud: 0.45, crunch: 0.6, ring: 0.5, hz: 720, decay: 0.4, glass: 1.4, glassFrom: 4, rustle: 0, dull: false },
 } as const;
 export type CrashKind = keyof typeof CRASH_KINDS;
 
@@ -197,7 +206,8 @@ export function crashMix(speed: number, kind: CrashKind, mass = 1400): CrashMix 
   const hard = clamp((speed - 1.2) / 13.8, 0, 1); // 1.2 m/s (4 km/h) to 15 m/s (54 km/h)
   const crunch = clamp((speed - 2.5) / 8, 0, 1) ** 1.2; // from about 10 km/h
   const ring = clamp((speed - 2) / 10, 0, 1);
-  const glass = clamp((speed - 8) / 6, 0, 1); // from about 30 km/h, all of it by 50
+  const glassFrom = 'glassFrom' in k ? k.glassFrom : 8; // from about 30 km/h, all of it by 50
+  const glass = clamp((speed - glassFrom) / 6, 0, 1);
   // A bicycle is lighter and higher; a bus or a tram deeper, and its blows heavier.
   const pitch = clamp((1400 / Math.max(60, mass)) ** 0.15, 0.7, 1.45);
   const weight = clamp((mass / 1400) ** 0.2, 0.6, 1.4);

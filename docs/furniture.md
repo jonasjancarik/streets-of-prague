@@ -56,14 +56,16 @@ The worker stamps the solid footprints into the existing collision grid before
 parking. `&nofurniture` disables generation and collision for baseline comparisons;
 hiding meshes only measures rendering cost.
 
-Bins, the 1100 l containers, benches and poster cases can be knocked loose
-(`KNOCKABLE`, plan 040). For those the worker also notes which grid cells only they
+Bins, the 1100 l containers, benches, poster cases, glass bells, bike stands, parking
+machines and street cabinets can be knocked loose (`KNOCKABLE`, plan 040). For those the worker also notes which grid cells only they
 made solid (`looseCells`, cell → what it was and which pieces). On the main thread
 `src/looseFurniture.ts` keeps each standing one as a rotated box. A car closing on one
 faster than its kind's `tough` frees its cells and throws it, and from then on it's a
 rigid box: it tumbles on its eight corners against the ground, bounces off walls, and
 sleeps once it's still. It's drawn by rewriting its own instance matrix in the tile's
-mesh, so both cameras show it, and it's back in place when its tile loads again. The
+mesh, so both cameras show it, and it's back in place when its tile loads again. Each
+kind has its mass, how hard it's fixed down, its crash sound by material, whether it
+rolls on castors and what it spills (`MAKES`); the spill is thrown by `Debris.spill`. The
 rest of the furniture is static. `scenarios/furniture-knock.ts` checks it.
 
 ## Mapped street furniture

@@ -6,27 +6,43 @@ import { furnitureModels } from './furnitureModels.ts';
 import { FURNITURE_SIZE, KIND, KNOCKABLE, type FurnitureSpot } from './map/furniture.ts';
 import type { Grid } from './map/geo.ts';
 
-// Street furniture a car can knock loose (plan 040): bins, the 1100 l containers, benches
-// and poster cases. Standing, each is solid cells in its tile's collision grid like any
-// other furniture, and a rotated box here. A car closing on one faster than its `tough`
+// Street furniture a car can knock loose (plan 040): bins, the 1100 l containers, benches,
+// poster cases and glass bells, and, bolted down and needing a harder blow, bike stands,
+// parking machines and street cabinets. Standing, each is solid cells in its tile's
+// collision grid like any other furniture, and a rotated box here. A car closing on one faster than its `tough`
 // frees its cells (the ones the tile worker noted it alone made solid, `looseCells`) and
 // throws it: from then on it's a rigid box that tumbles, skids and comes to rest on the
 // ground however it lands, and a car that runs into it again shoves it on. It's drawn
 // where it is by its own instance in the tile's furniture mesh, so both cameras show it.
+// A container rolls on its castors while it stands; a bin empties and a glass bell breaks
+// (`onSpill`, which src/debris.ts throws).
 //
 // The bodies are simulated in three.js's frame (x east, y up, z south), so a body's pose
 // goes straight into its instance matrix; the game's (x, y) is (x, -z).
 
 // mass kg; tough: m/s into it that knocks it loose; give: the share of the car's closing
-// speed the fixings take when it does; kind: what it sounds like (src/soundmix.ts).
-interface Make { mass: number; tough: number; give: number; sound: ImpactKind }
-const CONTAINER: Make = { mass: 70, tough: 2, give: 0, sound: 'rail' };
+// speed the fixings take when it does; sound: what it sounds like (src/soundmix.ts);
+// castors: rolls on them while it stands upright; spill: what comes out of it, and
+// `spills` how many times at most (a knock, a hard landing, tipping over).
+interface Make { mass: number; tough: number; give: number; sound: ImpactKind; castors?: boolean; spill?: Spill; spills?: number }
+export type Spill = 'rubbish' | 'bottles';
+const CONTAINER: Make = { mass: 70, tough: 2, give: 0, sound: 'container', castors: true, spill: 'rubbish', spills: 1 };
+// A glass bell full of bottles: heavy, sitting loose on the pavement.
+const BELL: Make = { mass: 250, tough: 2.5, give: 0, sound: 'bottles', spill: 'bottles', spills: 3 };
 const MAKES: Record<number, Make> = {
-  [KIND.bin]: { mass: 25, tough: 2.5, give: 0.05, sound: 'post' },
+  [KIND.bin]: { mass: 25, tough: 2.5, give: 0.05, sound: 'bin', spill: 'rubbish', spills: 2 },
   [KIND.paper]: CONTAINER, [KIND.plastic]: CONTAINER, [KIND.cartons]: CONTAINER, [KIND.metal]: CONTAINER,
-  [KIND.bench]: { mass: 90, tough: 5, give: 0.15, sound: 'fence' },
-  [KIND.posterCase]: { mass: 45, tough: 4, give: 0.1, sound: 'post' },
+  [KIND.bench]: { mass: 90, tough: 5, give: 0.15, sound: 'timber' },
+  [KIND.posterCase]: { mass: 45, tough: 4, give: 0.1, sound: 'panel' },
+  [KIND.glass]: BELL, [KIND.clearGlass]: BELL,
+  // Bolted down: they need a harder blow and take more of it.
+  [KIND.bikeStand]: { mass: 25, tough: 7, give: 0.25, sound: 'post' },
+  [KIND.parkingMachine]: { mass: 140, tough: 7, give: 0.35, sound: 'rail' },
+  [KIND.cabinet]: { mass: 90, tough: 6, give: 0.3, sound: 'container' },
 };
+// What a piece spilling gives anyone listening (src/debris.ts throws it): what, how many
+// pieces, where (game metres, z the ground) and how fast it was going.
+export interface SpillEvent { what: Spill; n: number; x: number; y: number; z: number; vx: number; vy: number }
 
 const CELL = 8; // m, the standing pieces' hash
 const PAD = 0.45; // m round a standing piece: its grid cells reach this far (0.15 stamped, half a 0.5 m cell)
@@ -35,6 +51,7 @@ const ITERATIONS = 4;
 const AWAKE = 48; // bodies simulated at once at most
 const G = 9.81;
 const FRICTION = 0.7, BOUNCE = 0.25;
+const ROLL = 0.45; // the grip of castors rolling (rolling resistance and a little sideways drag)
 
 interface Standing {
   tile: string; x: number; y: number; angle: number; hx: number; hy: number;
@@ -52,6 +69,8 @@ interface Body {
   invMass: number; invI: THREE.Vector3; // the inverse inertia about the box's own axes
   radius: number; // m, round it on the ground, for cars
   awake: boolean; still: number; heard: number;
+  spilled: number; // times it has spilled
+  from: [number, number]; // where it stood (game metres)
 }
 
 export interface LooseWorld {
@@ -110,6 +129,8 @@ class LooseFurniture {
   private clock = 0;
   // (For tests: every knock so far.)
   knocks = 0;
+  // Told when a piece spills its rubbish or its broken glass.
+  onSpill: ((e: SpillEvent) => void) | null = null;
 
   private key(cx: number, cy: number) { return (cx + 32768) * 65536 + cy + 32768; }
 
@@ -117,6 +138,7 @@ class LooseFurniture {
   // instanced meshes (src/furniture.ts, one per kind, the instances in the spots' order),
   // `looseCells` from the worker, `grid` the tile's collision grid.
   addTile(tile: string, spots: FurnitureSpot[], meshes: THREE.InstancedMesh[], looseCells: Map<number, number[]> | undefined, grid: Grid) {
+    this.removeTile(tile); // (a tile made again without being dropped first)
     if (!looseCells) return;
     const byKind = new Map<number, THREE.InstancedMesh>();
     for (const m of meshes) byKind.set(m.userData.kind, m);
@@ -234,7 +256,7 @@ class LooseFurniture {
       half: half.clone(), offset: mid.clone(),
       invMass: 1 / m, invI: new THREE.Vector3(12 / (m * (b * b + cc * cc)), 12 / (m * (a * a + cc * cc)), 12 / (m * (a * a + b * b))),
       radius: Math.max(0.3, Math.min(half.x, half.z) * 0.6 + Math.max(half.x, half.z) * 0.4),
-      awake: true, still: 0, heard: this.clock,
+      awake: true, still: 0, heard: this.clock, spilled: 0, from: [p.x, p.y],
     };
     this.bodies.push(body);
     this.knocks++;
@@ -256,6 +278,9 @@ class LooseFurniture {
     this.cap();
     const heard = vn * Math.min(1, Math.max(0.3, Math.sqrt(m / 300)));
     crash(car, null, heard, make.sound, p.x, p.y, M);
+    // A bin hit hard enough empties, a glass bell breaks.
+    // (A bin's rubbish mostly comes out where it lands: a little here.)
+    if (make.spill && vn > 4) this.spill(body, make.spill === 'bottles' ? 30 + vn * 5 : 4 + vn * 0.5);
     return 0;
   }
 
@@ -289,6 +314,15 @@ class LooseFurniture {
       crash(car, null, rel * Math.min(1, Math.max(0.3, Math.sqrt(m / 300))), b.make.sound, b.p.x, -b.p.z, M);
     }
     return 0;
+  }
+
+  // Some of what's in it out on the ground (at most `spills` times a piece).
+  private spill(b: Body, n: number) {
+    const make = b.make;
+    if (!make.spill || b.spilled >= (make.spills ?? 1) || !this.onSpill) return;
+    b.spilled++;
+    const x = b.p.x, y = -b.p.z;
+    this.onSpill({ what: make.spill, n: Math.round(Math.min(n, 120)), x, y, z: this.world!.ground(x, y, b.level), vx: b.v.x, vy: -b.v.z });
   }
 
   private wake(b: Body) {
@@ -352,6 +386,9 @@ class LooseFurniture {
       deepest = Math.max(deepest, depth[i]);
     }
     let landed = 0;
+    // Standing on its castors it rolls; on its side or its lid it scrapes.
+    const upright = new THREE.Vector3(0, 1, 0).applyQuaternion(b.q).y, rolling = !!b.make.castors && upright > 0.9;
+    const grip = rolling ? ROLL : FRICTION;
     for (let it = 0; it < ITERATIONS; it++) {
       for (let i = 0; i < 8; i++) {
         if (depth[i] < -0.01) continue;
@@ -371,7 +408,7 @@ class LooseFurniture {
         if (slide > 1e-4) {
           vt.divideScalar(slide);
           const kt = b.invMass + v3.crossVectors(invInertia(b, v3.crossVectors(r, vt), v3), r).dot(vt);
-          const jt = Math.min(slide / kt, FRICTION * jn);
+          const jt = Math.min(slide / kt, grip * jn);
           imp.addScaledVector(vt, -jt);
         }
         push(b, imp.clone(), r);
@@ -381,7 +418,7 @@ class LooseFurniture {
     if (deepest > 0.005) b.p.y += (deepest - 0.005) * 0.6;
     // Scraping and crumpling on the ground (a box tumbling on its corners otherwise rolls
     // on like a wheel), and the air.
-    if (deepest > -0.01) { b.w.multiplyScalar(0.975); b.v.x *= 0.992; b.v.z *= 0.992; } else b.w.multiplyScalar(0.999);
+    if (deepest > -0.01 && !rolling) { b.w.multiplyScalar(0.975); b.v.x *= 0.992; b.v.z *= 0.992; } else b.w.multiplyScalar(deepest > -0.01 ? 0.99 : 0.999);
     // On, against the walls: back off whichever way runs into one.
     const ox = b.p.x, oz = b.p.z;
     b.p.addScaledVector(b.v, h);
@@ -392,6 +429,8 @@ class LooseFurniture {
     // Heard landing hard.
     if (landed > 2.5 && this.clock - b.heard > 0.25) {
       b.heard = this.clock;
+      // Landing hard, or a container going over onto its side (its lid comes open).
+      if (landed > (b.make.spill === 'rubbish' ? 2.5 : 4) || (b.make.castors && upright < 0.5)) this.spill(b, b.make.spill === 'bottles' ? 10 + landed * 4 : 14 + landed * 3);
       crash(b, null, landed * Math.min(1, Math.max(0.3, Math.sqrt(b.make.mass / 300))), b.make.sound, b.p.x, -b.p.z, b.make.mass);
     }
     // At rest: asleep, costing nothing, until a car runs into it.
@@ -418,12 +457,18 @@ class LooseFurniture {
     this.dirty.add(b.mesh);
   }
 
+  // Whether furniture a car could knock loose still stands at (x, y) (a test's run up may go through it).
+  standsAt(x: number, y: number) {
+    const grid = this.world?.grid(x, y), i = grid ? grid.indexAt(x, y) : -1;
+    return !!grid && i >= 0 && !!this.shared.get(grid)?.get(i)?.standing.size;
+  }
+
   // (For tests and the console.)
   status() {
     return { standing: [...this.byTile.values()].reduce((n, l) => n + l.length, 0), bodies: this.bodies.length, awake: this.bodies.filter((b) => b.awake).length, knocks: this.knocks };
   }
   pieces() {
-    return this.bodies.map((b) => ({ x: b.p.x, y: -b.p.z, z: b.p.y, vx: b.v.x, vy: -b.v.z, vz: b.v.y, spin: b.w.length(), awake: b.awake, up: new THREE.Vector3(0, 1, 0).applyQuaternion(b.q).y }));
+    return this.bodies.map((b) => ({ from: b.from, x: b.p.x, y: -b.p.z, z: b.p.y, vx: b.v.x, vy: -b.v.z, vz: b.v.y, spin: b.w.length(), awake: b.awake, up: new THREE.Vector3(0, 1, 0).applyQuaternion(b.q).y }));
   }
   standingNear(x: number, y: number, r: number) {
     return this.near(x, y, r).filter((s) => Math.hypot(s.x - x, s.y - y) < r).map((s) => ({ x: s.x, y: s.y, angle: s.angle, kind: s.kind, z: s.spot.z }));

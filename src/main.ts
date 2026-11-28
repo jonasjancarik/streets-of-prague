@@ -2250,6 +2250,10 @@ async function main() {
     const a = e.a instanceof Car ? e.a : null;
     fires.debris.hit(e, ground(e.x, e.y, a) + (a ? Math.min(0.9, a.spec.H * 0.38) : 0.6), (x, y) => ground(x, y, a));
   });
+  // A knocked bin's rubbish and a glass bell's bottles, near the camera (looseFurniture.ts).
+  looseFurniture.onSpill = (e) => {
+    if (Math.hypot(e.x - camPos.x, e.y + camPos.z) < Debris.NEAR) fires.debris.spill(e.what, e.x, e.y, e.z, e.vx, e.vy, e.n, (x, y) => ground(x, y, null));
+  };
   const brigade: Brigade = new Brigade({
     scene, police, grid, fires, kit, height: ground, rng: seeded, edgesNear, offscreen, viewRadius,
     bodyAt: (x, y, r, skip) => police.bodyAt(x, y, r, skip),

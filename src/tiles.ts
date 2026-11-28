@@ -1916,8 +1916,6 @@ export class TileWorld {
     // The wires' poles stand among the lamp posts from now on: cars hit them, and park clear of them.
     for (const p of poles) posts.add(p);
     fences.add(fenceSections);
-    // The bins, benches and the rest a car can knock loose (looseFurniture.ts).
-    looseFurniture.addTile(k, land.furniture.spots, furniture, land.looseCells, grid);
     const inside = (x: number, y: number) => x >= x0 && x < x1 && y >= y0 && y < y1;
     const parking = parkCarsSteps({
       data, edges, clearanceEdges, zones, buildings: location.search.includes('oldparking') ? null : nearBuildings, r: rng(Math.floor(hash(`${this.area}/${k}`) * 1e9)), night: this.night,
@@ -1953,6 +1951,8 @@ export class TileWorld {
     try {
       this.loaded.set(k, tile);
       this.byIndex.set(key, tile);
+      // The bins, benches and the rest a car can knock loose (looseFurniture.ts).
+      looseFurniture.addTile(k, land.furniture.spots, furniture, land.looseCells, grid);
       // The tile's buildings as shadow casters, for its own sky view and its neighbours':
       // their ground next to these buildings is worked out again.
       this.sky.set(key, { shapes, texture: null, tileBox: t.box, ground, refresh: null });

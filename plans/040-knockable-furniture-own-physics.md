@@ -1,6 +1,6 @@
 # 040: Knockable street furniture, our own physics (option A)
 
-Status: PHASE 1 BUILT (28 November 2026) on branch `knockable-furniture`, unmerged.
+Status: PHASES 1 AND 2 BUILT (28 November 2026) on branch `knockable-furniture`, unmerged.
 Option B, the same thing with Rapier, is [041](041-knockable-furniture-rapier.md).
 We're trying this one first because it's smaller and adds no dependency.
 
@@ -79,16 +79,18 @@ unloads and loads again has its furniture back in place (the worker writes it ag
 
 ## Kinds
 
-| Kind | Mass | Comes loose above | Speed lost to the fixings |
-|---|---|---|---|
-| Bin (`bin`) | 25 kg | 2.5 m/s | 0.05 |
-| 1100 l container (`plastic`, `paper`, `cartons`, `metal`) | 70 kg | 2 m/s | 0 (on castors) |
-| Bench (`bench`) | 90 kg | 5 m/s | 0.15 |
-| Poster case (`posterCase`) | 45 kg | 4 m/s | 0.1 |
+| Kind | Mass | Comes loose above | Speed lost to the fixings | Sound | Spills |
+|---|---|---|---|---|---|
+| Bin (`bin`) | 25 kg | 2.5 m/s | 0.05 | `bin` | rubbish, twice |
+| 1100 l container (`plastic`, `paper`, `cartons`, `metal`) | 70 kg | 2 m/s | 0 (on castors) | `container` | rubbish when it tips over |
+| Bench (`bench`) | 90 kg | 5 m/s | 0.15 | `timber` | |
+| Poster case (`posterCase`) | 45 kg | 4 m/s | 0.1 | `panel` | |
+| Glass bell (`glass`, `clearGlass`) | 250 kg | 2.5 m/s | 0 (sits loose) | `bottles` | broken bottles, up to three times |
+| Bike stand (`bikeStand`) | 25 kg | 7 m/s | 0.25 | `post` | |
+| Parking machine (`parkingMachine`) | 140 kg | 7 m/s | 0.35 | `rail` | |
+| Street cabinet (`cabinet`) | 90 kg | 6 m/s | 0.3 | `container` | |
 
-Later phases: bike stands, parking machines and cabinets (heavy, bolted down), glass
-bells (about 150 kg, throwing broken glass). Bollards, planters, advertising columns,
-fountains and wall post boxes stay fixed.
+Bollards, planters, advertising columns, fountains and wall post boxes stay fixed.
 
 ## Phases
 
@@ -101,9 +103,28 @@ fountains and wall post boxes stay fixed.
    on its side, its back or upright, however it lands. Cost: about 0.02 ms a frame for
    each moving piece. No poster case was found with a clear run up in the scenario's
    places, so that kind is untested in a scene.
-2. **Material and mess.** Sounds for each material (a plastic container, a timber
-   bench), bins spilling litter (`streetLitter.ts`), glass bells shattering, lids
-   swinging open, castors that roll. The heavier kinds.
+2. **Material and mess.** DONE, apart from the lids. Five new crash kinds in
+   `CRASH_KINDS` (`src/soundmix.ts`), each with recordings in `src/crashsound.ts`:
+   `bin` (a hollow steel ring and the rubbish in it), `container` (a deep hollow boom),
+   `timber` (dull, no sparks), `bottles` (glass breaking from about 7 km/h,
+   `glassFrom`) and `panel` (a poster case's glass and aluminium). Debris throws no
+   sparks for timber or glass. A bin hit hard spills a little rubbish where it's hit and
+   most of it where it first lands. A glass bell spills broken bottles in green, clear
+   and brown. A container spills rubbish when it goes over onto its side (its lid
+   comes open). The spill is `looseFurniture.onSpill`, thrown as chips by `Debris.spill`;
+   they lie on the road for about a minute. It doesn't use `streetLitter.ts`, which is the
+   fallen leaves. A container standing on its castors rolls, with a grip of 0.45 against
+   0.7 for a piece scraping, so it runs on further but stops within a few seconds. Bike
+   stands, parking machines, cabinets and glass bells can be knocked (see Kinds).
+   `scenarios/furniture-knock.ts` covers all eight kinds. A piece in a row or a group
+   (bike stands, a recycling point) is hit through its neighbours (`t.piece(…, through)`),
+   which go too. Results on 28 November, at 50 km/h (40 for the container and the
+   bell, 60 for the cabinet): after a bin the car keeps 51 km/h, a bench 43,
+   a poster case 47, a parking machine 30, two bike stands 30, a glass bell 31 and two
+   cabinets 40. The bell moves about 7 m and the container 15–25 m; the bin spills
+   about 120 bits and the bell about 240.
+   Not done: lids that swing open. The models are one merged geometry per kind, so a
+   lid would need its own instanced part; left for later.
 3. **People and other cars.** Kicking things on foot, people walking round fallen
    pieces, bodies hitting parked cars and each other, police and traffic going round them.
 
