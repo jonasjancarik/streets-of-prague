@@ -22,7 +22,10 @@ const DAY = [0.22, 0.55, 1.35], NIGHT = [0.4, 0.7, 0.55];
 const VIGNETTE = 0.16;
 // (Read each frame: the developer panel can change it.)
 const vignette: N = uniform(VIGNETTE);
-const AO = 0.8; // how much of the ambient shading is taken
+// How deep the ambient shading goes at each strength (Custom: light, medium, strong): what
+// it worked out is raised to this power. (Read each frame.)
+const AO_POWER = [0, 0.8, 2, 3.5];
+const aoPower: N = uniform(AO_POWER[2]);
 // The bloom's first copy, as a share of the picture's width (three.js's own choice is a half: a
 // quarter is blurred enough not to show, and a quarter of the pixels to fill).
 const BLOOM_SCALE = 0.25;
@@ -121,7 +124,7 @@ export function makePost(renderer: WebGPURenderer) {
       // (Denoised: raw, its samples show as grain. A radius of 4 m, made for the view from
       // above, darkened a broad patch of the ground in front of the camera in the street.)
       const clean: N = denoise(shade.getTextureNode(), scenePass.getTextureNode('depth'), null as any, camera);
-      colour = colour.mul(vec4(vec3(clean.r.mul(AO).add(1 - AO)), 1));
+      colour = colour.mul(vec4(vec3(clean.r.max(1e-4).pow(aoPower)), 1));
     }
     // (The glow and the darker corners only when asked for: the shading can go on without them.)
     glow = null;
@@ -145,6 +148,7 @@ export function makePost(renderer: WebGPURenderer) {
       glow.threshold.value = mixed(2) / exposure;
     }
     vignette.value = Math.min(1, VIGNETTE * VIGNETTE_TUNE.strength);
+    aoPower.value = AO_POWER[POST.aoLevel] ?? AO_POWER[2];
     camera.updateMatrixWorld();
     speed.fromArray(POST.going);
     if (POST.blur > 0.001) {
