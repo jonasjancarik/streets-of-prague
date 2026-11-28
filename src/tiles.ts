@@ -592,7 +592,7 @@ export class TileWorld {
       if (tile.signs) tile.signs.visible = street;
       if (tile.directions) tile.directions.visible = street;
       tile.drawn?.surfaces.bridgeView(street);
-      const panel = tile.fences.find(section => !section.hedge && !section.rail);
+      const panel = tile.fences.find(section => section.kind === 'fence');
       if (panel) fenceCamera(panel.mesh, street);
     }
   }
@@ -1865,7 +1865,7 @@ export class TileWorld {
     const early = this.shown.has(k) ? this.meshJobs(k, source) : null;
     early?.catch(() => {});
     const landJob = this.workers.run('land', {
-      data: { size: data.size, origin: data.origin, areas: withPatches(t), roads: t.roads, buildings: outlines, walls: t.walls, fences: t.fences, sheds: t.sheds ?? [], trees: t.trees, shrubs: t.shrubs, canopy: t.canopy, utility: t.utility, mapped: new Float32Array(mapped), signs: signsAll && !location.search.includes('nosigns') ? { names: signsAll.names, cols: signsAll.cols, points: new Float32Array(signPoints) } : undefined, directions: signsAll && !location.search.includes('nosigns') ? directionsHere : undefined, passages: t.passages || [], levels: !!tileLevels, crossers, stepEdges: !location.search.includes('nostepedges'),
+      data: { size: data.size, origin: data.origin, areas: withPatches(t), roads: t.roads, buildings: outlines, walls: t.walls, fences: t.fences, crossings: t.crossings ?? [], roadEdges: clipped, bbox: this.index.bbox_wgs84, sheds: t.sheds ?? [], trees: t.trees, shrubs: t.shrubs, canopy: t.canopy, utility: t.utility, mapped: new Float32Array(mapped), signs: signsAll && !location.search.includes('nosigns') ? { names: signsAll.names, cols: signsAll.cols, points: new Float32Array(signPoints) } : undefined, directions: signsAll && !location.search.includes('nosigns') ? directionsHere : undefined, passages: t.passages || [], levels: !!tileLevels, crossers, stepEdges: !location.search.includes('nostepedges'),
         walk: t.walk ?? [], reserved: new Float32Array(reserved), structures: structures.flatMap(s => s.polys), furnitureBuildings: [...t.buildings.map(b => ({ rings: b.rings })), ...hide.map(rings => ({ rings }))], furnitureEnabled: reservedAll !== null && !location.search.includes('nofurniture') },
       seeds: seedArray, ground, bridges: (tileLevels || []).filter((l) => l.kind === 'bridge').map((l) => l.heights),
       box: bounds, structures: tileLevels ? structures : [],
@@ -1943,7 +1943,7 @@ export class TileWorld {
     const stairwells = stationStairwells(own, shade?.sample, this.ref);
     const tile: Tile = {
       k, i: t.i, j: t.j, box: t.box, passages: t.passages || [], raised: t.buildings.filter((b) => !grounded(b)).map((b) => b.rings), grid, trunkCells: land.trunkCells, levels: onLevels, cars, ms,
-      source, shown: false, dressing: null, drawn: null, drawMs: {}, drawAfter: 0, fixtures: [walls, ...(handrails ? [handrails] : []), fenceRows.fence, fenceRows.hedge, fenceRows.rail, ...(sheds ? [sheds] : []), ...wires, ...lights, ...statues, ...stairwells],
+      source, shown: false, dressing: null, drawn: null, drawMs: {}, drawAfter: 0, fixtures: [walls, ...(handrails ? [handrails] : []), fenceRows.fence, fenceRows.hedge, fenceRows.rail, fenceRows.railing, fenceRows.chain, ...(sheds ? [sheds] : []), ...wires, ...lights, ...statues, ...stairwells],
       roads, crossers, poles, fences: fenceSections, furniture, signs, directions, relief: shade, sample: shade?.sample,
       water: (t.areas.water || []).map((rings) => {
         const xs = rings[0].map((p) => p[0]), ys = rings[0].map((p) => p[1]);

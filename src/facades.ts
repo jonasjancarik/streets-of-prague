@@ -71,13 +71,9 @@ export function loadFacadeAtlas() {
   return loading;
 }
 
-// A wall's style from where it stands and how tall it is. Old Town, Malá Strana and
-// Hradčany are mostly baroque and older; tall blocks far out are prefab panel housing;
-// low buildings are family houses; the rest is mostly 19th-century tenements with some
-// 1920s–30s functionalism further out. Neighbouring walls share the random pick
-// (it goes by 60 m squares), so a block keeps to one style.
-export function styleFor(index: { bbox_wgs84: [number, number, number, number] }) {
-  const [w, s, e, n] = index.bbox_wgs84;
+// The historic core in an area's local metres (`bbox`: its WGS84 box): the Old Town
+// Square, and whether a point is in Staré Město, Malá Strana or Hradčany (three circles).
+export function historicCore([w, s, e, n]: [number, number, number, number]) {
   const local = `+proj=tmerc +lat_0=${(s + n) / 2} +lon_0=${(w + e) / 2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`;
   const at = (lon: number, lat: number) => proj4('EPSG:4326', local, [lon, lat]);
   const oldTown = at(14.4213, 50.0875);
@@ -86,10 +82,20 @@ export function styleFor(index: { bbox_wgs84: [number, number, number, number] }
     [...at(14.4034, 50.0880), 550], // Malá Strana
     [...at(14.3975, 50.0890), 450], // Hradčany
   ];
+  return { oldTown, inCore: (x: number, y: number) => core.some(([cx, cy, r]) => Math.hypot(x - cx, y - cy) < r) };
+}
+
+// A wall's style from where it stands and how tall it is. Old Town, Malá Strana and
+// Hradčany are mostly baroque and older; tall blocks far out are prefab panel housing;
+// low buildings are family houses; the rest is mostly 19th-century tenements with some
+// 1920s–30s functionalism further out. Neighbouring walls share the random pick
+// (it goes by 60 m squares), so a block keeps to one style.
+export function styleFor(index: { bbox_wgs84: [number, number, number, number] }) {
+  const { oldTown, inCore } = historicCore(index.bbox_wgs84);
   return (x: number, y: number, height: number) => {
     if (height < 8.5) return STYLE.house;
     const pick = cellHash(Math.floor(x / 60), Math.floor(y / 60));
-    if (core.some(([cx, cy, r]) => Math.hypot(x - cx, y - cy) < r)) return pick < 0.65 ? STYLE.baroque : STYLE.tenement;
+    if (inCore(x, y)) return pick < 0.65 ? STYLE.baroque : STYLE.tenement;
     const d = Math.hypot(x - oldTown[0], y - oldTown[1]);
     if (height > 20 && d > 3500) return STYLE.panel;
     if (d > 1800 && pick < 0.25) return STYLE.functionalist;

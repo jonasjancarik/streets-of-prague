@@ -1,12 +1,14 @@
 import * as THREE from 'three';
 import type { Point2 } from './geo.ts';
 import { HEDGE_SEASON } from '../groundSeason.ts';
+import { CHAIN_H, CHAIN_SPAN, CHAIN_VERTS, RAILING_SECTION, RAILING_VERTS, chainMaterial, chainSection, railingMaterial, railingSection } from './railings.ts';
 
 // Fences, hedges and crash barriers as a row of short sections (a car breaks one at a
 // time, see fences.ts).
 // Each section is a fixed number of vertices in its mesh, so the game can find it again.
 
-export interface FenceTile { fences?: { kind: string; h?: number; pts: Point2[] }[] }
+// `look`: a fence's texture row (else by place, fenceLook), a railing's paint (railings.ts).
+export interface FenceTile { fences?: { kind: string; h?: number; s?: number; look?: number; pts: Point2[] }[] }
 
 export const FENCE_H = 1.2; // m: a fence no one tagged a height on
 export const HEDGE_H = 1.5;
@@ -55,8 +57,10 @@ export interface FenceBuffers {
   fence: { position: Float32Array; normal: Float32Array; uv: Float32Array };
   hedge: { position: Float32Array; normal: Float32Array; uv: Float32Array };
   rail: { position: Float32Array; normal: Float32Array; uv: Float32Array };
-  // Per section: x1, y1, x2, y2, ground, height, fence (0), hedge (1) or crash barrier (2),
-  // first vertex in its mesh.
+  railing: { position: Float32Array; normal: Float32Array; uv: Float32Array };
+  chain: { position: Float32Array; normal: Float32Array; uv: Float32Array };
+  // Per section: x1, y1, x2, y2, ground, height, fence (0), hedge (1), crash barrier (2),
+  // street railing (3) or chain between bollards (4), first vertex in its mesh.
   sections: Float32Array;
 }
 
@@ -66,9 +70,33 @@ export function fenceArrays(data: FenceTile, height: (x: number, y: number) => n
     fence: { pos: [] as number[], nor: [] as number[], uv: [] as number[] },
     hedge: { pos: [] as number[], nor: [] as number[], uv: [] as number[] },
     rail: { pos: [] as number[], nor: [] as number[], uv: [] as number[] },
+    railing: { pos: [] as number[], nor: [] as number[], uv: [] as number[] },
+    chain: { pos: [] as number[], nor: [] as number[], uv: [] as number[] },
   };
   const sections: number[] = [];
   for (const line of data.fences ?? []) {
+    if (line.kind === 'railing' || line.kind === 'chain') {
+      // Modelled: a post or a bollard at each end of every section (railings.ts).
+      const chain = line.kind === 'chain', m = chain ? out.chain : out.railing;
+      const h = chain ? CHAIN_H : line.h ?? 1;
+      let along = 0;
+      for (let i = 0; i < line.pts.length - 1; i++) {
+        const [ax, ay] = line.pts[i], [bx, by] = line.pts[i + 1];
+        const len = Math.hypot(bx - ax, by - ay);
+        if (len < 0.05) continue;
+        const n = Math.ceil(len / (chain ? CHAIN_SPAN : RAILING_SECTION));
+        for (let s = 0; s < n; s++) {
+          const x1 = ax + (bx - ax) * s / n, y1 = ay + (by - ay) * s / n;
+          const x2 = ax + (bx - ax) * (s + 1) / n, y2 = ay + (by - ay) * (s + 1) / n;
+          const z1 = height(x1, y1), z2 = height(x2, y2);
+          sections.push(x1, y1, x2, y2, (z1 + z2) / 2, h, chain ? 4 : 3, m.pos.length / 3);
+          if (chain) chainSection(m, x1, y1, z1, x2, y2, z2, along + len * s / n);
+          else railingSection(m, x1, y1, z1, x2, y2, z2, h, line.look ?? 0);
+        }
+        along += len;
+      }
+      continue;
+    }
     const hedge = line.kind === 'hedge';
     const rail = line.kind === 'guard_rail';
     const h = rail ? RAIL_H : line.h ?? (hedge ? HEDGE_H : FENCE_H);
@@ -76,7 +104,7 @@ export function fenceArrays(data: FenceTile, height: (x: number, y: number) => n
     const repeat = hedge ? 2 : rail ? RAIL_POSTS : FENCE_REPEAT;
     // The texture rows a fence's faces take (a small gap left either side of each).
     const look = line.kind === 'slatted_gate' ? SLATTED_GATE
-      : !hedge && !rail ? fenceLook(line.pts[0][0], line.pts[0][1]) : 0;
+      : !hedge && !rail ? line.look ?? fenceLook(line.pts[0][0], line.pts[0][1]) : 0;
     const rows: [number, number] = rail ? [0, 1] : [(look + 0.03) / ATLAS_ROWS, (look + 0.97) / ATLAS_ROWS];
     let along = 0;
     // Where the line bends, a hedge's two sides meet on the bisector of the bend, so no
@@ -181,7 +209,7 @@ export function fenceArrays(data: FenceTile, height: (x: number, y: number) => n
   }
   const pack = (m: { pos: number[]; nor: number[]; uv: number[] }) =>
     ({ position: new Float32Array(m.pos), normal: new Float32Array(m.nor), uv: new Float32Array(m.uv) });
-  return { fence: pack(out.fence), hedge: pack(out.hedge), rail: pack(out.rail), sections: new Float32Array(sections) };
+  return { fence: pack(out.fence), hedge: pack(out.hedge), rail: pack(out.rail), railing: pack(out.railing), chain: pack(out.chain), sections: new Float32Array(sections) };
 }
 
 // How light a hedge is by its texture's v (`v`): the sides darker towards the ground,
@@ -323,7 +351,7 @@ export function fenceCamera(mesh: THREE.Mesh, street: boolean) {
   void fineFence.then(map => { if (map && mesh.userData.streetFence) set(map, true); });
 }
 
-export function fenceMeshes({ fence, hedge, rail }: FenceBuffers, street = false) {
+export function fenceMeshes({ fence, hedge, rail, railing, chain }: FenceBuffers, street = false) {
   const make = (a: FenceBuffers['fence'], material: THREE.Material, shadow: boolean) => {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(a.position, 3));
@@ -351,7 +379,11 @@ diffuseColor.rgb *= uHedgeSeason * ${HEDGE_SHADE_GLSL};`);
     fence: panels,
     hedge: make(hedge, hedgeMaterial, true),
     rail: make(rail, new THREE.MeshLambertMaterial({ map: barrier(), alphaTest: 0.5 }), false),
+    railing: make(railing, railingMaterial(), true),
+    chain: make(chain, chainMaterial(), true),
   };
 }
 
-export const VERTS = { fence: FENCE_VERTS, hedge: HEDGE_VERTS, rail: FENCE_VERTS };
+// The vertices of one section, by its kind (the sections' table, see FenceBuffers).
+export const VERTS = { fence: FENCE_VERTS, hedge: HEDGE_VERTS, rail: FENCE_VERTS, railing: RAILING_VERTS, chain: CHAIN_VERTS };
+export const KIND_NAMES = ['fence', 'hedge', 'rail', 'railing', 'chain'] as const;

@@ -10,6 +10,7 @@ import type { WebGPURenderer } from 'three/webgpu';
 import { Fn, If, pass, renderOutput, uniform, uv, vec2, vec3, vec4, length, smoothstep, float, dot, min, max, abs, cross, fract, screenCoordinate } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { ao } from 'three/addons/tsl/display/GTAONode.js';
+import { denoise } from 'three/addons/tsl/display/DenoiseNode.js';
 import { BLUR_TUNE, OTHERS, POST, VIGNETTE_TUNE, setPost } from '../post.ts';
 import type { N } from './common.ts';
 
@@ -21,7 +22,10 @@ const DAY = [0.22, 0.55, 1.35], NIGHT = [0.4, 0.7, 0.55];
 const VIGNETTE = 0.16;
 // (Read each frame: the developer panel can change it.)
 const vignette: N = uniform(VIGNETTE);
-const AO = 0.8; // how much of the ambient shading is taken
+// How deep the ambient shading goes at each strength (Custom: light, medium, strong): what
+// it worked out is raised to this power. (Read each frame.)
+const AO_POWER = [0, 0.8, 2, 3.5];
+const aoPower: N = uniform(AO_POWER[2]);
 // The bloom's first copy, as a share of the picture's width (three.js's own choice is a half: a
 // quarter is blurred enough not to show, and a quarter of the pixels to fill).
 const BLOOM_SCALE = 0.25;
@@ -103,7 +107,7 @@ export function makePost(renderer: WebGPURenderer) {
         return out;
       })();
     }
-    // On Ultra (graphics.ts; ?ao=on|off for one visit): ambient shading worked out from the picture's
+    // Off unless asked for (Custom, or ?ao=on for one visit): ambient shading worked out from the picture's
     // depth (three.js's GTAO at half resolution, the ground's depth drawn for it as in first
     // person). From above it darkens the ground round cars and along walls and the roofs'
     // valleys a little, next to the shadows and the soft shading already there, and costs
@@ -113,11 +117,14 @@ export function makePost(renderer: WebGPURenderer) {
     if (POST.ao) {
       const shade: N = ao(scenePass.getTextureNode('depth'), null as any, camera);
       shade.resolutionScale = 0.5;
-      shade.radius.value = 4;
+      shade.radius.value = 1.5;
       shade.scale.value = 1.6;
-      shade.thickness.value = 3;
+      shade.thickness.value = 1.5;
       shade.samples.value = 12;
-      colour = colour.mul(vec4(vec3(shade.getTextureNode().r.mul(AO).add(1 - AO)), 1));
+      // (Denoised: raw, its samples show as grain. A radius of 4 m, made for the view from
+      // above, darkened a broad patch of the ground in front of the camera in the street.)
+      const clean: N = denoise(shade.getTextureNode(), scenePass.getTextureNode('depth'), null as any, camera);
+      colour = colour.mul(vec4(vec3(clean.r.max(1e-4).pow(aoPower)), 1));
     }
     // (The glow and the darker corners only when asked for: the shading can go on without them.)
     glow = null;
@@ -141,6 +148,7 @@ export function makePost(renderer: WebGPURenderer) {
       glow.threshold.value = mixed(2) / exposure;
     }
     vignette.value = Math.min(1, VIGNETTE * VIGNETTE_TUNE.strength);
+    aoPower.value = AO_POWER[POST.aoLevel] ?? AO_POWER[2];
     camera.updateMatrixWorld();
     speed.fromArray(POST.going);
     if (POST.blur > 0.001) {

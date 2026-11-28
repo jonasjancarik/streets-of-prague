@@ -1708,8 +1708,10 @@ function tactile(ends: CrossingEnd[], blocked: (x: number, y: number) => boolean
 }
 // Where a zebra meets each kerb: the point on the road's edge, the way out onto the
 // pavement, the street's direction and the zebra's width (for the tactile paving).
-interface CrossingEnd { at: Point2; out: Point2; along: Point2; width: number }
-function zebras(crossings: Point2[][], edges: GroundRoadEdge[], road: Polygons, box: Bounds, ends: CrossingEnd[] = []): Point2[][] {
+// (`hw`: the class of the street it crosses.)
+export interface CrossingEnd { at: Point2; out: Point2; along: Point2; width: number; hw: string }
+// (Exported for the railings beside a zebra, map/railings.ts, which want only the `ends`.)
+export function zebras(crossings: Point2[][], edges: GroundRoadEdge[], road: Polygons, box: Bounds, ends: CrossingEnd[] = []): Point2[][] {
   const bars: Point2[][] = [];
   const done: Point2[] = [];
   const inRoad = onPolygons(road);
@@ -1745,7 +1747,7 @@ function zebras(crossings: Point2[][], edges: GroundRoadEdge[], road: Polygons, 
       for (const [t0, sx] of [[lo, -1], [hi, 1]] as const) {
         let t = t0 * k;
         while (t * sx < t0 * k * sx + 4 && inRoad(px + ax * t / k, py + ay * t / k)) t += sx * 0.1;
-        if (!offTile(t / k) && !inRoad(px + ax * t / k, py + ay * t / k)) ends.push({ at: [px + ax * t / k, py + ay * t / k], out: [sx * ax, sx * ay], along: [rx, ry], width: BAR_LEN });
+        if (!offTile(t / k) && !inRoad(px + ax * t / k, py + ay * t / k)) ends.push({ at: [px + ax * t / k, py + ay * t / k], out: [sx * ax, sx * ay], along: [rx, ry], width: BAR_LEN, hw: hit.hw });
       }
       const n = Math.floor((width - BAR) / PITCH) + 1;
       const first = lo * k + KERB_GAP + (width - (BAR + (n - 1) * PITCH)) / 2 + BAR / 2;
@@ -1762,20 +1764,20 @@ function zebras(crossings: Point2[][], edges: GroundRoadEdge[], road: Polygons, 
 // the point, the street's heading there, the crossing's, and the street's width.
 // A crossing that stops short of the centre line meets the nearest street it reaches.
 function crossingHits(pts: Point2[], edges: GroundRoadEdge[]) {
-  const hits: { at: Point2; road: Point2; along: Point2; width: number }[] = [];
+  const hits: { at: Point2; road: Point2; along: Point2; width: number; hw: string }[] = [];
   const unit = (a: Point2, b: Point2): Point2 => { const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1; return [(b[0] - a[0]) / l, (b[1] - a[1]) / l]; };
   for (const e of edges) {
     if (e.bridge || e.tunnel) continue;
     for (let i = 1; i < pts.length; i++) {
       for (let j = 1; j < e.pts.length; j++) {
         const at = segCross(pts[i - 1], pts[i], e.pts[j - 1], e.pts[j]);
-        if (at) hits.push({ at, road: unit(e.pts[j - 1], e.pts[j]), along: unit(pts[i - 1], pts[i]), width: e.width });
+        if (at) hits.push({ at, road: unit(e.pts[j - 1], e.pts[j]), along: unit(pts[i - 1], pts[i]), width: e.width, hw: e.hw });
       }
     }
   }
   if (hits.length || pts.length < 2) return hits;
   const mid = pts[Math.floor((pts.length - 1) / 2)], next = pts[Math.floor((pts.length - 1) / 2) + 1];
-  let best: { at: Point2; road: Point2; along: Point2; width: number } | null = null, bestD = Infinity;
+  let best: { at: Point2; road: Point2; along: Point2; width: number; hw: string } | null = null, bestD = Infinity;
   for (const e of edges) {
     if (e.bridge || e.tunnel) continue;
     for (let j = 1; j < e.pts.length; j++) {
@@ -1783,7 +1785,7 @@ function crossingHits(pts: Point2[], edges: GroundRoadEdge[]) {
       if (d >= bestD || d > e.width / 2 + 3) continue;
       const dx = b[0] - a[0], dy = b[1] - a[1], t = Math.max(0, Math.min(1, ((mid[0] - a[0]) * dx + (mid[1] - a[1]) * dy) / (dx * dx + dy * dy || 1)));
       bestD = d;
-      best = { at: [a[0] + dx * t, a[1] + dy * t], road: unit(a, b), along: unit(mid, next), width: e.width };
+      best = { at: [a[0] + dx * t, a[1] + dy * t], road: unit(a, b), along: unit(mid, next), width: e.width, hw: e.hw };
     }
   }
   return best ? [best] : [];

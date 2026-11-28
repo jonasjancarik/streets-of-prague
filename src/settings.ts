@@ -78,7 +78,7 @@ const CUSTOM: [string, Option[], Free?][] = [
   ['Lamp shadow detail', [['Normal (1024)', { lampMap: 1024 }], ['Sharp (2048)', { lampMap: 2048 }]]],
   ['Light beams and glints', on({ lights: true }, { lights: false })],
   ['Glow round bright lights', on({ post: true }, { post: false })],
-  ['Shade in corners and under cars', on({ ao: true }, { ao: false })],
+  ['AO (shade in corners and under cars)', [['Off', { ao: 0 }], ['Light', { ao: 1 }], ['Medium', { ao: 2 }], ['Strong', { ao: 3 }]]],
   ['Cars mirror the street', on({ probe: true }, { probe: false })],
   ['Grime, leaves and weathering', on({ look: true }, { look: false })],
   ['Detailed roofs', on({ roofs: true }, { roofs: false })],

@@ -6,8 +6,10 @@ import type * as THREE from 'three';
 // target of its own first. ?post=on|off overrides the tier for one visit.
 const query = new URLSearchParams(globalThis.location?.search ?? '');
 const asked = query.get('post');
-// ?ao (or ?ao=on) and ?ao=off override the tier's ambient shading for one visit.
-const aoAsked = query.has('ao') ? (query.get('ao') === 'off' ? 'off' : 'on') : null;
+// ?ao=off, ?ao=1|2|3 (light, medium, strong) and ?ao or ?ao=on (medium) override the
+// ambient shading for one visit.
+const aoQuery = query.get('ao');
+const aoAsked = aoQuery === null ? null : aoQuery === 'off' ? 0 : ['1', '2', '3'].includes(aoQuery) ? +aoQuery : 2;
 export const POST = {
   // Whether the tier wants it (graphics.ts).
   value: 0,
@@ -15,10 +17,12 @@ export const POST = {
   night: 0,
   // Wet ground glints more.
   wet: 0,
-  // Whether the tier wants ambient shading from the picture's depth (graphics.ts: Ultra).
-  aoValue: false,
+  // How strong the ambient shading from the picture's depth is wanted, 0 to 3 (graphics.ts: Custom only).
+  aoValue: 0,
   // Ambient shading from the picture's depth (webgpu/post.ts), with or without the glow.
-  get ao() { return aoAsked === 'on' || (aoAsked !== 'off' && this.aoValue); },
+  // How strong: 0 off, 1 light, 2 medium, 3 strong.
+  get aoLevel() { return aoAsked ?? this.aoValue; },
+  get ao() { return this.aoLevel > 0; },
   // Motion blur while driving, seen from the street: how much of it (0 below about 20 km/h, 1 from
   // about 60).
   blur: 0,
