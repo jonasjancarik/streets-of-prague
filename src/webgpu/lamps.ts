@@ -9,7 +9,7 @@ import {
   dot, smoothstep, abs, select, min, max, step, length, mix, sqrt, inverseSqrt, uniform, renderGroup, normalize, floor, fract, clamp,
 } from 'three/tsl';
 import './lampShadows.ts'; // (the nearest lamps' shadow maps: CLOSE)
-import { CLOSE, CLOSE_MAP, CLOSE_ON, CLOSE_SLOTS, CLOSE_ROI, CLOSE_NORMAL } from '../lamps.ts';
+import { CLOSE, CLOSE_MAP, CLOSE_ON, CLOSE_SLOTS, CLOSE_ROI, CLOSE_NORMAL, CLOSE_BUILT } from '../lamps.ts';
 import { LAMP_MAP, LAMP_MAP_HIGH, LAMP_MAP_OPEN, LAMP_MAP_NEAR, LAMP_NEAR, OPEN_ABOVE, LAMP_BOX, LAMP_REF, LAMP_ON, LAMP_SHADOWS, POOL, setPools, CAR_SHAPED, PERSON_SHAPED } from '../lamps.ts';
 
 const LUMA = vec3(0.3, 0.59, 0.11);
@@ -244,16 +244,21 @@ export function lampLight(w: N, n?: N, roofs = false, tall = false) {
         // Round you, the nearest lamps' real shadows instead of their boxes' (CLOSE): the
         // light the boxes kept off back (the right half of LAMP_MAP_NEAR), less what
         // the shadows keep off; towards the circle's edge the boxes' come back.
-        const change = vec3(0).toVar();
-        If(uCloseOn.greaterThan(0.5), () => {
-          const inside = smoothstep(uRoi.z.mul(0.75), uRoi.z, length(w.xz.sub(uRoi.xy))).oneMinus().toVar();
-          If(inside.greaterThan(0), () => {
-            const q = w.xz.sub(uLampNear.xy).mul(uLampNear.z);
-            const back = mapNear.sample(vec2(q.x.mul(0.25).add(0.75), q.y.mul(0.5).add(0.5).oneMinus())).level(float(0)).rgb;
-            const gone = closeShade(w, nv ? normalize(normalWorld) : null);
-            change.assign(back.mul(opened.oneMinus()).sub(gone).mul(inside));
+        // (Decided as each shader is built, not when this graph is made: CLOSE_BUILT.)
+        const change = Fn(() => {
+          if (!CLOSE_BUILT.value) return vec3(0);
+          const c = vec3(0).toVar();
+          If(uCloseOn.greaterThan(0.5), () => {
+            const inside = smoothstep(uRoi.z.mul(0.75), uRoi.z, length(w.xz.sub(uRoi.xy))).oneMinus().toVar();
+            If(inside.greaterThan(0), () => {
+              const q = w.xz.sub(uLampNear.xy).mul(uLampNear.z);
+              const back = mapNear.sample(vec2(q.x.mul(0.25).add(0.75), q.y.mul(0.5).add(0.5).oneMinus())).level(float(0)).rgb;
+              const gone = closeShade(w, nv ? normalize(normalWorld) : null);
+              c.assign(back.mul(opened.oneMinus()).sub(gone).mul(inside));
+            });
           });
-        });
+          return c;
+        })();
         return max(l.rgb.add(change), 0).mul(k);
       }
       return l.rgb.mul(k);

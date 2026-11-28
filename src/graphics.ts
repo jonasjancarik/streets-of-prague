@@ -9,7 +9,7 @@ import { CAR_SHADE } from './car.ts';
 import { PEOPLE_SHADOWS, type PeopleShadows } from './figures.ts';
 import * as THREE from 'three';
 import { DIRT, LEAVES, ROOF_DETAIL, ROOF_CLUTTER, WATER, WEATHER_DETAIL } from './shading.ts';
-import { LAMP_SHADOWS, LAMP_SIZE, LIGHT_FX } from './lamps.ts';
+import { LAMP_SHADOWS, LAMP_SIZE, LIGHT_FX, CLOSE_BUILT } from './lamps.ts';
 import { MIRROR_ON } from './mirror.ts';
 import { STREAKS_ON } from './streaks.ts';
 import type { Sky } from './sky.ts';
@@ -415,6 +415,15 @@ export class Graphics {
     const filter = SOFT_SHADOWS.value > 0 ? SHADOW_FILTER.value ?? null : null;
     const refiltered = (sunShadow.filterNode ?? null) !== filter;
     if (refiltered) sunShadow.filterNode = filter;
+    // The nearest lamps' shadows (CLOSE in lamps.ts) likewise go into the lit shaders only while
+    // the lamps' shadows are at Ultra's (3). Nothing in a material's cache key says so, so the
+    // renderer's context moves on a version: every shader is built afresh, not taken from the cache.
+    const closeBuilt = cars > 2.5, reclosed = CLOSE_BUILT.value !== closeBuilt;
+    if (reclosed) {
+      CLOSE_BUILT.value = closeBuilt;
+      const context = (this.renderer as unknown as { contextNode?: { needsUpdate: boolean } }).contextNode;
+      if (context) context.needsUpdate = true;
+    }
     const first = !this.applied;
     const lampSize = this.choice === 'auto' && this.applied ? LAMP_SIZE.value : lampMap, resized = LAMP_SIZE.value !== lampSize;
     LAMP_SIZE.value = lampSize;
@@ -431,7 +440,7 @@ export class Graphics {
       // texture by themselves; WebGL needs a new one.
       if (!(this.renderer as GPURenderer).backend) { shadow.map?.dispose(); shadow.map = null; }
     }
-    if ((resized || (refiltered && !first)) && (this.renderer as GPURenderer).backend) {
+    if ((resized || ((refiltered || reclosed) && !first)) && (this.renderer as GPURenderer).backend) {
       // The materials don't notice the lamps' maps being replaced and would go on
       // sampling the destroyed ones. Release their render caches once so every binding
       // is made afresh, including stationary objects. Materials remain reusable.

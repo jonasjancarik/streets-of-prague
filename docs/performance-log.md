@@ -2351,3 +2351,15 @@ main thread is mostly idle while Chrome's GPU process works. `closeShade` in
 `webgpu/lamps.ts` is unrolled into `lampLight`, so every lit material's shader carries three
 lamps × sixteen depth reads and their matrix arithmetic, behind a uniform that only Ultra
 turns on. Main with `closeShade` returning nothing at once: 10.4 fps there again.
+
+Fixed the same day: the close shadows' code goes into the lit shaders only while the lamps'
+shadows are at Ultra's (`CLOSE_BUILT` in `lamps.ts`, set by `Graphics.apply`, read by
+`lampLight` as each shader is built). Nothing in a material's cache key would tell the two
+apart, and the tiles' shared graphs keep their builder states, so a change also moves the
+renderer's `contextNode` on a version (part of every render object's cache key) and rebuilds
+the materials, as a change of the sun's shadow filter does. Checked in one page on the M5:
+at High 215 shaders with 88 texel reads in all and none with the close shadows; switched to
+Ultra, 59 shaders rebuilt with them (48 reads each) and `CLOSE_ON` 1, no console errors;
+back to High, 151 new shaders, none with them. On the Pixel 5 at Medium (36.6 °C, night
+rain) the game starts again: median frame 67 ms, its JavaScript the limit (the crowd's
+update about 22 ms), as on `e723da7f` before the change.
