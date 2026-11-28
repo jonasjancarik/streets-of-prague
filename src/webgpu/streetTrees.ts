@@ -8,15 +8,15 @@ import * as THREE from 'three';
 import { MeshLambertNodeMaterial } from 'three/webgpu';
 import {
   Fn, If, Discard, float, vec2, vec3, vec4, attribute, texture, uv, positionGeometry, positionLocal, positionWorld, normalViewGeometry, diffuseColor,
-  floor, fract, dot, mix, smoothstep, step, length, min, clamp, normalize, select, cameraViewMatrix, sin,
+  floor, fract, dot, mix, smoothstep, step, length, min, max, pow, clamp, normalize, select, cameraViewMatrix, cameraPosition, sin, uniform, renderGroup,
 } from 'three/tsl';
-import { BARE, SEASON, TREE_SWAY } from '../shading.ts';
+import { BARE, SEASON, TREE_SWAY, SUN_DIR, SUN_LIGHT, LEAF_LIGHT, LEAF_VARY } from '../shading.ts';
 import { STEM } from '../map/vegetation.ts';
 import { CROWN_FOOT, TREE_FROM, CANOPY, BOUGH } from '../map/streetTree.ts';
 import { setStreetTreeMaterial } from '../trees.ts';
 import { lampLit } from './lamps.ts';
 import { instanceMatrix, shareInstances, outlineAt, crownBase } from './trees.ts';
-import { type N, follow, followVec, uWet, uSnow } from './common.ts';
+import { type N, follow, followVec, followColor, uWet, uSnow } from './common.ts';
 
 const uBare = follow(BARE), uSeason = followVec(SEASON), uSway: N = followVec(TREE_SWAY);
 const part: N = attribute('part', 'vec4'), yearly: N = attribute('yearly', 'float');
@@ -102,6 +102,14 @@ const shaped = (): N => {
   return vec3(p.x.mul(wide).add(uSway.z.mul(lean)), y.add(flutter), p.z.mul(wide).add(uSway.w.mul(lean)));
 };
 
+const uSunDir: N = (() => {
+  const u = uniform(SUN_DIR.value.clone()).setGroup(renderGroup);
+  u.onRenderUpdate(() => { u.value.copy(SUN_DIR.value); return u.value; });
+  return u;
+})();
+const uSunLight: N = followColor(SUN_LIGHT);
+const uLeafLight: N = follow(LEAF_LIGHT), uLeafVary: N = follow(LEAF_VARY);
+
 function material() {
   const m = new MeshLambertNodeMaterial({ side: THREE.DoubleSide }) as N;
   const proto = Object.getPrototypeOf(m);
@@ -148,7 +156,11 @@ function material() {
       const turned: N = clamp(uSeason.x.mul(1.7).sub(clamp(own.add(part.z.sub(0.5).mul(0.3)), 0, 1).mul(0.7)), 0, 1).mul(changes);
       // Darker inside the crown and on its underside, where the light has to come through leaves.
       const inside: N = mix(0.5, 1.12, smoothstep(0.35, 1, part.w));
-      const leaf: N = mix(fresh, autumn.mul(shade).mul(0.7), turned).mul(p.rgb).mul(1.5).mul(inside);
+      // Spray by spray the green varies: some darker and bluer, some lighter and yellower, as
+      // leaves in the light and leaves turned from it, young and old, do on a real crown.
+      const vary: N = fract(part.z.mul(13.7).add(own.mul(3.1)));
+      const tone: N = mix(vec3(0.78, 0.84, 0.86), vec3(1.08, 1.06, 0.94), vary);
+      const leaf: N = mix(fresh.mul(mix(vec3(1), tone, uLeafVary)), autumn.mul(shade).mul(0.7), turned).mul(p.rgb).mul(1.5).mul(inside);
       c.assign(mix(p.rgb.mul(.8),leaf,leafy()));
     });
     c.mulAssign(float(1).sub(uWet.mul(0.18)));
@@ -160,6 +172,17 @@ function material() {
   };
   // The cards' normals are the crown's (map/streetTree.ts), the same from both sides.
   m.setupNormal = () => normalize(normalViewGeometry);
+  // Sunlight through the leaves: from below and behind a crown, looking towards the sun,
+  // its outer leaves glow yellow-green with the light coming through them (more the more
+  // nearly you look into the sun), and the side turned from the sun is never quite dull.
+  // Not the wood, and less where the crown is thick. (No shadow test: a tree in a house's
+  // shade glows a little too, at the crown's edge only.)
+  const sunView: N = normalize(cameraViewMatrix.mul(vec4(uSunDir, 0)).xyz);
+  const toward: N = max(dot(normalize(positionWorld.sub(cameraPosition)), uSunDir), 0);
+  const away: N = max(dot(normalize(normalViewGeometry), sunView).negate(), 0);
+  const outer: N = smoothstep(0.45, 1, part.w).mul(step(part.x, 0.5)).mul(leafy());
+  const through: N = pow(toward, 6).mul(0.3).add(away.mul(0.08)).mul(outer).mul(float(1).sub(uWet.mul(0.5))).mul(uLeafLight);
+  m.emissiveNode = diffuseColor.rgb.mul(vec3(1, 1.04, 0.82)).mul(uSunLight).mul(through);
   lampLit(m);
   return m as THREE.Material;
 }

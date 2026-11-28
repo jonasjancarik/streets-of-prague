@@ -525,6 +525,11 @@ the street is 5–30 m wide: Na Příkopě, Celetná, Karlova, Pařížská, Ná
 `FESTIVE` (`src/christmasLights.ts`; `Season.festive`, shared as `SEASON.w`). They glow
 after dark. Václavské náměstí is too wide for them.
 
+All year, about a third of the main roads' arm lamp posts fly a banner (`src/lampBanners.ts`):
+a 0.75 × 2.2 m cloth on two rods, standing out from the pole towards the road so that it
+faces whoever comes along the street, in one made-up design a 120 m stretch (the city's
+colours, an exhibition, a summer music festival, a museum), drawn with the poles near you.
+
 Stand under a street tree on a windy day. The boughs and sprays lean with the wind and
 swing back, in gusts that pass from tree to tree, about three times as hard in a storm.
 Towards sunset or dawn, look along the river at the sun: the horizon there is orange
@@ -1356,6 +1361,17 @@ record the measurements, merge decisions and pending landmark asset activation.
   The paint is worn (the `paint` pattern, `pPaint` in `src/shading.ts` and `src/webgpu.ts`):
   dulled and uneven, worn through in patches to the grey of the road, flaking in clusters
   and specked with grit up close, and under the street's grime; from above it still reads.
+  At each zebra's kerbs lies Prague's red tactile paving (`tactile` in `src/ground.ts`, the
+  `tactileStuds` and `tactileRibs` patterns): a warning strip of studs 0.4 m deep along the
+  kerb, the zebra's width (shortened where a corner's kerb curves away), and a ribbed guide
+  strip 0.8 m wide from it back across the pavement to the house front or 4 m. The kerb is
+  where the road's surface stops past the zebra's end, beyond a parking lane mapped across
+  it; none where a house, another road or water is behind it.
+  IPR's flower beds are planted through the season (the `flowerbed` pattern, `BED_SEASON`
+  in `src/groundSeason.ts`): bare earth from late October to mid-April, tulips and pansies
+  into May, the summer's bedding from June to September, each bed in one colour (red,
+  pink, white, violet, orange or yellow, picked over some 40 m), plants grown into a cover
+  with flowers specked over them up close and the bed's mixed colour from afar.
   The general pavement is asphalt grey; slab squares are lighter, and park paths stay
   warm. Squares use their own OSM `surface` tag where one exists. Otherwise, a clear
   majority of mapped pedestrian and service ways crossing the square can supply its

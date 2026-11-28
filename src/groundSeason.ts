@@ -20,6 +20,10 @@ export const GROUND_SEASON = GRASS_SEASON.park;
 export const WOOD_SEASON = { value: new THREE.Color(1, 1, 1) };
 export const FIELD_SEASON = { value: new THREE.Color(1, 1, 1) };
 export const HEDGE_SEASON = { value: new THREE.Color(1, 1, 1) };
+// The city's flower beds (IPR's, the 'flowerbed' pattern): x how far they are planted (bare
+// earth from late October to mid-April), y how much of it is in flower, z 0 for the spring's
+// tulips and pansies, 1 for the summer's bedding (begonias, salvias, petunias).
+export const BED_SEASON = { value: new THREE.Vector4(0, 0, 1, 0) };
 
 const ramp = (day: number, from: number, to: number) => {
   const t = Math.min(1, Math.max(0, (day - from) / (to - from)));
@@ -57,6 +61,10 @@ export function shareGroundSeason(season: Season) {
       1 - 0.65 * fresh + 0.5 * dry - 0.2 * cold,
     );
   }
+  const planted = ramp(day, 95, 112) * (1 - ramp(day, 290, 305));
+  const tulips = ramp(day, 100, 112) * (1 - ramp(day, 135, 150));
+  const summer = ramp(day, 150, 170) * (1 - ramp(day, 270, 292));
+  BED_SEASON.value.set(planted, Math.max(tulips, summer), day < 145 ? 0 : 1, 0);
   // Leaf litter on the woodland floor from November through March; this is a
   // broad colour, not a claim that the shader knows where individual trees stand.
   const litter = Math.max(1 - ramp(day, 90, 120), ramp(day, 285, 309));

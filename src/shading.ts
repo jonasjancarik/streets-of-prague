@@ -3,7 +3,7 @@ import { FACADE_ATLAS, FACADE_ON, STREET_FACADE, FACADE_GLSL } from './facades.t
 import { LAMP_ON, lampLit } from './lamps.ts';
 import { MIRROR, MIRROR_BRIGHT, MIRROR_K, MIRROR_MAP, MIRROR_MATRIX } from './mirror.ts';
 import { ROOF_TILES } from './map/roofPalette.ts';
-import { GRASS_SEASON, WOOD_SEASON, FIELD_SEASON } from './groundSeason.ts';
+import { GRASS_SEASON, WOOD_SEASON, FIELD_SEASON, BED_SEASON } from './groundSeason.ts';
 
 // Procedural surface patterns in world space, shared by the ground and the buildings.
 // Everything is computed per pixel from the position in metres, so it stays sharp at
@@ -160,6 +160,7 @@ uniform vec4 uGroundSeason;
 uniform vec4 uMeadowSeason;
 uniform vec4 uLawnSeason;
 uniform vec4 uGardenSeason;
+uniform vec4 uBedSeason;
 uniform vec4 uPitchSeason;
 uniform vec3 uWoodSeason;
 uniform vec3 uFieldSeason;
@@ -303,9 +304,51 @@ vec3 pPaint(vec3 c, vec2 p) {
   c *= 1. - specks * .35;
   return grit(grit(c, p), p + 41.);
 }
+// Tactile paving (p in its laying's axes, x along the strip): 40 cm concrete tiles, studs
+// 6 cm apart (23) or ribs across the strip's width running along it (24), lit from above
+// up close and plain from afar (as tactile() in webgpu.ts).
+vec3 pTactile(vec3 c, vec2 p, bool studs) {
+  float tile = blocks(p, vec2(.4, .4)).x, d = detail(p, .06);
+  c *= .92 + .1 * fbm(p * 3.) ;
+  c *= mix(.86, 1., smoothstep(.004, .012, tile));
+  if (d > 0.) {
+    float relief;
+    if (studs) {
+      vec2 q = fract(p / .06) - .5;
+      float r = length(q), top = smoothstep(.27, .2, r);
+      relief = top * (.12 + .1 * (q.y - q.x) / .3) - .14 * smoothstep(.36, .27, r) * (1. - top);
+    } else {
+      float r = abs(fract(p.y / .075) - .5) * 2.;
+      relief = .14 * smoothstep(.55, .25, r) - .1 * smoothstep(.75, .95, r);
+    }
+    c *= 1. + relief * d;
+  }
+  return c;
+}
+// A planted flower bed (as flowerbed() in webgpu.ts): bedding plants grown into a cover over
+// the earth, flowering in one colour a bed (over some 40 m), the season's
+// (uBedSeason); from afar, the bed's green and colour mixed.
+vec3 pFlowerbed(vec3 c, vec2 p) {
+  vec3 soil = pDirt(c, p);
+  if (uBedSeason.x < .01) return soil;
+  // (One colour over some 40 m, so a bed is mostly one: the shader doesn't know its outline.)
+  float pick = hash12(floor(p / 40. + vec2(vnoise(p * .2), vnoise(p * .2 + 9.)) * .5) + uBedSeason.z * 17.);
+  vec3 bloom = pick < .25 ? vec3(.62, .05, .05) : pick < .42 ? vec3(.82, .3, .45) : pick < .58 ? vec3(.86, .85, .8) : pick < .72 ? vec3(.36, .12, .5) : pick < .86 ? vec3(.88, .4, .04) : vec3(.88, .72, .08);
+  // Plants grown together into a cover, a little earth showing between: leaves from two
+  // scales of noise (no grid), flowers in specks over them.
+  float cover = smoothstep(.3, .55, fbm(p * 3.1) * .55 + vnoise(p * 9.) * .45);
+  float d = detail(p, .15);
+  vec3 leaf = vec3(.09, .18, .055) * (.75 + .5 * vnoise(p * 5.3 + 3.));
+  float fl = d > 0. ? smoothstep(.55, .72, vnoise(p * 31.) * .7 + vnoise(p * 67. + 4.) * .3) * cover : 0.;
+  vec3 near = mix(soil, mix(leaf, bloom * (.8 + .4 * vnoise(p * 13.)), fl * uBedSeason.y), cover);
+  vec3 far = mix(soil, mix(leaf * 1.1, bloom, .45 * uBedSeason.y), .85);
+  return mix(soil, mix(far, near, d), uBedSeason.x);
+}
 vec3 pattern(int id, vec3 c, vec2 p) {
   if (id == 1) return grit(pAsphalt(c, p), p);
+  if (id == 25) return pFlowerbed(c, p);
   if (id == 22) return pPaint(c, p);
+  if (id == 23 || id == 24) return grit(pTactile(c, p, id == 23), p);
   if (id == 2) return grit(pSetts(c, p, vec2(.17, .14)), p);
   if (id == 3 || id == 16) return grit(pMosaic(c, p), p);
   if (id == 4) return grit(pSlabs(c, p), p);
@@ -343,7 +386,7 @@ float ripples(vec2 p) {
 }
 vec3 weathered(int id, vec3 c, vec2 p, inout float shine) {
   if (id == 10 || id == 17) { shine = .35; return c; }
-  bool paved = id <= 4 || id == 9 || id == 16 || id == 20 || id == 22, road = id == 1 || id == 2;
+  bool paved = id <= 4 || id == 9 || id == 16 || id == 20 || id >= 22, road = id == 1 || id == 2;
   // Streets cleared of snow are wet with the slush.
   float wet = paved && uSnow > .01 ? max(uWet, uSnow * (1. - uStreetSnow) * .8) : uWet;
   if (wet > .01) {
@@ -388,7 +431,7 @@ vec3 mirrorOf(vec3 w, vec2 p) {
 }
 `;
 
-export const PATTERN: Record<string, number> = { flat: 0, asphalt: 1, setts: 2, mosaic: 3, slabs: 4, grass: 5, wood: 6, pitch: 7, dirt: 8, concrete: 9, water: 10, gravel: 11, field: 12, meadow: 13, lawn: 14, garden: 15, pavement: 16, quietWater: 17, groovedRail: 18, graniteKerb: 20, stairStone: 21, paint: 22 };
+export const PATTERN: Record<string, number> = { flat: 0, asphalt: 1, setts: 2, mosaic: 3, slabs: 4, grass: 5, wood: 6, pitch: 7, dirt: 8, concrete: 9, water: 10, gravel: 11, field: 12, meadow: 13, lawn: 14, garden: 15, pavement: 16, quietWater: 17, groovedRail: 18, graniteKerb: 20, stairStone: 21, paint: 22, tactileStuds: 23, tactileRibs: 24, flowerbed: 25 };
 
 // Buildings: tiles laid in rows down the slope of every roof face (the slope comes
 // from the face normal), slate in smaller rows, gravel on flat roofs, and a grid of
@@ -738,6 +781,11 @@ export const STREET_REF = { value: new THREE.Color(0, 0, 0) };
 export const WATER = { value: 1 };
 export const SUN_DIR = { value: new THREE.Vector3(0, 1, 0) };
 export const SUN_LIGHT = { value: new THREE.Color(0, 0, 0) };
+// How strong the sunlight through the street trees' leaves is (webgpu/streetTrees.ts), 1;
+// here to be tried in the page.
+export const LEAF_LIGHT = { value: 1 };
+// How much the street trees' sprays vary in their green, one from the next (1.3).
+export const LEAF_VARY = { value: 1.3 };
 // Lit windows at night: the share of them (0 by day).
 export const WINDOWS = { value: 0 };
 
@@ -994,6 +1042,7 @@ export function patterned(
     sh.uniforms.uMeadowSeason = GRASS_SEASON.meadow;
     sh.uniforms.uLawnSeason = GRASS_SEASON.lawn;
     sh.uniforms.uGardenSeason = GRASS_SEASON.garden;
+    sh.uniforms.uBedSeason = BED_SEASON;
     sh.uniforms.uPitchSeason = GRASS_SEASON.pitch;
     sh.uniforms.uWoodSeason = WOOD_SEASON;
     sh.uniforms.uFieldSeason = FIELD_SEASON;
@@ -1014,7 +1063,7 @@ export function patterned(
       sh.uniforms.uDeckBox = { value: deck.box };
     }
     // Setts, mosaic, slabs and concrete: in the axes they are laid along (laying.ts).
-    const laid = [2, 3, 4, 9, 16].includes(id);
+    const laid = [2, 3, 4, 9, 16, 23, 24].includes(id);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;${laid ? '\nattribute float lay;\nvarying float vLay;' : ''}`)
       .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>\n  vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;${laid ? '\n  vLay = lay;' : ''}`);
