@@ -19,7 +19,7 @@ import { iprRoofSites } from './map/iprRoofs.ts';
 import { fenceArrays } from './map/fences.ts';
 import { shedArrays, shedCorners } from './map/sheds.ts';
 import { treeInstances } from './map/vegetation.ts';
-import { furnitureInstances, furnitureMatrices, FURNITURE_SIZE, FLAT_FURNITURE, KNOCKABLE, KIND, mappedSpots, treeGrates } from './map/furniture.ts';
+import { furnitureInstances, furnitureMatrices, FURNITURE_SIZE, FLAT_FURNITURE, KNOCKABLE, POST_OWNER, KIND, mappedSpots, treeGrates } from './map/furniture.ts';
 import { onPolygons } from './map/geo.ts';
 import { signPosts, signGeometry } from './map/signs.ts';
 import { directionGeometry } from './map/directions.ts';
@@ -424,25 +424,33 @@ function land({ data, seeds, ground, bridges, box, structures }: WorkerJobs['lan
   // The traffic signs (map/signs.ts): off the carriageway, a few to a post, or on the wall.
   // And the direction plates and boards (map/directions.ts).
   let signs: LandResult['signs'] = null, directions: LandResult['directions'] = null;
-  const posts: { x: number; y: number }[] = [];
+  // (Each post: the ground it stands on, which mesh (0 the signs, 1 the direction plates)
+  // and which part of it it holds up, -1 a gantry's, that can't be knocked over.)
+  const posts: { x: number; y: number; z: number; mesh: number; part: number }[] = [];
   if (ground && (data.signs?.points.length || data.directions?.length)) {
     const onRoad = onPolygons([...(data.roads.road || []), ...(data.roads.sett || []), ...(data.roads.dirt || [])]);
     const inside = onPolygons(data.buildings.map(b => b.rings));
     if (data.signs?.points.length) {
       const standing = signPosts(data.signs.points, data.signs.names, onRoad, inside, hAt);
       signs = signGeometry(standing, data.signs.names, data.signs.cols);
-      for (const p of standing) if (!p.wall) posts.push(p);
+      standing.forEach((p, i) => { if (!p.wall) posts.push({ x: p.x, y: p.y, z: p.z, mesh: 0, part: i }); });
     }
     if (data.directions?.length) {
       directions = directionGeometry(data.directions, onRoad, inside, hAt);
-      for (let i = 0; directions && i < directions.posts.length; i += 4) if (!directions.posts[i + 2]) posts.push({ x: directions.posts[i], y: directions.posts[i + 1] });
+      for (let i = 0; directions && i < directions.posts.length; i += 4) {
+        if (directions.posts[i + 2]) continue;
+        const x = directions.posts[i], y = directions.posts[i + 1];
+        posts.push({ x, y, z: hAt(x, y), mesh: 1, part: directions.postParts[i / 4] });
+      }
     }
   }
   // The same solid-cell convention as tree trunks, stamped before parking.
   // (A sign post as a 12 cm square.)
-  // (`spot`: the index in furniture.spots of a piece a car can knock loose, else -1.)
+  // (`spot`: the index in furniture.spots of a piece a car can knock loose, POST_OWNER and
+  // its index in `posts` for a sign post one can knock over, else -1.)
   const solid = [...furniture.spots.flatMap((p, spot) => FLAT_FURNITURE.has(p.kind) ? [] : [{ x: p.x, y: p.y, angle: p.angle, size: FURNITURE_SIZE[p.kind], spot: KNOCKABLE.has(p.kind) ? spot : -1 }]),
-    ...posts.map(p => ({ x: p.x, y: p.y, angle: 0, size: [0.06, 0.06] as const, spot: -1 }))];
+    ...posts.map((p, k) => ({ x: p.x, y: p.y, angle: 0, size: [0.06, 0.06] as const, spot: p.part >= 0 ? POST_OWNER + k : -1 }))];
+  const signPostList = new Float32Array(posts.flatMap(p => [p.x, p.y, p.z, p.mesh, p.part]));
   // The cells only knockable pieces made solid: cell → [what the cell was, the spots…].
   const looseCells = new Map<number, number[]>(), fixed = new Set<number>();
   for (const p of solid) {
@@ -460,7 +468,7 @@ function land({ data, seeds, ground, bridges, box, structures }: WorkerJobs['lan
     }
   }
   const trunkCells = stampTrunks(grid, geo, trees, looseCells);
-  return { trees, walls, fences, sheds, furniture, signs, directions, cells: grid.cells, trunkCells, looseCells, masks: structures.map((l) => levelMask(box, l.polys, l.level)) };
+  return { trees, walls, fences, sheds, furniture, signs, directions, signPosts: signPostList, cells: grid.cells, trunkCells, looseCells, masks: structures.map((l) => levelMask(box, l.polys, l.level)) };
 }
 
 function isRequest(value: unknown): value is WorkerRequest {

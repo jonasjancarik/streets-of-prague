@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { posts, fall, type Post } from './posts.ts';
+import { crash } from './impacts.ts';
 
 // The street sign follows the slim red two-post frame in IPR's public-space manual,
 // section D.5.4.2. Its printed inserts use the lines and directions in this map.
@@ -150,7 +152,13 @@ function print(mode: StopMode, name: string, routes: StopRoute[], platform?: str
 }
 const distant = { bus: print('bus', '', []), tram: print('tram', '', []) };
 
+// A stop's sign is a post a car can knock over (posts.ts): its two thin steel posts go at
+// about 15 km/h, and it falls flat the way the car was going, turning about its foot.
+const STOP_POST = { r: 0.25, tough: 4, give: 0.1 };
+const tilt = new THREE.Vector3();
+
 export class StopSign extends THREE.Group {
+  private post?: Post;
   private mapView = new THREE.Group();
   private streetView = new THREE.Group();
   private inserts: THREE.Mesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>;
@@ -169,6 +177,23 @@ export class StopSign extends THREE.Group {
     this.streetView.add(frame, this.inserts); this.streetView.rotation.y = angle + Math.PI / 2;
     this.streetView.visible = false; this.add(this.mapView, this.streetView);
   }
+  // Where it stands (game x, y, and the ground): a post there from now on, and if it has
+  // been knocked over, turned down as far as it has fallen.
+  stand(x: number, y: number, z: number) {
+    let p = this.post;
+    if (!p) {
+      p = this.post = { x, y, z, ...STOP_POST, shades: false, down: null,
+        knocked: (q, speed) => crash(q, null, speed * 0.6, 'post', q.x, q.y, 40) };
+      posts.add(p);
+    } else if (p.x !== x || p.y !== y) { posts.remove(p); Object.assign(p, { x, y, z }); posts.add(p); }
+    if (p.down) {
+      tilt.set(-Math.sin(p.down.ang), 0, -Math.cos(p.down.ang));
+      this.quaternion.setFromAxisAngle(tilt, fall(p, performance.now()));
+    } else this.quaternion.identity();
+  }
+  // Out of view: no post to hit (nothing's drawn there), and stood up again for when it's next seen.
+  lift() { if (this.post) posts.remove(this.post); this.post = undefined; this.quaternion.identity(); }
+
   view(street: boolean, dx = Infinity, dy = Infinity) {
     if (!street && !this.streetView.visible) return;
     this.mapView.visible = !street; this.streetView.visible = street;

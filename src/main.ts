@@ -89,6 +89,8 @@ import { CUTAWAY, DIG, WEATHER_DETAIL, TREE_SWAY } from './shading.ts';
 import { streetHedges } from './streetHedges.ts';
 import { fences } from './fences.ts';
 import { looseFurniture } from './looseFurniture.ts';
+import { signFalls } from './signFalls.ts';
+import { posts } from './posts.ts';
 import { streetGrass, type GrassGround } from './streetGrass.ts';
 import type { LitterGround } from './streetLitter.ts';
 import { setupDev, watchTransitWhileWaiting } from './dev.ts';
@@ -2544,6 +2546,11 @@ async function main() {
       // heavy one holds you back.
       if (walker.down <= 0 && !walker.flight && walker.z < 0.5) {
         const [bx, by] = looseFurniture.kick(walker, walker.level ?? 0, kickBack);
+        // A café's chalkboard run into goes over (signFalls.ts: the lightest of the posts).
+        const pace = Math.hypot(walker.vx, walker.vy);
+        if (pace > 2.5) for (const p of posts.near(walker.x, walker.y, 0.35)) {
+          if (p.tough < 1.5 && (p.x - walker.x) * walker.vx + (p.y - walker.y) * walker.vy > 0) posts.knock(p, Math.atan2(walker.vy, walker.vx), pace);
+        }
         if (bx && !walker.blocked(walker.x + bx, walker.y)) walker.x += bx;
         if (by && !walker.blocked(walker.x, walker.y + by)) walker.y += by;
       }
@@ -2988,6 +2995,8 @@ async function main() {
 
     // Furniture knocked loose, tumbling and coming to rest.
     looseFurniture.update(dt);
+    // Sign posts knocked over, coming down (signFalls.ts).
+    signFalls.update();
     // Cars smoking, burning and blowing up (the ones that could have been hurt this step).
     fires.update(dt, active, { x: camPos.x, y: -camPos.z, r: viewRadius() + 40 });
 
@@ -4109,7 +4118,7 @@ async function main() {
     steps: (x, y, r) => world.stepEdgesNear(x, y, r), ground: (x, y) => world.terrainAt(x, y), levelAt: (x, y, l) => world.levelAt(x, y, l),
     streets: drive, countryside: () => !!world.country?.box, place: () => $('district').textContent || null, taxi,
     builtMap: (x, y) => !pastMap(x, y) && world.available.has(world.keyAt(x, y)),
-    grid, boats, ferries, pid, inspector, wallet, police, health, clock, fires, brigade, ambulances, refuse, hurtNearest, switchBeacon, traffic, crowd, rng: seeded, bags, stopWaiting, tours, busStops, busDoorKey,
+    grid, boats, ferries, pid, inspector, wallet, police, health, clock, fires, brigade, ambulances, refuse, hurtNearest, switchBeacon, traffic, crowd, rng: seeded, bags, stopWaiting, tours, busStops, tramStops, busDoorKey,
     missions, satnav, standing: repute, cannon: (on) => { cannonHeld = on; }, tram: { ride, list: () => trams.list, clearRun: (vehicle) => {
       const mid = vehicle.parts[1];
       if (!world.tileAt(mid.x, mid.y)?.drawn) return false;

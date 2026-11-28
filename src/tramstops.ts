@@ -90,10 +90,12 @@ export class TramStops {
       if (show !== sg.shown) {
         sg.shown = show;
         if (show) this.scene.add(sg.mesh ??= new StopSign('tram', sg.name, sg.ang, sg.routes, sg.platform));
-        else if (sg.mesh) { sg.mesh.view(false); this.scene.remove(sg.mesh); }
+        else if (sg.mesh) { sg.mesh.view(false); sg.mesh.lift(); this.scene.remove(sg.mesh); }
       }
       if (show) {
-        sg.mesh!.position.set(sg.x, height(sg.x, sg.y), -sg.y);
+        const z = height(sg.x, sg.y);
+        sg.mesh!.position.set(sg.x, z, -sg.y);
+        sg.mesh!.stand(sg.x, sg.y, z);
         sg.mesh!.view(street, sg.x - x, sg.y - y);
       }
     }

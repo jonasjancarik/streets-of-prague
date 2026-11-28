@@ -235,16 +235,20 @@ export class SignParts {
 // rendered façade (signs.ts mountOnWalls): the houses drawn are IPR's survey, not the
 // footprints the wall was found on here.
 export interface WallMount { part: number; x: number; y: number; z: number; angle: number }
-export function mergedArrays(parts: THREE.BufferGeometry[], posts: { x: number; y: number; wall: boolean; count: number }[], walls: WallMount[] = []) {
+// (`part`: which of `parts` a post holds up, -1 for one that can't be knocked over (a
+// gantry's); `ranges`: each part's first vertex and how many, to tip it over by.)
+export function mergedArrays(parts: THREE.BufferGeometry[], posts: { x: number; y: number; wall: boolean; count: number; part: number }[], walls: WallMount[] = []) {
   if (!parts.length) return null;
   const starts: number[] = [];
   let n = 0;
   for (const g of parts) { starts.push(n); n += g.attributes.position.count; }
   const mounts = new Float32Array(walls.flatMap(w => [w.x, w.y, w.z, w.angle, starts[w.part], parts[w.part].attributes.position.count]));
+  const ranges = new Float32Array(parts.flatMap((g, i) => [starts[i], g.attributes.position.count]));
   const merged = mergeGeometries(parts)!;
   parts.forEach(g => g.dispose());
   const a = (name: string) => merged.attributes[name].array as Float32Array;
-  return { position: a('position'), normal: a('normal'), uv: a('uv'), color: a('color'), posts: new Float32Array(posts.flatMap(p => [p.x, p.y, p.wall ? 1 : 0, p.count])), mounts };
+  return { position: a('position'), normal: a('normal'), uv: a('uv'), color: a('color'), posts: new Float32Array(posts.flatMap(p => [p.x, p.y, p.wall ? 1 : 0, p.count])),
+    postParts: new Float32Array(posts.map(p => p.part)), ranges, mounts };
 }
 
 // One tile's posts as one geometry's arrays. `cols`: the atlas's (atlasCols).
@@ -278,7 +282,7 @@ export function signGeometry(posts: SignPost[], names: string[], cols: number) {
     if (post.wall) walls.push({ part: out.length, x: post.x, y: post.y, z: post.z, angle: post.angle });
     out.push(o.placed(post.x, post.y, post.z, post.angle));
   }
-  return mergedArrays(out, posts.map(p => ({ x: p.x, y: p.y, wall: p.wall, count: p.signs.length })), walls);
+  return mergedArrays(out, posts.map((p, i) => ({ x: p.x, y: p.y, wall: p.wall, count: p.signs.length, part: i })), walls);
 }
 export type SignArrays = NonNullable<ReturnType<typeof signGeometry>>;
 

@@ -97,7 +97,7 @@ export function directionGeometry(signs: DirectionSign[], onRoad: (x: number, y:
   height: (x: number, y: number) => number) {
   const { faces, rects, width, height: H } = directionLayout(signs);
   const white = [WHITE_CORNER / 2 / width, 1 - WHITE_CORNER / 2 / H];
-  const out: THREE.BufferGeometry[] = [], posts: { x: number; y: number; wall: boolean; count: number }[] = [], walls: WallMount[] = [];
+  const out: THREE.BufferGeometry[] = [], posts: { x: number; y: number; wall: boolean; count: number; part: number }[] = [], walls: WallMount[] = [];
   let k = 0;
   for (const sign of signs) {
     const own = faces.slice(k, k += signFaces(sign).length), boxes = rects.slice(k - own.length, k);
@@ -109,7 +109,8 @@ export function directionGeometry(signs: DirectionSign[], onRoad: (x: number, y:
       const built = gantry(o, sign, own, boxes.map((r, i) => (stretch: number) => uvFor(r, own[i].px, stretch)), onRoad, height);
       if (!built) continue;
       out.push(o.placed(sign.x, sign.y, built.z, sign.angle));
-      for (const s of built.legs) posts.push({ x: sign.x + dx * s, y: sign.y + dy * s, wall: false, count: own.length });
+      // (A gantry is too big to knock down.)
+      for (const s of built.legs) posts.push({ x: sign.x + dx * s, y: sign.y + dy * s, wall: false, count: own.length, part: -1 });
       continue;
     }
     const at = stand(sign.x, sign.y, sign.angle, onRoad, inside);
@@ -127,7 +128,7 @@ export function directionGeometry(signs: DirectionSign[], onRoad: (x: number, y:
       for (const s of [-1, 1]) for (const t of [-.3, .3]) o.block(s * legs - .05, s * legs + .05, my + t * f.h - .03, my + t * f.h + .03, 0, .06);
       o.plate(faceOutline(f), 0, my, .06, .04, uvFor(boxes[0]));
       out.push(o.placed(cx, cy, z, sign.angle));
-      posts.push({ x: cx - dx * legs, y: cy - dy * legs, wall: false, count: 1 }, { x: cx + dx * legs, y: cy + dy * legs, wall: false, count: 1 });
+      posts.push({ x: cx - dx * legs, y: cy - dy * legs, wall: false, count: 1, part: out.length - 1 }, { x: cx + dx * legs, y: cy + dy * legs, wall: false, count: 1, part: out.length - 1 });
       continue;
     }
     const z = height(at.x, at.y);
@@ -146,7 +147,7 @@ export function directionGeometry(signs: DirectionSign[], onRoad: (x: number, y:
     });
     if (at.wall) walls.push({ part: out.length, x: at.x, y: at.y, z, angle: sign.angle });
     out.push(o.placed(at.x, at.y, z, sign.angle));
-    posts.push({ x: at.x, y: at.y, wall: at.wall, count: own.length });
+    posts.push({ x: at.x, y: at.y, wall: at.wall, count: own.length, part: out.length - 1 });
   }
   return mergedArrays(out, posts, walls);
 }

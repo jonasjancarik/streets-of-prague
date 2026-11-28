@@ -191,10 +191,12 @@ export class BusStops {
       if (show !== s.shown) {
         s.shown = show;
         if (show) this.o.scene.add(s.mesh ??= this.build(s));
-        else if (s.mesh) { s.mesh.view(false); this.o.scene.remove(s.mesh); }
+        else if (s.mesh) { s.mesh.view(false); s.mesh.lift(); this.o.scene.remove(s.mesh); }
       }
       if (show) {
-        s.mesh!.position.set(s.x, height(s.x, s.y), -s.y);
+        const z = height(s.x, s.y);
+        s.mesh!.position.set(s.x, z, -s.y);
+        s.mesh!.stand(s.x, s.y, z);
         s.mesh!.view(street, s.x - x, s.y - y); this.shownNow.push(s);
       }
     }

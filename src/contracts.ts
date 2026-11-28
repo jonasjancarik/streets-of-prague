@@ -153,6 +153,10 @@ export interface LandResult {
   // Cells only knockable pieces of furniture made solid: cell → [the cell's value without
   // them, their spot indices…] (src/looseFurniture.ts frees one once they've all come loose).
   looseCells: Map<number, number[]>;
+  // The sign posts a car can knock over (src/signFalls.ts): x, y, the ground, the mesh (0 the
+  // signs, 1 the direction plates) and the part of it the post holds up (-1: a gantry's,
+  // fixed). The k-th's cells are in looseCells as POST_OWNER + k.
+  signPosts: Float32Array;
   masks: LevelMask[];
 }
 

@@ -960,6 +960,15 @@ The metro ride uses its overhead cutaway camera.
   away on its castors and kick a loose piece along; a heavy one hardly moves. They
   stand again once their tile has been out of range and comes back
   (`src/looseFurniture.ts`, `docs/furniture.md`).
+- **Signs.** Like the lamp posts, the traffic signs' posts and the direction plates and
+  boards go over when a car hits them hard enough (about 13 km/h for a sign, 16 for a
+  board); slower, they stop it. The sign turns down about its foot and lies on the
+  pavement, its grid cells freed so the car carries on. A tram or bus stop's sign goes
+  over at about 15 km/h. A café's or bakery's chalkboard (drawn close up only) goes over
+  at a walking pace, or when you run into it on foot. Gantries over the road stay up.
+  The signs stand again when their tile is made again, a stop's sign once it's out of
+  view, a chalkboard once its wall is drawn again (`src/signFalls.ts`,
+  `src/stopSign.ts`).
 - **Lamps.** A hard knock (from about 16 km/h) smashes the headlamp or tail lamp it lands
   on, which then stays dark and lights nothing at night; the headlamps behind a police
   ram frame never break. The tail lamps light up when a car brakes, by day as well

@@ -38,6 +38,8 @@ import type { Hit } from './pistol.ts';
 import { gunOn, setGun } from './pistol.ts';
 import { upgrade } from './save.ts';
 import { onCrash } from './impacts.ts';
+import { signFalls } from './signFalls.ts';
+import type { StopSign } from './stopSign.ts';
 
 // Test API for scenarios (scenarios/*.ts), the developer panel and scripts/scene.mjs,
 // as window.__test. Positions are latitude/longitude in and out, headings are compass
@@ -126,7 +128,7 @@ interface Game {
   viewRadius: () => number;
   offscreen: (x: number, y: number) => boolean;
   canvas: HTMLElement; fov: number;
-  stopWaiting: StopWaiting; tours: Tours; busStops: BusStops; busDoorKey: () => void;
+  stopWaiting: StopWaiting; tours: Tours; busStops: BusStops; tramStops: { signs: { x: number; y: number; shown: boolean; mesh: StopSign | null }[] }; busDoorKey: () => void;
   wallet: Wallet; police: Police; health: Health; clock: Clock; fires: Fires; brigade: Brigade; ambulances: Ambulances; refuse: Refuse; traffic: Traffic; crowd: { people: { state: string; x: number; y: number; pace: number }[] }; hurtNearest: (grave?: boolean) => Pedestrian | null; switchBeacon: (c: Car) => void;
   weather: { set: (k: Kind | 'auto') => void; kind: () => string };
   season: { set: (when: string | number) => void; date: () => string };
@@ -164,6 +166,35 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
   // post stays down for the rest of the game, and a later scenario at the same place found
   // none left with a clear run up to it.
   const aimed: Post[] = [];
+  // Whether there's a clear run of `back` m up to `p` and `beyond` m past it for the car
+  // you're in (not through walls, fences, posts, other cars or trams; with `through`, it
+  // may go through furniture it would knock loose); `own(dx, dy)` says what's the target
+  // itself. If so the car is put at the start of the run, facing it.
+  const aimRun = (p: { x: number; y: number; z: number }, back: number, beyond: number, through: boolean, own: (dx: number, dy: number) => boolean) => {
+    const c = g.car();
+    if (!c) throw new Error('Not in a car');
+    const W = c.spec.W / 2 + 0.6, cells = g.grid.view?.(c) ?? g.grid; // (with the doorsteps the car meets)
+    const others = g.carsNear(p.x, p.y, back + beyond + 6).filter((o) => o !== c);
+    const trams = g.tramsNear(p.x, p.y, back + beyond + 30);
+    for (let a = 0; a < 16; a++) {
+      const h = (a * Math.PI) / 8, cos = Math.cos(h), sin = Math.sin(h);
+      let ok = true;
+      for (let s = -beyond; s <= back + c.spec.L / 2 && ok; s += 0.25) {
+        for (let off = -W; off <= W + 0.01; off += 0.25) {
+          const x = p.x - cos * s - sin * off, y = p.y - sin * s + cos * off;
+          if (own(x - p.x, y - p.y)) continue;
+          ok &&= (cells.at(x, y) === 0 || (through && looseFurniture.standsAt(x, y))) && Math.abs(g.ground(x, y) - p.z) < 0.6 && !fences.blocks(x, y, 0.4, -10) && !posts.near(x, y, 0.4).length;
+        }
+        const x = p.x - cos * s, y = p.y - sin * s;
+        ok &&= others.every((o) => o.gap(x, y) > W + 0.3);
+        ok &&= trams.every((body) => body.circles.every(([tx, ty]) => Math.hypot(x - tx, y - ty) >= W + 1.25 + 4));
+      }
+      if (!ok) continue;
+      Object.assign(c, { x: p.x - cos * back, y: p.y - sin * back, h, vx: 0, vy: 0, w: 0 });
+      return true;
+    }
+    return false;
+  };
   const kit = {
     PLACES,
     // The live game's clock: paused, or running at this speed (0.25 = slow motion).
@@ -991,34 +1022,38 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     // `beyond` m past it, the car put at the start of the run facing it. Null: none.
     // `through`: the run may go through other furniture the car would knock loose too.
     piece(kind: number, r = 300, back = 16, beyond = 10, through = false) {
-      const c = g.car();
-      if (!c) throw new Error('Not in a car');
-      const m = g.me(), W = c.spec.W / 2 + 0.6, cells = g.grid.view?.(c) ?? g.grid; // (with the doorsteps the car meets)
+      const m = g.me();
       const list = looseFurniture.standingNear(m.x, m.y, r).filter((s) => s.kind === kind)
         .sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y));
-      for (const p of list) for (let a = 0; a < 16; a++) {
-        const h = (a * Math.PI) / 8, cos = Math.cos(h), sin = Math.sin(h);
-        const others = g.carsNear(p.x, p.y, back + beyond + 6).filter((o) => o !== c);
-        const trams = g.tramsNear(p.x, p.y, back + beyond + 30);
-        let ok = true;
-        for (let s = -beyond; s <= back + c.spec.L / 2 && ok; s += 0.25) {
-          for (let off = -W; off <= W + 0.01; off += 0.25) {
-            const x = p.x - cos * s - sin * off, y = p.y - sin * s + cos * off;
-            // (Not the piece itself.)
-            const dx = x - p.x, dy = y - p.y, [hx, hy] = FURNITURE_SIZE[p.kind];
-            if (Math.abs(dx * Math.cos(p.angle) + dy * Math.sin(p.angle)) < hx + 0.5 && Math.abs(-dx * Math.sin(p.angle) + dy * Math.cos(p.angle)) < hy + 0.5) continue;
-            ok &&= (cells.at(x, y) === 0 || (through && looseFurniture.standsAt(x, y))) && Math.abs(g.ground(x, y) - p.z) < 0.6 && !fences.blocks(x, y, 0.4, -10) && !posts.near(x, y, 0.4).length;
-          }
-          const x = p.x - cos * s, y = p.y - sin * s;
-          ok &&= others.every((o) => o.gap(x, y) > W + 0.3);
-          ok &&= trams.every((body) => body.circles.every(([tx, ty]) => Math.hypot(x - tx, y - ty) >= W + 1.25 + 4));
-        }
-        if (!ok) continue;
-        Object.assign(c, { x: p.x - cos * back, y: p.y - sin * back, h, vx: 0, vy: 0, w: 0 });
-        return p;
+      for (const p of list) {
+        const [hx, hy] = FURNITURE_SIZE[p.kind], c = Math.cos(p.angle), s = Math.sin(p.angle);
+        // (Not the piece itself.)
+        if (aimRun(p, back, beyond, through, (dx, dy) => Math.abs(dx * c + dy * s) < hx + 0.5 && Math.abs(-dx * s + dy * c) < hy + 0.5)) return p;
       }
       return null;
     },
+    // The same for the nearest sign post a car can knock over (signFalls.ts).
+    signPost(r = 300, back = 16, beyond = 10) {
+      const m = g.me();
+      const list = signFalls.standingNear(m.x, m.y, r).sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y));
+      for (const p of list) if (aimRun(p, back, beyond, false, (dx, dy) => Math.hypot(dx, dy) < 0.9)) return p;
+      return null;
+    },
+    // The nearest tram or bus stop sign in view with a clear run up to it, the car aimed at it.
+    stopSign(r = 150, back = 14, beyond = 8) {
+      const m = g.me();
+      const list = [...g.busStops.shown, ...g.tramStops.signs.filter((s) => s.shown)].filter((s) => Math.hypot(s.x - m.x, s.y - m.y) < r)
+        .sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y));
+      for (const s of list) {
+        const p = { x: s.x, y: s.y, z: g.ground(s.x, s.y) };
+        if (aimRun(p, back, beyond, false, (dx, dy) => Math.hypot(dx, dy) < 0.9)) return { ...p, sign: s.mesh! };
+      }
+      return null;
+    },
+    // The cafés' chalkboards drawn within r m of (x, y) (close up only): where, and whether down.
+    boardsNear(x: number, y: number, r: number) { return signFalls.boardsNear(x, y, r).map((p) => ({ x: p.x, y: p.y, down: !!p.down })); },
+    // The sign posts still standing within r m of (x, y) that a car could knock over.
+    signPostsNear(x: number, y: number, r: number) { return signFalls.standingNear(x, y, r); },
     // The furniture knocked loose so far: where each piece is and which way up (1 upright).
     pieces() { return looseFurniture.pieces(); },
     // The standing piece nearest (x, y) within r m (of a kind) set loose where it stands:

@@ -75,6 +75,18 @@ Someone on foot shoves loose pieces and knocks over the kinds with a `kick` spee
 (`kick`). The rest of the furniture is static. `scenarios/furniture-knock.ts` and
 `scenarios/furniture-aftermath.ts` check it.
 
+Sign posts go over like the lamp posts (`src/signFalls.ts`). The worker writes a traffic
+sign's or direction plate's post into the grid under its own owner number in `looseCells`
+(`POST_OWNER` and its index in the tile's `signPosts`), and gives each part of the merged
+sign mesh its range of vertices (`mergedArrays`: `ranges`, `postParts`). Each post is a
+`Post` in `src/posts.ts` with a `reach` of 0.42 m, where the grid stops a car. Knocked
+over, it frees its cells (`looseFurniture.release`) and its part of the mesh turns down
+about its foot, vertex by vertex, as it falls. A gantry's posts stay fixed. A stop's sign
+(`src/stopSign.ts`) is a post while it's shown, and the whole sign tips over. A café's
+chalkboard is drawn in its wall's close-up mesh (`map/streetFacade.ts`, `boards`: its
+foot and its runs of vertices), and is a light post only while that mesh is shown.
+`scenarios/sign-knock.ts` checks all three.
+
 ## Mapped street furniture
 
 Along the streets the furniture is OpenStreetMap's, where it stands on the map:

@@ -12,7 +12,11 @@ export interface Post {
   tough: number; // m/s into it that knocks it over
   give: number; // how much of the car's speed into it the car loses knocking it over (0..1)
   down: { ang: number; t: number } | null; // knocked over: the way it fell (radians), when (performance.now)
-  knocked?: (p: Post) => void;
+  knocked?: (p: Post, speed: number) => void; // (speed: how fast the car hit it, m/s)
+  // How near a car's box comes before it touches (m; r when not given): a sign post's grid
+  // cells stop a car well short of its thin tube, so it's hit there.
+  reach?: number;
+  shades?: boolean; // whether it shades the lamps' light like a lamp post (lamps.ts; yes when not given)
 }
 
 const CELL = 8;
@@ -53,7 +57,7 @@ class Posts {
     for (let cx = Math.floor((x - r - 1) / CELL); cx <= Math.floor((x + r + 1) / CELL); cx++) {
       for (let cy = Math.floor((y - r - 1) / CELL); cy <= Math.floor((y + r + 1) / CELL); cy++) {
         const list = this.cells.get(this.key(cx, cy));
-        if (list) for (const p of list) if (!p.down && Math.hypot(p.x - x, p.y - y) < r + p.r) out.push(p);
+        if (list) for (const p of list) if (!p.down && Math.hypot(p.x - x, p.y - y) < r + (p.reach ?? p.r)) out.push(p);
       }
     }
     return out;
@@ -69,10 +73,10 @@ class Posts {
     });
   }
 
-  knock(p: Post, ang: number) {
+  knock(p: Post, ang: number, speed = 0) {
     if (p.down) return;
     p.down = { ang, t: performance.now() };
-    p.knocked?.(p);
+    p.knocked?.(p, speed);
   }
 
   // A car against the posts it touches: pushed out of each, and bounced off it or,
@@ -83,33 +87,34 @@ class Posts {
     for (const p of this.near(car.x, car.y, Math.hypot(L, W))) {
       if (!Number.isNaN(p.z) && car.gz !== undefined && Math.abs(car.gz - p.z) > 2.5) continue;
       impact = Math.max(impact, bump(car, p, c, s, L, W));
-      if (hit.over) this.knock(p, Math.atan2(car.vy, car.vx));
+      if (hit.over) this.knock(p, Math.atan2(car.vy, car.vx), hit.speed);
     }
     return impact;
   }
 }
 
 // Whether the last bump was hard enough to go through what it hit.
-export const hit = { over: false };
+export const hit = { over: false, speed: 0 }; // (and how fast into it, m/s)
 
 // A car against one round thing (fixed, or a post): pushed out of it, and bounced off it,
 // or (faster into it than `tough`) carrying on through it, slowed by `give` of its speed
 // into it. `c`, `s`: the car's heading, `L`, `W`: half its length and width. Returns how
 // hard it hit (m/s); `hit.over` says whether it went through.
-export function bump(car: Car, p: { x: number; y: number; r: number; tough: number; give: number }, c: number, s: number, L: number, W: number) {
+export function bump(car: Car, p: { x: number; y: number; r: number; reach?: number; tough: number; give: number }, c: number, s: number, L: number, W: number) {
   hit.over = false;
+  const r = p.reach ?? p.r;
   // The post in the car's frame, and the nearest point of the car's box to it.
   const dx = p.x - car.x, dy = p.y - car.y, lx = dx * c + dy * s, ly = -dx * s + dy * c;
   const qx = Math.max(-L, Math.min(L, lx)), qy = Math.max(-W, Math.min(W, ly));
   let ex = lx - qx, ey = ly - qy, d = Math.hypot(ex, ey), pen: number;
-  if (d >= p.r) return 0;
+  if (d >= r) return 0;
   if (d > 1e-6) {
-    pen = p.r - d;
+    pen = r - d;
     ex /= d; ey /= d;
   } else {
     // Its middle is inside the box: out the nearer side.
     const px = L - Math.abs(lx), py = W - Math.abs(ly);
-    if (px < py) { ex = Math.sign(lx) || 1; ey = 0; pen = px + p.r; } else { ex = 0; ey = Math.sign(ly) || 1; pen = py + p.r; }
+    if (px < py) { ex = Math.sign(lx) || 1; ey = 0; pen = px + r; } else { ex = 0; ey = Math.sign(ly) || 1; pen = py + r; }
   }
   // (ex, ey): from the car towards the post; the car goes the other way.
   const nx = -(ex * c - ey * s), ny = -(ex * s + ey * c);
@@ -119,6 +124,7 @@ export function bump(car: Car, p: { x: number; y: number; r: number; tough: numb
   if (vn >= 0) return 0;
   if (-vn > p.tough) {
     hit.over = true;
+    hit.speed = -vn;
     car.vx -= p.give * vn * nx;
     car.vy -= p.give * vn * ny;
     car.takeImpactDamage(p.give * 2);

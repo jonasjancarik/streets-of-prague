@@ -1183,7 +1183,7 @@ export class Lamps {
           if (Math.abs(p.x - x) < r + 30 && Math.abs(p.y - y) < r + 30) put(p.x, p.y, p.ang, TRAM_SECTION / 2, 1.2, v.levels?.[i]?.gz ?? this.height(p.x, p.y), 3.2);
         });
       }
-      for (const p of posts.near(x, y, r)) this.postIndex.set(p, put(p.x, p.y, 0, p.r, p.r, Number.isNaN(p.z) ? this.height(p.x, p.y) : p.z, 6));
+      for (const p of posts.near(x, y, r)) if (p.shades !== false) this.postIndex.set(p, put(p.x, p.y, 0, p.r, p.r, Number.isNaN(p.z) ? this.height(p.x, p.y) : p.z, 6));
     }
     if (on) {
       this.carMap.needsUpdate = true;

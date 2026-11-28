@@ -332,7 +332,7 @@ export function signMesh(arrays: SignArrays, signs: TrafficSigns) {
   g.setAttribute('color', new THREE.BufferAttribute(arrays.color, 3));
   g.computeBoundingSphere();
   const mesh = new THREE.Mesh(g, signMaterial(signs));
-  mesh.name = 'traffic signs'; mesh.castShadow = mesh.receiveShadow = true; mesh.userData.posts = arrays.posts; mesh.userData.mounts = arrays.mounts;
+  mesh.name = 'traffic signs'; mesh.castShadow = mesh.receiveShadow = true; mesh.userData.posts = arrays.posts; mesh.userData.mounts = arrays.mounts; mesh.userData.ranges = arrays.ranges;
   mesh.addEventListener('added', () => meshes.add(mesh));
   mesh.addEventListener('removed', () => meshes.delete(mesh));
   return mesh;
@@ -563,7 +563,7 @@ export function directionMesh(arrays: DirectionArrays, signs: DirectionSign[]) {
   g.computeBoundingSphere();
   const mesh = new THREE.Mesh(g, cutAway(new THREE.MeshStandardMaterial({ map, vertexColors: true, roughness: .5, metalness: .15 }), 'furniture'));
   mesh.name = 'direction signs'; mesh.castShadow = mesh.receiveShadow = true;
-  mesh.userData.posts = arrays.posts; mesh.userData.mounts = arrays.mounts; mesh.userData.ownMaterial = true;
+  mesh.userData.posts = arrays.posts; mesh.userData.mounts = arrays.mounts; mesh.userData.ranges = arrays.ranges; mesh.userData.ownMaterial = true;
   mesh.addEventListener('added', () => meshes.add(mesh));
   mesh.addEventListener('removed', () => meshes.delete(mesh));
   return mesh;

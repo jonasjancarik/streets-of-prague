@@ -610,6 +610,7 @@ export interface FacadeGeometry {
   plateMounts: Float32Array; // a clear patch of plaster near either end, in world coordinates
   plaqueMounts: Float32Array; // the middle of each mapped memorial plaque (PLAQUE), in world coordinates
   doorPlates: Float32Array; // the middle of each house door's number plates (DOOR_PLATES), in world coordinates
+  boards: Float32Array; // the chalkboards on the pavement: [x, y, z (its feet, world), runs, first vertex, count, …] each
 }
 const cross = (ax: number, ay: number, bx: number, by: number) => ax * by - ay * bx;
 // The shade under sills and the ground floor's cornice: how far down it reaches (m) and
@@ -643,6 +644,9 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
   const ground = F_GROUND[style], storey = F_STOREY[style] * (STOREY_FIT[0] + (Math.floor((w - style) * 1024) % 32) * STOREY_FIT[1] / 31);
   const pos: number[] = [], norm: number[] = [], col: number[] = [], fac: number[] = [], shade: number[] = [], detail: number[] = [];
   const foot: number[] = [], steps: number[] = [];
+  // Each chalkboard's vertices, by its bay: first vertex and how many, a run for each of the
+  // wall's triangles it was drawn in (signFalls.ts knocks one over by them).
+  const boardRuns = new Map<number, number[]>();
   // Ground-floor bays a mapped shop looks out of (mappedFrontages.ts: u, stock, word).
   const displays = new Map<number,{ stock: number; word: number }>();
   const shops=arrays.shops;
@@ -910,9 +914,11 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
         // with its word; above some shops an alarm box.
         if (!row && shop && sign) {
           const board = mapped && CHALKBOARD.has(mapped.word) && pick(seed, j, 25) < .55;
+          const first = pos.length / 3;
           if (board) for (const [poly, kind, ao] of chalkboard(j * bay + bay * (pick(seed, j, 26) < .5 ? .3 : .7), .95)) {
             emit(poly.map(([x, y, z, light, u]) => [x, bottom + y, z, light, u]), layer, ao, kind, kind === S.shopSign ? CHALK : finish?.[0], kind === S.shopSign ? mapped!.word : undefined);
           }
+          if (pos.length / 3 > first) { const runs = boardRuns.get(j) ?? []; runs.push(first, pos.length / 3 - first); boardRuns.set(j, runs); }
           if (pick(seed, j, 27) < .3 && h > 3.3) for (const [poly, kind, ao] of alarmBox(j * bay + bay - .35, h - .45)) {
             emit(poly.map(([x, y, z]) => [x, bottom + y, z]), layer, ao, S.shopPaint, WALL_KIT_PAINT[kind === -13 ? 3 : 2]);
           }
@@ -981,5 +987,16 @@ export function buildStreetWall(arrays: Pick<BuildingArrays, 'position' | 'color
     const [hw, hh] = PLAQUE;
     [0, .5, -.5, 1, -1, 1.6, -1.6, 2.3, -2.3].some(du => [2.7, 3.0, 2.4].some(h => mount(u + du, h, hw, hh, plaques)));
   }
-  return { plateMounts: Float32Array.from(mounts), plaqueMounts: Float32Array.from(plaques), doorPlates: Float32Array.from(doors), footShade: Float32Array.from(foot), steps: Float32Array.from(steps), position: new Float32Array(pos), normal: new Float32Array(norm), color: new Float32Array(col), facade: new Float32Array(fac), sky: new Float32Array(shade), detail: new Float32Array(detail) };
+  // The chalkboards: the middle of each one's feet (three.js world) and its runs of vertices,
+  // [x, y, z, runs, first, count, …] one after another.
+  const boards: number[] = [];
+  for (const runs of boardRuns.values()) {
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity, y0 = Infinity;
+    for (let r = 0; r < runs.length; r += 2) for (let i = runs[r]; i < runs[r] + runs[r + 1]; i++) {
+      const x = pos[i * 3], y = pos[i * 3 + 1], z = pos[i * 3 + 2];
+      x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); y0 = Math.min(y0, y);
+    }
+    boards.push((x0 + x1) / 2, y0, (z0 + z1) / 2, runs.length / 2, ...runs);
+  }
+  return { boards: Float32Array.from(boards), plateMounts: Float32Array.from(mounts), plaqueMounts: Float32Array.from(plaques), doorPlates: Float32Array.from(doors), footShade: Float32Array.from(foot), steps: Float32Array.from(steps), position: new Float32Array(pos), normal: new Float32Array(norm), color: new Float32Array(col), facade: new Float32Array(fac), sky: new Float32Array(shade), detail: new Float32Array(detail) };
 }

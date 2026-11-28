@@ -3,7 +3,7 @@ import type { Car } from './car.ts';
 import { crash, type ImpactKind } from './impacts.ts';
 import { sendInstances } from './gpu.ts';
 import { furnitureModels } from './furnitureModels.ts';
-import { FURNITURE_SIZE, KIND, KNOCKABLE, type FurnitureSpot } from './map/furniture.ts';
+import { FURNITURE_SIZE, KIND, KNOCKABLE, POST_OWNER, type FurnitureSpot } from './map/furniture.ts';
 import type { Grid } from './map/geo.ts';
 
 // Street furniture a car can knock loose (plan 040): bins, the 1100 l containers, benches,
@@ -632,7 +632,21 @@ class LooseFurniture {
     const grid = this.world!.grid(x, y);
     if (!grid) return true;
     const i = grid.indexAt(x, y);
-    return i < 0 || (grid.cells[i] === 255 && !this.shared.get(grid)?.has(i));
+    if (i < 0) return true;
+    if (grid.cells[i] !== 255) return false;
+    // (Not furniture still standing, but a sign post that still stands: that it bounces off.)
+    const shared = this.shared.get(grid)?.get(i);
+    if (!shared) return true;
+    for (const o of shared.standing) if (o >= POST_OWNER) return true;
+    return false;
+  }
+
+  // A sign post knocked over (src/signFalls.ts): the grid cells only it held, freed. `owner`
+  // is POST_OWNER and its index in the tile's sign posts.
+  release(grid: Grid, owner: number) {
+    const cells = this.shared.get(grid);
+    if (!cells) return;
+    for (const c of cells.values()) if (c.standing.delete(owner) && !c.standing.size) grid.cells[c.cell] = c.was;
   }
 
   private draw(b: Body) {

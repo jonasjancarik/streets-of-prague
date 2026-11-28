@@ -55,6 +55,7 @@ import { overheadWires } from './wires.ts';
 import { stopLines } from './map/stopShelters.ts';
 import { posts, type Post } from './posts.ts';
 import { looseFurniture } from './looseFurniture.ts';
+import { signFalls } from './signFalls.ts';
 import { fences, type FenceSection } from './fences.ts';
 import { stepEdges, shortenInto, INTO_TUNNEL, type Crosser, type StepEdge } from './stepEdges.ts';
 import { byLevel, bridgeApproaches } from './roadLevels.ts';
@@ -1953,6 +1954,8 @@ export class TileWorld {
       this.byIndex.set(key, tile);
       // The bins, benches and the rest a car can knock loose (looseFurniture.ts).
       looseFurniture.addTile(k, land.furniture.spots, furniture, land.looseCells, grid);
+      // The sign posts a car can knock over (signFalls.ts).
+      signFalls.addTile(k, land.signPosts, [signs, directions], grid);
       // The tile's buildings as shadow casters, for its own sky view and its neighbours':
       // their ground next to these buildings is worked out again.
       this.sky.set(key, { shapes, texture: null, tileBox: t.box, ground, refresh: null });
@@ -1964,6 +1967,7 @@ export class TileWorld {
       this.onCars(cars, tile);
     } catch (error) {
       looseFurniture.removeTile(k);
+      signFalls.removeTile(k);
       disposeFurniture(furniture);
       signs?.geometry.dispose();
       if (directions) disposeDirections(directions);
@@ -2254,6 +2258,7 @@ export class TileWorld {
     }
     for (const p of t.poles) posts.remove(p);
     looseFurniture.removeTile(k);
+    signFalls.removeTile(k);
     fences.remove(t.fences);
     streetHedges.remove(k);
     this.loaded.delete(k);
