@@ -39,7 +39,7 @@ const SHUTTER = 0.016, REACH = 0.045, TAPS = 8;
 const LIFT = 0.25;
 
 export function makePost(renderer: WebGPURenderer) {
-  let pipeline: RenderPipeline | null = null, of: THREE.Scene | null = null, by: THREE.Camera | null = null, shaded = false;
+  let pipeline: RenderPipeline | null = null, of: THREE.Scene | null = null, by: THREE.Camera | null = null, shaded = false, glowing = false;
   let glow: N = null;
   let sceneTarget: THREE.RenderTarget | null = null; // (what the scene is drawn into: post.ts, postTarget)
   // The camera's travel while the shutter is open, as the camera sees it; the player's vehicle
@@ -53,7 +53,7 @@ export function makePost(renderer: WebGPURenderer) {
   const speed = new Vector3(), turn = new Matrix3();
   const build = (scene: THREE.Scene, camera: THREE.Camera) => {
     pipeline?.dispose();
-    of = scene; by = camera; shaded = POST.ao;
+    of = scene; by = camera; shaded = POST.ao; glowing = POST.glow;
     // (The ground's layers are drawn once a pixel with the stencil: surface.ts.)
     const scenePass: N = pass(scene, camera, { stencilBuffer: true } as any);
     sceneTarget = scenePass.renderTarget;
@@ -119,22 +119,28 @@ export function makePost(renderer: WebGPURenderer) {
       shade.samples.value = 12;
       colour = colour.mul(vec4(vec3(shade.getTextureNode().r.mul(AO).add(1 - AO)), 1));
     }
-    glow = bloom(colour, DAY[0], DAY[1], DAY[2]);
-    glow.setResolutionScale(BLOOM_SCALE);
-    const lit: N = renderOutput(colour.add(glow));
+    // (The glow and the darker corners only when asked for: the shading can go on without them.)
+    glow = null;
+    if (POST.glow) {
+      glow = bloom(colour, DAY[0], DAY[1], DAY[2]);
+      glow.setResolutionScale(BLOOM_SCALE);
+    }
+    const lit: N = renderOutput(glow ? colour.add(glow) : colour);
     const p: N = uv().sub(0.5).mul(vec2(1, 0.85));
-    const shade: N = float(1).sub(smoothstep(0.38, 0.82, length(p)).mul(vignette));
+    const shade: N = POST.glow ? float(1).sub(smoothstep(0.38, 0.82, length(p)).mul(vignette)) : float(1);
     pipeline = new RenderPipeline(renderer, vec4(lit.rgb.mul(shade), 1) as any);
     pipeline.outputColorTransform = false;
   };
   setPost((scene, camera) => {
-    if (!pipeline || of !== scene || by !== camera || shaded !== POST.ao) build(scene, camera);
+    if (!pipeline || of !== scene || by !== camera || shaded !== POST.ao || glowing !== POST.glow) build(scene, camera);
     const k = POST.night, mixed = (i: number) => DAY[i] + (NIGHT[i] - DAY[i]) * k;
     const exposure = Math.max(Math.abs(renderer.toneMappingExposure), 0.01);
-    glow.strength.value = mixed(0) * (1 + 0.25 * POST.wet * k);
-    glow.radius.value = mixed(1);
+    if (glow) {
+      glow.strength.value = mixed(0) * (1 + 0.25 * POST.wet * k);
+      glow.radius.value = mixed(1);
+      glow.threshold.value = mixed(2) / exposure;
+    }
     vignette.value = Math.min(1, VIGNETTE * VIGNETTE_TUNE.strength);
-    glow.threshold.value = mixed(2) / exposure;
     camera.updateMatrixWorld();
     speed.fromArray(POST.going);
     if (POST.blur > 0.001) {

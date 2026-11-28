@@ -17,7 +17,7 @@ export const POST = {
   wet: 0,
   // Whether the tier wants ambient shading from the picture's depth (graphics.ts: Ultra).
   aoValue: false,
-  // Ambient shading from the picture's depth (webgpu/post.ts), with the post-processing.
+  // Ambient shading from the picture's depth (webgpu/post.ts), with or without the glow.
   get ao() { return aoAsked === 'on' || (aoAsked !== 'off' && this.aoValue); },
   // Motion blur while driving, seen from the street: how much of it (0 below about 20 km/h, 1 from
   // about 60).
@@ -33,7 +33,10 @@ export const POST = {
   // Each is its middle, its half length, width and height with its heading, and its
   // velocity (m/s), in the scene's coordinates as above.
   others: [] as { mid: [number, number, number]; box: [number, number, number, number]; going: [number, number, number] }[],
-  get on() { return asked === 'on' || (asked !== 'off' && this.value > 0); },
+  // The glow and the darker corners.
+  get glow() { return asked === 'on' || (asked !== 'off' && this.value > 0); },
+  // Whether the picture goes through the post-processing at all: for the glow, the shading or both.
+  get on() { return this.glow || this.ao; },
 };
 
 export const OTHERS = 4;
